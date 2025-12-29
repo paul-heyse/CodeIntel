@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, TypeVar
 
+from codeintel.core.schemas.row_serialization import row_to_tuple_by_columns
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ def serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) -> 
     tuple[object, ...]
         Row values ordered according to the provided columns.
     """
-    return tuple(row[column] for column in columns)
+    return row_to_tuple_by_columns(row, columns)
 
 
 __all__ = [

@@ -12,8 +12,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.schemas.contracts import table_schema_from_json_obj
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
-from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph

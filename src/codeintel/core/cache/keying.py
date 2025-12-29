@@ -7,9 +7,10 @@ from various input types.
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from typing import Any
+
+from codeintel.core.serialization.stable import stable_stringify
 
 
 def cache_key(*args: object, **kwargs: object) -> str:
@@ -41,7 +42,7 @@ def cache_key(*args: object, **kwargs: object) -> str:
     if kwargs:
         sorted_kwargs = sorted(kwargs.items())
         for k, v in sorted_kwargs:
-            parts.append(f"{k}={_serialize_value(v)}")
+            parts.append(f"{k}={stable_stringify(v)}")
 
     return ":".join(parts)
 
@@ -73,32 +74,6 @@ def hash_key(*args: object, **kwargs: object) -> str:
     base_key = cache_key(*args, **kwargs)
     return hashlib.md5(base_key.encode(), usedforsecurity=False).hexdigest()
 
-
-def _serialize_value(value: object) -> str:
-    """Serialize a value for inclusion in a cache key.
-
-    Parameters
-    ----------
-    value
-        Value to serialize.
-
-    Returns
-    -------
-    str
-        String representation of the value.
-    """
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float, str)):
-        return str(value)
-    if isinstance(value, (list, tuple)):
-        items = [_serialize_value(item) for item in value]
-        return f"[{','.join(items)}]"
-    if isinstance(value, dict):
-        return json.dumps(value, sort_keys=True, default=str)
-    return str(value)
 
 
 @dataclass(frozen=True)
@@ -199,7 +174,7 @@ class KeyBuilder:
         for arg in args:
             self._parts.append(str(arg))
         for k, v in sorted(kwargs.items()):
-            self._parts.append(f"{k}={_serialize_value(v)}")
+            self._parts.append(f"{k}={stable_stringify(v)}")
         return self
 
     def build(self) -> str:

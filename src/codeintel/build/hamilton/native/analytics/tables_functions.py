@@ -19,8 +19,8 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
-from codeintel.build.tabular.duckdb_relation import relation_to_polars
 from codeintel.build.tabular.types import TabularInput
+from codeintel.core.columnar import to_lazyframe
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
 
@@ -55,7 +55,7 @@ def function_metrics__base(q__core__goids: TabularInput) -> pl.LazyFrame:
     pl.LazyFrame
         Lazy frame with function metrics columns.
     """
-    frame = relation_to_polars(q__core__goids)
+    frame = to_lazyframe(q__core__goids)
     end_line = pl.coalesce([pl.col("end_line"), pl.col("start_line")])
     frame = frame.rename({"goid_h128": "function_goid_h128"})
     frame = frame.with_columns(

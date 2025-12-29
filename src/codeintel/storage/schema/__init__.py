@@ -11,7 +11,10 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.storage.schema.arrow_schema import arrow_schema_for_table_key, arrow_schema_hash
+    from codeintel.storage.schema.arrow_contracts import (
+        arrow_schema_for_table_key,
+        arrow_schema_hash,
+    )
     from codeintel.storage.schema.ddl import (
         SCHEMAS,
         apply_all_schemas,
@@ -42,11 +45,11 @@ if TYPE_CHECKING:
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "arrow_schema_for_table_key": (
-        "codeintel.storage.schema.arrow_schema",
+        "codeintel.storage.schema.arrow_contracts",
         "arrow_schema_for_table_key",
     ),
     "arrow_schema_hash": (
-        "codeintel.storage.schema.arrow_schema",
+        "codeintel.storage.schema.arrow_contracts",
         "arrow_schema_hash",
     ),
     "SCHEMAS": ("codeintel.storage.schema.ddl", "SCHEMAS"),

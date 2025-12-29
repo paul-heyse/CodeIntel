@@ -11,7 +11,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
+from codeintel.core.schemas.contracts import DEFAULT_EXTRAS_COLUMN
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.validation.arrow_type_compat import is_compatible_arrow_type

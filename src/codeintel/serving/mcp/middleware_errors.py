@@ -22,7 +22,7 @@ from codeintel.serving.errors import (
     build_error_context_from_mcp_context,
     exception_to_error_response,
 )
-from codeintel.serving.errors.problem_adapter import problem_detail_from_error_response
+from codeintel.serving.errors.transport import problem_detail_from_error_response_with_context
 
 if TYPE_CHECKING:
     from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
@@ -90,11 +90,9 @@ class CodeIntelErrorMappingMiddleware(Middleware):
             error_response = exception_to_error_response(exc, context=err_context)
             kind = error_response.error.kind
             jsonrpc_code = _KIND_TO_JSONRPC_CODE.get(kind, -32603)
-            instance = err_context.resource_uri or err_context.operation
-            problem_detail = problem_detail_from_error_response(
+            problem_detail = problem_detail_from_error_response_with_context(
                 error_response,
-                instance=instance,
-                correlation_id=err_context.request_id,
+                context=err_context,
             )
 
             self._logger.exception(

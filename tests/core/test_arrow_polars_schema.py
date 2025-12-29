@@ -8,13 +8,11 @@ import polars as pl
 import pyarrow as pa
 import pytest
 
-from codeintel.core.schemas.arrow_gen import (
+from codeintel.core.schemas.contracts import (
     ARROW_SCHEMA_CONTRACT_VERSION,
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
     arrow_contract_for_table_schema,
-)
-from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_dataframe,
 )

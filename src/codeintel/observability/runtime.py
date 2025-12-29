@@ -87,11 +87,11 @@ from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.config_loader import apply_otel_config_file, load_otel_config_file
 from codeintel.observability.events import TelemetryEvent, emit_event
 from codeintel.observability.grpc import GrpcObservabilityHandle, register_grpc_observability
-from codeintel.observability.instrumentation_registry import (
+from codeintel.observability.policy import ObservabilityPolicy, policy_from_settings
+from codeintel.observability.registry import (
     InstrumentationRegistry,
     get_instrumentation_registry,
 )
-from codeintel.observability.policy import ObservabilityPolicy, policy_from_settings
 from codeintel.observability.semconv_keys import (
     DB_QUERY_SUMMARY,
     TELEMETRY_ACTION,

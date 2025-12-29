@@ -669,13 +669,13 @@ If any answer is “no,” revise the test to move it closer to production reali
 - **Canonical manager:** `uv`
 - **Python:** pinned to **3.13.11**
 - **Virtual env:** project‑local `.venv/` only (never system Python)
-- **One-shot bootstrap (REQUIRED):** use `scripts/bootstrap.sh`
+- **One-shot bootstrap (REQUIRED):** use `scripts/bootstrap_codex.sh`
   ```bash
-  scripts/bootstrap.sh
+  scripts/bootstrap_codex.sh
   ```
-  The script lives at `scripts/bootstrap.sh` and provisions uv, pins Python 3.13.11, syncs dependencies, activates the project `.venv/`, and sets project paths correctly. It is REQUIRED, the code will not function correctly if you do not run this script. Pass `--help` for options.
+  The script lives at `scripts/bootstrap_codex.sh` and provisions uv, pins Python 3.13.11, syncs dependencies, activates the project `.venv/`, and sets project paths correctly. It is REQUIRED, the code will not function correctly if you do not run this script. Pass `--help` for options.
 
-  If you are having difficulties with reaching the directory even after running `scripts/bootstrap.sh` please attempt to run the bash command "/bin/bash -lc 'pwd && ls -la'"
+  If you are having difficulties with reaching the directory even after running `scripts/bootstrap_codex.sh` please attempt to run the bash command "/bin/bash -lc 'pwd && ls -la'"
 
 - **Remote container / devcontainer:** follow [Link Policy for Remote Editors](#link-policy-for-remote-editors) so deep links open correctly from generated artifacts.
 - **Do not** duplicate tool configs across files. `pyrightconfig.jsonc` and `pyrefly.toml` are canonical; `pyproject.toml` is canonical for Ruff and packaging.

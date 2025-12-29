@@ -31,8 +31,8 @@ from codeintel.analytics.testing.profiles.types import (
     TestRecord,
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
+from codeintel.core.parsing import parse_python_module
 from codeintel.core.paths import path_to_module
-from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     from pathlib import Path

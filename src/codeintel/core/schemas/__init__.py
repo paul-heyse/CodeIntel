@@ -8,28 +8,28 @@ Hamilton-inferred, compiled manifests, etc.).
 
 from __future__ import annotations
 
-from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
-from codeintel.core.schemas.arrow_polars import (
-    table_schema_from_arrow_schema,
-    table_schema_from_polars_dataframe,
-    table_schema_from_polars_lazyframe,
-    table_schema_from_polars_schema,
-)
 from codeintel.core.schemas.authority import (
     SchemaAuthority,
     SchemaDerivation,
     SchemaSelection,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.contracts import (
+    arrow_schema_from_table_schema,
+    json_schema_from_table_schema,
+    table_schema_from_arrow_schema,
+    table_schema_from_json_obj,
+    table_schema_from_polars_dataframe,
+    table_schema_from_polars_lazyframe,
+    table_schema_from_polars_schema,
+)
 from codeintel.core.schemas.hashing import canonical_type, schema_hash
-from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.primitives import Column, ColumnType, Index, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.core.schemas.row_models import (
     GeneratedRowBinding,
     row_binding_for_table_schema,
 )
-from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.schemas.service import (
     DatasetSchemaLike,
     DatasetSchemaProvider,

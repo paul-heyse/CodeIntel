@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime
-from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import pyarrow as pa
@@ -16,20 +13,24 @@ import pyarrow.compute as pc
 
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
-from codeintel.core.schemas.arrow_gen import (
+from codeintel.core.schemas.contracts import (
     ARROW_SCHEMA_CONTRACT_VERSION,
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
     ExtrasPolicy,
+    encode_schema_ipc_b64,
+    table_schema_from_arrow_schema,
 )
-from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 from codeintel.core.time import utc_now
+from codeintel.storage.helpers.table_key import try_parse_table_key
+from codeintel.storage.tracking.observation_codec import (
+    encode_column_stats,
+    encode_dataset_stats,
+    encode_derived_settings,
+)
 from codeintel.storage.tracking.schema_catalog_models import (
-    ColumnStatsEntry,
-    ColumnStatsPayload,
-    DatasetStatsPayload,
     DerivedSettingsPayload,
     ParquetStatsPayload,
     SchemaObservationRecord,
@@ -176,7 +177,7 @@ class SchemaObservationAccumulator:
             drift_summary,
             drift_history=resolved_inputs.drift_history,
         )
-        derived_settings = _derived_settings_from_stats(
+        derived_settings = encode_derived_settings(
             table_schema=merged,
             column_stats=self.column_stats,
             row_count=self.row_count,
@@ -200,12 +201,12 @@ class SchemaObservationAccumulator:
             table_key=self.table_key,
             schema_digest=schema_digest,
             schema_hash=schema_hash_value,
-            arrow_schema_ipc_b64=_serialize_schema_ipc_b64(annotated_schema),
+            arrow_schema_ipc_b64=encode_schema_ipc_b64(annotated_schema),
             repo=resolved_inputs.repo,
             commit=resolved_inputs.commit,
             target_name=resolved_inputs.target_name,
-            column_stats=_column_stats_payload(self.column_stats),
-            dataset_stats=_dataset_stats_payload(
+            column_stats=encode_column_stats(self.column_stats),
+            dataset_stats=encode_dataset_stats(
                 row_count=self.row_count,
                 batch_count=self.batch_count,
                 total_bytes=self.total_bytes,
@@ -425,10 +426,11 @@ def table_schema_from_tag_sets(
     TableSchema | None
         TableSchema derived from schema.output tags, or None when unavailable.
     """
-    parsed = _split_table_key(table_key)
+    parsed = try_parse_table_key(table_key)
     if parsed is None:
         return None
-    schema_name, table_name = parsed
+    schema_name = parsed.schema
+    table_name = parsed.name
     ordered_columns: list[str] = []
     column_types: dict[str, ColumnType] = {}
     for tags in tag_sets:
@@ -695,102 +697,7 @@ def _observed_nullability(
     return observed
 
 
-_DEFAULT_DICT_MAX_CARDINALITY = 256
-_DEFAULT_DICT_RATIO = 0.1
-_TARGET_ROW_GROUP_BYTES = 64 * 1024 * 1024
-_MIN_ROW_GROUP_SIZE = 10_000
-_MAX_ROW_GROUP_SIZE = 1_000_000
-_MIN_DATA_PAGE_SIZE = 64 * 1024
-_MAX_DATA_PAGE_SIZE = 1024 * 1024
-_ROW_GROUP_PAGE_DIVISOR = 128
 _EXTRAS_POLICY_RETAIN_COUNT = 2
-
-
-def _derived_settings_from_stats(
-    *,
-    table_schema: TableSchema,
-    column_stats: Mapping[str, _ColumnStatsAccumulator],
-    row_count: int,
-    total_bytes: int,
-    extras_policy: ExtrasPolicy,
-) -> DerivedSettingsPayload | None:
-    settings: DerivedSettingsPayload = {"extras_policy": extras_policy}
-    dictionary_columns: list[str] = []
-    distinct_values: list[int] = []
-    for column in table_schema.columns:
-        if column.type != "VARCHAR":
-            continue
-        stats = column_stats.get(column.name)
-        if stats is None or stats.distinct_max is None:
-            continue
-        if stats.non_null_count <= 0:
-            continue
-        distinct = stats.distinct_max
-        ratio = distinct / stats.non_null_count
-        if distinct <= _DEFAULT_DICT_MAX_CARDINALITY and ratio <= _DEFAULT_DICT_RATIO:
-            dictionary_columns.append(column.name)
-            distinct_values.append(distinct)
-    if dictionary_columns:
-        settings["dictionary_encode_columns"] = sorted(dictionary_columns)
-        settings["dictionary_max_cardinality"] = max(distinct_values)
-        settings["unify_dictionaries"] = True
-
-    if row_count > 0 and total_bytes > 0:
-        avg_row_bytes = total_bytes / row_count
-        if avg_row_bytes > 0:
-            raw_rows = int(_TARGET_ROW_GROUP_BYTES / avg_row_bytes)
-            row_group_size = max(_MIN_ROW_GROUP_SIZE, min(_MAX_ROW_GROUP_SIZE, raw_rows))
-            row_group_bytes = row_group_size * avg_row_bytes
-            page_bytes = int(row_group_bytes / _ROW_GROUP_PAGE_DIVISOR)
-            page_bytes = max(_MIN_DATA_PAGE_SIZE, min(_MAX_DATA_PAGE_SIZE, page_bytes))
-            settings["row_group_size"] = row_group_size
-            settings["data_page_size"] = page_bytes
-            settings["avg_row_bytes"] = avg_row_bytes
-
-    return settings or None
-
-
-def _column_stats_payload(
-    column_stats: Mapping[str, _ColumnStatsAccumulator],
-) -> ColumnStatsPayload | None:
-    if not column_stats:
-        return None
-    payload: ColumnStatsPayload = {}
-    for name, stats in column_stats.items():
-        entry: ColumnStatsEntry = {
-            "null_count": stats.null_count,
-            "non_null_count": stats.non_null_count,
-        }
-        if stats.distinct_max is not None:
-            entry["distinct_count_max"] = stats.distinct_max
-        if stats.min_value is not None:
-            entry["min"] = _json_safe_value(stats.min_value)
-        if stats.max_value is not None:
-            entry["max"] = _json_safe_value(stats.max_value)
-        if stats.length_count > 0:
-            entry["avg_length"] = stats.length_sum / stats.length_count
-        payload[name] = entry
-    return payload
-
-
-def _dataset_stats_payload(
-    *,
-    row_count: int,
-    batch_count: int,
-    total_bytes: int,
-    manifest_stats: ParquetStatsPayload | None,
-    manifest_row_count: int | None,
-) -> DatasetStatsPayload:
-    payload: DatasetStatsPayload = {
-        "row_count": row_count,
-        "batch_count": batch_count,
-        "total_bytes": total_bytes,
-    }
-    if manifest_row_count is not None:
-        payload["manifest_row_count"] = manifest_row_count
-    if manifest_stats:
-        payload["parquet_stats"] = dict(manifest_stats)
-    return payload
 
 
 def _drift_summary(
@@ -973,37 +880,11 @@ def _renderer_cache_from_arrow_schema(
     extras_column: str,
 ) -> dict[str, object]:
     return {
-        "arrow_schema_ipc_b64": _serialize_schema_ipc_b64(schema),
+        "arrow_schema_ipc_b64": encode_schema_ipc_b64(schema),
         "arrow_schema_contract_version": ARROW_SCHEMA_CONTRACT_VERSION,
         "extras_policy": extras_policy,
         "extras_column": extras_column,
     }
-
-
-def _serialize_schema_ipc_b64(schema: pa.Schema) -> str:
-    return base64.b64encode(_serialize_schema_ipc(schema)).decode("ascii")
-
-
-def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
-    serialize_schema = getattr(pa.ipc, "serialize_schema", None)
-    if callable(serialize_schema):
-        buffer = cast("pa.Buffer", serialize_schema(schema))
-        return buffer.to_pybytes()
-    write_schema = getattr(pa.ipc, "write_schema", None)
-    if callable(write_schema):
-        sink = pa.BufferOutputStream()
-        write_schema(schema, sink)
-        return sink.getvalue().to_pybytes()
-    new_stream = getattr(pa.ipc, "new_stream", None)
-    if callable(new_stream):
-        sink = pa.BufferOutputStream()
-        writer = new_stream(sink, schema)
-        close = getattr(writer, "close", None)
-        if callable(close):
-            close()
-        return sink.getvalue().to_pybytes()
-    msg = "Arrow IPC schema serialization is unavailable"
-    raise TypeError(msg)
 
 
 def _apply_extras_policy(
@@ -1036,7 +917,7 @@ def _apply_extras_policy(
         updated_settings["extras_policy"] = desired_policy
     updated_observation = replace(
         bundle.observation,
-        arrow_schema_ipc_b64=_serialize_schema_ipc_b64(updated_schema),
+        arrow_schema_ipc_b64=encode_schema_ipc_b64(updated_schema),
         derived_settings=updated_settings,
     )
     updated_schema_version = replace(
@@ -1252,23 +1133,6 @@ def _safe_max(current: object | None, candidate: object) -> object:
     return current
 
 
-def _json_safe_value(value: object) -> object:
-    if isinstance(value, memoryview):
-        value = value.tobytes()
-    if isinstance(value, bytes):
-        try:
-            return value.decode("utf-8")
-        except UnicodeDecodeError:
-            return base64.b64encode(value).decode("ascii")
-    if isinstance(value, datetime):
-        return value.astimezone(UTC).isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return str(value)
-    return value
-
-
 @runtime_checkable
 class _SupportsRichComparison(Protocol):
     def __lt__(self, other: object) -> bool: ...
@@ -1328,15 +1192,6 @@ def _column_type_from_schema_output(raw: object) -> ColumnType:
         return normalize_column_type(normalized)
     except ValueError:
         return "JSON"
-
-
-def _split_table_key(table_key: str) -> tuple[str, str] | None:
-    if "." not in table_key:
-        return None
-    schema, name = table_key.split(".", 1)
-    if not schema or not name:
-        return None
-    return schema, name
 
 
 __all__ = [

@@ -16,7 +16,7 @@ from codeintel.core.errors.schema import (
     SchemaLoadError,
     SchemaNotFoundError,
 )
-from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
+from codeintel.core.schemas.contracts import json_schema_from_table_schema
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema

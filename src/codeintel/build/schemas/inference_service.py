@@ -40,7 +40,7 @@ from codeintel.core.config.settings import (
     HamiltonExecutionSettings,
 )
 from codeintel.core.hamilton import tags as hamilton_tags
-from codeintel.core.schemas.arrow_polars import (
+from codeintel.core.schemas.contracts import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_lazyframe,
 )
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
     from codeintel.build.schemas.observations import SchemaHints
-    from codeintel.core.schemas.arrow_gen import ExtrasPolicy
+    from codeintel.core.schemas.contracts import ExtrasPolicy
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [

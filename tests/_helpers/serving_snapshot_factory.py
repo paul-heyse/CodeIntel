@@ -24,7 +24,7 @@ from codeintel.core.columnar.schema_alignment import (
 from codeintel.core.hashing import stable_hash
 from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
 from codeintel.core.schemas import table_schema_from_json_obj
-from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.schemas.contracts import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.serving.db.pointer import ServingSnapshotPointer

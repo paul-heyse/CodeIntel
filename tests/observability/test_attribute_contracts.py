@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Protocol, cast
 import pytest
 
 from codeintel.observability.attribute_sanitizer import SpanAttributeValue
-from codeintel.observability.instrumentation_registry import InstrumentationRegistry
 from codeintel.observability.operation_scope import observe_operation
 from codeintel.observability.policy import ObservabilityPolicy
+from codeintel.observability.registry import InstrumentationRegistry
 from codeintel.observability.runtime import (
     DbTracingConfig,
     MetricConfig,

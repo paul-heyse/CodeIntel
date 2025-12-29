@@ -11,25 +11,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from codeintel.core.paths import normalize_optional_path
+
 ServingMode = Literal["local_db", "remote_api"]
-
-
-def normalize_optional_path(path: str | Path | None) -> Path | None:
-    """Normalize a possibly missing path into a resolved Path.
-
-    Parameters
-    ----------
-    path
-        Raw path value or None.
-
-    Returns
-    -------
-    Path | None
-        Resolved Path when provided; otherwise None.
-    """
-    if path is None:
-        return None
-    return Path(path).expanduser().resolve()
 
 
 class ServingConfig(BaseModel):
@@ -93,7 +77,7 @@ class ServingConfig(BaseModel):
             if self.db_path is None:
                 self.db_path = (self.repo_root / "build" / "db" / "codeintel.duckdb").resolve()
             else:
-                self.db_path = normalize_optional_path(self.db_path)
+                self.db_path = normalize_optional_path(self.db_path, resolve=True)
         elif self.mode == "remote_api":
             if not self.api_base_url:
                 msg = "api_base_url is required when mode='remote_api'"
@@ -105,4 +89,4 @@ class ServingConfig(BaseModel):
         return self
 
 
-__all__ = ["ServingConfig", "ServingMode", "normalize_optional_path"]
+__all__ = ["ServingConfig", "ServingMode"]

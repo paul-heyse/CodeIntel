@@ -11,7 +11,7 @@ from typing import cast
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.core.schemas.arrow_gen import (
+from codeintel.core.schemas.contracts import (
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
     EXTRAS_POLICIES,

@@ -14,7 +14,7 @@ from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
-from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN, arrow_contract_for_table_schema
+from codeintel.core.schemas.contracts import DEFAULT_EXTRAS_COLUMN, arrow_contract_for_table_schema
 from codeintel.core.schemas.primitives import ColumnType, TableSchema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from tests._helpers.schemas import ensure_storage_contract_catalog

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse
-from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
+from codeintel.core.parsing import parse_python_module
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

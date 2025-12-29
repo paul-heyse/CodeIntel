@@ -6,6 +6,7 @@ HTTP route handlers stay thin and consistent.
 
 from __future__ import annotations
 
+import inspect
 import os
 import tempfile
 import time
@@ -19,12 +20,12 @@ from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
-from codeintel.serving.export.engine import (
-    ExportDelivery,
-    ExportPlan,
-    build_export_plan,
-    write_export_file,
+from codeintel.serving.export.dispatch import (
+    ExportDispatchHandlers,
+    ExportRowProvider,
+    dispatch_export,
 )
+from codeintel.serving.export.engine import ExportPlan
 from codeintel.serving.http.streaming import ndjson_response
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
@@ -100,16 +101,14 @@ def export_hash_headers(*, query_hash: str, schema_hash: str | None) -> dict[str
 
 
 def _iter_rows_with_metrics(
+    rows: Iterator[dict[str, object]],
     *,
-    ops: ServingOperations,
-    payload: SemanticExportRequest,
     metrics: ExportMetricsContext,
-    cancel_check: CancelCheck | None,
 ) -> Iterator[dict[str, object]]:
     row_count = 0
     started = time.perf_counter()
     try:
-        for row in ops.export_rows(payload, cancel_check=cancel_check):
+        for row in rows:
             row_count += 1
             yield row
     finally:
@@ -131,35 +130,55 @@ async def dispatch_semantic_export(
     ExportDispatchResult
         Response payload and optional metrics row count.
     """
-    plan = build_export_plan(payload)
-    if plan.delivery is ExportDelivery.ndjson_stream:
-        response = ndjson_response(
-            _iter_rows_with_metrics(
-                ops=ops,
-                payload=payload,
-                metrics=metrics,
-                cancel_check=options.cancel_check,
-            ),
-            filename=f"{payload.view_id}{plan.suffix}",
-            headers=options.headers,
+    async def handle_json_rows(
+        plan: ExportPlan,
+        provider: ExportRowProvider,
+    ) -> ExportDispatchResult:
+        rows = await _run_blocking(
+            provider.collect_rows,
+            timeout_s=options.timeout_s,
+            cancel_check=options.cancel_check,
         )
-        return ExportDispatchResult(response=response, metrics_row_count=None)
-    if plan.delivery is ExportDelivery.binary_file:
+        response = _json_dict_response(rows, plan=plan, metrics=metrics, headers=options.headers)
+        return ExportDispatchResult(response=response, metrics_row_count=len(rows))
+
+    async def handle_binary_file(
+        plan: ExportPlan,
+        write_fn: Callable[[Path], int],
+    ) -> ExportDispatchResult:
         response, rows_written = await _binary_response(
-            ops,
-            payload,
+            payload.view_id,
             plan,
+            write_fn=write_fn,
             options=options,
         )
         return ExportDispatchResult(response=response, metrics_row_count=rows_written)
 
-    rows = await _run_blocking(
-        lambda: list(ops.export_rows(payload, cancel_check=options.cancel_check)),
-        timeout_s=options.timeout_s,
-        cancel_check=options.cancel_check,
+    def handle_ndjson(
+        plan: ExportPlan,
+        provider: ExportRowProvider,
+    ) -> ExportDispatchResult:
+        response = ndjson_response(
+            _iter_rows_with_metrics(provider.iter_rows(), metrics=metrics),
+            filename=f"{payload.view_id}{plan.suffix}",
+            headers=options.headers,
+        )
+        return ExportDispatchResult(response=response, metrics_row_count=None)
+
+    handlers = ExportDispatchHandlers(
+        ndjson_stream=handle_ndjson,
+        json_rows=handle_json_rows,
+        binary_file=handle_binary_file,
     )
-    response = _json_dict_response(rows, plan=plan, metrics=metrics, headers=options.headers)
-    return ExportDispatchResult(response=response, metrics_row_count=len(rows))
+    result = dispatch_export(
+        ops,
+        payload,
+        cancel_check=options.cancel_check,
+        handlers=handlers,
+    )
+    if inspect.isawaitable(result):
+        return await result
+    return result
 
 
 def _json_dict_response(
@@ -185,26 +204,21 @@ def _json_dict_response(
 
 
 async def _binary_response(
-    ops: ServingOperations,
-    payload: SemanticExportRequest,
+    view_id: str,
     plan: ExportPlan,
     *,
+    write_fn: Callable[[Path], int],
     options: ExportDispatchOptions,
 ) -> tuple[FileResponse, int]:
     fd, tmp_path = tempfile.mkstemp(
-        prefix=f"codeintel-export-{payload.view_id}-",
+        prefix=f"codeintel-export-{view_id}-",
         suffix=plan.suffix,
     )
     os.close(fd)
     rows_written: int | None = None
     try:
         rows_written = await _run_blocking(
-            lambda: write_export_file(
-                ops,
-                payload,
-                output_path=Path(tmp_path),
-                cancel_check=options.cancel_check,
-            ),
+            lambda: write_fn(Path(tmp_path)),
             timeout_s=options.timeout_s,
             cancel_check=options.cancel_check,
         )
@@ -219,7 +233,7 @@ async def _binary_response(
     response = FileResponse(
         path=tmp_path,
         media_type=plan.mime_type,
-        filename=f"{payload.view_id}{plan.suffix}",
+        filename=f"{view_id}{plan.suffix}",
         headers=options.headers,
         background=BackgroundTask(lambda: _unlink_best_effort(tmp_path)),
     )

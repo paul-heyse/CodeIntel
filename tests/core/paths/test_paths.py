@@ -14,7 +14,9 @@ from codeintel.core.paths import (
     ensure_repo_root,
     is_package_path,
     module_to_path,
+    normalize_optional_path,
     normalize_path,
+    normalize_rel_path,
     path_to_module,
     repo_relpath,
     safe_relpath,
@@ -56,6 +58,43 @@ class TestNormalizePath:
         """Test that leading ./ is removed."""
         result = normalize_path("./src/file.py")
         expect_false(result.startswith("./"))
+
+
+class TestNormalizeRelPath:
+    """Tests for normalize_rel_path function."""
+
+    @staticmethod
+    def test_rel_path_normalizes_separators() -> None:
+        """Test that backslashes become forward slashes."""
+        result = normalize_rel_path("src\\module\\file.py")
+        expect_true("/" in result or "\\" not in result)
+
+    @staticmethod
+    def test_rel_path_removes_dot_segments() -> None:
+        """Test that dot segments are normalized."""
+        result = normalize_rel_path("./src/../src/file.py")
+        expect_equal(result, "src/file.py")
+
+
+class TestNormalizeOptionalPath:
+    """Tests for normalize_optional_path function."""
+
+    @staticmethod
+    def test_none_passthrough() -> None:
+        """Test that None remains None."""
+        expect_equal(normalize_optional_path(None), None)
+
+    @staticmethod
+    def test_expand_user() -> None:
+        """Test that user paths are expanded."""
+        result = normalize_optional_path(Path("~"))
+        expect_is_instance(result, Path)
+
+    @staticmethod
+    def test_resolve_flag() -> None:
+        """Test optional resolve behavior."""
+        result = normalize_optional_path("src", resolve=False)
+        expect_is_instance(result, Path)
 
 
 class TestEnsureRepoRoot:

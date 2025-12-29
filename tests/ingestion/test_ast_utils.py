@@ -13,10 +13,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.schemas import configure_schema_service, get_schema_provider
-from codeintel.core.parsing import AstSpanIndex
+from codeintel.core.parsing import AstSpanIndex, parse_python_module, timed_parse
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.ast_extract import AstVisitor
-from codeintel.ingestion.infrastructure.ast_utils import parse_python_module, timed_parse
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.assertions import (
     expect_equal,

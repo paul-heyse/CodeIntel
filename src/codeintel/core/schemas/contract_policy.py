@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.storage.helpers.table_key import try_parse_table_key
 
 __all__ = [
     "default_json_schema_id",
@@ -30,15 +31,6 @@ _NON_EXPORTABLE_CORE_TABLES: frozenset[str] = frozenset(
 _NON_EXPORTABLE_ANALYTICS_TABLES: frozenset[str] = frozenset({"tags_index"})
 
 
-def _split_table_key(table_key: str) -> tuple[str, str] | None:
-    if "." not in table_key:
-        return None
-    schema_prefix, table_name = table_key.split(".", maxsplit=1)
-    if not schema_prefix or not table_name:
-        return None
-    return schema_prefix, table_name
-
-
 def table_name_from_key(table_key: str) -> str:
     """Return the dataset/table name component of a table key.
 
@@ -47,11 +39,10 @@ def table_name_from_key(table_key: str) -> str:
     str
         Table name portion of the key.
     """
-    split = _split_table_key(table_key)
-    if split is None:
+    parsed = try_parse_table_key(table_key)
+    if parsed is None:
         return table_key
-    _, table_name = split
-    return table_name
+    return parsed.name
 
 
 def exportable_by_default(table_key: str) -> bool:
@@ -62,10 +53,11 @@ def exportable_by_default(table_key: str) -> bool:
     bool
         True when the dataset is exportable by default.
     """
-    split = _split_table_key(table_key)
-    if split is None:
+    parsed = try_parse_table_key(table_key)
+    if parsed is None:
         return False
-    schema_prefix, table_name = split
+    schema_prefix = parsed.schema
+    table_name = parsed.name
 
     if schema_prefix == "build":
         return False
@@ -107,10 +99,11 @@ def default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str
     """
     if schema is None:
         return None
-    split = _split_table_key(table_key)
-    if split is None:
+    parsed = try_parse_table_key(table_key)
+    if parsed is None:
         return None
-    schema_prefix, table_name = split
+    schema_prefix = parsed.schema
+    table_name = parsed.name
     if schema_prefix == "build":
         return None
     return table_name

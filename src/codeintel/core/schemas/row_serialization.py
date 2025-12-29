@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from codeintel.core.schemas.row_models import RowSerializer
 
@@ -58,6 +58,27 @@ def row_to_tuple(table_key: str, row: Mapping[str, object]) -> tuple[object, ...
     return row_serializer_for_table_key(table_key)(row)
 
 
+def row_to_tuple_by_columns(
+    row: Mapping[str, object],
+    columns: Sequence[str],
+) -> tuple[object, ...]:
+    """Serialize a row mapping using an explicit column order.
+
+    Parameters
+    ----------
+    row
+        Row mapping from column name to value.
+    columns
+        Ordered column names.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row values ordered according to the provided columns.
+    """
+    return tuple(row[column] for column in columns)
+
+
 def clear_row_serializer_cache() -> None:
     """Clear the cached row serializers."""
     row_serializer_for_table_key.cache_clear()
@@ -67,4 +88,5 @@ __all__ = [
     "clear_row_serializer_cache",
     "row_serializer_for_table_key",
     "row_to_tuple",
+    "row_to_tuple_by_columns",
 ]

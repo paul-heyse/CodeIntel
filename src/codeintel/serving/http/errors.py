@@ -18,7 +18,7 @@ from codeintel.serving.errors import (
     build_error_context_from_http_request,
     exception_to_error_response,
 )
-from codeintel.serving.errors.problem_adapter import problem_detail_from_error_response
+from codeintel.serving.errors.transport import problem_detail_from_error_response_with_context
 from codeintel.serving.http.middleware import get_correlation_id
 
 if TYPE_CHECKING:
@@ -97,8 +97,10 @@ def problem_from_error_response(request: Request, error: ErrorResponse) -> Probl
     ProblemDetail
         Problem detail payload.
     """
-    return problem_detail_from_error_response(
+    ctx = build_error_context_from_http_request(request)
+    return problem_detail_from_error_response_with_context(
         error,
+        context=ctx,
         instance=str(request.url.path),
         correlation_id=get_correlation_id(request),
     )
@@ -120,7 +122,12 @@ def problem_from_domain_error(request: Request, err: CodeIntelDomainError) -> Pr
         Problem detail payload.
     """
     ctx = build_error_context_from_http_request(request)
-    return problem_from_error_response(request, err.to_error_response(context=ctx))
+    return problem_detail_from_error_response_with_context(
+        err.to_error_response(context=ctx),
+        context=ctx,
+        instance=str(request.url.path),
+        correlation_id=get_correlation_id(request),
+    )
 
 
 def problem_from_exception(request: Request, exc: Exception) -> ProblemDetail:
@@ -139,9 +146,11 @@ def problem_from_exception(request: Request, exc: Exception) -> ProblemDetail:
         Problem detail payload.
     """
     ctx = build_error_context_from_http_request(request)
-    return problem_from_error_response(
-        request,
+    return problem_detail_from_error_response_with_context(
         exception_to_error_response(exc, context=ctx),
+        context=ctx,
+        instance=str(request.url.path),
+        correlation_id=get_correlation_id(request),
     )
 
 

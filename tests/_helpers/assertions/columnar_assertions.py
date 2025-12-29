@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
-from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN, arrow_contract_for_table_schema
+from codeintel.core.schemas.contracts import DEFAULT_EXTRAS_COLUMN, arrow_contract_for_table_schema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 
 if TYPE_CHECKING:

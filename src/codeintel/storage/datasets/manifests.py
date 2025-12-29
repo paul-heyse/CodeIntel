@@ -4,39 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.core.manifests import ArrowDatasetManifest, read_manifest_json, write_manifest_json
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.core.manifests import ArrowDatasetManifest
+from codeintel.storage.manifests.manifest_io import (
+    DATASET_MANIFEST_FILENAME,
+    dataset_manifest_path,
+    read_manifest_json,
+    write_manifest_json,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-DATASET_MANIFEST_FILENAME = "dataset_manifest.json"
-
-
-def dataset_manifest_path(*, dataset_root: Path, table_key: str, snapshot_id: str) -> Path:
-    """Return the expected path for a dataset manifest file.
-
-    Parameters
-    ----------
-    dataset_root
-        Root directory where Arrow datasets are stored.
-    table_key
-        Fully qualified table key (schema.table).
-    snapshot_id
-        Snapshot identifier.
-
-    Returns
-    -------
-    Path
-        Manifest path for the dataset snapshot.
-    """
-    snapshot_dir = dataset_snapshot_dir(
-        dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
-    )
-    return snapshot_dir / DATASET_MANIFEST_FILENAME
-
 
 def write_dataset_manifest(path: Path, manifest: ArrowDatasetManifest) -> Path:
     """Write a dataset manifest to disk.
