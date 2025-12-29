@@ -53,6 +53,14 @@ def _saver_tag_errors(node_name: str, tags: dict[str, object]) -> list[str]:
         if not isinstance(path_template, str) or not path_template:
             errors.append(f"{node_name}: missing artifact_path_template tag")
 
+    materialization = tags.get(ht.TAG_MATERIALIZATION)
+    if not isinstance(materialization, str) or not materialization:
+        errors.append(f"{node_name}: missing materialization tag")
+
+    materialized_name = tags.get(ht.TAG_MATERIALIZED_NAME)
+    if not isinstance(materialized_name, str) or not materialized_name:
+        errors.append(f"{node_name}: missing materialized_name tag")
+
     return errors
 
 

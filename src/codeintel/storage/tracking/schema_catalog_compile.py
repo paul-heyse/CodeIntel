@@ -169,6 +169,9 @@ def _arrow_provenance(provenance: TableProvenance | None) -> ArrowSchemaProvenan
         derivation_source=provenance.derivation_source,
         inference_status=provenance.inference_status,
         inference_error=provenance.inference_error,
+        producer_target=provenance.producer_target,
+        producer_module=provenance.producer_module,
+        producer_version=provenance.producer_version,
     )
 
 

@@ -14,7 +14,6 @@ Row models are derived from ``TableSchema`` and avoid pandas-specific types.
 from __future__ import annotations
 
 import ast
-import datetime as dt
 import json
 import math
 import re
@@ -27,6 +26,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.primitives import COLUMN_TYPE_REGISTRY, column_type_base
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 
 if TYPE_CHECKING:
@@ -48,20 +48,7 @@ def _register_row_model(name: str, model: type[object]) -> None:
 
 
 def _python_type_for_column_type(col_type: ColumnType) -> type[object]:
-    if col_type in {"INTEGER", "BIGINT", "DECIMAL(38,0)"}:
-        return int
-    if col_type in {"DOUBLE", "DECIMAL"}:
-        return float
-    if col_type == "BOOLEAN":
-        return bool
-    if col_type == "VARCHAR":
-        return str
-    if col_type == "JSON":
-        return object
-    if col_type in {"TIMESTAMP", "TIMESTAMPTZ"}:
-        return dt.datetime
-    msg = f"Unsupported ColumnType for row model generation: {col_type}"
-    raise ValueError(msg)
+    return COLUMN_TYPE_REGISTRY.python_type_for(col_type)
 
 
 def _row_model_signature(schema: TableSchema) -> tuple[tuple[str, ColumnType, bool], ...]:
@@ -195,7 +182,10 @@ def normalize_row_value_for_type(value: object, column_type: ColumnType | None) 
     normalized = normalize_row_value(value)
     if normalized is None:
         return None
-    if column_type == "JSON":
+    if column_type is None:
+        return normalized
+    base = column_type_base(column_type)
+    if base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
         return _normalize_json_value(normalized)
     return normalized
 

@@ -35,10 +35,11 @@ from codeintel.build.hamilton.native.tool_results import HasExecutionResult, Too
 from codeintel.build.hamilton.nodes.module_attach import tagged_attach_node
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tag_spec import TagSpec
+from codeintel.build.hamilton.tag_spec import TagKey, TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.tabular.types import TabularInput
 from codeintel.core.errors import CodeIntelError
+from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.native.patterns.specs import ArtifactOutputSpec, TableOutputSpec
@@ -74,12 +75,18 @@ class ToolFinalizeContext:
     change_delta: Mapping[str, object] | None = None
 
 
+FinalizeContextFn = Callable[
+    [BuildEnv, DagCatalog, HasExecutionResult | None, HasExecutionResult | None],
+    ToolFinalizeContext,
+]
+
+
 @dataclass(frozen=True, slots=True)
-class IngestStep[TPayload]:
+class IngestStep[TPayload_co]:
     """Standard ingest step wrapper for tool-backed targets."""
 
     result: ExecutionResult
-    payload: TPayload | None = None
+    payload: TPayload_co | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +104,7 @@ class _AnchorInputs:
     ingest_node: str | None
     artifact_collector_node: str
     table_collector_node: str
+    finalize_context_fn: FinalizeContextFn | None
 
 
 def run_tool_step(
@@ -232,11 +240,25 @@ def attach_tool_target_template(
     spec: ToolTargetSpec,
     run_fn: Callable[..., ToolStepOutput],
     ingest_fn: Callable[..., IngestStep[TabularByTable]] | None = None,
+    finalize_context_fn: FinalizeContextFn | None = None,
 ) -> None:
     """Attach a tool-backed target scaffold to a module.
 
     This helper generates run/ingest nodes, per-output saver nodes, collectors,
     and the final target anchor using the provided spec.
+
+    Parameters
+    ----------
+    module
+        Target module that will receive the generated nodes.
+    spec
+        Tool-backed target specification.
+    run_fn
+        Function implementing the tool execution step.
+    ingest_fn
+        Optional function producing table payloads from the tool output.
+    finalize_context_fn
+        Optional function to build a ToolFinalizeContext with custom metadata.
 
     Raises
     ------
@@ -336,6 +358,7 @@ def attach_tool_target_template(
             ingest_node=ingest_node if ingest_fn is not None else None,
             artifact_collector_node=artifact_collector_node,
             table_collector_node=table_collector_node,
+            finalize_context_fn=finalize_context_fn,
         ),
     )
     tagged_attach_node(
@@ -423,7 +446,11 @@ def _attach_table_rows_node(
         return_annotation=TabularInput | None,
     )
     rows_fn = set_signature(rows_fn, signature)
-    node_name = f"{context.target_name}__{table_spec.table_key.replace('.', '__')}_rows"
+    node_name = (
+        table_spec.node_name
+        if table_spec.node_name is not None
+        else f"{context.target_name}__{table_spec.table_key.replace('.', '__')}_rows"
+    )
     rows_fn.__name__ = node_name
     decorator = save_relation_table(
         context=context.saver_context,
@@ -436,7 +463,12 @@ def _attach_table_rows_node(
         context.module,
         node_name=node_name,
         fn=decorator(rows_fn),
-        tag_spec=TagSpec.for_compute(domain=context.domain, target=context.target_name),
+        tag_spec=TagSpec.for_dataset(
+            domain=context.domain,
+            target=context.target_name,
+            table_key=table_spec.table_key,
+            extra_tags={cast("TagKey", ht.TAG_OUTPUT_KIND): ht.OUTPUT_KIND_TABLE},
+        ),
     )
 
 
@@ -460,12 +492,22 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
             "Mapping[str, MaterializationResult]",
             kwargs.get(inputs.table_collector_node),
         )
-        return finalize_target_from_materializations(
-            context=ToolFinalizeContext(
+        context = (
+            inputs.finalize_context_fn(
+                env,
+                catalog,
+                cast("HasExecutionResult | None", tool_step),
+                cast("HasExecutionResult | None", ingest_step),
+            )
+            if inputs.finalize_context_fn is not None
+            else ToolFinalizeContext(
                 env=env,
                 catalog=catalog,
                 target_name=inputs.spec.target_name,
-            ),
+            )
+        )
+        return finalize_target_from_materializations(
+            context=context,
             tool_step=cast("HasExecutionResult | None", tool_step),
             ingest_step=cast("HasExecutionResult | None", ingest_step),
             artifact_materializations=artifact_materializations,
@@ -517,6 +559,7 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
         inspect.Signature(params, return_annotation=TargetRunRecord),
     )
     anchor_fn.__name__ = f"t__{inputs.spec.target_name}"
+    anchor_fn.__doc__ = f"Finalize {inputs.spec.target_name} target materialization."
     return codeintel_target(
         domain=inputs.spec.domain,
         target=inputs.spec.target_name,

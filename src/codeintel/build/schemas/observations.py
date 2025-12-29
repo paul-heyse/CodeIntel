@@ -9,7 +9,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol, cast, get_args, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -24,9 +24,14 @@ from codeintel.core.schemas.arrow_gen import (
 )
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
-from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 from codeintel.core.time import utc_now
 from codeintel.storage.tracking.schema_catalog_models import (
+    ColumnStatsEntry,
+    ColumnStatsPayload,
+    DatasetStatsPayload,
+    DerivedSettingsPayload,
+    ParquetStatsPayload,
     SchemaObservationRecord,
     SchemaVersionRecord,
     TableSchemaRegistryRecord,
@@ -61,6 +66,8 @@ class SchemaObservationInputs:
     target_name: str | None = None
     extras_policy: ExtrasPolicy | None = None
     drift_history: Sequence[Mapping[str, object] | None] | None = None
+    dataset_stats: ParquetStatsPayload | None = None
+    manifest_row_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +209,8 @@ class SchemaObservationAccumulator:
                 row_count=self.row_count,
                 batch_count=self.batch_count,
                 total_bytes=self.total_bytes,
+                manifest_stats=resolved_inputs.dataset_stats,
+                manifest_row_count=resolved_inputs.manifest_row_count,
             ),
             derived_settings=derived_settings,
             drift_summary=drift_summary,
@@ -299,7 +308,6 @@ _SCHEMA_PII_BY_COLUMN_TAG = "schema_pii_by_column"
 _HAMILTON_SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 _TAG_DESCRIPTION = hamilton_tags.TAG_DESCRIPTION
 
-_COLUMN_TYPE_VALUES: frozenset[str] = frozenset(get_args(ColumnType))
 _SCHEMA_OUTPUT_TYPE_MAP: dict[str, ColumnType] = {
     "int": "BIGINT",
     "int64": "BIGINT",
@@ -705,8 +713,8 @@ def _derived_settings_from_stats(
     row_count: int,
     total_bytes: int,
     extras_policy: ExtrasPolicy,
-) -> dict[str, object] | None:
-    settings: dict[str, object] = {"extras_policy": extras_policy}
+) -> DerivedSettingsPayload | None:
+    settings: DerivedSettingsPayload = {"extras_policy": extras_policy}
     dictionary_columns: list[str] = []
     distinct_values: list[int] = []
     for column in table_schema.columns:
@@ -744,12 +752,12 @@ def _derived_settings_from_stats(
 
 def _column_stats_payload(
     column_stats: Mapping[str, _ColumnStatsAccumulator],
-) -> dict[str, object] | None:
+) -> ColumnStatsPayload | None:
     if not column_stats:
         return None
-    payload: dict[str, object] = {}
+    payload: ColumnStatsPayload = {}
     for name, stats in column_stats.items():
-        entry: dict[str, object] = {
+        entry: ColumnStatsEntry = {
             "null_count": stats.null_count,
             "non_null_count": stats.non_null_count,
         }
@@ -770,12 +778,19 @@ def _dataset_stats_payload(
     row_count: int,
     batch_count: int,
     total_bytes: int,
-) -> dict[str, object]:
-    return {
+    manifest_stats: ParquetStatsPayload | None,
+    manifest_row_count: int | None,
+) -> DatasetStatsPayload:
+    payload: DatasetStatsPayload = {
         "row_count": row_count,
         "batch_count": batch_count,
         "total_bytes": total_bytes,
     }
+    if manifest_row_count is not None:
+        payload["manifest_row_count"] = manifest_row_count
+    if manifest_stats:
+        payload["parquet_stats"] = dict(manifest_stats)
+    return payload
 
 
 def _drift_summary(
@@ -1013,9 +1028,12 @@ def _apply_extras_policy(
         extras_policy=desired_policy,
         extras_column=DEFAULT_EXTRAS_COLUMN,
     )
-    derived_settings = bundle.observation.derived_settings or {}
-    updated_settings = dict(derived_settings)
-    updated_settings["extras_policy"] = desired_policy
+    derived_settings = bundle.observation.derived_settings
+    if derived_settings is None:
+        updated_settings: DerivedSettingsPayload = {"extras_policy": desired_policy}
+    else:
+        updated_settings = cast("DerivedSettingsPayload", dict(derived_settings))
+        updated_settings["extras_policy"] = desired_policy
     updated_observation = replace(
         bundle.observation,
         arrow_schema_ipc_b64=_serialize_schema_ipc_b64(updated_schema),
@@ -1301,17 +1319,15 @@ def _column_type_from_schema_output(raw: object) -> ColumnType:
     normalized = raw.strip()
     if not normalized:
         return "JSON"
-    upper = normalized.upper()
-    if upper in _COLUMN_TYPE_VALUES:
-        return cast("ColumnType", upper)
     lower = normalized.lower()
     compact = lower.replace(" ", "")
     mapped = _SCHEMA_OUTPUT_TYPE_MAP.get(lower) or _SCHEMA_OUTPUT_TYPE_MAP.get(compact)
     if mapped is not None:
         return mapped
-    if compact.startswith("decimal"):
-        return "DECIMAL(38,0)" if compact == "decimal(38,0)" else "DECIMAL"
-    return "JSON"
+    try:
+        return normalize_column_type(normalized)
+    except ValueError:
+        return "JSON"
 
 
 def _split_table_key(table_key: str) -> tuple[str, str] | None:
@@ -1321,7 +1337,6 @@ def _split_table_key(table_key: str) -> tuple[str, str] | None:
     if not schema or not name:
         return None
     return schema, name
-
 
 
 __all__ = [

@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from typing import cast, get_args
+from typing import cast
 
 import polars as pl
 import pyarrow as pa
 
 from codeintel.core.schemas.arrow_gen import ARROW_SCHEMA_CONTRACT_VERSION, EXTRAS_POLICIES
-from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 from codeintel.storage.helpers.table_key import split_table_key, validate_table_key
-
-_ALLOWED_COLUMN_TYPES: set[str] = set(get_args(ColumnType))
-_DECIMAL_INT_PRECISION = 38
-_DECIMAL_INT_SCALE = 0
 
 
 def table_schema_from_arrow_schema(
@@ -191,11 +187,11 @@ def _column_type_from_metadata(metadata: Mapping[str, object]) -> ColumnType | N
     if not isinstance(raw, str):
         msg = f"Arrow metadata codeintel.column_type must be a string, got {type(raw)}"
         raise TypeError(msg)
-    normalized = raw.strip().upper()
-    if normalized not in _ALLOWED_COLUMN_TYPES:
+    try:
+        return normalize_column_type(raw)
+    except ValueError as exc:
         msg = f"Arrow metadata codeintel.column_type is not supported: {raw!r}"
-        raise ValueError(msg)
-    return cast("ColumnType", normalized)
+        raise ValueError(msg) from exc
 
 
 def _column_type_from_arrow_type(dtype: pa.DataType) -> ColumnType:
@@ -212,7 +208,7 @@ def _column_type_from_arrow_type(dtype: pa.DataType) -> ColumnType:
     - date/time/duration -> TIMESTAMP
     - string/string_view -> VARCHAR
     - binary/binary_view -> VARCHAR
-    - list/struct/map/union -> JSON
+    - list/struct/map/union -> LIST/STRUCT/MAP/UNION types
 
     Returns
     -------
@@ -255,9 +251,9 @@ def _decimal_column_type(dtype: pa.DataType) -> ColumnType | None:
         return None
     precision = getattr(dtype, "precision", None)
     scale = getattr(dtype, "scale", None)
-    if precision == _DECIMAL_INT_PRECISION and scale == _DECIMAL_INT_SCALE:
-        return "DECIMAL(38,0)"
-    return "DECIMAL"
+    if precision is None or scale is None:
+        return "DECIMAL"
+    return normalize_column_type(f"DECIMAL({precision},{scale})")
 
 
 def _timestamp_column_type(dtype: pa.DataType) -> ColumnType | None:
@@ -290,10 +286,40 @@ def _dictionary_column_type(dtype: pa.DataType) -> ColumnType | None:
     return _column_type_from_arrow_type(dtype.value_type)
 
 
-def _complex_column_type(dtype: pa.DataType) -> ColumnType | None:
-    if not _is_complex_type(dtype):
+def _struct_column_type(dtype: pa.DataType) -> ColumnType | None:
+    if not pa.types.is_struct(dtype):
         return None
-    return "JSON"
+    struct_type = cast("pa.StructType", dtype)
+    parts = [f"{field.name} {_column_type_from_arrow_type(field.type)}" for field in struct_type]
+    return normalize_column_type(f"STRUCT({', '.join(parts)})")
+
+
+def _list_column_type(dtype: pa.DataType) -> ColumnType | None:
+    if not _is_list_type(dtype):
+        return None
+    value_type = getattr(dtype, "value_type", None)
+    if not isinstance(value_type, pa.DataType):
+        msg = f"List type missing value_type: {dtype}"
+        raise TypeError(msg)
+    inner = _column_type_from_arrow_type(value_type)
+    return normalize_column_type(f"LIST({inner})")
+
+
+def _map_column_type(dtype: pa.DataType) -> ColumnType | None:
+    if not pa.types.is_map(dtype):
+        return None
+    map_type = cast("pa.MapType", dtype)
+    key_type = _column_type_from_arrow_type(map_type.key_type)
+    value_type = _column_type_from_arrow_type(map_type.item_type)
+    return normalize_column_type(f"MAP({key_type}, {value_type})")
+
+
+def _union_column_type(dtype: pa.DataType) -> ColumnType | None:
+    if not pa.types.is_union(dtype):
+        return None
+    union_type = cast("pa.UnionType", dtype)
+    parts = [f"{field.name} {_column_type_from_arrow_type(field.type)}" for field in union_type]
+    return normalize_column_type(f"UNION({', '.join(parts)})")
 
 
 def _null_column_type(dtype: pa.DataType) -> ColumnType | None:
@@ -320,15 +346,18 @@ def _is_binary_type(dtype: pa.DataType) -> bool:
     return any(check(dtype) for check in checks)
 
 
-def _is_complex_type(dtype: pa.DataType) -> bool:
-    checks = (
-        pa.types.is_struct,
+def _is_list_type(dtype: pa.DataType) -> bool:
+    checks = [
         pa.types.is_list,
         pa.types.is_large_list,
         pa.types.is_fixed_size_list,
-        pa.types.is_map,
-        pa.types.is_union,
-    )
+    ]
+    list_view = getattr(pa.types, "is_list_view", None)
+    if callable(list_view):
+        checks.append(list_view)
+    large_list_view = getattr(pa.types, "is_large_list_view", None)
+    if callable(large_list_view):
+        checks.append(large_list_view)
     return any(check(dtype) for check in checks)
 
 
@@ -345,7 +374,10 @@ _ARROW_TYPE_RESOLVERS: tuple[
     _string_column_type,
     _binary_column_type,
     _dictionary_column_type,
-    _complex_column_type,
+    _struct_column_type,
+    _list_column_type,
+    _map_column_type,
+    _union_column_type,
     _null_column_type,
 )
 

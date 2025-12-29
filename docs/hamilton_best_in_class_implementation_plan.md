@@ -229,55 +229,108 @@ Acceptance
 ## Remaining Work Checklist (Ordered)
 
 ### Phase 0 - Inventory and Design Mapping
-- [ ] Build an output-to-schema inventory artifact (tables, views, artifacts) capturing schema source-of-truth and tags. Files: `docs/hamilton_best_in_class_inventory.md`, `src/codeintel/build/hamilton/native/**`, `src/codeintel/build/schemas/**`
-- [ ] Catalog repeated pipeline patterns to convert into parameterized_subdag usage. Files: `docs/hamilton_best_in_class_subdag_candidates.md`, `src/codeintel/build/hamilton/native/**`
+- [x] Build an output-to-schema inventory artifact (tables, views, artifacts) capturing schema
+  source-of-truth and tags.
+  Files: `docs/hamilton_best_in_class_inventory.md`,
+  `src/codeintel/build/hamilton/native/**`, `src/codeintel/build/schemas/**`
+- [x] Catalog repeated pipeline patterns to convert into parameterized_subdag usage.
+  Files: `docs/hamilton_best_in_class_subdag_candidates.md`,
+  `src/codeintel/build/hamilton/native/**`
 
 ### Phase 1 - Schema and Tag Metadata Foundation
-- [ ] Sweep all table-producing nodes to apply `schema_output(...)` and canonical dataset tags. Files: `src/codeintel/sdk/annotations.py`, `src/codeintel/build/hamilton/native/**`, `src/codeintel/build/hamilton/tagging.py`
-- [ ] Ensure materialize nodes emit domain/target/table_key/output_kind and materialization tags. Files: `src/codeintel/build/hamilton/save_to.py`, `src/codeintel/build/hamilton/materializers/**`, `src/codeintel/build/hamilton/tag_spec.py`
+- [x] Sweep all table-producing nodes to apply `schema_output(...)` and canonical dataset tags.
+  Files: `src/codeintel/sdk/annotations.py`, `src/codeintel/build/hamilton/native/**`,
+  `src/codeintel/build/hamilton/tagging.py`
+- [x] Ensure materialize nodes emit domain/target/table_key/output_kind and materialization tags.
+  Files: `src/codeintel/build/hamilton/save_to.py`,
+  `src/codeintel/build/hamilton/materializers/**`, `src/codeintel/build/hamilton/tag_spec.py`
 
 ### Phase 2 - Output Validation with Data Quality Modifiers
-- [ ] Apply warn/fail validators to key outputs (row count, nullability, PK uniqueness). Files: `src/codeintel/build/hamilton/data_quality.py`, `src/codeintel/build/hamilton/native/**`, `src/codeintel/sdk/validation.py`
-- [ ] Tag validation nodes for UI hiding and ensure validation mode config is honored. Files: `src/codeintel/build/hamilton/tagging.py`, `src/codeintel/build/hamilton/validate.py`, `src/codeintel/runtime/compose.py`
+- [x] Apply warn/fail validators to key outputs (row count, nullability, PK uniqueness).
+  Files: `src/codeintel/build/hamilton/data_quality.py`,
+  `src/codeintel/build/hamilton/native/**`, `src/codeintel/sdk/validation.py`
+- [x] Tag validation nodes for UI hiding and ensure validation mode config is honored.
+  Files: `src/codeintel/build/hamilton/tagging.py`, `src/codeintel/build/hamilton/validate.py`,
+  `src/codeintel/runtime/compose.py`
 
 ### Phase 3 - Materialization Tags and Catalog Alignment
-- [ ] Confirm `materialization`/`materialized_name` tags are propagated from saver nodes and visible in the semantic catalog. Files: `src/codeintel/build/hamilton/save_to.py`, `src/codeintel/serving/semantic/registry_compiler.py`
-- [ ] Align saver tag schemas with UI expectations for table/artifact outputs. Files: `src/codeintel/build/hamilton/materializers/**`, `src/codeintel/serving/semantic/models.py`
+- [x] Confirm `materialization`/`materialized_name` tags are propagated from saver nodes and
+  visible in the semantic catalog.
+  Files: `src/codeintel/build/hamilton/save_to.py`,
+  `src/codeintel/serving/semantic/registry_compiler.py`
+- [x] Align saver tag schemas with UI expectations for table/artifact outputs.
+  Files: `src/codeintel/build/hamilton/materializers/**`,
+  `src/codeintel/serving/semantic/models.py`
 
 ### Phase 4 - Tag-Driven CLI and Runtime Querying
-- [ ] Surface tag metadata in CLI outputs (targets listing/build results). Files: `src/codeintel/cli/handlers/targets.py`, `src/codeintel/cli/handlers/build.py`, `src/codeintel/cli/core/result_types.py`
-- [ ] Add/update CLI snapshot tests to cover tag output rendering. Files: `tests/build/hamilton/snapshots/**`, `tests/build/hamilton/test_cli_snapshots.py`
+- [x] Surface tag metadata in CLI outputs (targets listing/build results).
+  Files: `src/codeintel/cli/handlers/targets.py`, `src/codeintel/cli/handlers/build.py`,
+  `src/codeintel/cli/core/result_types.py`
+- [x] Add/update CLI snapshot tests to cover tag output rendering.
+  Files: `tests/build/hamilton/snapshots/**`, `tests/build/hamilton/test_cli_snapshots.py`
 
 ### Phase 5 - Cross-Cutting Normalization with mutate
-- [ ] Centralize ingestion normalization transforms and apply via mutate/pipe patterns. Files: `src/codeintel/build/hamilton/transforms/**`, `src/codeintel/build/hamilton/native/ingestion/**`
-- [ ] Tag normalization steps for lineage visibility. Files: `src/codeintel/build/hamilton/tagging.py`
+- [x] Centralize ingestion normalization transforms and apply via mutate/pipe patterns.
+  Files: `src/codeintel/build/hamilton/transforms/**`,
+  `src/codeintel/build/hamilton/native/ingestion/**`
+- [x] Tag normalization steps for lineage visibility.
+  Files: `src/codeintel/build/hamilton/tagging.py`
 
 ### Phase 6 - Parameterized SubDAGs and Config-Driven Composition
-- [ ] Replace repeated pipeline patterns with parameterized_subdag/parameterize_sources. Files: `src/codeintel/build/hamilton/native/ingestion/**`, `src/codeintel/build/hamilton/native/graphs/**`, `src/codeintel/build/hamilton/nodes/support_nodes.py`
-- [ ] Gate pipeline variants via config (resolve_from_config) with namespaced keys. Files: `src/codeintel/runtime/compose.py`, `src/codeintel/core/runtime/loader.py`
+- [ ] Replace repeated pipeline patterns with parameterized_subdag/parameterize_sources.
+  Files: `src/codeintel/build/hamilton/native/ingestion/**`,
+  `src/codeintel/build/hamilton/native/graphs/**`,
+  `src/codeintel/build/hamilton/nodes/support_nodes.py`
+  (extraction targets now use tool-target template; ingestion/graphs still pending)
+- [ ] Gate pipeline variants via config (resolve_from_config) with namespaced keys.
+  Files: `src/codeintel/runtime/compose.py`, `src/codeintel/core/runtime/loader.py`
 
 ### Phase 7 - Dynamic Execution with Parallelizable/Collect
-- [ ] Expand Parallelizable/Collect beyond module ingest where safe and add gating tests. Files: `src/codeintel/build/hamilton/native/**`, `tests/build/hamilton/**`
-- [ ] Document dynamic execution knobs and defaults. Files: `docs/hamilton_best_in_class_implementation_plan.md`, `codeintel.yaml`
+- [ ] Expand Parallelizable/Collect beyond module ingest where safe and add gating tests.
+  Files: `src/codeintel/build/hamilton/native/**`, `tests/build/hamilton/**`
+- [x] Document dynamic execution knobs and defaults.
+  Files: `docs/hamilton_best_in_class_implementation_plan.md`, `codeintel.yaml`
+
+Dynamic execution knobs (defaults)
+- Config keys (Hamilton config): `ci.dynamic_execution.enabled=false`,
+  `ci.dynamic_execution.local_executor=null`, `ci.dynamic_execution.remote_executor=null`
+- Env keys: `CODEINTEL_HAMILTON_DYNAMIC_EXECUTION=false`,
+  `CODEINTEL_HAMILTON_DYNAMIC_LOCAL_EXECUTOR`,
+  `CODEINTEL_HAMILTON_DYNAMIC_REMOTE_EXECUTOR`,
+  `CODEINTEL_HAMILTON_DYNAMIC_REMOTE_MAX_TASKS`
+- Execution defaults: `HAMILTON_BACKEND=sequential`, `HAMILTON_MAX_WORKERS=null`
+- Example YAML: see `codeintel.yaml`
 
 ### Phase 8 - Adapter Expansion and ResultBuilder
-- [ ] Add adapter safeguards (materialize-node locking/grouping) for parallel execution. Files: `src/codeintel/build/hamilton/adapters/parallel.py`, `src/codeintel/build/hamilton/executor.py`
-- [ ] Add optional backend tests for ResultBuilder behavior and adapter detection. Files: `tests/build/hamilton/**`
+- [ ] Add adapter safeguards (materialize-node locking/grouping) for parallel execution.
+  Files: `src/codeintel/build/hamilton/adapters/parallel.py`,
+  `src/codeintel/build/hamilton/executor.py`
+- [ ] Add optional backend tests for ResultBuilder behavior and adapter detection.
+  Files: `tests/build/hamilton/**`
 
 ### Phase 9 - Builder-Level Materializers
-- [ ] Wire config schema and docs for materializer selection. Files: `src/codeintel/core/config/settings.py`, `src/codeintel/core/runtime/loader.py`, `src/codeintel/runtime/compose.py`, `codeintel.yaml`
-- [ ] Add tests covering materializer config selection and DAG tagging. Files: `tests/build/hamilton/**`
+- [ ] Wire config schema and docs for materializer selection.
+  Files: `src/codeintel/core/config/settings.py`, `src/codeintel/core/runtime/loader.py`,
+  `src/codeintel/runtime/compose.py`, `codeintel.yaml`
+- [ ] Add tests covering materializer config selection and DAG tagging.
+  Files: `tests/build/hamilton/**`
 
 ### Phase 10 - Cache Lineage Export and Audit Pipelines
-- [ ] Ensure cache log ingestion produces DuckDB rows tied to run_id/target outputs. Files: `src/codeintel/build/hamilton/executor.py`, `src/codeintel/observability/cache_log_ingest.py`
-- [ ] Add CLI integration tests for cache log ingestion paths. Files: `tests/cli/**`, `tests/observability/**`
+- [ ] Ensure cache log ingestion produces DuckDB rows tied to run_id/target outputs.
+  Files: `src/codeintel/build/hamilton/executor.py`,
+  `src/codeintel/observability/cache_log_ingest.py`
+- [ ] Add CLI integration tests for cache log ingestion paths.
+  Files: `tests/cli/**`, `tests/observability/**`
 
 ### Testing and Verification Additions
-- [ ] Tag presence and schema_output derivation coverage. Files: `tests/build/hamilton/**`
+- [ ] Tag presence and schema_output derivation coverage.
+  Files: `tests/build/hamilton/**` (extraction dataset tags test added)
 - [ ] Validation warn/fail coverage and hidden validation nodes. Files: `tests/build/hamilton/**`
-- [ ] Tag-driven CLI selection and metadata output tests. Files: `tests/build/hamilton/**`, `tests/cli/**`
+- [ ] Tag-driven CLI selection and metadata output tests.
+  Files: `tests/build/hamilton/**`, `tests/cli/**`
 - [ ] Dynamic execution gating and adapter optionality tests. Files: `tests/build/hamilton/**`
-- [ ] Cache log ingestion tests (empty, populated, and failure modes). Files: `tests/observability/**`
+- [ ] Cache log ingestion tests (empty, populated, and failure modes).
+  Files: `tests/observability/**`
 
 ## Testing and Verification
 

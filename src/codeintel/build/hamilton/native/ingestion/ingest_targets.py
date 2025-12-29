@@ -1735,6 +1735,7 @@ def t__typing(
     )
 
 
+@tag_helper(domain="ingestion")
 @mutate_ingest_rows(
     apply_to(modules__module_rows, table_key=value(MODULES_TABLE_KEY)),
     apply_to(modules__file_state_rows, table_key=value(FILE_STATE_TABLE_KEY)),

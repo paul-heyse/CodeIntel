@@ -495,6 +495,12 @@ class TableProvenance(ManifestBase):
         Optional inference status when the table is inferable.
     inference_error
         Optional inference error message when inference failed.
+    producer_target
+        Optional Hamilton target name responsible for the schema output.
+    producer_module
+        Optional Hamilton target module (ingestion/graphs/analytics/export).
+    producer_version
+        Optional Hamilton target spec version string.
     """
 
     schema_hash: str
@@ -502,6 +508,9 @@ class TableProvenance(ManifestBase):
     derivation_source: str
     inference_status: InferenceStatus | None = None
     inference_error: str | None = None
+    producer_target: str | None = None
+    producer_module: str | None = None
+    producer_version: str | None = None
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable representation.
@@ -520,6 +529,12 @@ class TableProvenance(ManifestBase):
             result["inference_status"] = self.inference_status
         if self.inference_error is not None:
             result["inference_error"] = self.inference_error
+        if self.producer_target is not None:
+            result["producer_target"] = self.producer_target
+        if self.producer_module is not None:
+            result["producer_module"] = self.producer_module
+        if self.producer_version is not None:
+            result["producer_version"] = self.producer_version
         return result
 
 

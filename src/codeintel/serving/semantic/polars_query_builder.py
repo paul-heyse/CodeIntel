@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from sqlglot import exp
 
+from codeintel.core.schemas.primitives import column_type_base
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
 
 if TYPE_CHECKING:
@@ -369,7 +370,7 @@ def _polars_string_unary_expr(
     column = _column_name(expr)
     _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
     column_type = column_types.get(column) if column_types is not None else None
-    if column_type is not None and column_type != "VARCHAR":
+    if column_type is not None and column_type_base(column_type) != "VARCHAR":
         msg = f"{func_name} is only supported for VARCHAR columns"
         raise PolarsQueryBuilderError(msg)
     pl_mod = _require_polars()
@@ -781,13 +782,14 @@ def _validate_operator(*, op: str, column_type: ColumnType | None) -> None:
             f"Operator {op} is not supported for column type {column_type or _UNKNOWN_COLUMN_TYPE}"
         )
         raise PolarsQueryBuilderError(msg)
-    if op in _ORDERING_OPS and column_type == "VARCHAR":
+    base = column_type_base(column_type) if column_type is not None else None
+    if op in _ORDERING_OPS and base == "VARCHAR":
         msg = f"Operator {op} is not supported for string columns"
         raise PolarsQueryBuilderError(msg)
-    if op == "in" and column_type == "JSON":
+    if op == "in" and base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
         msg = "IN operator is not supported for JSON columns"
         raise PolarsQueryBuilderError(msg)
-    if op in _STRING_OPS and column_type is not None and column_type != "VARCHAR":
+    if op in _STRING_OPS and base is not None and base != "VARCHAR":
         msg = f"{op} operator is only supported for VARCHAR columns"
         raise PolarsQueryBuilderError(msg)
 

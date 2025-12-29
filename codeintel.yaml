@@ -8,3 +8,13 @@ graphs:
   recipe: builtin.full
 storage:
   db_path: .codeintel/duckdb.db
+hamilton:
+  dynamic_execution:
+    enabled: false
+    local_executor: null
+    remote_executor: null
+    remote_max_tasks: null
+  execution:
+    parallel_backend: sequential
+    max_workers: null
+    materializers: []

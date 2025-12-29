@@ -20,6 +20,7 @@ Decorator = Callable[[Callable[P, R]], Callable[P, R]]
 class _TransformCarrier(Protocol):
     transform: list[NodeTransformLifecycle]
 
+
 def _drop_null_rows(
     frame: pl.LazyFrame,
     *,

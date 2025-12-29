@@ -43,6 +43,8 @@ from codeintel.core.columnar import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
+from codeintel.core.config.settings import BuildSettings
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_polars import (
@@ -95,6 +97,7 @@ _TABULAR_TYPES: tuple[type, ...] = (
 _DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit", "target")
 _COLLECT_GROUP_TAG = "ci.collect_group"
 _COLLECT_ALL_WAIT_S = 0.5
+_PROFILE_RESULT_TUPLE_LENGTH = 2
 _SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 
 LOG = logging.getLogger(__name__)
@@ -180,6 +183,7 @@ class _DatasetWriteContext:
     snapshot_id: str
     options: ArrowDatasetWriteOptions
     arrow_settings: ArrowDatasetSettings
+    build_settings: BuildSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +334,7 @@ def _materialize_dataset(
             snapshot_id=plan.snapshot_id,
             options=plan.options,
             arrow_settings=ctx.env.settings.arrow_dataset,
+            build_settings=ctx.env.settings,
         )
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
@@ -346,6 +351,7 @@ def _materialize_dataset(
             ctx=ctx,
             observation=plan.observation,
             arrow_schema=plan.arrow_schema,
+            manifest=manifest,
         )
         return manifest, manifest_path
 
@@ -370,6 +376,7 @@ def _materialize_dataset(
         ctx=ctx,
         observation=plan.observation,
         arrow_schema=plan.arrow_schema,
+        manifest=manifest,
     )
     return manifest, manifest_path
 
@@ -467,55 +474,169 @@ def _write_lazyframe_dataset(
         snapshot_id=ctx.snapshot_id,
     )
     _prepare_snapshot_dir(snapshot_dir, behavior=ctx.options.existing_data_behavior)
+    query_opt_flags = resolve_query_opt_flags(ctx.build_settings.polars_query_opt_flags)
+    _log_lazyframe_plan(
+        data,
+        table_key=ctx.table_key,
+        streaming=ctx.build_settings.polars_streaming,
+        query_opt_flags=query_opt_flags,
+        inspect_enabled=ctx.build_settings.polars_inspect,
+    )
+    profiled = _profile_lazyframe(
+        data,
+        table_key=ctx.table_key,
+        streaming=ctx.build_settings.polars_streaming,
+        query_opt_flags=query_opt_flags,
+        profile_enabled=ctx.build_settings.polars_profile,
+    )
+    if profiled is not None:
+        LOG.warning("Polars profile enabled; materializing %s before write", ctx.table_key)
+        return _write_profiled_dataset(
+            ctx=ctx,
+            frame=profiled,
+            contract_schema=contract_schema,
+            observation=observation,
+        )
     if contract_schema is not None:
-        reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
-        aligned = _align_reader_to_contract(reader, contract_schema=contract_schema)
-        if observation is not None:
-            aligned = instrument_reader_for_observation(aligned, accumulator=observation)
-        return write_dataset(
-            dataset_root=ctx.dataset_root,
-            table_key=ctx.table_key,
-            snapshot_id=ctx.snapshot_id,
-            data=aligned,
-            options=ctx.options,
+        return _write_contract_dataset(
+            ctx=ctx,
+            data=data,
+            contract_schema=contract_schema,
+            observation=observation,
+            query_opt_flags=query_opt_flags,
         )
     partition_by = list(ctx.options.partition_columns) if ctx.options.partition_columns else None
     if partition_by or not ctx.arrow_settings.enable_sink_parquet:
-        reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
-        if observation is not None:
-            reader = instrument_reader_for_observation(reader, accumulator=observation)
-        return write_dataset(
-            dataset_root=ctx.dataset_root,
-            table_key=ctx.table_key,
-            snapshot_id=ctx.snapshot_id,
-            data=reader,
-            options=ctx.options,
+        return _write_partitioned_dataset(
+            ctx=ctx,
+            data=data,
+            observation=observation,
+            query_opt_flags=query_opt_flags,
         )
 
+    return _write_sink_or_dataset(
+        ctx=ctx,
+        data=data,
+        snapshot_dir=snapshot_dir,
+        observation=observation,
+        query_opt_flags=query_opt_flags,
+    )
+
+
+def _lazyframe_reader(
+    *,
+    ctx: _DatasetWriteContext,
+    data: pl.LazyFrame,
+    query_opt_flags: object | None,
+) -> pa.RecordBatchReader:
+    return _lazyframe_stream(
+        data,
+        streaming=ctx.build_settings.polars_streaming,
+        streaming_fallback=ctx.build_settings.polars_streaming_fallback,
+        query_opt_flags=query_opt_flags,
+        inspect=ctx.build_settings.polars_inspect,
+    ).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+
+
+def _write_dataset_from_reader(
+    *,
+    ctx: _DatasetWriteContext,
+    reader: ArrowDatasetInput,
+    observation: SchemaObservationAccumulator | None,
+) -> ArrowDatasetManifest:
+    if observation is not None:
+        reader = instrument_reader_for_observation(reader, accumulator=observation)
+    return write_dataset(
+        dataset_root=ctx.dataset_root,
+        table_key=ctx.table_key,
+        snapshot_id=ctx.snapshot_id,
+        data=reader,
+        options=ctx.options,
+    )
+
+
+def _write_profiled_dataset(
+    *,
+    ctx: _DatasetWriteContext,
+    frame: pl.DataFrame,
+    contract_schema: pa.Schema | None,
+    observation: SchemaObservationAccumulator | None,
+) -> ArrowDatasetManifest:
+    reader = _reader_from_frame(frame)
+    aligned = _align_reader_to_contract(reader, contract_schema=contract_schema)
+    return _write_dataset_from_reader(ctx=ctx, reader=aligned, observation=observation)
+
+
+def _write_contract_dataset(
+    *,
+    ctx: _DatasetWriteContext,
+    data: pl.LazyFrame,
+    contract_schema: pa.Schema | None,
+    observation: SchemaObservationAccumulator | None,
+    query_opt_flags: object | None,
+) -> ArrowDatasetManifest:
+    reader = _lazyframe_reader(ctx=ctx, data=data, query_opt_flags=query_opt_flags)
+    aligned = _align_reader_to_contract(reader, contract_schema=contract_schema)
+    return _write_dataset_from_reader(ctx=ctx, reader=aligned, observation=observation)
+
+
+def _write_partitioned_dataset(
+    *,
+    ctx: _DatasetWriteContext,
+    data: pl.LazyFrame,
+    observation: SchemaObservationAccumulator | None,
+    query_opt_flags: object | None,
+) -> ArrowDatasetManifest:
+    reader = _lazyframe_reader(ctx=ctx, data=data, query_opt_flags=query_opt_flags)
+    return _write_dataset_from_reader(ctx=ctx, reader=reader, observation=observation)
+
+
+def _write_sink_or_dataset(
+    *,
+    ctx: _DatasetWriteContext,
+    data: pl.LazyFrame,
+    snapshot_dir: Path,
+    observation: SchemaObservationAccumulator | None,
+    query_opt_flags: object | None,
+) -> ArrowDatasetManifest:
     sink_path = snapshot_dir / "data.parquet"
     try:
         _sink_parquet_lazyframe(
             data,
             output_path=sink_path,
             options=ctx.options,
+            query_opt_flags=query_opt_flags,
         )
     except (PolarsError, TypeError, ValueError) as exc:
         LOG.warning("LazyFrame sink_parquet failed; falling back to dataset write: %s", exc)
-        reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
-        return write_dataset(
-            dataset_root=ctx.dataset_root,
-            table_key=ctx.table_key,
-            snapshot_id=ctx.snapshot_id,
-            data=reader,
-            options=ctx.options,
-        )
+        reader = _lazyframe_reader(ctx=ctx, data=data, query_opt_flags=query_opt_flags)
+        return _write_dataset_from_reader(ctx=ctx, reader=reader, observation=observation)
     dataset = ds.dataset(str(snapshot_dir), format="parquet")
-    if observation is not None:
-        try:
-            scanner = dataset.scanner(batch_size=DEFAULT_ARROW_BATCH_SIZE)
-            observe_batches(scanner.to_reader(), accumulator=observation)
-        except (TypeError, ValueError, pa.ArrowInvalid, OSError):
-            LOG.warning("Schema observation scan failed for %s", ctx.table_key)
+    _observe_sink_dataset(dataset=dataset, table_key=ctx.table_key, observation=observation)
+    return _manifest_from_sink(ctx=ctx, dataset=dataset, snapshot_dir=snapshot_dir)
+
+
+def _observe_sink_dataset(
+    *,
+    dataset: ds.Dataset,
+    table_key: str,
+    observation: SchemaObservationAccumulator | None,
+) -> None:
+    if observation is None:
+        return
+    try:
+        scanner = dataset.scanner(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        observe_batches(scanner.to_reader(), accumulator=observation)
+    except (TypeError, ValueError, pa.ArrowInvalid, OSError):
+        LOG.warning("Schema observation scan failed for %s", table_key)
+
+
+def _manifest_from_sink(
+    *,
+    ctx: _DatasetWriteContext,
+    dataset: ds.Dataset,
+    snapshot_dir: Path,
+) -> ArrowDatasetManifest:
     request = ArrowDatasetManifestRequest(
         table_key=ctx.table_key,
         snapshot_id=ctx.snapshot_id,
@@ -543,37 +664,265 @@ def _sink_parquet_lazyframe(
     *,
     output_path: Path,
     options: ArrowDatasetWriteOptions,
+    query_opt_flags: object | None,
 ) -> None:
     sink_fn = getattr(frame, "sink_parquet", None)
     if not callable(sink_fn):
         msg = "LazyFrame.sink_parquet is unavailable"
         raise TypeError(msg)
-    kwargs = _sink_parquet_kwargs(sink_fn, options=options)
+    kwargs = _sink_parquet_kwargs(sink_fn, options=options, query_opt_flags=query_opt_flags)
     sink_fn(str(output_path), **kwargs)
+
+
+def _add_optional_sink_kwargs(
+    kwargs: dict[str, object],
+    *,
+    parameters: Mapping[str, inspect.Parameter],
+    items: Sequence[tuple[str, object | None]],
+) -> None:
+    kwargs.update(
+        {name: value for name, value in items if value is not None and name in parameters}
+    )
+
+
+def _add_dictionary_sink_kwargs(
+    kwargs: dict[str, object],
+    *,
+    parameters: Mapping[str, inspect.Parameter],
+    enable_dictionary: bool,
+) -> None:
+    if not enable_dictionary:
+        return
+    for name in ("use_dictionary", "dictionary"):
+        if name in parameters:
+            kwargs[name] = True
+            return
+
+
+def _add_query_opt_sink_kwargs(
+    kwargs: dict[str, object],
+    *,
+    parameters: Mapping[str, inspect.Parameter],
+    query_opt_flags: object | None,
+) -> None:
+    if query_opt_flags is None:
+        return
+    for name in ("optimization_flags", "query_opt_flags", "optimizations"):
+        if name in parameters:
+            kwargs[name] = query_opt_flags
+            return
 
 
 def _sink_parquet_kwargs(
     sink_fn: object,
     *,
     options: ArrowDatasetWriteOptions,
+    query_opt_flags: object | None,
 ) -> dict[str, object]:
     try:
         signature = inspect.signature(sink_fn)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return {}
     kwargs: dict[str, object] = {}
-    if options.compression and "compression" in signature.parameters:
-        kwargs["compression"] = options.compression
-    if options.row_group_size and "row_group_size" in signature.parameters:
-        kwargs["row_group_size"] = options.row_group_size
-    if options.data_page_size and "data_page_size" in signature.parameters:
-        kwargs["data_page_size"] = options.data_page_size
-    if options.dictionary_encode:
-        if "use_dictionary" in signature.parameters:
-            kwargs["use_dictionary"] = True
-        elif "dictionary" in signature.parameters:
-            kwargs["dictionary"] = True
+    _add_optional_sink_kwargs(
+        kwargs,
+        parameters=signature.parameters,
+        items=(
+            ("compression", options.compression),
+            ("row_group_size", options.row_group_size),
+            ("data_page_size", options.data_page_size),
+        ),
+    )
+    _add_dictionary_sink_kwargs(
+        kwargs,
+        parameters=signature.parameters,
+        enable_dictionary=options.dictionary_encode,
+    )
+    _add_query_opt_sink_kwargs(
+        kwargs,
+        parameters=signature.parameters,
+        query_opt_flags=query_opt_flags,
+    )
     return kwargs
+
+
+def _lazyframe_stream(
+    frame: pl.LazyFrame,
+    *,
+    streaming: bool,
+    streaming_fallback: bool,
+    query_opt_flags: object | None,
+    inspect: bool,
+) -> LazyFrameStream:
+    return LazyFrameStream(
+        frame,
+        query_opt_flags=query_opt_flags,
+        streaming=streaming,
+        streaming_fallback=streaming_fallback,
+        inspect=inspect,
+    )
+
+
+def _reader_from_frame(frame: pl.DataFrame) -> pa.RecordBatchReader:
+    table = frame.to_arrow()
+    batches = table.to_batches()
+    return pa.RecordBatchReader.from_batches(table.schema, batches)
+
+
+def _log_lazyframe_plan(
+    frame: pl.LazyFrame,
+    *,
+    table_key: str,
+    streaming: bool,
+    query_opt_flags: object | None,
+    inspect_enabled: bool,
+) -> None:
+    if not inspect_enabled:
+        return
+    explain = _polars_explain(
+        frame,
+        streaming=streaming,
+        query_opt_flags=query_opt_flags,
+    )
+    if explain is not None:
+        LOG.debug("polars_explain table=%s plan=%s", table_key, explain)
+    graph = _polars_show_graph(
+        frame,
+        streaming=streaming,
+        query_opt_flags=query_opt_flags,
+    )
+    if graph is not None:
+        LOG.debug("polars_graph table=%s graph=%s", table_key, graph)
+
+
+def _polars_explain(
+    frame: pl.LazyFrame,
+    *,
+    streaming: bool,
+    query_opt_flags: object | None,
+) -> str | None:
+    explain_fn = getattr(frame, "explain", None)
+    if not callable(explain_fn):
+        return None
+    kwargs = _polars_plan_kwargs(
+        explain_fn,
+        streaming=streaming,
+        query_opt_flags=query_opt_flags,
+        optimized=True,
+    )
+    try:
+        result = explain_fn(**kwargs)
+    except PolarsError:
+        return None
+    return result if isinstance(result, str) else None
+
+
+def _polars_show_graph(
+    frame: pl.LazyFrame,
+    *,
+    streaming: bool,
+    query_opt_flags: object | None,
+) -> str | None:
+    show_graph = getattr(frame, "show_graph", None)
+    if not callable(show_graph):
+        return None
+    try:
+        signature = inspect.signature(show_graph)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        signature = None
+    kwargs = _polars_plan_kwargs(
+        show_graph,
+        streaming=streaming,
+        query_opt_flags=query_opt_flags,
+        optimized=True,
+    )
+    if signature is not None:
+        if "show" in signature.parameters:
+            kwargs["show"] = False
+        if "raw_output" in signature.parameters:
+            kwargs["raw_output"] = True
+    try:
+        result = show_graph(**kwargs)
+    except PolarsError:
+        return None
+    return result if isinstance(result, str) else None
+
+
+def _profile_lazyframe(
+    frame: pl.LazyFrame,
+    *,
+    table_key: str,
+    streaming: bool,
+    query_opt_flags: object | None,
+    profile_enabled: bool,
+) -> pl.DataFrame | None:
+    if not profile_enabled:
+        return None
+    profile_fn = getattr(frame, "profile", None)
+    if not callable(profile_fn):
+        LOG.warning("Polars profile is unavailable for %s", table_key)
+        return None
+    kwargs = _polars_plan_kwargs(
+        profile_fn,
+        streaming=streaming,
+        query_opt_flags=query_opt_flags,
+        optimized=True,
+    )
+    try:
+        result = profile_fn(**kwargs)
+    except PolarsError as exc:
+        LOG.warning("Polars profile failed for %s: %s", table_key, exc)
+        return None
+    if isinstance(result, tuple) and len(result) == _PROFILE_RESULT_TUPLE_LENGTH:
+        frame_result, profile = result
+        _log_polars_profile(table_key, profile)
+        return frame_result if isinstance(frame_result, pl.DataFrame) else None
+    if isinstance(result, pl.DataFrame):
+        return result
+    return None
+
+
+def _polars_plan_kwargs(
+    func: object,
+    *,
+    streaming: bool,
+    query_opt_flags: object | None,
+    optimized: bool,
+) -> dict[str, object]:
+    try:
+        signature = inspect.signature(func)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return {}
+    kwargs: dict[str, object] = {}
+    if "optimized" in signature.parameters:
+        kwargs["optimized"] = optimized
+    if "engine" in signature.parameters and streaming:
+        kwargs["engine"] = "streaming"
+    elif "streaming" in signature.parameters:
+        kwargs["streaming"] = streaming
+    if query_opt_flags is not None:
+        if "optimization_flags" in signature.parameters:
+            kwargs["optimization_flags"] = query_opt_flags
+        elif "query_opt_flags" in signature.parameters:
+            kwargs["query_opt_flags"] = query_opt_flags
+        elif "optimizations" in signature.parameters:
+            kwargs["optimizations"] = query_opt_flags
+    return kwargs
+
+
+def _log_polars_profile(table_key: str, profile: object) -> None:
+    if profile is None:
+        return
+    to_string = getattr(profile, "to_string", None)
+    if callable(to_string):
+        try:
+            profile_repr = to_string()
+        except (TypeError, ValueError):
+            profile_repr = None
+    else:
+        profile_repr = str(profile)
+    if profile_repr:
+        LOG.info("polars_profile table=%s profile=%s", table_key, profile_repr)
 
 
 def _collect_partitioned_frame(
@@ -955,6 +1304,7 @@ def _persist_observation_if_ready(
     ctx: _MaterializeContext,
     observation: SchemaObservationAccumulator,
     arrow_schema: pa.Schema,
+    manifest: ArrowDatasetManifest | None,
 ) -> None:
     try:
         drift_history: tuple[Mapping[str, object] | None, ...] | None = None
@@ -969,6 +1319,8 @@ def _persist_observation_if_ready(
             commit=ctx.env.commit,
             target_name=ctx.target_name,
             drift_history=drift_history,
+            dataset_stats=manifest.stats if manifest is not None else None,
+            manifest_row_count=manifest.row_count if manifest is not None else None,
         )
         bundle = observation.finalize(arrow_schema=arrow_schema, inputs=inputs)
         persist_observation_bundle(gateway=ctx.env.gateway, bundle=bundle)

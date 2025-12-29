@@ -2,14 +2,53 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from datetime import datetime
 
 DEFAULT_SCHEMA_MANIFEST_KIND = "schema_manifest_v2"
+
+
+class ColumnStatsEntry(TypedDict, total=False):
+    """Typed payload for a single column statistics entry."""
+
+    null_count: int
+    non_null_count: int
+    distinct_count_max: int
+    min: object
+    max: object
+    avg_length: float
+
+
+type ColumnStatsPayload = dict[str, ColumnStatsEntry]
+
+
+type ParquetStatsPayload = Mapping[str, object]
+
+
+class DatasetStatsPayload(TypedDict, total=False):
+    """Typed payload for dataset-level stats observations."""
+
+    row_count: int
+    batch_count: int
+    total_bytes: int
+    manifest_row_count: int
+    parquet_stats: ParquetStatsPayload
+
+
+class DerivedSettingsPayload(TypedDict, total=False):
+    """Typed payload for derived dataset settings."""
+
+    extras_policy: str
+    dictionary_encode_columns: list[str]
+    dictionary_max_cardinality: int
+    unify_dictionaries: bool
+    row_group_size: int
+    data_page_size: int
+    avg_row_bytes: float
 
 
 @dataclass(frozen=True)
@@ -61,9 +100,9 @@ class SchemaObservationRecord:
     repo: str | None = None
     commit: str | None = None
     target_name: str | None = None
-    column_stats: Mapping[str, object] | None = None
-    dataset_stats: Mapping[str, object] | None = None
-    derived_settings: Mapping[str, object] | None = None
+    column_stats: ColumnStatsPayload | None = None
+    dataset_stats: DatasetStatsPayload | None = None
+    derived_settings: DerivedSettingsPayload | None = None
     drift_summary: Mapping[str, object] | None = None
     observed_at: datetime | None = None
     observation_id: str | None = None
@@ -123,7 +162,12 @@ class SchemaCatalogRequest:
 
 __all__ = [
     "DEFAULT_SCHEMA_MANIFEST_KIND",
+    "ColumnStatsEntry",
+    "ColumnStatsPayload",
+    "DatasetStatsPayload",
+    "DerivedSettingsPayload",
     "OverrideRegistryRefreshResult",
+    "ParquetStatsPayload",
     "SchemaCatalogRequest",
     "SchemaManifestRunRecord",
     "SchemaObservationRecord",

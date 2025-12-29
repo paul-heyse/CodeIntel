@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.primitives import Column, Index, TableSchema
+from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
 from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
 
 if TYPE_CHECKING:
@@ -20,21 +20,6 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
     from codeintel.core.schemas.primitives import ColumnType
-
-_ALLOWED_COLUMN_TYPES: frozenset[str] = frozenset(
-    {
-        "BOOLEAN",
-        "INTEGER",
-        "BIGINT",
-        "DOUBLE",
-        "DECIMAL",
-        "DECIMAL(38,0)",
-        "VARCHAR",
-        "JSON",
-        "TIMESTAMP",
-        "TIMESTAMPTZ",
-    }
-)
 
 
 def _expect_dict(value: object, *, ctx: str) -> dict[str, object]:
@@ -55,10 +40,11 @@ def _parse_column_type(value: object, *, ctx: str) -> ColumnType:
     if not isinstance(value, str):
         msg = f"Expected string for {ctx}"
         raise TypeError(msg)
-    if value not in _ALLOWED_COLUMN_TYPES:
+    try:
+        return normalize_column_type(value)
+    except ValueError as exc:
         msg = f"Unsupported column type for {ctx}: {value}"
-        raise ValueError(msg)
-    return cast("ColumnType", value)
+        raise ValueError(msg) from exc
 
 
 def _parse_columns(items: object) -> list[Column]:

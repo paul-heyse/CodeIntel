@@ -199,7 +199,9 @@ class TableRowCountValidator(DataValidator):
             Validation outcome for the dataset.
         """
         if dataset is None:
-            return ValidationResult(passes=True, message=f"No rows to validate for {self.table_key}")
+            return ValidationResult(
+                passes=True, message=f"No rows to validate for {self.table_key}"
+            )
         if self.min_rows <= 0:
             return ValidationResult(
                 passes=True,

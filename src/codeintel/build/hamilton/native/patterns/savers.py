@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, ParamSpec, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
+import hamilton.node as h_node
 from hamilton.function_modifiers import check_output_custom, resolve_from_config, source, value
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
@@ -19,6 +20,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
+from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
@@ -90,6 +92,25 @@ class _NoOpTransform(NodeTransformLifecycle):
         return fn
 
 
+_VALIDATOR_NODE_TAG = "hamilton.data_quality.contains_dq_results"
+
+
+class _TaggedValidation(check_output_custom):
+    """Validator decorator that hides data-quality nodes from UI outputs."""
+
+    def transform_node(
+        self,
+        node_: h_node.Node,
+        config: dict[str, Any],
+        fn: Callable[..., object],
+    ) -> Collection[h_node.Node]:
+        nodes = super().transform_node(node_, config, fn)
+        for node in nodes:
+            if _VALIDATOR_NODE_TAG in node.tags or node.name.endswith("_raw"):
+                node.tags[ht.TAG_MCP_VISIBLE] = "0"
+        return nodes
+
+
 def _resolve_validation_profile(
     *,
     default_profile: str | None,
@@ -152,7 +173,7 @@ def _validation_from_config(
         )
         if not validators:
             return _NoOpTransform()
-        return check_output_custom(*validators)
+        return _TaggedValidation(*validators)
 
     return resolve_from_config(decorate_with=_factory)
 

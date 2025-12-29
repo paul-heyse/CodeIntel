@@ -978,8 +978,7 @@ class SemanticQueryKernel:
                 table_keys = sorted(extract_table_keys_duckdb(ast_sql))
                 raw_lineage = extract_column_lineage_duckdb(ast_sql)
                 column_lineage = {
-                    column: _column_lineage_refs(entries)
-                    for column, entries in raw_lineage.items()
+                    column: _column_lineage_refs(entries) for column, entries in raw_lineage.items()
                 }
             except (SqlglotError, TypeError, ValueError):
                 table_keys = []

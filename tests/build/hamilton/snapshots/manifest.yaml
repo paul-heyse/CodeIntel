@@ -205,6 +205,27 @@ cases:
     kind: "text"
 
   # ========================================================================
+  # Phase 4: Tag metadata surfaced in CLI outputs
+  # ========================================================================
+
+  - name: "pr90_targets_list_show_tags"
+    tags: ["pr90", "phase4", "targets", "json", "tiny"]
+    args:
+      [
+        "targets",
+        "list",
+        "--show-tags",
+        "--tag",
+        "target=modules",
+        "--output-format",
+        "json",
+        "--root",
+        ".",
+      ]
+    exit_code: 0
+    snapshot: "pr90_targets_list_show_tags.json"
+
+  # ========================================================================
   # PR-59: Schema manifest CLI surfaces (help-only)
   # ========================================================================
 

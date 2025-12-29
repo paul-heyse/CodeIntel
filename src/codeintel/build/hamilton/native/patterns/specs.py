@@ -31,6 +31,7 @@ class TableOutputSpec:
     """Specification for a table output."""
 
     table_key: str
+    node_name: str | None = None
     columns: tuple[str, ...] | DeferredColumns | None = None
     output_role: OutputRole | None = None
 

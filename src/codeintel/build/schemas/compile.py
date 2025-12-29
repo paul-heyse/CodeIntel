@@ -581,64 +581,103 @@ def _collect_manifest_provenance(
     artifact_provenance: dict[str, ArtifactProvenance] = {}
     known_hashes: dict[str, str] = {}
 
-    allow_inference = True
-    if isinstance(provider, UnifiedSchemaProvider):
-        allow_inference = provider.allow_inference
+    allow_inference = (
+        provider.allow_inference if isinstance(provider, UnifiedSchemaProvider) else True
+    )
 
     for table in tables:
-        derivation = schema_index.derivations.get(table.table_key)
-        if derivation is None:
-            derivation_kind = DECLARED_SOURCE_KIND
-            derivation_source = DECLARED_SOURCE_NAME
-        else:
-            derivation_kind = derivation.kind
-            derivation_source = derivation.source
-        inference_status = schema_index.inference_status_for(
-            table.table_key,
+        table_provenance[table.table_key] = _table_provenance_entry(
+            table,
+            schema_index=schema_index,
             allow_inference=allow_inference,
-        )
-        inference_error = (
-            schema_index.get_inference_error(table.table_key)
-            if inference_status == "error"
-            else None
-        )
-        table_hash = schema_hash(table)
-        known_hashes[table.table_key] = table_hash
-        table_provenance[table.table_key] = TableProvenance(
-            schema_hash=table_hash,
-            derivation_kind=derivation_kind,
-            derivation_source=derivation_source,
-            inference_status=inference_status,
-            inference_error=inference_error,
+            known_hashes=known_hashes,
         )
 
     for view in views:
-        view_hash = schema_hash(view)
-        view_provenance[view.table_key] = TableProvenance(
-            schema_hash=view_hash,
-            derivation_kind=VIEW_DERIVATION_KIND,
-            derivation_source=VIEW_DERIVATION_SOURCE,
-        )
+        view_provenance[view.table_key] = _view_provenance_entry(view)
 
     for artifact in artifacts:
-        source_table_keys = (artifact.table_key,) if artifact.table_key is not None else ()
-        source_schema_hashes = tuple(
-            _schema_hash_for_table_key(
-                table_key,
-                known_hashes=known_hashes,
-                provider=provider,
-            )
-            for table_key in source_table_keys
-        )
-        artifact_provenance[artifact.filename] = ArtifactProvenance(
-            source_table_keys=source_table_keys,
-            source_schema_hashes=source_schema_hashes,
+        artifact_provenance[artifact.filename] = _artifact_provenance_entry(
+            artifact,
+            known_hashes=known_hashes,
+            provider=provider,
         )
 
     return ManifestProvenance(
         table_provenance=table_provenance,
         view_provenance=view_provenance,
         artifact_provenance=artifact_provenance,
+    )
+
+
+def _table_provenance_entry(
+    table: TableSchema,
+    *,
+    schema_index: SchemaIndex,
+    allow_inference: bool,
+    known_hashes: dict[str, str],
+) -> TableProvenance:
+    derivation = schema_index.derivations.get(table.table_key)
+    if derivation is None:
+        derivation_kind = DECLARED_SOURCE_KIND
+        derivation_source = DECLARED_SOURCE_NAME
+        producer_target = None
+        producer_module = None
+        producer_version = None
+    else:
+        derivation_kind = derivation.kind
+        derivation_source = derivation.source
+        producer_target = derivation.source
+        producer_module = derivation.source_module
+        producer_version = derivation.source_version
+    inference_status = schema_index.inference_status_for(
+        table.table_key,
+        allow_inference=allow_inference,
+    )
+    inference_error = (
+        schema_index.get_inference_error(table.table_key) if inference_status == "error" else None
+    )
+    table_hash = schema_hash(table)
+    known_hashes[table.table_key] = table_hash
+    return TableProvenance(
+        schema_hash=table_hash,
+        derivation_kind=derivation_kind,
+        derivation_source=derivation_source,
+        inference_status=inference_status,
+        inference_error=inference_error,
+        producer_target=producer_target,
+        producer_module=producer_module,
+        producer_version=producer_version,
+    )
+
+
+def _view_provenance_entry(view: TableSchema) -> TableProvenance:
+    view_hash = schema_hash(view)
+    return TableProvenance(
+        schema_hash=view_hash,
+        derivation_kind=VIEW_DERIVATION_KIND,
+        derivation_source=VIEW_DERIVATION_SOURCE,
+    )
+
+
+def _artifact_provenance_entry(
+    artifact: ExportArtifact,
+    *,
+    known_hashes: dict[str, str],
+    provider: SchemaProvider,
+) -> ArtifactProvenance:
+    source_table_keys = (artifact.table_key,) if artifact.table_key is not None else ()
+    source_schema_hashes = tuple(
+        _schema_hash_for_table_key(
+            table_key,
+            known_hashes=known_hashes,
+            provider=provider,
+        )
+        for table_key in source_table_keys
+    )
+    return ArtifactProvenance(
+        source_table_keys=source_table_keys,
+        source_schema_hashes=source_schema_hashes,
     )
 
 

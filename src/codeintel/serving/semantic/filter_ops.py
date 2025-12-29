@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.core.schemas.primitives import column_type_base
 from codeintel.serving.semantic.models import Op
 
 if TYPE_CHECKING:
@@ -15,18 +16,6 @@ if TYPE_CHECKING:
 
 
 _ALL_OPS: tuple[Op, ...] = ("eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith")
-
-_NUMERIC_TYPES: frozenset[str] = frozenset(
-    {
-        "INTEGER",
-        "BIGINT",
-        "DOUBLE",
-        "DECIMAL",
-        "DECIMAL(38,0)",
-    }
-)
-
-_TIME_TYPES: frozenset[str] = frozenset({"TIMESTAMP", "TIMESTAMPTZ"})
 
 
 def allowed_ops_for_column_type(column_type: ColumnType | str | None) -> tuple[Op, ...]:
@@ -44,12 +33,12 @@ def allowed_ops_for_column_type(column_type: ColumnType | str | None) -> tuple[O
     """
     allowed_ops = _ALL_OPS
     if column_type is not None:
-        normalized = str(column_type).upper()
-        if normalized == "BOOLEAN":
+        base = column_type_base(column_type)
+        if base == "BOOLEAN":
             allowed_ops = ("eq", "ne")
-        elif normalized == "VARCHAR":
+        elif base == "VARCHAR":
             allowed_ops = ("eq", "ne", "in", "contains", "startswith")
-        elif normalized == "JSON":
+        elif base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
             allowed_ops = ("eq", "ne")
         else:
             allowed_ops = ("eq", "ne", "lt", "lte", "gt", "gte", "in")
@@ -85,19 +74,19 @@ def parse_filter_value(column_type: ColumnType | str | None, *, op: Op, raw: str
 
 
 def _parse_scalar_value(column_type: ColumnType | str, raw: str) -> object:
-    normalized = str(column_type).upper()
+    base = column_type_base(column_type)
     parsed: object = raw
-    if normalized in {"INTEGER", "BIGINT"}:
+    if base in {"INTEGER", "BIGINT"}:
         try:
             parsed = int(raw)
         except ValueError:
             parsed = raw
-    elif normalized in {"DOUBLE", "DECIMAL", "DECIMAL(38,0)"}:
+    elif base in {"DOUBLE", "DECIMAL"}:
         try:
             parsed = float(raw)
         except ValueError:
             parsed = raw
-    elif normalized == "BOOLEAN":
+    elif base == "BOOLEAN":
         lowered = raw.lower()
         if lowered in {"true", "1", "yes"}:
             parsed = True

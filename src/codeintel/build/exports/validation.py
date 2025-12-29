@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
@@ -28,6 +29,7 @@ from codeintel.build.schemas.json_schema_registry import (
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED, SchemaError
 from codeintel.core.errors.taxonomy import NOT_FOUND
+from codeintel.core.schemas.primitives import column_type_base
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -257,15 +259,24 @@ def _json_types_for_column(column_type: str) -> tuple[str, ...]:
         "BOOLEAN": ("boolean",),
         "INTEGER": ("integer",),
         "BIGINT": ("integer",),
-        "DECIMAL(38,0)": ("integer",),
         "DOUBLE": ("number",),
         "DECIMAL": ("number",),
         "VARCHAR": ("string",),
         "JSON": ("object",),
         "TIMESTAMP": ("string",),
         "TIMESTAMPTZ": ("string",),
+        "STRUCT": ("object",),
+        "MAP": ("object",),
+        "LIST": ("array",),
+        "UNION": ("object",),
     }
-    return mapping.get(column_type, ())
+    base = column_type_base(column_type)
+    if base == "DECIMAL":
+        compact = str(column_type).upper().replace(" ", "")
+        match = re.match(r"^DECIMAL\\((\\d+),(\\d+)\\)$", compact)
+        if match is not None and int(match.group(2)) == 0:
+            return ("integer",)
+    return mapping.get(base, ())
 
 
 def _normalize_types(value: object) -> tuple[str, ...]:

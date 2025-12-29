@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
+import pyarrow.parquet as pq
 
 from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
+from codeintel.storage.validation.arrow_type_compat import is_compatible_arrow_type
 
 if TYPE_CHECKING:
     from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
@@ -23,6 +26,7 @@ LOG = logging.getLogger(__name__)
 __all__ = [
     "TableValidationError",
     "ValidationMode",
+    "validate_parquet_path",
     "validate_record_batch_reader",
     "validate_table",
 ]
@@ -46,50 +50,8 @@ def _lookup_table_schema(table_key: str) -> TableSchema | None:
     return provider.get_table_schema(table_key)
 
 
-def _unwrap_dictionary_type(data_type: pa.DataType) -> pa.DataType:
-    if pa.types.is_dictionary(data_type):
-        return data_type.value_type
-    return data_type
-
-
 def _is_compatible_type(column: Column, actual_type: pa.DataType) -> bool:
-    normalized = _unwrap_dictionary_type(actual_type)
-    if pa.types.is_null(normalized):
-        return column.nullable
-    if column.type == "JSON":
-        return True
-
-    def _is_decimal_or_int(data_type: pa.DataType) -> bool:
-        return pa.types.is_integer(data_type) or pa.types.is_decimal(data_type)
-
-    def _is_decimal_or_float(data_type: pa.DataType) -> bool:
-        return (
-            pa.types.is_floating(data_type)
-            or pa.types.is_decimal(data_type)
-            or pa.types.is_integer(data_type)
-        )
-
-    def _is_string_like(data_type: pa.DataType) -> bool:
-        return pa.types.is_string(data_type) or pa.types.is_large_string(data_type)
-
-    def _is_temporal(data_type: pa.DataType) -> bool:
-        return pa.types.is_timestamp(data_type) or pa.types.is_date(data_type)
-
-    predicates: dict[str, Callable[[pa.DataType], bool]] = {
-        "INTEGER": pa.types.is_integer,
-        "BIGINT": pa.types.is_integer,
-        "DECIMAL(38,0)": _is_decimal_or_int,
-        "DOUBLE": _is_decimal_or_float,
-        "DECIMAL": _is_decimal_or_float,
-        "BOOLEAN": pa.types.is_boolean,
-        "VARCHAR": _is_string_like,
-        "TIMESTAMP": _is_temporal,
-        "TIMESTAMPTZ": _is_temporal,
-    }
-    predicate = predicates.get(column.type)
-    if predicate is None:
-        return True
-    return predicate(normalized)
+    return is_compatible_arrow_type(column, actual_type)
 
 
 def _schema_errors(table_schema: TableSchema, actual_schema: pa.Schema) -> list[str]:
@@ -286,15 +248,52 @@ def validate_record_batch_reader(
             batch_errors = []
             batch_errors.extend(_arrow_batch_validation_errors(batch))
             batch_errors.extend(_nullability_errors_for_batch(schema, batch))
-            batch_errors.extend(
-                _observation_errors_for_batch(schema, batch, schema_observation)
-            )
+            batch_errors.extend(_observation_errors_for_batch(schema, batch, schema_observation))
             if batch_errors:
                 batch_errors = [f"batch {batch_index}: {error}" for error in batch_errors]
                 _handle_errors(table_key, batch_errors, mode)
             yield batch
 
     return pa.RecordBatchReader.from_batches(reader.schema, _iter_batches())
+
+
+def validate_parquet_path(
+    table_key: str,
+    path: Path,
+    *,
+    table_schema: TableSchema | None = None,
+    schema_observation: SchemaObservationRecord | None = None,
+    mode: ValidationMode = "strict",
+) -> None:
+    """Validate a Parquet file against the registered TableSchema.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    path
+        Path to the Parquet file.
+    table_schema
+        Optional schema override to use instead of the registry lookup.
+    schema_observation
+        Optional schema observation record for inferred constraint checks.
+    mode
+        Validation behavior: ``"strict"`` raises, ``"warn"`` logs, ``"skip"`` ignores.
+    """
+    parquet_file = pq.ParquetFile(path)
+    reader = pa.RecordBatchReader.from_batches(
+        parquet_file.schema_arrow,
+        parquet_file.iter_batches(),
+    )
+    validated = validate_record_batch_reader(
+        table_key,
+        reader,
+        table_schema=table_schema,
+        schema_observation=schema_observation,
+        mode=mode,
+    )
+    for _batch in validated:
+        continue
 
 
 def _observation_errors_for_table(

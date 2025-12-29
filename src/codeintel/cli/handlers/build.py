@@ -542,6 +542,55 @@ def _execute_build_hamilton(
     return _BuildExecutionOutcome(result=hamilton_result, cache_report=cache_report)
 
 
+def _maybe_publish_serving_snapshot(
+    runtime: ResolvedRuntime,
+    execution: BuildExecutionArgs,
+    outcome: _BuildExecutionOutcome | None,
+    *,
+    gateway: StorageGateway,
+) -> None:
+    if not execution.publish_serving_snapshot or execution.run_mode is not RunMode.EXECUTE:
+        return
+    if outcome is None or outcome.result.failed_targets:
+        return
+    _publish_serving_snapshot_from_build(
+        runtime,
+        gateway,
+        run_id=outcome.result.run_id,
+    )
+
+
+def _execute_build_outcome(
+    runtime: ResolvedRuntime,
+    execution: BuildExecutionArgs,
+    *,
+    gateway: StorageGateway | None,
+) -> _BuildExecutionOutcome | None:
+    if gateway is None:
+        with runtime_gateway(
+            runtime,
+            read_only=False,
+            validation_mode=execution.validation_mode,
+        ) as runtime_gateway_obj:
+            outcome = _execute_build_hamilton(runtime, runtime_gateway_obj, execution)
+            _maybe_publish_serving_snapshot(
+                runtime,
+                execution,
+                outcome,
+                gateway=runtime_gateway_obj,
+            )
+            return outcome
+
+    outcome = _execute_build_hamilton(runtime, gateway, execution)
+    _maybe_publish_serving_snapshot(
+        runtime,
+        execution,
+        outcome,
+        gateway=gateway,
+    )
+    return outcome
+
+
 def _build_cache_report(
     *,
     hamilton_result: HamiltonBuildResult,
@@ -841,6 +890,12 @@ class _BuildRunParams:
     allow_workspace_modules: bool | None
 
 
+@dataclass(frozen=True)
+class _BuildRunFormatOptions:
+    runtime_bundle: RuntimeBundle | None
+    show_tags: bool
+
+
 def resolve_parallel_backend(*, parallel_backend: str | None, max_workers: int | None) -> str:
     """Resolve the effective parallel backend from CLI inputs.
 
@@ -1084,6 +1139,86 @@ def _resolve_goals_for_params(
     return goals, None
 
 
+def _unique_targets(targets: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for target in targets:
+        if target in seen:
+            continue
+        seen.add(target)
+        unique.append(target)
+    return unique
+
+
+def _extract_node_tags(node: object | None) -> dict[str, object] | None:
+    if node is None:
+        return None
+    node_tags = getattr(node, "tags", None)
+    if not isinstance(node_tags, Mapping):
+        return None
+    tags = {key: value for key, value in node_tags.items() if isinstance(key, str)}
+    return tags or None
+
+
+def _collect_target_tags(
+    runtime_bundle: RuntimeBundle,
+    *,
+    targets: Sequence[str],
+) -> dict[str, dict[str, object]]:
+    tags_by_target: dict[str, dict[str, object]] = {}
+    nodes = runtime_bundle.driver.graph.nodes
+    catalog = runtime_bundle.catalog
+    for target_name in _unique_targets(targets):
+        target = catalog.targets.get(target_name)
+        if target is None:
+            continue
+        tags = _extract_node_tags(nodes.get(target.anchor_node))
+        if tags is None:
+            continue
+        tags_by_target[target_name] = tags
+    return tags_by_target
+
+
+def _resolve_tag_runtime_bundle(
+    outcome: _BuildExecutionOutcome | None,
+    runtime_bundle: RuntimeBundle | None,
+) -> RuntimeBundle | None:
+    if outcome is not None and outcome.result.runtime is not None:
+        return outcome.result.runtime
+    return runtime_bundle
+
+
+def _tag_targets_for_execution(
+    execution: BuildExecutionArgs,
+    outcome: _BuildExecutionOutcome | None,
+) -> list[str]:
+    if execution.run_mode is RunMode.DRY_RUN or outcome is None:
+        return list(execution.goals)
+    return _unique_targets(
+        list(outcome.result.computed_targets)
+        + list(outcome.result.skipped_targets)
+        + list(outcome.result.failed_targets)
+    )
+
+
+def _resolve_build_target_tags(
+    execution: BuildExecutionArgs,
+    outcome: _BuildExecutionOutcome | None,
+    *,
+    format_options: _BuildRunFormatOptions | None,
+) -> dict[str, dict[str, object]] | None:
+    if format_options is None or not format_options.show_tags:
+        return None
+    tag_runtime = _resolve_tag_runtime_bundle(outcome, format_options.runtime_bundle)
+    if tag_runtime is None:
+        return None
+    target_tags = _collect_target_tags(
+        tag_runtime,
+        targets=_tag_targets_for_execution(execution, outcome),
+    )
+    return target_tags or None
+
+
 def _build_run_result(
     ctx: CommandContext,
     *,
@@ -1155,6 +1290,10 @@ def _build_run_result(
             execution_args,
             gateway=gateway,
             telemetry_state=telemetry_state,
+            format_options=_BuildRunFormatOptions(
+                runtime_bundle=runtime_bundle,
+                show_tags=params.show_tags,
+            ),
         )
 
     return result, runtime, goals
@@ -1377,6 +1516,7 @@ def _execute_and_format_result(
     *,
     gateway: StorageGateway | None = None,
     telemetry_state: _BuildRunTelemetryState | None = None,
+    format_options: _BuildRunFormatOptions | None = None,
 ) -> CliResult[BuildRunResult]:
     """Execute build and format result.
 
@@ -1390,6 +1530,8 @@ def _execute_and_format_result(
         Optional pre-opened gateway to reuse for execution.
     telemetry_state
         Optional telemetry state to populate with execution metadata.
+    format_options
+        Optional formatting options for tag metadata output.
 
     Returns
     -------
@@ -1397,40 +1539,16 @@ def _execute_and_format_result(
         Build result.
     """
     try:
-        if gateway is None:
-            with runtime_gateway(
-                runtime,
-                read_only=False,
-                validation_mode=execution.validation_mode,
-            ) as runtime_gateway_obj:
-                outcome = _execute_build_hamilton(runtime, runtime_gateway_obj, execution)
-                if (
-                    execution.publish_serving_snapshot
-                    and execution.run_mode is RunMode.EXECUTE
-                    and outcome is not None
-                    and not outcome.result.failed_targets
-                ):
-                    _publish_serving_snapshot_from_build(
-                        runtime,
-                        runtime_gateway_obj,
-                        run_id=outcome.result.run_id,
-                    )
-        else:
-            outcome = _execute_build_hamilton(runtime, gateway, execution)
-            if (
-                execution.publish_serving_snapshot
-                and execution.run_mode is RunMode.EXECUTE
-                and outcome is not None
-                and not outcome.result.failed_targets
-            ):
-                _publish_serving_snapshot_from_build(
-                    runtime,
-                    gateway,
-                    run_id=outcome.result.run_id,
-                )
+        outcome = _execute_build_outcome(runtime, execution, gateway=gateway)
     except Exception as exc:
         LOG.exception("build.run.error")
         return fail_execution_failed("build", str(exc))
+
+    target_tags = _resolve_build_target_tags(
+        execution,
+        outcome,
+        format_options=format_options,
+    )
 
     if execution.run_mode is RunMode.DRY_RUN or outcome is None:
         return CliResult.ok(
@@ -1439,6 +1557,7 @@ def _execute_and_format_result(
                 skipped=[],
                 failed=[],
                 duration_seconds=0.0,
+                target_tags=target_tags,
             )
         )
 
@@ -1464,6 +1583,7 @@ def _execute_and_format_result(
             failed=list(outcome.result.failed_targets),
             duration_seconds=outcome.result.duration_ms / 1000.0,
             cache=cache_report,
+            target_tags=target_tags,
         )
     )
 

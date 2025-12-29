@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.core.schemas.primitives import column_type_base
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
 from codeintel.serving.semantic.models import FilterSpec, FilterValue
 from codeintel.serving.semantic.specs import SemanticQuerySpec
@@ -170,7 +171,8 @@ def _build_comparison_predicate(
     if isinstance(value, list):
         msg = f"{op} operator does not support list value"
         raise SqlglotQueryBuilderError(msg)
-    if op in _ORDERING_OPS and column_type == "VARCHAR":
+    base = column_type_base(column_type) if column_type is not None else None
+    if op in _ORDERING_OPS and base == "VARCHAR":
         msg = f"Operator {op} is not supported for string columns"
         raise SqlglotQueryBuilderError(msg)
     literal = _literal_expr(value)
@@ -199,7 +201,8 @@ def _build_in_predicate(
     if not isinstance(value, list):
         msg = "IN operator requires list value"
         raise SqlglotQueryBuilderError(msg)
-    if column_type == "JSON":
+    base = column_type_base(column_type) if column_type is not None else None
+    if base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
         msg = "IN operator is not supported for JSON columns"
         raise SqlglotQueryBuilderError(msg)
     if not value:
@@ -218,7 +221,8 @@ def _build_string_predicate(
     if not isinstance(value, str):
         msg = f"{op} operator requires string value"
         raise SqlglotQueryBuilderError(msg)
-    if column_type is not None and column_type != "VARCHAR":
+    base = column_type_base(column_type) if column_type is not None else None
+    if base is not None and base != "VARCHAR":
         msg = f"{op} operator is only supported for VARCHAR columns"
         raise SqlglotQueryBuilderError(msg)
     func_name = "contains" if op == "contains" else "starts_with"

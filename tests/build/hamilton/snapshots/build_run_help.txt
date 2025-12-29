@@ -7,6 +7,10 @@ Build targets with automatic dependency resolution.
 │   --empty-targets             call_graph). [env var:                         │
 │                               CODEINTEL_BUILD_RUN_TARGETS,                   │
 │                               CODEINTEL_BUILD_RUN_TARGETS] [default: (none)] │
+│ TAG --tag --empty-tag         Filter by Hamilton tags (key=value or key,     │
+│                               repeatable). [env var:                         │
+│                               CODEINTEL_BUILD_RUN_TAGS,                      │
+│                               CODEINTEL_BUILD_RUN_TAG] [default: (none)]     │
 │ MODULE --module -m            Build all targets in a module (ingestion,      │
 │                               graphs, analytics, export). [env var:          │
 │                               CODEINTEL_BUILD_RUN_MODULE,                    │
@@ -26,11 +30,6 @@ Build targets with automatic dependency resolution.
 │                               CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS,          │
 │                               CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS]          │
 │                               [default: false]                               │
-│ STRICT-CONTRACTS              Fail if target writes outside declared         │
-│   --strict-contracts          contract. [env var:                            │
-│                               CODEINTEL_BUILD_RUN_STRICT_CONTRACTS,          │
-│                               CODEINTEL_BUILD_RUN_STRICT_CONTRACTS]          │
-│                               [default: false]                               │
 │ VALIDATION-MODE               Contract validation mode: lenient, strict, or  │
 │   --validation-mode           off. [env var:                                 │
 │                               CODEINTEL_BUILD_RUN_VALIDATION_MODE,           │
@@ -42,6 +41,11 @@ Build targets with automatic dependency resolution.
 │                               CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT,  │
 │                               CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT]  │
 │                               [default: false]                               │
+│ SHOW-TAGS --show-tags         Include Hamilton tag metadata in build         │
+│                               outputs. [env var:                             │
+│                               CODEINTEL_BUILD_RUN_SHOW_TAGS,                 │
+│                               CODEINTEL_BUILD_RUN_SHOW_TAGS] [default:       │
+│                               false]                                         │
 │ PARALLEL-BACKEND              Parallel execution backend.                    │
 │   --parallel-backend                                                         │
 │                               Options: sequential (default, safest);         │
@@ -77,6 +81,19 @@ Build targets with automatic dependency resolution.
 │                               CODEINTEL_BUILD_RUN_CACHE_REPORT,              │
 │                               CODEINTEL_BUILD_RUN_CACHE_REPORT] [default:    │
 │                               false]                                         │
+│ ENABLE-PLUGIN                 Enable plugin packs by name (repeatable). [env │
+│   --enable-plugin             var: CODEINTEL_BUILD_RUN_ENABLE_PLUGIN,        │
+│   --empty-enable-plugin       CODEINTEL_BUILD_RUN_ENABLE_PLUGIN] [default:   │
+│                               (none)]                                        │
+│ DISABLE-PLUGIN                Disable plugin packs by name (repeatable).     │
+│   --disable-plugin            [env var: CODEINTEL_BUILD_RUN_DISABLE_PLUGIN,  │
+│   --empty-disable-plugin      CODEINTEL_BUILD_RUN_DISABLE_PLUGIN] [default:  │
+│                               (none)]                                        │
+│ NO-WORKSPACE-TARGETS          Disable loading workspace targets from         │
+│   --no-workspace-targets      codeintel_targets/. [env var:                  │
+│                               CODEINTEL_BUILD_RUN_NO_WORKSPACE_TARGETS,      │
+│                               CODEINTEL_BUILD_RUN_NO_WORKSPACE_TARGETS]      │
+│                               [default: false]                               │
 │ PROGRESS --progress           Show progress bar during execution. [env var:  │
 │   --no-progress               CODEINTEL_BUILD_RUN_PROGRESS,                  │
 │                               CODEINTEL_BUILD_RUN_PROGRESS] [default: false] │
