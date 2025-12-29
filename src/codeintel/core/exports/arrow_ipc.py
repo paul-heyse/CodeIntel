@@ -184,7 +184,7 @@ def _merge_schema_metadata(
     merged = dict(existing)
     encoded = _encode_metadata(metadata)
     for key, value in encoded.items():
-        if not overwrite and key in merged and not key.startswith(b"codeintel."):
+        if not overwrite and key in merged:
             continue
         merged[key] = value
     return schema.with_metadata(merged)

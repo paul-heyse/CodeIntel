@@ -354,9 +354,7 @@ def _requires_factory_args(factory: object) -> bool:
 def _materializer_from_object(obj: object, *, source: str) -> object:
     if inspect.isfunction(obj) or inspect.isclass(obj):
         if _requires_factory_args(obj):
-            msg = (
-                f"Materializer {source} requires arguments; supply an instance or no-arg factory."
-            )
+            msg = f"Materializer {source} requires arguments; supply an instance or no-arg factory."
             raise ValueError(msg)
         return obj()
     return obj

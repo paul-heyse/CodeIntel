@@ -168,6 +168,7 @@ def test_build_run_help() -> None:
     expect_in("--all", result.stdout)
     expect_in("--dry-run", result.stdout)
     expect_in("--force", result.stdout)
+    expect_in("--show-tags", result.stdout)
 
 
 @pytest.mark.xdist_group("cli_shared_flags")

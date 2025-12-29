@@ -14,6 +14,7 @@ from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.schemas.primitives import column_type_base, normalize_column_type
 from codeintel.serving.semantic.datasets import (
     DatasetScannerOptions,
     dataset_filter_expression,
@@ -662,7 +663,7 @@ def _duckdb_string_unary_expr(
     column = _column_name(column_expr)
     _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
     column_type = column_types.get(column) if column_types is not None else None
-    if column_type is not None and column_type != "VARCHAR":
+    if column_type is not None and column_type_base(column_type) != "VARCHAR":
         msg = f"{func_name} is only supported for VARCHAR columns"
         raise DuckDBRelationQueryBuilderError(msg)
     return FunctionExpression(func_name, ColumnExpression(column))
@@ -1032,13 +1033,14 @@ def _validate_operator(*, op: str, column_type: ColumnType | None) -> None:
             f"Operator {op} is not supported for column type {column_type or _UNKNOWN_COLUMN_TYPE}"
         )
         raise DuckDBRelationQueryBuilderError(msg)
-    if op in _ORDERING_OPS and column_type == "VARCHAR":
+    base = column_type_base(column_type) if column_type is not None else None
+    if op in _ORDERING_OPS and base == "VARCHAR":
         msg = f"Operator {op} is not supported for string columns"
         raise DuckDBRelationQueryBuilderError(msg)
-    if op == "in" and column_type == "JSON":
+    if op == "in" and base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
         msg = "IN operator is not supported for JSON columns"
         raise DuckDBRelationQueryBuilderError(msg)
-    if op in _STRING_OPS and column_type is not None and column_type != "VARCHAR":
+    if op in _STRING_OPS and base is not None and base != "VARCHAR":
         msg = f"{op} operator is only supported for VARCHAR columns"
         raise DuckDBRelationQueryBuilderError(msg)
 
@@ -1136,12 +1138,15 @@ _DECIMAL_38_0 = "DECIMAL(38,0)"
 def _duckdb_type_for_column(column_type: ColumnType | None) -> DuckDBPyType | None:
     if column_type is None:
         return None
-    normalized = str(column_type).upper()
-    if normalized == _DECIMAL_38_0:
+    normalized = normalize_column_type(str(column_type))
+    base = column_type_base(normalized)
+    if normalized.upper().replace(" ", "") == _DECIMAL_38_0:
         return duckdb.sqltype(_DECIMAL_38_0)
-    if normalized == "DECIMAL":
+    if base == "DECIMAL":
+        if normalized.upper().startswith("DECIMAL("):
+            return duckdb.sqltype(normalized)
         return duckdb.sqltype("DECIMAL")
-    if normalized.startswith(("STRUCT", "MAP", "LIST")):
+    if base in {"STRUCT", "MAP", "LIST", "UNION"}:
         return duckdb.sqltype(normalized)
     type_map: dict[str, DuckDBPyType] = {
         "BOOLEAN": duckdb.sqltype("BOOLEAN"),
@@ -1153,18 +1158,18 @@ def _duckdb_type_for_column(column_type: ColumnType | None) -> DuckDBPyType | No
         "TIMESTAMPTZ": duckdb.sqltype("TIMESTAMPTZ"),
         "JSON": duckdb.sqltype("JSON"),
     }
-    return type_map.get(normalized)
+    return type_map.get(base)
 
 
 def _typed_constant(value: FilterValue, *, column_type: ColumnType | None) -> Expression:
     literal_value: object = value
-    if column_type == "JSON":
+    base = column_type_base(column_type) if column_type is not None else None
+    if base == "JSON":
         literal_value = normalize_duckdb_json_value(value)
     literal = ConstantExpression(literal_value)
     if column_type is None:
         return literal
-    normalized = str(column_type).upper()
-    if normalized in {"BOOLEAN", "INTEGER", "BIGINT", "DOUBLE", "VARCHAR"}:
+    if base in {"BOOLEAN", "INTEGER", "BIGINT", "DOUBLE", "VARCHAR"}:
         return literal
     duckdb_type = _duckdb_type_for_column(column_type)
     if duckdb_type is None:
@@ -1182,7 +1187,8 @@ def _build_comparison_predicate(
     if isinstance(value, list):
         msg = f"{op} operator does not support list value"
         raise DuckDBRelationQueryBuilderError(msg)
-    if op in _ORDERING_OPS and column_type == "VARCHAR":
+    base = column_type_base(column_type) if column_type is not None else None
+    if op in _ORDERING_OPS and base == "VARCHAR":
         msg = f"Operator {op} is not supported for string columns"
         raise DuckDBRelationQueryBuilderError(msg)
     literal = _typed_constant(value, column_type=column_type)
@@ -1211,7 +1217,8 @@ def _build_in_predicate(
     if not isinstance(value, list):
         msg = "IN operator requires list value"
         raise DuckDBRelationQueryBuilderError(msg)
-    if column_type == "JSON":
+    base = column_type_base(column_type) if column_type is not None else None
+    if base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
         msg = "IN operator is not supported for JSON columns"
         raise DuckDBRelationQueryBuilderError(msg)
     if not value:
@@ -1230,7 +1237,8 @@ def _build_string_predicate(
     if not isinstance(value, str):
         msg = f"{op} operator requires string value"
         raise DuckDBRelationQueryBuilderError(msg)
-    if column_type is not None and column_type != "VARCHAR":
+    base = column_type_base(column_type) if column_type is not None else None
+    if base is not None and base != "VARCHAR":
         msg = f"{op} operator is only supported for VARCHAR columns"
         raise DuckDBRelationQueryBuilderError(msg)
     literal = _typed_constant(value, column_type=column_type)

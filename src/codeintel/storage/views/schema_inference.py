@@ -11,7 +11,7 @@ from sqlglot.errors import ParseError
 from sqlglot.optimizer import annotate_types, qualify
 from sqlglot.schema import MappingSchema
 
-from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
@@ -78,17 +78,19 @@ _STRING_TYPES = {
     exp.DataType.Type.FIXEDSTRING,
     exp.DataType.Type.UUID,
 }
-_JSON_TYPES = {
-    exp.DataType.Type.JSON,
-    exp.DataType.Type.JSONB,
-    exp.DataType.Type.OBJECT,
-    exp.DataType.Type.VARIANT,
+_NESTED_TYPES = {
     exp.DataType.Type.ARRAY,
     exp.DataType.Type.LIST,
     exp.DataType.Type.MAP,
     exp.DataType.Type.STRUCT,
     exp.DataType.Type.SET,
     exp.DataType.Type.UNION,
+}
+_JSON_TYPES = {
+    exp.DataType.Type.JSON,
+    exp.DataType.Type.JSONB,
+    exp.DataType.Type.OBJECT,
+    exp.DataType.Type.VARIANT,
     exp.DataType.Type.SUPER,
 }
 _TIMESTAMPTZ_TYPES = {exp.DataType.Type.TIMESTAMPTZ, exp.DataType.Type.TIMESTAMPLTZ}
@@ -348,6 +350,13 @@ def _json_type(data_type: exp.DataType) -> ColumnType | None:
     return "JSON" if data_type.this in _JSON_TYPES else None
 
 
+def _nested_type(data_type: exp.DataType) -> ColumnType | None:
+    if data_type.this not in _NESTED_TYPES:
+        return None
+    sql = data_type.sql(dialect=DUCKDB_DIALECT)
+    return normalize_column_type(sql)
+
+
 def _timestamptz_type(data_type: exp.DataType) -> ColumnType | None:
     return "TIMESTAMPTZ" if data_type.this in _TIMESTAMPTZ_TYPES else None
 
@@ -364,6 +373,7 @@ _SQLGLOT_TYPE_RESOLVERS: tuple[Callable[[exp.DataType], ColumnType | None], ...]
     _float_type,
     _decimal_type,
     _string_type,
+    _nested_type,
     _json_type,
     _timestamptz_type,
     _timestamp_type,

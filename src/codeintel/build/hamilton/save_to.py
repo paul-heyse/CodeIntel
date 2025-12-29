@@ -7,9 +7,11 @@ as ``MaterializationResult`` at the DAG boundary.
 
 from __future__ import annotations
 
+import types
+import typing
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAliasType, TypeGuard, cast, get_args, get_origin
 
 import hamilton.node as h_node
 from hamilton.function_modifiers.adapters import (
@@ -346,16 +348,83 @@ def _resolve_metadata_node_name(
 
 def _resolve_saver_class(
     *,
-    node_type: type[object],
+    node_type: object,
     saver_classes: Sequence[type[AdapterCommon]],
     fn: Callable[..., object],
 ) -> type[AdapterCommon]:
-    node_type_cast = cast("type[type]", node_type)
+    normalized_type = _normalize_node_type(node_type)
+    node_type_cast = cast("type[type]", normalized_type)
     saver_cls = resolve_adapter_class(node_type_cast, list(saver_classes))
     if saver_cls is None:
         msg = f"No saver class found for type: {node_type!r} (fn={fn.__qualname__})"
         raise InvalidDecoratorException(msg)
     return saver_cls
+
+
+def _normalize_node_type(node_type: object) -> object:
+    resolved = _resolve_type_alias(node_type)
+    origin = get_origin(resolved)
+    if origin in {types.UnionType, typing.Union}:
+        args = _flatten_union_args(get_args(resolved))
+        if not args:
+            return resolved
+        normalized_args = [_resolve_type_alias(arg) for arg in args]
+        unique_args = _dedupe_args(normalized_args)
+        if len(unique_args) == 1:
+            return unique_args[0]
+        unionable_args = _coerce_unionable_args(unique_args)
+        if unionable_args is None:
+            return resolved
+        normalized = unionable_args[0]
+        for arg in unionable_args[1:]:
+            normalized |= arg
+        return normalized
+    return resolved
+
+
+def _resolve_type_alias(type_: object) -> object:
+    if isinstance(type_, TypeAliasType):
+        return _resolve_type_alias(type_.__value__)
+    return type_
+
+
+def _flatten_union_args(args: tuple[object, ...]) -> list[object]:
+    flattened: list[object] = []
+    for arg in args:
+        resolved = _resolve_type_alias(arg)
+        origin = get_origin(resolved)
+        if origin in {types.UnionType, typing.Union}:
+            flattened.extend(get_args(resolved))
+        else:
+            flattened.append(resolved)
+    return flattened
+
+
+def _dedupe_args(args: list[object]) -> list[object]:
+    seen: set[object] = set()
+    unique: list[object] = []
+    for arg in args:
+        if arg in seen:
+            continue
+        unique.append(arg)
+        seen.add(arg)
+    return unique
+
+
+type _UnionableType = type[object] | types.UnionType
+
+
+def _coerce_unionable_args(args: list[object]) -> list[_UnionableType] | None:
+    unionable: list[_UnionableType] = []
+    for arg in args:
+        if not _is_unionable_type(arg):
+            return None
+        unionable.append(arg)
+    return unionable
+
+
+def _is_unionable_type(value: object) -> TypeGuard[_UnionableType]:
+    return isinstance(value, (type, types.UnionType))
 
 
 def _resolve_saver_factory(

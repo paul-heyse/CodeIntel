@@ -102,6 +102,9 @@ def _load_build_settings() -> BuildSettings:
         return get_bool(name, default=None)
 
     dictionary_max_cardinality = optional_int("CODEINTEL_ARROW_DATASET_DICT_MAX_CARDINALITY")
+    polars_streaming = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING")
+    polars_streaming_fallback = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING_FALLBACK")
+    polars_flags = split_csv(get_str("CODEINTEL_BUILD_POLARS_QUERY_OPT_FLAGS", default=None))
     return BuildSettings(
         engine_version=_resolve_engine_version(),
         export_audit=ExportAuditSettings(
@@ -124,6 +127,13 @@ def _load_build_settings() -> BuildSettings:
                 optional_bool("CODEINTEL_ARROW_DATASET_ENABLE_SINK_PARQUET") or True
             ),
         ),
+        polars_profile=bool(optional_bool("CODEINTEL_BUILD_POLARS_PROFILE") or False),
+        polars_inspect=bool(optional_bool("CODEINTEL_BUILD_POLARS_INSPECT") or False),
+        polars_query_opt_flags=tuple(polars_flags),
+        polars_streaming=polars_streaming if polars_streaming is not None else True,
+        polars_streaming_fallback=polars_streaming_fallback
+        if polars_streaming_fallback is not None
+        else True,
     )
 
 

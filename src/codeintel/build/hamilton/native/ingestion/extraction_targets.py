@@ -15,11 +15,11 @@ The targets share a common pattern:
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass, field
 
 import polars as pl
 
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -29,21 +29,16 @@ from codeintel.build.hamilton.native.ingestion.frame_utils import (
 )
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
-    RelationTableSaveSpec,
-    SaverContext,
-    ToolFinalizeContext,
+    TableOutputSpec,
     ToolRunContext,
-    finalize_target_from_materializations,
+    ToolTargetSpec,
+    attach_tool_target_template,
     run_tool_step,
-    save_relation_table,
 )
-from codeintel.build.hamilton.native.target_decorators import (
-    TargetSpecDescriptor,
-    codeintel_target,
-)
+from codeintel.build.hamilton.native.patterns.tool_target import TabularByTable
+from codeintel.build.hamilton.native.target_decorators import TargetSpecDescriptor
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -56,7 +51,6 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
-    MaterializationResult,
     DagCatalog,
     TargetRunRecord,
     ModuleRecord,
@@ -75,19 +69,6 @@ CST_TABLE_KEYS = (CST_NODES_TABLE_KEY,)
 
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
 DOCSTRINGS_TABLE_KEYS = (DOCSTRINGS_TABLE_KEY,)
-
-AST_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=AST_TARGET_NAME,
-)
-CST_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=CST_TARGET_NAME,
-)
-DOCSTRINGS_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=DOCSTRINGS_TARGET_NAME,
-)
 
 
 @dataclass(frozen=True)
@@ -257,7 +238,6 @@ def _coerce_docstrings_output(
     )
 
 
-@tag_tool(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast__run(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -303,18 +283,20 @@ def t__ast__run(
         )
 
     output = run_tool_step(context=context, run=_execute)
-    return _coerce_ast_output(output, warnings)
+    coerced = _coerce_ast_output(output, warnings)
+    for warning in coerced.result.warnings:
+        log.warning("AST extraction warning: %s", warning)
+    return coerced
 
 
-@tag_compute(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast__ingest(
     t__ast__run: AstToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
+) -> IngestStep[TabularByTable]:
     """Package AST rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, pl.LazyFrame]]
+    IngestStep[TabularByTable]
         Ingest result with table frames.
     """
     result = t__ast__run.result
@@ -347,145 +329,6 @@ def t__ast__ingest(
     )
 
 
-@save_relation_table(
-    context=AST_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=AST_NODES_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=AST_TARGET_NAME, target_="ast__node_rows")
-def ast__node_rows(
-    t__ast__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
-    """Extract rows for core.ast_nodes.
-
-    Returns
-    -------
-    pl.LazyFrame | None
-        Lazy frame for core.ast_nodes, or None when skipped/failed.
-
-    Raises
-    ------
-    ValueError
-        If the ingest payload is missing expected row data.
-    """
-    if t__ast__ingest.result.skipped or not t__ast__ingest.result.success:
-        return None
-
-    payload = t__ast__ingest.payload
-    if payload is None:
-        msg = "Missing AST ingest payload"
-        raise ValueError(msg)
-    frame = payload.get(AST_NODES_TABLE_KEY)
-    if frame is None:
-        msg = f"Missing frame for {AST_NODES_TABLE_KEY}"
-        raise ValueError(msg)
-    return frame
-
-
-@save_relation_table(
-    context=AST_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=AST_METRICS_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=AST_TARGET_NAME, target_="ast__metric_rows")
-def ast__metric_rows(
-    t__ast__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
-    """Extract rows for core.ast_metrics.
-
-    Returns
-    -------
-    pl.LazyFrame | None
-        Lazy frame for core.ast_metrics, or None when skipped/failed.
-
-    Raises
-    ------
-    ValueError
-        If the ingest payload is missing expected row data.
-    """
-    if t__ast__ingest.result.skipped or not t__ast__ingest.result.success:
-        return None
-
-    payload = t__ast__ingest.payload
-    if payload is None:
-        msg = "Missing AST ingest payload"
-        raise ValueError(msg)
-    frame = payload.get(AST_METRICS_TABLE_KEY)
-    if frame is None:
-        msg = f"Missing frame for {AST_METRICS_TABLE_KEY}"
-        raise ValueError(msg)
-    return frame
-
-
-@tag_helper(domain="ingestion", target=AST_TARGET_NAME)
-def ast__table_materializations(
-    m__core__ast_nodes: MaterializationResult,
-    m__core__ast_metrics: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect AST materialization results.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table keys to materialization results.
-    """
-    return {
-        AST_NODES_TABLE_KEY: m__core__ast_nodes,
-        AST_METRICS_TABLE_KEY: m__core__ast_metrics,
-    }
-
-
-@tag_helper(domain="ingestion", target=AST_TARGET_NAME)
-def ast__finalize_context(
-    env: BuildEnv,
-    catalog: DagCatalog,
-) -> ToolFinalizeContext:
-    """Build finalization context for the AST target.
-
-    Returns
-    -------
-    ToolFinalizeContext
-        Finalization context for AST extraction.
-    """
-    return ToolFinalizeContext(
-        env=env,
-        catalog=catalog,
-        target_name=AST_TARGET_NAME,
-    )
-
-
-@codeintel_target(
-    domain="ingestion",
-    target=AST_TARGET_NAME,
-    spec=TargetSpecDescriptor(
-        resources=TargetResources(tracker=True, modules=True),
-        execution=CPU_INTENSIVE_EXECUTION,
-    ),
-)
-def t__ast(
-    ast__finalize_context: ToolFinalizeContext,
-    t__ast__run: AstToolOutput,
-    t__ast__ingest: IngestStep[dict[str, pl.LazyFrame]],
-    ast__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Python AST extraction and metrics.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record describing the materialization outcome.
-    """
-    for warning in t__ast__run.result.warnings:
-        log.warning("AST extraction warning: %s", warning)
-
-    return finalize_target_from_materializations(
-        context=ast__finalize_context,
-        tool_step=t__ast__run,
-        ingest_step=t__ast__ingest,
-        artifact_materializations=None,
-        table_materializations=ast__table_materializations,
-    )
-
-
-@tag_tool(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst__run(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -526,18 +369,20 @@ def t__cst__run(
         )
 
     output = run_tool_step(context=context, run=_execute)
-    return _coerce_cst_output(output, warnings)
+    coerced = _coerce_cst_output(output, warnings)
+    for warning in coerced.result.warnings:
+        log.warning("CST extraction warning: %s", warning)
+    return coerced
 
 
-@tag_compute(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst__ingest(
     t__cst__run: CstToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
+) -> IngestStep[TabularByTable]:
     """Package CST rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, pl.LazyFrame]]
+    IngestStep[TabularByTable]
         Ingest result with table frames.
     """
     result = t__cst__run.result
@@ -564,100 +409,6 @@ def t__cst__ingest(
     )
 
 
-@save_relation_table(
-    context=CST_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=CST_NODES_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=CST_TARGET_NAME, target_="cst__node_rows")
-def cst__node_rows(
-    t__cst__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
-    """Extract rows for core.cst_nodes.
-
-    Returns
-    -------
-    pl.LazyFrame | None
-        Lazy frame for core.cst_nodes, or None when skipped/failed.
-
-    Raises
-    ------
-    ValueError
-        If the ingest payload is missing expected row data.
-    """
-    if t__cst__ingest.result.skipped or not t__cst__ingest.result.success:
-        return None
-
-    payload = t__cst__ingest.payload
-    if payload is None:
-        msg = "Missing CST ingest payload"
-        raise ValueError(msg)
-    frame = payload.get(CST_NODES_TABLE_KEY)
-    if frame is None:
-        msg = f"Missing frame for {CST_NODES_TABLE_KEY}"
-        raise ValueError(msg)
-    return frame
-
-
-@tag_helper(domain="ingestion", target=CST_TARGET_NAME)
-def cst__table_materializations(
-    m__core__cst_nodes: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect CST materialization results.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table keys to materialization results.
-    """
-    return {CST_NODES_TABLE_KEY: m__core__cst_nodes}
-
-
-@tag_helper(domain="ingestion", target=CST_TARGET_NAME)
-def cst__finalize_context(
-    env: BuildEnv,
-    catalog: DagCatalog,
-) -> ToolFinalizeContext:
-    """Build finalization context for the CST target.
-
-    Returns
-    -------
-    ToolFinalizeContext
-        Finalization context for CST extraction.
-    """
-    return ToolFinalizeContext(
-        env=env,
-        catalog=catalog,
-        target_name=CST_TARGET_NAME,
-    )
-
-
-@codeintel_target(domain="ingestion", target=CST_TARGET_NAME)
-def t__cst(
-    cst__finalize_context: ToolFinalizeContext,
-    t__cst__run: CstToolOutput,
-    t__cst__ingest: IngestStep[dict[str, pl.LazyFrame]],
-    cst__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Concrete syntax tree extraction.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record describing the materialization outcome.
-    """
-    for warning in t__cst__run.result.warnings:
-        log.warning("CST extraction warning: %s", warning)
-
-    return finalize_target_from_materializations(
-        context=cst__finalize_context,
-        tool_step=t__cst__run,
-        ingest_step=t__cst__ingest,
-        artifact_materializations=None,
-        table_materializations=cst__table_materializations,
-    )
-
-
-@tag_tool(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings__run(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -698,18 +449,20 @@ def t__docstrings__run(
         )
 
     output = run_tool_step(context=context, run=_execute)
-    return _coerce_docstrings_output(output, warnings)
+    coerced = _coerce_docstrings_output(output, warnings)
+    for warning in coerced.result.warnings:
+        log.warning("Docstring extraction warning: %s", warning)
+    return coerced
 
 
-@tag_compute(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings__ingest(
     t__docstrings__run: DocstringsToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
+) -> IngestStep[TabularByTable]:
     """Package docstrings rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, pl.LazyFrame]]
+    IngestStep[TabularByTable]
         Ingest result with table frames.
     """
     result = t__docstrings__run.result
@@ -736,97 +489,56 @@ def t__docstrings__ingest(
     )
 
 
-@save_relation_table(
-    context=DOCSTRINGS_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=DOCSTRINGS_TABLE_KEY),
+_INTENSIVE_SPEC = TargetSpecDescriptor(
+    resources=TargetResources(tracker=True, modules=True),
+    execution=CPU_INTENSIVE_EXECUTION,
 )
-@tag_compute(domain="ingestion", target=DOCSTRINGS_TARGET_NAME, target_="docstrings__rows")
-def docstrings__rows(
-    t__docstrings__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
-    """Extract rows for core.docstrings.
+_AST_TARGET_SPEC = ToolTargetSpec(
+    domain="ingestion",
+    target_name=AST_TARGET_NAME,
+    spec=_INTENSIVE_SPEC,
+    tables=(
+        TableOutputSpec(table_key=AST_NODES_TABLE_KEY, node_name="ast__node_rows"),
+        TableOutputSpec(table_key=AST_METRICS_TABLE_KEY, node_name="ast__metric_rows"),
+    ),
+)
+_CST_TARGET_SPEC = ToolTargetSpec(
+    domain="ingestion",
+    target_name=CST_TARGET_NAME,
+    spec=_INTENSIVE_SPEC,
+    tables=(TableOutputSpec(table_key=CST_NODES_TABLE_KEY, node_name="cst__node_rows"),),
+)
+_DOCSTRINGS_TARGET_SPEC = ToolTargetSpec(
+    domain="ingestion",
+    target_name=DOCSTRINGS_TARGET_NAME,
+    spec=TargetSpecDescriptor(),
+    tables=(TableOutputSpec(table_key=DOCSTRINGS_TABLE_KEY, node_name="docstrings__rows"),),
+)
 
-    Returns
-    -------
-    pl.LazyFrame | None
-        Lazy frame for core.docstrings, or None when skipped/failed.
+_MODULE = sys.modules[__name__]
 
-    Raises
-    ------
-    ValueError
-        If the ingest payload is missing expected row data.
-    """
-    if t__docstrings__ingest.result.skipped or not t__docstrings__ingest.result.success:
-        return None
+attach_tool_target_template(
+    _MODULE,
+    spec=_AST_TARGET_SPEC,
+    run_fn=t__ast__run,
+    ingest_fn=t__ast__ingest,
+)
+attach_tool_target_template(
+    _MODULE,
+    spec=_CST_TARGET_SPEC,
+    run_fn=t__cst__run,
+    ingest_fn=t__cst__ingest,
+)
+attach_tool_target_template(
+    _MODULE,
+    spec=_DOCSTRINGS_TARGET_SPEC,
+    run_fn=t__docstrings__run,
+    ingest_fn=t__docstrings__ingest,
+)
 
-    payload = t__docstrings__ingest.payload
-    if payload is None:
-        msg = "Missing docstrings ingest payload"
-        raise ValueError(msg)
-    frame = payload.get(DOCSTRINGS_TABLE_KEY)
-    if frame is None:
-        msg = f"Missing frame for {DOCSTRINGS_TABLE_KEY}"
-        raise ValueError(msg)
-    return frame
-
-
-@tag_helper(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
-def docstrings__table_materializations(
-    m__core__docstrings: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect docstrings materialization results.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table keys to materialization results.
-    """
-    return {DOCSTRINGS_TABLE_KEY: m__core__docstrings}
-
-
-@tag_helper(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
-def docstrings__finalize_context(
-    env: BuildEnv,
-    catalog: DagCatalog,
-) -> ToolFinalizeContext:
-    """Build finalization context for the docstrings target.
-
-    Returns
-    -------
-    ToolFinalizeContext
-        Finalization context for docstrings.
-    """
-    return ToolFinalizeContext(
-        env=env,
-        catalog=catalog,
-        target_name=DOCSTRINGS_TARGET_NAME,
-    )
-
-
-@codeintel_target(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
-def t__docstrings(
-    docstrings__finalize_context: ToolFinalizeContext,
-    t__docstrings__run: DocstringsToolOutput,
-    t__docstrings__ingest: IngestStep[dict[str, pl.LazyFrame]],
-    docstrings__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Docstring extraction and parsing.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record describing the materialization outcome.
-    """
-    for warning in t__docstrings__run.result.warnings:
-        log.warning("Docstring extraction warning: %s", warning)
-
-    return finalize_target_from_materializations(
-        context=docstrings__finalize_context,
-        tool_step=t__docstrings__run,
-        ingest_step=t__docstrings__ingest,
-        artifact_materializations=None,
-        table_materializations=docstrings__table_materializations,
-    )
+t__ast = _MODULE.t__ast
+t__cst = _MODULE.t__cst
+t__docstrings = _MODULE.t__docstrings
 
 
 __all__ = [

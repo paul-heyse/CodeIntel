@@ -13,6 +13,7 @@ from codeintel.core.schemas.primitives import (
     TableSchema,
     TableWritePolicy,
     WriteMode,
+    normalize_column_type,
 )
 
 
@@ -88,11 +89,11 @@ def _require_bool(value: object, *, field: str) -> bool:
 
 def _parse_column_type(value: object, *, field: str) -> ColumnType:
     type_str = _require_str(value, field=field).strip()
-    allowed = get_args(ColumnType)
-    if type_str not in allowed:
+    try:
+        return normalize_column_type(type_str)
+    except ValueError as exc:
         msg = f"Unsupported column type: {type_str}"
-        raise ValueError(msg)
-    return cast("ColumnType", type_str)
+        raise ValueError(msg) from exc
 
 
 def _write_policy_to_json_obj(policy: TableWritePolicy) -> dict[str, object]:

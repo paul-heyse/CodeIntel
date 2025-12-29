@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.schemas.service import get_schema_service
@@ -29,8 +29,7 @@ class ColumnarRowBuffer:
     def append(self, row: Mapping[str, object]) -> None:
         """Append a row mapping to the buffer."""
         for name, col_type in zip(self.columns, self.column_types, strict=True):
-            normalized_type = cast("ColumnType", col_type)
-            self.data[name].append(normalize_row_value_for_type(row[name], normalized_type))
+            self.data[name].append(normalize_row_value_for_type(row[name], col_type))
         self.row_count += 1
 
     def extend(self, rows: Sequence[Mapping[str, object]]) -> None:

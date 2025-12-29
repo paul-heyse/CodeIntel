@@ -29,6 +29,8 @@ class SchemaDerivation:
     table_key: str
     kind: SchemaDerivationKind
     source: str
+    source_module: str | None = None
+    source_version: str | None = None
     override_schema: TableSchema | None = None
 
 
@@ -408,6 +410,7 @@ def build_schema_index(
     inferable = inference_service.inferable_table_keys()
     derivations: dict[str, SchemaDerivation] = {}
     missing_overrides: list[tuple[str, str]] = []
+    target_cache = catalog.targets
 
     for table_key, output in sorted(catalog.table_outputs.items()):
         override_schema = override_provider.get_table_schema(table_key)
@@ -418,10 +421,13 @@ def build_schema_index(
                 missing_overrides.append((table_key, output.producer_target))
                 continue
             kind = "explicit_override"
+        target = target_cache.get(output.producer_target)
         derivations[table_key] = SchemaDerivation(
             table_key=table_key,
             kind=kind,
             source=output.producer_target,
+            source_module=target.module if target is not None else None,
+            source_version=target.spec_version if target is not None else None,
             override_schema=override_schema,
         )
 

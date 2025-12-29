@@ -10,10 +10,14 @@ import duckdb
 DuckDBConnection = duckdb.DuckDBPyConnection
 DuckDBRelation = duckdb.DuckDBPyRelation
 DuckDBError = duckdb.Error
-ColumnExpression = duckdb.ColumnExpression
 Expression = duckdb.Expression
-ConstantExpression = cast("Callable[[object], Expression]", duckdb.ConstantExpression)
-FunctionExpression = cast("Callable[..., Expression]", duckdb.FunctionExpression)
+type ExpressionFactory = Callable[..., Expression]
+type ColumnExpressionFactory = Callable[[str], Expression]
+type ConstantExpressionFactory = Callable[[object], Expression]
+type FunctionExpressionFactory = Callable[..., Expression]
+ColumnExpression = cast("ColumnExpressionFactory", duckdb.ColumnExpression)
+ConstantExpression = cast("ConstantExpressionFactory", duckdb.ConstantExpression)
+FunctionExpression = cast("FunctionExpressionFactory", duckdb.FunctionExpression)
 DuckDBCatalogException = duckdb.CatalogException
 DuckDBConnectionException = duckdb.ConnectionException
 DuckDBDatabaseError = duckdb.DatabaseError
@@ -23,7 +27,9 @@ DuckDBBinderException = duckdb.BinderException
 
 __all__ = [
     "ColumnExpression",
+    "ColumnExpressionFactory",
     "ConstantExpression",
+    "ConstantExpressionFactory",
     "DuckDBBinderException",
     "DuckDBCatalogException",
     "DuckDBConnection",
@@ -34,5 +40,7 @@ __all__ = [
     "DuckDBProgrammingError",
     "DuckDBRelation",
     "Expression",
+    "ExpressionFactory",
     "FunctionExpression",
+    "FunctionExpressionFactory",
 ]

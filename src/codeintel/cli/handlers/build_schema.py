@@ -30,7 +30,7 @@ from codeintel.cli.errors.results import (
     fail_missing_required,
 )
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
-from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 
 if TYPE_CHECKING:
     from codeintel.build.schemas.diff import ManifestDiffResult
@@ -41,7 +41,6 @@ if TYPE_CHECKING:
 
 _VALID_MODULES: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
 
-_ALLOWED_COLUMN_TYPES: frozenset[str] = frozenset(get_args(ColumnType))
 _ALLOWED_DERIVATION_KINDS: frozenset[str] = frozenset(get_args(ManifestDerivationKind))
 
 
@@ -86,10 +85,11 @@ def _parse_column_type(value: object) -> ColumnType:
     if not isinstance(value, str):
         msg = "Expected string for column type"
         raise TypeError(msg)
-    if value not in _ALLOWED_COLUMN_TYPES:
+    try:
+        return normalize_column_type(value)
+    except ValueError as exc:
         msg = f"Unsupported column type: {value}"
-        raise ValueError(msg)
-    return cast("ColumnType", value)
+        raise ValueError(msg) from exc
 
 
 def _parse_description(value: object, *, ctx: str) -> str | None:
@@ -374,6 +374,18 @@ def _parse_table_provenance(
         table_obj.get("derivation_source"),
         ctx=f"{ctx}.derivation_source",
     )
+    producer_module = _parse_optional_str(
+        table_obj.get("producer_module"),
+        ctx=f"{ctx}.producer_module",
+    )
+    producer_version = _parse_optional_str(
+        table_obj.get("producer_version"),
+        ctx=f"{ctx}.producer_version",
+    )
+    producer_target = _parse_optional_str(
+        table_obj.get("producer_target"),
+        ctx=f"{ctx}.producer_target",
+    )
     if schema_hash is None and derivation_kind is None and derivation_source is None:
         return None
     if schema_hash is None or derivation_kind is None or derivation_source is None:
@@ -383,6 +395,9 @@ def _parse_table_provenance(
         schema_hash=schema_hash,
         derivation_kind=derivation_kind,
         derivation_source=derivation_source,
+        producer_module=producer_module,
+        producer_version=producer_version,
+        producer_target=producer_target,
     )
 
 

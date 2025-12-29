@@ -7,21 +7,280 @@ storage and build layers can depend on them without cycles.
 
 from __future__ import annotations
 
+import datetime as dt
+import re
 from dataclasses import dataclass
-from typing import Literal
+from decimal import Decimal
+from typing import Final, Literal
 
-ColumnType = Literal[
-    "BOOLEAN",
-    "INTEGER",
-    "BIGINT",
-    "DOUBLE",
-    "DECIMAL",
-    "DECIMAL(38,0)",
-    "VARCHAR",
-    "JSON",
-    "TIMESTAMP",
-    "TIMESTAMPTZ",
-]
+ColumnType = str
+
+_DECIMAL_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"^DECIMAL\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)$"
+)
+_ADVANCED_TYPE_PREFIXES: Final[tuple[str, ...]] = ("STRUCT", "LIST", "MAP", "UNION")
+_ALIAS_CANONICAL: Final[dict[str, str]] = {
+    "BOOL": "BOOLEAN",
+    "BOOLEAN": "BOOLEAN",
+    "INT": "INTEGER",
+    "INT4": "INTEGER",
+    "INT32": "INTEGER",
+    "INTEGER": "INTEGER",
+    "SMALLINT": "INTEGER",
+    "TINYINT": "INTEGER",
+    "BIGINT": "BIGINT",
+    "INT64": "BIGINT",
+    "LONG": "BIGINT",
+    "DOUBLE": "DOUBLE",
+    "FLOAT": "DOUBLE",
+    "FLOAT4": "DOUBLE",
+    "FLOAT8": "DOUBLE",
+    "FLOAT64": "DOUBLE",
+    "REAL": "DOUBLE",
+    "DECIMAL": "DECIMAL",
+    "NUMERIC": "DECIMAL",
+    "VARCHAR": "VARCHAR",
+    "TEXT": "VARCHAR",
+    "STRING": "VARCHAR",
+    "CHAR": "VARCHAR",
+    "JSON": "JSON",
+    "TIMESTAMP": "TIMESTAMP",
+    "TIMESTAMP_TZ": "TIMESTAMPTZ",
+    "TIMESTAMP WITH TIME ZONE": "TIMESTAMPTZ",
+    "TIMESTAMPTZ": "TIMESTAMPTZ",
+}
+COLUMN_TYPE_BASE_VALUES: Final[frozenset[str]] = frozenset(
+    {
+        "BOOLEAN",
+        "INTEGER",
+        "BIGINT",
+        "DOUBLE",
+        "DECIMAL",
+        "DECIMAL(38,0)",
+        "VARCHAR",
+        "JSON",
+        "TIMESTAMP",
+        "TIMESTAMPTZ",
+        *_ADVANCED_TYPE_PREFIXES,
+    }
+)
+
+_PYTHON_TYPE_MAP: Final[dict[str, type[object]]] = {
+    "INTEGER": int,
+    "BIGINT": int,
+    "DOUBLE": float,
+    "BOOLEAN": bool,
+    "VARCHAR": str,
+    "JSON": object,
+    "TIMESTAMP": dt.datetime,
+    "TIMESTAMPTZ": dt.datetime,
+    "STRUCT": dict,
+    "MAP": dict,
+    "LIST": list,
+    "UNION": object,
+}
+
+
+def _clean_column_type(value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned:
+        msg = "Column type must be a non-empty string"
+        raise ValueError(msg)
+    return cleaned
+
+
+def _compact_upper(value: str) -> str:
+    return " ".join(value.upper().split())
+
+
+def _normalize_list_suffix(value: str, registry: ColumnTypeRegistry) -> ColumnType | None:
+    if not value.endswith("[]"):
+        return None
+    inner = value[:-2].strip()
+    if not inner:
+        msg = "Column type list syntax requires a base type"
+        raise ValueError(msg)
+    return f"LIST({registry.normalize(inner)})"
+
+
+def _normalize_decimal(compact: str) -> ColumnType | None:
+    match = _DECIMAL_PATTERN.fullmatch(compact)
+    if match is None:
+        return None
+    precision = match.group(1)
+    scale = match.group(2)
+    return f"DECIMAL({precision},{scale})"
+
+
+def _normalize_array(value: str, compact: str) -> ColumnType | None:
+    if not compact.startswith("ARRAY"):
+        return None
+    suffix = value[len("ARRAY") :].strip()
+    if not suffix:
+        msg = "ARRAY column type requires inner type"
+        raise ValueError(msg)
+    return f"LIST{suffix}"
+
+
+def _normalize_advanced(value: str, upper: str) -> ColumnType | None:
+    for prefix in _ADVANCED_TYPE_PREFIXES:
+        if upper.startswith(prefix):
+            return f"{prefix}{value[len(prefix) :]}"
+    return None
+
+
+def _decimal_scale(value: ColumnType) -> int | None:
+    compact = str(value).upper().replace(" ", "")
+    match = _DECIMAL_PATTERN.match(compact)
+    if match is None:
+        return None
+    return int(match.group(2))
+
+
+class ColumnTypeRegistry:
+    """Normalize and interpret column type strings."""
+
+    def normalize(self, value: str) -> ColumnType:
+        """Normalize a column type string.
+
+        Parameters
+        ----------
+        value
+            Raw column type string.
+
+        Returns
+        -------
+        ColumnType
+            Normalized column type string.
+
+        Raises
+        ------
+        TypeError
+            If ``value`` is not a string.
+        ValueError
+            If ``value`` is empty or unsupported.
+        """
+        if not isinstance(value, str):
+            msg = f"Column type must be a string, got {type(value)}"
+            raise TypeError(msg)
+        cleaned = _clean_column_type(value)
+        list_type = _normalize_list_suffix(cleaned, self)
+        if list_type is not None:
+            return list_type
+        upper = cleaned.upper()
+        compact = _compact_upper(cleaned)
+        alias = _ALIAS_CANONICAL.get(compact)
+        if alias is not None:
+            return alias
+        if compact in COLUMN_TYPE_BASE_VALUES:
+            return compact
+        decimal = _normalize_decimal(compact)
+        if decimal is not None:
+            return decimal
+        array_type = _normalize_array(cleaned, compact)
+        if array_type is not None:
+            return array_type
+        advanced = _normalize_advanced(cleaned, upper)
+        if advanced is not None:
+            return advanced
+        msg = f"Unsupported column type: {value}"
+        raise ValueError(msg)
+
+    @staticmethod
+    def base_type(value: ColumnType) -> str:
+        """Return the normalized base type for a column type string.
+
+        Returns
+        -------
+        str
+            Normalized base type.
+        """
+        upper = str(value).strip().upper()
+        if upper.startswith("DECIMAL("):
+            return "DECIMAL"
+        if upper.startswith("ARRAY"):
+            return "LIST"
+        for prefix in _ADVANCED_TYPE_PREFIXES:
+            if upper.startswith(prefix):
+                return prefix
+        return upper
+
+    def is_nested(self, value: ColumnType) -> bool:
+        """Return True when the column type is a nested/complex type.
+
+        Returns
+        -------
+        bool
+            True if the base type is nested.
+        """
+        return self.base_type(value) in _ADVANCED_TYPE_PREFIXES
+
+    def python_type_for(self, value: ColumnType) -> type[object]:
+        """Return the Python type for a column type.
+
+        Returns
+        -------
+        type[object]
+            Python runtime type representing the column values.
+
+        Raises
+        ------
+        ValueError
+            If the column type cannot be mapped.
+        """
+        base = self.base_type(value)
+        if base == "DECIMAL":
+            scale = _decimal_scale(value)
+            if scale == 0:
+                return int
+            return Decimal
+        python_type = _PYTHON_TYPE_MAP.get(base)
+        if python_type is None:
+            msg = f"Unsupported ColumnType for Python mapping: {value}"
+            raise ValueError(msg)
+        return python_type
+
+
+COLUMN_TYPE_REGISTRY = ColumnTypeRegistry()
+
+
+def normalize_column_type(value: str) -> ColumnType:
+    """Normalize a column type string.
+
+    Parameters
+    ----------
+    value
+        Raw column type string.
+
+    Returns
+    -------
+    ColumnType
+        Normalized column type string.
+    """
+    return COLUMN_TYPE_REGISTRY.normalize(value)
+
+
+def column_type_base(value: ColumnType) -> str:
+    """Return the normalized base type for a column type string.
+
+    Returns
+    -------
+    str
+        Normalized base type.
+    """
+    return COLUMN_TYPE_REGISTRY.base_type(value)
+
+
+def column_type_is_nested(value: ColumnType) -> bool:
+    """Return True when the column type is a nested/complex type.
+
+    Returns
+    -------
+    bool
+        True if the base type is nested.
+    """
+    return COLUMN_TYPE_REGISTRY.is_nested(value)
+
 
 WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
@@ -218,11 +477,17 @@ class TableSchema:
 
 
 __all__ = [
+    "COLUMN_TYPE_BASE_VALUES",
+    "COLUMN_TYPE_REGISTRY",
     "Column",
     "ColumnType",
+    "ColumnTypeRegistry",
     "Index",
     "ReplaceScope",
     "TableSchema",
     "TableWritePolicy",
     "WriteMode",
+    "column_type_base",
+    "column_type_is_nested",
+    "normalize_column_type",
 ]

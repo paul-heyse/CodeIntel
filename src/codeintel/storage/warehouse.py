@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
 import sqlglot.expressions as exp
-from duckdb import ColumnExpression, ConstantExpression, ExplainType
+from duckdb import ExplainType
 from sqlglot import parse_one
 from sqlglot.errors import ParseError
 
@@ -35,6 +35,7 @@ from codeintel.core.columnar import (
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.queries.expressions import snapshot_filter
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.snapshot_scoping import RepoCommitScope
@@ -167,10 +168,7 @@ class Warehouse:
             return relation
         if not _relation_has_repo_commit_columns(relation):
             return relation
-        return relation.filter(
-            (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
-            & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
-        )
+        return relation.filter(snapshot_filter(repo=snapshot.repo, commit=snapshot.commit))
 
     def exists(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> bool:
         """Return True if the table/view exists.
@@ -211,10 +209,7 @@ class Warehouse:
         """
         relation = self.gateway.relation_from_table_key(table_key)
         if snapshot is not None and _relation_has_repo_commit_columns(relation):
-            relation = relation.filter(
-                (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
-                & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
-            )
+            relation = relation.filter(snapshot_filter(repo=snapshot.repo, commit=snapshot.commit))
         row = relation.count("*").fetchone()
         return int(row[0]) if row is not None else 0
 
@@ -481,10 +476,7 @@ class Warehouse:
 
 def _relation_has_snapshot_rows(relation: DuckDBRelation, *, repo: str, commit: str) -> bool:
     try:
-        filtered = relation.filter(
-            (ColumnExpression("repo") == ConstantExpression(repo))
-            & (ColumnExpression("commit") == ConstantExpression(commit))
-        )
+        filtered = relation.filter(snapshot_filter(repo=repo, commit=commit))
         return filtered.limit(1).fetchone() is not None
     except DuckDBError:
         return False

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard
 
 import pyarrow as pa
 
@@ -24,6 +25,10 @@ from codeintel.storage.tracking.schema_catalog_compile import (
     compile_schema_catalog_batches,
 )
 from codeintel.storage.tracking.schema_catalog_models import (
+    ColumnStatsEntry,
+    ColumnStatsPayload,
+    DatasetStatsPayload,
+    DerivedSettingsPayload,
     OverrideRegistryRefreshResult,
     SchemaCatalogRequest,
     SchemaManifestRunRecord,
@@ -36,7 +41,7 @@ from codeintel.storage.tracking.schema_catalog_models import (
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
     from collections.abc import Set as AbstractSet
 
     from codeintel.core.manifests import SchemaManifest, TableProvenance
@@ -554,9 +559,9 @@ class SchemaCatalogTracking:
             schema_digest=str(row[5]),
             schema_hash=str(row[6]),
             arrow_schema_ipc_b64=str(row[7]),
-            column_stats=_decode_optional_json_dict(row[8]),
-            dataset_stats=_decode_optional_json_dict(row[9]),
-            derived_settings=_decode_optional_json_dict(row[10]),
+            column_stats=_decode_optional_column_stats(row[8]),
+            dataset_stats=_decode_optional_dataset_stats(row[9]),
+            derived_settings=_decode_optional_derived_settings(row[10]),
             drift_summary=_decode_optional_json_dict(row[11]),
             observed_at=row[12],
         )
@@ -1444,6 +1449,217 @@ def _decode_optional_json_dict(value: object | None) -> dict[str, object] | None
         return None
     decoded = decode_json_dict(value)
     return decoded if decoded else None
+
+
+def _decode_optional_column_stats(value: object | None) -> ColumnStatsPayload | None:
+    decoded = _decode_optional_json_dict(value)
+    if decoded is None:
+        return None
+    payload: ColumnStatsPayload = {}
+    for column_name, entry_raw in decoded.items():
+        if not isinstance(column_name, str):
+            return None
+        entry = _coerce_column_stats_entry(entry_raw)
+        if entry is None:
+            return None
+        payload[column_name] = entry
+    return payload or None
+
+
+def _coerce_column_stats_entry(value: object) -> ColumnStatsEntry | None:
+    if not isinstance(value, Mapping):
+        return None
+    entry: ColumnStatsEntry = {}
+    for key in ("null_count", "non_null_count", "distinct_count_max"):
+        raw = value.get(key)
+        if raw is None:
+            continue
+        if not _is_int(raw):
+            return None
+        entry[key] = raw
+    for key in ("avg_length",):
+        raw = value.get(key)
+        if raw is None:
+            continue
+        if not _is_floatlike(raw):
+            return None
+        entry[key] = float(raw)
+    for key in ("min", "max"):
+        if key in value:
+            entry[key] = value[key]
+    return entry
+
+
+type _DatasetStatsKey = Literal[
+    "row_count",
+    "batch_count",
+    "total_bytes",
+    "manifest_row_count",
+]
+
+
+_DATASET_INT_KEYS: tuple[_DatasetStatsKey, ...] = (
+    "row_count",
+    "batch_count",
+    "total_bytes",
+    "manifest_row_count",
+)
+
+
+def _decode_optional_dataset_stats(value: object | None) -> DatasetStatsPayload | None:
+    decoded = _decode_optional_json_dict(value)
+    if decoded is None:
+        return None
+    payload: DatasetStatsPayload = {}
+    for key in _DATASET_INT_KEYS:
+        if not _apply_optional_dataset_int(payload, decoded, key):
+            return None
+    parquet_stats = decoded.get("parquet_stats")
+    if parquet_stats is not None:
+        parquet_payload = _coerce_string_object_mapping(parquet_stats)
+        if parquet_payload is None:
+            return None
+        payload["parquet_stats"] = parquet_payload
+    return payload or None
+
+
+type _DerivedIntKey = Literal[
+    "dictionary_max_cardinality",
+    "row_group_size",
+    "data_page_size",
+]
+
+
+_DERIVED_INT_KEYS: tuple[_DerivedIntKey, ...] = (
+    "dictionary_max_cardinality",
+    "row_group_size",
+    "data_page_size",
+)
+
+
+def _decode_optional_derived_settings(value: object | None) -> DerivedSettingsPayload | None:
+    decoded = _decode_optional_json_dict(value)
+    if decoded is None:
+        return None
+    payload: DerivedSettingsPayload = {}
+    valid = _apply_optional_str(payload, decoded, "extras_policy") and _apply_optional_str_list(
+        payload, decoded, "dictionary_encode_columns"
+    )
+    if valid:
+        for key in _DERIVED_INT_KEYS:
+            if not _apply_optional_derived_int(payload, decoded, key):
+                valid = False
+                break
+    if valid:
+        valid = _apply_optional_bool(payload, decoded, "unify_dictionaries") and _apply_optional_float(
+            payload, decoded, "avg_row_bytes"
+        )
+    if not valid:
+        return None
+    return payload or None
+
+
+def _coerce_string_object_mapping(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    payload: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            return None
+        payload[key] = item
+    return payload
+
+
+def _apply_optional_dataset_int(
+    payload: DatasetStatsPayload,
+    decoded: Mapping[str, object],
+    key: _DatasetStatsKey,
+) -> bool:
+    raw = decoded.get(key)
+    if raw is None:
+        return True
+    if not _is_int(raw):
+        return False
+    payload[key] = raw
+    return True
+
+
+def _apply_optional_str(
+    payload: DerivedSettingsPayload,
+    decoded: Mapping[str, object],
+    key: Literal["extras_policy"],
+) -> bool:
+    raw = decoded.get(key)
+    if raw is None:
+        return True
+    if not isinstance(raw, str):
+        return False
+    payload[key] = raw
+    return True
+
+
+def _apply_optional_str_list(
+    payload: DerivedSettingsPayload,
+    decoded: Mapping[str, object],
+    key: Literal["dictionary_encode_columns"],
+) -> bool:
+    raw = decoded.get(key)
+    if raw is None:
+        return True
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        return False
+    payload[key] = list(raw)
+    return True
+
+
+def _apply_optional_derived_int(
+    payload: DerivedSettingsPayload,
+    decoded: Mapping[str, object],
+    key: _DerivedIntKey,
+) -> bool:
+    raw = decoded.get(key)
+    if raw is None:
+        return True
+    if not _is_int(raw):
+        return False
+    payload[key] = raw
+    return True
+
+
+def _apply_optional_bool(
+    payload: DerivedSettingsPayload,
+    decoded: Mapping[str, object],
+    key: Literal["unify_dictionaries"],
+) -> bool:
+    raw = decoded.get(key)
+    if raw is None:
+        return True
+    if not isinstance(raw, bool):
+        return False
+    payload[key] = raw
+    return True
+
+
+def _apply_optional_float(
+    payload: DerivedSettingsPayload,
+    decoded: Mapping[str, object],
+    key: Literal["avg_row_bytes"],
+) -> bool:
+    raw = decoded.get(key)
+    if raw is None:
+        return True
+    if not _is_floatlike(raw):
+        return False
+    payload[key] = float(raw)
+    return True
+
+
+def _is_int(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_floatlike(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _append_sample(target: list[str], value: str, *, limit: int) -> None:

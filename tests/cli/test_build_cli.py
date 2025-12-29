@@ -96,6 +96,7 @@ class TestBuildRunHelp:
         expect_in("--module", result.stdout, label="module option")
         expect_in("--dry-run", result.stdout, label="dry-run option")
         expect_in("--force", result.stdout, label="force option")
+        expect_in("--show-tags", result.stdout, label="show-tags option")
         expect_in("--output-format", result.stdout, label="output format option")
 
 

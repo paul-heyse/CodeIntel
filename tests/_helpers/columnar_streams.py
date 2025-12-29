@@ -215,7 +215,7 @@ def _buffer_for_columns(
     resolved_columns = tuple(columns) if columns else tuple(type_by_name)
     default_type: ColumnType = "VARCHAR"
     column_types: tuple[ColumnType, ...] = tuple(
-        cast("ColumnType", type_by_name.get(name, default_type)) for name in resolved_columns
+        type_by_name.get(name, default_type) for name in resolved_columns
     )
     return ColumnarRowBuffer(
         table_key=table_schema.table_key,

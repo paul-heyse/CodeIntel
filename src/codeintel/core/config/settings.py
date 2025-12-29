@@ -38,6 +38,11 @@ class BuildSettings:
     engine_version: str
     export_audit: ExportAuditSettings = field(default_factory=ExportAuditSettings)
     arrow_dataset: ArrowDatasetSettings = field(default_factory=ArrowDatasetSettings)
+    polars_profile: bool = False
+    polars_inspect: bool = False
+    polars_query_opt_flags: tuple[str, ...] = ()
+    polars_streaming: bool = True
+    polars_streaming_fallback: bool = True
 
 
 @dataclass(frozen=True, slots=True)

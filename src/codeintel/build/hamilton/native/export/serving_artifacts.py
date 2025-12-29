@@ -28,12 +28,17 @@ from hamilton.function_modifiers import source, value
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRelationSaver, FileArtifactSaver
+from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.ingestion.frame_utils import lazyframe_for_table_columns
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns import (
+    RelationTableSaveSpec,
+    SaverContext,
+    save_relation_table,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -70,6 +75,11 @@ SERVING_ARTIFACT_BUILDSPEC = "buildspec"
 SERVING_ARTIFACT_ENVIRONMENT = "environment"
 SERVING_ARTIFACT_DATASET_MANIFEST_PATHS = "dataset_manifest_paths"
 SCHEMA_INFERENCE_ERRORS_TABLE_KEY = "core.schema_inference_errors"
+
+SERVING_ARTIFACTS_SAVE_CONTEXT = SaverContext(
+    domain="export",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
+)
 
 
 def _package_version(name: str) -> str:
@@ -314,18 +324,9 @@ def serving_artifacts__dataset_manifest_paths(env: BuildEnv, catalog: DagCatalog
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRelationSaver],
-    output_name_=materialize_node(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
-    env=source("env"),
-    catalog=source("catalog"),
-    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
-    table_key=value(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
-)
-@tag_compute(
-    domain="export",
-    target=SERVING_ARTIFACTS_TARGET_NAME,
-    target_="serving_artifacts__schema_inference_errors_rows",
+@save_relation_table(
+    context=SERVING_ARTIFACTS_SAVE_CONTEXT,
+    spec=RelationTableSaveSpec(table_key=SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
 )
 def serving_artifacts__schema_inference_errors_rows(
     env: BuildEnv,

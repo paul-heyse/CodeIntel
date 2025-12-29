@@ -14,7 +14,7 @@ from starlette.responses import StreamingResponse
 
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
 from codeintel.serving.export.formats import mime_type_for_export_format
-from codeintel.serving.export.ndjson import iter_ndjson_bytes
+from codeintel.serving.export.ndjson import iter_ndjson_bytes, iter_ndjson_bytes_from_reader
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -70,6 +70,33 @@ def ndjson_response(
     )
 
 
+def _response_headers(
+    *,
+    filename: str | None,
+    headers: Mapping[str, str] | None,
+) -> dict[str, str]:
+    response_headers: dict[str, str] = {}
+    if filename:
+        response_headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if headers is not None:
+        response_headers.update({str(k): str(v) for k, v in headers.items()})
+    return response_headers
+
+
+def _ipc_stream_supported() -> bool:
+    stream_fn = getattr(pa.ipc, "new_stream", None)
+    return callable(stream_fn)
+
+
+def _fallback_filename(filename: str | None) -> str | None:
+    if filename is None:
+        return None
+    for suffix in (".arrow", ".ipc", ".feather"):
+        if filename.endswith(suffix):
+            return f"{filename[: -len(suffix)]}.jsonl"
+    return filename
+
+
 @dataclass(frozen=True, slots=True)
 class ArrowIpcResponseOptions:
     """Options for Arrow IPC streaming responses."""
@@ -102,11 +129,20 @@ def arrow_ipc_response(
         Streaming response with Arrow IPC stream content type.
     """
     resolved = options or ArrowIpcResponseOptions()
-    response_headers: dict[str, str] = {}
-    if resolved.filename:
-        response_headers["Content-Disposition"] = f'attachment; filename="{resolved.filename}"'
-    if resolved.headers is not None:
-        response_headers.update({str(k): str(v) for k, v in resolved.headers.items()})
+    if isinstance(source, pa.RecordBatchReader) and not _ipc_stream_supported():
+        response_headers = _response_headers(
+            filename=_fallback_filename(resolved.filename),
+            headers=resolved.headers,
+        )
+        return StreamingResponse(
+            iter_ndjson_bytes_from_reader(source),
+            media_type=mime_type_for_export_format("jsonl"),
+            headers=response_headers,
+        )
+    response_headers = _response_headers(
+        filename=resolved.filename,
+        headers=resolved.headers,
+    )
     if isinstance(source, pa.RecordBatchReader):
         payload = iter_ipc_stream(
             source,

@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast, get_args
+from typing import TYPE_CHECKING, get_args
 
 import duckdb
 
@@ -525,7 +525,7 @@ def _columns_from_raw(columns_raw: list[object]) -> list[Column] | None:
         columns.append(
             Column(
                 name=col_name,
-                type=cast("ColumnType", col_type),
+                type=col_type,
                 nullable=bool(col.get("nullable", True)),
                 description=description_str,
             )

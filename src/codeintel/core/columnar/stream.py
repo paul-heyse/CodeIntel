@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import pyarrow as pa
 
+from codeintel.core.columnar.polars_collect import (
+    PolarsExecutionOptions,
+    collect_batches,
+    collect_lazyframe,
+)
 from codeintel.core.columnar.schema import unify_schema_for_batches
 
 if TYPE_CHECKING:
@@ -23,6 +28,10 @@ try:
     import polars as pl
 except ImportError:  # pragma: no cover
     pl = None
+try:
+    from polars.exceptions import PolarsError
+except ImportError:  # pragma: no cover
+    PolarsError = Exception
 
 
 @runtime_checkable
@@ -153,6 +162,10 @@ class LazyFrameStream:
     """ColumnarStream adapter for Polars LazyFrame."""
 
     lazyframe: PolarsLazyFrame
+    query_opt_flags: object | None = None
+    streaming: bool = True
+    streaming_fallback: bool = True
+    inspect: bool = False
 
     @property
     def schema(self) -> pa.Schema:
@@ -211,12 +224,26 @@ class LazyFrameStream:
             raise TypeError(msg)
 
         def _iter_batches() -> Iterator[pa.RecordBatch]:
-            for frame in self.lazyframe.collect_batches(
-                chunk_size=batch_size,
-                engine="streaming",
-            ):
-                table = frame.to_arrow()
-                yield from table.to_batches()
+            if self.inspect:
+                _maybe_inspect(self.lazyframe)
+            streaming = self.streaming
+            try:
+                yield from _collect_batches(
+                    self.lazyframe,
+                    batch_size=batch_size,
+                    streaming=streaming,
+                    query_opt_flags=self.query_opt_flags,
+                )
+            except PolarsError:
+                if streaming and self.streaming_fallback:
+                    yield from _collect_batches(
+                        self.lazyframe,
+                        batch_size=batch_size,
+                        streaming=False,
+                        query_opt_flags=self.query_opt_flags,
+                    )
+                else:
+                    raise
 
         return pa.RecordBatchReader.from_batches(self.schema, _iter_batches())
 
@@ -251,7 +278,46 @@ class LazyFrameStream:
         if not isinstance(self.lazyframe, pl.LazyFrame):
             msg = "LazyFrameStream expects a polars.LazyFrame"
             raise TypeError(msg)
-        return self.lazyframe.collect(engine="streaming").to_arrow()
+        if self.inspect:
+            _maybe_inspect(self.lazyframe)
+        options = PolarsExecutionOptions(
+            streaming=self.streaming,
+            query_opt_flags=self.query_opt_flags,
+            inspect=self.inspect,
+            streaming_fallback=self.streaming_fallback,
+        )
+        return collect_lazyframe(self.lazyframe, options=options).to_arrow()
+
+
+def _collect_batches(
+    lazyframe: PolarsLazyFrame,
+    *,
+    batch_size: int,
+    streaming: bool,
+    query_opt_flags: object | None,
+) -> Iterator[pa.RecordBatch]:
+    options = PolarsExecutionOptions(
+        streaming=streaming,
+        query_opt_flags=query_opt_flags,
+    )
+    result = collect_batches(
+        lazyframe,
+        batch_size=batch_size,
+        options=options,
+    )
+    for frame in result:
+        table = frame.to_arrow()
+        yield from table.to_batches()
+
+
+def _maybe_inspect(lazyframe: PolarsLazyFrame) -> None:
+    inspect_fn = getattr(lazyframe, "inspect", None)
+    if not callable(inspect_fn):
+        return
+    try:
+        inspect_fn()
+    except PolarsError:
+        return
 
 
 ColumnarStreamAdapter = RecordBatchReaderStream | LazyFrameStream

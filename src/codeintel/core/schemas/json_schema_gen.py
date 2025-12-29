@@ -12,7 +12,10 @@ use the configured ``SchemaService`` or storage validation helpers.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
+
+from codeintel.core.schemas.primitives import column_type_base
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
@@ -35,15 +38,25 @@ def _json_schema_type_for_column_type(col_type: ColumnType) -> dict[str, Any]:
         "BOOLEAN": {"type": "boolean"},
         "INTEGER": {"type": "integer"},
         "BIGINT": {"type": "integer"},
-        "DECIMAL(38,0)": {"type": "integer"},
         "DOUBLE": {"type": "number"},
         "DECIMAL": {"type": "number"},
         "VARCHAR": {"type": "string"},
         "JSON": {},  # Any valid JSON value
         "TIMESTAMP": {"type": "string", "format": "date-time"},
         "TIMESTAMPTZ": {"type": "string", "format": "date-time"},
+        "STRUCT": {"type": "object"},
+        "MAP": {"type": "object"},
+        "LIST": {"type": "array"},
+        "UNION": {},
     }
-    return mapping.get(col_type, {"type": "string"})
+    normalized = str(col_type).strip()
+    base = column_type_base(normalized)
+    if base == "DECIMAL":
+        compact = normalized.upper().replace(" ", "")
+        match = re.match(r"^DECIMAL\\((\\d+),(\\d+)\\)$", compact)
+        if match is not None and int(match.group(2)) == 0:
+            return {"type": "integer"}
+    return mapping.get(base, {"type": "string"})
 
 
 def json_schema_from_table_schema(
