@@ -10,7 +10,6 @@ import types
 import typing
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from time import perf_counter
 from typing import TYPE_CHECKING, Literal, cast, get_args, get_origin
 
 import polars as pl
@@ -22,11 +21,8 @@ from polars.exceptions import PolarsError
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers.base import (
-    MaterializationContextError,
-    duration_ms,
-    resolve_materialization_context,
-)
+from codeintel.build.hamilton.materializers.base import duration_ms
+from codeintel.build.hamilton.materializers.base_pipeline import run_materialization_pipeline
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
@@ -45,9 +41,9 @@ from codeintel.core.columnar import (
 )
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.config.settings import BuildSettings
-from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
+from codeintel.core.execution.materialization import succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
-from codeintel.core.schemas.arrow_polars import (
+from codeintel.core.schemas.contracts import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_lazyframe,
 )
@@ -69,6 +65,7 @@ if TYPE_CHECKING:
 
     from pyarrow import RecordBatchReader
 
+    from codeintel.build.hamilton.materializers.base import MaterializationContext
     from codeintel.build.schemas.observations import SchemaHints
     from codeintel.core.config.settings import ArrowDatasetSettings
     from codeintel.core.manifests import ArrowDatasetManifest
@@ -254,69 +251,44 @@ class ArrowDatasetSaver(DataSaver):
         dict[str, object]
             Materialization metadata mapping.
         """
-        start = perf_counter()
-        input_hash: str | None = None
-        result: MaterializationResult | None = None
-
-        try:
-            prepared = resolve_materialization_context(
+        def _materialize(
+            _context: MaterializationContext,
+            value: object,
+            input_hash: str | None,
+            start: float,
+        ) -> MaterializationResult:
+            ctx = _MaterializeContext(
                 env=self.env,
                 catalog=self.catalog,
+                table_key=self.table_key,
                 target_name=self.target_name,
+                partition_columns=self.partition_columns,
+                collect_group=self.collect_group,
             )
-            if isinstance(prepared, MaterializationContextError):
-                result = failed_table_result(
-                    table_key=self.table_key,
-                    duration_ms=duration_ms(start),
-                    input_hash=prepared.input_hash or "",
-                    error=prepared.message,
-                )
-            else:
-                context = prepared
-                input_hash = context.input_hash
-                if data is None:
-                    result = failed_table_result(
-                        table_key=self.table_key,
-                        duration_ms=duration_ms(start),
-                        input_hash=input_hash or "",
-                        error="Expected tabular data but received None",
-                    )
-                else:
-                    context = _MaterializeContext(
-                        env=self.env,
-                        catalog=self.catalog,
-                        table_key=self.table_key,
-                        target_name=self.target_name,
-                        partition_columns=self.partition_columns,
-                        collect_group=self.collect_group,
-                    )
-                    manifest, manifest_path = _materialize_dataset(
-                        ctx=context,
-                        data=cast("TabularData", data),
-                    )
-                    row_count = manifest.row_count if manifest.row_count is not None else 0
-                    result = succeeded_table_result(
-                        table_key=self.table_key,
-                        duration_ms=duration_ms(start),
-                        input_hash=input_hash or "",
-                        row_count=row_count,
-                        dataset_manifest_path=str(manifest_path),
-                    )
-        except _RECOVERABLE_EXCEPTIONS as exc:
-            result = failed_table_result(
+            manifest, manifest_path = _materialize_dataset(
+                ctx=ctx,
+                data=cast("TabularData", value),
+            )
+            row_count = manifest.row_count if manifest.row_count is not None else 0
+            return succeeded_table_result(
                 table_key=self.table_key,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
-                error=str(exc),
+                row_count=row_count,
+                dataset_manifest_path=str(manifest_path),
             )
 
-        if result is None:
-            result = failed_table_result(
-                table_key=self.table_key,
-                duration_ms=duration_ms(start),
-                input_hash=input_hash or "",
-                error="Unknown Arrow dataset materialization failure",
-            )
+        result = run_materialization_pipeline(
+            env=self.env,
+            catalog=self.catalog,
+            target_name=self.target_name,
+            table_key=self.table_key,
+            data=data,
+            recoverable_exceptions=_RECOVERABLE_EXCEPTIONS,
+            none_error="Expected tabular data but received None",
+            unknown_error="Unknown Arrow dataset materialization failure",
+            materialize=_materialize,
+        )
         return result.to_mapping()
 
 

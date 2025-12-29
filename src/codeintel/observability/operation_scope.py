@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Protocol
 from opentelemetry import trace as otel_trace
 
 from codeintel.observability.attribute_schema import build_attribute_normalizer
-from codeintel.observability.instrument_registry import get_instrument_registry
 from codeintel.observability.policy import ObservabilityPolicy
+from codeintel.observability.registry import get_instrument_registry
 from codeintel.observability.runtime import get_observability
 from codeintel.observability.semconv_keys import (
     CODEINTEL_COMPONENT,

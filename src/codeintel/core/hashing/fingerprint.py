@@ -7,7 +7,8 @@ objects and data structures.
 from __future__ import annotations
 
 import hashlib
-import json
+
+from codeintel.core.serialization.stable import stable_stringify
 
 
 def fingerprint(data: object) -> str:
@@ -30,7 +31,7 @@ def fingerprint(data: object) -> str:
     >>> fingerprint({"key": "value", "num": 42})
     'abc123...'
     """
-    serialized = _serialize(data)
+    serialized = stable_stringify(data)
     return hashlib.sha256(serialized.encode(), usedforsecurity=False).hexdigest()
 
 
@@ -54,98 +55,9 @@ def stable_hash(*args: object) -> str:
     >>> stable_hash("prefix", 123, {"key": "value"})
     'def456...'
     """
-    parts = [_serialize(arg) for arg in args]
+    parts = [stable_stringify(arg) for arg in args]
     combined = "|".join(parts)
     return hashlib.sha256(combined.encode(), usedforsecurity=False).hexdigest()
-
-
-def _serialize(data: object) -> str:
-    """Serialize data for hashing.
-
-    Parameters
-    ----------
-    data
-        Data to serialize.
-
-    Returns
-    -------
-    str
-        Serialized string.
-    """
-    return _serialize_value(data)
-
-
-def _serialize_value(data: object) -> str:
-    """Serialize a single value.
-
-    Parameters
-    ----------
-    data
-        Value to serialize.
-
-    Returns
-    -------
-    str
-        Serialized string.
-    """
-    if data is None:
-        return "null"
-    if isinstance(data, bool):
-        return "true" if data else "false"
-    if isinstance(data, (int, float, str)):
-        return str(data) if not isinstance(data, str) else data
-    if isinstance(data, bytes):
-        return data.decode("utf-8", errors="replace")
-    return _serialize_compound(data)
-
-
-def _serialize_compound(data: object) -> str:
-    """Serialize compound values (list, dict).
-
-    Parameters
-    ----------
-    data
-        Compound value to serialize.
-
-    Returns
-    -------
-    str
-        Serialized string.
-    """
-    if isinstance(data, (list, tuple)):
-        items = [_serialize_value(item) for item in data]
-        return f"[{','.join(items)}]"
-    if isinstance(data, dict):
-        return json.dumps(
-            _make_serializable(data),
-            sort_keys=True,
-            default=str,
-        )
-    return str(data)
-
-
-def _make_serializable(obj: object) -> object:
-    """Make an object JSON-serializable.
-
-    Parameters
-    ----------
-    obj
-        Object to make serializable.
-
-    Returns
-    -------
-    object
-        JSON-serializable object.
-    """
-    if isinstance(obj, dict):
-        return {str(k): _make_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_make_serializable(item) for item in obj]
-    if isinstance(obj, bytes):
-        return obj.decode("utf-8", errors="replace")
-    if hasattr(obj, "__dict__"):
-        return _make_serializable(vars(obj))
-    return obj
 
 
 __all__ = [

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.serde import table_schema_from_json_obj
+from codeintel.core.schemas.contracts import table_schema_from_json_obj
 from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 

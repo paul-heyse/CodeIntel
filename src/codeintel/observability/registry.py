@@ -1,16 +1,18 @@
-"""Instrumentation registry for observability diagnostics."""
+"""Unified registries for observability instrumentation."""
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from threading import Lock
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TypeVar, cast
 from weakref import WeakKeyDictionary
 
 from codeintel.core.singleton import SingletonHolder
 from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.events import TelemetryEvent, emit_event
+from codeintel.observability.instrument_cache import InstrumentCache
 from codeintel.observability.semconv_keys import (
     TELEMETRY_INSTRUMENTATION_NAME,
     TELEMETRY_INSTRUMENTATION_STATUS,
@@ -24,6 +26,41 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 InstrumentationStatus = Literal["enabled", "unavailable", "suppressed", "error"]
+
+_T = TypeVar("_T")
+
+
+@dataclass(slots=True)
+class InstrumentRegistry:
+    """Cache instrumentation groups by meter and name."""
+
+    _cache: InstrumentCache[Meter, dict[str, object]] = field(default_factory=InstrumentCache)
+    _lock: Lock = field(default_factory=Lock)
+
+    def get_group(
+        self,
+        meter: Meter,
+        group: str,
+        builder: Callable[[Meter], _T],
+    ) -> _T:
+        """Return a cached instrument group, creating it if needed."""
+        group_map = self._cache.get_or_create(meter, dict)
+        with self._lock:
+            existing = group_map.get(group)
+            if existing is not None:
+                return cast("_T", existing)
+            created = builder(meter)
+            group_map[group] = created
+            return created
+
+
+class _InstrumentRegistryHolder(SingletonHolder[InstrumentRegistry]):
+    pass
+
+
+def get_instrument_registry() -> InstrumentRegistry:
+    """Return the shared instrument registry."""
+    return _InstrumentRegistryHolder.get(InstrumentRegistry)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,72 +90,30 @@ class InstrumentationRegistry:
         self._emitted_metrics: WeakKeyDictionary[Meter, bool] = WeakKeyDictionary()
 
     def record_enabled(self, name: str) -> None:
-        """Record an enabled instrumentation entry.
-
-        Parameters
-        ----------
-        name
-            Instrumentation name to record.
-        """
+        """Record an enabled instrumentation entry."""
         self._record(name, status="enabled")
 
     def record_unavailable(self, name: str, detail: str | None = None) -> None:
-        """Record an unavailable instrumentation entry.
-
-        Parameters
-        ----------
-        name
-            Instrumentation name to record.
-        detail
-            Optional detail describing why it is unavailable.
-        """
+        """Record an unavailable instrumentation entry."""
         self._record(name, status="unavailable", detail=detail)
 
     def record_suppressed(self, name: str, detail: str | None = None) -> None:
-        """Record a suppressed instrumentation entry.
-
-        Parameters
-        ----------
-        name
-            Instrumentation name to record.
-        detail
-            Optional detail describing why it is suppressed.
-        """
+        """Record a suppressed instrumentation entry."""
         self._record(name, status="suppressed", detail=detail)
 
     def record_error(self, name: str, detail: str | None = None) -> None:
-        """Record an instrumentation error entry.
-
-        Parameters
-        ----------
-        name
-            Instrumentation name to record.
-        detail
-            Optional detail describing the error.
-        """
+        """Record an instrumentation error entry."""
         self._record(name, status="error", detail=detail)
 
     def snapshot(self) -> tuple[InstrumentationRecord, ...]:
-        """Return a stable snapshot of instrumentation records.
-
-        Returns
-        -------
-        tuple[InstrumentationRecord, ...]
-            Sorted instrumentation records.
-        """
+        """Return a stable snapshot of instrumentation records."""
         with self._lock:
             records = list(self._records.values())
         records.sort(key=lambda record: record.name)
         return tuple(records)
 
     def summary(self) -> dict[str, int]:
-        """Summarize instrumentation statuses.
-
-        Returns
-        -------
-        dict[str, int]
-            Counts of records per status.
-        """
+        """Summarize instrumentation statuses."""
         counts: dict[str, int] = {
             "enabled": 0,
             "unavailable": 0,
@@ -135,15 +130,7 @@ class InstrumentationRegistry:
         policy: ObservabilityPolicy,
         logger: logging.Logger | None = None,
     ) -> None:
-        """Emit a structured telemetry summary of instrumentation status.
-
-        Parameters
-        ----------
-        policy
-            Attribute policy used to normalize emitted telemetry attributes.
-        logger
-            Optional logger override.
-        """
+        """Emit a structured telemetry summary of instrumentation status."""
         payload = {
             "summary": self.summary(),
             "records": [
@@ -168,15 +155,7 @@ class InstrumentationRegistry:
         )
 
     def emit_metrics(self, meter: Meter, *, policy: ObservabilityPolicy) -> None:
-        """Emit instrumentation status metrics using the supplied meter.
-
-        Parameters
-        ----------
-        meter
-            OpenTelemetry meter to emit metrics with.
-        policy
-            Attribute policy used to normalize instrumentation labels.
-        """
+        """Emit instrumentation status metrics using the supplied meter."""
         with self._lock:
             if meter in self._emitted_metrics:
                 return
@@ -217,18 +196,6 @@ class InstrumentationRegistry:
 
 
 def _get_instruments(meter: Meter) -> _Instruments:
-    """Return cached instruments for the supplied meter.
-
-    Parameters
-    ----------
-    meter
-        OpenTelemetry meter to use for metric instruments.
-
-    Returns
-    -------
-    _Instruments
-        Cached instrumentation counter wrapper.
-    """
     instruments = _INSTRUMENTS.get(meter)
     if instruments is not None:
         return instruments
@@ -249,19 +216,15 @@ class _RegistryHolder(SingletonHolder[InstrumentationRegistry]):
 
 
 def get_instrumentation_registry() -> InstrumentationRegistry:
-    """Return the process-wide instrumentation registry.
-
-    Returns
-    -------
-    InstrumentationRegistry
-        Shared instrumentation registry instance.
-    """
+    """Return the process-wide instrumentation registry."""
     return _RegistryHolder.get(InstrumentationRegistry)
 
 
 __all__ = [
+    "InstrumentRegistry",
     "InstrumentationRecord",
     "InstrumentationRegistry",
     "InstrumentationStatus",
+    "get_instrument_registry",
     "get_instrumentation_registry",
 ]

@@ -32,6 +32,7 @@ from codeintel.config.primitives import (
     GraphBackendConfig,
     GraphFeatureFlags,
 )
+from codeintel.core.paths import normalize_optional_path
 from codeintel.core.tools import ToolBinaries, ToolName, build_tool_env
 
 if TYPE_CHECKING:
@@ -304,11 +305,7 @@ class ToolsConfig(BaseModel):
     @field_validator("coverage_file", "pytest_report_path", mode="before")
     @classmethod
     def _normalize_optional_path(cls, v: Path | str | None) -> Path | None:
-        if v is None:
-            return None
-        if isinstance(v, Path):
-            return v.expanduser()
-        return Path(str(v)).expanduser()
+        return normalize_optional_path(v, resolve=False)
 
     @classmethod
     def default(cls) -> ToolsConfig:

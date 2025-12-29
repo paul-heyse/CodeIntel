@@ -14,6 +14,17 @@ Examples
 from __future__ import annotations
 
 from codeintel.core.parsing.ast_index import AstSpanIndex
+from codeintel.core.parsing.ast_utils import (
+    literal_bool,
+    literal_int,
+    literal_int_sequence,
+    literal_str,
+    literal_value,
+    parse_python_module,
+    safe_unparse,
+    snippet_from_lines,
+    timed_parse,
+)
 from codeintel.core.parsing.models import ParsedFunction, ParsedModule
 from codeintel.core.parsing.source_span import SourceSpan
 
@@ -22,4 +33,13 @@ __all__ = [
     "ParsedFunction",
     "ParsedModule",
     "SourceSpan",
+    "literal_bool",
+    "literal_int",
+    "literal_int_sequence",
+    "literal_str",
+    "literal_value",
+    "parse_python_module",
+    "safe_unparse",
+    "snippet_from_lines",
+    "timed_parse",
 ]

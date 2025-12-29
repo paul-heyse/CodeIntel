@@ -10,7 +10,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 
 from codeintel.core.config.settings import GrpcObservabilitySettings
 from codeintel.observability.grpc import register_grpc_observability
-from codeintel.observability.instrumentation_registry import InstrumentationRegistry
+from codeintel.observability.registry import InstrumentationRegistry
 
 
 class _StubPlugin:

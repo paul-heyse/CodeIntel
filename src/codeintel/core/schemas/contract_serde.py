@@ -7,13 +7,13 @@ from typing import Literal, cast
 
 from codeintel.config.datasets.primitives import CompositeSchema
 from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.core.schemas.serde import (
+from codeintel.core.schemas.contracts import (
     column_from_json_obj,
     column_to_json_obj,
     table_schema_from_json_obj,
     table_schema_to_json_obj,
 )
+from codeintel.core.schemas.primitives import Column, TableSchema
 
 
 def _serialize_columns(columns: tuple[Column, ...]) -> list[dict[str, object]]:

@@ -25,8 +25,8 @@ from codeintel.analytics.utilities.ast import (
     snippet_from_lines,
 )
 from codeintel.core.hashing import sha256_short
+from codeintel.core.parsing import parse_python_module
 from codeintel.core.paths import normalize_path, path_to_module
-from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence

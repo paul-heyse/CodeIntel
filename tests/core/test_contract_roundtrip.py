@@ -12,7 +12,7 @@ from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
-from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.schemas.contracts import arrow_contract_for_table_schema
 from codeintel.core.schemas.primitives import Column, TableSchema
 
 

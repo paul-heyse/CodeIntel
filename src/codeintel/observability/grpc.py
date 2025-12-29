@@ -11,7 +11,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.core.config.settings import GrpcObservabilitySettings
-from codeintel.observability.instrumentation_registry import InstrumentationRegistry
+from codeintel.observability.registry import InstrumentationRegistry
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import MeterProvider

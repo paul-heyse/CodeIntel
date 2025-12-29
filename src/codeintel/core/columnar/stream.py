@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from inspect import signature
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.columnar.polars_collect import (
+from codeintel.core.columnar.schema import unify_schema_for_batches
+from codeintel.core.columnar.tabular_adapter import (
+    ColumnarStream,
     PolarsExecutionOptions,
     collect_batches,
     collect_lazyframe,
 )
-from codeintel.core.columnar.schema import unify_schema_for_batches
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -32,62 +32,6 @@ try:
     from polars.exceptions import PolarsError
 except ImportError:  # pragma: no cover
     PolarsError = Exception
-
-
-@runtime_checkable
-class ColumnarStream(Protocol):
-    """Protocol for columnar streaming sources."""
-
-    @property
-    def schema(self) -> pa.Schema:
-        """Return the Arrow schema for the stream.
-
-        Returns
-        -------
-        pyarrow.Schema
-            Schema describing the stream output.
-        """
-        ...
-
-    def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
-        """Return a RecordBatchReader for the stream.
-
-        Parameters
-        ----------
-        batch_size
-            Target batch size for stream readers that support it.
-
-        Returns
-        -------
-        pyarrow.RecordBatchReader
-            Reader over the stream batches.
-        """
-        ...
-
-    def to_lazyframe(self) -> PolarsLazyFrame:
-        """Return a Polars LazyFrame for the stream.
-
-        Returns
-        -------
-        polars.LazyFrame
-            LazyFrame view of the stream.
-
-        Raises
-        ------
-        RuntimeError
-            If Polars is unavailable for conversion.
-        """
-        ...
-
-    def to_table(self) -> pa.Table:
-        """Return a fully materialized Arrow table (last resort).
-
-        Returns
-        -------
-        pyarrow.Table
-            Materialized table containing the stream data.
-        """
-        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -323,101 +267,9 @@ def _maybe_inspect(lazyframe: PolarsLazyFrame) -> None:
 ColumnarStreamAdapter = RecordBatchReaderStream | LazyFrameStream
 
 
-def coerce_arrow_reader(
-    value: object,
-    *,
-    batch_size: int | None = None,
-) -> pa.RecordBatchReader | None:
-    """Coerce interoperability inputs into a RecordBatchReader.
-
-    Parameters
-    ----------
-    value
-        Candidate object implementing ``__arrow_c_stream__`` or ``__dataframe__``.
-    batch_size
-        Optional batch size when materializing from tables.
-
-    Returns
-    -------
-    pyarrow.RecordBatchReader | None
-        Reader when coercion succeeds, otherwise None.
-    """
-    if isinstance(value, pa.RecordBatchReader):
-        return value
-    reader = _import_c_stream(value)
-    if reader is not None:
-        return reader
-    table = _table_from_interchange(value)
-    if table is None:
-        return None
-    batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
-    return pa.RecordBatchReader.from_batches(table.schema, batches)
-
-
-def coerce_arrow_table(value: object) -> pa.Table | None:
-    """Coerce interoperability inputs into an Arrow table.
-
-    Parameters
-    ----------
-    value
-        Candidate object implementing ``__arrow_c_stream__`` or ``__dataframe__``.
-
-    Returns
-    -------
-    pyarrow.Table | None
-        Table when coercion succeeds, otherwise None.
-    """
-    if isinstance(value, pa.Table):
-        return value
-    reader = _import_c_stream(value)
-    if reader is not None:
-        return pa.Table.from_batches(list(reader), schema=reader.schema)
-    return _table_from_interchange(value)
-
-
-def _import_c_stream(value: object) -> pa.RecordBatchReader | None:
-    stream_fn = getattr(value, "__arrow_c_stream__", None)
-    if not callable(stream_fn):
-        return None
-    capsule = stream_fn()
-    importer = getattr(pa.RecordBatchReader, "_import_from_c", None)
-    if callable(importer):
-        try:
-            return importer(capsule)
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            return None
-    return None
-
-
-def _table_from_interchange(value: object) -> pa.Table | None:
-    dataframe_fn = getattr(value, "__dataframe__", None)
-    if not callable(dataframe_fn):
-        return None
-    interchange = dataframe_fn()
-    module = getattr(pa, "interchange", None)
-    if module is None:
-        return None
-    from_dataframe = getattr(module, "from_dataframe", None)
-    if not callable(from_dataframe):
-        return None
-    kwargs: dict[str, object] = {}
-    try:
-        params = signature(from_dataframe).parameters
-    except (TypeError, ValueError):
-        params = {}
-    if "allow_copy" in params:
-        kwargs["allow_copy"] = False
-    try:
-        return from_dataframe(interchange, **kwargs)
-    except (TypeError, ValueError, pa.ArrowInvalid):
-        return None
-
-
 __all__ = [
     "ColumnarStream",
     "ColumnarStreamAdapter",
     "LazyFrameStream",
     "RecordBatchReaderStream",
-    "coerce_arrow_reader",
-    "coerce_arrow_table",
 ]

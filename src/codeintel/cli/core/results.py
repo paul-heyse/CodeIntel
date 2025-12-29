@@ -11,14 +11,10 @@ from __future__ import annotations
 import dataclasses
 import json
 from dataclasses import dataclass, field, is_dataclass
-from dataclasses import fields as get_fields
-from enum import Enum
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     ClassVar,
     Protocol,
-    TypeGuard,
     TypeVar,
     cast,
     runtime_checkable,
@@ -27,6 +23,7 @@ from typing import (
 from codeintel.core.serialization.converters import (
     serialize_dataclass_to_dict as serialize_result,
 )
+from codeintel.core.serialization.stable import stable_json_value
 
 if TYPE_CHECKING:
     from codeintel.cli.errors import ProblemDetail
@@ -109,17 +106,6 @@ def result_type[T](cls: type[T]) -> type[T]:
     return cls
 
 
-def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
-    """Return True when value is a dataclass instance (not a class).
-
-    Returns
-    -------
-    bool
-        True if value is a dataclass instance.
-    """
-    return is_dataclass(value) and not isinstance(value, type)
-
-
 def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
     """Serialize a dataclass instance to dictionary.
 
@@ -133,16 +119,14 @@ def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
     dict[str, object]
         Dictionary with non-None, non-private field values.
     """
-    result: dict[str, object] = {}
-
-    for fld in get_fields(value):
-        if fld.name.startswith("_"):
-            continue
-        field_value = getattr(value, fld.name)
-        if field_value is None:
-            continue
-        result[fld.name] = _serialize_value(field_value)
-    return result
+    serialized = stable_json_value(
+        value,
+        omit_none=True,
+        omit_private_fields=True,
+    )
+    if isinstance(serialized, dict):
+        return serialized
+    return {}
 
 
 def _serialize_value(value: object) -> object:
@@ -163,41 +147,14 @@ def _serialize_value(value: object) -> object:
     if value is None:
         return None
 
-    if _is_dataclass_instance(value):
-        return _serialize_dataclass(value)
-
-    if isinstance(value, (list, tuple)):
-        return [_serialize_value(item) for item in value]
-
-    if isinstance(value, dict):
-        return {k: _serialize_value(v) for k, v in value.items() if v is not None}
-
     if isinstance(value, SerializableResult):
         return value.to_dict()
 
-    return _serialize_primitive(value)
-
-
-def _serialize_primitive(value: object) -> object:
-    """Serialize primitive and special types.
-
-    Parameters
-    ----------
-    value
-        Value to serialize.
-
-    Returns
-    -------
-    object
-        Serialized value.
-    """
-    if isinstance(value, Enum):
-        return value.value
-
-    if isinstance(value, Path):
-        return str(value)
-
-    return value
+    return stable_json_value(
+        value,
+        omit_none=True,
+        omit_private_fields=True,
+    )
 
 
 def ensure_serializable[T](cls: type[T]) -> type[T]:

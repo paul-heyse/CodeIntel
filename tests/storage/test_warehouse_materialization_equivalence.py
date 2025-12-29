@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.tabular.duckdb_relation import coerce_to_relation
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar import to_relation
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.columnar_tables import materialize_table_from_rows
@@ -29,7 +29,7 @@ def test_warehouse_materialize_variants_write_equivalent_rows(
     table_key = "core.repo_map"
 
     arrow_table = pa.table({"repo": [snapshot.repo], "commit": [snapshot.commit]})
-    relation = coerce_to_relation(fresh_gateway.con, arrow_table, name_hint="repo_map")
+    relation = to_relation(fresh_gateway.con, arrow_table, name_hint="repo_map")
     warehouse.materialize_table(table_key, relation, options=options)
     expect_equal(warehouse.count(table_key, snapshot=snapshot), 1, label="df count")
 

@@ -8,10 +8,10 @@ import polars as pl
 import pyarrow as pa
 
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
+from codeintel.core.columnar import to_lazyframe
 from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract
-from codeintel.core.schemas.arrow_gen import (
+from codeintel.core.schemas.contracts import (
     DEFAULT_EXTRAS_POLICY,
     ArrowSchemaMetadata,
     ExtrasPolicy,
@@ -30,7 +30,7 @@ def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
     schema = get_schema_service().require_table_schema(table_key)
     arrow_schema = arrow_contract_for_table_schema(table_schema=schema)
     reader = pa.RecordBatchReader.from_batches(arrow_schema, [])
-    return arrow_reader_to_lazyframe(reader)
+    return to_lazyframe(reader)
 
 
 def lazyframe_for_table_columns(
@@ -73,7 +73,7 @@ def lazyframe_for_table_columns(
         contract_schema,
         extras_policy=extras_policy,
     )
-    return arrow_reader_to_lazyframe(aligned)
+    return to_lazyframe(aligned)
 
 
 def lazyframe_for_ingest_columns(

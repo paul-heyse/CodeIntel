@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 import pyarrow as pa
 
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
-from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+from codeintel.core.columnar import to_lazyframe
+from codeintel.core.schemas.contracts import arrow_schema_from_table_schema
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -113,7 +113,7 @@ class MiniSeedHarness:
         table_schema = self.schema_provider.require_table_schema(table_key)
         arrow_schema = arrow_schema_from_table_schema(table_schema=table_schema)
         reader = pa.RecordBatchReader.from_batches(arrow_schema, [])
-        frame = arrow_reader_to_lazyframe(reader)
+        frame = to_lazyframe(reader)
         self._seeded[table_key] = frame
         return frame
 

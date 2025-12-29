@@ -26,11 +26,10 @@ from sqlglot import parse_one
 from sqlglot.errors import ParseError
 
 from codeintel.core.columnar import (
-    ColumnarStream,
+    TabularInput,
     align_reader_to_contract,
-    coerce_arrow_reader,
-    coerce_arrow_table,
     extras_policy_from_schema,
+    to_record_batch_reader,
 )
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
@@ -55,8 +54,6 @@ from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError, 
 
 WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
-
-type TabularInput = DuckDBRelation | pa.Table | pa.RecordBatchReader | ColumnarStream | object
 
 _PROFILE_DIR_ENV = "CODEINTEL_WAREHOUSE_PROFILING_DIR"
 
@@ -242,10 +239,13 @@ class Warehouse:
         )
 
         def _write() -> int | None:
-            coerced = _coerce_tabular_input(
-                relation,
-                batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            )
+            if isinstance(relation, (DuckDBRelation, pa.Table, pa.RecordBatchReader)):
+                coerced = relation
+            else:
+                coerced = to_record_batch_reader(
+                    relation,
+                    batch_size=DEFAULT_ARROW_BATCH_SIZE,
+                )
             return _write_tabular(
                 gateway=self.gateway,
                 table_key=table_key,
@@ -860,29 +860,6 @@ def _align_tabular_input(
         contract_schema,
         extras_policy=extras_policy_from_schema(contract_schema),
     )
-
-
-def _coerce_tabular_input(
-    value: TabularInput,
-    *,
-    batch_size: int,
-) -> DuckDBRelation | pa.Table | pa.RecordBatchReader:
-    if isinstance(value, DuckDBRelation):
-        return value
-    if isinstance(value, pa.Table):
-        return value
-    if isinstance(value, pa.RecordBatchReader):
-        return value
-    if isinstance(value, ColumnarStream):
-        return value.to_reader(batch_size=batch_size)
-    reader = coerce_arrow_reader(value, batch_size=batch_size)
-    if reader is not None:
-        return reader
-    table = coerce_arrow_table(value)
-    if table is not None:
-        return table
-    msg = f"Unsupported tabular input: {type(value)!r}"
-    raise TypeError(msg)
 
 
 __all__ = [

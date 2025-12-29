@@ -26,6 +26,7 @@ from codeintel.serving.errors.mapping import (
 )
 from codeintel.serving.errors.models import ErrorContext, ErrorInfo, ErrorKind, ErrorResponse
 from codeintel.serving.errors.templates import ErrorInfoTemplate
+from codeintel.serving.errors.transport import problem_detail_from_error_response_with_context
 
 __all__ = [
     "ERROR_CODE_CATALOG",
@@ -53,4 +54,5 @@ __all__ = [
     "build_error_context_from_http_request",
     "build_error_context_from_mcp_context",
     "exception_to_error_response",
+    "problem_detail_from_error_response_with_context",
 ]

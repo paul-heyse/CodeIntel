@@ -14,9 +14,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
-from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+from codeintel.core.schemas.contracts import (
+    arrow_schema_from_table_schema,
+    json_schema_from_table_schema,
+)
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema

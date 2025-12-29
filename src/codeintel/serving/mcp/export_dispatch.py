@@ -9,13 +9,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.serving.export.engine import ExportDelivery, build_export_plan, write_export_file
+from codeintel.serving.export.dispatch import (
+    ExportDispatchHandlers,
+    ExportRowProvider,
+    dispatch_export,
+)
 from codeintel.serving.export.models import ExportArtifactSpec
 from codeintel.serving.mcp.resource_store import ResourceStore
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExportRequest
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from codeintel.serving.export.engine import ExportPlan
     from codeintel.serving.mcp.resource_store import StoredArtifact, StoredMetadata
     from codeintel.serving.operations.cancellation import CancelCheck
 
@@ -47,34 +55,51 @@ def write_export_to_store(
     ValueError
         If the export format is unsupported.
     """
-    plan = build_export_plan(payload.request)
-
-    if plan.delivery is ExportDelivery.ndjson_stream:
+    def handle_ndjson(
+        _plan: ExportPlan,
+        provider: ExportRowProvider,
+    ) -> tuple[str, StoredArtifact, StoredMetadata]:
         return payload.store.put_with_metadata_stream(
-            payload.ops.export_rows(payload.request, cancel_check=payload.cancel_check),
+            provider.iter_rows(),
             spec=payload.spec,
             export_id=payload.export_id,
         )
-    if plan.delivery is ExportDelivery.json_rows:
-        rows = list(payload.ops.export_rows(payload.request, cancel_check=payload.cancel_check))
+
+    def handle_json_rows(
+        _plan: ExportPlan,
+        provider: ExportRowProvider,
+    ) -> tuple[str, StoredArtifact, StoredMetadata]:
         return payload.store.put_with_metadata(
-            rows,
+            provider.collect_rows(),
             spec=payload.spec,
             export_id=payload.export_id,
         )
-    if plan.delivery is ExportDelivery.binary_file:
+
+    def handle_binary_file(
+        _plan: ExportPlan,
+        write_fn: Callable[[Path], int],
+    ) -> tuple[str, StoredArtifact, StoredMetadata]:
         return payload.store.put_generated_file_with_metadata(
             spec=payload.spec,
             export_id=payload.export_id,
-            write_fn=lambda path: write_export_file(
-                payload.ops,
-                payload.request,
-                output_path=path,
-                cancel_check=payload.cancel_check,
-            ),
+            write_fn=write_fn,
         )
-    msg = f"Unsupported export format: {payload.request.format}"
-    raise ValueError(msg)
+
+    handlers = ExportDispatchHandlers(
+        ndjson_stream=handle_ndjson,
+        json_rows=handle_json_rows,
+        binary_file=handle_binary_file,
+    )
+    result = dispatch_export(
+        payload.ops,
+        payload.request,
+        cancel_check=payload.cancel_check,
+        handlers=handlers,
+    )
+    if isinstance(result, tuple):
+        return result
+    msg = "Export dispatch returned unexpected async result"
+    raise RuntimeError(msg)
 
 
 __all__ = ["ExportStoreRequest", "write_export_to_store"]

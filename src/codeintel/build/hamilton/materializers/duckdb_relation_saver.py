@@ -7,7 +7,6 @@ import types
 import typing
 from collections.abc import Mapping
 from dataclasses import dataclass
-from time import perf_counter
 from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
 import polars as pl
@@ -17,11 +16,8 @@ from hamilton.io.data_adapters import DataSaver
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers.base import (
-    MaterializationContextError,
-    duration_ms,
-    resolve_materialization_context,
-)
+from codeintel.build.hamilton.materializers.base import duration_ms
+from codeintel.build.hamilton.materializers.base_pipeline import run_materialization_pipeline
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observations import (
@@ -32,13 +28,14 @@ from codeintel.build.schemas.observations import (
     schema_hints_from_tag_sets,
     table_schema_from_tag_sets,
 )
-from codeintel.build.tabular.duckdb_relation import register_ephemeral
-from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
+from codeintel.core.columnar import register_ephemeral
+from codeintel.core.execution.materialization import succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.storage.duckdb_types import DuckDBError, DuckDBRelation
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.materializers.base import MaterializationContext
     from codeintel.core.schemas.primitives import TableSchema
 
 _RECOVERABLE_EXCEPTIONS = (
@@ -134,85 +131,63 @@ class DuckDBRelationSaver(DataSaver):
             Metadata describing the write, including status, row count, and
             input hash for manifest-based incremental builds.
         """
-        start = perf_counter()
-        input_hash: str | None = None
-        result: MaterializationResult | None = None
         temp_name: str | None = None
-        relation: DuckDBRelation | None = None
 
-        try:
-            prepared = resolve_materialization_context(
-                env=self.env,
-                catalog=self.catalog,
-                target_name=self.target_name,
-            )
-            if isinstance(prepared, MaterializationContextError):
-                result = failed_table_result(
-                    table_key=self.table_key,
-                    duration_ms=duration_ms(start),
-                    input_hash=prepared.input_hash or "",
-                    error=prepared.message,
-                )
-            else:
-                context = prepared
-                input_hash = context.input_hash
-                if data is None:
-                    result = failed_table_result(
-                        table_key=self.table_key,
-                        duration_ms=duration_ms(start),
-                        input_hash=input_hash or "",
-                        error="Expected relation data but received None",
-                    )
-                else:
-                    relation, temp_name = _coerce_relation(
-                        self.env,
-                        data=data,
-                        table_key=self.table_key,
-                    )
-                    options = resolve_materialize_options(
-                        env=self.env,
-                        target_name=self.target_name,
-                        table_key=self.table_key,
-                        input_hash=input_hash,
-                        column_names=tuple(relation.columns),
-                    )
-                    row_count = _materialize_relation(
-                        self.env.warehouse,
-                        table_key=self.table_key,
-                        relation=relation,
-                        options=options,
-                    )
-                    result = succeeded_table_result(
-                        table_key=self.table_key,
-                        duration_ms=duration_ms(start),
-                        input_hash=input_hash or "",
-                        row_count=row_count,
-                    )
-                    _persist_schema_observation(
-                        env=self.env,
-                        target_name=self.target_name,
-                        table_key=self.table_key,
-                        relation=relation,
-                        catalog=self.catalog,
-                    )
-        except _RECOVERABLE_EXCEPTIONS as exc:
-            result = failed_table_result(
-                table_key=self.table_key,
-                duration_ms=duration_ms(start),
-                input_hash=input_hash or "",
-                error=str(exc),
-            )
-        finally:
+        def _cleanup() -> None:
             if temp_name is not None:
                 self.env.gateway.unregister(temp_name)
 
-        if result is None:
-            result = failed_table_result(
+        def _materialize(
+            _context: MaterializationContext,
+            value: object,
+            input_hash: str | None,
+            start: float,
+        ) -> MaterializationResult:
+            nonlocal temp_name
+            relation, temp_name = _coerce_relation(
+                self.env,
+                data=value,
+                table_key=self.table_key,
+            )
+            options = resolve_materialize_options(
+                env=self.env,
+                target_name=self.target_name,
+                table_key=self.table_key,
+                input_hash=input_hash,
+                column_names=tuple(relation.columns),
+            )
+            row_count = _materialize_relation(
+                self.env.warehouse,
+                table_key=self.table_key,
+                relation=relation,
+                options=options,
+            )
+            _persist_schema_observation(
+                env=self.env,
+                target_name=self.target_name,
+                table_key=self.table_key,
+                relation=relation,
+                catalog=self.catalog,
+            )
+            return succeeded_table_result(
                 table_key=self.table_key,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
-                error="Unknown materialization failure",
+                row_count=row_count,
             )
+
+        result = run_materialization_pipeline(
+            env=self.env,
+            catalog=self.catalog,
+            target_name=self.target_name,
+            table_key=self.table_key,
+            data=data,
+            recoverable_exceptions=_RECOVERABLE_EXCEPTIONS,
+            none_error="Expected relation data but received None",
+            unknown_error="Unknown materialization failure",
+            materialize=_materialize,
+            cleanup=_cleanup,
+        )
         return result.to_mapping()
 
 

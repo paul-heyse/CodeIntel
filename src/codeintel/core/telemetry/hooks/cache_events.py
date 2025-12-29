@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.observability.instrument_registry import get_instrument_registry
+from codeintel.observability.registry import get_instrument_registry
 from codeintel.observability.runtime import get_observability
 
 if TYPE_CHECKING:

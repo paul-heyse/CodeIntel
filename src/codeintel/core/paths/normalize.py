@@ -51,6 +51,45 @@ def normalize_path(path: str | Path) -> str:
     return normalized
 
 
+def normalize_rel_path(path: str | Path) -> str:
+    """Return a normalized POSIX-style relative path.
+
+    Parameters
+    ----------
+    path
+        Path to normalize.
+
+    Returns
+    -------
+    str
+        Normalized path with forward slashes.
+    """
+    return normalize_path(Path(path).as_posix())
+
+
+def normalize_optional_path(path: str | Path | None, *, resolve: bool = False) -> Path | None:
+    """Normalize a possibly missing path into a Path.
+
+    Parameters
+    ----------
+    path
+        Raw path value or None.
+    resolve
+        When True, resolve the path to an absolute location.
+
+    Returns
+    -------
+    Path | None
+        Normalized path when provided; otherwise None.
+    """
+    if path is None:
+        return None
+    path_obj = Path(path).expanduser()
+    if resolve:
+        return path_obj.resolve()
+    return path_obj
+
+
 def ensure_repo_root(repo_root: Path | str) -> Path:
     """Resolve a repo root to an absolute, expanded Path.
 
@@ -140,7 +179,9 @@ def safe_relpath(path: str | Path, base: str | Path) -> str:
 
 __all__ = [
     "ensure_repo_root",
+    "normalize_optional_path",
     "normalize_path",
+    "normalize_rel_path",
     "repo_relpath",
     "safe_relpath",
 ]

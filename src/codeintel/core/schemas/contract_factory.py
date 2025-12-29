@@ -12,6 +12,7 @@ from codeintel.core.schemas.contract_policy import (
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.service import SchemaService
+from codeintel.storage.helpers.table_key import parse_table_key
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema
@@ -25,7 +26,6 @@ _OWNER_PACKAGE_BY_PREFIX: dict[str, Literal["core", "analytics", "graphs", "qa",
     "docs": "docs",
     "qa": "qa",
 }
-_EXPECTED_TABLE_KEY_PARTS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,14 +56,6 @@ def is_docs_view(table_key: str) -> bool:
         True when the table key is a docs view.
     """
     return table_key.startswith("docs.v_")
-
-
-def _split_table_key(table_key: str) -> tuple[str, str]:
-    parts = table_key.split(".", maxsplit=1)
-    if len(parts) != _EXPECTED_TABLE_KEY_PARTS or not parts[0] or not parts[1]:
-        msg = f"Invalid table key: {table_key!r}"
-        raise ValueError(msg)
-    return parts[0], parts[1]
 
 
 def _owner_package_from_prefix(
@@ -106,7 +98,9 @@ def build_dataset_contract(
     DatasetContract
         Derived dataset contract with deterministic defaults.
     """
-    schema_prefix, table_name = _split_table_key(table_key)
+    parsed = parse_table_key(table_key)
+    schema_prefix = parsed.schema
+    table_name = parsed.name
     is_view = is_view_override if is_view_override is not None else is_docs_view(table_key)
     schema = schema_service.get_table_schema(table_key)
     row_binding = _resolve_row_binding(schema_service, table_key)

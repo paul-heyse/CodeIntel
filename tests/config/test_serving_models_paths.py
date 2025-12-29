@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.serving.config import ServingConfig, normalize_optional_path
+from codeintel.core.paths import normalize_optional_path
+from codeintel.serving.config import ServingConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,7 +22,7 @@ def test_normalize_optional_path_handles_none() -> None:
 def test_normalize_optional_path_resolves_strings(tmp_path: Path) -> None:
     """Helper should resolve string paths to absolute Path objects."""
     rel_path = tmp_path / "db.duckdb"
-    normalized = normalize_optional_path(str(rel_path))
+    normalized = normalize_optional_path(str(rel_path), resolve=True)
     if normalized != rel_path.resolve():
         pytest.fail("Expected string path to resolve to Path")
 
