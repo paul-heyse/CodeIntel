@@ -137,15 +137,20 @@ def insert_rows(
                     update_columns=("repo", "commit", "language", "tags", "owners", "row_hash"),
                 ),
             )
+        row_mappings = [_row_to_mapping(row, columns) for row in group_rows]
         result = materialize_table_from_rows(
             warehouse,
             table,
-            [r.to_tuple() for r in group_rows],
+            row_mappings,
             columns=columns,
             options=options,
         )
         inserted += result.rows_written or 0
     return inserted
+
+
+def _row_to_mapping(row: InsertableRow, columns: Sequence[str]) -> dict[str, object]:
+    return dict(zip(columns, row.to_tuple(), strict=True))
 
 
 __all__ = ["InsertableRow", "insert_rows"]

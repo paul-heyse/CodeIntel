@@ -21,13 +21,20 @@ from referencing import Registry
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import log_export_error
-from codeintel.build.schemas.json_schema_registry import get_json_schema
+from codeintel.build.schemas.json_schema_registry import (
+    get_json_schema,
+    get_json_schema_for_table_schema,
+)
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED, SchemaError
 from codeintel.core.errors.taxonomy import NOT_FOUND
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +56,30 @@ def _get_generated_schema(table_key: str) -> dict[str, Any] | None:
         return get_json_schema(table_key)
     except (KeyError, SchemaError) as e:
         log.debug("Schema lookup failed for %s: %s", table_key, e)
+        return None
+
+
+def _get_inferred_schema(
+    gateway: StorageGateway | None,
+    table_key: str,
+) -> TableSchema | None:
+    if gateway is None:
+        return None
+    try:
+        return gateway.schemas.load_table_schema(table_key)
+    except (RuntimeError, TypeError, ValueError):
+        return None
+
+
+def _get_latest_observation(
+    gateway: StorageGateway | None,
+    table_key: str,
+) -> SchemaObservationRecord | None:
+    if gateway is None:
+        return None
+    try:
+        return gateway.schemas.load_latest_schema_observation(table_key=table_key)
+    except (RuntimeError, TypeError, ValueError):
         return None
 
 
@@ -78,6 +109,13 @@ class _ArrowFieldConstraint:
     maximum: float | int | None
     min_length: int | None
     max_length: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ParquetValidationOverrides:
+    constraints: list[_ArrowFieldConstraint]
+    additional_properties: bool
+    needs_fallback: bool
 
 
 _SUPPORTED_PROPERTY_KEYS = frozenset(
@@ -158,6 +196,40 @@ def _schema_constraints(
     return constraints, additional_properties, requires_fallback
 
 
+def _constraints_from_observation(
+    table_schema: TableSchema,
+    observation: SchemaObservationRecord,
+) -> tuple[list[_ArrowFieldConstraint], bool]:
+    constraints: list[_ArrowFieldConstraint] = []
+    column_stats = observation.column_stats or {}
+    extras_policy = None
+    if observation.derived_settings is not None:
+        extras_policy_raw = observation.derived_settings.get("extras_policy")
+        extras_policy = extras_policy_raw if isinstance(extras_policy_raw, str) else None
+    allow_extras = extras_policy != "reject"
+    for column in table_schema.columns:
+        stats = column_stats.get(column.name)
+        min_value = None
+        max_value = None
+        if isinstance(stats, dict):
+            min_value = _number_or_none(stats.get("min"))
+            max_value = _number_or_none(stats.get("max"))
+        constraints.append(
+            _ArrowFieldConstraint(
+                name=column.name,
+                types=_json_types_for_column(column.type),
+                required=not column.nullable,
+                nullable=column.nullable,
+                enum=None,
+                minimum=min_value,
+                maximum=max_value,
+                min_length=None,
+                max_length=None,
+            )
+        )
+    return constraints, allow_extras
+
+
 def _schema_needs_fallback(schema: dict[str, Any], *, properties: dict[str, Any]) -> bool:
     unsupported_root = set(schema) - {
         "$schema",
@@ -178,6 +250,22 @@ def _schema_needs_fallback(schema: dict[str, Any], *, properties: dict[str, Any]
         if unsupported:
             return True
     return False
+
+
+def _json_types_for_column(column_type: str) -> tuple[str, ...]:
+    mapping: dict[str, tuple[str, ...]] = {
+        "BOOLEAN": ("boolean",),
+        "INTEGER": ("integer",),
+        "BIGINT": ("integer",),
+        "DECIMAL(38,0)": ("integer",),
+        "DOUBLE": ("number",),
+        "DECIMAL": ("number",),
+        "VARCHAR": ("string",),
+        "JSON": ("object",),
+        "TIMESTAMP": ("string",),
+        "TIMESTAMPTZ": ("string",),
+    }
+    return mapping.get(column_type, ())
 
 
 def _normalize_types(value: object) -> tuple[str, ...]:
@@ -280,9 +368,7 @@ def _matches_json_type(json_type: str, data_type: pa.DataType) -> bool:
         "boolean": pa.types.is_boolean,
         "integer": lambda dtype: pa.types.is_integer(dtype) or pa.types.is_decimal(dtype),
         "number": lambda dtype: (
-            pa.types.is_floating(dtype)
-            or pa.types.is_integer(dtype)
-            or pa.types.is_decimal(dtype)
+            pa.types.is_floating(dtype) or pa.types.is_integer(dtype) or pa.types.is_decimal(dtype)
         ),
         "string": lambda dtype: pa.types.is_string(dtype) or pa.types.is_large_string(dtype),
     }
@@ -349,38 +435,29 @@ def _validate_length(
     constraint: _ArrowFieldConstraint,
     array: pa.Array | pa.ChunkedArray,
 ) -> list[str]:
+    errors: list[str] = []
     length_fn = getattr(pc, "utf8_length", None) or getattr(pc, "count_characters", None)
-    if not callable(length_fn):
-        return []
-    try:
-        lengths = length_fn(array)
-    except (TypeError, pa.ArrowInvalid):
-        return []
-    mask: pa.Array | pa.ChunkedArray | None = None
-    try:
-        if constraint.min_length is not None:
-            min_mask = _binary_compute("greater_equal", lengths, constraint.min_length)
-            if min_mask is None:
-                return []
-            mask = min_mask if mask is None else _binary_compute("and_", mask, min_mask)
-        if constraint.max_length is not None:
-            max_mask = _binary_compute("less_equal", lengths, constraint.max_length)
-            if max_mask is None:
-                return []
-            mask = max_mask if mask is None else _binary_compute("and_", mask, max_mask)
-    except (TypeError, pa.ArrowInvalid):
-        return []
+    lengths: pa.Array | pa.ChunkedArray | None = None
+    if callable(length_fn):
+        try:
+            lengths = length_fn(array)
+        except (TypeError, pa.ArrowInvalid):
+            lengths = None
+    if lengths is None:
+        return errors
+    mask = _length_mask(constraint, lengths)
     if mask is None:
-        return []
+        return errors
     mask = _apply_nullable_mask(mask, array, nullable=constraint.nullable)
     if _all_true(mask):
-        return []
+        return errors
     failures = _first_false_indices(mask)
-    return [
+    errors.append(
         f"Column {constraint.name} length constraint failed at rows {failures}"
         if failures
         else f"Column {constraint.name} length constraint failed"
-    ]
+    )
+    return errors
 
 
 def _apply_nullable_mask(
@@ -391,14 +468,33 @@ def _apply_nullable_mask(
 ) -> pa.Array | pa.ChunkedArray:
     if not nullable:
         return mask
-    try:
-        nulls = _unary_compute("is_null", array)
-        if nulls is None:
-            return mask
-        combined = _binary_compute("or_", nulls, mask)
-        return combined if combined is not None else mask
-    except (TypeError, pa.ArrowInvalid):
+    nulls = _unary_compute("is_null", array)
+    if nulls is None:
         return mask
+    combined = _binary_compute("or_", nulls, mask)
+    return combined if combined is not None else mask
+
+
+def _length_mask(
+    constraint: _ArrowFieldConstraint,
+    lengths: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray | None:
+    mask: pa.Array | pa.ChunkedArray | None = None
+    if constraint.min_length is not None:
+        min_mask = _binary_compute("greater_equal", lengths, constraint.min_length)
+        if min_mask is None:
+            return None
+        mask = min_mask if mask is None else _binary_compute("and_", mask, min_mask)
+        if mask is None:
+            return None
+    if constraint.max_length is not None:
+        max_mask = _binary_compute("less_equal", lengths, constraint.max_length)
+        if max_mask is None:
+            return None
+        mask = max_mask if mask is None else _binary_compute("and_", mask, max_mask)
+        if mask is None:
+            return None
+    return mask
 
 
 def _all_true(mask: pa.Array | pa.ChunkedArray) -> bool:
@@ -462,6 +558,7 @@ def _validate_parquet(
     *,
     schema: dict[str, Any],
     validator: jsonschema.Draft202012Validator,
+    overrides: _ParquetValidationOverrides | None = None,
 ) -> list[str]:
     """Validate a Parquet file against a schema.
 
@@ -473,6 +570,8 @@ def _validate_parquet(
         JSON Schema used for validation.
     validator
         JSON Schema validator instance.
+    overrides
+        Optional overrides for constraints and extras handling.
 
     Returns
     -------
@@ -481,7 +580,12 @@ def _validate_parquet(
     """
     parquet_file = pq.ParquetFile(path)
     errors: list[str] = []
-    constraints, additional_properties, needs_fallback = _schema_constraints(schema)
+    if overrides is None:
+        constraints, additional_properties, needs_fallback = _schema_constraints(schema)
+    else:
+        constraints = overrides.constraints
+        additional_properties = overrides.additional_properties
+        needs_fallback = overrides.needs_fallback
     errors.extend(
         _schema_errors_for_json(
             schema,
@@ -538,6 +642,7 @@ def validate_export_files(
     paths: list[Path],
     *,
     dataset_name: str | None = None,
+    gateway: StorageGateway | None = None,
 ) -> int:
     """Validate files against the table schema.
 
@@ -547,8 +652,12 @@ def validate_export_files(
         Fully qualified table key (schema.table).
     dataset_name
         Optional dataset name used for logging context.
+    gateway
+        Optional storage gateway for inference-backed schema observations.
     paths
         List of JSONL or Parquet files to validate.
+    gateway
+        Optional storage gateway used to load inferred schemas.
 
     Returns
     -------
@@ -560,7 +669,13 @@ def validate_export_files(
     BuildProblemError
         If no schema is available for the table.
     """
-    schema = _get_generated_schema(table_key)
+    inferred_schema = _get_inferred_schema(gateway, table_key)
+    observation = _get_latest_observation(gateway, table_key)
+    schema = (
+        get_json_schema_for_table_schema(inferred_schema)
+        if inferred_schema is not None
+        else _get_generated_schema(table_key)
+    )
     if schema is None:
         label = dataset_name or table_key
         message = f"No JSON Schema available for table: {table_key}"
@@ -578,6 +693,19 @@ def validate_export_files(
         ).problem_detail
         raise BuildProblemError(problem)
 
+    overrides: _ParquetValidationOverrides | None = None
+    if inferred_schema is not None and observation is not None:
+        constraints_override, allow_extras_override = _constraints_from_observation(
+            inferred_schema, observation
+        )
+        overrides = _ParquetValidationOverrides(
+            constraints=constraints_override,
+            additional_properties=(
+                allow_extras_override if allow_extras_override is not None else True
+            ),
+            needs_fallback=False,
+        )
+
     validator = jsonschema.Draft202012Validator(schema, registry=Registry())
     all_errors: list[str] = []
     for path in paths:
@@ -592,7 +720,12 @@ def validate_export_files(
         if path.suffix.lower() == ".jsonl":
             errors = _validate_jsonl(path, validator)
         else:
-            errors = _validate_parquet(path, schema=schema, validator=validator)
+            errors = _validate_parquet(
+                path,
+                schema=schema,
+                validator=validator,
+                overrides=overrides,
+            )
         all_errors.extend([f"{path}: {err}" for err in errors])
 
     if all_errors:

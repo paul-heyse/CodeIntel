@@ -10,7 +10,6 @@ subsystem analytics data beyond the basic SubsystemPack.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -154,7 +153,7 @@ class SubsystemAnalyticsPack:
                 path=MOD_API_PATH,
                 repo=ctx.repo,
                 commit=ctx.commit,
-                tags='["api"]',
+                tags=["api"],
             ),
             dataclass_row(
                 ModuleRow,
@@ -162,7 +161,7 @@ class SubsystemAnalyticsPack:
                 path=MOD_CORE_PATH,
                 repo=ctx.repo,
                 commit=ctx.commit,
-                tags='["api"]',
+                tags=["api"],
             ),
             dataclass_row(
                 ModuleRow,
@@ -417,8 +416,8 @@ class SubsystemAnalyticsPack:
                 name="API Layer",
                 description="API entry points",
                 module_count=1,
-                modules_json=json.dumps([MOD_API_FQN]),
-                entrypoints_json=json.dumps([MOD_API_FQN]),
+                modules_json=[MOD_API_FQN],
+                entrypoints_json=[MOD_API_FQN],
                 internal_edge_count=0,
                 external_edge_count=1,
                 fan_in=0,
@@ -438,8 +437,8 @@ class SubsystemAnalyticsPack:
                 name="Core Analytics",
                 description="Core business logic",
                 module_count=1,
-                modules_json=json.dumps([MOD_CORE_FQN]),
-                entrypoints_json=json.dumps([]),
+                modules_json=[MOD_CORE_FQN],
+                entrypoints_json=[],
                 internal_edge_count=0,
                 external_edge_count=1,
                 fan_in=1,

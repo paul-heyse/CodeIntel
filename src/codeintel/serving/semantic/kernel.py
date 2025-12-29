@@ -7,6 +7,7 @@ both FastAPI routes and MCP tools.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from sqlglot.errors import SqlglotError
 
 from codeintel.core.columnar import align_reader_to_contract, extras_policy_from_schema
 from codeintel.core.exports import (
@@ -61,7 +63,7 @@ from codeintel.serving.semantic.planner import SemanticQueryPlanner
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
-from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (
@@ -70,6 +72,7 @@ from codeintel.storage.queries.safe import (
     assert_select_perimeter,
 )
 from codeintel.storage.schema import arrow_schema_for_table_key
+from codeintel.storage.sqlglot_tools import semantic_diff_sql_duckdb
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
@@ -86,6 +89,7 @@ if TYPE_CHECKING:
     from codeintel.serving.semantic.models import (
         SemanticExportRequest,
         SemanticQueryRequest,
+        SemanticViewSpec,
     )
     from codeintel.serving.semantic.planner import ResolvedViewContext
     from codeintel.serving.semantic.templates import DbApiQuery
@@ -99,6 +103,9 @@ class UnknownViewIdError(KeyError):
     def __init__(self, view_id: str) -> None:
         super().__init__(view_id)
         self.view_id = view_id
+
+
+LOG = logging.getLogger(__name__)
 
 
 def _sanitize_float_nan(value: object) -> object:
@@ -279,6 +286,24 @@ def _ipc_write_options(settings: ServingSettings) -> pa.ipc.IpcWriteOptions:
     )
 
 
+def _resolve_view_columns(
+    *,
+    view: SemanticViewSpec,
+    inventory: SchemaInventory,
+) -> list[str]:
+    if view.columns_dynamic:
+        schema = inventory.get(view.table_key)
+        if schema is None:
+            return list(view.columns)
+        return [column.name for column in schema.columns]
+    if view.columns:
+        return list(view.columns)
+    schema = inventory.get(view.table_key)
+    if schema is None:
+        return list(view.columns)
+    return [column.name for column in schema.columns]
+
+
 @dataclass
 class SemanticQueryKernel:
     """Unified query kernel for semantic layer access.
@@ -428,6 +453,34 @@ class SemanticQueryKernel:
         else:
             return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
 
+    @staticmethod
+    def _log_ast_diff(
+        *,
+        query: ServingQuery,
+        explain: QueryExplain,
+        engine_name: str,
+    ) -> None:
+        if not LOG.isEnabledFor(logging.INFO):
+            return
+        if explain.sql is None:
+            return
+        try:
+            requested_sql = query.ast.sql(dialect=DUCKDB_DIALECT)
+            diff = semantic_diff_sql_duckdb(requested_sql, explain.sql)
+        except SqlglotError:
+            return
+        if not diff:
+            return
+        LOG.info(
+            "semantic_query_diff",
+            extra={
+                "engine": engine_name,
+                "view_id": query.spec.view_id,
+                "table_key": query.spec.table_key,
+                "diff": diff,
+            },
+        )
+
     def _execute_engine_plan(
         self,
         *,
@@ -447,6 +500,11 @@ class SemanticQueryKernel:
             reader = plan.to_reader(batch_size=self.settings.export_batch_size)
             rows = _sanitize_rows(self._rows_from_reader(reader, cancel_check=cancel_check))
             explain = plan.explain()
+            self._log_ast_diff(
+                query=query,
+                explain=explain,
+                engine_name=engine_name,
+            )
         finally:
             plan.cleanup()
         return rows, explain, engine_name
@@ -470,6 +528,7 @@ class SemanticQueryKernel:
         pointer = self.db.current_pointer()
         context = self._planner.snapshot_context(pointer)
         registry = context.registry
+        inventory = context.inventory
 
         views = [
             SemanticCatalogView(
@@ -478,7 +537,7 @@ class SemanticQueryKernel:
                 entity=v.entity,
                 grain=v.grain,
                 description=v.description,
-                column_count=len(v.columns),
+                column_count=len(_resolve_view_columns(view=v, inventory=inventory)),
             )
             for v in registry.views
         ]
@@ -513,10 +572,12 @@ class SemanticQueryKernel:
 
         view = registry.by_id(view_id)
         table_schema = inventory.get(view.table_key)
+        resolved_columns = _resolve_view_columns(view=view, inventory=inventory)
 
         column_types: dict[str, str] = {}
         if table_schema is not None:
-            column_types = {c.name: c.type for c in table_schema.columns}
+            allowed = set(resolved_columns)
+            column_types = {c.name: c.type for c in table_schema.columns if c.name in allowed}
 
         lineage: dict[str, list[ColumnLineageRef]] = {}
         with self.db.connect() as (warehouse, _):
@@ -550,7 +611,7 @@ class SemanticQueryKernel:
             grain=view.grain,
             description=view.description,
             primary_key=view.primary_key,
-            columns=view.columns,
+            columns=resolved_columns,
             column_types=column_types,
             joins=view.joins,
             defaults=view.defaults,

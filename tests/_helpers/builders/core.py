@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.core.hashing import stable_hash
@@ -11,6 +10,8 @@ from tests._helpers.builders._common import _iso
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+    from codeintel.core.serialization.converters import JsonValue
 
 __all__ = [
     "AstMetricsRow",
@@ -41,7 +42,7 @@ class RepoMapRow:
     overlays: dict[str, str] | None = None
     generated_at: datetime | None = None
 
-    def to_tuple(self) -> tuple[str, str, str, str, str]:
+    def to_tuple(self) -> tuple[str, str, dict[str, str], dict[str, str], str]:
         """Serialize row to database insert order.
 
         Returns
@@ -52,8 +53,8 @@ class RepoMapRow:
         return (
             self.repo,
             self.commit,
-            json.dumps(self.modules),
-            json.dumps(self.overlays or {}),
+            self.modules,
+            self.overlays or {},
             _iso(self.generated_at),
         )
 
@@ -79,11 +80,11 @@ class ModuleRow:
     repo: str
     commit: str
     language: str = "python"
-    tags: str = "[]"
-    owners: str = "[]"
+    tags: list[str] = field(default_factory=list)
+    owners: list[str] = field(default_factory=list)
     row_hash: str | None = None
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, str, str, str | None]:
+    def to_tuple(self) -> tuple[str, str, str, str, str, list[str], list[str], str | None]:
         """Serialize row to database insert order.
 
         Returns
@@ -287,10 +288,10 @@ class DocstringRow:
     style: str
     short_desc: str
     long_desc: str
-    params_json: str
-    returns_json: str
-    raises_json: str
-    examples_json: str
+    params_json: JsonValue | None
+    returns_json: JsonValue | None
+    raises_json: JsonValue | None
+    examples_json: JsonValue | None
     created_at: datetime
 
     def to_tuple(
@@ -308,10 +309,10 @@ class DocstringRow:
         str,
         str,
         str,
-        str,
-        str,
-        str,
-        str,
+        JsonValue | None,
+        JsonValue | None,
+        JsonValue | None,
+        JsonValue | None,
         str,
     ]:
         """Serialize row to database insert order.

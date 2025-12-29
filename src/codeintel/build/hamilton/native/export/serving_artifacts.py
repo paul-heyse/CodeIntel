@@ -19,7 +19,6 @@ import platform
 import sys
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
 
 import polars as pl
 import pyarrow as pa
@@ -57,9 +56,7 @@ from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.storage.datasets.manifests import dataset_manifest_path
-from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
-from codeintel.storage.views.diff import diff_view_sql_maps
 
 LOG = logging.getLogger(__name__)
 
@@ -71,8 +68,6 @@ SERVING_ARTIFACT_SEMANTIC_REGISTRY = "semantic_registry"
 SERVING_ARTIFACT_SCHEMA_MANIFEST = "schema_manifest"
 SERVING_ARTIFACT_BUILDSPEC = "buildspec"
 SERVING_ARTIFACT_ENVIRONMENT = "environment"
-SERVING_ARTIFACT_VIEWS_SQL = "views_sql"
-SERVING_ARTIFACT_VIEWS_SQL_DIFF = "views_sql_diff"
 SERVING_ARTIFACT_DATASET_MANIFEST_PATHS = "dataset_manifest_paths"
 SCHEMA_INFERENCE_ERRORS_TABLE_KEY = "core.schema_inference_errors"
 
@@ -199,60 +194,6 @@ def _environment_json(env: BuildEnv) -> str:
             },
         },
         "argv0": sys.argv[0] if sys.argv else None,
-    }
-    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-
-
-def _views_sql_json(env: BuildEnv, tag_query: TagQuery) -> str:
-    _ = (env, tag_query)
-    return json.dumps({}, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-
-
-def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
-    after = json.loads(current_views_sql)
-    if not isinstance(after, dict):
-        msg = "views_sql artifact did not contain an object mapping"
-        raise TypeError(msg)
-
-    before: dict[str, str] = {}
-    try:
-        versions = env.gateway.assets.get_asset_versions(
-            repo=env.repo,
-            commit=env.commit,
-            asset_kind="artifact",
-            asset_key=SERVING_ARTIFACT_VIEWS_SQL,
-            limit=1,
-        )
-    except DuckDBError:
-        LOG.exception(
-            "Failed to load prior views_sql versions repo=%s commit=%s",
-            env.repo,
-            env.commit,
-        )
-        versions = []
-    if versions:
-        location = versions[0].location
-        if isinstance(location, str):
-            path = Path(location)
-            if path.is_file():
-                try:
-                    text = path.read_text(encoding="utf-8")
-                except OSError:
-                    text = ""
-                if text:
-                    try:
-                        loaded = json.loads(text)
-                    except ValueError:
-                        loaded = None
-                    if isinstance(loaded, dict):
-                        before = {str(k).lower(): str(v) for k, v in loaded.items()}
-
-    diff = diff_view_sql_maps(before=before, after={str(k): str(v) for k, v in after.items()})
-    payload = {
-        "repo": env.repo,
-        "commit": env.commit,
-        "previous_present": bool(before),
-        "views": diff,
     }
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
@@ -474,70 +415,6 @@ def serving_artifacts__environment(env: BuildEnv) -> str:
     return _environment_json(env)
 
 
-@SaveToObjectMetadataDecorator(
-    [FileArtifactSaver],
-    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL}"),
-    env=source("env"),
-    catalog=source("catalog"),
-    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
-    artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL),
-    path_template=value("{build_dir}/serving/artifacts/views_sql.json"),
-)
-@tag_compute(
-    domain="export",
-    target=SERVING_ARTIFACTS_TARGET_NAME,
-    target_="serving_artifacts__views_sql",
-)
-def serving_artifacts__views_sql(env: BuildEnv, tag_query: TagQuery) -> str:
-    """Compile compiled view SQL map JSON for serving.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway access.
-    tag_query
-        TagQuery helper for semantic view discovery.
-
-    Returns
-    -------
-    str
-        Newline-terminated JSON mapping of view_key -> compiled SQL.
-    """
-    return _views_sql_json(env, tag_query)
-
-
-@SaveToObjectMetadataDecorator(
-    [FileArtifactSaver],
-    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL_DIFF}"),
-    env=source("env"),
-    catalog=source("catalog"),
-    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
-    artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL_DIFF),
-    path_template=value("{build_dir}/serving/artifacts/views_sql_diff.json"),
-)
-@tag_compute(
-    domain="export",
-    target=SERVING_ARTIFACTS_TARGET_NAME,
-    target_="serving_artifacts__views_sql_diff",
-)
-def serving_artifacts__views_sql_diff(env: BuildEnv, serving_artifacts__views_sql: str) -> str:
-    """Compute a diff summary between the latest stored and current view SQL maps.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway access.
-    serving_artifacts__views_sql
-        Newline-terminated JSON mapping of view_key -> compiled SQL for this build.
-
-    Returns
-    -------
-    str
-        Newline-terminated JSON diff artifact.
-    """
-    return _views_sql_diff_json(env, current_views_sql=serving_artifacts__views_sql)
-
-
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations_base(
     m__artifact__semantic_registry: MaterializationResult,
@@ -574,8 +451,6 @@ def serving_artifacts__materializations_base(
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations_views(
     m__artifact__environment: MaterializationResult,
-    m__artifact__views_sql: MaterializationResult,
-    m__artifact__views_sql_diff: MaterializationResult,
 ) -> dict[str, MaterializationResult]:
     """Collect saver metadata for the view/metadata artifacts.
 
@@ -586,8 +461,6 @@ def serving_artifacts__materializations_views(
     """
     return {
         SERVING_ARTIFACT_ENVIRONMENT: m__artifact__environment,
-        SERVING_ARTIFACT_VIEWS_SQL: m__artifact__views_sql,
-        SERVING_ARTIFACT_VIEWS_SQL_DIFF: m__artifact__views_sql_diff,
     }
 
 

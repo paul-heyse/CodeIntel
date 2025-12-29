@@ -75,6 +75,17 @@ class DatasetManifestIndex:
         return tuple(self.by_table_key.keys())
 
 
+@dataclass(frozen=True, slots=True)
+class DatasetScannerOptions:
+    """Options for streaming dataset scans."""
+
+    batch_size: int
+    fragment_readahead: int | None = None
+    filter_expression: ds.Expression | None = None
+    metrics_enabled: bool = False
+    schema: pa.Schema | None = None
+
+
 def dataset_for_entry(entry: DatasetManifestEntry) -> ds.Dataset:
     """Return a PyArrow dataset for a manifest entry.
 
@@ -122,11 +133,7 @@ def dataset_filter_expression(
 def dataset_scanner_for_entry(
     entry: DatasetManifestEntry,
     *,
-    batch_size: int,
-    fragment_readahead: int | None = None,
-    filter_expression: ds.Expression | None = None,
-    metrics_enabled: bool = False,
-    schema: pa.Schema | None = None,
+    options: DatasetScannerOptions,
 ) -> ds.Scanner:
     """Return a dataset scanner configured for streaming reads.
 
@@ -137,22 +144,22 @@ def dataset_scanner_for_entry(
     """
     start = perf_counter()
     dataset = dataset_for_entry(entry)
-    if metrics_enabled:
+    if options.metrics_enabled:
         _log_scan_metrics(
             entry,
             dataset=dataset,
-            filter_expression=filter_expression,
+            filter_expression=options.filter_expression,
             duration_ms=(perf_counter() - start) * 1000,
             memory_bytes=_total_allocated_bytes(),
         )
-    scan_kwargs: dict[str, object] = {"batch_size": batch_size}
-    if fragment_readahead is not None:
-        scan_kwargs["fragment_readahead"] = fragment_readahead
+    scan_kwargs: dict[str, object] = {"batch_size": options.batch_size}
+    if options.fragment_readahead is not None:
+        scan_kwargs["fragment_readahead"] = options.fragment_readahead
     return _build_scanner(
         dataset,
-        filter_expression=filter_expression,
+        filter_expression=options.filter_expression,
         scan_kwargs=scan_kwargs,
-        schema=schema,
+        schema=options.schema,
     )
 
 
@@ -273,6 +280,8 @@ def _log_scan_metrics(
 ) -> None:
     stats = entry.manifest.stats or {}
     row_groups = stats.get("row_groups")
+    row_count = entry.manifest.row_count or stats.get("rows_from_metadata")
+    total_bytes = stats.get("total_bytes")
     total_fragments = _count_fragments(dataset, filter_expression=None)
     filtered_fragments = (
         _count_fragments(dataset, filter_expression=filter_expression)
@@ -281,12 +290,14 @@ def _log_scan_metrics(
     )
     LOG.info(
         "dataset_scan_metrics table=%s files=%s fragments=%s fragments_filtered=%s "
-        "row_groups=%s duration_ms=%.2f memory_bytes=%s",
+        "row_groups=%s rows=%s bytes=%s duration_ms=%.2f memory_bytes=%s",
         entry.manifest.table_key,
         len(entry.manifest.files),
         total_fragments,
         filtered_fragments,
         row_groups,
+        row_count,
+        total_bytes,
         duration_ms,
         memory_bytes,
     )
@@ -327,24 +338,35 @@ def _total_allocated_bytes() -> int | None:
 def _coerce_int(value: object) -> int | None:
     if isinstance(value, bool):
         return None
-    result: int | None = None
     if isinstance(value, int):
-        result = value
-    elif isinstance(value, float):
-        result = int(value)
-    elif isinstance(value, str):
-        try:
-            result = int(value)
-        except ValueError:
-            result = None
-    else:
-        converter = getattr(value, "__int__", None)
-        if callable(converter):
-            try:
-                result = int(value)
-            except (TypeError, ValueError):
-                result = None
-    return result
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return _coerce_int_from_str(value)
+    return _coerce_int_from_intlike(value)
+
+
+def _coerce_int_from_str(value: str) -> int | None:
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _coerce_int_from_intlike(value: object) -> int | None:
+    converter = getattr(value, "__int__", None)
+    if not callable(converter):
+        return None
+    try:
+        converted = converter()
+    except (TypeError, ValueError):
+        return None
+    if isinstance(converted, bool):
+        return None
+    if isinstance(converted, int):
+        return converted
+    return None
 
 
 def _build_scanner(
@@ -425,6 +447,7 @@ _DATASET_COMPARISON_BUILDERS: dict[str, Callable[[ds.Expression, FilterValue], d
 __all__ = [
     "DatasetManifestEntry",
     "DatasetManifestIndex",
+    "DatasetScannerOptions",
     "dataset_filter_expression",
     "dataset_for_entry",
     "dataset_scanner_for_entry",

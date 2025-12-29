@@ -184,7 +184,7 @@ def seed_docs_export_minimal(
     )
     insert_rows(
         gateway,
-        [CFGBlockRow(goid, 0, f"{goid}:block0", "entry", "foo.py", 1, 1, "entry", "[]", 0, 0)],
+        [CFGBlockRow(goid, 0, f"{goid}:block0", "entry", "foo.py", 1, 1, "entry", [], 0, 0)],
     )
     insert_rows(
         gateway,
@@ -231,10 +231,10 @@ def seed_docs_export_minimal(
                 style="auto",
                 short_desc="demo",
                 long_desc="",
-                params_json="[]",
-                returns_json='{"type": "str"}',
-                raises_json="[]",
-                examples_json="[]",
+                params_json=[],
+                returns_json={"type": "str"},
+                raises_json=[],
+                examples_json=[],
                 created_at=now,
             )
         ],
@@ -297,7 +297,7 @@ def seed_docs_export_minimal(
                 return_type="str",
                 return_type_source="annotation",
                 type_comment=None,
-                param_types_json="{}",
+                param_types_json={},
                 fully_typed=True,
                 partial_typed=False,
                 untyped=False,
@@ -440,8 +440,8 @@ def seed_profile_data(
                 path=rel_path,
                 repo=repo,
                 commit=commit,
-                tags='["server"]',
-                owners='["team@example.com"]',
+                tags=["server"],
+                owners=["team@example.com"],
             )
         ],
     )
@@ -520,10 +520,10 @@ def seed_profile_data(
                 style="auto",
                 short_desc="Short doc",
                 long_desc="Longer doc",
-                params_json="[]",
-                returns_json='{"return": "int"}',
-                raises_json="[]",
-                examples_json="[]",
+                params_json=[],
+                returns_json={"return": "int"},
+                raises_json=[],
+                examples_json=[],
                 created_at=now,
             )
         ],
@@ -602,7 +602,7 @@ def seed_profile_data(
                 return_type="int",
                 return_type_source="annotation",
                 type_comment=None,
-                param_types_json="[]",
+                param_types_json=[],
                 fully_typed=True,
                 partial_typed=False,
                 untyped=False,
@@ -649,7 +649,7 @@ def seed_profile_data(
                 kind="function",
                 status="failed",
                 duration_ms=1500,
-                markers="[]",
+                markers=[],
                 parametrized=False,
                 flaky=True,
                 created_at=now,

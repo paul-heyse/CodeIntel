@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
 import sqlglot.expressions as exp
@@ -620,10 +620,14 @@ def _contract_schema_metadata(
 ) -> tuple[str | None, str | None]:
     contract = _dataset_contract(gateway, table_key=table_key)
     schema_version = contract.schema_version if contract is not None else None
-    computed_schema_hash = None
+    provider = gateway.policy.schema_provider
+    if provider is not None:
+        inferred_schema = provider.get_table_schema(table_key)
+        if inferred_schema is not None:
+            return schema_version, schema_hash(inferred_schema)
     if contract is not None and contract.schema is not None:
-        computed_schema_hash = schema_hash(contract.schema)
-    return schema_version, computed_schema_hash
+        return schema_version, schema_hash(contract.schema)
+    return schema_version, None
 
 
 @dataclass(frozen=True, slots=True)
@@ -791,7 +795,9 @@ def _write_tabular(
     relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
     options: MaterializeOptions,
 ) -> int | None:
-    table_row_count: int | None = relation.num_rows if isinstance(relation, pa.Table) else None
+    table_row_count: int | None = None
+    if isinstance(relation, pa.Table):
+        table_row_count = cast("int", relation.num_rows)
     contract_schema = _contract_schema_for_table(gateway, table_key=table_key)
     if contract_schema is not None:
         relation = _align_tabular_input(

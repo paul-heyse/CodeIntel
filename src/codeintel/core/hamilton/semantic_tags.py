@@ -31,6 +31,12 @@ TAG_MCP_VISIBLE = "mcp_visible"
 TAG_DEFAULT_ORDER = "semantic_default_order_by"
 TAG_DEFAULT_LIMIT = "semantic_default_limit"
 TAG_SENSITIVITY = "semantic_sensitivity"
+TAG_LAYER = ht.TAG_LAYER
+TAG_KIND = ht.TAG_KIND
+TAG_VERSION = ht.TAG_VERSION
+TAG_SCHEMA_REF = ht.TAG_SCHEMA_REF
+TAG_ENTITY_KEYS = ht.TAG_ENTITY_KEYS
+TAG_JOIN_KEYS = ht.TAG_JOIN_KEYS
 
 _TFunc = TypeVar("_TFunc", bound=Callable[..., object])
 
@@ -46,6 +52,7 @@ class SemanticViewTagSpec(TypedDict, total=False):
     table_key: Required[str]
     entity: Required[str]
     grain: Required[str]
+    version: str
     primary_key: tuple[str, ...]
     columns: tuple[str, ...]
     description: str | None
@@ -55,6 +62,9 @@ class SemanticViewTagSpec(TypedDict, total=False):
     sensitivity: str
     mcp_visible: bool
     kind: Literal["table", "view"]
+    schema_ref: str | None
+    entity_keys: tuple[str, ...]
+    join_keys: tuple[str, ...]
 
 
 class SemanticViewSpecError(TypeError):
@@ -71,10 +81,15 @@ def _build_semantic_tags(spec: SemanticViewTagSpec) -> dict[str, str]:
     grain = spec["grain"]
 
     tags: dict[str, str] = {
+        TAG_LAYER: "semantic",
+        TAG_KIND: spec.get("kind", "view"),
+        TAG_VERSION: str(spec.get("version", "1")),
         TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
         TAG_DEFAULT_LIMIT: str(spec.get("default_limit", 200)),
         TAG_DEFAULT_ORDER: _csv(spec.get("default_order_by", ())),
         TAG_MCP_VISIBLE: "1" if spec.get("mcp_visible", True) else "0",
+        ht.TAG_ENTITY: entity,
+        ht.TAG_GRAIN: grain,
         TAG_SEMANTIC_ENTITY: entity,
         TAG_SEMANTIC_GRAIN: grain,
         TAG_SEMANTIC_ID: semantic_id,
@@ -92,6 +107,15 @@ def _build_semantic_tags(spec: SemanticViewTagSpec) -> dict[str, str]:
     joins = spec.get("joins")
     if joins is not None:
         tags[TAG_SEMANTIC_JOINS] = json.dumps(joins, sort_keys=True)
+    schema_ref = spec.get("schema_ref")
+    if schema_ref:
+        tags[TAG_SCHEMA_REF] = schema_ref
+    entity_keys = spec.get("entity_keys", ())
+    if entity_keys:
+        tags[TAG_ENTITY_KEYS] = _csv(entity_keys)
+    join_keys = spec.get("join_keys", ())
+    if join_keys:
+        tags[TAG_JOIN_KEYS] = _csv(join_keys)
 
     return tags
 
@@ -163,6 +187,9 @@ def semantic_view(
                 table_key=table_key,
                 entity=entity,
                 grain=grain,
+                layer=tags[TAG_LAYER],
+                kind=tags[TAG_KIND],
+                version=tags[TAG_VERSION],
                 mcp_visible=tags[TAG_MCP_VISIBLE],
                 semantic_default_limit=tags[TAG_DEFAULT_LIMIT],
                 semantic_default_order_by=tags[TAG_DEFAULT_ORDER],
@@ -177,6 +204,12 @@ def semantic_view(
             tagged = cast("_TFunc", h_tag(semantic_description=tags[TAG_SEMANTIC_DESC])(tagged))
         if TAG_SEMANTIC_JOINS in tags:
             tagged = cast("_TFunc", h_tag(semantic_joins=tags[TAG_SEMANTIC_JOINS])(tagged))
+        if TAG_SCHEMA_REF in tags:
+            tagged = cast("_TFunc", h_tag(schema_ref=tags[TAG_SCHEMA_REF])(tagged))
+        if TAG_ENTITY_KEYS in tags:
+            tagged = cast("_TFunc", h_tag(entity_keys=tags[TAG_ENTITY_KEYS])(tagged))
+        if TAG_JOIN_KEYS in tags:
+            tagged = cast("_TFunc", h_tag(join_keys=tags[TAG_JOIN_KEYS])(tagged))
         setattr(tagged, SEMANTIC_VIEW_TAG_ATTR, tags)
         return tagged
 
@@ -204,8 +237,13 @@ __all__ = [
     "SEMANTIC_VIEW_TAG_ATTR",
     "TAG_DEFAULT_LIMIT",
     "TAG_DEFAULT_ORDER",
+    "TAG_ENTITY_KEYS",
+    "TAG_JOIN_KEYS",
+    "TAG_KIND",
+    "TAG_LAYER",
     "TAG_MCP_VISIBLE",
     "TAG_OUTPUT_KIND",
+    "TAG_SCHEMA_REF",
     "TAG_SEMANTIC_COLS",
     "TAG_SEMANTIC_DESC",
     "TAG_SEMANTIC_ENTITY",
@@ -216,6 +254,7 @@ __all__ = [
     "TAG_SEMANTIC_PK",
     "TAG_SENSITIVITY",
     "TAG_TABLE_KEY",
+    "TAG_VERSION",
     "SemanticViewSpecError",
     "SemanticViewTagSpec",
     "get_semantic_view_tags",

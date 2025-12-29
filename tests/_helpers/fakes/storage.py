@@ -6,12 +6,14 @@ that need deterministic storage behavior without a real database.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
+from tests._helpers.columnar_streams import contract_schema_for_table_key, table_for_rows
 from tests._helpers.records import CallRecorder, StorageOpCall
 
 if TYPE_CHECKING:
@@ -49,7 +51,7 @@ class FakeIngestStorage:
     codeintel.ingestion.adapters.DuckDBStorageAdapter : Production implementation
     """
 
-    data: dict[str, list[Sequence[object]]] = field(default_factory=dict)
+    data: dict[str, pa.Table] = field(default_factory=dict)
     schemas: set[str] = field(default_factory=set)
     operations: CallRecorder[StorageOpCall] = field(default_factory=CallRecorder)
 
@@ -63,7 +65,7 @@ class FakeIngestStorage:
         """
         self.schemas.add(table_key)
         if table_key not in self.data:
-            self.data[table_key] = []
+            self.data[table_key] = _empty_table(table_key)
         self.operations.record(StorageOpCall(op="ensure_schema", target=table_key, details=None))
 
     def write_batch(
@@ -90,8 +92,11 @@ class FakeIngestStorage:
             Metadata about the write operation.
         """
         if table_key not in self.data:
-            self.data[table_key] = []
-        self.data[table_key].extend(rows)
+            self.data[table_key] = _empty_table(table_key)
+        normalized_rows = [tuple(row) for row in rows]
+        table = table_for_rows(table_key, normalized_rows)
+        existing = self.data[table_key]
+        self.data[table_key] = pa.concat_tables([existing, table])
         self.operations.record(
             StorageOpCall(
                 op="write_batch", target=table_key, details={"rows": len(rows), "scope": scope}
@@ -193,12 +198,36 @@ class FakeIngestStorage:
         pa.RecordBatchReader
             Empty Arrow reader for fake storage responses.
         """
-        _ = batch_size
         self.operations.record(
             StorageOpCall(op="fetch_arrow_reader", target=sql, details={"params": params})
         )
-        schema = pa.schema([])
-        return pa.RecordBatchReader.from_batches(schema, [])
+        table_key = _table_key_from_sql(sql)
+        if table_key is None:
+            schema = pa.schema([])
+            return pa.RecordBatchReader.from_batches(schema, [])
+        table = self.data.get(table_key)
+        if table is None:
+            table = _empty_table(table_key)
+        batches = table.to_batches(max_chunksize=batch_size)
+        return pa.RecordBatchReader.from_batches(table.schema, batches)
+
+
+_FROM_RE = re.compile(
+    r'from\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\."?([A-Za-z_][A-Za-z0-9_]*)"?',
+    re.I,
+)
+
+
+def _table_key_from_sql(sql: str) -> str | None:
+    match = _FROM_RE.search(sql)
+    if match is None:
+        return None
+    return f"{match.group(1)}.{match.group(2)}"
+
+
+def _empty_table(table_key: str) -> pa.Table:
+    schema = contract_schema_for_table_key(table_key)
+    return pa.Table.from_batches([], schema=schema)
 
 
 __all__ = ["FakeIngestStorage"]

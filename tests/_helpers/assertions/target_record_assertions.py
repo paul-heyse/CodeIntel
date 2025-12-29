@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.schema_provider import get_schema_provider
-from codeintel.storage.validation.columnar import TableValidationError, validate_table
+from codeintel.storage.validation.columnar import (
+    TableValidationError,
+    validate_record_batch_reader,
+)
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,
@@ -67,9 +71,16 @@ def assert_table_schema_valid(gateway: StorageGateway, table_key: str) -> None:
     if table_schema is None:
         message = f"No schema registered for {table_key}"
         raise AssertionError(message)
-    table = gateway.con.table(table_key).fetch_arrow_table()
     try:
-        validate_table(table_key, table, table_schema=table_schema, mode="strict")
+        reader = gateway.con.table(table_key).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        validated = validate_record_batch_reader(
+            table_key,
+            reader,
+            table_schema=table_schema,
+            mode="strict",
+        )
+        for _batch in validated:
+            pass
     except TableValidationError as exc:
         message = f"Schema validation failed for {table_key}: {exc.errors}"
         raise AssertionError(message) from exc

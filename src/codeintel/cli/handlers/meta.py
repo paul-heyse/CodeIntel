@@ -220,3 +220,26 @@ def meta_registry_health_handler(ctx: CommandContext) -> CliResult[dict[str, obj
     except (RuntimeError, TypeError, ValueError) as exc:
         return fail_execution_failed("meta", str(exc), status=500)
     return CliResult.ok(payload)
+
+
+def meta_drift_report_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
+    """Return latest schema drift summaries from schema observations.
+
+    Parameters
+    ----------
+    ctx
+        CLI command context with gateway access.
+
+    Returns
+    -------
+    CliResult[dict[str, object]]
+        Drift summary payload for recent observations.
+    """
+    if not ctx.has_storage:
+        return fail_execution_failed("meta", "meta.drift requires storage access")
+    limit = ctx.params.get_int("limit", 50)
+    try:
+        payload = ctx.gateway.schemas.drift_summary_report(limit=limit)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        return fail_execution_failed("meta", str(exc), status=500)
+    return CliResult.ok(payload)

@@ -203,6 +203,7 @@ def _validate_written_exports(
     written: list[Path],
     registry_by_table_key: Mapping[str, DatasetContract],
     opts: ExportCallOptions,
+    gateway: StorageGateway,
 ) -> None:
     if not opts.validate_exports:
         return
@@ -220,7 +221,12 @@ def _validate_written_exports(
             log.info("Skipping validation for %s; no JSON Schema configured", table_key)
             continue
         profile = resolve_validation_profile(opts, dataset)
-        exit_code = validate_export_files(table_key, matching, dataset_name=dataset_name)
+        exit_code = validate_export_files(
+            table_key,
+            matching,
+            dataset_name=dataset_name,
+            gateway=gateway,
+        )
         if exit_code != 0 and profile == "lenient":
             log_export_error(
                 SCHEMA_VALIDATION_FAILED,
@@ -410,7 +416,7 @@ def export_all_datasets(
             settings.table_enabled,
         )
 
-    _validate_written_exports(written, registry.by_table_key, opts)
+    _validate_written_exports(written, registry.by_table_key, opts, gateway)
     return written
 
 

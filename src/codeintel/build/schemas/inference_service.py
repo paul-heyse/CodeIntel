@@ -21,6 +21,13 @@ from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
+from codeintel.build.schemas.observations import (
+    SchemaObservationAccumulator,
+    SchemaObservationBundle,
+    merge_table_schema_hints,
+    observe_batches,
+    schema_hints_from_tags,
+)
 from codeintel.build.schemas.seed_harness import MiniSeedHarness
 from codeintel.build.tabular.types import InferableTabularInput, TabularInput
 from codeintel.config.models import ToolsConfig
@@ -44,15 +51,21 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
+    from codeintel.build.schemas.observations import SchemaHints
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
     "HamiltonSchemaProvider",
     "SchemaInferenceService",
+    "SchemaObservationAccumulator",
+    "SchemaObservationBundle",
+    "SchemaObservationContext",
     "get_schema_inference_service",
     "infer_schema_for_table_key",
     "infer_table_schemas",
     "inferable_native_table_keys",
+    "observe_schema_from_batches",
+    "observe_schema_from_reader",
     "table_schema_from_tabular",
 ]
 
@@ -154,6 +167,17 @@ def _output_data_node(
     if len(tabular_deps) != 1:
         return None
     return tabular_deps[0]
+
+
+def _schema_hints_for_table_key(
+    *,
+    catalog: DagCatalog,
+    table_key: str,
+) -> SchemaHints | None:
+    output = catalog.table_outputs.get(table_key)
+    if output is None:
+        return None
+    return schema_hints_from_tags(output.tags)
 
 
 def _resolve_inference_job(
@@ -367,10 +391,17 @@ def infer_schema_for_table_key(
 
     try:
         job = _resolve_inference_job(context=context, table_key=table_key)
-        return _infer_table_schema_for_compute(
+        inferred = _infer_table_schema_for_compute(
             context=context,
             declared_provider=declared_provider,
             job=job,
+        )
+        declared_schema = declared_provider.get_table_schema(table_key)
+        schema_hints = _schema_hints_for_table_key(catalog=catalog, table_key=table_key)
+        return merge_table_schema_hints(
+            inferred,
+            declared_schema,
+            schema_hints=schema_hints,
         )
     except KeyError as exc:
         msg = f"Failed to infer schema for {table_key}: {exc}"
@@ -384,6 +415,18 @@ def infer_schema_for_table_key(
 
 
 Inferer = Callable[[str], TableSchema]
+_INFERENCE_ERRORS = (KeyError, TypeError, ValueError, RuntimeError)
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaObservationContext:
+    """Optional metadata used when generating schema observations."""
+
+    declared_schema: TableSchema | None = None
+    schema_hints: SchemaHints | None = None
+    repo: str | None = None
+    commit: str | None = None
+    target_name: str | None = None
 
 
 @dataclass
@@ -393,7 +436,7 @@ class HamiltonSchemaProvider(SchemaProvider):
     declared: SchemaProvider
     inferer: Inferer
     inferable_table_keys: frozenset[str]
-    fallback_to_declared_on_error: bool = True
+    fallback_to_declared_on_error: bool = False
     _cache: dict[str, TableSchema] = field(default_factory=dict)
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
@@ -416,9 +459,9 @@ class HamiltonSchemaProvider(SchemaProvider):
         if table_key in self.inferable_table_keys:
             try:
                 inferred = self.inferer(table_key)
-            except Exception:
+            except _INFERENCE_ERRORS:
                 if not self.fallback_to_declared_on_error:
-                    raise
+                    return None
                 return self.declared.get_table_schema(table_key)
             self._cache[table_key] = inferred
             return inferred
@@ -619,6 +662,83 @@ def table_schema_from_tabular(obj: InferableTabularInput, *, table_key: str) -> 
         TableSchema derived from the tabular output.
     """
     return _table_schema_from_tabular(obj, table_key=table_key)
+
+
+def observe_schema_from_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    table_key: str,
+    context: SchemaObservationContext | None = None,
+) -> SchemaObservationBundle:
+    """Observe a schema from a streaming RecordBatchReader.
+
+    Parameters
+    ----------
+    reader
+        RecordBatchReader to observe.
+    table_key
+        Fully qualified table key (schema.table).
+    context
+        Optional observation context containing declared schema and provenance.
+
+    Returns
+    -------
+    SchemaObservationBundle
+        Bundle containing observation, registry, and schema version records.
+    """
+    resolved = context or SchemaObservationContext()
+    accumulator = SchemaObservationAccumulator(
+        table_key=table_key,
+        declared_schema=resolved.declared_schema,
+        schema_hints=resolved.schema_hints,
+    )
+    observe_batches(reader, accumulator=accumulator)
+    return accumulator.finalize(
+        arrow_schema=reader.schema,
+        repo=resolved.repo,
+        commit=resolved.commit,
+        target_name=resolved.target_name,
+    )
+
+
+def observe_schema_from_batches(
+    *,
+    batches: Iterable[pa.RecordBatch],
+    schema: pa.Schema,
+    table_key: str,
+    context: SchemaObservationContext | None = None,
+) -> SchemaObservationBundle:
+    """Observe a schema from an iterator of record batches.
+
+    Parameters
+    ----------
+    batches
+        Record batch iterable to observe.
+    schema
+        Arrow schema describing the batch stream.
+    table_key
+        Fully qualified table key (schema.table).
+    context
+        Optional observation context containing declared schema and provenance.
+
+    Returns
+    -------
+    SchemaObservationBundle
+        Bundle containing observation, registry, and schema version records.
+    """
+    resolved = context or SchemaObservationContext()
+    accumulator = SchemaObservationAccumulator(
+        table_key=table_key,
+        declared_schema=resolved.declared_schema,
+        schema_hints=resolved.schema_hints,
+    )
+    observe_batches(batches, accumulator=accumulator)
+    return accumulator.finalize(
+        arrow_schema=schema,
+        repo=resolved.repo,
+        commit=resolved.commit,
+        target_name=resolved.target_name,
+    )
 
 
 @dataclass(frozen=True, slots=True)

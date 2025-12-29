@@ -7,8 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.columnar.schema_alignment import (
+    align_reader_to_contract,
+    extras_policy_from_schema,
+)
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
@@ -18,6 +23,7 @@ from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref, split_table_key
+from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
 
 if TYPE_CHECKING:
@@ -25,6 +31,17 @@ if TYPE_CHECKING:
 
 
 DEFAULT_FRAGMENT_READAHEAD = 2
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetViewRequest:
+    """Dataset manifest context for view registration."""
+
+    table_key: str
+    schema: str
+    table: str
+    manifest: ArrowDatasetManifest
+    manifest_path: Path
 
 
 class ServingSnapshotError(RuntimeError):
@@ -191,12 +208,16 @@ class ServingSnapshotService:
             manifest = read_dataset_manifest(manifest_path)
             schema, table = split_table_key(table_key)
             backend.create_schema_if_not_exists(schema)
-            _create_dataset_view(
-                con=con,
+            request = DatasetViewRequest(
+                table_key=table_key,
                 schema=schema,
                 table=table,
                 manifest=manifest,
                 manifest_path=manifest_path,
+            )
+            _create_dataset_view(
+                con=con,
+                request=request,
             )
 
 
@@ -292,23 +313,22 @@ def _expect_list(value: object, *, ctx: str) -> list[object]:
 def _create_dataset_view(
     *,
     con: DuckDBConnection,
-    schema: str,
-    table: str,
-    manifest: ArrowDatasetManifest,
-    manifest_path: Path,
+    request: DatasetViewRequest,
 ) -> None:
     current_schema = _current_schema(con)
-    if current_schema != schema:
-        _set_schema(con, schema)
+    if current_schema != request.schema:
+        _set_schema(con, request.schema)
     try:
+        contract_schema = _contract_schema_for_table(con, table_key=request.table_key)
         relation = _dataset_read_parquet_relation(
             con=con,
-            manifest=manifest,
-            manifest_path=manifest_path,
+            manifest=request.manifest,
+            manifest_path=request.manifest_path,
+            contract_schema=contract_schema,
         )
-        relation.create_view(table)
+        relation.create_view(request.table)
     finally:
-        if current_schema != schema:
+        if current_schema != request.schema:
             _set_schema(con, current_schema)
 
 
@@ -317,6 +337,7 @@ def _dataset_read_parquet_relation(
     con: DuckDBConnection,
     manifest: ArrowDatasetManifest,
     manifest_path: Path,
+    contract_schema: pa.Schema | None,
 ) -> DuckDBRelation:
     dataset_dir = manifest_path.parent.resolve()
     partitioning: str | None = "hive" if manifest.partition_columns else None
@@ -325,10 +346,24 @@ def _dataset_read_parquet_relation(
         dataset = ds.dataset(paths, format="parquet", partitioning=partitioning)
     else:
         dataset = ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning)
-    scanner = dataset.scanner(
-        batch_size=DEFAULT_ARROW_BATCH_SIZE,
-        fragment_readahead=DEFAULT_FRAGMENT_READAHEAD,
-    )
+    scan_kwargs: dict[str, object] = {
+        "batch_size": DEFAULT_ARROW_BATCH_SIZE,
+        "fragment_readahead": DEFAULT_FRAGMENT_READAHEAD,
+    }
+    if contract_schema is not None:
+        scan_kwargs["schema"] = contract_schema
+    scanner = _scanner_with_schema(dataset, scan_kwargs)
+    if contract_schema is not None:
+        reader = scanner.to_reader()
+        aligned = align_reader_to_contract(
+            reader,
+            contract_schema,
+            extras_policy=extras_policy_from_schema(contract_schema),
+        )
+        try:
+            return con.from_arrow(aligned)
+        except (TypeError, ValueError):
+            return con.from_arrow(scanner)
     try:
         return con.from_arrow(scanner)
     except (TypeError, ValueError):
@@ -337,6 +372,25 @@ def _dataset_read_parquet_relation(
             return con.from_arrow(reader)
         except (TypeError, ValueError):
             return con.from_arrow(dataset)
+
+
+def _contract_schema_for_table(
+    con: DuckDBConnection,
+    *,
+    table_key: str,
+) -> pa.Schema | None:
+    try:
+        return arrow_schema_for_table_key(con, table_key=table_key)
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
+
+
+def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> ds.Scanner:
+    try:
+        return dataset.scanner(**scan_kwargs)
+    except TypeError:
+        scan_kwargs.pop("schema", None)
+        return dataset.scanner(**scan_kwargs)
 
 
 def _current_schema(con: DuckDBConnection) -> str:

@@ -10,6 +10,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.storage.contracts.catalog_state import contract_catalog_table_schemas
 
 if TYPE_CHECKING:
@@ -32,6 +33,12 @@ def get_schema_provider() -> SchemaProvider:
     RuntimeError
         Raised when the contract catalog is not loaded.
     """
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        service = None
+    else:
+        return service.table_provider
     catalog_schemas = contract_catalog_table_schemas()
     if not catalog_schemas:
         msg = "Contract catalog not loaded; schema provider unavailable"

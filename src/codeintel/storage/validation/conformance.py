@@ -10,6 +10,7 @@ import duckdb
 import jsonschema
 
 from codeintel.core.errors.schema import SchemaError
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.json_schema import get_json_schema_for_table_key
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.validation.contract import collect_contract_issues
@@ -108,19 +109,26 @@ def _validate_schema_rows(
             continue
         validator = jsonschema.Draft202012Validator(schema)
         try:
-            rows = con.table(ds.table_key).limit(sample_size).fetchall()
+            reader = (
+                con.table(ds.table_key)
+                .limit(sample_size)
+                .fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+            )
         except duckdb.Error as exc:
             yield ConformanceIssue(dataset=name, message=f"Failed to sample rows: {exc}")
             continue
-        columns = [col.name for col in ds.schema.columns if col.name is not None]
-        for idx, row in enumerate(rows):
-            record = dict(zip(columns, row, strict=True))
-            errors = sorted(validator.iter_errors(record), key=lambda e: e.path)
-            if errors:
-                yield ConformanceIssue(
-                    dataset=name,
-                    message=f"Row {idx} failed JSON Schema validation: {errors[0].message}",
-                )
+        row_index = 0
+        for batch in reader:
+            for record in batch.to_pylist():
+                errors = sorted(validator.iter_errors(record), key=lambda e: e.path)
+                if errors:
+                    yield ConformanceIssue(
+                        dataset=name,
+                        message=(
+                            f"Row {row_index} failed JSON Schema validation: {errors[0].message}"
+                        ),
+                    )
+                row_index += 1
 
 
 def run_conformance(

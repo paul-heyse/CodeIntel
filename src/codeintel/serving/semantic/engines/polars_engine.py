@@ -12,12 +12,16 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.serving.semantic.datasets import (
+    DatasetScannerOptions,
     dataset_filter_expression,
     dataset_for_entry,
     dataset_scanner_for_entry,
 )
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
-from codeintel.serving.semantic.guardrails import warn_eager_materialization
+from codeintel.serving.semantic.guardrails import (
+    warn_eager_materialization,
+    warn_schema_drift_observed,
+)
 from codeintel.serving.semantic.polars_query_builder import (
     PolarsQueryBuilderError,
     apply_query_ast,
@@ -206,6 +210,10 @@ def _collect_batches(
                     "Polars streaming collect_batches failed; falling back to eager: %s",
                     exc,
                 )
+                warn_eager_materialization(
+                    engine="polars",
+                    context="collect_batches_fallback",
+                )
                 return _collect(streaming=False)
             raise
     return _collect(streaming=False)
@@ -237,6 +245,10 @@ def _collect_frame(
                 LOG.warning(
                     "Polars streaming collect failed; falling back to eager: %s",
                     exc,
+                )
+                warn_eager_materialization(
+                    engine="polars",
+                    context="collect_fallback",
                 )
                 return _collect(streaming=False)
             raise
@@ -416,24 +428,24 @@ def _scan_arrow_dataset(
         msg = "polars is required for Polars query execution"
         raise PolarsQueryBuilderError(msg)
     dataset = dataset_for_entry(entry)
-    scanner = dataset_scanner_for_entry(
-        entry,
+    options = DatasetScannerOptions(
         batch_size=settings.export_batch_size,
         fragment_readahead=settings.dataset_fragment_readahead,
         filter_expression=filter_expression,
         metrics_enabled=settings.dataset_scan_metrics_enabled,
         schema=contract_schema,
     )
+    scanner = dataset_scanner_for_entry(entry, options=options)
     scan_pyarrow_dataset = getattr(pl, "scan_pyarrow_dataset", None)
     if not callable(scan_pyarrow_dataset):
         LOG.debug("Polars scan_pyarrow_dataset unavailable; falling back to scan_parquet.")
         return None
     try:
-        scan = cast(Callable[..., PolarsLazyFrame], scan_pyarrow_dataset)
+        scan = cast("Callable[..., PolarsLazyFrame]", scan_pyarrow_dataset)
         return scan(scanner)
     except TypeError:
         try:
-            scan = cast(Callable[..., PolarsLazyFrame], scan_pyarrow_dataset)
+            scan = cast("Callable[..., PolarsLazyFrame]", scan_pyarrow_dataset)
             return scan(dataset)
         except TypeError:
             return None
@@ -679,7 +691,7 @@ def _scan_parquet(
     if pl is None:  # pragma: no cover
         msg = "polars is required for Polars query execution"
         raise PolarsQueryBuilderError(msg)
-    scan_parquet = cast(Callable[..., PolarsLazyFrame], pl.scan_parquet)
+    scan_parquet = cast("Callable[..., PolarsLazyFrame]", pl.scan_parquet)
     kwargs: dict[str, object] = {}
     if hive_partitioning:
         kwargs["hive_partitioning"] = True
@@ -697,6 +709,7 @@ def _scan_parquet(
 def _contract_schema_for_table(ctx: EngineContext, *, table_key: str) -> pa.Schema | None:
     if ctx.warehouse is None:
         return None
+    _log_drift_if_present(ctx, table_key=table_key)
     try:
         return arrow_schema_for_table_key(
             ctx.warehouse.gateway.con,
@@ -706,6 +719,20 @@ def _contract_schema_for_table(ctx: EngineContext, *, table_key: str) -> pa.Sche
         )
     except (DuckDBError, RuntimeError, TypeError, ValueError):
         return None
+
+
+def _log_drift_if_present(ctx: EngineContext, *, table_key: str) -> None:
+    if ctx.warehouse is None:
+        return
+    try:
+        observation = ctx.warehouse.gateway.schemas.load_latest_schema_observation(
+            table_key=table_key
+        )
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return
+    if observation is None or observation.drift_summary is None:
+        return
+    warn_schema_drift_observed(table_key=table_key, drift_summary=observation.drift_summary)
 
 
 __all__ = ["PolarsExecutablePlan", "PolarsQueryEngine"]

@@ -40,7 +40,7 @@ class SchemaIndex:
     inferable_table_keys: frozenset[str]
     declared_provider: SchemaProvider
     inference_service: SchemaInferenceService
-    fallback_to_override_on_error: bool = True
+    fallback_to_override_on_error: bool = False
     _cache: dict[str, TableSchema] = field(default_factory=dict, repr=False)
     _inference_errors: dict[str, str] = field(default_factory=dict, repr=False)
     _seed_provider: SchemaProvider | None = field(default=None, repr=False)
@@ -307,7 +307,7 @@ class SchemaIndex:
             if override_schema is None:
                 return None
             if not self.fallback_to_override_on_error:
-                raise
+                return None
             return override_schema
 
         self._clear_inference_error(table_key)

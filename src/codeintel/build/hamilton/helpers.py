@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
@@ -244,14 +245,19 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
         Module paths from storage; empty when unavailable.
     """
     try:
-        rows = env.gateway.execute(
+        reader = env.gateway.execute(
             "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
             [env.snapshot.repo, env.snapshot.commit],
-        ).fetchall()
-        return [str(row[0]) for row in rows if row[0] is not None]
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        paths: list[str] = []
+        for batch in reader:
+            values = [str(value) for value in batch.column(0).to_pylist() if value is not None]
+            paths.extend(values)
     except (RuntimeError, OSError, DuckDBError) as exc:
         log.warning("gateway error fetching module paths: %s", exc)
         return []
+    else:
+        return paths
 
 
 # -----------------------------------------------------------------------------

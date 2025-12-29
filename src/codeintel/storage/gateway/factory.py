@@ -32,8 +32,9 @@ from codeintel.storage.metadata import (
     record_schema_validation_run,
 )
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
-from codeintel.storage.metadata.meta_catalog import attach_meta_database
+from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
+from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
 from codeintel.storage.validation import (
     ContractValidationMode,
     clear_contract_validation_cache,
@@ -73,14 +74,52 @@ class MemoryGatewayOptions:
     commit: str | None = None
 
 
-def _maybe_set_schema_service_from_catalog() -> None:
+def _registry_has_schemas(con: duckdb.DuckDBPyConnection) -> bool:
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
+    filter_clause = (
+        "AND ("
+        "registry.inference_status IN ('inferred', 'override') "
+        "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
+        ")"
+    )
     try:
-        get_schema_service()
+        row = con.execute(
+            f"""
+            SELECT 1
+            FROM {registry_ref} AS registry
+            WHERE 1 = 1
+            {filter_clause}
+            LIMIT 1
+            """
+        ).fetchone()
+    except (duckdb.Error, RuntimeError, TypeError, ValueError):
+        return False
+    return row is not None
+
+
+def _maybe_set_schema_service_from_catalog(con: duckdb.DuckDBPyConnection) -> None:
+    try:
+        service = get_schema_service()
     except RuntimeError:
-        schemas = contract_catalog_table_schemas()
-        if schemas:
-            service = SchemaService(table_provider=MappingSchemaProvider(schemas))
+        service = None
+    if service is not None:
+        if isinstance(service.table_provider, RegistrySchemaProvider):
+            return
+        if _registry_has_schemas(con):
+            service = SchemaService(table_provider=RegistrySchemaProvider(con))
             set_schema_service(service)
+            clear_schema_provider_cache()
+        return
+    if _registry_has_schemas(con):
+        service = SchemaService(table_provider=RegistrySchemaProvider(con))
+        set_schema_service(service)
+        clear_schema_provider_cache()
+        return
+    schemas = contract_catalog_table_schemas()
+    if schemas:
+        service = SchemaService(table_provider=MappingSchemaProvider(schemas))
+        set_schema_service(service)
+        clear_schema_provider_cache()
 
 
 def _schema_service_mismatches() -> list[str]:
@@ -294,7 +333,7 @@ def open_gateway(
                 con,
                 include_views=include_views_for_bootstrap,
             )
-        _maybe_set_schema_service_from_catalog()
+        _maybe_set_schema_service_from_catalog(con)
         datasets = load_dataset_registry(con)
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
         include_views = config.ensure_views and not config.read_only

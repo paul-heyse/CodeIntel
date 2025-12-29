@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 LOG = logging.getLogger("codeintel.serving.guardrails")
 
@@ -50,9 +51,18 @@ def warn_contract_metadata_mismatch(
     )
 
 
+def warn_schema_drift_observed(*, table_key: str, drift_summary: Mapping[str, object]) -> None:
+    """Log a warning when schema drift is observed for a table key."""
+    LOG.warning(
+        "Schema drift observed",
+        extra={"table_key": table_key, "drift_summary": drift_summary},
+    )
+
+
 __all__ = [
     "warn_contract_metadata_mismatch",
     "warn_contract_metadata_missing",
     "warn_eager_materialization",
     "warn_missing_contract_schema",
+    "warn_schema_drift_observed",
 ]

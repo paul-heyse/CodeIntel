@@ -40,9 +40,12 @@ from codeintel.cli.commands.help_commands import help_commands_app
 from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.jobs import jobs_app
 from codeintel.cli.commands.meta import meta_app
+from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.registry import registry_app
+from codeintel.cli.commands.semantic import semantic_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
+from codeintel.cli.commands.targets import targets_app
 
 __all__ = [
     "OutputFormatCLI",
@@ -65,9 +68,12 @@ __all__ = [
     "main",
     "make_root_app",
     "meta_app",
+    "plugins_app",
     "registry_app",
     "resolve_output_format",
     "runtime_field",
+    "semantic_app",
     "serve_app",
     "storage_app",
+    "targets_app",
 ]

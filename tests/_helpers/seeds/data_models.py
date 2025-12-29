@@ -10,7 +10,6 @@ realistic data model source code and type annotations.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -578,7 +577,7 @@ class DataModelsPack:
                     return_type=return_type,
                     return_type_source="annotation",
                     type_comment=None,
-                    param_types_json=json.dumps(params),
+                    param_types_json=params,
                     fully_typed=True,
                     partial_typed=False,
                     untyped=False,

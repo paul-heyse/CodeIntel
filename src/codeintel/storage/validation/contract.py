@@ -19,6 +19,7 @@ from codeintel.core.schemas.contract_validation import (
     validate_contract_or_raise as validate_contract_or_raise_core,
 )
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.datasets.registry import (
     load_dataset_registry,
@@ -79,7 +80,7 @@ def clear_contract_validation_cache() -> None:
 def _table_columns_lookup(con: DuckDBPyConnection, *, missing_ok: bool) -> TableColumnsLookup:
     def _lookup(table_key: str) -> list[str] | None:
         schema_name, table_name = split_table_key(table_key)
-        info = con.execute(
+        reader = con.execute(
             """
             SELECT column_name
             FROM information_schema.columns
@@ -87,10 +88,14 @@ def _table_columns_lookup(con: DuckDBPyConnection, *, missing_ok: bool) -> Table
             ORDER BY ordinal_position
             """,
             [schema_name, table_name],
-        ).fetchall()
-        if not info and missing_ok:
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        columns: list[str] = []
+        for batch in reader:
+            values = [str(value) for value in batch.column(0).to_pylist() if value is not None]
+            columns.extend(values)
+        if not columns and missing_ok:
             return None
-        return [row[0] for row in info]
+        return columns
 
     return _lookup
 

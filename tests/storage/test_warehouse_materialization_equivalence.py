@@ -36,7 +36,7 @@ def test_warehouse_materialize_variants_write_equivalent_rows(
     materialize_table_from_rows(
         warehouse,
         table_key,
-        [(snapshot.repo, snapshot.commit)],
+        [{"repo": snapshot.repo, "commit": snapshot.commit}],
         columns=("repo", "commit"),
         options=options,
     )

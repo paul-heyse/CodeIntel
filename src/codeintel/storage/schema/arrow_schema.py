@@ -10,12 +10,6 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.schemas.arrow_gen import (
-    ArrowSchemaMetadata,
-    ArrowSchemaProvenance,
-    arrow_schema_from_table_schema,
-)
-from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
@@ -24,40 +18,22 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
 
-def _load_registry_metadata(con: DuckDBPyConnection, table_key: str) -> dict[str, object]:
-    registry_ref = meta_table_ref("metadata.table_schema_registry")
-    row = con.execute(
-        f"""
-        SELECT schema_digest,
-               schema_hash,
-               derivation_kind,
-               derivation_source,
-               inference_status,
-               inference_error
-        FROM {registry_ref}
-        WHERE table_key = ?
-        """,
-        [table_key],
-    ).fetchone()
-    if row is None:
-        return {}
-    return {
-        "schema_digest": row[0],
-        "schema_hash": row[1],
-        "derivation_kind": row[2],
-        "derivation_source": row[3],
-        "inference_status": row[4],
-        "inference_error": row[5],
-    }
-
-
 def _load_contract_schema(
     con: DuckDBPyConnection,
     *,
     table_key: str,
+    require_inferred: bool,
 ) -> pa.Schema | None:
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
+    filter_clause = ""
+    if require_inferred:
+        filter_clause = (
+            "AND ("
+            "registry.inference_status IN ('inferred', 'override') "
+            "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
+            ")"
+        )
     row = con.execute(
         f"""
         SELECT versions.renderer_cache
@@ -65,6 +41,7 @@ def _load_contract_schema(
         JOIN {versions_ref} AS versions
           ON registry.schema_digest = versions.schema_digest
         WHERE registry.table_key = ?
+        {filter_clause}
         """,
         [table_key],
     ).fetchone()
@@ -75,6 +52,29 @@ def _load_contract_schema(
     if not isinstance(ipc_payload, str):
         return None
     return _schema_from_ipc_payload(ipc_payload)
+
+
+def _load_observed_schema(
+    con: DuckDBPyConnection,
+    *,
+    table_key: str,
+) -> pa.Schema | None:
+    observations_ref = meta_table_ref("metadata.schema_observations")
+    row = con.execute(
+        f"""
+        SELECT arrow_schema_ipc_b64
+        FROM {observations_ref}
+        WHERE table_key = ?
+        ORDER BY observed_at DESC
+        LIMIT 1
+        """,
+        [table_key],
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    if not isinstance(row[0], str):
+        return None
+    return _schema_from_ipc_payload(row[0])
 
 
 def _schema_from_ipc_payload(payload: str) -> pa.Schema | None:
@@ -191,9 +191,6 @@ def arrow_schema_for_table_key(
     pa.Schema | None
         Rendered PyArrow schema with metadata, or None if the table is unknown.
     """
-    table_schema = get_schema_provider().get_table_schema(table_key)
-    if table_schema is None:
-        return None
     column_lineage = None
     if repo and commit:
         column_lineage = load_derived_lineage_columns(
@@ -202,43 +199,25 @@ def arrow_schema_for_table_key(
             commit=commit,
             downstream_table=table_key,
         )
-    contract_schema = _load_contract_schema(con, table_key=table_key)
-    if contract_schema is not None:
-        return _apply_runtime_metadata(
-            contract_schema,
-            column_lineage=column_lineage,
-            pii_by_column=pii_by_column,
-        )
-
-    registry_metadata = _load_registry_metadata(con, table_key)
-    schema_digest = _normalize_str(registry_metadata.get("schema_digest"))
-    schema_hash_value = _normalize_str(registry_metadata.get("schema_hash"))
-    derivation_kind = _normalize_str(registry_metadata.get("derivation_kind"))
-    derivation_source = _normalize_str(registry_metadata.get("derivation_source"))
-    inference_status = _normalize_str(registry_metadata.get("inference_status"))
-    inference_error = _normalize_str(registry_metadata.get("inference_error"))
-
-    provenance = ArrowSchemaProvenance(
-        derivation_kind=derivation_kind,
-        derivation_source=derivation_source,
-        inference_status=inference_status,
-        inference_error=inference_error,
+    contract_schema = _load_contract_schema(
+        con,
+        table_key=table_key,
+        require_inferred=True,
     )
-    metadata = ArrowSchemaMetadata(
-        schema_hash=schema_hash_value,
-        schema_digest=schema_digest,
-        provenance=provenance,
+    observed_schema = None
+    if contract_schema is None:
+        observed_schema = _load_observed_schema(
+            con,
+            table_key=table_key,
+        )
+    resolved_schema = contract_schema or observed_schema
+    if resolved_schema is None:
+        return None
+    return _apply_runtime_metadata(
+        resolved_schema,
         column_lineage=column_lineage,
         pii_by_column=pii_by_column,
     )
-
-    return arrow_schema_from_table_schema(table_schema=table_schema, metadata=metadata)
-
-
-def _normalize_str(value: object | None) -> str | None:
-    if value is None:
-        return None
-    return str(value)
 
 
 def arrow_schema_hash(schema: pa.Schema) -> str | None:

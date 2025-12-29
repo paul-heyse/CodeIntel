@@ -27,6 +27,7 @@ from codeintel.storage.tracking.schema_catalog_models import (
     OverrideRegistryRefreshResult,
     SchemaCatalogRequest,
     SchemaManifestRunRecord,
+    SchemaObservationRecord,
     SchemaVersionRecord,
     TableSchemaOverrideRegistryRecord,
     TableSchemaOverrideVersionRecord,
@@ -49,6 +50,14 @@ if TYPE_CHECKING:
         def inferable_table_keys(self) -> AbstractSet[str]: ...
 
         def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None: ...
+
+
+_INFERRED_REGISTRY_FILTER = (
+    "AND ("
+    "registry.inference_status IN ('inferred', 'override') "
+    "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
+    ")"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +204,73 @@ class SchemaCatalogTracking:
             catalog=META_CATALOG_NAME,
             upsert=UpsertSpec(
                 conflict_columns=("schema_digest",),
+                update_columns=(),
+            ),
+        )
+
+    def record_schema_observations_batch(
+        self,
+        records: Sequence[SchemaObservationRecord],
+    ) -> int:
+        """Insert schema observations for inference tracking.
+
+        Returns
+        -------
+        int
+            Number of rows processed.
+        """
+        if not records:
+            return 0
+
+        now = utc_now()
+        rows = [
+            (
+                record.observation_id or new_uuid_str(),
+                record.table_key,
+                record.repo,
+                record.commit,
+                record.target_name,
+                record.schema_digest,
+                record.schema_hash,
+                record.arrow_schema_ipc_b64,
+                normalize_duckdb_json_value(record.column_stats)
+                if record.column_stats is not None
+                else None,
+                normalize_duckdb_json_value(record.dataset_stats)
+                if record.dataset_stats is not None
+                else None,
+                normalize_duckdb_json_value(record.derived_settings)
+                if record.derived_settings is not None
+                else None,
+                normalize_duckdb_json_value(record.drift_summary)
+                if record.drift_summary is not None
+                else None,
+                record.observed_at or now,
+            )
+            for record in records
+        ]
+
+        return self._backend.upsert(
+            "metadata.schema_observations",
+            rows,
+            columns=(
+                "observation_id",
+                "table_key",
+                "repo",
+                "commit",
+                "target_name",
+                "schema_digest",
+                "schema_hash",
+                "arrow_schema_ipc_b64",
+                "column_stats",
+                "dataset_stats",
+                "derived_settings",
+                "drift_summary",
+                "observed_at",
+            ),
+            catalog=META_CATALOG_NAME,
+            upsert=UpsertSpec(
+                conflict_columns=("observation_id",),
                 update_columns=(),
             ),
         )
@@ -400,19 +476,229 @@ class SchemaCatalogTracking:
         row = self._con.execute(
             f"""
             SELECT v.schema_json
-            FROM {registry_ref} AS r
+            FROM {registry_ref} AS registry
             JOIN {versions_ref} AS v
-              ON r.schema_digest = v.schema_digest
-            WHERE r.table_key = ?
+              ON registry.schema_digest = v.schema_digest
+            WHERE registry.table_key = ?
+            {_INFERRED_REGISTRY_FILTER}
             """,
             [table_key],
         ).fetchone()
+        if row is None:
+            row = self._con.execute(
+                f"""
+                SELECT v.schema_json
+                FROM {registry_ref} AS registry
+                JOIN {versions_ref} AS v
+                  ON registry.schema_digest = v.schema_digest
+                WHERE registry.table_key = ?
+                """,
+                [table_key],
+            ).fetchone()
         if row is None:
             return None
         schema_json = decode_json_dict(row[0])
         if not schema_json:
             return None
         return table_schema_from_json_obj(schema_json)
+
+    def load_latest_schema_observation(
+        self,
+        *,
+        table_key: str,
+    ) -> SchemaObservationRecord | None:
+        """Load the latest schema observation for a table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key.
+
+        Returns
+        -------
+        SchemaObservationRecord | None
+            Latest observation record when present; otherwise None.
+        """
+        observations_ref = meta_table_ref("metadata.schema_observations")
+        row = self._con.execute(
+            f"""
+            SELECT
+              observation_id,
+              table_key,
+              repo,
+              commit,
+              target_name,
+              schema_digest,
+              schema_hash,
+              arrow_schema_ipc_b64,
+              column_stats,
+              dataset_stats,
+              derived_settings,
+              drift_summary,
+              observed_at
+            FROM {observations_ref}
+            WHERE table_key = ?
+            ORDER BY observed_at DESC
+            LIMIT 1
+            """,
+            [table_key],
+        ).fetchone()
+        if row is None:
+            return None
+        return SchemaObservationRecord(
+            observation_id=str(row[0]) if row[0] is not None else None,
+            table_key=str(row[1]),
+            repo=str(row[2]) if row[2] is not None else None,
+            commit=str(row[3]) if row[3] is not None else None,
+            target_name=str(row[4]) if row[4] is not None else None,
+            schema_digest=str(row[5]),
+            schema_hash=str(row[6]),
+            arrow_schema_ipc_b64=str(row[7]),
+            column_stats=_decode_optional_json_dict(row[8]),
+            dataset_stats=_decode_optional_json_dict(row[9]),
+            derived_settings=_decode_optional_json_dict(row[10]),
+            drift_summary=_decode_optional_json_dict(row[11]),
+            observed_at=row[12],
+        )
+
+    def has_contract_arrow_schema(self, *, table_key: str) -> bool:
+        """Return True when the registry stores Arrow schema bytes for a table.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key.
+
+        Returns
+        -------
+        bool
+            True when renderer_cache contains Arrow schema IPC bytes.
+        """
+        registry_ref = meta_table_ref("metadata.table_schema_registry")
+        versions_ref = meta_table_ref("metadata.schema_versions")
+        row = self._con.execute(
+            f"""
+            SELECT v.renderer_cache
+            FROM {registry_ref} AS registry
+            JOIN {versions_ref} AS v
+              ON registry.schema_digest = v.schema_digest
+            WHERE registry.table_key = ?
+            LIMIT 1
+            """,
+            [table_key],
+        ).fetchone()
+        if row is None or row[0] is None:
+            return False
+        renderer_cache = decode_json_dict(row[0])
+        return _renderer_cache_has_arrow_schema(renderer_cache)
+
+    def load_recent_drift_summaries(
+        self,
+        *,
+        table_key: str,
+        limit: int = 5,
+    ) -> tuple[dict[str, object] | None, ...]:
+        """Return recent drift summaries for a table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key.
+        limit
+            Maximum number of summaries to return.
+
+        Returns
+        -------
+        tuple[dict[str, object] | None, ...]
+            Ordered drift summaries, newest first.
+        """
+        if limit <= 0:
+            return ()
+        observations_ref = meta_table_ref("metadata.schema_observations")
+        rows = self._con.execute(
+            f"""
+            SELECT drift_summary
+            FROM {observations_ref}
+            WHERE table_key = ?
+            ORDER BY observed_at DESC
+            LIMIT ?
+            """,
+            [table_key, limit],
+        ).fetchall()
+        if not rows:
+            return ()
+        summaries: list[dict[str, object] | None] = []
+        for (summary_raw,) in rows:
+            summaries.append(_decode_optional_json_dict(summary_raw))
+        return tuple(summaries)
+
+    def drift_summary_report(self, *, limit: int = 50) -> dict[str, object]:
+        """Return a summary of recent schema drift observations.
+
+        Returns
+        -------
+        dict[str, object]
+            Aggregate drift summary across recent observations.
+        """
+        observations_ref = meta_table_ref("metadata.schema_observations")
+        totals_row = self._con.execute(
+            f"""
+            SELECT
+              COUNT(DISTINCT table_key),
+              COUNT(DISTINCT CASE WHEN drift_summary IS NOT NULL THEN table_key END)
+            FROM {observations_ref}
+            """
+        ).fetchone()
+        total_tables = int(totals_row[0]) if totals_row and totals_row[0] is not None else 0
+        drift_tables = int(totals_row[1]) if totals_row and totals_row[1] is not None else 0
+
+        rows = self._con.execute(
+            f"""
+            SELECT table_key, drift_summary, observed_at
+            FROM (
+              SELECT
+                table_key,
+                drift_summary,
+                observed_at,
+                ROW_NUMBER() OVER (PARTITION BY table_key ORDER BY observed_at DESC) AS rn
+              FROM {observations_ref}
+              WHERE drift_summary IS NOT NULL
+            )
+            WHERE rn = 1
+            ORDER BY observed_at DESC
+            LIMIT ?
+            """,
+            [limit],
+        ).fetchall()
+
+        latest: list[dict[str, object]] = []
+        missing_total = 0
+        extra_total = 0
+        type_change_total = 0
+        for table_key, drift_raw, observed_at in rows:
+            summary = _decode_optional_json_dict(drift_raw) or {}
+            missing = summary.get("missing_columns")
+            extra = summary.get("extra_columns")
+            type_changes = summary.get("type_changes")
+            missing_total += len(missing) if isinstance(missing, list) else 0
+            extra_total += len(extra) if isinstance(extra, list) else 0
+            type_change_total += len(type_changes) if isinstance(type_changes, list) else 0
+            latest.append(
+                {
+                    "table_key": str(table_key),
+                    "drift_summary": summary,
+                    "observed_at": observed_at.isoformat() if observed_at is not None else None,
+                }
+            )
+
+        return {
+            "total_tables": total_tables,
+            "tables_with_drift": drift_tables,
+            "missing_columns": missing_total,
+            "extra_columns": extra_total,
+            "type_changes": type_change_total,
+            "latest": latest,
+        }
 
     def load_override_registry(self) -> dict[str, TableSchema]:
         """Load active override schemas for inferable outputs.
@@ -1151,6 +1437,13 @@ def _schema_metadata_value(schema: pa.Schema, key: str) -> str | None:
     if raw is None:
         return None
     return raw.decode("utf-8")
+
+
+def _decode_optional_json_dict(value: object | None) -> dict[str, object] | None:
+    if value is None:
+        return None
+    decoded = decode_json_dict(value)
+    return decoded if decoded else None
 
 
 def _append_sample(target: list[str], value: str, *, limit: int) -> None:

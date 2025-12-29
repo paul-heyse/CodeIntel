@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import pandas as pd
+import pyarrow as pa
 
 from codeintel.build.schemas import (
     ContractProvider,
@@ -14,11 +14,19 @@ from codeintel.build.schemas import (
     ContractResolutionSettings,
     get_contract_provider,
 )
+from codeintel.core.columnar.rows import ColumnarRowBuffer
+from codeintel.core.columnar.schema_alignment import (
+    align_reader_to_contract,
+    extras_policy_from_schema,
+)
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.schemas.primitives import TableSchema
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.gateway import seed_contract_catalog
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -81,6 +89,19 @@ def _columns_for_table_key(
     return columns
 
 
+def _table_schema_for_table_key(
+    table_key: str,
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> TableSchema:
+    contract = _contracts_by_table(contract_provider).get(table_key)
+    schema = getattr(contract, "schema", None)
+    if schema is None:
+        msg = f"Missing schema for {table_key}"
+        raise ValueError(msg)
+    return schema
+
+
 def _require_columns(
     table_key: str,
     *,
@@ -97,17 +118,17 @@ def _function_profile_row(
     spec: SnapshotSpec,
     *,
     contract_provider: ContractProvider | None = None,
-) -> tuple[object, ...]:
+) -> dict[str, object | None]:
     """Build a function profile row from a snapshot spec.
 
     Returns
     -------
-    tuple[object, ...]
-        Row tuple for function_profile table.
+    dict[str, object | None]
+        Row mapping for analytics.function_profile.
     """
     columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider)
-    defaults: dict[str, object | None] = dict.fromkeys(columns, None)
-    defaults.update(
+    row: dict[str, object | None] = dict.fromkeys(columns, None)
+    row.update(
         {
             "function_goid_h128": spec.goid,
             "urn": f"goid:{spec.repo}/{spec.rel_path}#{spec.qualname}",
@@ -127,24 +148,24 @@ def _function_profile_row(
             "risk_level": spec.risk_level,
         }
     )
-    return tuple(defaults[col] for col in columns)
+    return row
 
 
 def _module_profile_row(
     spec: SnapshotSpec,
     *,
     contract_provider: ContractProvider | None = None,
-) -> tuple[object, ...]:
+) -> dict[str, object | None]:
     """Build a module profile row from a snapshot spec.
 
     Returns
     -------
-    tuple[object, ...]
-        Row tuple for module_profile table.
+    dict[str, object | None]
+        Row mapping for analytics.module_profile.
     """
     columns = _require_columns(_MODULE_PROFILE_TABLE_KEY, contract_provider=contract_provider)
-    defaults: dict[str, object | None] = dict.fromkeys(columns, None)
-    defaults.update(
+    row: dict[str, object | None] = dict.fromkeys(columns, None)
+    row.update(
         {
             "repo": spec.repo,
             "commit": spec.commit,
@@ -158,7 +179,39 @@ def _module_profile_row(
             "avg_risk_score": spec.risk_score,
         }
     )
-    return tuple(defaults[col] for col in columns)
+    return row
+
+
+def _reader_for_row(
+    table_key: str,
+    row: Mapping[str, object],
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> pa.RecordBatchReader:
+    schema = _table_schema_for_table_key(table_key, contract_provider=contract_provider)
+    buffer = ColumnarRowBuffer(
+        table_key=table_key,
+        columns=tuple(schema.column_names()),
+        column_types=tuple(column.type for column in schema.columns),
+        data={column.name: [] for column in schema.columns},
+    )
+    buffer.append(row)
+    table = pa.table(buffer.data)
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    contract_schema = arrow_contract_for_table_schema(table_schema=schema)
+    extras_policy = extras_policy_from_schema(contract_schema)
+    return align_reader_to_contract(reader, contract_schema, extras_policy=extras_policy)
+
+
+def _table_from_row(
+    table_key: str,
+    row: Mapping[str, object],
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> pa.Table:
+    reader = _reader_for_row(table_key, row, contract_provider=contract_provider)
+    batches = list(reader)
+    return pa.Table.from_batches(batches, schema=reader.schema)
 
 
 def create_snapshot_db(
@@ -190,20 +243,20 @@ def create_snapshot_db(
     gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
     con = gateway.con
     apply_all_schemas(con)
-    fp_columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider)
-    mp_columns = _require_columns(_MODULE_PROFILE_TABLE_KEY, contract_provider=contract_provider)
-    fp_df = pd.DataFrame(
-        [_function_profile_row(spec, contract_provider=contract_provider)],
-        columns=pd.Index(fp_columns),
+    fp_table = _table_from_row(
+        _FUNCTION_PROFILE_TABLE_KEY,
+        _function_profile_row(spec, contract_provider=contract_provider),
+        contract_provider=contract_provider,
     )
-    mp_df = pd.DataFrame(
-        [_module_profile_row(spec, contract_provider=contract_provider)],
-        columns=pd.Index(mp_columns),
+    mp_table = _table_from_row(
+        _MODULE_PROFILE_TABLE_KEY,
+        _module_profile_row(spec, contract_provider=contract_provider),
+        contract_provider=contract_provider,
     )
-    con.register("fp_df", fp_df)
-    con.register("mp_df", mp_df)
-    con.execute("INSERT INTO analytics.function_profile BY NAME SELECT * FROM fp_df")
-    con.execute("INSERT INTO analytics.module_profile BY NAME SELECT * FROM mp_df")
+    con.register("fp_table", fp_table)
+    con.register("mp_table", mp_table)
+    con.execute("INSERT INTO analytics.function_profile BY NAME SELECT * FROM fp_table")
+    con.execute("INSERT INTO analytics.module_profile BY NAME SELECT * FROM mp_table")
     gateway.close()
     return db_path
 
@@ -217,9 +270,9 @@ def insert_function_history_row(
     """Insert a minimal function_history row for validation helpers."""
     con = gateway.con
     fh_columns = _require_columns(_FUNCTION_HISTORY_TABLE_KEY, contract_provider=contract_provider)
-    defaults: dict[str, object | None] = dict.fromkeys(fh_columns, None)
+    row: dict[str, object | None] = dict.fromkeys(fh_columns, None)
     now = datetime.now(tz=UTC)
-    defaults.update(
+    row.update(
         {
             "repo": spec.repo,
             "commit": spec.commit,
@@ -242,12 +295,13 @@ def insert_function_history_row(
             "created_at_row": now,
         }
     )
-    fh_df = pd.DataFrame(
-        [tuple(defaults[col] for col in fh_columns)],
-        columns=pd.Index(fh_columns),
+    fh_table = _table_from_row(
+        _FUNCTION_HISTORY_TABLE_KEY,
+        row,
+        contract_provider=contract_provider,
     )
-    con.register("fh_df", fh_df)
-    con.execute("INSERT INTO analytics.function_history BY NAME SELECT * FROM fh_df")
+    con.register("fh_table", fh_table)
+    con.execute("INSERT INTO analytics.function_history BY NAME SELECT * FROM fh_table")
 
 
 __all__ = [

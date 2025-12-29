@@ -9,7 +9,6 @@ realistic subsystem groupings.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -146,8 +145,8 @@ class SubsystemPack:
                 name="Core",
                 description="Core business logic subsystem",
                 module_count=3,
-                modules_json=json.dumps([MOD_A_FQN, MOD_B_FQN, MOD_C_FQN]),
-                entrypoints_json=json.dumps([MOD_A_FQN]),
+                modules_json=[MOD_A_FQN, MOD_B_FQN, MOD_C_FQN],
+                entrypoints_json=[MOD_A_FQN],
                 internal_edge_count=3,
                 external_edge_count=1,
                 fan_in=0,
@@ -167,8 +166,8 @@ class SubsystemPack:
                 name="Utilities",
                 description="Shared utility functions",
                 module_count=1,
-                modules_json=json.dumps([MOD_UTIL_FQN]),
-                entrypoints_json=json.dumps([]),
+                modules_json=[MOD_UTIL_FQN],
+                entrypoints_json=[],
                 internal_edge_count=0,
                 external_edge_count=1,
                 fan_in=1,

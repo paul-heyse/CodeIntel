@@ -264,6 +264,8 @@ class SemanticQueryPlanner:
             raise ValueError(msg)
 
         schema_cols = [c.name for c in schema.columns]
+        if view.columns_dynamic:
+            return schema_cols
         if not view.columns:
             return schema_cols
 

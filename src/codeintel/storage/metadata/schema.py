@@ -14,6 +14,7 @@ __all__ = [
     "EXPORT_AUDIT_TABLE",
     "METADATA_TABLES",
     "SCHEMA_MANIFEST_RUNS_TABLE",
+    "SCHEMA_OBSERVATIONS_TABLE",
     "SCHEMA_VALIDATION_RUNS_TABLE",
     "SCHEMA_VERSIONS_TABLE",
     "TABLE_SCHEMA_OVERRIDE_REGISTRY_TABLE",
@@ -163,6 +164,33 @@ SCHEMA_VALIDATION_RUNS_TABLE = TableSchema(
     ),
 )
 
+SCHEMA_OBSERVATIONS_TABLE = TableSchema(
+    schema="metadata",
+    name="schema_observations",
+    columns=[
+        Column("observation_id", "VARCHAR", nullable=False),
+        Column("table_key", "VARCHAR", nullable=False),
+        Column("repo", "VARCHAR"),
+        Column("commit", "VARCHAR"),
+        Column("target_name", "VARCHAR"),
+        Column("schema_digest", "VARCHAR", nullable=False),
+        Column("schema_hash", "VARCHAR", nullable=False),
+        Column("arrow_schema_ipc_b64", "VARCHAR", nullable=False),
+        Column("column_stats", "JSON"),
+        Column("dataset_stats", "JSON"),
+        Column("derived_settings", "JSON"),
+        Column("drift_summary", "JSON"),
+        Column("observed_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("observation_id",),
+    indexes=(
+        Index("idx_schema_observations_table_key", ("table_key", "observed_at")),
+        Index("idx_schema_observations_schema_digest", ("schema_digest",)),
+        Index("idx_schema_observations_schema_hash", ("schema_hash",)),
+        Index("idx_schema_observations_repo_commit", ("repo", "commit", "observed_at")),
+    ),
+)
+
 METADATA_TABLES: tuple[TableSchema, ...] = (
     EXPORT_AUDIT_TABLE,
     CANONICAL_CATALOGS_TABLE,
@@ -170,6 +198,7 @@ METADATA_TABLES: tuple[TableSchema, ...] = (
     TABLE_SCHEMA_REGISTRY_TABLE,
     TABLE_SCHEMA_OVERRIDE_VERSIONS_TABLE,
     TABLE_SCHEMA_OVERRIDE_REGISTRY_TABLE,
+    SCHEMA_OBSERVATIONS_TABLE,
     SCHEMA_MANIFEST_RUNS_TABLE,
     SCHEMA_VALIDATION_RUNS_TABLE,
     TableSchema(

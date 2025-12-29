@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -12,6 +13,9 @@ from codeintel.serving.semantic.routing import auto_preference
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+
+LOG = logging.getLogger("codeintel.serving.routing")
 
 
 class EngineSelectionError(ValueError):
@@ -59,7 +63,15 @@ class QueryEngineRegistry:
         """
         normalized = preference.lower().strip() or "auto"
         if normalized == "auto":
-            return self._select_first(auto_preference(query, ctx=ctx), query=query, ctx=ctx)
+            candidates = auto_preference(query, ctx=ctx)
+            engine = self._select_first(candidates, query=query, ctx=ctx)
+            _log_selection(
+                preference=normalized,
+                candidates=candidates,
+                engine=engine.name,
+                query=query,
+            )
+            return engine
         engine = self.get(normalized)
         if engine is None:
             msg = f"Unknown query engine preference: {preference}"
@@ -67,6 +79,12 @@ class QueryEngineRegistry:
         if not engine.can_run(query, ctx=ctx):
             msg = f"Query engine {engine.name} cannot satisfy the request"
             raise EngineSelectionError(msg)
+        _log_selection(
+            preference=normalized,
+            candidates=(engine.name,),
+            engine=engine.name,
+            query=query,
+        )
         return engine
 
     def select_prefer(
@@ -83,7 +101,15 @@ class QueryEngineRegistry:
         QueryEngine
             Selected engine instance.
         """
-        return self._select_first(tuple(names), query=query, ctx=ctx)
+        candidates = tuple(names)
+        engine = self._select_first(candidates, query=query, ctx=ctx)
+        _log_selection(
+            preference="prefer",
+            candidates=candidates,
+            engine=engine.name,
+            query=query,
+        )
+        return engine
 
     def _select_first(
         self,
@@ -112,6 +138,27 @@ class QueryEngineRegistry:
                 return engine
         msg = "No registered query engines can satisfy the request"
         raise EngineSelectionError(msg)
+
+
+def _log_selection(
+    *,
+    preference: str,
+    candidates: tuple[str, ...],
+    engine: str,
+    query: ServingQuery,
+) -> None:
+    if not LOG.isEnabledFor(logging.INFO):
+        return
+    LOG.info(
+        "query_engine_selected",
+        extra={
+            "preference": preference,
+            "candidates": candidates,
+            "engine": engine,
+            "view_id": query.spec.view_id,
+            "table_key": query.spec.table_key,
+        },
+    )
 
 
 def build_engine_registry(engines: Iterable[QueryEngine]) -> QueryEngineRegistry:

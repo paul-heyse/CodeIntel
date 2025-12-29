@@ -7,7 +7,6 @@ real database schemas, ingestion pipelines, and tooling configurations.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -1055,8 +1054,8 @@ def _seed_minimal_subsystems(gateway: StorageGateway, *, repo: str, commit: str)
                 name="Subsystem Demo",
                 description="Seeded subsystem for docs/CLI tests",
                 module_count=len(ordered_modules),
-                modules_json=json.dumps(ordered_modules),
-                entrypoints_json=json.dumps([entrypoint_module]),
+                modules_json=ordered_modules,
+                entrypoints_json=[entrypoint_module],
                 internal_edge_count=0,
                 external_edge_count=0,
                 fan_in=0,

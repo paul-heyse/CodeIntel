@@ -6,7 +6,6 @@ exercise DuckDB relation and SQLGlot paths and avoid legacy storage adapters.
 
 from __future__ import annotations
 
-import json
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -450,9 +449,9 @@ def seed_repo_identity(
     gateway.con.execute(
         """
         INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-        VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
-        [repo, commit, json.dumps(modules_payload)],
+        [repo, commit, modules_payload, {}],
     )
     if modules_payload:
         gateway.con.execute(
@@ -462,9 +461,9 @@ def seed_repo_identity(
         gateway.con.executemany(
             """
             INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-            VALUES (?, ?, ?, ?, 'python', '[]', '[]')
+            VALUES (?, ?, ?, ?, 'python', ?, ?)
             """,
-            [(module, path, repo, commit) for module, path in modules_payload.items()],
+            [(module, path, repo, commit, [], []) for module, path in modules_payload.items()],
         )
         snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
         ModulesAssertions(gateway, snapshot).inventory_consistent()

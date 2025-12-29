@@ -10,8 +10,19 @@ from codeintel.build.hamilton.validate import (
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
-def validate_graph(*, runtime: RuntimeBundle) -> GraphValidationResult:
+def validate_graph(
+    *,
+    runtime: RuntimeBundle,
+    validate_schema: bool = True,
+) -> GraphValidationResult:
     """Validate the Hamilton graph for build invariants.
+
+    Parameters
+    ----------
+    runtime
+        Runtime bundle containing the Hamilton driver and catalog.
+    validate_schema
+        Whether to validate output table schemas using the schema provider.
 
     Returns
     -------
@@ -20,7 +31,9 @@ def validate_graph(*, runtime: RuntimeBundle) -> GraphValidationResult:
     """
     return validate_nodes(
         runtime.dr.graph.nodes,
+        validate_schema=validate_schema,
         enforce_compute_io_purity=True,
+        module_provenance=runtime.module_provenance,
     )
 
 

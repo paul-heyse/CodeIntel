@@ -23,6 +23,21 @@ TAG_SEMANTIC_ID = "semantic_id"
 TAG_ENTITY = "entity"
 TAG_GRAIN = "grain"
 TAG_MCP_VISIBLE = "mcp_visible"
+TAG_LAYER = "layer"
+TAG_KIND = "kind"
+TAG_VERSION = "version"
+TAG_SCHEMA_REF = "schema_ref"
+TAG_ENTITY_KEYS = "entity_keys"
+TAG_JOIN_KEYS = "join_keys"
+TAG_DTYPE = "dtype"
+TAG_STABILITY = "stability"
+TAG_OWNER = "owner"
+TAG_DESCRIPTION = "description"
+TAG_UNIT = "unit"
+TAG_PII = "pii"
+TAG_SOURCE_SYSTEM = "source_system"
+TAG_MATERIALIZATION = "materialization"
+TAG_MATERIALIZED_NAME = "materialized_name"
 
 OUTPUT_KIND_TABLE = "table"
 OUTPUT_KIND_VIEW = "view"
@@ -49,13 +64,26 @@ __all__ = [
     "OUTPUT_KIND_VIEW",
     "TAG_ARTIFACT",
     "TAG_ARTIFACT_PATH_TEMPLATE",
+    "TAG_DESCRIPTION",
     "TAG_DOMAIN",
+    "TAG_DTYPE",
     "TAG_ENTITY",
+    "TAG_ENTITY_KEYS",
     "TAG_GRAIN",
+    "TAG_JOIN_KEYS",
+    "TAG_KIND",
+    "TAG_LAYER",
+    "TAG_MATERIALIZATION",
+    "TAG_MATERIALIZED_NAME",
     "TAG_MCP_VISIBLE",
     "TAG_NODE_TYPE",
     "TAG_OUTPUT_KIND",
+    "TAG_OWNER",
+    "TAG_PII",
+    "TAG_SCHEMA_REF",
     "TAG_SEMANTIC_ID",
+    "TAG_SOURCE_SYSTEM",
+    "TAG_STABILITY",
     "TAG_TABLE_KEY",
     "TAG_TARGET",
     "TAG_TARGET_ESTIMATED_DURATION_MS",
@@ -64,4 +92,6 @@ __all__ = [
     "TAG_TARGET_RESOURCES",
     "TAG_TARGET_SPEC_VERSION",
     "TAG_TOOLS",
+    "TAG_UNIT",
+    "TAG_VERSION",
 ]

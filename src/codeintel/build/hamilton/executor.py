@@ -69,6 +69,7 @@ from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANI
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from typing import TypedDict
 
     from hamilton.lifecycle.base import LifecycleAdapter
 
@@ -76,7 +77,51 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.config.settings import HamiltonTrackerSettings
 
+    class BuildExecutionOverrides(TypedDict, total=False):
+        profile: str | None
+        parallel_backend: str
+        max_workers: int | None
+        enable_cache: bool
+        cache_dir: str | None
+        plugins_enabled: tuple[str, ...] | None
+        plugins_disabled: tuple[str, ...] | None
+        allow_workspace_modules: bool | None
+
+    class BuildExecutionOptionsData(TypedDict, total=False):
+        profile: str | None
+        parallel_backend: str
+        max_workers: int | None
+        enable_hamilton_cache: bool
+        cache_dir: str | None
+        plugins_enabled: tuple[str, ...] | None
+        plugins_disabled: tuple[str, ...] | None
+        allow_workspace_modules: bool | None
+
+
 log = logging.getLogger(__name__)
+
+_EXECUTOR_OVERRIDE_KEYS: frozenset[str] = frozenset(
+    {
+        "profile",
+        "parallel_backend",
+        "max_workers",
+        "enable_cache",
+        "cache_dir",
+        "plugins_enabled",
+        "plugins_disabled",
+        "allow_workspace_modules",
+    }
+)
+_EXECUTOR_OVERRIDE_MAP: tuple[tuple[str, str], ...] = (
+    ("profile", "profile"),
+    ("parallel_backend", "parallel_backend"),
+    ("max_workers", "max_workers"),
+    ("enable_cache", "enable_hamilton_cache"),
+    ("cache_dir", "cache_dir"),
+    ("plugins_enabled", "plugins_enabled"),
+    ("plugins_disabled", "plugins_disabled"),
+    ("allow_workspace_modules", "allow_workspace_modules"),
+)
 
 
 @dataclass(frozen=True)
@@ -791,38 +836,65 @@ class HamiltonBuildResult:
         return None
 
 
+def _options_from_overrides(
+    *,
+    options: BuildExecutionOptions | None,
+    overrides: Mapping[str, object],
+) -> BuildExecutionOptions:
+    if options is not None:
+        return _ensure_no_overrides(options, overrides)
+    if not overrides:
+        return BuildExecutionOptions()
+    _ensure_known_overrides(overrides)
+    data = _build_override_data(overrides)
+    return BuildExecutionOptions(**cast("BuildExecutionOptionsData", data))
+
+
+def _ensure_no_overrides(
+    options: BuildExecutionOptions,
+    overrides: Mapping[str, object],
+) -> BuildExecutionOptions:
+    if overrides:
+        msg = "Pass either options or keyword overrides, not both."
+        raise TypeError(msg)
+    return options
+
+
+def _ensure_known_overrides(overrides: Mapping[str, object]) -> None:
+    unknown = sorted(set(overrides) - _EXECUTOR_OVERRIDE_KEYS)
+    if unknown:
+        msg = f"Unknown BuildExecutionOptions overrides: {', '.join(unknown)}"
+        raise TypeError(msg)
+
+
+def _build_override_data(overrides: Mapping[str, object]) -> dict[str, object]:
+    return {
+        target_key: overrides[source_key]
+        for source_key, target_key in _EXECUTOR_OVERRIDE_MAP
+        if source_key in overrides
+    }
+
+
 class HamiltonBuildExecutor:
     """Execute build targets using Hamilton Driver.
 
     Parameters
     ----------
-    profile
-        Optional policy profile name (e.g., "fast", "full", "ci").
-    enable_cache
-        When True, enable Hamilton's on-disk caching adapter for nodes decorated with
-        ``@cache``.
-    cache_dir
-        Optional override for the Hamilton cache directory. When omitted, uses
-        ``{build_dir}/.hamilton_cache`` from the provided BuildEnv.
+    options
+        Optional ``BuildExecutionOptions`` instance configuring execution behavior.
+    **overrides
+        Keyword overrides matching ``BuildExecutionOptions`` fields (profile, cache, plugins).
+        Only one of ``options`` or keyword overrides may be supplied.
     """
 
     def __init__(
         self,
         *,
-        profile: str | None = None,
-        parallel_backend: str = "sequential",
-        max_workers: int | None = None,
-        enable_cache: bool = False,
-        cache_dir: str | None = None,
+        options: BuildExecutionOptions | None = None,
+        **overrides: object,
     ) -> None:
         """Initialize the Hamilton executor."""
-        self._options = BuildExecutionOptions(
-            profile=profile,
-            parallel_backend=parallel_backend,
-            max_workers=max_workers,
-            enable_hamilton_cache=enable_cache,
-            cache_dir=cache_dir,
-        )
+        self._options = _options_from_overrides(options=options, overrides=overrides)
 
     @property
     def profile(self) -> str | None:
@@ -981,6 +1053,7 @@ class HamiltonBuildExecutor:
         config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
         config.update(env.variants.as_hamilton_config())
         config["variant_fingerprint"] = env.variants.variant_fingerprint
+        config.update(self._options.plugin_overrides())
         telemetry_hook: NodeTelemetryHook | None = None
 
         hook_options = self._options.hook_options()

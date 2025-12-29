@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from codeintel.core.execution.ids import new_uuid_hex, new_uuid_str
 from codeintel.serving.errors.catalog import ERROR_CODE_CATALOG
 from codeintel.serving.errors.models import ErrorContext, ErrorInfo, ErrorResponse
-from codeintel.serving.uris import EXPORT_RESOURCE_PREFIX, META_VIEWS_SQL_URI
+from codeintel.serving.uris import EXPORT_RESOURCE_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -258,10 +258,6 @@ def exception_to_error_response(exc: Exception, *, context: ErrorContext) -> Err
         isinstance(context.resource_uri, str)
         and context.resource_uri.startswith(EXPORT_RESOURCE_PREFIX)
     )
-    is_meta_views_sql = isinstance(context.resource_uri, str) and context.resource_uri.startswith(
-        META_VIEWS_SQL_URI
-    )
-
     code: str
     params: dict[str, Any] | None = None
     details: dict[str, Any] | None = None
@@ -277,10 +273,7 @@ def exception_to_error_response(exc: Exception, *, context: ErrorContext) -> Err
         code = "CODEINTEL_SEMANTIC_VIEW_NOT_FOUND"
         params = {"view_id": context.view_id}
     elif isinstance(exc, (TypeError, ValueError)):
-        if is_meta_views_sql and context.view_id is not None:
-            code = "CODEINTEL_META_SQL_UNSAFE"
-            params = {"view_id": context.view_id}
-        elif is_export:
+        if is_export:
             code = "CODEINTEL_EXPORT_INVALID_REQUEST"
         else:
             code = "CODEINTEL_SEMANTIC_INVALID_QUERY"

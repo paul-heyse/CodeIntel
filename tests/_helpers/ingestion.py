@@ -412,7 +412,7 @@ def build_ingestion_context_bundle(
 def materialize_rows_for_snapshot(
     gateway: StorageGateway,
     table_key: str,
-    rows: Sequence[tuple[object, ...]] | ColumnarRows,
+    rows: Sequence[tuple[object, ...]] | Sequence[Mapping[str, object]] | ColumnarRows,
     *,
     snapshot: SnapshotRef,
 ) -> None:
@@ -876,7 +876,7 @@ def seed_modules_and_repo_map(
     con.executemany(
         """
         INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
+        VALUES (?, ?, ?, ?, 'python', ?, ?)
         """,
         [
             (
@@ -884,6 +884,8 @@ def seed_modules_and_repo_map(
                 record.file_path.relative_to(repo_root).as_posix(),
                 ctx.snapshot.repo,
                 ctx.snapshot.commit,
+                [],
+                [],
             )
             for record in records
         ],
@@ -894,9 +896,9 @@ def seed_modules_and_repo_map(
     con.execute(
         """
         INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-        VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
-        [ctx.snapshot.repo, ctx.snapshot.commit, json.dumps(modules_json)],
+        [ctx.snapshot.repo, ctx.snapshot.commit, modules_json, {}],
     )
     ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
 
@@ -923,7 +925,7 @@ def seed_inventory_from_paths(
     con.executemany(
         """
         INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
+        VALUES (?, ?, ?, ?, 'python', ?, ?)
         """,
         [
             (
@@ -931,6 +933,8 @@ def seed_inventory_from_paths(
                 record.file_path.relative_to(repo_root).as_posix(),
                 repo,
                 commit,
+                [],
+                [],
             )
             for record in records
         ],
@@ -941,9 +945,9 @@ def seed_inventory_from_paths(
     con.execute(
         """
         INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-        VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
-        [repo, commit, json.dumps(modules_json)],
+        [repo, commit, modules_json, {}],
     )
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     ModulesAssertions(gateway, snapshot).inventory_consistent()

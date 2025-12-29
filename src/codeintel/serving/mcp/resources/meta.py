@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.serving.errors import MetaArtifactNotFoundError, MetaSqlUnsafeError
-from codeintel.serving.mcp.protocols import ServingSnapshotPointerProtocol
 from codeintel.serving.meta.models import DEFAULT_RESOURCE_TEMPLATES
 from codeintel.serving.meta.service import (
     build_environment_meta_payload,
@@ -18,63 +14,15 @@ from codeintel.serving.uris import (
     META_ENVIRONMENT_URI,
     META_RESOURCES_URI,
     META_SERVING_URI,
-    META_VIEWS_SQL_DIFF_URI,
-    META_VIEWS_SQL_URI,
     SEMANTIC_VIEW_URI_TEMPLATE,
     SEMANTIC_VIEWS_URI,
 )
-from codeintel.storage.queries.safe import (
-    SqlIngressPolicy,
-    UnsafeSqlError,
-    assert_select_perimeter,
-)
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from fastmcp import FastMCP
 
     from codeintel.serving.operations.ops import ServingOperations
     from codeintel.serving.settings import ServingSettings
-
-LOG = logging.getLogger(__name__)
-
-
-def _read_json_file(path: Path) -> dict[str, object]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        msg = f"Expected JSON object in {path.name}"
-        raise TypeError(msg)
-    return {str(k): v for k, v in raw.items()}
-
-
-def _artifact_dir_for_pointer(pointer: ServingSnapshotPointerProtocol) -> Path:
-    return pointer.schema_manifest_path.parent
-
-
-def _read_views_sql(pointer: ServingSnapshotPointerProtocol) -> dict[str, object]:
-    artifact_name = "views_sql.json"
-    path = _artifact_dir_for_pointer(pointer) / artifact_name
-    if not path.is_file():
-        raise MetaArtifactNotFoundError(artifact_name)
-    views_sql = _read_json_file(path)
-    for view_id, sql in views_sql.items():
-        if not isinstance(sql, str):
-            msg = f"views_sql.json entry for {view_id!r} is not a string"
-            raise TypeError(msg)
-        try:
-            assert_select_perimeter(sql, policy=SqlIngressPolicy())
-        except UnsafeSqlError as exc:
-            raise MetaSqlUnsafeError(str(view_id)) from exc
-    return views_sql
-
-
-def _read_views_sql_diff(pointer: ServingSnapshotPointerProtocol) -> dict[str, object]:
-    artifact_name = "views_sql_diff.json"
-    path = _artifact_dir_for_pointer(pointer) / artifact_name
-    if not path.is_file():
-        raise MetaArtifactNotFoundError(artifact_name)
-    return _read_json_file(path)
 
 
 def _build_resource_templates_response(ops: ServingOperations) -> dict[str, object]:
@@ -113,14 +61,6 @@ def register_meta_resources(
     @mcp.resource(META_ENVIRONMENT_URI, mime_type="application/json", tags={"meta"})
     def environment() -> dict[str, object]:
         return build_environment_meta_payload(ops, settings=settings)
-
-    @mcp.resource(META_VIEWS_SQL_URI, mime_type="application/json", tags={"meta"})
-    def views_sql() -> dict[str, object]:
-        return _read_views_sql(ops.db.current_pointer())
-
-    @mcp.resource(META_VIEWS_SQL_DIFF_URI, mime_type="application/json", tags={"meta"})
-    def views_sql_diff() -> dict[str, object]:
-        return _read_views_sql_diff(ops.db.current_pointer())
 
 
 __all__ = ["register_meta_resources"]

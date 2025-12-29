@@ -21,6 +21,7 @@
           "description": { "type": ["string", "null"] },
           "primary_key": { "type": "array", "items": { "type": "string" }, "default": [] },
           "columns": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "columns_dynamic": { "type": "boolean", "default": false },
           "joins": { "type": "array", "default": [] },
           "defaults": {
             "type": "object",
