@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping
 from typing import ParamSpec, Protocol, TypeVar, cast
 
+from hamilton.function_modifiers import schema as h_schema
 from hamilton.function_modifiers import tag as h_tag
 
 from codeintel.build.hamilton.tag_spec import (
@@ -15,7 +16,10 @@ from codeintel.build.hamilton.tag_spec import (
     tag_spec_from_tags,
     validate_tag_spec,
 )
+from codeintel.build.schemas import get_schema_provider
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
+from codeintel.core.schemas.primitives import TableSchema
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -158,7 +162,17 @@ def tag_dataset(
     spec = TagSpec.for_dataset(
         domain=domain, target=target, table_key=table_key, extra_tags=merged_tags
     )
-    return tag_from_spec(spec, target_=target_)
+    tag_decorator = tag_from_spec(spec, target_=target_)
+    schema_decorator = _schema_output_decorator(table_key)
+    if schema_decorator is None:
+        return tag_decorator
+    schema_tag = cast("Decorator[P, R]", schema_decorator)
+
+    def apply(fn: Callable[P, R]) -> Callable[P, R]:
+        tagged = schema_tag(fn)
+        return tag_decorator(tagged)
+
+    return apply
 
 
 def tag_artifact(
@@ -225,6 +239,30 @@ def tag_loader_query(
         extra_tags=extra_tags,
     )
     return tag_from_spec(spec, target_=target_)
+
+
+def _schema_output_decorator(table_key: str) -> Decorator[P, R] | None:
+    schema = _resolve_table_schema(table_key)
+    if schema is None:
+        return None
+    fields = tuple((column.name, column.type) for column in schema.columns)
+    if not fields:
+        return None
+    tag_value = ",".join(f"{name}={dtype}" for name, dtype in fields)
+    decorator = h_tag(
+        bypass_reserved_namespaces_=True,
+        **{h_schema.INTERNAL_SCHEMA_OUTPUT_KEY: tag_value},
+    )
+    return cast("Decorator[P, R]", decorator)
+
+
+def _resolve_table_schema(table_key: str) -> TableSchema | None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        return OUTPUT_TABLE_SCHEMAS.get(table_key)
+    schema = provider.get_table_schema(table_key)
+    return schema or OUTPUT_TABLE_SCHEMAS.get(table_key)
 
 
 def tag_helper(

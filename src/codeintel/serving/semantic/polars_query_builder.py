@@ -47,23 +47,9 @@ def _require_polars() -> _PolarsApi:
     return cast("_PolarsApi", pl)
 
 
-def _select_columns(lazyframe: PolarsLazyFrame, *, columns: list[str]) -> PolarsLazyFrame:
-    if pl is None:  # pragma: no cover
-        msg = "polars is required for Polars query execution"
-        raise PolarsQueryBuilderError(msg)
-    selectors = getattr(pl, "selectors", None)
-    if selectors is None:
-        return lazyframe.select(columns)
-    by_name = getattr(selectors, "by_name", None)
-    if callable(by_name):
-        selector = cast("PolarsExpr", by_name(columns))
-        return lazyframe.select(selector)
-    return lazyframe.select(columns)
-
-
 def can_apply_query_ast(
     *,
-    ast: exp.Select,
+    ast: exp.Expression,
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None = None,
 ) -> bool:
@@ -99,7 +85,7 @@ def can_apply_query_ast(
 def apply_query_ast(
     lazyframe: PolarsLazyFrame,
     *,
-    ast: exp.Select,
+    ast: exp.Expression,
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None = None,
 ) -> PolarsLazyFrame:
@@ -138,7 +124,7 @@ def apply_query_ast(
         lazyframe = lazyframe.filter(components.filters)
     if components.order_by:
         lazyframe = lazyframe.sort(by=components.order_by, descending=components.descending)
-    lazyframe = _select_columns(lazyframe, columns=components.columns)
+    lazyframe = lazyframe.select(components.select_exprs)
     if components.limit is not None or components.offset:
         if components.limit is None:
             msg = "offset without limit is not supported"
@@ -164,7 +150,7 @@ def _require_allowed_column(*, column: str, allowed_columns: frozenset[str], ctx
 
 @dataclass(frozen=True, slots=True)
 class _AstQueryComponents:
-    columns: list[str]
+    select_exprs: list[PolarsExpr]
     filters: PolarsExpr | None
     order_by: list[str]
     descending: list[bool]
@@ -174,14 +160,18 @@ class _AstQueryComponents:
 
 def _parse_ast_components(
     *,
-    ast: exp.Select,
+    ast: exp.Expression,
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None,
 ) -> _AstQueryComponents:
     if not isinstance(ast, exp.Select):
         msg = "Expected SQLGlot Select expression"
         raise PolarsQueryBuilderError(msg)
-    columns = _select_columns_from_ast(ast, allowed_columns=allowed_columns)
+    select_exprs = _select_exprs_from_ast(
+        ast,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
     filters = _where_expr_from_ast(
         ast=ast,
         allowed_columns=allowed_columns,
@@ -191,7 +181,7 @@ def _parse_ast_components(
     limit, offset = _limit_offset_from_ast(ast)
     _validate_pagination(limit=limit or 0, offset=offset)
     return _AstQueryComponents(
-        columns=columns,
+        select_exprs=select_exprs,
         filters=filters,
         order_by=order_by,
         descending=descending,
@@ -200,28 +190,242 @@ def _parse_ast_components(
     )
 
 
-def _select_columns_from_ast(
+def _select_exprs_from_ast(
     ast: exp.Select,
     *,
     allowed_columns: frozenset[str],
-) -> list[str]:
-    columns: list[str] = []
-    for expr in ast.expressions:
-        if isinstance(expr, exp.Column):
-            column = _column_name(expr)
-            _require_allowed_column(
-                column=column,
-                allowed_columns=allowed_columns,
-                ctx="select",
-            )
-            columns.append(column)
-            continue
-        msg = f"Unsupported select expression: {type(expr).__name__}"
-        raise PolarsQueryBuilderError(msg)
-    if not columns:
+    column_types: Mapping[str, ColumnType] | None,
+) -> list[PolarsExpr]:
+    select_exprs = [
+        _polars_expr_from_select(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        for expr in ast.expressions
+    ]
+    if not select_exprs:
         msg = "Select expression must include at least one column"
         raise PolarsQueryBuilderError(msg)
-    return columns
+    return select_exprs
+
+
+def _polars_expr_from_select(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> PolarsExpr:
+    if isinstance(expr, exp.Alias):
+        alias = expr.alias
+        if not alias:
+            msg = "Select alias requires a name"
+            raise PolarsQueryBuilderError(msg)
+        base = _polars_expr_from_select(
+            expr.this,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        return base.alias(alias)
+    return _polars_expr_from_projection(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+def _polars_expr_from_projection(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> PolarsExpr:
+    result: PolarsExpr | None = None
+    if isinstance(expr, exp.Column):
+        column = _column_name(expr)
+        _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
+        pl_mod = _require_polars()
+        result = pl_mod.col(column)
+    elif isinstance(expr, exp.Lower):
+        result = _polars_string_unary_expr(
+            expr.this,
+            func_name="lower",
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.Upper):
+        result = _polars_string_unary_expr(
+            expr.this,
+            func_name="upper",
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.Coalesce):
+        result = _polars_coalesce_expr(
+            expr.expressions,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.Contains):
+        result = _polars_string_predicate_expr(
+            expr.this,
+            expr.expression,
+            func_name="contains",
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.StartsWith):
+        result = _polars_string_predicate_expr(
+            expr.this,
+            expr.expression,
+            func_name="starts_with",
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.Anonymous):
+        result = _polars_function_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, (exp.Boolean, exp.Literal)):
+        result = _polars_literal_expr(expr)
+
+    if result is None:
+        msg = f"Unsupported select expression: {type(expr).__name__}"
+        raise PolarsQueryBuilderError(msg)
+    return result
+
+
+def _polars_literal_expr(expr: exp.Expression) -> PolarsExpr:
+    pl_mod = _require_polars()
+    value = _literal_value(expr)
+    return pl_mod.lit(value)
+
+
+def _polars_function_expr(
+    expr: exp.Anonymous,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> PolarsExpr:
+    func_name = (expr.name or "").lower()
+    if func_name in _STRING_PREDICATE_FUNCS:
+        return _polars_string_function(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if func_name in _STRING_UNARY_FUNCS:
+        column_expr = expr.expressions[0] if expr.expressions else None
+        return _polars_string_unary_expr(
+            column_expr,
+            func_name=func_name,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if func_name in _CASE_FUNCTIONS:
+        return _polars_coalesce_expr(
+            expr.expressions,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    msg = f"Unsupported function: {func_name or '<unknown>'}"
+    raise PolarsQueryBuilderError(msg)
+
+
+def _polars_string_function(
+    expr: exp.Anonymous,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> PolarsExpr:
+    func_name = (expr.name or "").lower()
+    if len(expr.expressions) != _STRING_FUNC_ARG_COUNT:
+        msg = f"{func_name} requires column and string literal arguments"
+        raise PolarsQueryBuilderError(msg)
+    return _polars_string_predicate_expr(
+        expr.expressions[0],
+        expr.expressions[1],
+        func_name=func_name,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+def _polars_string_unary_expr(
+    expr: exp.Expression | None,
+    *,
+    func_name: str,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> PolarsExpr:
+    if func_name not in _STRING_UNARY_FUNCS:
+        msg = f"Unsupported function: {func_name or '<unknown>'}"
+        raise PolarsQueryBuilderError(msg)
+    if expr is None or not isinstance(expr, exp.Column):
+        msg = f"{func_name or 'function'} requires a column argument"
+        raise PolarsQueryBuilderError(msg)
+    column = _column_name(expr)
+    _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
+    column_type = column_types.get(column) if column_types is not None else None
+    if column_type is not None and column_type != "VARCHAR":
+        msg = f"{func_name} is only supported for VARCHAR columns"
+        raise PolarsQueryBuilderError(msg)
+    pl_mod = _require_polars()
+    if func_name == "upper":
+        return pl_mod.col(column).str.to_uppercase()
+    return pl_mod.col(column).str.to_lowercase()
+
+
+def _polars_string_predicate_expr(
+    column_expr: exp.Expression | None,
+    value_expr: exp.Expression | None,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+    func_name: str,
+) -> PolarsExpr:
+    if not isinstance(column_expr, exp.Column):
+        msg = f"{func_name} requires a column argument"
+        raise PolarsQueryBuilderError(msg)
+    column = _column_name(column_expr)
+    _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
+    column_type = column_types.get(column) if column_types is not None else None
+    _validate_operator(op=_STRING_FUNC_MAP[func_name], column_type=column_type)
+    value = _literal_value(value_expr)
+    if not isinstance(value, str):
+        msg = f"{func_name} requires a string literal"
+        raise PolarsQueryBuilderError(msg)
+    pl_mod = _require_polars()
+    if func_name == "contains":
+        return pl_mod.col(column).str.contains(value, literal=True)
+    return pl_mod.col(column).str.starts_with(value)
+
+
+def _polars_coalesce_expr(
+    expressions: list[exp.Expression],
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> PolarsExpr:
+    if not expressions:
+        msg = "coalesce requires at least one argument"
+        raise PolarsQueryBuilderError(msg)
+    pl_mod = _require_polars()
+    resolved = [
+        _polars_expr_from_projection(
+            item,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        for item in expressions
+    ]
+    coalesce = getattr(pl_mod, "coalesce", None)
+    if callable(coalesce):
+        return cast("PolarsExpr", coalesce(resolved))
+    msg = "polars coalesce is unavailable"
+    raise PolarsQueryBuilderError(msg)
 
 
 def _where_expr_from_ast(
@@ -319,6 +523,22 @@ def _build_predicate_expr(
     if isinstance(expr, exp.In):
         return _build_in_expr_ast(
             expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Contains):
+        return _build_string_predicate_expr(
+            func_name="contains",
+            column_expr=expr.this,
+            value_expr=expr.expression,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.StartsWith):
+        return _build_string_predicate_expr(
+            func_name="starts_with",
+            column_expr=expr.this,
+            value_expr=expr.expression,
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
@@ -510,7 +730,7 @@ def _build_string_expr_ast(
 ) -> PolarsExpr:
     func_name = (expr.name or "").lower()
     if func_name == "starts_with":
-        op = "startswith"
+        op = "starts_with"
     elif func_name == "contains":
         op = "contains"
     else:
@@ -519,21 +739,37 @@ def _build_string_expr_ast(
     if len(expr.expressions) != _STRING_FUNC_ARG_COUNT:
         msg = f"{op} requires column and string literal arguments"
         raise PolarsQueryBuilderError(msg)
-    column_expr = expr.expressions[0]
-    value_expr = expr.expressions[1]
+    return _build_string_predicate_expr(
+        func_name=op,
+        column_expr=expr.expressions[0],
+        value_expr=expr.expressions[1],
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+def _build_string_predicate_expr(
+    *,
+    func_name: str,
+    column_expr: exp.Expression | None,
+    value_expr: exp.Expression | None,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> PolarsExpr:
     if not isinstance(column_expr, exp.Column):
-        msg = f"{op} requires a column argument"
+        msg = f"{func_name} requires a column argument"
         raise PolarsQueryBuilderError(msg)
     column = _column_name(column_expr)
     _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="filter")
     column_type = column_types.get(column) if column_types is not None else None
+    op = "startswith" if func_name == "starts_with" else func_name
     _validate_operator(op=op, column_type=column_type)
     value = _literal_value(value_expr)
     if not isinstance(value, str):
-        msg = f"{op} operator requires string value"
+        msg = f"{func_name} operator requires string value"
         raise PolarsQueryBuilderError(msg)
     pl_mod = _require_polars()
-    if op == "contains":
+    if func_name == "contains":
         return pl_mod.col(column).str.contains(value, literal=True)
     return pl_mod.col(column).str.starts_with(value)
 
@@ -649,6 +885,14 @@ def _column_name(column: exp.Column) -> str:
 
 _UNKNOWN_COLUMN_TYPE = "UNKNOWN"
 _STRING_FUNC_ARG_COUNT = 2
+_STRING_FUNC_MAP = {
+    "contains": "contains",
+    "starts_with": "startswith",
+}
+_FILTER_STRING_FUNCS = frozenset(_STRING_FUNC_MAP.keys())
+_STRING_PREDICATE_FUNCS = frozenset({"contains", "starts_with"})
+_STRING_UNARY_FUNCS = frozenset({"lower", "upper"})
+_CASE_FUNCTIONS = frozenset({"coalesce"})
 _COMPARISON_BUILDERS: dict[str, Callable[[PolarsExpr, FilterScalar], PolarsExpr]] = {
     "eq": operator.eq,
     "ne": operator.ne,

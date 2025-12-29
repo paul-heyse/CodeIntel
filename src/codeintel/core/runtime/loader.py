@@ -136,6 +136,14 @@ def _load_execution_settings() -> HamiltonExecutionSettings:
     duckdb_temp_directory = get_path("CODEINTEL_DUCKDB_TEMP_DIRECTORY", default=None)
     duckdb_enable_profiling = get_bool("CODEINTEL_DUCKDB_ENABLE_PROFILING", default=None)
     duckdb_profiling_output = get_path("CODEINTEL_DUCKDB_PROFILING_OUTPUT", default=None)
+    dynamic_execution = bool(get_bool("CODEINTEL_HAMILTON_DYNAMIC_EXECUTION", default=False))
+    dynamic_local_executor = get_str("CODEINTEL_HAMILTON_DYNAMIC_LOCAL_EXECUTOR", default=None)
+    dynamic_remote_executor = get_str("CODEINTEL_HAMILTON_DYNAMIC_REMOTE_EXECUTOR", default=None)
+    dynamic_remote_max_tasks = get_int(
+        "CODEINTEL_HAMILTON_DYNAMIC_REMOTE_MAX_TASKS",
+        default=None,
+    )
+    materializers = split_csv(get_str("CODEINTEL_HAMILTON_MATERIALIZERS", default=None))
     return HamiltonExecutionSettings(
         parallel_backend=backend,
         max_workers=max_workers,
@@ -145,6 +153,11 @@ def _load_execution_settings() -> HamiltonExecutionSettings:
         duckdb_temp_directory=duckdb_temp_directory,
         duckdb_enable_profiling=duckdb_enable_profiling,
         duckdb_profiling_output=duckdb_profiling_output,
+        dynamic_execution=dynamic_execution,
+        dynamic_local_executor=dynamic_local_executor,
+        dynamic_remote_executor=dynamic_remote_executor,
+        dynamic_remote_max_tasks=dynamic_remote_max_tasks,
+        materializers=materializers,
     )
 
 

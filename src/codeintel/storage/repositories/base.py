@@ -177,8 +177,8 @@ class BaseRepository:
             truncated=truncated,
         )
 
-    @staticmethod
     def _validated_records(
+        self,
         table_key: str,
         relation: DuckDBRelation,
     ) -> list[RowDict]:
@@ -189,11 +189,11 @@ class BaseRepository:
         list[RowDict]
             Validated records from the relation.
         """
-        reader = BaseRepository._relation_to_reader(relation, table_key=table_key)
+        reader = self._relation_to_reader(relation, table_key=table_key)
         return records_from_arrow_reader(reader)
 
-    @staticmethod
     def _relation_to_reader(
+        self,
         relation: DuckDBRelation,
         *,
         table_key: str | None = None,
@@ -202,7 +202,12 @@ class BaseRepository:
         reader = relation.fetch_record_batch(batch_size)
         if table_key is None or BaseRepository._has_nested_arrow_types(reader.schema):
             return reader
-        return validate_record_batch_reader(table_key, reader)
+        table_schema = None
+        try:
+            table_schema = self.gateway.schemas.load_table_schema(table_key)
+        except (RuntimeError, TypeError, ValueError):
+            table_schema = None
+        return validate_record_batch_reader(table_key, reader, table_schema=table_schema)
 
     @staticmethod
     def _has_nested_arrow_types(schema: pa.Schema) -> bool:

@@ -6,6 +6,8 @@ enabling better resource utilization for I/O-bound workloads.
 Supported backends:
 - threadpool: Multi-threaded execution using ThreadPoolExecutor
 - sequential: Default single-threaded execution (no adapter needed)
+- ray: Ray graph adapter execution (optional dependency)
+- dask: Dask graph adapter execution (optional dependency)
 - auto: Automatically select best available backend
 
 Examples
@@ -20,12 +22,14 @@ Check available backends:
 
 >>> from codeintel.build.hamilton.adapters.parallel import get_available_backends
 >>> backends = get_available_backends()
->>> print(backends)  # ['sequential', 'threadpool']
+>>> print(backends)  # ['sequential', 'threadpool', ...] depending on optional deps
 """
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
+import inspect
 import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -76,12 +80,18 @@ class ExecutionBackend(Enum):
         Default single-threaded execution.
     THREADPOOL
         Multi-threaded execution using ThreadPoolExecutor.
+    RAY
+        Ray-based graph execution.
+    DASK
+        Dask-based graph execution.
     AUTO
         Automatically select best available backend.
     """
 
     SEQUENTIAL = "sequential"
     THREADPOOL = "threadpool"
+    RAY = "ray"
+    DASK = "dask"
     AUTO = "auto"
 
 
@@ -177,15 +187,23 @@ def get_available_backends() -> list[str]:
         Names of available backends.
     """
     available = ["sequential", "threadpool"]  # Always available
-
-    # Check for optional backends (future support)
-    if importlib.util.find_spec("ray") is not None:
+    if _ray_available():
         available.append("ray")
-
-    if importlib.util.find_spec("dask") is not None:
+    if _dask_available():
         available.append("dask")
-
     return available
+
+
+def _has_module(module: str) -> bool:
+    return importlib.util.find_spec(module) is not None
+
+
+def _ray_available() -> bool:
+    return _has_module("ray") and _has_module("hamilton.plugins.h_ray")
+
+
+def _dask_available() -> bool:
+    return _has_module("dask") and _has_module("hamilton.plugins.h_dask")
 
 
 class ThreadPoolAdapter(
@@ -417,13 +435,51 @@ class ThreadPoolAdapter(
             gw.close()
 
 
+def _auto_backend() -> ExecutionBackend:
+    if _ray_available():
+        return ExecutionBackend.RAY
+    if _dask_available():
+        return ExecutionBackend.DASK
+    return ExecutionBackend.THREADPOOL
+
+
+def _build_graph_adapter(
+    *,
+    module_path: str,
+    class_name: str,
+    result_builder: ResultBuilder | None,
+) -> lifecycle_base.LifecycleAdapter | None:
+    try:
+        module = importlib.import_module(module_path)
+    except ModuleNotFoundError as exc:
+        log.warning("Adapter module %s unavailable: %s", module_path, exc)
+        return None
+    adapter_cls = getattr(module, class_name, None)
+    if adapter_cls is None:
+        log.warning("Adapter class %s missing in %s", class_name, module_path)
+        return None
+    kwargs: dict[str, object] = {}
+    if result_builder is not None:
+        try:
+            params = inspect.signature(adapter_cls).parameters
+        except (TypeError, ValueError):
+            params = {}
+        if "result_builder" in params:
+            kwargs["result_builder"] = result_builder
+    try:
+        return adapter_cls(**kwargs)
+    except (TypeError, ValueError) as exc:
+        log.warning("Failed to initialize %s adapter: %s", class_name, exc)
+        return None
+
+
 def create_parallel_adapter(
     backend: str | ExecutionBackend = ExecutionBackend.SEQUENTIAL,
     *,
     max_workers: int | None = None,
     thread_name_prefix: str = "hamilton-build",
     result_builder: ResultBuilder | None = None,
-) -> ThreadPoolAdapter | None:
+) -> lifecycle_base.LifecycleAdapter | None:
     """Create a parallel execution adapter.
 
     Factory function for creating execution adapters based on the
@@ -442,7 +498,7 @@ def create_parallel_adapter(
 
     Returns
     -------
-    ThreadPoolAdapter | None
+    LifecycleAdapter | None
         Adapter instance, or None for sequential execution.
 
     Examples
@@ -464,9 +520,7 @@ def create_parallel_adapter(
 
     # Handle auto selection
     if backend == ExecutionBackend.AUTO:
-        # For now, default to threadpool for auto
-        # Future: Could check workload characteristics
-        backend = ExecutionBackend.THREADPOOL
+        backend = _auto_backend()
         log.info("Auto-selected backend: %s", backend.value)
 
     # Create adapter based on backend
@@ -481,12 +535,27 @@ def create_parallel_adapter(
             result_builder=result_builder,
         )
 
-    # Future backends would be handled here
+    if backend == ExecutionBackend.RAY:
+        return _build_graph_adapter(
+            module_path="hamilton.plugins.h_ray",
+            class_name="RayGraphAdapter",
+            result_builder=result_builder,
+        )
+
+    if backend == ExecutionBackend.DASK:
+        return _build_graph_adapter(
+            module_path="hamilton.plugins.h_dask",
+            class_name="DaskGraphAdapter",
+            result_builder=result_builder,
+        )
+
     log.warning("Backend %s not yet implemented, using sequential", backend.value)
     return None
 
 
-def create_adapter_from_config(config: ParallelConfig) -> ThreadPoolAdapter | None:
+def create_adapter_from_config(
+    config: ParallelConfig,
+) -> lifecycle_base.LifecycleAdapter | None:
     """Create adapter from ParallelConfig.
 
     Parameters
@@ -496,7 +565,7 @@ def create_adapter_from_config(config: ParallelConfig) -> ThreadPoolAdapter | No
 
     Returns
     -------
-    ThreadPoolAdapter | None
+    LifecycleAdapter | None
         Adapter instance, or None for sequential execution.
     """
     return create_parallel_adapter(

@@ -8,7 +8,7 @@ import shutil
 import threading
 import types
 import typing
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, cast, get_args, get_origin
@@ -30,11 +30,13 @@ from codeintel.build.hamilton.materializers.base import (
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
+    SchemaObservationInputs,
     instrument_reader_for_observation,
     merge_table_schema_hints,
     observe_batches,
     persist_observation_bundle,
-    schema_hints_from_tags,
+    schema_hints_from_tag_sets,
+    table_schema_from_tag_sets,
 )
 from codeintel.core.columnar import (
     LazyFrameStream,
@@ -42,6 +44,7 @@ from codeintel.core.columnar import (
     extras_policy_from_schema,
 )
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
+from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_lazyframe,
@@ -92,6 +95,7 @@ _TABULAR_TYPES: tuple[type, ...] = (
 _DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit", "target")
 _COLLECT_GROUP_TAG = "ci.collect_group"
 _COLLECT_ALL_WAIT_S = 0.5
+_SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 
 LOG = logging.getLogger(__name__)
 
@@ -375,11 +379,14 @@ def _build_materialization_plan(
     ctx: _MaterializeContext,
     data: TabularData,
 ) -> _MaterializationPlan:
-    schema_hints = _schema_hints_for_table(
-        catalog=ctx.catalog,
-        table_key=ctx.table_key,
-    )
+    tag_sets = _schema_tag_sets_for_table(catalog=ctx.catalog, table_key=ctx.table_key)
+    schema_hints = schema_hints_from_tag_sets(tag_sets)
     declared_schema = _declared_schema_hint(table_key=ctx.table_key)
+    if declared_schema is None:
+        declared_schema = table_schema_from_tag_sets(
+            table_key=ctx.table_key,
+            tag_sets=tag_sets,
+        )
     table_schema = _table_schema_for_data(
         table_key=ctx.table_key,
         data=data,
@@ -775,11 +782,47 @@ def _declared_schema_hint(table_key: str) -> TableSchema | None:
     return provider.get_table_schema(table_key)
 
 
-def _schema_hints_for_table(*, catalog: DagCatalog, table_key: str) -> SchemaHints | None:
+def _schema_tag_sets_for_table(
+    *,
+    catalog: DagCatalog,
+    table_key: str,
+) -> tuple[Mapping[str, object], ...]:
+    tag_sets: list[Mapping[str, object]] = []
     output = catalog.table_outputs.get(table_key)
-    if output is None:
-        return None
-    return schema_hints_from_tags(output.tags)
+    if output is not None:
+        tag_sets.append(output.tags)
+        tag_sets.extend(_schema_output_tag_sets(catalog=catalog, saver_node=output.saver_node))
+    tag_sets.extend(
+        node.tags
+        for node in catalog.nodes.values()
+        if node.tags.get(hamilton_tags.TAG_TABLE_KEY) == table_key
+    )
+    return tuple(tag_sets)
+
+
+def _schema_output_tag_sets(
+    *,
+    catalog: DagCatalog,
+    saver_node: str,
+) -> list[Mapping[str, object]]:
+    node = catalog.nodes.get(saver_node)
+    if node is None:
+        return []
+    visited: set[str] = set()
+    stack = list(node.deps)
+    tag_sets: list[Mapping[str, object]] = []
+    while stack:
+        node_name = stack.pop()
+        if node_name in visited:
+            continue
+        visited.add(node_name)
+        candidate = catalog.nodes.get(node_name)
+        if candidate is None:
+            continue
+        if _SCHEMA_OUTPUT_TAG in candidate.tags:
+            tag_sets.append(candidate.tags)
+        stack.extend(candidate.deps)
+    return tag_sets
 
 
 def _arrow_schema_for_data(*, data: TabularData) -> pa.Schema:
@@ -914,12 +957,20 @@ def _persist_observation_if_ready(
     arrow_schema: pa.Schema,
 ) -> None:
     try:
-        bundle = observation.finalize(
-            arrow_schema=arrow_schema,
+        drift_history: tuple[Mapping[str, object] | None, ...] | None = None
+        try:
+            drift_history = ctx.env.gateway.schemas.load_recent_drift_summaries(
+                table_key=ctx.table_key
+            )
+        except (DuckDBError, RuntimeError, TypeError, ValueError):
+            drift_history = None
+        inputs = SchemaObservationInputs(
             repo=ctx.env.repo,
             commit=ctx.env.commit,
             target_name=ctx.target_name,
+            drift_history=drift_history,
         )
+        bundle = observation.finalize(arrow_schema=arrow_schema, inputs=inputs)
         persist_observation_bundle(gateway=ctx.env.gateway, bundle=bundle)
     except (TypeError, ValueError, pa.ArrowInvalid) as exc:
         LOG.warning("Schema observation persistence failed for %s: %s", ctx.table_key, exc)

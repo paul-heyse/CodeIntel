@@ -61,6 +61,12 @@ BUILD_RUN_MODULE = OptionSpec(
     help="Build all targets in a module (ingestion, graphs, analytics, export).",
     show_choices=True,
 )
+BUILD_RUN_SHOW_TAGS = OptionSpec(
+    arg_name="show_tags",
+    names=("--show-tags",),
+    help="Include Hamilton tag metadata in build outputs.",
+    negative=(),
+)
 BUILD_RUN_ALL_TARGETS = OptionSpec(
     arg_name="all_targets",
     names=("--all", "-a"),
@@ -890,6 +896,17 @@ TARGETS_SHOW_ORIGIN = OptionSpec(
     help="Include module origin and plugin attribution.",
     negative=(),
 )
+TARGETS_SHOW_TAGS = OptionSpec(
+    arg_name="show_tags",
+    names=("--show-tags",),
+    help="Include Hamilton tag metadata for target anchors.",
+    negative=(),
+)
+TAG_FILTERS = OptionSpec(
+    arg_name="tags",
+    names=("--tag",),
+    help="Filter by Hamilton tags (key=value or key, repeatable).",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1123,6 +1140,7 @@ __all__ = [
     "BUILD_RUN_PARALLEL_BACKEND",
     "BUILD_RUN_PROGRESS",
     "BUILD_RUN_PUBLISH_SNAPSHOT",
+    "BUILD_RUN_SHOW_TAGS",
     "BUILD_RUN_TARGETS",
     "BUILD_RUN_VALIDATE_OUTPUTS",
     "BUILD_RUN_VALIDATION_MODE",
@@ -1220,6 +1238,8 @@ __all__ = [
     "STORAGE_INPUT_DIR",
     "STORAGE_OUTPUT_DIR",
     "STORAGE_VALIDATION_MODE",
+    "TAG_FILTERS",
     "TARGETS_SHOW_ORIGIN",
+    "TARGETS_SHOW_TAGS",
     "VERBOSE",
 ]

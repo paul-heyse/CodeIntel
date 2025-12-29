@@ -20,6 +20,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import polars as pl
+from hamilton.function_modifiers import (
+    apply_to,
+    inject,
+    parameterize,
+    resolve_from_config,
+    source,
+    value,
+)
+from hamilton.function_modifiers.base import NodeTransformLifecycle
+from hamilton.htypes import Collect, Parallelizable
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -36,7 +46,10 @@ from codeintel.build.hamilton.native.ingestion.frame_utils import (
     empty_lazyframe_for_table,
     lazyframe_for_ingest_columns,
 )
-from codeintel.build.hamilton.native.ingestion.pipelines import pipe_ingest_rows
+from codeintel.build.hamilton.native.ingestion.pipelines import (
+    mutate_ingest_rows,
+    pipe_ingest_rows,
+)
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
@@ -56,6 +69,7 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
+from codeintel.build.hamilton.transforms.ingestion_normalize import normalize_ingest_frame
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.core.columnar.rows import columnar_row_count
@@ -239,8 +253,11 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
 
 
 @tag_helper(domain="ingestion")
-def module_records(env: BuildEnv, module_paths: tuple[str, ...]) -> tuple[ModuleRecord, ...]:
-    """Convert module paths into ModuleRecord objects.
+def module_records_static(
+    env: BuildEnv,
+    module_paths: tuple[str, ...],
+) -> tuple[ModuleRecord, ...]:
+    """Convert module paths into ModuleRecord objects (static execution).
 
     Parameters
     ----------
@@ -257,6 +274,106 @@ def module_records(env: BuildEnv, module_paths: tuple[str, ...]) -> tuple[Module
     if not module_paths:
         return ()
     return tuple(paths_to_modules(module_paths, env.snapshot.repo_root))
+
+
+@tag_helper(domain="ingestion")
+def module_record_inputs(
+    module_paths: tuple[str, ...],
+) -> Parallelizable[tuple[int, int, str]]:
+    """Yield module record inputs for dynamic execution.
+
+    Parameters
+    ----------
+    module_paths
+        Module paths loaded from storage.
+
+    Yields
+    ------
+    tuple[int, int, str]
+        Tuple of (index, total, relative_path).
+    """
+    total = len(module_paths)
+    for index, path in enumerate(module_paths, start=1):
+        yield (index, total, path)
+
+
+@tag_helper(domain="ingestion")
+def module_record(
+    env: BuildEnv,
+    module_record_inputs: tuple[int, int, str],
+) -> ModuleRecord:
+    """Build a ModuleRecord from dynamic inputs.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    module_record_inputs
+        Tuple of (index, total, relative_path).
+
+    Returns
+    -------
+    ModuleRecord
+        Module record for downstream ingestion steps.
+    """
+    index, total, rel_path = module_record_inputs
+    return ModuleRecord(
+        rel_path=rel_path,
+        module_name=rel_path.replace("/", ".").removesuffix(".py"),
+        file_path=env.snapshot.repo_root / rel_path,
+        index=index,
+        total=total,
+    )
+
+
+@tag_helper(domain="ingestion")
+def module_records_dynamic(
+    module_record: Collect[ModuleRecord],
+) -> tuple[ModuleRecord, ...]:
+    """Collect dynamic ModuleRecord outputs into a stable tuple.
+
+    Parameters
+    ----------
+    module_record
+        Collected ModuleRecord values from dynamic execution.
+
+    Returns
+    -------
+    tuple[ModuleRecord, ...]
+        Module records for downstream ingestion steps.
+    """
+    records = list(module_record)
+    if not records:
+        return ()
+    ordered = sorted(records, key=lambda record: record.index)
+    return tuple(ordered)
+
+
+def _pick_module_records(
+    *,
+    ci_dynamic_module_records: bool = False,
+) -> NodeTransformLifecycle:
+    if ci_dynamic_module_records:
+        return inject(records=source("module_records_dynamic"))
+    return inject(records=source("module_records_static"))
+
+
+@resolve_from_config(decorate_with=_pick_module_records)
+@tag_helper(domain="ingestion")
+def module_records(records: tuple[ModuleRecord, ...]) -> tuple[ModuleRecord, ...]:
+    """Return module records from the configured execution path.
+
+    Parameters
+    ----------
+    records
+        Module records from either static or dynamic execution.
+
+    Returns
+    -------
+    tuple[ModuleRecord, ...]
+        Module records for downstream ingestion steps.
+    """
+    return records
 
 
 @tag_tool(domain="ingestion", target=MODULES_TARGET_NAME)
@@ -754,34 +871,59 @@ def t__config_ingest__ingest(
     )
 
 
-@tag_compute(
-    domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__raw_rows"
+@parameterize(
+    config_ingest__raw_rows={
+        "ingest_step": source("t__config_ingest__ingest"),
+        "table_key": value(CONFIG_VALUES_TABLE_KEY),
+        "label": value("config ingest"),
+    },
+    coverage__raw_rows={
+        "ingest_step": source("t__coverage_ingest__ingest"),
+        "table_key": value(COVERAGE_LINES_TABLE_KEY),
+        "label": value("coverage ingest"),
+    },
+    tests__raw_rows={
+        "ingest_step": source("t__tests_ingest__ingest"),
+        "table_key": value(TEST_CATALOG_TABLE_KEY),
+        "label": value("tests ingest"),
+    },
 )
-def config_ingest__raw_rows(
-    t__config_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+def _extract_ingest_rows(
+    ingest_step: IngestStep[dict[str, pl.LazyFrame]],
+    table_key: str,
+    label: str,
 ) -> pl.LazyFrame | None:
-    """Extract raw rows for analytics.config_values.
+    """Extract raw rows for ingestion tables.
+
+    Parameters
+    ----------
+    ingest_step
+        Ingestion step containing table payloads.
+    table_key
+        Table key to extract from the payload.
+    label
+        Human-readable label for error messages.
 
     Returns
     -------
     pl.LazyFrame | None
-        Raw frame for the config values table, or None when skipped/failed.
+        Extracted frame or None when the ingest step skipped/failed.
 
     Raises
     ------
     ValueError
-        If the ingest payload or rows are missing.
+        If the ingest payload or table frame is missing.
     """
-    if t__config_ingest__ingest.result.skipped or not t__config_ingest__ingest.result.success:
+    if ingest_step.result.skipped or not ingest_step.result.success:
         return None
 
-    payload = t__config_ingest__ingest.payload
+    payload = ingest_step.payload
     if payload is None:
-        msg = "Missing config ingest payload"
+        msg = f"Missing {label} payload"
         raise ValueError(msg)
-    frame = payload.get(CONFIG_VALUES_TABLE_KEY)
+    frame = payload.get(table_key)
     if frame is None:
-        msg = f"Missing frame for {CONFIG_VALUES_TABLE_KEY}"
+        msg = f"Missing frame for {table_key}"
         raise ValueError(msg)
     return frame
 
@@ -1020,7 +1162,7 @@ def t__coverage_ingest__ingest(
 )
 @tag_compute(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, target_="coverage__rows")
 def coverage__rows(
-    t__coverage_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+    coverage__raw_rows: pl.LazyFrame | None,
 ) -> pl.LazyFrame | None:
     """Extract rows for analytics.coverage_lines.
 
@@ -1028,24 +1170,8 @@ def coverage__rows(
     -------
     pl.LazyFrame | None
         Lazy frame for the coverage_lines table, or None when ingestion is skipped or failed.
-
-    Raises
-    ------
-    ValueError
-        If the ingest payload is missing expected row data.
     """
-    if t__coverage_ingest__ingest.result.skipped or not t__coverage_ingest__ingest.result.success:
-        return None
-
-    payload = t__coverage_ingest__ingest.payload
-    if payload is None:
-        msg = "Missing coverage ingest payload"
-        raise ValueError(msg)
-    frame = payload.get(COVERAGE_LINES_TABLE_KEY)
-    if frame is None:
-        msg = f"Missing frame for {COVERAGE_LINES_TABLE_KEY}"
-        raise ValueError(msg)
-    return frame
+    return coverage__raw_rows
 
 
 @tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
@@ -1261,7 +1387,7 @@ def t__tests_ingest__ingest(
 )
 @tag_compute(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, target_="tests__rows")
 def tests__rows(
-    t__tests_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+    tests__raw_rows: pl.LazyFrame | None,
 ) -> pl.LazyFrame | None:
     """Extract rows for analytics.test_catalog.
 
@@ -1269,24 +1395,8 @@ def tests__rows(
     -------
     pl.LazyFrame | None
         Lazy frame for the test_catalog table, or None when ingestion is skipped or failed.
-
-    Raises
-    ------
-    ValueError
-        If the ingest payload is missing expected row data.
     """
-    if t__tests_ingest__ingest.result.skipped or not t__tests_ingest__ingest.result.success:
-        return None
-
-    payload = t__tests_ingest__ingest.payload
-    if payload is None:
-        msg = "Missing tests ingest payload"
-        raise ValueError(msg)
-    frame = payload.get(TEST_CATALOG_TABLE_KEY)
-    if frame is None:
-        msg = f"Missing frame for {TEST_CATALOG_TABLE_KEY}"
-        raise ValueError(msg)
-    return frame
+    return tests__raw_rows
 
 
 @tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
@@ -1623,6 +1733,37 @@ def t__typing(
         artifact_materializations=None,
         table_materializations=typing__table_materializations,
     )
+
+
+@mutate_ingest_rows(
+    apply_to(modules__module_rows, table_key=value(MODULES_TABLE_KEY)),
+    apply_to(modules__file_state_rows, table_key=value(FILE_STATE_TABLE_KEY)),
+    apply_to(modules__repo_map_rows, table_key=value(REPO_MAP_TABLE_KEY)),
+    apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
+    apply_to(coverage__rows, table_key=value(COVERAGE_LINES_TABLE_KEY)),
+    apply_to(tests__rows, table_key=value(TEST_CATALOG_TABLE_KEY)),
+    apply_to(typing__typedness_rows, table_key=value(TYPEDNESS_TABLE_KEY)),
+    apply_to(typing__diagnostic_rows, table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY)),
+)
+def _normalize_ingest_rows(
+    rows: pl.LazyFrame | None,
+    table_key: str,
+) -> pl.LazyFrame | None:
+    """Normalize ingestion outputs with shared alignment/dedupe logic.
+
+    Parameters
+    ----------
+    rows
+        Ingestion rows to normalize.
+    table_key
+        Table key used for schema alignment.
+
+    Returns
+    -------
+    pl.LazyFrame | None
+        Normalized rows for the table.
+    """
+    return normalize_ingest_frame(rows, table_key=table_key)
 
 
 __all__: list[str] = [

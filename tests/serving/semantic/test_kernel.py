@@ -143,6 +143,9 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
         expect_equal(res.columns, ["id", "label"])
         expect_equal([row["id"] for row in res.rows], [3, 2])
 
+        explain = kernel.explain(req)
+        expect_true("docs.v_demo" in explain.table_keys, message="Explain includes table_keys")
+
         meta = kernel.meta()
         expect_equal(meta.schema_inventory, {"tables": 1, "views": 1})
     finally:

@@ -9,7 +9,7 @@ from cyclopts import App
 
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.targets import targets_list_handler
-from codeintel.cli.options.registry import TARGETS_SHOW_ORIGIN
+from codeintel.cli.options.registry import TAG_FILTERS, TARGETS_SHOW_ORIGIN, TARGETS_SHOW_TAGS
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
@@ -31,9 +31,17 @@ _TARGETS_LIST_FLAGS_FIELD = shared_flags_field(TARGETS_LIST_PATH)
 class TargetsListCommand:
     """List runtime targets."""
 
+    tags: Annotated[
+        list[str] | None,
+        option_param(TAG_FILTERS, command_path=TARGETS_LIST_PATH),
+    ] = None
     show_origin: Annotated[
         bool,
         option_param(TARGETS_SHOW_ORIGIN, command_path=TARGETS_LIST_PATH),
+    ] = False
+    show_tags: Annotated[
+        bool,
+        option_param(TARGETS_SHOW_TAGS, command_path=TARGETS_LIST_PATH),
     ] = False
     flags: SharedFlagsProtocol = _TARGETS_LIST_FLAGS_FIELD
 

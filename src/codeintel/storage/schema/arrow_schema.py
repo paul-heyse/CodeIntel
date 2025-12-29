@@ -31,6 +31,7 @@ def _load_contract_schema(
         filter_clause = (
             "AND ("
             "registry.inference_status IN ('inferred', 'override') "
+            "OR registry.inference_status IS NULL "
             "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
             ")"
         )

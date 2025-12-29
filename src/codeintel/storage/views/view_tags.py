@@ -8,11 +8,10 @@ using Hamilton's `@tag` modifier and discover them via Hamilton introspection.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeVar, cast
-
-from hamilton.function_modifiers import tag as h_tag
+from typing import TypeVar
 
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.hamilton.tagging_helpers import apply_raw_tags
 
 _TFunc = TypeVar("_TFunc", bound=Callable[..., object])
 
@@ -32,12 +31,12 @@ def sql_view(table_key: str) -> Callable[[_TFunc], _TFunc]:
     """
 
     def decorator(fn: _TFunc) -> _TFunc:
-        return cast(
-            "_TFunc",
-            h_tag(
-                output_kind=ht.OUTPUT_KIND_VIEW,
-                table_key=table_key,
-            )(fn),
+        return apply_raw_tags(
+            fn,
+            tags={
+                ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_VIEW,
+                ht.TAG_TABLE_KEY: table_key,
+            },
         )
 
     return decorator

@@ -14,6 +14,7 @@ from textwrap import dedent
 from types import FunctionType, MethodType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
+from codeintel.build.hamilton.naming import target_node
 from codeintel.core.hamilton.semantic_tags import (
     TAG_SEMANTIC_ENTITY,
     TAG_SEMANTIC_GRAIN,
@@ -299,6 +300,65 @@ def _tag_type_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue
     return issues
 
 
+def _target_anchor_tag_issues(
+    nodes: Mapping[str, NodeLike],
+) -> tuple[list[GraphValidationIssue], list[GraphValidationIssue]]:
+    errors: list[GraphValidationIssue] = []
+    warnings: list[GraphValidationIssue] = []
+
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        tags = _tags_mapping(node)
+        if tags is None:
+            continue
+        if tags.get(TAG_NODE_TYPE) != NODE_TYPE_MATERIALIZE:
+            continue
+        if not node_name.startswith("t__"):
+            continue
+
+        target = _tag_str_value(tags, TAG_TARGET)
+        if target is not None:
+            expected_name = target_node(target)
+            if node_name != expected_name:
+                errors.append(
+                    GraphValidationIssue(
+                        severity="error",
+                        code="invalid_anchor_name",
+                        message=(
+                            "Target anchor name does not match target tag "
+                            f"(expected {expected_name})"
+                        ),
+                        node=node_name,
+                        target=target,
+                    )
+                )
+
+        kind = _tag_str_value(tags, TAG_KIND)
+        if kind is None:
+            warnings.append(
+                GraphValidationIssue(
+                    severity="warning",
+                    code="missing_anchor_tag",
+                    message="Target anchor missing kind tag",
+                    node=node_name,
+                    target=target,
+                )
+            )
+        schema_ref = _tag_str_value(tags, TAG_SCHEMA_REF)
+        if schema_ref is None:
+            warnings.append(
+                GraphValidationIssue(
+                    severity="warning",
+                    code="missing_anchor_tag",
+                    message="Target anchor missing schema_ref tag",
+                    node=node_name,
+                    target=target,
+                )
+            )
+
+    return errors, warnings
+
+
 def _tag_str_value(tags: Mapping[str, object], key: str) -> str | None:
     value = tags.get(key)
     if not isinstance(value, str):
@@ -505,13 +565,134 @@ def _collect_materialize_index(
     return node_to_target, materialize_nodes_by_target, issues
 
 
+def _require_tag_value(
+    *,
+    tags: Mapping[str, object],
+    key: str,
+    message: str,
+    node_name: str,
+    issues: list[GraphValidationIssue],
+) -> str | None:
+    value = tags.get(key)
+    if isinstance(value, str) and value:
+        return value
+    issues.append(
+        GraphValidationIssue(
+            severity="error",
+            code="missing_tag",
+            message=message,
+            node=node_name,
+        )
+    )
+    return None
+
+
+def _candidate_targets(
+    tags: Mapping[str, object],
+    available_targets: tuple[str, ...],
+) -> tuple[str, ...]:
+    target = _target_tag_value(tags)
+    return available_targets if target is None else (target,)
+
+
+@dataclass(frozen=True, slots=True)
+class _ProducerContext:
+    node_to_target: Mapping[str, str]
+    nodes: Mapping[str, NodeLike]
+    dependents: Mapping[str, Sequence[str]]
+    available_targets: tuple[str, ...]
+
+
+def _resolve_producer_targets(
+    node: NodeLike,
+    *,
+    tags: Mapping[str, object],
+    context: _ProducerContext,
+) -> set[str]:
+    producer_targets = {
+        context.node_to_target[dep.name]
+        for dep in node.dependencies
+        if dep.name in context.node_to_target
+    }
+    if producer_targets:
+        return producer_targets
+    candidate_targets = _candidate_targets(tags, context.available_targets)
+    return {
+        candidate
+        for candidate in candidate_targets
+        if _materialize_node_reachable(
+            start_node=node.name,
+            target=candidate,
+            nodes=context.nodes,
+            dependents=context.dependents,
+        )
+    }
+
+
+def _record_produced_table(
+    *,
+    produced: dict[str, str],
+    table_key: str,
+    target: str,
+    node_name: str,
+    issues: list[GraphValidationIssue],
+) -> None:
+    existing = produced.get(table_key)
+    if existing is not None and existing != target:
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="duplicate_table_key",
+                message=f"table_key produced by multiple targets: {existing}, {target}",
+                node=node_name,
+                table_key=table_key,
+                target=target,
+            )
+        )
+        return
+    produced[table_key] = target
+
+
+def _record_produced_artifact(
+    *,
+    produced: dict[str, str],
+    artifact: str,
+    target: str,
+    node_name: str,
+    issues: list[GraphValidationIssue],
+) -> None:
+    existing = produced.get(artifact)
+    if existing is not None and existing != target:
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="duplicate_artifact_key",
+                message=f"artifact produced by multiple targets: {existing}, {target}",
+                node=node_name,
+                artifact=artifact,
+                target=target,
+            )
+        )
+        return
+    produced[artifact] = target
+
+
 def _collect_produced_tables(
     nodes: Mapping[str, NodeLike],
     *,
     node_to_target: Mapping[str, str],
+    materialize_nodes_by_target: Mapping[str, Sequence[str]],
 ) -> tuple[dict[str, str], list[GraphValidationIssue]]:
     produced_table_to_target: dict[str, str] = {}
     issues: list[GraphValidationIssue] = []
+    dependents = _build_dependents_map(nodes)
+    available_targets = tuple(materialize_nodes_by_target.keys())
+    producer_context = _ProducerContext(
+        node_to_target=node_to_target,
+        nodes=nodes,
+        dependents=dependents,
+        available_targets=available_targets,
+    )
 
     for node_name in sorted(nodes):
         node = nodes[node_name]
@@ -522,31 +703,28 @@ def _collect_produced_tables(
         if tags.get(TAG_NODE_TYPE) != NODE_TYPE_DATASET:
             continue
 
-        domain = tags.get(TAG_DOMAIN)
-        table_key = tags.get(TAG_TABLE_KEY)
-        if not isinstance(domain, str) or not domain:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="missing_tag",
-                    message="Dataset node missing domain tag",
-                    node=node.name,
-                )
-            )
-        if not isinstance(table_key, str) or not table_key:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="missing_tag",
-                    message="Dataset node missing table_key tag",
-                    node=node.name,
-                )
-            )
+        _require_tag_value(
+            tags=tags,
+            key=TAG_DOMAIN,
+            message="Dataset node missing domain tag",
+            node_name=node.name,
+            issues=issues,
+        )
+        table_key = _require_tag_value(
+            tags=tags,
+            key=TAG_TABLE_KEY,
+            message="Dataset node missing table_key tag",
+            node_name=node.name,
+            issues=issues,
+        )
+        if table_key is None:
             continue
 
-        producer_targets = {
-            node_to_target[dep.name] for dep in node.dependencies if dep.name in node_to_target
-        }
+        producer_targets = _resolve_producer_targets(
+            node,
+            tags=tags,
+            context=producer_context,
+        )
         if not producer_targets:
             issues.append(
                 GraphValidationIssue(
@@ -574,22 +752,13 @@ def _collect_produced_tables(
             continue
 
         producer_target = next(iter(producer_targets))
-        existing = produced_table_to_target.get(table_key)
-        if existing is not None and existing != producer_target:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="duplicate_table_key",
-                    message=(
-                        f"table_key produced by multiple targets: {existing}, {producer_target}"
-                    ),
-                    node=node.name,
-                    table_key=table_key,
-                    target=producer_target,
-                )
-            )
-        else:
-            produced_table_to_target[table_key] = producer_target
+        _record_produced_table(
+            produced=produced_table_to_target,
+            table_key=table_key,
+            target=producer_target,
+            node_name=node.name,
+            issues=issues,
+        )
 
     return produced_table_to_target, issues
 
@@ -598,9 +767,18 @@ def _collect_produced_artifacts(
     nodes: Mapping[str, NodeLike],
     *,
     node_to_target: Mapping[str, str],
+    materialize_nodes_by_target: Mapping[str, Sequence[str]],
 ) -> tuple[dict[str, str], list[GraphValidationIssue]]:
     produced_artifact_to_target: dict[str, str] = {}
     issues: list[GraphValidationIssue] = []
+    dependents = _build_dependents_map(nodes)
+    available_targets = tuple(materialize_nodes_by_target.keys())
+    producer_context = _ProducerContext(
+        node_to_target=node_to_target,
+        nodes=nodes,
+        dependents=dependents,
+        available_targets=available_targets,
+    )
 
     for node_name in sorted(nodes):
         node = nodes[node_name]
@@ -611,31 +789,28 @@ def _collect_produced_artifacts(
         if tags.get(TAG_NODE_TYPE) != NODE_TYPE_ARTIFACT:
             continue
 
-        domain = tags.get(TAG_DOMAIN)
-        artifact = tags.get(TAG_ARTIFACT)
-        if not isinstance(domain, str) or not domain:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="missing_tag",
-                    message="Artifact node missing domain tag",
-                    node=node.name,
-                )
-            )
-        if not isinstance(artifact, str) or not artifact:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="missing_tag",
-                    message="Artifact node missing artifact tag",
-                    node=node.name,
-                )
-            )
+        _require_tag_value(
+            tags=tags,
+            key=TAG_DOMAIN,
+            message="Artifact node missing domain tag",
+            node_name=node.name,
+            issues=issues,
+        )
+        artifact = _require_tag_value(
+            tags=tags,
+            key=TAG_ARTIFACT,
+            message="Artifact node missing artifact tag",
+            node_name=node.name,
+            issues=issues,
+        )
+        if artifact is None:
             continue
 
-        producer_targets = {
-            node_to_target[dep.name] for dep in node.dependencies if dep.name in node_to_target
-        }
+        producer_targets = _resolve_producer_targets(
+            node,
+            tags=tags,
+            context=producer_context,
+        )
         if not producer_targets:
             issues.append(
                 GraphValidationIssue(
@@ -663,20 +838,13 @@ def _collect_produced_artifacts(
             continue
 
         producer_target = next(iter(producer_targets))
-        existing = produced_artifact_to_target.get(artifact)
-        if existing is not None and existing != producer_target:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="duplicate_artifact_key",
-                    message=f"artifact produced by multiple targets: {existing}, {producer_target}",
-                    node=node.name,
-                    artifact=artifact,
-                    target=producer_target,
-                )
-            )
-        else:
-            produced_artifact_to_target[artifact] = producer_target
+        _record_produced_artifact(
+            produced=produced_artifact_to_target,
+            artifact=artifact,
+            target=producer_target,
+            node_name=node.name,
+            issues=issues,
+        )
 
     return produced_artifact_to_target, issues
 
@@ -871,8 +1039,16 @@ def _collect_validation_inputs(nodes: Mapping[str, NodeLike]) -> _ValidationInpu
     node_to_target, materialize_nodes_by_target, materialize_issues = _collect_materialize_index(
         nodes
     )
-    _, dataset_issues = _collect_produced_tables(nodes, node_to_target=node_to_target)
-    _, artifact_issues = _collect_produced_artifacts(nodes, node_to_target=node_to_target)
+    _, dataset_issues = _collect_produced_tables(
+        nodes,
+        node_to_target=node_to_target,
+        materialize_nodes_by_target=materialize_nodes_by_target,
+    )
+    _, artifact_issues = _collect_produced_artifacts(
+        nodes,
+        node_to_target=node_to_target,
+        materialize_nodes_by_target=materialize_nodes_by_target,
+    )
     saver_table_to_target, saver_artifact_to_target, saver_issues = _collect_saver_outputs(nodes)
     return _ValidationInputs(
         node_to_target=node_to_target,
@@ -1280,6 +1456,8 @@ def validate_nodes(
         *inputs.saver_issues,
     ]
     errors.extend(_tag_type_issues(nodes))
+    anchor_errors, anchor_warnings = _target_anchor_tag_issues(nodes)
+    errors.extend(anchor_errors)
     errors.extend(_semantic_tag_issues(nodes))
     errors.extend(
         _orphan_saver_issues(
@@ -1298,6 +1476,7 @@ def validate_nodes(
         )
 
     warnings: list[GraphValidationIssue] = []
+    warnings.extend(anchor_warnings)
 
     derived_deps: dict[str, tuple[str, ...]] | None = None
     if not any(issue.code == "duplicate_materialize" for issue in errors):

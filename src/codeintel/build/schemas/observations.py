@@ -9,11 +9,12 @@ from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, get_args, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.arrow_gen import (
     ARROW_SCHEMA_CONTRACT_VERSION,
@@ -23,7 +24,7 @@ from codeintel.core.schemas.arrow_gen import (
 )
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
-from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.core.time import utc_now
 from codeintel.storage.tracking.schema_catalog_models import (
     SchemaObservationRecord,
@@ -32,7 +33,7 @@ from codeintel.storage.tracking.schema_catalog_models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -49,6 +50,17 @@ class SchemaObservationBundle:
     observation: SchemaObservationRecord
     schema_version: SchemaVersionRecord
     registry_record: TableSchemaRegistryRecord
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaObservationInputs:
+    """Optional inputs for schema observation finalization."""
+
+    repo: str | None = None
+    commit: str | None = None
+    target_name: str | None = None
+    extras_policy: ExtrasPolicy | None = None
+    drift_history: Sequence[Mapping[str, object] | None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,10 +141,7 @@ class SchemaObservationAccumulator:
         self,
         *,
         arrow_schema: pa.Schema,
-        repo: str | None,
-        commit: str | None,
-        target_name: str | None,
-        extras_policy: ExtrasPolicy | None = None,
+        inputs: SchemaObservationInputs | None = None,
     ) -> SchemaObservationBundle:
         """Build observation records after streaming completes.
 
@@ -141,22 +150,25 @@ class SchemaObservationAccumulator:
         SchemaObservationBundle
             Bundle containing observation, registry, and schema version records.
         """
+        resolved_inputs = inputs or SchemaObservationInputs()
         inferred = table_schema_from_arrow_schema(
             arrow_schema=arrow_schema,
             table_key=self.table_key,
         )
-        observed_nullability = _observed_nullability(self.column_stats)
         merged = _merge_table_schema_hints(
             inferred,
             self.declared_schema,
             schema_hints=self.schema_hints,
-            observed_nullability=observed_nullability,
+            observed_nullability=_observed_nullability(self.column_stats),
         )
         schema_json = merged.to_json_obj()
         schema_digest = fingerprint(schema_json)
         schema_hash_value = compute_schema_hash(merged)
         drift_summary = _drift_summary(merged, self.declared_schema)
-        resolved_extras_policy = extras_policy or _extras_policy_from_drift(drift_summary)
+        resolved_extras_policy = resolved_inputs.extras_policy or _extras_policy_from_drift(
+            drift_summary,
+            drift_history=resolved_inputs.drift_history,
+        )
         derived_settings = _derived_settings_from_stats(
             table_schema=merged,
             column_stats=self.column_stats,
@@ -182,9 +194,9 @@ class SchemaObservationAccumulator:
             schema_digest=schema_digest,
             schema_hash=schema_hash_value,
             arrow_schema_ipc_b64=_serialize_schema_ipc_b64(annotated_schema),
-            repo=repo,
-            commit=commit,
-            target_name=target_name,
+            repo=resolved_inputs.repo,
+            commit=resolved_inputs.commit,
+            target_name=resolved_inputs.target_name,
             column_stats=_column_stats_payload(self.column_stats),
             dataset_stats=_dataset_stats_payload(
                 row_count=self.row_count,
@@ -211,7 +223,7 @@ class SchemaObservationAccumulator:
             schema_digest=schema_digest,
             schema_hash=schema_hash_value,
             derivation_kind="inferred_relation",
-            derivation_source=target_name or "observed_output",
+            derivation_source=resolved_inputs.target_name or "observed_output",
             inference_status="inferred",
             inference_error=None,
             catalog_hash=None,
@@ -284,6 +296,35 @@ _SCHEMA_COLUMNS_TAG = "schema_columns"
 _SCHEMA_COLUMN_DESCRIPTIONS_TAG = "schema_column_descriptions"
 _SCHEMA_NULLABLE_BY_COLUMN_TAG = "schema_nullable_by_column"
 _SCHEMA_PII_BY_COLUMN_TAG = "schema_pii_by_column"
+_HAMILTON_SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
+_TAG_DESCRIPTION = hamilton_tags.TAG_DESCRIPTION
+
+_COLUMN_TYPE_VALUES: frozenset[str] = frozenset(get_args(ColumnType))
+_SCHEMA_OUTPUT_TYPE_MAP: dict[str, ColumnType] = {
+    "int": "BIGINT",
+    "int64": "BIGINT",
+    "int32": "INTEGER",
+    "integer": "INTEGER",
+    "bigint": "BIGINT",
+    "float": "DOUBLE",
+    "float64": "DOUBLE",
+    "double": "DOUBLE",
+    "str": "VARCHAR",
+    "string": "VARCHAR",
+    "varchar": "VARCHAR",
+    "bool": "BOOLEAN",
+    "boolean": "BOOLEAN",
+    "datetime": "TIMESTAMP",
+    "timestamp": "TIMESTAMP",
+    "timestamptz": "TIMESTAMPTZ",
+    "date": "TIMESTAMP",
+    "decimal": "DECIMAL",
+    "decimal(38,0)": "DECIMAL(38,0)",
+    "json": "JSON",
+    "dict": "JSON",
+    "list": "JSON",
+    "object": "JSON",
+}
 
 
 @dataclass(slots=True)
@@ -326,6 +367,7 @@ def schema_hints_from_tags(tags: Mapping[str, object]) -> SchemaHints | None:
     - ``schema_column_descriptions``: column -> description mapping.
     - ``schema_nullable_by_column``: column -> bool mapping.
     - ``schema_pii_by_column``: column -> pii class mapping.
+    - ``description``: fallback table description tag.
 
     Returns
     -------
@@ -333,11 +375,78 @@ def schema_hints_from_tags(tags: Mapping[str, object]) -> SchemaHints | None:
         Parsed schema hints when available.
     """
     builder = _SchemaHintsBuilder()
+    _merge_schema_hints(builder, tags)
+    return builder.build()
+
+
+def schema_hints_from_tag_sets(tag_sets: Iterable[Mapping[str, object]]) -> SchemaHints | None:
+    """Merge schema hints from multiple tag mappings.
+
+    Parameters
+    ----------
+    tag_sets
+        Iterable of tag mappings to merge.
+
+    Returns
+    -------
+    SchemaHints | None
+        Merged schema hints, or None when no hints are available.
+    """
+    builder = _SchemaHintsBuilder()
+    for tags in tag_sets:
+        _merge_schema_hints(builder, tags)
+    return builder.build()
+
+
+def table_schema_from_tag_sets(
+    *,
+    table_key: str,
+    tag_sets: Iterable[Mapping[str, object]],
+) -> TableSchema | None:
+    """Return a TableSchema hint derived from @schema.output tags.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    tag_sets
+        Tag mappings to scan for schema output metadata.
+
+    Returns
+    -------
+    TableSchema | None
+        TableSchema derived from schema.output tags, or None when unavailable.
+    """
+    parsed = _split_table_key(table_key)
+    if parsed is None:
+        return None
+    schema_name, table_name = parsed
+    ordered_columns: list[str] = []
+    column_types: dict[str, ColumnType] = {}
+    for tags in tag_sets:
+        mapping = _schema_output_from_tags(tags)
+        if not mapping:
+            continue
+        for column_name, raw_type in mapping.items():
+            if column_name in column_types:
+                continue
+            ordered_columns.append(column_name)
+            column_types[column_name] = _column_type_from_schema_output(raw_type)
+    if not column_types:
+        return None
+    columns = [
+        Column(name=column_name, type=column_types[column_name]) for column_name in ordered_columns
+    ]
+    return TableSchema(schema=schema_name, name=table_name, columns=columns)
+
+
+def _merge_schema_hints(builder: _SchemaHintsBuilder, tags: Mapping[str, object]) -> None:
     raw_hints = _coerce_mapping(tags.get(_SCHEMA_HINTS_TAG))
     if raw_hints is not None:
         _apply_schema_hints_mapping(builder, raw_hints)
 
     builder.merge_description(_coerce_str(tags.get(_SCHEMA_DESCRIPTION_TAG)))
+    builder.merge_description(_coerce_str(tags.get(_TAG_DESCRIPTION)))
     _merge_columns_from_mapping(builder, _coerce_mapping(tags.get(_SCHEMA_COLUMNS_TAG)))
     _merge_columns_from_scalar_mapping(
         builder,
@@ -354,7 +463,6 @@ def schema_hints_from_tags(tags: Mapping[str, object]) -> SchemaHints | None:
         _coerce_mapping(tags.get(_SCHEMA_PII_BY_COLUMN_TAG)),
         kind="pii_class",
     )
-    return builder.build()
 
 
 def _apply_schema_hints_mapping(
@@ -701,13 +809,25 @@ def _drift_summary(
     }
 
 
-def _extras_policy_from_drift(drift_summary: Mapping[str, object] | None) -> ExtrasPolicy:
-    if drift_summary is None:
-        return DEFAULT_EXTRAS_POLICY
-    extra = drift_summary.get("extra_columns")
-    if isinstance(extra, list) and extra:
+def _extras_policy_from_drift(
+    drift_summary: Mapping[str, object] | None,
+    *,
+    drift_history: Sequence[Mapping[str, object] | None] | None = None,
+) -> ExtrasPolicy:
+    if _drift_has_extras(drift_summary):
         return "retain"
+    if drift_history is not None:
+        extra_count = sum(1 for summary in drift_history if _drift_has_extras(summary))
+        if extra_count >= _EXTRAS_POLICY_RETAIN_COUNT:
+            return "retain"
     return DEFAULT_EXTRAS_POLICY
+
+
+def _drift_has_extras(drift_summary: Mapping[str, object] | None) -> bool:
+    if drift_summary is None:
+        return False
+    extra = drift_summary.get("extra_columns")
+    return isinstance(extra, list) and bool(extra)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1138,14 +1258,83 @@ class _SupportsRichComparison(Protocol):
     def __gt__(self, other: object) -> bool: ...
 
 
+def _schema_output_from_tags(tags: Mapping[str, object]) -> dict[str, str] | None:
+    raw = tags.get(_HAMILTON_SCHEMA_OUTPUT_TAG)
+    if isinstance(raw, str):
+        return _schema_output_from_string(raw)
+    if isinstance(raw, dict):
+        return _schema_output_from_mapping(raw)
+    return None
+
+
+def _schema_output_from_string(raw: str) -> dict[str, str] | None:
+    if not raw:
+        return None
+    pairs = [part.strip() for part in raw.split(",") if part.strip()]
+    mapping: dict[str, str] = {}
+    for pair in pairs:
+        if "=" not in pair:
+            continue
+        name, dtype = pair.split("=", 1)
+        name = name.strip()
+        dtype = dtype.strip()
+        if not name or not dtype:
+            continue
+        mapping[name] = dtype
+    return mapping or None
+
+
+def _schema_output_from_mapping(raw: Mapping[object, object]) -> dict[str, str] | None:
+    mapping: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            continue
+        if not isinstance(value, str) or not value.strip():
+            continue
+        mapping[key.strip()] = value.strip()
+    return mapping or None
+
+
+def _column_type_from_schema_output(raw: object) -> ColumnType:
+    if not isinstance(raw, str):
+        return "JSON"
+    normalized = raw.strip()
+    if not normalized:
+        return "JSON"
+    upper = normalized.upper()
+    if upper in _COLUMN_TYPE_VALUES:
+        return cast("ColumnType", upper)
+    lower = normalized.lower()
+    compact = lower.replace(" ", "")
+    mapped = _SCHEMA_OUTPUT_TYPE_MAP.get(lower) or _SCHEMA_OUTPUT_TYPE_MAP.get(compact)
+    if mapped is not None:
+        return mapped
+    if compact.startswith("decimal"):
+        return "DECIMAL(38,0)" if compact == "decimal(38,0)" else "DECIMAL"
+    return "JSON"
+
+
+def _split_table_key(table_key: str) -> tuple[str, str] | None:
+    if "." not in table_key:
+        return None
+    schema, name = table_key.split(".", 1)
+    if not schema or not name:
+        return None
+    return schema, name
+
+
+
 __all__ = [
     "ColumnHint",
     "SchemaHints",
     "SchemaObservationAccumulator",
     "SchemaObservationBundle",
+    "SchemaObservationInputs",
     "instrument_reader_for_observation",
     "merge_table_schema_hints",
     "observe_batches",
     "persist_observation_bundle",
+    "schema_hints_from_tag_sets",
     "schema_hints_from_tags",
+    "table_schema_from_tag_sets",
 ]

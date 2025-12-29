@@ -192,7 +192,10 @@ class SemanticQueryResponse(BaseModel):
 
 
 class SemanticExplainResponse(BaseModel):
-    """Response payload for a semantic query EXPLAIN request."""
+    """Response payload for a semantic query EXPLAIN request.
+
+    Includes derived table/column lineage when available.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -200,6 +203,8 @@ class SemanticExplainResponse(BaseModel):
     sql: str
     plan: str
     snapshot: ServingSnapshotIdentity
+    table_keys: list[str] = Field(default_factory=list)
+    column_lineage: dict[str, list[ColumnLineageRef]] = Field(default_factory=dict)
 
 
 class SemanticCatalogView(BaseModel):

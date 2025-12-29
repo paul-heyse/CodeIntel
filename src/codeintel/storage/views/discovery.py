@@ -10,10 +10,9 @@ import inspect
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from hamilton.function_modifiers import tag as h_tag
-
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.tag_query import TagQuery
+from codeintel.core.hamilton.tagging_helpers import extract_tag_decorator_tags
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -74,8 +73,9 @@ def _tags_from_callable(fn: object) -> dict[str, object]:
         return {}
     tags: dict[str, object] = {}
     for decorator in decorators:
-        if isinstance(decorator, h_tag):
-            tags.update(decorator.tags)
+        decorator_tags = extract_tag_decorator_tags(decorator)
+        if decorator_tags is not None:
+            tags.update(decorator_tags)
     return tags
 
 

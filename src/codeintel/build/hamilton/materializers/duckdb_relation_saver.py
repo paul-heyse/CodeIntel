@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import types
 import typing
+from collections.abc import Mapping
 from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, get_args, get_origin
@@ -25,17 +26,19 @@ from codeintel.build.hamilton.materializers.write_policy import resolve_material
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
+    SchemaObservationInputs,
     observe_batches,
     persist_observation_bundle,
-    schema_hints_from_tags,
+    schema_hints_from_tag_sets,
+    table_schema_from_tag_sets,
 )
 from codeintel.build.tabular.duckdb_relation import register_ephemeral
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
-from codeintel.storage.duckdb_types import DuckDBRelation
+from codeintel.core.hamilton import tags as hamilton_tags
+from codeintel.storage.duckdb_types import DuckDBError, DuckDBRelation
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:
-    from codeintel.build.schemas.observations import SchemaHints
     from codeintel.core.schemas.primitives import TableSchema
 
 _RECOVERABLE_EXCEPTIONS = (
@@ -52,6 +55,7 @@ _TABULAR_TYPES: tuple[type, ...] = (
     pa.Table,
     pl.LazyFrame,
 )
+_SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 
 LOG = logging.getLogger(__name__)
 
@@ -267,11 +271,47 @@ def _declared_schema_hint(table_key: str) -> TableSchema | None:
     return provider.get_table_schema(table_key)
 
 
-def _schema_hints_for_table(*, catalog: DagCatalog, table_key: str) -> SchemaHints | None:
+def _schema_tag_sets_for_table(
+    *,
+    catalog: DagCatalog,
+    table_key: str,
+) -> tuple[Mapping[str, object], ...]:
+    tag_sets: list[Mapping[str, object]] = []
     output = catalog.table_outputs.get(table_key)
-    if output is None:
-        return None
-    return schema_hints_from_tags(output.tags)
+    if output is not None:
+        tag_sets.append(output.tags)
+        tag_sets.extend(_schema_output_tag_sets(catalog=catalog, saver_node=output.saver_node))
+    tag_sets.extend(
+        node.tags
+        for node in catalog.nodes.values()
+        if node.tags.get(hamilton_tags.TAG_TABLE_KEY) == table_key
+    )
+    return tuple(tag_sets)
+
+
+def _schema_output_tag_sets(
+    *,
+    catalog: DagCatalog,
+    saver_node: str,
+) -> list[Mapping[str, object]]:
+    node = catalog.nodes.get(saver_node)
+    if node is None:
+        return []
+    visited: set[str] = set()
+    stack = list(node.deps)
+    tag_sets: list[Mapping[str, object]] = []
+    while stack:
+        node_name = stack.pop()
+        if node_name in visited:
+            continue
+        visited.add(node_name)
+        candidate = catalog.nodes.get(node_name)
+        if candidate is None:
+            continue
+        if _SCHEMA_OUTPUT_TAG in candidate.tags:
+            tag_sets.append(candidate.tags)
+        stack.extend(candidate.deps)
+    return tag_sets
 
 
 def _persist_schema_observation(
@@ -282,22 +322,34 @@ def _persist_schema_observation(
     relation: DuckDBRelation,
     catalog: DagCatalog,
 ) -> None:
+    tag_sets = _schema_tag_sets_for_table(catalog=catalog, table_key=table_key)
     declared_schema = _declared_schema_hint(table_key)
-    schema_hints = _schema_hints_for_table(catalog=catalog, table_key=table_key)
+    if declared_schema is None:
+        declared_schema = table_schema_from_tag_sets(
+            table_key=table_key,
+            tag_sets=tag_sets,
+        )
+    schema_hints = schema_hints_from_tag_sets(tag_sets)
     accumulator = SchemaObservationAccumulator(
         table_key=table_key,
         declared_schema=declared_schema,
         schema_hints=schema_hints,
     )
     try:
+        drift_history: tuple[Mapping[str, object] | None, ...] | None = None
+        try:
+            drift_history = env.gateway.schemas.load_recent_drift_summaries(table_key=table_key)
+        except (DuckDBError, RuntimeError, TypeError, ValueError):
+            drift_history = None
         reader = relation.fetch_arrow_reader()
         observe_batches(reader, accumulator=accumulator)
-        bundle = accumulator.finalize(
-            arrow_schema=reader.schema,
+        inputs = SchemaObservationInputs(
             repo=env.repo,
             commit=env.commit,
             target_name=target_name,
+            drift_history=drift_history,
         )
+        bundle = accumulator.finalize(arrow_schema=reader.schema, inputs=inputs)
         persist_observation_bundle(gateway=env.gateway, bundle=bundle)
     except (TypeError, ValueError, pa.ArrowInvalid) as exc:
         LOG.warning("Schema observation failed for %s: %s", table_key, exc)

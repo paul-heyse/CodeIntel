@@ -16,8 +16,9 @@ from sqlglot import exp
 if TYPE_CHECKING:
     from codeintel.analytics.utilities.persistence import DeleteScope
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.schemas.primitives import ColumnType
+    from codeintel.core.schemas.primitives import ColumnType, TableSchema
     from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 from codeintel.build.schemas import (
     ContractResolutionMode,
@@ -30,6 +31,30 @@ from codeintel.core.schemas.service import get_schema_service
 from codeintel.storage.validation.columnar import validate_table
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
+
+
+def _load_inferred_schema(
+    gateway: StorageGateway | None,
+    table_key: str,
+) -> TableSchema | None:
+    if gateway is None:
+        return None
+    try:
+        return gateway.schemas.load_table_schema(table_key)
+    except (RuntimeError, TypeError, ValueError):
+        return None
+
+
+def _load_latest_observation(
+    gateway: StorageGateway | None,
+    table_key: str,
+) -> SchemaObservationRecord | None:
+    if gateway is None:
+        return None
+    try:
+        return gateway.schemas.load_latest_schema_observation(table_key=table_key)
+    except (RuntimeError, TypeError, ValueError):
+        return None
 
 
 def _table_supports_snapshot_delete(table_key: str) -> bool:
@@ -186,7 +211,7 @@ def write_analytics_rows(
         Number of rows inserted.
     """
     contract = get_analytics_dataset_contract(gateway, table_key)
-    validated_rows = validate_contract_rows(contract.table_key, rows)
+    validated_rows = validate_contract_rows(contract.table_key, rows, gateway=gateway)
     return insert_analytics_rows(
         gateway,
         contract,
@@ -197,7 +222,10 @@ def write_analytics_rows(
 
 
 def validate_contract_rows(
-    table_key: str, rows: Sequence[Mapping[str, object]]
+    table_key: str,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    gateway: StorageGateway | None = None,
 ) -> list[dict[str, object]]:
     """
     Validate rows for a dataset using Arrow/Polars checks and return normalized dicts.
@@ -216,7 +244,10 @@ def validate_contract_rows(
     """
     if not rows:
         return []
-    table_schema = get_schema_service().get_table_schema(table_key)
+    table_schema = _load_inferred_schema(gateway, table_key)
+    if table_schema is None:
+        table_schema = get_schema_service().get_table_schema(table_key)
+    observation = _load_latest_observation(gateway, table_key)
     records: list[dict[str, object]]
     if table_schema is None:
         frame = pl.from_dicts(rows)
@@ -233,7 +264,13 @@ def validate_contract_rows(
         for name in missing:
             frame = frame.with_columns(pl.lit(None).alias(name))
         frame = frame.select(expected_columns)
-        validate_table(table_key, frame.to_arrow(), table_schema=table_schema, mode="strict")
+        validate_table(
+            table_key,
+            frame.to_arrow(),
+            table_schema=table_schema,
+            schema_observation=observation,
+            mode="strict",
+        )
         records = frame.to_dicts()
     column_types: dict[str, ColumnType] = (
         {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}

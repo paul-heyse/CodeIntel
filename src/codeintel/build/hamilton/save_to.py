@@ -22,7 +22,10 @@ from hamilton.node import DependencyType
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.materializers.path_templates import validate_path_template
+from codeintel.build.schemas import get_schema_provider
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
+from codeintel.core.schemas.primitives import TableSchema
 
 _TAG_ONLY_KWARGS = {
     "output_role",
@@ -43,6 +46,7 @@ _METADATA_TAGS: dict[str, str] = {
 }
 
 _VALIDATION_PROFILES: frozenset[str] = frozenset({"strict", "lenient"})
+_SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Sequence
@@ -465,8 +469,13 @@ def _build_saver_tags(
     if context.table_key is not None:
         tags[ht.TAG_TABLE_KEY] = context.table_key
         tags[ht.TAG_OUTPUT_KIND] = ht.OUTPUT_KIND_TABLE
+        _apply_schema_output_tag(tags, table_key=context.table_key)
+        tags.setdefault(ht.TAG_MATERIALIZATION, context.sink)
+        tags.setdefault(ht.TAG_MATERIALIZED_NAME, context.table_key)
     if context.artifact_name is not None:
         tags[ht.TAG_ARTIFACT] = context.artifact_name
+        tags.setdefault(ht.TAG_MATERIALIZATION, context.sink)
+        tags.setdefault(ht.TAG_MATERIALIZED_NAME, context.artifact_name)
     if context.path_template is not None:
         tags[ht.TAG_ARTIFACT_PATH_TEMPLATE] = context.path_template
     if isinstance(node_.tags, dict):
@@ -474,6 +483,24 @@ def _build_saver_tags(
         if isinstance(domain, str) and domain:
             tags[ht.TAG_DOMAIN] = domain
     return tags
+
+
+def _apply_schema_output_tag(tags: dict[str, object], *, table_key: str) -> None:
+    if _SCHEMA_OUTPUT_TAG in tags:
+        return
+    schema = _resolve_table_schema(table_key)
+    if schema is None:
+        return
+    tags[_SCHEMA_OUTPUT_TAG] = {column.name: column.type for column in schema.columns}
+
+
+def _resolve_table_schema(table_key: str) -> TableSchema | None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        return OUTPUT_TABLE_SCHEMAS.get(table_key)
+    schema = provider.get_table_schema(table_key)
+    return schema or OUTPUT_TABLE_SCHEMAS.get(table_key)
 
 
 def _resolve_metadata_tags(

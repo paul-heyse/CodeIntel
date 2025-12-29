@@ -52,6 +52,11 @@ class HamiltonExecutionSettings:
     duckdb_temp_directory: Path | None = None
     duckdb_enable_profiling: bool | None = None
     duckdb_profiling_output: Path | None = None
+    dynamic_execution: bool = False
+    dynamic_local_executor: str | None = None
+    dynamic_remote_executor: str | None = None
+    dynamic_remote_max_tasks: int | None = None
+    materializers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

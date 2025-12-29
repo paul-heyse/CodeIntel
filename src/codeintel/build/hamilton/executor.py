@@ -15,10 +15,12 @@ Design Principles
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import hamilton.base as h_base
@@ -38,6 +40,7 @@ from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
 from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
+from codeintel.build.hamilton.result_builder import BuildResultBuilder
 from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
@@ -55,6 +58,10 @@ from codeintel.build.schemas.compile import (
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.cache_log_ingest import (
+    CacheLogIngestConfigError,
+    ingest_cache_log_jsonl,
+)
 from codeintel.observability.telemetry_context import (
     RepoCommitContext,
     telemetry_context,
@@ -62,6 +69,7 @@ from codeintel.observability.telemetry_context import (
 from codeintel.runtime.compose import compose_runtime, set_execution_active
 from codeintel.runtime.inputs import ExecutionInputs, execution_input_mapping
 from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
@@ -71,6 +79,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from typing import TypedDict
 
+    from hamilton.io.materialization import ExtractorFactory, MaterializerFactory
     from hamilton.lifecycle.base import LifecycleAdapter
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
@@ -123,6 +132,28 @@ _EXECUTOR_OVERRIDE_MAP: tuple[tuple[str, str], ...] = (
     ("allow_workspace_modules", "allow_workspace_modules"),
 )
 
+_EXECUTOR_ALIASES: dict[str, str] = {
+    "synchronous": "sync",
+    "sync": "sync",
+    "local": "sync",
+    "thread": "thread",
+    "threads": "thread",
+    "threading": "thread",
+    "process": "process",
+    "processes": "process",
+    "multiprocessing": "process",
+    "mp": "process",
+    "none": "none",
+    "off": "none",
+    "disabled": "none",
+}
+
+_EXECUTOR_CLASS_NAMES: dict[str, str] = {
+    "sync": "SynchronousLocalTaskExecutor",
+    "thread": "MultiThreadingExecutor",
+    "process": "MultiProcessingExecutor",
+}
+
 
 @dataclass(frozen=True)
 class _RunState:
@@ -132,6 +163,7 @@ class _RunState:
     targets: tuple[str, ...]
     runtime: RuntimeBundle
     run_id: str
+    cache_dir: Path
     start_time: float
     started_at: datetime
     domain: str | None
@@ -194,6 +226,223 @@ def _apply_tracker_constants(settings: HamiltonTrackerSettings) -> None:
         constants.MAX_LIST_LENGTH_CAPTURE = settings.max_list_length
     if settings.max_dict_length is not None:
         constants.MAX_DICT_LENGTH_CAPTURE = settings.max_dict_length
+
+
+def _normalize_executor_name(value: str | None, *, default: str) -> str:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if not normalized:
+        return default
+    return _EXECUTOR_ALIASES.get(normalized, normalized)
+
+
+def _executor_kwargs(executor_cls: type[object], *, max_tasks: int | None) -> dict[str, object]:
+    if max_tasks is None:
+        return {}
+    params = inspect.signature(executor_cls).parameters
+    if "max_tasks" in params:
+        return {"max_tasks": max_tasks}
+    if "max_workers" in params:
+        return {"max_workers": max_tasks}
+    if "max_concurrent_tasks" in params:
+        return {"max_concurrent_tasks": max_tasks}
+    return {}
+
+
+def _instantiate_task_executor(
+    executor_cls: type[object],
+    *,
+    max_tasks: int | None,
+    label: str,
+) -> object | None:
+    kwargs = _executor_kwargs(executor_cls, max_tasks=max_tasks)
+    try:
+        return executor_cls(**kwargs)
+    except (TypeError, ValueError) as exc:
+        log.warning("Failed to instantiate %s executor: %s", label, exc)
+        return None
+
+
+def _resolve_task_executor(
+    *,
+    name: str | None,
+    default: str,
+    max_tasks: int | None,
+) -> object | None:
+    normalized = _normalize_executor_name(name, default=default)
+    if normalized == "none":
+        return None
+    class_name = _EXECUTOR_CLASS_NAMES.get(normalized)
+    if class_name is None:
+        log.warning("Unknown dynamic executor '%s', defaulting to %s", normalized, default)
+        class_name = _EXECUTOR_CLASS_NAMES.get(default)
+        if class_name is None:
+            return None
+    try:
+        executors = importlib.import_module("hamilton.execution.executors")
+    except ModuleNotFoundError as exc:
+        log.warning("Dynamic execution requested but executors module missing: %s", exc)
+        return None
+    executor_cls = getattr(executors, class_name, None)
+    if executor_cls is None:
+        log.warning("Dynamic executor class %s is unavailable", class_name)
+        return None
+    return _instantiate_task_executor(
+        executor_cls,
+        max_tasks=max_tasks,
+        label=normalized,
+    )
+
+
+def _resolve_dynamic_executors(
+    *,
+    enabled: bool,
+    local_name: str | None,
+    remote_name: str | None,
+    max_tasks: int | None,
+) -> tuple[bool, object | None, object | None]:
+    if not enabled:
+        return False, None, None
+    local_executor = _resolve_task_executor(
+        name=local_name,
+        default="sync",
+        max_tasks=None,
+    )
+    remote_executor = _resolve_task_executor(
+        name=remote_name,
+        default="thread",
+        max_tasks=max_tasks,
+    )
+    if local_executor is None and remote_executor is None:
+        log.warning("Dynamic execution enabled but no executors resolved; disabling")
+        return False, None, None
+    if local_executor is None:
+        local_executor = _resolve_task_executor(
+            name="sync",
+            default="sync",
+            max_tasks=None,
+        )
+    return True, local_executor, remote_executor
+
+
+def _materializer_import_path(raw: str) -> tuple[str, str]:
+    module_name, sep, attr = raw.partition(":")
+    if not sep:
+        module_name, _, attr = raw.rpartition(".")
+    if not module_name or not attr:
+        msg = f"Invalid materializer import path: {raw}"
+        raise ValueError(msg)
+    return module_name, attr
+
+
+def _requires_factory_args(factory: object) -> bool:
+    if not callable(factory):
+        return True
+    try:
+        signature = inspect.signature(factory)
+    except (TypeError, ValueError):
+        return True
+    for param in signature.parameters.values():
+        if param.kind in {param.VAR_POSITIONAL, param.VAR_KEYWORD}:
+            continue
+        if param.default is param.empty:
+            return True
+    return False
+
+
+def _materializer_from_object(obj: object, *, source: str) -> object:
+    if inspect.isfunction(obj) or inspect.isclass(obj):
+        if _requires_factory_args(obj):
+            msg = (
+                f"Materializer {source} requires arguments; supply an instance or no-arg factory."
+            )
+            raise ValueError(msg)
+        return obj()
+    return obj
+
+
+def _resolve_materializers(
+    materializer_paths: tuple[str, ...],
+) -> tuple[ExtractorFactory | MaterializerFactory, ...]:
+    if not materializer_paths:
+        return ()
+    resolved: list[ExtractorFactory | MaterializerFactory] = []
+    for raw in materializer_paths:
+        module_name, attr = _materializer_import_path(raw)
+        module = importlib.import_module(module_name)
+        obj = getattr(module, attr, None)
+        if obj is None:
+            msg = f"Materializer not found: {raw}"
+            raise ValueError(msg)
+        resolved.append(
+            cast(
+                "ExtractorFactory | MaterializerFactory",
+                _materializer_from_object(obj, source=raw),
+            )
+        )
+    return tuple(resolved)
+
+
+def _base_hamilton_config(
+    *,
+    env: BuildEnv,
+    options: BuildExecutionOptions,
+) -> dict[str, Any]:
+    config: dict[str, Any] = {"profile": options.resolved_profile(env=env)}
+    config.update(env.variants.as_hamilton_config())
+    config["variant_fingerprint"] = env.variants.variant_fingerprint
+    config.update(options.plugin_overrides())
+    config["ci_validate_outputs"] = bool(env.validate_outputs)
+    config["ci_validation_mode"] = env.validation_mode.value
+    return config
+
+
+def _apply_dynamic_execution_config(
+    *,
+    config: dict[str, Any],
+    env: BuildEnv,
+    options: BuildExecutionOptions,
+) -> tuple[bool, object | None, object | None]:
+    dynamic_enabled, local_executor, remote_executor = _resolve_dynamic_executors(
+        enabled=bool(env.execution_settings.dynamic_execution),
+        local_name=env.execution_settings.dynamic_local_executor,
+        remote_name=env.execution_settings.dynamic_remote_executor,
+        max_tasks=env.execution_settings.dynamic_remote_max_tasks
+        or options.max_workers
+        or env.execution_settings.max_workers,
+    )
+    config["ci.dynamic_execution"] = dynamic_enabled
+    config["ci_dynamic_module_records"] = dynamic_enabled
+    if dynamic_enabled:
+        if local_executor is not None:
+            config["ci.dynamic_execution.local_executor"] = local_executor
+        if remote_executor is not None:
+            config["ci.dynamic_execution.remote_executor"] = remote_executor
+    return dynamic_enabled, local_executor, remote_executor
+
+
+def _build_cache_adapter(
+    *,
+    env: BuildEnv,
+    run_id: str,
+    cache_dir: Path,
+    enable_cache: bool,
+) -> ManifestBackedCacheAdapter | None:
+    if not enable_cache:
+        return None
+    cache_options = CacheAdapterOptions(
+        default_behavior="default",
+        default_loader_behavior="disable",
+        default_saver_behavior="disable",
+        log_to_file=True,
+    )
+    return ManifestBackedCacheAdapter(
+        path=cache_dir,
+        manifest_writer=CacheManifestWriter(env.gateway),
+        manifest_run_id=run_id,
+        options=cache_options,
+    )
 
 
 def _build_tracker_tags(
@@ -454,6 +703,44 @@ def _apply_cache_keys(
         if snapshot.cache_key is None:
             continue
         outputs[node_name] = replace(record, input_hash=snapshot.cache_key)
+
+
+def _cache_adapter_for_runtime(runtime: RuntimeBundle) -> HamiltonCacheAdapter | None:
+    cache_adapter = runtime.cache_adapter
+    if cache_adapter is None:
+        cache_adapter = getattr(runtime.dr, "cache", None)
+    if isinstance(cache_adapter, HamiltonCacheAdapter):
+        return cache_adapter
+    return None
+
+
+def _maybe_ingest_cache_logs(*, context: _RunState) -> None:
+    if context.env.gateway.config.read_only:
+        return
+    cache_adapter = _cache_adapter_for_runtime(context.runtime)
+    if cache_adapter is None or not cache_adapter.run_ids:
+        return
+    db_path = context.env.gateway.config.db_path
+    if str(db_path) == ":memory:":
+        return
+    try:
+        result = ingest_cache_log_jsonl(
+            duckdb_path=Path(db_path),
+            cache_dir=context.cache_dir,
+        )
+    except CacheLogIngestConfigError as exc:
+        log.warning("cache_log_ingest.skipped error=%s", exc)
+        return
+    except DuckDBError as exc:
+        log.warning("cache_log_ingest.failed error=%s", exc)
+        return
+    if result.inserted_events:
+        run_ids = ",".join(result.run_ids)
+        log.info(
+            "cache_log_ingest.completed inserted=%d run_ids=%s",
+            result.inserted_events,
+            run_ids,
+        )
 
 
 def _map_closure_to_nodes(
@@ -758,6 +1045,7 @@ def _finalize_run(
         success,
         duration_ms,
     )
+    _maybe_ingest_cache_logs(context=context)
 
     return HamiltonBuildResult(
         requested=context.targets,
@@ -926,10 +1214,12 @@ class HamiltonBuildExecutor:
         """
         run_id = _generate_run_id()
         writer = BuildRunWriter(env.gateway)
+        cache_dir = self._options.resolved_cache_dir(env=env)
         runtime, telemetry_hook = self._build_runtime(
             env=env,
             run_id=run_id,
             writer=writer,
+            cache_dir=cache_dir,
             domain=domain,
         )
         _maybe_persist_schema_manifest(env=env, runtime=runtime, run_id=run_id, domain=domain)
@@ -939,6 +1229,7 @@ class HamiltonBuildExecutor:
             targets=tuple(targets),
             runtime=runtime,
             run_id=run_id,
+            cache_dir=cache_dir,
             start_time=time.perf_counter(),
             started_at=datetime.now(tz=UTC),
             domain=domain,
@@ -1041,6 +1332,7 @@ class HamiltonBuildExecutor:
         env: BuildEnv,
         run_id: str,
         writer: BuildRunWriter,
+        cache_dir: Path,
         domain: str | None,
     ) -> tuple[RuntimeBundle, NodeTelemetryHook | None]:
         """Build Hamilton runtime with configured mode and lifecycle adapters.
@@ -1050,37 +1342,38 @@ class HamiltonBuildExecutor:
         RuntimeBundle
             Configured runtime bundle with driver and catalog.
         """
-        config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
-        config.update(env.variants.as_hamilton_config())
-        config["variant_fingerprint"] = env.variants.variant_fingerprint
-        config.update(self._options.plugin_overrides())
+        config = _base_hamilton_config(env=env, options=self._options)
+        dynamic_enabled, _, _ = _apply_dynamic_execution_config(
+            config=config,
+            env=env,
+            options=self._options,
+        )
+        materializers = _resolve_materializers(env.execution_settings.materializers)
         telemetry_hook: NodeTelemetryHook | None = None
 
         hook_options = self._options.hook_options()
-        cache_adapter: ManifestBackedCacheAdapter | None = None
-        cache_dir = self._options.resolved_cache_dir(env=env)
-        if self._options.enable_hamilton_cache:
-            cache_options = CacheAdapterOptions(
-                default_behavior="default",
-                default_loader_behavior="disable",
-                default_saver_behavior="disable",
-            )
-            cache_adapter = ManifestBackedCacheAdapter(
-                path=cache_dir,
-                manifest_writer=CacheManifestWriter(env.gateway),
-                manifest_run_id=run_id,
-                options=cache_options,
-            )
+        cache_adapter = _build_cache_adapter(
+            env=env,
+            run_id=run_id,
+            cache_dir=cache_dir,
+            enable_cache=self._options.enable_hamilton_cache,
+        )
 
         def _adapter_factory(catalog: DagCatalog) -> list[LifecycleAdapter]:
             nonlocal telemetry_hook
             adapters: list[LifecycleAdapter] = []
             effective_max_workers = self._effective_max_workers(catalog)
-            parallel_adapter = create_parallel_adapter(
-                self._options.parallel_backend,
-                max_workers=effective_max_workers,
-                thread_name_prefix="codeintel-build",
+            result_builder = BuildResultBuilder(
+                allowed_nodes=tuple(catalog.target_nodes.values()),
             )
+            parallel_adapter = None
+            if not dynamic_enabled:
+                parallel_adapter = create_parallel_adapter(
+                    self._options.parallel_backend,
+                    max_workers=effective_max_workers,
+                    thread_name_prefix="codeintel-build",
+                    result_builder=result_builder,
+                )
             if parallel_adapter is not None:
                 adapters.append(parallel_adapter)
             else:
@@ -1106,6 +1399,7 @@ class HamiltonBuildExecutor:
             config=config,
             options=BuildDriverOptions(
                 adapter_factory=_adapter_factory,
+                materializers=materializers or None,
                 enable_cache=self._options.enable_hamilton_cache,
                 cache_dir=str(cache_dir),
                 cache_adapter=cache_adapter,

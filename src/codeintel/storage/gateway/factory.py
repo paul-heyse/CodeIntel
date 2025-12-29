@@ -70,6 +70,7 @@ class MemoryGatewayOptions:
     apply_schema: bool = True
     ensure_views: bool = False
     validate_schema: bool = True
+    suppress_registry_health_log: bool = False
     repo: str | None = None
     commit: str | None = None
 
@@ -344,7 +345,8 @@ def open_gateway(
             config=config,
             include_views=include_views,
         )
-        _log_registry_health(gateway)
+        if not config.suppress_registry_health_log:
+            _log_registry_health(gateway)
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc), cause=exc) from exc
     return gateway
@@ -472,6 +474,7 @@ def open_memory_gateway(
         apply_schema=resolved.apply_schema,
         ensure_views=resolved.ensure_views,
         validate_schema=resolved.validate_schema,
+        suppress_registry_health_log=resolved.suppress_registry_health_log,
         repo=repo_value,
         commit=commit_value,
     )
