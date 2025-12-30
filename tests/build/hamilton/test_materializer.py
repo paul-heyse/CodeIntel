@@ -23,6 +23,7 @@ from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.validation.mode import ContractValidationMode
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
+    expect_is_not_none,
     expect_true,
 )
 from tests._helpers.catalog import (
@@ -172,6 +173,34 @@ def test_iceberg_saver_snapshot_properties_persisted(
     expect_equal(props.get("schema_hash"), expected=expected_hash)
 
 
+def test_iceberg_saver_refreshes_metadata_cache(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """IcebergDatasetSaver should refresh the metadata cache."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    graph = _make_graph()
+    saver = IcebergDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
+    meta = saver.save_data(df.lazy())
+    expect_equal(meta["status"], expected="succeeded")
+
+    tables_ref = meta_table_ref("metadata.iceberg_tables")
+    row = env.gateway.con.execute(
+        f"SELECT current_snapshot_id, current_schema_id FROM {tables_ref} WHERE table_key = ?",
+        ["core.modules"],
+    ).fetchone()
+    row = expect_is_not_none(row, message="Expected iceberg_tables row")
+    expect_true(isinstance(row[0], int), message="Expected current_snapshot_id")
+    expect_true(isinstance(row[1], int), message="Expected current_schema_id")
+
+
 def test_iceberg_saver_schema_evolution_preserves_field_ids(
     build_harness: HamiltonBuildHarness,
 ) -> None:
@@ -186,19 +215,18 @@ def test_iceberg_saver_schema_evolution_preserves_field_ids(
         table_key="core.modules",
     )
 
-    base_frame = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
-    base_meta = saver.save_data(base_frame.lazy())
-    expect_equal(base_meta["status"], expected="succeeded")
+    frame = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
+    meta = saver.save_data(frame.lazy())
+    expect_equal(meta["status"], expected="succeeded")
 
     expected_schema = get_schema_service().require_table_schema("core.modules")
     expected_ids = iceberg_field_ids_for_table_schema(expected_schema)
 
-    evolved = base_frame.with_columns(pl.lit("extra").alias("extra_flag"))
-    evolved_meta = saver.save_data(evolved.lazy())
-    expect_equal(evolved_meta["status"], expected="succeeded")
+    frame = frame.with_columns(pl.lit("extra").alias("extra_flag"))
+    meta = saver.save_data(frame.lazy())
+    expect_equal(meta["status"], expected="succeeded")
 
-    settings_view = SettingsView.from_build_env(env)
-    provider = IcebergCatalogProvider(settings_view.build.iceberg)
+    provider = IcebergCatalogProvider(SettingsView.from_build_env(env).build.iceberg)
     table = provider.load_table("core.modules")
     table.refresh()
     iceberg_schema = table.schema()

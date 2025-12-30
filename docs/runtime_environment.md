@@ -8,9 +8,11 @@ This document lists environment variables that control runtime behavior. These a
 Defaults:
 - When `CODEINTEL_DEPLOYMENT_ENVIRONMENT` is `prod`/`production`, Iceberg read/write/tombstones default to false.
 - In non-prod, Iceberg read/write/tombstones default to true when catalog configuration is provided.
+- Iceberg read fallback defaults to false in prod and true in non-prod.
 
 - `CODEINTEL_DEPLOYMENT_ENVIRONMENT` (str): Deployment environment name (`prod`, `production`, etc.).
 - `CODEINTEL_ICEBERG_READ_ENABLED` (bool): Enable Iceberg reads.
+- `CODEINTEL_ICEBERG_READ_FALLBACK_ENABLED` (bool): Allow DuckDB fallback when Iceberg scans fail.
 - `CODEINTEL_ICEBERG_WRITE_ENABLED` (bool): Enable Iceberg writes.
 - `CODEINTEL_ICEBERG_TOMBSTONES_ENABLED` (bool): Enable tombstone filtering.
 - `CODEINTEL_ICEBERG_FLIGHT_ENABLED` (bool): Enable Arrow Flight serving (when supported).

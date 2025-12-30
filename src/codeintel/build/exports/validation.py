@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import jsonschema
 import pyarrow as pa
 import pyarrow.compute as pc
-import pyarrow.parquet as pq
+import pyarrow.dataset as ds
 from referencing import Registry
 
 from codeintel.build.errors import BuildProblemError
@@ -589,7 +589,7 @@ def _validate_parquet(
     list[str]
         List of validation error messages.
     """
-    parquet_file = pq.ParquetFile(path)
+    dataset = ds.dataset(str(path), format="parquet")
     errors: list[str] = []
     if overrides is None:
         constraints, additional_properties, needs_fallback = _schema_constraints(schema)
@@ -600,11 +600,12 @@ def _validate_parquet(
     errors.extend(
         _schema_errors_for_json(
             schema,
-            parquet_file.schema_arrow,
+            dataset.schema,
             additional_properties=additional_properties,
         )
     )
-    for batch in parquet_file.iter_batches():
+    reader = dataset.scanner().to_reader()
+    for batch in reader:
         errors.extend(_validate_batch_constraints(batch, constraints))
         if needs_fallback:
             records = _records_from_batch(batch)

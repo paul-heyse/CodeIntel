@@ -24,6 +24,35 @@ if TYPE_CHECKING:
 
 _INFERRED_REGISTRY_STATUSES = ("inferred", "override")
 _INFERRED_DERIVATION_KINDS = ("inferred_relation", "view_inferred")
+_TABLE_REF_WITH_CATALOG_PARTS = 3
+_TABLE_REF_WITH_SCHEMA_PARTS = 2
+
+
+@dataclass(frozen=True, slots=True)
+class _RegistrySchemaSqlOptions:
+    inferred_only: bool
+    order_by_table: bool
+    include_table_key: bool
+    filter_by_table_key: bool
+
+
+def _registry_schema_sql_options(
+    *,
+    inferred_only: bool,
+    order_by_table: bool,
+    include_table_key: bool | None = None,
+    filter_by_table_key: bool | None = None,
+) -> _RegistrySchemaSqlOptions:
+    resolved_include = (
+        include_table_key if include_table_key is not None else not filter_by_table_key
+    )
+    resolved_filter = filter_by_table_key if filter_by_table_key is not None else not order_by_table
+    return _RegistrySchemaSqlOptions(
+        inferred_only=inferred_only,
+        order_by_table=order_by_table,
+        include_table_key=resolved_include,
+        filter_by_table_key=resolved_filter,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,10 +80,12 @@ class RegistrySchemaProvider:
             _registry_schema_sql(
                 registry_ref=registry_ref,
                 versions_ref=versions_ref,
-                inferred_only=True,
-                order_by_table=False,
-                include_table_key=False,
-                filter_by_table_key=True,
+                options=_registry_schema_sql_options(
+                    inferred_only=True,
+                    order_by_table=False,
+                    include_table_key=False,
+                    filter_by_table_key=True,
+                ),
             ),
             [table_key],
         ).fetchone()
@@ -63,10 +94,12 @@ class RegistrySchemaProvider:
                 _registry_schema_sql(
                     registry_ref=registry_ref,
                     versions_ref=versions_ref,
-                    inferred_only=False,
-                    order_by_table=False,
-                    include_table_key=False,
-                    filter_by_table_key=True,
+                    options=_registry_schema_sql_options(
+                        inferred_only=False,
+                        order_by_table=False,
+                        include_table_key=False,
+                        filter_by_table_key=True,
+                    ),
                 ),
                 [table_key],
             ).fetchone()
@@ -115,10 +148,12 @@ class RegistrySchemaProvider:
             _registry_schema_sql(
                 registry_ref=registry_ref,
                 versions_ref=versions_ref,
-                inferred_only=True,
-                order_by_table=False,
-                include_table_key=True,
-                filter_by_table_key=False,
+                options=_registry_schema_sql_options(
+                    inferred_only=True,
+                    order_by_table=False,
+                    include_table_key=True,
+                    filter_by_table_key=False,
+                ),
             )
         ).fetchall()
         schemas_by_key: dict[str, TableSchema] = {}
@@ -131,10 +166,12 @@ class RegistrySchemaProvider:
             _registry_schema_sql(
                 registry_ref=registry_ref,
                 versions_ref=versions_ref,
-                inferred_only=False,
-                order_by_table=True,
-                include_table_key=True,
-                filter_by_table_key=False,
+                options=_registry_schema_sql_options(
+                    inferred_only=False,
+                    order_by_table=True,
+                    include_table_key=True,
+                    filter_by_table_key=False,
+                ),
             )
         ).fetchall()
         for table_key, schema_json_raw in fallback_rows:
@@ -164,20 +201,12 @@ def _registry_schema_sql(
     *,
     registry_ref: str,
     versions_ref: str,
-    inferred_only: bool,
-    order_by_table: bool,
-    include_table_key: bool | None = None,
-    filter_by_table_key: bool | None = None,
+    options: _RegistrySchemaSqlOptions,
 ) -> str:
-    resolved_include = include_table_key if include_table_key is not None else not filter_by_table_key
-    resolved_filter = filter_by_table_key if filter_by_table_key is not None else not order_by_table
     return _registry_schema_sql_cached(
         registry_ref=registry_ref,
         versions_ref=versions_ref,
-        inferred_only=inferred_only,
-        include_table_key=resolved_include,
-        order_by_table=order_by_table,
-        filter_by_table_key=resolved_filter,
+        options=options,
     )
 
 
@@ -186,10 +215,7 @@ def _registry_schema_sql_cached(
     *,
     registry_ref: str,
     versions_ref: str,
-    inferred_only: bool,
-    include_table_key: bool,
-    order_by_table: bool,
-    filter_by_table_key: bool,
+    options: _RegistrySchemaSqlOptions,
 ) -> str:
     registry = _table_expr(registry_ref, alias="r")
     versions = _table_expr(versions_ref, alias="v")
@@ -198,25 +224,23 @@ def _registry_schema_sql_cached(
         expression=exp.column("schema_digest", table="v"),
     )
     select_exprs: list[exp.Expression] = [exp.column("schema_json", table="v")]
-    if include_table_key:
+    if options.include_table_key:
         select_exprs.insert(0, exp.column("table_key", table="r"))
     query = exp.select(*select_exprs).from_(registry).join(versions, on=join_on)
     predicate: exp.Expression | None = None
-    if filter_by_table_key:
+    if options.filter_by_table_key:
         predicate = exp.EQ(
             this=exp.column("table_key", table="r"),
             expression=exp.Parameter(),
         )
-    if inferred_only:
+    if options.inferred_only:
         inferred_predicate = _inferred_registry_predicate()
         predicate = (
-            exp.and_(predicate, inferred_predicate)
-            if predicate is not None
-            else inferred_predicate
+            exp.and_(predicate, inferred_predicate) if predicate is not None else inferred_predicate
         )
     if predicate is not None:
         query = query.where(predicate)
-    if order_by_table:
+    if options.order_by_table:
         query = query.order_by(exp.column("table_key", table="r"))
     return render_sql_duckdb(query)
 
@@ -239,9 +263,9 @@ def _table_expr(table_ref: str, *, alias: str | None = None) -> exp.Table:
     catalog: str | None = None
     schema: str | None = None
     table: str
-    if len(parts) == 3:
+    if len(parts) == _TABLE_REF_WITH_CATALOG_PARTS:
         catalog, schema, table = parts
-    elif len(parts) == 2:
+    elif len(parts) == _TABLE_REF_WITH_SCHEMA_PARTS:
         schema, table = parts
     else:
         table = parts[0]

@@ -6,7 +6,7 @@ import base64
 import binascii
 import json
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast, get_args
 
@@ -623,6 +623,28 @@ def arrow_schema_from_table_schema(
     return pa.schema(fields, metadata=_encode_metadata(schema_metadata))
 
 
+def arrow_schema_from_fields(
+    *,
+    fields: Sequence[pa.Field],
+    metadata: Mapping[bytes, bytes] | None = None,
+) -> pa.Schema:
+    """Return a PyArrow schema constructed from fields.
+
+    Parameters
+    ----------
+    fields
+        Arrow fields to include in the schema.
+    metadata
+        Optional Arrow schema metadata mapping.
+
+    Returns
+    -------
+    pyarrow.Schema
+        Schema built from the provided fields.
+    """
+    return pa.schema(list(fields), metadata=metadata)
+
+
 def apply_contract_metadata_to_arrow_schema(
     *,
     arrow_schema: pa.Schema,
@@ -716,6 +738,30 @@ def update_arrow_schema_metadata(
     if merged is None:
         return schema.remove_metadata()
     return schema.with_metadata(merged)
+
+
+def iceberg_schema_id_from_arrow_schema(schema: pa.Schema) -> int | None:
+    """Return the Iceberg schema id from Arrow schema metadata when present.
+
+    Parameters
+    ----------
+    schema
+        Arrow schema containing CodeIntel contract metadata.
+
+    Returns
+    -------
+    int | None
+        Iceberg schema id when present, otherwise None.
+    """
+    metadata = _decode_metadata(schema.metadata)
+    raw = metadata.get("codeintel.iceberg_schema_id")
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if stripped.isdigit() or (stripped.startswith("-") and stripped[1:].isdigit()):
+            return int(stripped)
+    return None
 
 
 def arrow_contract_for_table_schema(
@@ -1787,6 +1833,7 @@ __all__ = [
     "apply_contract_metadata_to_arrow_schema",
     "arrow_contract_for_table_schema",
     "arrow_schema_digest",
+    "arrow_schema_from_fields",
     "arrow_schema_from_table_schema",
     "arrow_schema_hash",
     "column_from_json_obj",
@@ -1799,6 +1846,7 @@ __all__ = [
     "from_json_schema",
     "index_from_json_obj",
     "index_to_json_obj",
+    "iceberg_schema_id_from_arrow_schema",
     "json_schema_from_table_schema",
     "table_schema_from_arrow_schema",
     "table_schema_from_json_obj",

@@ -68,7 +68,7 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
         options=ExportCallOptions(validate_exports=False),
     )
 
-    expected_basenames = {
+    expected_outputs = {
         "goids.parquet",
         "goid_crosswalk.parquet",
         "call_graph_nodes.parquet",
@@ -95,22 +95,28 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
         "test_catalog.jsonl",
         "test_coverage_edges.jsonl",
         "goid_risk_factors.jsonl",
-        "datasets_manifest.json",
     }
 
     written = {p.name for p in output_dir.iterdir() if p.is_file()}
 
-    missing = expected_basenames - written
+    missing = expected_outputs - written
     if missing:
         message = f"Expected exports missing: {sorted(missing)}"
         raise AssertionError(message)
-    manifest = json.loads((output_dir / "datasets_manifest.json").read_text(encoding="utf-8"))
-    dataset_entries = {entry["name"]: entry for entry in manifest.get("datasets", [])}
-    if "function_metrics" not in dataset_entries:
-        pytest.fail("function_metrics missing from dataset manifest")
-    metrics_entry = dataset_entries["function_metrics"]
-    if metrics_entry.get("jsonl") != "function_metrics.jsonl":
-        pytest.fail(f"Unexpected manifest entry: {metrics_entry}")
+    for output_name in expected_outputs:
+        manifest_name = f"{output_name}.manifest.json"
+        marker_name = f"{output_name}.marker.json"
+        if manifest_name not in written:
+            pytest.fail(f"Missing per-dataset manifest: {manifest_name}")
+        if marker_name not in written:
+            pytest.fail(f"Missing per-dataset marker: {marker_name}")
+    parquet_manifest = json.loads(
+        (output_dir / "function_metrics.parquet.manifest.json").read_text(encoding="utf-8")
+    )
+    if parquet_manifest.get("dataset") != "function_metrics":
+        pytest.fail(f"Unexpected manifest payload: {parquet_manifest}")
+    if parquet_manifest.get("artifact") != "function_metrics.parquet":
+        pytest.fail(f"Unexpected manifest payload: {parquet_manifest}")
 
 
 def test_export_validation_passes_on_minimal_data(
@@ -160,17 +166,10 @@ def test_export_subset_by_dataset_name(docs_export_gateway: TestContext, tmp_pat
         "function_metrics.jsonl.marker.json",
         "goids.jsonl.manifest.json",
         "goids.jsonl.marker.json",
-        "datasets_manifest.json",
     }
     if written != expected:
         message = f"Unexpected export set: missing {expected - written}, extra {written - expected}"
         pytest.fail(message)
-    manifest = json.loads((output_dir / "datasets_manifest.json").read_text(encoding="utf-8"))
-    selected_entries = {
-        entry["name"] for entry in manifest.get("datasets", []) if entry.get("selected")
-    }
-    if set(selected) != selected_entries:
-        pytest.fail(f"Manifest selected set mismatch: {selected_entries}")
 
 
 def test_export_subset_validates_dataset_names(

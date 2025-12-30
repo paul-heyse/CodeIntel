@@ -52,6 +52,10 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.core.columnar.tabular_adapter import (
+    PolarsExecutionOptions,
+    collect_lazyframe,
+)
 from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
@@ -402,7 +406,8 @@ def _build_file_state_map(
     file_state_rows: pl.LazyFrame,
 ) -> dict[str, FileDigest]:
     digest_by_path: dict[str, FileDigest] = {}
-    for row in file_state_rows.collect().to_dicts():
+    frame = collect_lazyframe(file_state_rows, options=PolarsExecutionOptions())
+    for row in frame.to_dicts():
         rel_path_raw = row.get("rel_path")
         size_raw = row.get("size_bytes")
         mtime_raw = row.get("mtime_ns")

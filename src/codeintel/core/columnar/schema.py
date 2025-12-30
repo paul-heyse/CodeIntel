@@ -6,6 +6,8 @@ from collections.abc import Sequence
 
 import pyarrow as pa
 
+from codeintel.core.schemas.contracts import arrow_schema_from_fields
+
 
 def unify_schema_for_batches(
     batches: Sequence[pa.RecordBatch],
@@ -27,7 +29,7 @@ def unify_schema_for_batches(
         Unified schema covering all batches.
     """
     if not batches:
-        return base_schema or pa.schema([])
+        return base_schema or arrow_schema_from_fields(fields=())
     schemas = [batch.schema for batch in batches]
     if base_schema is not None:
         schemas.append(base_schema)

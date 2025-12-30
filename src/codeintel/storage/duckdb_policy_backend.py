@@ -91,7 +91,10 @@ log = logging.getLogger(__name__)
 
 
 def _skip_table_creation(table_key: str) -> bool:
-    return is_view_contract(table_key)
+    try:
+        return is_view_contract(table_key)
+    except (KeyError, RuntimeError):
+        return False
 
 
 def _resolve_hash_column(table_schema: TableSchema | None) -> str | None:

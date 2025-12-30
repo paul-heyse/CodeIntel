@@ -384,6 +384,15 @@ def clear_target_metadata_cache() -> None:
     """Clear cached target metadata services."""
     for provider in _TARGET_METADATA_PROVIDERS:
         provider.reset()
+
+
+def reset_target_metadata_state() -> None:
+    """Reset cached target metadata providers.
+
+    Intended for tests that need a fresh provider registration state.
+    """
+    for provider in _TARGET_METADATA_PROVIDERS:
+        provider.reset()
     _TARGET_METADATA_PROVIDERS.clear()
 
 
@@ -398,4 +407,5 @@ __all__ = [
     "get_target_metadata_service",
     "get_target_system",
     "is_target_metadata_loaded",
+    "reset_target_metadata_state",
 ]

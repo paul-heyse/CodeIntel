@@ -26,6 +26,7 @@ from codeintel.serving.settings import ServingSettings
 if TYPE_CHECKING:
     from codeintel.serving.db.manager import ServingDBManager
 
+
 def test_planner_allows_columns_from_derived_views(tmp_path: Path) -> None:
     """Planner resolves allowed columns from a derived view schema."""
     manifest = {

@@ -41,7 +41,6 @@ from codeintel.build.exports.manifest import (
     compute_file_hash,
     read_incremental_marker,
     should_skip_export,
-    write_dataset_manifest,
     write_incremental_marker,
     write_per_dataset_manifest,
 )
@@ -369,7 +368,7 @@ def export_all_datasets(
     Returns
     -------
     list[Path]
-        Paths to written dataset artifacts and the top-level manifest.
+        Paths to written dataset artifacts.
     """
     opts = options or ExportCallOptions()
     document_output_dir = document_output_dir.resolve()
@@ -399,15 +398,6 @@ def export_all_datasets(
         exported = _export_dataset(gateway, target, spec=spec, opts=opts, settings=settings)
         if exported is not None:
             written.append(exported)
-
-    manifest_path = write_dataset_manifest(
-        document_output_dir,
-        dataset_mapping,
-        jsonl_mapping=registry.jsonl_datasets,
-        parquet_mapping=registry.parquet_datasets,
-        selected=list(selected.keys()),
-    )
-    written.append(manifest_path)
 
     if gateway.exports.audit_enabled(settings):
         log.debug(

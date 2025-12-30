@@ -20,7 +20,14 @@ from codeintel.build.hamilton.native.analytics.tables_functions import (
 from codeintel.build.hamilton.native.analytics.tables_modules import (
     module_profile__base,
     module_profile__table,
-    t__module_profile,
+)
+from codeintel.build.hamilton.native.analytics.tables_profiles import (
+    file_profile__table,
+    function_profile__table,
+    profiles__table_materializations,
+    t__profiles,
+    t__test_profile,
+    test_profile__table,
 )
 from codeintel.build.hamilton.native.analytics.tables_risk import (
     risk_factors__base,
@@ -33,15 +40,20 @@ __all__ = [
     "external_deps__calls_table",
     "external_deps__table",
     "external_deps__table_materializations",
+    "file_profile__table",
     "function_metrics__base",
     "function_metrics__table",
+    "function_profile__table",
     "module_profile__base",
     "module_profile__table",
+    "profiles__table_materializations",
     "risk_factors__base",
     "risk_factors__table",
+    "t__profiles",
     "t__coverage_functions",
     "t__external_deps",
     "t__function_metrics",
-    "t__module_profile",
     "t__risk_factors",
+    "t__test_profile",
+    "test_profile__table",
 ]

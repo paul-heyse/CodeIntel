@@ -124,7 +124,10 @@ def clear_row_binding_cache() -> None:
     """
     get_row_binding.cache_clear()
     column_names_for_table_key.cache_clear()
-    get_schema_service().clear_caches()
+    try:
+        get_schema_service().clear_caches()
+    except RuntimeError:
+        return
 
 
 __all__ = [

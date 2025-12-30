@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, cast
 import polars as pl
 import pyarrow as pa
 
+from codeintel.core.columnar.tabular_adapter import PolarsExecutionOptions, collect_lazyframe
+
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
 
@@ -32,7 +34,7 @@ def to_records(frame: DataFrame | LazyFrame | pa.Table) -> list[dict[str, Any]]:
         if isinstance(resolved, pl.Series):
             resolved = resolved.to_frame()
     elif isinstance(frame, pl.LazyFrame):
-        resolved = frame.collect()
+        resolved = collect_lazyframe(frame, options=PolarsExecutionOptions())
     else:
         resolved = frame
     return cast("list[dict[str, Any]]", resolved.to_dicts())

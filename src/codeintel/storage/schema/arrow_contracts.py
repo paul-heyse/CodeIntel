@@ -13,6 +13,7 @@ from sqlglot import exp
 from codeintel.core.schemas.contracts import (
     arrow_schema_digest,
     arrow_schema_hash,
+    arrow_schema_from_fields,
     try_decode_schema_ipc_b64,
 )
 from codeintel.storage.helpers.json import decode_json_dict
@@ -22,6 +23,9 @@ from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
+
+_TABLE_REF_WITH_CATALOG_PARTS = 3
+_TABLE_REF_WITH_SCHEMA_PARTS = 2
 
 
 def _load_contract_schema(
@@ -89,7 +93,7 @@ def _apply_runtime_metadata(
         if updates:
             updated_field = _merge_field_metadata(field, updates)
         fields.append(updated_field)
-    return pa.schema(fields, metadata=schema.metadata)
+    return arrow_schema_from_fields(fields=fields, metadata=schema.metadata)
 
 
 def _merge_field_metadata(field: pa.Field, updates: Mapping[str, object]) -> pa.Field:
@@ -225,9 +229,7 @@ def _contract_schema_sql(
 @lru_cache(maxsize=4)
 def _observed_schema_sql(*, observations_ref: str) -> str:
     observations = _table_expr(observations_ref, alias="observations")
-    query = exp.select(exp.column("arrow_schema_ipc_b64", table="observations")).from_(
-        observations
-    )
+    query = exp.select(exp.column("arrow_schema_ipc_b64", table="observations")).from_(observations)
     query = query.where(
         exp.EQ(
             this=exp.column("table_key", table="observations"),
@@ -267,9 +269,9 @@ def _table_expr(table_ref: str, *, alias: str | None = None) -> exp.Table:
     catalog: str | None = None
     schema: str | None = None
     table: str
-    if len(parts) == 3:
+    if len(parts) == _TABLE_REF_WITH_CATALOG_PARTS:
         catalog, schema, table = parts
-    elif len(parts) == 2:
+    elif len(parts) == _TABLE_REF_WITH_SCHEMA_PARTS:
         schema, table = parts
     else:
         table = parts[0]

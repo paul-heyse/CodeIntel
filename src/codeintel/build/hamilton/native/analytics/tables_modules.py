@@ -4,36 +4,28 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import module_features
-from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     SaverContext,
     save_dataset,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.types import TabularInput
 from codeintel.core.columnar import to_lazyframe
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
+_HAMILTON_TYPE_HINTS = (TabularInput,)
 
-MODULE_PROFILE_TARGET_NAME = "module_profile"
+PROFILES_TARGET_NAME = "profiles"
 MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
 MODULE_PROFILE_SAVE_CONTEXT = SaverContext(
     domain="analytics",
-    target=MODULE_PROFILE_TARGET_NAME,
+    target=PROFILES_TARGET_NAME,
 )
 MODULE_PROFILE_CONTRACT = TableContractSpec(
     table_key=MODULE_PROFILE_TABLE_KEY,
     domain="analytics",
-    target=MODULE_PROFILE_TARGET_NAME,
+    target=PROFILES_TARGET_NAME,
     ops_module=module_features,
     columns_to_pass=("total_loc", "function_count", "avg_risk_score", "module_coverage_ratio"),
     required_cols=("total_loc", "function_count"),
@@ -107,30 +99,7 @@ def module_profile__table(module_profile__base: pl.LazyFrame) -> pl.LazyFrame:
     return module_profile__base
 
 
-@codeintel_target(domain="analytics", target=MODULE_PROFILE_TARGET_NAME)
-def t__module_profile(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__module_profile: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize module_profile target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the module_profile target.
-    """
-    return record_from_duckdb_materialization(
-        env=env,
-        catalog=catalog,
-        target_name=MODULE_PROFILE_TARGET_NAME,
-        expected_table_key=MODULE_PROFILE_TABLE_KEY,
-        materialization=m__analytics__module_profile,
-    )
-
-
 __all__ = [
     "module_profile__base",
     "module_profile__table",
-    "t__module_profile",
 ]

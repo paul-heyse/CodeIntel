@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from pyiceberg.table import Table
-
 LOG = logging.getLogger(__name__)
 
 _PUFFIN_FLAGS = (0).to_bytes(4, "little")

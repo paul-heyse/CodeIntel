@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pyiceberg.expressions import And, StartsWith
+from pyiceberg.expressions import And, In, StartsWith
 
 from codeintel.core.config.settings import IcebergSettings
 from codeintel.serving.semantic.iceberg_scans import (
@@ -48,9 +48,12 @@ def test_iceberg_row_filter_reports_pushdown_for_supported_ops() -> None:
         FilterSpec(column="name", op="contains", value="x"),
     ]
     result = iceberg_row_filter_from_filters(filters=filters, column_types={"name": "VARCHAR"})
-    assert result.supported == 1
-    assert result.total == 2
-    assert result.coverage == 0.5
+    expected_supported = 1
+    expected_total = len(filters)
+    expected_coverage = expected_supported / expected_total
+    assert result.supported == expected_supported
+    assert result.total == expected_total
+    assert result.coverage == expected_coverage
     assert isinstance(result.row_filter, StartsWith)
 
 
@@ -61,7 +64,18 @@ def test_iceberg_row_filter_combines_supported_filters() -> None:
         FilterSpec(column="id", op="lt", value=20),
     ]
     result = iceberg_row_filter_from_filters(filters=filters, column_types={"id": "INTEGER"})
-    assert result.supported == 2
-    assert result.total == 2
+    expected_total = len(filters)
+    assert result.supported == expected_total
+    assert result.total == expected_total
     assert result.coverage == 1.0
     assert isinstance(result.row_filter, And)
+
+
+def test_iceberg_row_filter_supports_in_operator() -> None:
+    """IN filters should translate to Iceberg row filters when supported."""
+    filters = [FilterSpec(column="state", op="in", value=["ny", "ca"])]
+    result = iceberg_row_filter_from_filters(filters=filters, column_types={"state": "VARCHAR"})
+    assert result.supported == 1
+    assert result.total == 1
+    assert result.coverage == 1.0
+    assert isinstance(result.row_filter, In)

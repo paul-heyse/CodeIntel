@@ -19,7 +19,7 @@ def test_auto_driver_includes_native_analytics_nodes(hamilton_runtime: RuntimeBu
         "coverage_functions",
         "external_deps",
         "function_metrics",
-        "module_profile",
+        "profiles",
         "risk_factors",
     ]
     expected_target_nodes = [f"t__{target_name}" for target_name in native_targets]
@@ -39,7 +39,7 @@ def test_auto_driver_resolves_native_target_nodes(
         "coverage_functions",
         "external_deps",
         "function_metrics",
-        "module_profile",
+        "profiles",
         "risk_factors",
     ]
 

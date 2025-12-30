@@ -22,6 +22,7 @@ from codeintel.core.schemas.contracts import (
     ExtrasPolicy,
     apply_contract_metadata_to_arrow_schema,
     encode_schema_ipc_b64,
+    iceberg_schema_id_from_arrow_schema,
     table_schema_from_arrow_schema,
     update_arrow_schema_metadata,
 )
@@ -200,6 +201,10 @@ class SchemaObservationAccumulator:
             table_schema=merged,
             metadata=schema_metadata,
         )
+        iceberg_stats = _coerce_iceberg_stats(
+            resolved_inputs.iceberg_stats,
+            arrow_schema=annotated_schema,
+        )
         observed_at = utc_now()
         observation = SchemaObservationRecord(
             table_key=self.table_key,
@@ -215,7 +220,7 @@ class SchemaObservationAccumulator:
                     row_count=self.row_count,
                     batch_count=self.batch_count,
                     total_bytes=self.total_bytes,
-                    iceberg_stats=resolved_inputs.iceberg_stats,
+                    iceberg_stats=iceberg_stats,
                 ),
             ),
             derived_settings=derived_settings,
@@ -251,6 +256,23 @@ class SchemaObservationAccumulator:
             schema_version=schema_version,
             registry_record=registry_record,
         )
+
+
+def _coerce_iceberg_stats(
+    stats: IcebergStatsPayload | None,
+    *,
+    arrow_schema: pa.Schema,
+) -> IcebergStatsPayload | None:
+    if stats is None:
+        return None
+    if isinstance(stats.get("schema_id"), int):
+        return stats
+    schema_id = iceberg_schema_id_from_arrow_schema(arrow_schema)
+    if schema_id is None:
+        return stats
+    updated: IcebergStatsPayload = dict(stats)
+    updated["schema_id"] = schema_id
+    return updated
 
 
 def instrument_reader_for_observation(

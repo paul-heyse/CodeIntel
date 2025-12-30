@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
-import pyarrow.parquet as pq
+import pyarrow.dataset as ds
 
 from codeintel.core.schemas.contracts import DEFAULT_EXTRAS_COLUMN
 from codeintel.core.schemas.primitives import Column, TableSchema, column_type_base
@@ -405,11 +405,8 @@ def validate_parquet_path(
     mode
         Validation behavior: ``"strict"`` raises, ``"warn"`` logs, ``"skip"`` ignores.
     """
-    parquet_file = pq.ParquetFile(path)
-    reader = pa.RecordBatchReader.from_batches(
-        parquet_file.schema_arrow,
-        parquet_file.iter_batches(),
-    )
+    dataset = ds.dataset(str(path), format="parquet")
+    reader = dataset.scanner().to_reader()
     validated = validate_record_batch_reader(
         table_key,
         reader,

@@ -21,6 +21,16 @@ from codeintel.build.hamilton.native.graphs.cfg_dfg import (
     dfg_edges_empty,
     dfg_edges_existing,
 )
+from codeintel.build.hamilton.native.graphs.goids_targets import (
+    GOID_CROSSWALK_TABLE_KEY,
+    GOIDS_TABLE_KEY,
+    GOIDS_TARGET_NAME,
+    goids__crosswalk_table,
+    goids__frames,
+    goids__table,
+    goids__table_materializations,
+    t__goids,
+)
 from codeintel.build.hamilton.native.graphs.graph_targets import (
     CALL_GRAPH_TARGET_NAME,
     CFG_TARGET_NAME,
@@ -56,6 +66,9 @@ __all__ = [
     "CFG_BLOCKS_TABLE_KEY",
     "CFG_EDGES_TABLE_KEY",
     "CFG_TARGET_NAME",
+    "GOID_CROSSWALK_TABLE_KEY",
+    "GOIDS_TABLE_KEY",
+    "GOIDS_TARGET_NAME",
     "DFG_EDGES_TABLE_KEY",
     "DFG_TARGET_NAME",
     "IMPORT_GRAPH_EDGES_TABLE_KEY",
@@ -76,6 +89,10 @@ __all__ = [
     "dfg_edges",
     "dfg_edges_empty",
     "dfg_edges_existing",
+    "goids__crosswalk_table",
+    "goids__frames",
+    "goids__table",
+    "goids__table_materializations",
     "import_graph_edges",
     "import_graph_edges_empty",
     "import_graph_edges_existing",
@@ -85,5 +102,6 @@ __all__ = [
     "t__call_graph",
     "t__cfg",
     "t__dfg",
+    "t__goids",
     "t__import_graph",
 ]

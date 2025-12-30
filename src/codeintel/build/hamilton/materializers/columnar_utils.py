@@ -24,11 +24,13 @@ from codeintel.core.schemas.contracts import (
     table_schema_from_polars_lazyframe,
 )
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.duckdb_types import DuckDBRelation
 
 if TYPE_CHECKING:
     from pyarrow import RecordBatchReader
 
-    type ColumnarInput = RecordBatchReader | pl.LazyFrame
+    type ColumnarInput = RecordBatchReader | pa.Table | pl.LazyFrame | DuckDBRelation
 else:
     type ColumnarInput = object
 
@@ -112,6 +114,27 @@ def table_schema_for_data(
             declared_schema,
             schema_hints=schema_hints,
         )
+    if isinstance(data, pa.Table):
+        inferred = table_schema_from_arrow_schema(
+            arrow_schema=data.schema,
+            table_key=table_key,
+        )
+        return merge_table_schema_hints(
+            inferred,
+            declared_schema,
+            schema_hints=schema_hints,
+        )
+    if isinstance(data, DuckDBRelation):
+        reader = _relation_arrow_reader(data)
+        inferred = table_schema_from_arrow_schema(
+            arrow_schema=reader.schema,
+            table_key=table_key,
+        )
+        return merge_table_schema_hints(
+            inferred,
+            declared_schema,
+            schema_hints=schema_hints,
+        )
     msg = f"Unsupported columnar input type: {type(data).__name__}"
     raise TypeError(msg)
 
@@ -133,6 +156,10 @@ def arrow_schema_for_data(*, data: ColumnarInput) -> pa.Schema:
         return data.collect_schema().to_arrow()
     if isinstance(data, pa.RecordBatchReader):
         return data.schema
+    if isinstance(data, pa.Table):
+        return data.schema
+    if isinstance(data, DuckDBRelation):
+        return _relation_arrow_reader(data).schema
     msg = f"Unsupported columnar input type: {type(data).__name__}"
     raise TypeError(msg)
 
@@ -156,6 +183,16 @@ def align_reader_to_contract_schema(
         contract_schema,
         extras_policy=extras_policy_from_schema(contract_schema),
     )
+
+
+def _relation_arrow_reader(relation: DuckDBRelation) -> RecordBatchReader:
+    fetcher = getattr(relation, "fetch_arrow_reader", None)
+    if callable(fetcher):
+        try:
+            return fetcher(DEFAULT_ARROW_BATCH_SIZE)
+        except TypeError:
+            return fetcher()
+    return relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
 
 def _schema_output_tag_sets(

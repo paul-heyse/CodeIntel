@@ -115,8 +115,9 @@ Decision point:
   output parity matches existing datasets.
 
 Only-if gates:
-- Only enable fragment pruning if dataset manifests include partition metadata
-  and filter translation is validated by tests.
+- Only enable fragment pruning if partition metadata is available via Iceberg
+  metadata or per-dataset export manifests, and filter translation is validated
+  by tests.
 - Only enable `sink_parquet` if row-group sizing and ordering controls are
   compatible with existing downstream readers.
 - Only enable streaming reads/writes if contract schema load succeeds.

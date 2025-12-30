@@ -26,8 +26,10 @@ from codeintel.build.schemas import (
     get_contract_for_table_key,
 )
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.columnar.tabular_adapter import to_table
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.validation.columnar import validate_table
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
@@ -266,7 +268,7 @@ def validate_contract_rows(
         frame = frame.select(expected_columns)
         validate_table(
             table_key,
-            frame.to_arrow(),
+            to_table(frame, batch_size=DEFAULT_ARROW_BATCH_SIZE),
             table_schema=table_schema,
             schema_observation=observation,
             mode="strict",

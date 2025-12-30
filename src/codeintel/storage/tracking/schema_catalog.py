@@ -494,9 +494,7 @@ class SchemaCatalogTracking:
             ),
         )
 
-    def _record_schema_manifest_runs_batch(
-        self, records: Sequence[SchemaManifestRunRecord]
-    ) -> int:
+    def _record_schema_manifest_runs_batch(self, records: Sequence[SchemaManifestRunRecord]) -> int:
         """Upsert run -> schema manifest catalog linkages.
 
         Returns

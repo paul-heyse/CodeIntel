@@ -61,7 +61,7 @@ NATIVE_ANALYTICS_TARGETS = [
     "coverage_functions",
     "external_deps",
     "function_metrics",
-    "module_profile",
+    "profiles",
     "risk_factors",
 ]
 

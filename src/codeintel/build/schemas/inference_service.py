@@ -124,7 +124,9 @@ def _is_tabular_annotation(annotation: object) -> bool:
                 "pa.Table",
                 "pyarrow.Table",
                 "pl.LazyFrame",
+                "pl.DataFrame",
                 "polars.LazyFrame",
+                "polars.DataFrame",
             )
         )
     return any(
@@ -137,7 +139,9 @@ def _is_tabular_annotation(annotation: object) -> bool:
             "pa.Table",
             "pyarrow.Table",
             "pl.LazyFrame",
+            "pl.DataFrame",
             "polars.LazyFrame",
+            "polars.DataFrame",
         )
     )
 
@@ -706,6 +710,8 @@ def _table_schema_from_tabular(obj: InferableTabularInput, *, table_key: str) ->
         return table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
     if isinstance(obj, pa.RecordBatchReader):
         return table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
+    if isinstance(obj, pl.DataFrame):
+        return table_schema_from_polars_lazyframe(frame=obj.lazy(), table_key=table_key)
     if isinstance(obj, pl.LazyFrame):
         return table_schema_from_polars_lazyframe(frame=obj, table_key=table_key)
     msg = f"Unsupported tabular output for schema inference: {type(obj)}"

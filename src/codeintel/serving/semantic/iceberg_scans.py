@@ -73,6 +73,7 @@ class IcebergScanRequest:
     pointer: ServingSnapshotPointer
     settings: IcebergSettings
     batch_size: int | None = None
+    table: Table | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,7 +281,18 @@ def iceberg_scan_for_query(*, request: IcebergScanRequest) -> IcebergScanResult:
 
 
 def iceberg_scan_for_ref(*, request: IcebergRefScanRequest) -> IcebergScanResult:
-    """Build an Iceberg scan with a pre-resolved ref name."""
+    """Build an Iceberg scan with a pre-resolved ref name.
+
+    Returns
+    -------
+    IcebergScanResult
+        Resolved Iceberg scan and plan details.
+
+    Raises
+    ------
+    IcebergScanError
+        Raised when the target Iceberg table cannot be loaded.
+    """
     provider = IcebergCatalogProvider(request.settings)
     try:
         table = provider.load_table(request.table_key)
