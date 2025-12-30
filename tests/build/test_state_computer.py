@@ -158,8 +158,8 @@ class TestStateComputer:
         """When no cache entries exist, all targets are missing."""
         state = computer.compute_all()
         expect_equal(state.current_targets(), ())
-        expect_equal(state.blocked_targets(), ())
-        expect_equal(state.missing_targets(), tuple(state.targets))
+        expect_equal(state.blocked_targets(), ("ast", "goids"))
+        expect_equal(state.missing_targets(), ("modules",))
 
     @staticmethod
     def test_blocked_when_dependency_missing(

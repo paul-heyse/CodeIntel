@@ -18,16 +18,21 @@ def _variable_name(variable: object) -> str:
 
 def test_pr64_loader_tags_are_canonical(hamilton_runtime: RuntimeBundle) -> None:
     """q__ nodes should be tagged with loader.* node types."""
-    all_names = {_variable_name(var) for var in hamilton_runtime.dr.list_available_variables()}
-    q_nodes = {name for name in all_names if name.startswith("q__")}
+    variables = list(hamilton_runtime.dr.list_available_variables())
+    expected_tagged = {
+        _variable_name(var)
+        for var in variables
+        if _variable_name(var).startswith("q__")
+        and not getattr(var, "user_defined", False)
+    }
 
     q_vars = hamilton_runtime.tag_query.query({ht.TAG_NODE_TYPE: NODE_TYPE_LOADER_QUERY})
 
     q_tagged = {_variable_name(var) for var in q_vars}
 
-    if q_nodes != q_tagged:
-        missing = sorted(q_nodes - q_tagged)
-        extra = sorted(q_tagged - q_nodes)
+    if expected_tagged != q_tagged:
+        missing = sorted(expected_tagged - q_tagged)
+        extra = sorted(q_tagged - expected_tagged)
         pytest.fail(f"q__ node tag mismatch missing={missing} extra={extra}")
 
     for variable in q_vars:

@@ -21,8 +21,8 @@ Build targets with automatic dependency resolution.
 │ DRY-RUN --dry-run -n          Show build plan without executing. [env var:   │
 │                               CODEINTEL_BUILD_RUN_DRY_RUN,                   │
 │                               CODEINTEL_BUILD_RUN_DRY_RUN] [default: false]  │
-│ FORCE --force --empty-force   Force recompute of specific targets            │
-│   -f                          (repeatable). [env var:                        │
+│ FORCE --force -f              Force recompute of specific targets            │
+│   --empty-force               (repeatable). [env var:                        │
 │                               CODEINTEL_BUILD_RUN_FORCE,                     │
 │                               CODEINTEL_BUILD_RUN_FORCE] [default: (none)]   │
 │ VALIDATE-OUTPUTS              Validate produced datasets against Pandera     │

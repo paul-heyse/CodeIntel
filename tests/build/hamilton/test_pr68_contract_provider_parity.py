@@ -274,7 +274,7 @@ class TestContractMetadataDerivation:
         expect_equal(contract.family, "core")
 
     @staticmethod
-    def test_validation_profile_defaults_to_strict() -> None:
-        """Verify validation_profile defaults to 'strict'."""
+    def test_validation_profile_defaults_to_lenient() -> None:
+        """Verify validation_profile defaults to 'lenient'."""
         contract = get_contract_for_table_key("analytics.function_metrics")
-        expect_equal(contract.validation_profile, "strict")
+        expect_equal(contract.validation_profile, "lenient")

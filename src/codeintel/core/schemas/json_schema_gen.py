@@ -53,7 +53,7 @@ def _json_schema_type_for_column_type(col_type: ColumnType) -> dict[str, Any]:
     base = column_type_base(normalized)
     if base == "DECIMAL":
         compact = normalized.upper().replace(" ", "")
-        match = re.match(r"^DECIMAL\\((\\d+),(\\d+)\\)$", compact)
+        match = re.match(r"^DECIMAL\((\d+),(\d+)\)$", compact)
         if match is not None and int(match.group(2)) == 0:
             return {"type": "integer"}
     return mapping.get(base, {"type": "string"})

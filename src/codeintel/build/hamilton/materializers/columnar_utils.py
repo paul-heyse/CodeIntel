@@ -30,7 +30,7 @@ from codeintel.storage.duckdb_types import DuckDBRelation
 if TYPE_CHECKING:
     from pyarrow import RecordBatchReader
 
-    type ColumnarInput = RecordBatchReader | pa.Table | pl.LazyFrame | DuckDBRelation
+    type ColumnarInput = RecordBatchReader | pa.Table | pl.DataFrame | pl.LazyFrame | DuckDBRelation
 else:
     type ColumnarInput = object
 
@@ -103,6 +103,16 @@ def table_schema_for_data(
             declared_schema,
             schema_hints=schema_hints,
         )
+    if isinstance(data, pl.DataFrame):
+        inferred = table_schema_from_polars_lazyframe(
+            frame=data.lazy(),
+            table_key=table_key,
+        )
+        return merge_table_schema_hints(
+            inferred,
+            declared_schema,
+            schema_hints=schema_hints,
+        )
     if isinstance(data, pa.RecordBatchReader):
         arrow_reader = cast("RecordBatchReader", data)
         inferred = table_schema_from_arrow_schema(
@@ -154,6 +164,8 @@ def arrow_schema_for_data(*, data: ColumnarInput) -> pa.Schema:
     """
     if isinstance(data, pl.LazyFrame):
         return data.collect_schema().to_arrow()
+    if isinstance(data, pl.DataFrame):
+        return data.to_arrow().schema
     if isinstance(data, pa.RecordBatchReader):
         return data.schema
     if isinstance(data, pa.Table):

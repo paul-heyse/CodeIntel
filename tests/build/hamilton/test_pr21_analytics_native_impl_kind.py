@@ -51,7 +51,12 @@ def test_native_analytics_marked_in_plan(
             include_io_details=False,
             include_cache_details=False,
         )
-        plan = compute_plan(env=env, plan_request=request, runtime=hamilton_runtime)
+        plan = compute_plan(
+            env=env,
+            plan_request=request,
+            runtime=hamilton_runtime,
+            materialize=False,
+        )
 
         # Find the entry for this target in the plan
         target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -92,7 +97,12 @@ def test_function_metrics_now_native_after_phase4(
         include_io_details=False,
         include_cache_details=False,
     )
-    plan = compute_plan(env=env, plan_request=request, runtime=hamilton_runtime)
+    plan = compute_plan(
+        env=env,
+        plan_request=request,
+        runtime=hamilton_runtime,
+        materialize=False,
+    )
 
     # Find the entry for this target in the plan
     target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -122,7 +132,12 @@ def test_risk_factors_still_native_after_wave2(
         include_io_details=False,
         include_cache_details=False,
     )
-    plan = compute_plan(env=env, plan_request=request, runtime=hamilton_runtime)
+    plan = compute_plan(
+        env=env,
+        plan_request=request,
+        runtime=hamilton_runtime,
+        materialize=False,
+    )
 
     # Find the entry for risk_factors
     target_entry = next((e for e in plan.entries if e.target == "risk_factors"), None)

@@ -17,6 +17,7 @@ import pyarrow.compute as pc
 from hamilton.io.data_adapters import DataSaver
 from polars.exceptions import PolarsError
 from pyiceberg.catalog import Catalog
+from pyiceberg.exceptions import NamespaceAlreadyExistsError
 from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
@@ -139,7 +140,7 @@ if TYPE_CHECKING:
     from codeintel.core.config.settings import IcebergSettings
     from codeintel.storage.tracking.schema_catalog_models import IcebergStatsPayload
 
-    type IcebergInput = RecordBatchReader | pa.Table | pl.LazyFrame | DuckDBRelation
+    type IcebergInput = RecordBatchReader | pa.Table | pl.DataFrame | pl.LazyFrame | DuckDBRelation
 else:
     type IcebergInput = object
 
@@ -159,6 +160,7 @@ _RECOVERABLE_EXCEPTIONS = (
 _TABULAR_TYPES: tuple[type, ...] = (
     pa.RecordBatchReader,
     pa.Table,
+    pl.DataFrame,
     pl.LazyFrame,
     DuckDBRelation,
 )
@@ -830,6 +832,7 @@ def _ensure_table(
             settings=ctx.settings_view.build.iceberg,
         )
         return table
+    _ensure_namespace(catalog=catalog, identifier=identifier)
     properties = _table_properties(plan=plan, settings=ctx.settings_view.build.iceberg)
     partition_spec = _partition_spec(
         table_schema=plan.table_schema,
@@ -851,6 +854,16 @@ def _ensure_table(
         sort_order=sort_order,
         properties=properties,
     )
+
+
+def _ensure_namespace(*, catalog: Catalog, identifier: tuple[str, ...]) -> None:
+    namespace = identifier[:-1]
+    if not namespace:
+        return
+    try:
+        catalog.create_namespace(namespace)
+    except NamespaceAlreadyExistsError:
+        return
 
 
 def _table_properties(*, plan: _IcebergPlan, settings: IcebergSettings) -> dict[str, str]:

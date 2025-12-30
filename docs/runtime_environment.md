@@ -19,10 +19,11 @@ Defaults:
 - `CODEINTEL_ICEBERG_READ_REF` (str): Override snapshot ref name to read (e.g., `main` or `run/<id>`).
 - `CODEINTEL_ICEBERG_ENFORCE_PREFIXES` (csv): Table key prefixes that must resolve to Iceberg.
 - `CODEINTEL_ICEBERG_CATALOG_NAME` (str): Catalog name passed to PyIceberg.
-- `CODEINTEL_ICEBERG_CATALOG_TYPE` (str): Catalog type (e.g., `sql`).
+- `CODEINTEL_ICEBERG_CATALOG_TYPE` (str): Optional catalog type for non-DuckDB catalogs.
+- `CODEINTEL_ICEBERG_CATALOG_PROPERTIES` (csv `key=value`): Extra catalog properties, including
+  `py-catalog-impl` to override the default DuckDB catalog implementation.
 - `CODEINTEL_ICEBERG_CATALOG_URI` (str): Catalog connection URI.
 - `CODEINTEL_ICEBERG_CATALOG_WAREHOUSE` (str): Warehouse path for table data.
-- `CODEINTEL_ICEBERG_CATALOG_PROPERTIES` (csv `key=value`): Extra catalog properties.
 - `CODEINTEL_ICEBERG_CONFIG_PATH` (path): Optional `.pyiceberg.yaml` path override.
 - `CODEINTEL_ICEBERG_IO_IMPL` (str): FileIO implementation class.
 - `CODEINTEL_ICEBERG_IO_OPTIONS` (csv `key=value`): FileIO option overrides.

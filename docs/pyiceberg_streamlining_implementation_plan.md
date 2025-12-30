@@ -31,6 +31,7 @@ duplicate functionality.
 - Metadata sync and contract queries now use SQLGlot AST rendering where possible.
 - Tests now cover Iceberg CLI commands, cache IPC integrity, stats file persistence, and materializer cache
   refresh.
+- Materializer tests now assert `iceberg_snapshot_id`, and serving snapshot helpers validate Iceberg refs.
 
 ## Prioritized Checklist (Remaining Work)
 
@@ -343,8 +344,9 @@ Test updates (remove legacy assumptions):
   (`tests/docs_export/test_export_smoke.py`,
   `tests/build/hamilton/test_pr76_buildspec_compiler_outputs_match_dag.py`,
   `tests/build/hamilton/snapshots/pr77_build_spec_compile_auto.json`).
-- [ ] Replace manifest-based snapshot tests with Iceberg snapshot + ref checks.
-- [ ] Ensure all table materialization tests validate `iceberg_snapshot_id` in results.
+- [x] Replace manifest-based snapshot tests with Iceberg snapshot + ref checks.
+  - Serving snapshot factory asserts Iceberg refs; materializer tests now verify commit/run tags.
+- [x] Ensure all table materialization tests validate `iceberg_snapshot_id` in results.
 
 Cutover gates:
 - [ ] All above tests passing locally with `ICEBERG_READ_ENABLED=true` and `ICEBERG_WRITE_ENABLED=true`.

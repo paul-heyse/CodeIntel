@@ -38,8 +38,8 @@ Update expected manifest to match current schemas.
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_DRY_RUN,      │
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_DRY_RUN]      │
 │                                 [default: true]                              │
-│    INCLUDE-VIEWS                Include view schemas in the manifest  │
-│      --include-views            (v2 format). [env var:                       │
+│    INCLUDE-VIEWS                Include view schemas in the manifest (v2     │
+│      --include-views            format). [env var:                           │
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_INCLUDE_VIEWS │
 │                                 ,                                            │
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_INCLUDE_VIEWS │

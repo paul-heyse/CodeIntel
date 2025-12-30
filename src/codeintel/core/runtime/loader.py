@@ -131,9 +131,9 @@ def _iceberg_default_enabled(*, deployment_environment: str | None, configured: 
 
 def _load_iceberg_catalog_config() -> _IcebergCatalogConfig:
     catalog_name = get_str("CODEINTEL_ICEBERG_CATALOG_NAME", default="default") or "default"
-    catalog_type = get_str("CODEINTEL_ICEBERG_CATALOG_TYPE", default="sql")
+    catalog_type = get_str("CODEINTEL_ICEBERG_CATALOG_TYPE", default=None)
     if catalog_type is not None:
-        catalog_type = catalog_type.strip() or "sql"
+        catalog_type = catalog_type.strip().lower() or None
     catalog_uri = get_str("CODEINTEL_ICEBERG_CATALOG_URI", default=None)
     catalog_warehouse = get_str("CODEINTEL_ICEBERG_CATALOG_WAREHOUSE", default=None)
     catalog_properties = _parse_kv_pairs(

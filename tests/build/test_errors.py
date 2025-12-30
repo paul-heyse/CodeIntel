@@ -27,7 +27,7 @@ def test_schema_not_found_messages() -> None:
 
     expect_in("core.ast_nodes", error.user_message)
     expect_in("schema", error.user_message)
-    expect_in("Add schema", error.actionable_hint)
+    expect_in("Register schema", error.actionable_hint)
     expect_equal(error.error_code, "SCHEMANOTFOUNDERROR")
 
 

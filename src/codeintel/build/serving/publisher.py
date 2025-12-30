@@ -138,6 +138,9 @@ def _prepare_snapshot_tables(
 
 def _copy_snapshot_database(*, snap_dir: Path, config: StorageConfig) -> Path:
     snap_db = snap_dir / "codeintel.duckdb"
+    if str(config.db_path) != ":memory:":
+        if config.db_path.resolve() != snap_db.resolve():
+            shutil.copy2(config.db_path, snap_db)
     if config.attach_meta:
         meta_path = resolve_meta_db_path(config)
         if str(meta_path) != ":memory:" and meta_path.exists():

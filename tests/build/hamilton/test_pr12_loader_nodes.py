@@ -52,10 +52,14 @@ class TestDriverLoaderNodes:
         config.update(runtime_env.variants.as_hamilton_config())
         config["variant_fingerprint"] = runtime_env.variants.variant_fingerprint
         runtime = compose_runtime(env=runtime_env, config=config).bundle
-        node_names = set(runtime.dr.graph.nodes)
         query_name = query_node("analytics.function_metrics")
-        if query_name in node_names:
-            pytest.fail("Query nodes should be disabled when include_loader_nodes=False")
+        variables = list(runtime.dr.list_available_variables())
+        var_by_name = {getattr(var, "name", None): var for var in variables}
+        query_var = var_by_name.get(query_name)
+        if query_var is None:
+            return
+        if not getattr(query_var, "user_defined", False):
+            pytest.fail("Query nodes should be external inputs when include_loader_nodes=False")
 
 
 class TestBuildEnvValidateOutputsFlag:

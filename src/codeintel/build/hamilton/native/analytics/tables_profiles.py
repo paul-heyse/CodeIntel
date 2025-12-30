@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+import uuid
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, cast
 
+import duckdb
 import pyarrow as pa
+from polars.exceptions import PolarsError
 
 from codeintel.analytics.profiles.files import (
     build_file_profile_rows,
@@ -44,8 +48,12 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.types import TabularInput
+from codeintel.core.columnar.tabular_adapter import to_table
 from codeintel.core.schemas.contracts import arrow_contract_for_table_schema
-from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBError, DuckDBRelation
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.helpers.table_key import split_table_key
 
 LOG = logging.getLogger(__name__)
 
@@ -66,10 +74,84 @@ PROFILES_TABLE_KEYS = (
 PROFILES_SAVE_CONTEXT = SaverContext(domain="analytics", target=PROFILES_TARGET_NAME)
 TEST_PROFILE_SAVE_CONTEXT = SaverContext(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 
+if TYPE_CHECKING:
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway.protocol import StorageGateway
 
-def _touch_dependencies(*_deps: object) -> None:
-    if not _deps:
+
+def _duckdb_connection_from_input(value: TabularInput) -> DuckDBConnection | None:
+    """Return a DuckDB connection from a relation-backed input when available.
+
+    Returns
+    -------
+    DuckDBConnection | None
+        Connection from the relation when accessible; otherwise None.
+    """
+    if not isinstance(value, DuckDBRelation):
+        return None
+    candidate = getattr(value, "connection", None)
+    if isinstance(candidate, DuckDBConnection):
+        return candidate
+    if callable(candidate):
+        try:
+            connection = candidate()
+        except TypeError:
+            return None
+        return connection if isinstance(connection, DuckDBConnection) else None
+    return None
+
+
+def _register_tabular_input(
+    *,
+    con: DuckDBConnection,
+    table_key: str,
+    value: TabularInput,
+) -> None:
+    """Register a tabular input as a schema-qualified DuckDB view."""
+    try:
+        schema, name = split_table_key(table_key)
+    except ValueError:
+        LOG.warning("profile gateway skipping invalid table key: %s", table_key)
         return
+    try:
+        table = to_table(value, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    except (DuckDBError, PolarsError, TypeError, ValueError, pa.ArrowInvalid) as exc:
+        LOG.warning("profile gateway failed to coerce %s: %s", table_key, exc)
+        return
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+    temp_name = f"tmp_{schema}_{name}_{uuid.uuid4().hex}"
+    con.register(temp_name, table)
+    try:
+        con.execute(
+            f"CREATE OR REPLACE VIEW {schema}.{name} AS SELECT * FROM {temp_name}"
+        )
+    finally:
+        con.unregister(temp_name)
+
+
+def _profile_gateway_from_inputs(
+    *,
+    table_inputs: Mapping[str, TabularInput],
+) -> tuple[MinimalStorageGateway, bool]:
+    """Create a gateway for profile computations from tabular inputs.
+
+    Returns
+    -------
+    tuple[MinimalStorageGateway, bool]
+        Gateway and a flag indicating connection ownership.
+    """
+    for value in table_inputs.values():
+        connection = _duckdb_connection_from_input(value)
+        if connection is not None:
+            return MinimalStorageGateway(connection), False
+    connection = duckdb.connect(database=":memory:")
+    for table_key, value in table_inputs.items():
+        _register_tabular_input(con=connection, table_key=table_key, value=value)
+    return MinimalStorageGateway(connection), True
+
+
+def _rows_to_dicts(rows: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
+    return [dict(row) for row in rows]
 
 
 def _table_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
@@ -80,9 +162,14 @@ def _table_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
     return pa.Table.from_pylist(rows, schema=arrow_schema)
 
 
-def _function_profile_rows(env: BuildEnv) -> list[dict[str, object]]:
+def _function_profile_rows(
+    *,
+    snapshot: SnapshotRef,
+    table_inputs: Mapping[str, TabularInput],
+) -> list[dict[str, object]]:
+    gateway, owns_connection = _profile_gateway_from_inputs(table_inputs=table_inputs)
     try:
-        inputs = compute_function_profile_inputs(env.gateway, env.snapshot)
+        inputs = compute_function_profile_inputs(cast("StorageGateway", gateway), snapshot)
         views = FunctionProfileViews(
             base_by_func=load_function_base_info(inputs),
             risk_by_func=join_function_risk(inputs),
@@ -94,28 +181,47 @@ def _function_profile_rows(env: BuildEnv) -> list[dict[str, object]]:
             docs_by_func=join_function_docs(inputs),
             history_by_func=join_function_history(inputs),
         )
-        return list(build_function_profile_rows(inputs, views=views))
+        return _rows_to_dicts(build_function_profile_rows(inputs, views=views))
     except (DuckDBError, RuntimeError, ValueError, TypeError) as exc:
         LOG.warning("function_profile build failed: %s", exc)
         return []
+    finally:
+        if owns_connection:
+            gateway.con.close()
 
 
-def _file_profile_rows(env: BuildEnv) -> list[dict[str, object]]:
+def _file_profile_rows(
+    *,
+    snapshot: SnapshotRef,
+    table_inputs: Mapping[str, TabularInput],
+) -> list[dict[str, object]]:
+    gateway, owns_connection = _profile_gateway_from_inputs(table_inputs=table_inputs)
     try:
-        inputs = compute_file_profile_inputs(env.gateway, env.snapshot)
-        return list(build_file_profile_rows(inputs))
+        inputs = compute_file_profile_inputs(cast("StorageGateway", gateway), snapshot)
+        return _rows_to_dicts(build_file_profile_rows(inputs))
     except (DuckDBError, RuntimeError, ValueError, TypeError) as exc:
         LOG.warning("file_profile build failed: %s", exc)
         return []
+    finally:
+        if owns_connection:
+            gateway.con.close()
 
 
-def _test_profile_rows(env: BuildEnv) -> list[dict[str, object]]:
+def _test_profile_rows(
+    *,
+    snapshot: SnapshotRef,
+    table_inputs: Mapping[str, TabularInput],
+) -> list[dict[str, object]]:
+    gateway, owns_connection = _profile_gateway_from_inputs(table_inputs=table_inputs)
     try:
-        result = build_test_profile_result(env.gateway, env.snapshot)
+        result = build_test_profile_result(cast("StorageGateway", gateway), snapshot)
     except (DuckDBError, RuntimeError, ValueError, TypeError) as exc:
         LOG.warning("test_profile build failed: %s", exc)
         return []
-    return list(result.rows or [])
+    finally:
+        if owns_connection:
+            gateway.con.close()
+    return _rows_to_dicts(result.rows or [])
 
 
 @save_dataset(
@@ -129,14 +235,36 @@ def function_profile__table(
     q__analytics__coverage_functions: TabularInput,
     q__analytics__goid_risk_factors: TabularInput,
 ) -> pa.Table:
-    """Build analytics.function_profile from stored inputs."""
-    _touch_dependencies(
-        q__core__goids,
-        q__analytics__function_metrics,
-        q__analytics__coverage_functions,
-        q__analytics__goid_risk_factors,
+    """Build analytics.function_profile from stored inputs.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot context.
+    q__core__goids
+        Loader relation for ``core.goids``.
+    q__analytics__function_metrics
+        Loader relation for ``analytics.function_metrics``.
+    q__analytics__coverage_functions
+        Loader relation for ``analytics.coverage_functions``.
+    q__analytics__goid_risk_factors
+        Loader relation for ``analytics.goid_risk_factors``.
+
+    Returns
+    -------
+    pa.Table
+        Arrow table for analytics.function_profile.
+    """
+    table_inputs = {
+        "core.goids": q__core__goids,
+        "analytics.function_metrics": q__analytics__function_metrics,
+        "analytics.coverage_functions": q__analytics__coverage_functions,
+        "analytics.goid_risk_factors": q__analytics__goid_risk_factors,
+    }
+    return _table_from_rows(
+        FUNCTION_PROFILE_TABLE_KEY,
+        _function_profile_rows(snapshot=env.snapshot, table_inputs=table_inputs),
     )
-    return _table_from_rows(FUNCTION_PROFILE_TABLE_KEY, _function_profile_rows(env))
 
 
 @save_dataset(
@@ -148,18 +276,69 @@ def file_profile__table(
     q__core__ast_metrics: TabularInput,
     q__core__modules: TabularInput,
 ) -> pa.Table:
-    """Build analytics.file_profile from stored inputs."""
-    _touch_dependencies(q__core__ast_metrics, q__core__modules)
-    return _table_from_rows(FILE_PROFILE_TABLE_KEY, _file_profile_rows(env))
+    """Build analytics.file_profile from stored inputs.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot context.
+    q__core__ast_metrics
+        Loader relation for ``core.ast_metrics``.
+    q__core__modules
+        Loader relation for ``core.modules``.
+
+    Returns
+    -------
+    pa.Table
+        Arrow table for analytics.file_profile.
+    """
+    table_inputs = {
+        "core.ast_metrics": q__core__ast_metrics,
+        "core.modules": q__core__modules,
+    }
+    return _table_from_rows(
+        FILE_PROFILE_TABLE_KEY,
+        _file_profile_rows(snapshot=env.snapshot, table_inputs=table_inputs),
+    )
 
 
 @save_dataset(
     context=TEST_PROFILE_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=TEST_PROFILE_TABLE_KEY),
 )
-def test_profile__table(env: BuildEnv) -> pa.Table:
-    """Build analytics.test_profile from stored inputs."""
-    return _table_from_rows(TEST_PROFILE_TABLE_KEY, _test_profile_rows(env))
+def test_profile__table(
+    env: BuildEnv,
+    q__analytics__test_catalog: TabularInput,
+    q__analytics__test_coverage_edges: TabularInput,
+    q__analytics__test_graph_metrics_tests: TabularInput,
+) -> pa.Table:
+    """Build analytics.test_profile from stored inputs.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot context.
+    q__analytics__test_catalog
+        Loader relation for ``analytics.test_catalog``.
+    q__analytics__test_coverage_edges
+        Loader relation for ``analytics.test_coverage_edges``.
+    q__analytics__test_graph_metrics_tests
+        Loader relation for ``analytics.test_graph_metrics_tests``.
+
+    Returns
+    -------
+    pa.Table
+        Arrow table for analytics.test_profile.
+    """
+    table_inputs = {
+        "analytics.test_catalog": q__analytics__test_catalog,
+        "analytics.test_coverage_edges": q__analytics__test_coverage_edges,
+        "analytics.test_graph_metrics_tests": q__analytics__test_graph_metrics_tests,
+    }
+    return _table_from_rows(
+        TEST_PROFILE_TABLE_KEY,
+        _test_profile_rows(snapshot=env.snapshot, table_inputs=table_inputs),
+    )
 
 
 profiles__table_materializations = make_table_materializations_collector(
@@ -176,7 +355,13 @@ def t__profiles(
     catalog: DagCatalog,
     profiles__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
-    """Finalize profiles target run record."""
+    """Finalize profiles target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the profiles target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
@@ -195,7 +380,13 @@ def t__test_profile(
     catalog: DagCatalog,
     m__analytics__test_profile: MaterializationResult,
 ) -> TargetRunRecord:
-    """Finalize test_profile target run record."""
+    """Finalize test_profile target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the test_profile target.
+    """
     return record_from_duckdb_materialization(
         env=env,
         catalog=catalog,

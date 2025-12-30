@@ -16,6 +16,7 @@ from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
+from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.fixtures.repos import write_sample_repo
 from tests._helpers.gateway import seed_repo_identity
 from tests._helpers.harnesses.hamilton_build import (
@@ -109,6 +110,7 @@ class ServingTargetHarness:
         schema_manifest = _require_path(artifact_paths, SERVING_ARTIFACT_SCHEMA_MANIFEST)
         buildspec = _require_path(artifact_paths, SERVING_ARTIFACT_BUILDSPEC)
         serve_dir = self.harness.ctx.build_paths.build_dir / "serving"
+        self._ensure_search_documents()
         request = PublishServingSnapshotRequest(
             run_id=run_id,
             serve_dir=serve_dir,
@@ -129,6 +131,36 @@ class ServingTargetHarness:
         if count <= 0:
             message = "core.modules is empty; serving snapshots require seeded module inventory."
             raise AssertionError(message)
+
+    def _ensure_search_documents(self) -> None:
+        gateway = self.harness.ctx.gateway
+        repo = gateway.config.repo or self.harness.ctx.snapshot.repo
+        commit = gateway.config.commit or self.harness.ctx.snapshot.commit
+        if not gateway.policy.table_exists(schema="docs", table="search_documents"):
+            build_search_documents_table(gateway.con)
+        row = gateway.con.execute("SELECT COUNT(*) FROM docs.search_documents").fetchone()
+        count = int(row[0]) if row is not None and row[0] is not None else 0
+        if count > 0:
+            return
+        gateway.con.execute(
+            """
+            INSERT INTO docs.search_documents (
+                doc_id, kind, name, module, rel_path, text, ref_goid_h128, repo, commit
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                "module:demo",
+                "module",
+                "pkg.demo",
+                "pkg.demo",
+                "pkg/demo.py",
+                "pkg.demo pkg/demo.py",
+                None,
+                repo,
+                commit,
+            ],
+        )
 
     def assert_artifacts_exist(self) -> None:
         """Assert serving artifacts exist on disk.

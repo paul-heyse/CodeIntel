@@ -6,19 +6,23 @@ DAG-visible I/O, replacing the legacy ``native.materializer`` utilities.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 import polars as pl
+import pytest
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.materializers import IcebergDatasetSaver
+from codeintel.build.schemas import configure_contract_service, configure_schema_service
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.config.view import SettingsView
 from codeintel.core.hashing import stable_hash
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.core.iceberg.schema import iceberg_field_ids_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.runtime.compose import compose_runtime
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.validation.mode import ContractValidationMode
 from tests._helpers.assertions.expectation_assertions import (
@@ -35,7 +39,22 @@ from tests._helpers.catalog import (
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.core.schemas.primitives import Column
+
+
+@pytest.fixture(autouse=True)
+def _configure_schema_services(build_harness: HamiltonBuildHarness) -> None:
+    env = build_harness.build_env()
+    config: dict[str, object] = {}
+    if env.profile:
+        config["profile"] = env.profile
+    config.update(env.variants.as_hamilton_config())
+    config["variant_fingerprint"] = env.variants.variant_fingerprint
+    runtime = compose_runtime(env=env, config=config).bundle
+    configure_schema_service(runtime=runtime)
+    configure_contract_service(runtime=runtime)
 
 
 def _modules_rows(*, repo: str, commit: str, count: int) -> pl.DataFrame:
@@ -53,6 +72,36 @@ def _modules_rows(*, repo: str, commit: str, count: int) -> pl.DataFrame:
         row["row_hash"] = stable_hash(row)
         rows.append(row)
     return pl.DataFrame(rows)
+
+
+def _assert_snapshot_id(meta: Mapping[str, object]) -> None:
+    snapshot_id = meta.get("iceberg_snapshot_id")
+    expect_true(
+        isinstance(snapshot_id, int),
+        message="Expected iceberg_snapshot_id to be an integer",
+    )
+
+
+def _assert_status(meta: Mapping[str, object], expected: str) -> None:
+    status = meta.get("status")
+    if status == expected:
+        return
+    error = meta.get("error")
+    details = f"expected {expected!r}, got {status!r}"
+    if error:
+        details = f"{details} (error={error!r})"
+    raise AssertionError(details)
+
+
+def _assert_snapshot_ref(table: object, ref_name: str) -> None:
+    snapshot_by_name = getattr(table, "snapshot_by_name", None)
+    expect_true(
+        callable(snapshot_by_name),
+        message=f"Expected snapshot ref support for {ref_name}",
+    )
+    snapshot_by_name = cast("Callable[[str], object | None]", snapshot_by_name)
+    snapshot = snapshot_by_name(ref_name)
+    expect_true(snapshot is not None, message=f"Missing snapshot ref: {ref_name}")
 
 
 def _make_graph() -> DagCatalog:
@@ -124,13 +173,9 @@ def test_iceberg_saver_writes_table(
 
     df = _modules_rows(repo=snapshot.repo, commit=snapshot.commit, count=2)
     meta = saver.save_data(df.lazy())
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
     expect_equal(meta["row_count"], expected=2)
-    snapshot_id = meta.get("iceberg_snapshot_id")
-    expect_true(
-        isinstance(snapshot_id, int),
-        message="Expected iceberg_snapshot_id to be an integer",
-    )
+    _assert_snapshot_id(meta)
 
     settings_view = SettingsView.from_build_env(env)
     provider = IcebergCatalogProvider(settings_view.build.iceberg)
@@ -138,6 +183,39 @@ def test_iceberg_saver_writes_table(
     reader = table.scan().to_arrow_batch_reader()
     written_rows = sum(batch.num_rows for batch in reader)
     expect_equal(written_rows, expected=2)
+
+
+def test_iceberg_saver_creates_snapshot_refs(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """IcebergDatasetSaver should tag commit/run refs for snapshots."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    graph = _make_graph()
+    saver = IcebergDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
+    meta = saver.save_data(df.lazy())
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
+
+    provider = IcebergCatalogProvider(SettingsView.from_build_env(env).build.iceberg)
+    table = provider.load_table("core.modules")
+    table.refresh()
+    _assert_snapshot_ref(table, f"commit/{env.commit}")
+
+    run_id = None
+    if env.execution_context is not None:
+        run_id_value = env.execution_context.run.run_id
+        if run_id_value:
+            run_id = run_id_value
+    if run_id is not None:
+        _assert_snapshot_ref(table, f"run/{run_id}")
 
 
 def test_iceberg_saver_snapshot_properties_persisted(
@@ -156,7 +234,8 @@ def test_iceberg_saver_snapshot_properties_persisted(
 
     df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
     meta = saver.save_data(df.lazy())
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
 
     settings_view = SettingsView.from_build_env(env)
     provider = IcebergCatalogProvider(settings_view.build.iceberg)
@@ -189,7 +268,8 @@ def test_iceberg_saver_refreshes_metadata_cache(
 
     df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
     meta = saver.save_data(df.lazy())
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
 
     tables_ref = meta_table_ref("metadata.iceberg_tables")
     row = env.gateway.con.execute(
@@ -217,14 +297,16 @@ def test_iceberg_saver_schema_evolution_preserves_field_ids(
 
     frame = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
     meta = saver.save_data(frame.lazy())
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
 
     expected_schema = get_schema_service().require_table_schema("core.modules")
     expected_ids = iceberg_field_ids_for_table_schema(expected_schema)
 
     frame = frame.with_columns(pl.lit("extra").alias("extra_flag"))
     meta = saver.save_data(frame.lazy())
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
 
     provider = IcebergCatalogProvider(SettingsView.from_build_env(env).build.iceberg)
     table = provider.load_table("core.modules")
@@ -258,11 +340,13 @@ def test_iceberg_saver_appends_tombstones(
 
     df_first = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=2)
     first_meta = saver.save_data(df_first.lazy())
-    expect_equal(first_meta["status"], expected="succeeded")
+    _assert_status(first_meta, "succeeded")
+    _assert_snapshot_id(first_meta)
 
     df_second = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
     second_meta = saver.save_data(df_second.lazy())
-    expect_equal(second_meta["status"], expected="succeeded")
+    _assert_status(second_meta, "succeeded")
+    _assert_snapshot_id(second_meta)
 
     settings_view = SettingsView.from_build_env(env)
     provider = IcebergCatalogProvider(settings_view.build.iceberg)
@@ -290,7 +374,8 @@ def test_materialize_table_validates_when_schema_available(
 
     df = _modules_rows(repo=repo, commit=commit, count=2)
     meta = saver.save_data(df.lazy())
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
     expect_equal(meta["row_count"], expected=df.height)
     expect_equal(meta["validation_status"], expected="passed")
 
@@ -325,7 +410,8 @@ def test_iceberg_saver_accepts_duckdb_relation(
 
     meta = saver.save_data(relation)
 
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
     expect_equal(meta["row_count"], expected=1)
 
 
@@ -346,7 +432,8 @@ def test_materialize_table_persists_validation_record(
     df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
     meta = saver.save_data(df.lazy())
 
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
     validations_ref = meta_table_ref("metadata.materialization_validations")
     row = env.gateway.con.execute(
         f"SELECT status FROM {validations_ref} WHERE table_key = ? "
@@ -387,7 +474,7 @@ def test_strict_validation_fails_on_missing_columns(
 
     meta = saver.save_data(frame)
 
-    expect_equal(meta["status"], expected="failed")
+    _assert_status(meta, "failed")
     validations_ref = meta_table_ref("metadata.materialization_validations")
     row = env.gateway.con.execute(
         f"SELECT status FROM {validations_ref} WHERE table_key = ? "
@@ -441,7 +528,8 @@ def test_internal_outputs_skip_contract_checks(
     ).lazy()
 
     meta = saver.save_data(frame)
-    expect_equal(meta["status"], expected="succeeded")
+    _assert_status(meta, "succeeded")
+    _assert_snapshot_id(meta)
 
     validations_ref = meta_table_ref("metadata.materialization_validations")
     row = env.gateway.con.execute(

@@ -77,6 +77,19 @@ class SchemaObservationInputs:
 
 
 @dataclass(frozen=True, slots=True)
+class _ObservationArtifacts:
+    merged_schema: TableSchema
+    annotated_schema: pa.Schema
+    schema_json: dict[str, object]
+    schema_digest: str
+    schema_hash: str
+    drift_summary: Mapping[str, object] | None
+    extras_policy: ExtrasPolicy
+    derived_settings: DerivedSettingsPayload | None
+    iceberg_stats: IcebergStatsPayload | None
+
+
+@dataclass(frozen=True, slots=True)
 class ColumnHint:
     """Soft column-level hints merged into inferred metadata."""
 
@@ -164,53 +177,17 @@ class SchemaObservationAccumulator:
             Bundle containing observation, registry, and schema version records.
         """
         resolved_inputs = inputs or SchemaObservationInputs()
-        inferred = table_schema_from_arrow_schema(
+        artifacts = _build_observation_artifacts(
+            accumulator=self,
             arrow_schema=arrow_schema,
-            table_key=self.table_key,
-        )
-        merged = _merge_table_schema_hints(
-            inferred,
-            self.declared_schema,
-            schema_hints=self.schema_hints,
-            observed_nullability=_observed_nullability(self.column_stats),
-        )
-        schema_json = merged.to_json_obj()
-        schema_digest = fingerprint(schema_json)
-        schema_hash_value = compute_schema_hash(merged)
-        drift_summary = _drift_summary(merged, self.declared_schema)
-        resolved_extras_policy = resolved_inputs.extras_policy or _extras_policy_from_drift(
-            drift_summary,
-            drift_history=resolved_inputs.drift_history,
-        )
-        derived_settings = encode_derived_settings(
-            table_schema=merged,
-            column_stats=self.column_stats,
-            row_count=self.row_count,
-            total_bytes=self.total_bytes,
-            extras_policy=resolved_extras_policy,
-        )
-        schema_metadata = ArrowSchemaMetadata(
-            schema_hash=schema_hash_value,
-            schema_digest=schema_digest,
-            extras_policy=resolved_extras_policy,
-            extras_column=DEFAULT_EXTRAS_COLUMN,
-            pii_by_column=_pii_by_column(self.schema_hints),
-        )
-        annotated_schema = apply_contract_metadata_to_arrow_schema(
-            arrow_schema=arrow_schema,
-            table_schema=merged,
-            metadata=schema_metadata,
-        )
-        iceberg_stats = _coerce_iceberg_stats(
-            resolved_inputs.iceberg_stats,
-            arrow_schema=annotated_schema,
+            inputs=resolved_inputs,
         )
         observed_at = utc_now()
         observation = SchemaObservationRecord(
             table_key=self.table_key,
-            schema_digest=schema_digest,
-            schema_hash=schema_hash_value,
-            arrow_schema_ipc_b64=encode_schema_ipc_b64(annotated_schema),
+            schema_digest=artifacts.schema_digest,
+            schema_hash=artifacts.schema_hash,
+            arrow_schema_ipc_b64=encode_schema_ipc_b64(artifacts.annotated_schema),
             repo=resolved_inputs.repo,
             commit=resolved_inputs.commit,
             target_name=resolved_inputs.target_name,
@@ -220,28 +197,28 @@ class SchemaObservationAccumulator:
                     row_count=self.row_count,
                     batch_count=self.batch_count,
                     total_bytes=self.total_bytes,
-                    iceberg_stats=iceberg_stats,
+                    iceberg_stats=artifacts.iceberg_stats,
                 ),
             ),
-            derived_settings=derived_settings,
-            drift_summary=drift_summary,
+            derived_settings=artifacts.derived_settings,
+            drift_summary=artifacts.drift_summary,
             observed_at=observed_at,
         )
         schema_version = SchemaVersionRecord(
-            schema_digest=schema_digest,
-            schema_hash=schema_hash_value,
-            schema_json=schema_json,
+            schema_digest=artifacts.schema_digest,
+            schema_hash=artifacts.schema_hash,
+            schema_json=artifacts.schema_json,
             renderer_cache=_renderer_cache_from_arrow_schema(
-                annotated_schema,
-                extras_policy=resolved_extras_policy,
+                artifacts.annotated_schema,
+                extras_policy=artifacts.extras_policy,
                 extras_column=DEFAULT_EXTRAS_COLUMN,
             ),
             created_at=observed_at,
         )
         registry_record = TableSchemaRegistryRecord(
             table_key=self.table_key,
-            schema_digest=schema_digest,
-            schema_hash=schema_hash_value,
+            schema_digest=artifacts.schema_digest,
+            schema_hash=artifacts.schema_hash,
             derivation_kind="inferred_relation",
             derivation_source=resolved_inputs.target_name or "observed_output",
             inference_status="inferred",
@@ -250,12 +227,73 @@ class SchemaObservationAccumulator:
             updated_at=observed_at,
         )
         return SchemaObservationBundle(
-            table_schema=merged,
-            arrow_schema=annotated_schema,
+            table_schema=artifacts.merged_schema,
+            arrow_schema=artifacts.annotated_schema,
             observation=observation,
             schema_version=schema_version,
             registry_record=registry_record,
         )
+
+
+def _build_observation_artifacts(
+    *,
+    accumulator: SchemaObservationAccumulator,
+    arrow_schema: pa.Schema,
+    inputs: SchemaObservationInputs,
+) -> _ObservationArtifacts:
+    merged_schema = _merge_table_schema_hints(
+        table_schema_from_arrow_schema(
+            arrow_schema=arrow_schema,
+            table_key=accumulator.table_key,
+        ),
+        accumulator.declared_schema,
+        schema_hints=accumulator.schema_hints,
+        observed_nullability=_observed_nullability(accumulator.column_stats),
+    )
+    schema_json = merged_schema.to_json_obj()
+    schema_digest = fingerprint(schema_json)
+    schema_hash_value = compute_schema_hash(merged_schema)
+    drift_summary = _drift_summary(merged_schema, accumulator.declared_schema)
+    extras_policy = inputs.extras_policy or _extras_policy_from_drift(
+        drift_summary,
+        drift_history=inputs.drift_history,
+    )
+    derived_settings = encode_derived_settings(
+        table_schema=merged_schema,
+        column_stats=accumulator.column_stats,
+        row_count=accumulator.row_count,
+        total_bytes=accumulator.total_bytes,
+        extras_policy=extras_policy,
+    )
+    if derived_settings is None:
+        derived_settings = cast("DerivedSettingsPayload", {"extras_policy": extras_policy})
+    schema_metadata = ArrowSchemaMetadata(
+        schema_hash=schema_hash_value,
+        schema_digest=schema_digest,
+        extras_policy=extras_policy,
+        extras_column=DEFAULT_EXTRAS_COLUMN,
+        pii_by_column=_pii_by_column(accumulator.schema_hints),
+    )
+    annotated_schema = apply_contract_metadata_to_arrow_schema(
+        arrow_schema=arrow_schema,
+        table_schema=merged_schema,
+        metadata=schema_metadata,
+    )
+    iceberg_stats = _coerce_iceberg_stats(
+        inputs.iceberg_stats,
+        arrow_schema=annotated_schema,
+    )
+    return _ObservationArtifacts(
+        merged_schema=merged_schema,
+        annotated_schema=annotated_schema,
+        schema_json=schema_json,
+        schema_digest=schema_digest,
+        schema_hash=schema_hash_value,
+        drift_summary=drift_summary,
+        extras_policy=extras_policy,
+        derived_settings=derived_settings,
+        iceberg_stats=iceberg_stats,
+    )
 
 
 def _coerce_iceberg_stats(
@@ -270,9 +308,9 @@ def _coerce_iceberg_stats(
     schema_id = iceberg_schema_id_from_arrow_schema(arrow_schema)
     if schema_id is None:
         return stats
-    updated: IcebergStatsPayload = dict(stats)
+    updated = dict(stats)
     updated["schema_id"] = schema_id
-    return updated
+    return cast("IcebergStatsPayload", updated)
 
 
 def instrument_reader_for_observation(

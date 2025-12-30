@@ -400,7 +400,7 @@ def get_contract_for_table_key(
         Raised when the resolution mode is unsupported.
     """
     if settings is None:
-        return get_enriched_contract_service().get_contract_for_table_key(table_key)
+        return _get_enriched_contract_for_table_key(table_key)
     mode = settings.mode
     if mode is ContractResolutionMode.FULL:
         if settings.target_metadata_provider is not None:

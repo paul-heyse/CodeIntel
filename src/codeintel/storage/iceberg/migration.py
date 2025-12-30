@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow.dataset as ds
+from pyiceberg.exceptions import NamespaceAlreadyExistsError
 from pyiceberg.io.pyarrow import pyarrow_to_schema
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table import TableProperties
@@ -67,17 +68,27 @@ def add_files_to_iceberg(
     -------
     IcebergAddFilesResult
         Summary of the add_files outcome.
+
+    Raises
+    ------
+    FileNotFoundError
+        If provided Parquet files are missing.
+    ValueError
+        If inputs are invalid or Iceberg writes are disabled.
     """
     if not settings.write_enabled:
         require_iceberg_write(settings=settings, table_key=request.table_key)
         msg = "Iceberg writes are disabled for this operation."
         raise ValueError(msg)
 
-    files = _resolve_parquet_files(
-        data_dir=request.data_dir,
-        file_paths=request.file_paths,
-        table_key=request.table_key,
-    )
+    try:
+        files = _resolve_parquet_files(
+            data_dir=request.data_dir,
+            file_paths=request.file_paths,
+            table_key=request.table_key,
+        )
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(str(exc)) from exc
 
     dataset = ds.dataset([str(path) for path in files], format="parquet")
     arrow_schema = dataset.schema
@@ -140,6 +151,7 @@ def _ensure_table(
     catalog = provider.load()
     if catalog.table_exists(identifier):
         return catalog.load_table(identifier)
+    _ensure_namespace(catalog=catalog, identifier=identifier)
     iceberg_schema = pyarrow_to_schema(arrow_schema, name_mapping=name_mapping)
     properties = {"write.format.default": "parquet"}
     properties.update(iceberg_location_properties(settings))
@@ -152,6 +164,19 @@ def _ensure_table(
         sort_order=SortOrder(order_id=0),
         properties=properties,
     )
+
+
+def _ensure_namespace(*, catalog: object, identifier: tuple[str, ...]) -> None:
+    namespace = identifier[:-1]
+    if not namespace:
+        return
+    create_namespace = getattr(catalog, "create_namespace", None)
+    if not callable(create_namespace):
+        return
+    try:
+        create_namespace(namespace)
+    except NamespaceAlreadyExistsError:
+        return
 
 
 def _resolve_parquet_files(

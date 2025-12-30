@@ -84,7 +84,7 @@ class _DropNodes(NodeTransformLifecycle):
         config: dict[str, Any],
         fn: Callable[..., object],
     ) -> Collection[Node]:
-        _ = (node_, config, fn)
+        _ = (self, node_, config, fn)
         return []
 
 

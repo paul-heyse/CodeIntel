@@ -1,89 +1,17 @@
 {
-  "buildspec_hash": "acd46c8bd9d220b1fa5994fcf61df95da62088e18ccb8d793f52640dc76db396",
+  "buildspec_hash": "fa64f09ee41fee776c98d674fc42a6e5beeb0cda93390b6bec5bf9990d1d2ce6",
   "datasets": [
-    {
-      "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
-      "table_key": "analytics.behavioral_coverage"
-    },
-    {
-      "schema_hash": "bfd52893bcac939b2dcdbb656760191635dc5e27a83cc07d5173e5fd82e7860d",
-      "table_key": "analytics.cfg_block_metrics"
-    },
-    {
-      "schema_hash": "fbe16f1a256c60911eb50a195e7e6551aa054c492d6b54c378f4ed04e8b1d5bf",
-      "table_key": "analytics.cfg_function_metrics"
-    },
-    {
-      "schema_hash": "80e1d3e9999f5b6c5c4a72de2958ad1536bec52b950a4fd0838c396b9f9f97c8",
-      "table_key": "analytics.cfg_function_metrics_ext"
-    },
-    {
-      "schema_hash": "2d57a2dfc029aaa5f54b798845c8621316ef1a5c5fe2ecb3c85b8079ebb691e5",
-      "table_key": "analytics.config_data_flow"
-    },
-    {
-      "schema_hash": "1c5159d419ba477a9b59c338bc2c4c41d26acab1f5c7ce77a832965d64a836d2",
-      "table_key": "analytics.config_graph_metrics_keys"
-    },
-    {
-      "schema_hash": "af693c91149335d3b0be77752015cffa4a208de1492575169ccba917bfc2740d",
-      "table_key": "analytics.config_graph_metrics_modules"
-    },
-    {
-      "schema_hash": "cf324bd1d25f8b770c215d3368e4986a38f07c100f5bb5ded6885a0399765fdd",
-      "table_key": "analytics.config_projection_key_edges"
-    },
-    {
-      "schema_hash": "b1285f435ae72dce5a804b0010aebf92e3ef3b0a0ce04617fe7267945bd7d2ca",
-      "table_key": "analytics.config_projection_module_edges"
-    },
     {
       "schema_hash": "63f728d2d927356c67d0b29fa4a895b14c52971d70202a924ecce2cda91a22e8",
       "table_key": "analytics.config_values"
     },
     {
-      "schema_hash": "6a32ddabfce6d627872a18d65f26dbfcb0e684c4e3bcc46c1f7f849332d59a5b",
+      "schema_hash": "e5f0d70c3961c21735b7d8d6f531219a2ac097f193298c7e9a9900103c57b322",
       "table_key": "analytics.coverage_functions"
     },
     {
       "schema_hash": "18d89771739b2bd8d85ec445b67752bf1e7c5f74a2cf436ddbb10ecc5b517ace",
       "table_key": "analytics.coverage_lines"
-    },
-    {
-      "schema_hash": "1836a4bdc9233f5d223d36d67dfd8edb280d60946721216bcabb8f115c523260",
-      "table_key": "analytics.data_model_fields"
-    },
-    {
-      "schema_hash": "ae5f28059f5a15a05de40daf953d666286fb989cc1828a974f3f587c65945035",
-      "table_key": "analytics.data_model_relationships"
-    },
-    {
-      "schema_hash": "0be07984b4f280a5d923cefe8bfdc679847976311636b8cb671676d24d89c846",
-      "table_key": "analytics.data_model_usage"
-    },
-    {
-      "schema_hash": "870b6cc33e52dcebcdedcbf05690e6313cf82d6e8aee6306a4dbf24b12c4b085",
-      "table_key": "analytics.data_models"
-    },
-    {
-      "schema_hash": "c8bbb5105d85fb1ac6377160a86fc39c61b97b95680f1a6a35b7b49cafc1c4a9",
-      "table_key": "analytics.dfg_block_metrics"
-    },
-    {
-      "schema_hash": "28ac0075ca1d196cde1fb309970787e1d1ef52e7f6461162932ccc17ece12aa2",
-      "table_key": "analytics.dfg_function_metrics"
-    },
-    {
-      "schema_hash": "5198ef39497a6ee2a0bb3456348344dae4ea5eb63dee460076035d83d2bf3e40",
-      "table_key": "analytics.dfg_function_metrics_ext"
-    },
-    {
-      "schema_hash": "8ebebe0cbcbf3b3aebcfcfc9376ea87f189149798fe35fe91e37dc658a22ba64",
-      "table_key": "analytics.entrypoint_tests"
-    },
-    {
-      "schema_hash": "72cbd71ac106c61f5af33d575c435c7a52f1882930a1e59fbedaff96e7e1ab6a",
-      "table_key": "analytics.entrypoints"
     },
     {
       "schema_hash": "3a16c13c558cdbf9519d4923e02471c0346f69e37947ed3bb5632e33941ade34",
@@ -98,22 +26,6 @@
       "table_key": "analytics.file_profile"
     },
     {
-      "schema_hash": "7f82cb29a3aee540b499265bcd0c7f65696c177ead9c37ae111dce53cf0c2257",
-      "table_key": "analytics.function_ast_features"
-    },
-    {
-      "schema_hash": "9328be454dfaca9c00390cf81255055b8767760c02322e366b1b78be5b2ffe9f",
-      "table_key": "analytics.function_contracts"
-    },
-    {
-      "schema_hash": "4e85198009c9e6ceb09d4bc35b408861a3b67ef9e44b9e87c7ca0d011e8d7699",
-      "table_key": "analytics.function_effects"
-    },
-    {
-      "schema_hash": "695d1e2580f1c3eb769654d0bbe96b2901d8a04fbbc8679a3746de102b477ed0",
-      "table_key": "analytics.function_history"
-    },
-    {
       "schema_hash": "fc4923def086847974b1c868aa23dbc72f15d6c4b203e46586f696795ecca395",
       "table_key": "analytics.function_metrics"
     },
@@ -122,112 +34,28 @@
       "table_key": "analytics.function_profile"
     },
     {
-      "schema_hash": "7394b2d65a1fa9626d0391bb939fb8a87b9d60c19033c75c6e7c32631fb8620b",
-      "table_key": "analytics.function_types"
-    },
-    {
-      "schema_hash": "86af3821b6fb0de90f48b57526d7dc6b543ef83a3b27df13c7be378ba8a8415a",
-      "table_key": "analytics.function_validation"
-    },
-    {
-      "schema_hash": "584d7b352bed51343a9db84f19fa415424c26165db890bf95f7bee4cfce4a87e",
+      "schema_hash": "68edf4707ff87de28e4bc73545b112554b2aac098b4e44b9cffaa82f38c2d3be",
       "table_key": "analytics.goid_risk_factors"
     },
     {
-      "schema_hash": "d0bac37476b12f6fabfd4bb38ae0ea244ff49bd66cfbaeac7f3230c2ec3d2d5e",
-      "table_key": "analytics.graph_metrics_functions"
-    },
-    {
-      "schema_hash": "ce16f128e6d641fba6e31b0e4ba3fa611d86d9389d45348c42a602ec13d705a3",
-      "table_key": "analytics.graph_metrics_functions_ext"
-    },
-    {
-      "schema_hash": "d1a6caea468d40a24d2c650959624d94405ece00038c3130aab49b2da08e558e",
-      "table_key": "analytics.graph_metrics_modules"
-    },
-    {
-      "schema_hash": "6a6f6415c9765574974bb3a2ed3aabc4383c50f8d45fd9c2b1d7296dfb3af1cd",
-      "table_key": "analytics.graph_metrics_modules_ext"
-    },
-    {
-      "schema_hash": "39293f9e45b328395a81fe8d6a8ff6847296d322a1fcbff5c5be549af2447a74",
-      "table_key": "analytics.graph_stats"
-    },
-    {
-      "schema_hash": "1672bfe08473dbcb7ec68dca3ba8ff16365f4401afd055d9aa3d951f4affd281",
-      "table_key": "analytics.graph_validation"
+      "schema_hash": "f74781987027ba5fa14fc87debfa876ac9bedb4da05a7ffb0864db2da7424de0",
+      "table_key": "analytics.hello_example"
     },
     {
       "schema_hash": "0aa079c93d3ac9592225d64e85942bb356dceb5ba19fbe0f29630cc557a7169b",
       "table_key": "analytics.history_timeseries"
     },
     {
-      "schema_hash": "525a2a75a6d17adff75058418e432a2ea108f7ac35c2c1c63feb5bdd8ed1d5fc",
-      "table_key": "analytics.hotspots"
-    },
-    {
       "schema_hash": "1a311ce64b292cd1308c6069f3d889af5a4ec137d8653a2cd6d04e03c410db87",
       "table_key": "analytics.module_profile"
-    },
-    {
-      "schema_hash": "2e8535134be8168712fc413076fcc2d99b6697ce39a585f0bd961d2f904d9c08",
-      "table_key": "analytics.semantic_roles_functions"
-    },
-    {
-      "schema_hash": "539e8bbdf03437b3285ec4499b3068dde59e9ece9f3bc0373e39302364b6df08",
-      "table_key": "analytics.semantic_roles_modules"
     },
     {
       "schema_hash": "f0367834b641b32157e013bc209d35c7d2d341dabf8bcc0d54b2f8255841b2ba",
       "table_key": "analytics.static_diagnostics"
     },
     {
-      "schema_hash": "99dc1fdbac049b68801f872ef03e24acc95b6a88423fd322a15d8a4edee64e61",
-      "table_key": "analytics.subsystem_agreement"
-    },
-    {
-      "schema_hash": "803b047e4adcb156d0e20e945de82c5f4c2bb0521f500f6a463a3231bf4daa11",
-      "table_key": "analytics.subsystem_coverage_cache"
-    },
-    {
-      "schema_hash": "ee8a482ef8564969646c9c052c04b84d35562ac2a98e8621d8a2caccdb08ff46",
-      "table_key": "analytics.subsystem_graph_metrics"
-    },
-    {
-      "schema_hash": "d440a90c02ad5bfa674db86f2d410a2a7a0f0ef3dd719209e7db6e9b703f6e96",
-      "table_key": "analytics.subsystem_modules"
-    },
-    {
-      "schema_hash": "9fe191501e20f8dda75b53911548303ea217766e38ed7c6f84a2a321f35f80fb",
-      "table_key": "analytics.subsystem_profile_cache"
-    },
-    {
-      "schema_hash": "2c3d207b764a9a1c02eff84f4970e9e13432df816a5aa514d1fa2b3099a5cd73",
-      "table_key": "analytics.subsystems"
-    },
-    {
-      "schema_hash": "9317af8a1adbbd1f3fe06084b8e7e8d62cbc2915c7124ceb0dabe0e86878fcae",
-      "table_key": "analytics.symbol_graph_metrics_functions"
-    },
-    {
-      "schema_hash": "ec5b4ee870996ca9df31c81073143673ba5c3f17823bbb1653893d2df4bacad7",
-      "table_key": "analytics.symbol_graph_metrics_modules"
-    },
-    {
       "schema_hash": "88288686a0ecf0677ed5b0e95298b971f518693d8918c9c96b8213c359333655",
       "table_key": "analytics.test_catalog"
-    },
-    {
-      "schema_hash": "271ac4a8b28017f119d8bc722ebd04764a7f71efce8bd1a3a37a304d2610407e",
-      "table_key": "analytics.test_coverage_edges"
-    },
-    {
-      "schema_hash": "a16dbc54ec3467fab7a28f21b19b1ec518b53d80c7239ab114bd82fdf1579b44",
-      "table_key": "analytics.test_graph_metrics_functions"
-    },
-    {
-      "schema_hash": "43e413a2d7b04613c74b6ac2647be8c09b5a46e123c1fac88fe68a54a4a6edd1",
-      "table_key": "analytics.test_graph_metrics_tests"
     },
     {
       "schema_hash": "51b1c6706630a9416f92434012377785299d2884929466634a9efa4abdeafd6c",
@@ -236,6 +64,10 @@
     {
       "schema_hash": "dcc5b7fdca6d93bc71fe11cf7e8e37160b7bc1c6f16398e4fa9f5e3740964f25",
       "table_key": "analytics.typedness"
+    },
+    {
+      "schema_hash": "ca6a08d65abcfc414bea6bd67c1c4ef37288a8b70f4bb56a840344c3ce02d7f8",
+      "table_key": "ci.plan_entries"
     },
     {
       "schema_hash": "6aa6e250fc1ca6c73100da4b9ff88d6168440d9e3af84040ae79b5ed2b01193b",
@@ -332,18 +164,6 @@
     {
       "schema_hash": "c1289d1f3103eccc6aced55aeec25ad47e796c370c89de460fda8b06b5a5baa0",
       "table_key": "graph.import_modules"
-    },
-    {
-      "schema_hash": "9169c05ed8d7a35ae1a06d6bb49f33fa0d6e60ad4180dae265754d99a6e39a92",
-      "table_key": "graph.symbol_use_edges"
-    },
-    {
-      "schema_hash": "0b48f9bf11b955f9e94f6c034a8e5447b5a2e8a130fa60634653b30aff375377",
-      "table_key": "graph.v_call_depth_stats"
-    },
-    {
-      "schema_hash": "7b0906d0ed3fbaa528f7bbc1baa8cb1935eba54709d2ef873aef2900780f9d16",
-      "table_key": "graph.v_function_call_counts"
     }
   ],
   "spec_version": 1,
@@ -363,22 +183,7 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "test_profile"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "behavioral_coverage",
-      "outputs": [
-        "analytics.behavioral_coverage"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "goids",
-        "modules"
-      ],
+      "deps": [],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "call_graph",
@@ -389,22 +194,7 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "call_graph"
-      ],
-      "domain": "graphs",
-      "impl_kind": "native",
-      "name": "call_graph_views",
-      "outputs": [
-        "graph.v_call_depth_stats",
-        "graph.v_function_call_counts"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "goids"
-      ],
+      "deps": [],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "cfg",
@@ -414,35 +204,24 @@
       ]
     },
     {
-      "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "cfg_dfg_metrics",
-      "outputs": [
-        "analytics.cfg_block_metrics",
-        "analytics.cfg_function_metrics",
-        "analytics.cfg_function_metrics_ext",
-        "analytics.dfg_block_metrics",
-        "analytics.dfg_function_metrics",
-        "analytics.dfg_function_metrics_ext"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "call_graph",
-        "goids"
+      "artifacts": [
+        {
+          "kind": null,
+          "name": "ci.plan.explain.md",
+          "path_template": "{build_dir}/plans/ci_plan.explain.md"
+        },
+        {
+          "kind": null,
+          "name": "ci.plan.json",
+          "path_template": "{build_dir}/plans/ci_plan.json"
+        }
       ],
-      "domain": "analytics",
+      "deps": [],
+      "domain": "ops",
       "impl_kind": "native",
-      "name": "config_data_flow",
+      "name": "ci_plan",
       "outputs": [
-        "analytics.config_data_flow",
-        "analytics.config_graph_metrics_keys",
-        "analytics.config_graph_metrics_modules",
-        "analytics.config_projection_key_edges",
-        "analytics.config_projection_module_edges"
+        "ci.plan_entries"
       ]
     },
     {
@@ -483,18 +262,6 @@
     {
       "artifacts": [],
       "deps": [
-        "goids"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "coverage_test_edges",
-      "outputs": [
-        "analytics.test_coverage_edges"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
         "modules"
       ],
       "domain": "ingestion",
@@ -502,28 +269,6 @@
       "name": "cst",
       "outputs": [
         "core.cst_nodes"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "data_model_usage",
-      "outputs": [
-        "analytics.data_model_usage"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "data_models",
-      "outputs": [
-        "analytics.data_model_fields",
-        "analytics.data_model_relationships",
-        "analytics.data_models"
       ]
     },
     {
@@ -542,9 +287,7 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "goids"
-      ],
+      "deps": [],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "dfg",
@@ -562,21 +305,6 @@
       "name": "docstrings",
       "outputs": [
         "core.docstrings"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "goids",
-        "semantic_roles",
-        "test_profile"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "entrypoints",
-      "outputs": [
-        "analytics.entrypoint_tests",
-        "analytics.entrypoints"
       ]
     },
     {
@@ -615,7 +343,9 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph"
+        "ast",
+        "call_graph",
+        "modules"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -630,62 +360,15 @@
       "deps": [],
       "domain": "analytics",
       "impl_kind": "native",
-      "name": "function_ast_features",
-      "outputs": [
-        "analytics.function_ast_features"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "goids"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "function_contracts",
-      "outputs": [
-        "analytics.function_contracts"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "call_graph"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "function_effects",
-      "outputs": [
-        "analytics.function_effects"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "function_history",
-      "outputs": [
-        "analytics.function_history"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "goids"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
       "name": "function_metrics",
       "outputs": [
-        "analytics.function_metrics",
-        "analytics.function_types",
-        "analytics.function_validation"
+        "analytics.function_metrics"
       ]
     },
     {
       "artifacts": [],
       "deps": [
+        "ast",
         "modules"
       ],
       "domain": "graphs",
@@ -698,32 +381,12 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "call_graph"
-      ],
-      "domain": "graphs",
+      "deps": [],
+      "domain": "analytics",
       "impl_kind": "native",
-      "name": "graph_metrics",
+      "name": "hello_example",
       "outputs": [
-        "analytics.graph_metrics_functions",
-        "analytics.graph_metrics_functions_ext",
-        "analytics.graph_metrics_modules",
-        "analytics.graph_metrics_modules_ext",
-        "analytics.graph_stats"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "call_graph",
-        "cfg",
-        "import_graph"
-      ],
-      "domain": "graphs",
-      "impl_kind": "native",
-      "name": "graph_validation",
-      "outputs": [
-        "analytics.graph_validation"
+        "analytics.hello_example"
       ]
     },
     {
@@ -738,22 +401,7 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "ast",
-        "modules"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "hotspots",
-      "outputs": [
-        "analytics.hotspots"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "modules"
-      ],
+      "deps": [],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "import_graph",
@@ -777,8 +425,12 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "symbol_uses"
+        "ast",
+        "coverage_functions",
+        "function_metrics",
+        "goids",
+        "modules",
+        "risk_factors"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -792,8 +444,6 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "coverage_functions",
         "function_metrics"
       ],
       "domain": "analytics",
@@ -843,20 +493,6 @@
       "outputs": []
     },
     {
-      "artifacts": [],
-      "deps": [
-        "function_ast_features",
-        "modules"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "semantic_roles",
-      "outputs": [
-        "analytics.semantic_roles_functions",
-        "analytics.semantic_roles_modules"
-      ]
-    },
-    {
       "artifacts": [
         {
           "kind": null,
@@ -890,98 +526,7 @@
     {
       "artifacts": [],
       "deps": [
-        "subsystems"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "subsystem_agreement",
-      "outputs": [
-        "analytics.subsystem_agreement"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "subsystem_graph_metrics",
-        "subsystems",
-        "test_profile"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "subsystem_caches",
-      "outputs": [
-        "analytics.subsystem_coverage_cache",
-        "analytics.subsystem_profile_cache"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "subsystems"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "subsystem_graph_metrics",
-      "outputs": [
-        "analytics.subsystem_graph_metrics"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "import_graph",
-        "semantic_roles"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "subsystems",
-      "outputs": [
-        "analytics.subsystem_modules",
-        "analytics.subsystems"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "symbol_uses"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "symbol_graph_metrics",
-      "outputs": [
-        "analytics.symbol_graph_metrics_functions",
-        "analytics.symbol_graph_metrics_modules"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "goids",
-        "modules",
-        "scip"
-      ],
-      "domain": "graphs",
-      "impl_kind": "native",
-      "name": "symbol_uses",
-      "outputs": [
-        "graph.symbol_use_edges"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "test_graph_metrics",
-      "outputs": [
-        "analytics.test_graph_metrics_functions",
-        "analytics.test_graph_metrics_tests"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [
-        "coverage_test_edges"
+        "tests_ingest"
       ],
       "domain": "analytics",
       "impl_kind": "native",

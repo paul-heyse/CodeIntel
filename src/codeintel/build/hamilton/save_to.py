@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeAliasType, TypeGuard, cast, get_args, get_origin
 
+import duckdb
 import hamilton.node as h_node
 from hamilton.function_modifiers.adapters import (
     AdapterFactory,
@@ -571,7 +572,10 @@ def _resolve_table_schema(table_key: str) -> TableSchema | None:
         provider = get_schema_provider()
     except RuntimeError:
         return OUTPUT_TABLE_SCHEMAS.get(table_key)
-    schema = provider.get_table_schema(table_key)
+    try:
+        schema = provider.get_table_schema(table_key)
+    except duckdb.Error:
+        return OUTPUT_TABLE_SCHEMAS.get(table_key)
     return schema or OUTPUT_TABLE_SCHEMAS.get(table_key)
 
 

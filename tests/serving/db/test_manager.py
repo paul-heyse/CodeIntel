@@ -191,8 +191,6 @@ async def test_manager_refreshes_iceberg_cache_on_load(
     factory = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path / "snapshot-1")
     snapshot = factory.demo_snapshot(row_count=1)
     iceberg = snapshot.iceberg_settings
-    if iceberg.catalog_type:
-        monkeypatch.setenv("CODEINTEL_ICEBERG_CATALOG_TYPE", iceberg.catalog_type)
     if iceberg.catalog_uri:
         monkeypatch.setenv("CODEINTEL_ICEBERG_CATALOG_URI", iceberg.catalog_uri)
     if iceberg.catalog_warehouse:
