@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,7 +22,9 @@ from codeintel.config.primitives import (
     GraphFeatureFlags,
     SnapshotRef,
 )
+from codeintel.core.config.view import SettingsView
 from codeintel.core.execution import ExecutionContext, new_run_context
+from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.core.registry import RegistryService
 from codeintel.core.runtime.loader import (
     RuntimeInputs,
@@ -33,9 +36,14 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.view_registry import ViewRegistry, view_spec_modules
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
+from codeintel.storage.iceberg.cache import refresh_iceberg_metadata_cache
+from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.metadata.meta_catalog import attach_meta_database
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -47,6 +55,7 @@ if TYPE_CHECKING:
 
 _POOL_CLOSING_ERROR = "Pool is closing"
 _POOL_ACQUIRE_MAX_ATTEMPTS = 3
+LOG = logging.getLogger(__name__)
 
 
 def _default_export_pool_cfg() -> PoolConfig:
@@ -398,6 +407,7 @@ def _load_inventory_from_registry(pointer: ServingSnapshotPointer) -> SchemaInve
         return None
     finally:
         if con is not None:
+            con.commit()
             con.close()
     if inventory is None or not inventory.schemas:
         return None
@@ -419,6 +429,8 @@ def _load_snapshot_context(
     if inventory is None:
         inventory = SchemaInventory.load(pointer.schema_manifest_path)
         inventory_source = "manifest"
+    inventory = inventory.with_derived_views()
+    _refresh_iceberg_cache(pointer, inventory=inventory)
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
     env_path = _resolve_environment_path(pointer, pointer_path=pointer_path)
@@ -458,3 +470,47 @@ def _load_snapshot_context(
         view_registry=ViewRegistry.load(modules=view_spec_modules()),
         summary=summary,
     )
+
+
+def _refresh_iceberg_cache(
+    pointer: ServingSnapshotPointer,
+    *,
+    inventory: SchemaInventory,
+) -> None:
+    settings = SettingsView.from_runtime().require_serving()
+    iceberg = settings.iceberg
+    if not iceberg.read_enabled:
+        return
+    config = StorageConfig(
+        db_path=pointer.db_path,
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+        suppress_registry_health_log=True,
+    )
+    session = DuckDBSession(config)
+    con = None
+    try:
+        con = session.open()
+        attach_meta_database(con, config=config)
+        apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
+        gateway = MinimalStorageGateway(con)
+        provider = IcebergCatalogProvider(iceberg)
+        for table_key in inventory.schemas:
+            try:
+                if not provider.table_exists(table_key):
+                    continue
+                table = provider.load_table(table_key)
+            except (RuntimeError, ValueError, KeyError, OSError):
+                continue
+            refresh_iceberg_metadata_cache(
+                gateway=gateway,
+                table_key=table_key,
+                table=table,
+            )
+    except (DuckDBError, OSError, RuntimeError, ValueError) as exc:
+        LOG.warning("Iceberg metadata cache refresh failed: %s", exc)
+    finally:
+        if con is not None:
+            con.close()

@@ -26,6 +26,12 @@ from codeintel.build.tabular.types import TabularInput
 from codeintel.core.config.view import SettingsView
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.core.iceberg.guardrails import iceberg_enforced_table, require_iceberg_read
+from codeintel.serving.semantic.iceberg_scans import (
+    IcebergRefScanRequest,
+    iceberg_scan_for_ref,
+    iceberg_table_exists,
+    resolve_iceberg_ref_for_identity,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -51,18 +57,6 @@ def _loader_signature(*, dataset_param: str) -> inspect.Signature:
         ),
     ]
     return inspect.Signature(params, return_annotation=TabularInput)
-
-
-def _iceberg_ref_for_dataset(ref: DatasetRef, *, settings: SettingsView) -> str | None:
-    iceberg = settings.build.iceberg
-    if iceberg.read_ref:
-        return iceberg.read_ref
-    run_id = ref.metadata.get("run_id")
-    if isinstance(run_id, str) and run_id:
-        return f"run/{run_id}"
-    if ref.commit:
-        return f"commit/{ref.commit}"
-    return "main"
 
 
 def _iceberg_has_column(table_schema: Schema, name: str) -> bool:
@@ -100,32 +94,32 @@ def _load_iceberg_scan(
     iceberg = settings_view.build.iceberg
     if not iceberg.read_enabled:
         return None
-    provider = IcebergCatalogProvider(iceberg)
-    if not provider.table_exists(table_key):
+    if not iceberg_table_exists(settings=iceberg, table_key=table_key):
         return None
+    provider = IcebergCatalogProvider(iceberg)
     table = provider.load_table(table_key)
-    ref_name = _iceberg_ref_for_dataset(ref, settings=settings_view)
-    snapshot_id = None
-    if ref_name:
-        snapshot = table.snapshot_by_name(ref_name)
-        if snapshot is not None:
-            snapshot_id = snapshot.snapshot_id
-        else:
-            LOG.warning("Iceberg ref missing for %s: %s", table_key, ref_name)
     row_filter = _iceberg_row_filter_for_ref(table_schema=table.schema(), ref=ref)
-    options = dict(iceberg.io_options)
-    if options:
-        return table.scan(
-            row_filter=row_filter,
-            snapshot_id=snapshot_id,
-            case_sensitive=True,
-            options=options,
-        )
-    return table.scan(
-        row_filter=row_filter,
-        snapshot_id=snapshot_id,
-        case_sensitive=True,
+    run_id = ref.metadata.get("run_id")
+    resolved_run_id = run_id if isinstance(run_id, str) and run_id else None
+    ref_name = resolve_iceberg_ref_for_identity(
+        run_id=resolved_run_id,
+        commit=ref.commit,
+        settings=iceberg,
     )
+    scan_result = iceberg_scan_for_ref(
+        request=IcebergRefScanRequest(
+            table_key=table_key,
+            selected_fields=(),
+            row_filter=row_filter,
+            ref_name=ref_name,
+            settings=iceberg,
+            batch_size=None,
+            table=table,
+        )
+    )
+    if options:
+        return scan_result.scan
+    return scan_result.scan
 
 
 def load_table(
@@ -176,7 +170,7 @@ def load_table(
 
     loader = set_signature(loader, _loader_signature(dataset_param=dataset_param))
     loader.__name__ = resolved_node_name
-    loader.__doc__ = f"Load {table_key} as a DuckDB relation."
+    loader.__doc__ = f"Load {table_key} as a tabular input."
     return tag_loader_query(domain=domain, target=target, table_key=table_key)(loader)
 
 

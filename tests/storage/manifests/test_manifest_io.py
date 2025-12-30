@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.storage.manifests import (
+from codeintel.core.manifests import (
     manifest_hash,
     read_manifest_json,
     validate_manifest_hash,

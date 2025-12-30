@@ -3,16 +3,26 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.config.primitives import BuildPaths
+from codeintel.core.schemas.contracts import (
+    table_schema_from_json_obj,
+    table_schema_to_json_obj,
+)
+from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.storage.views.inventory import discover_derived_docs_views, view_builder_modules
+from codeintel.storage.views.schema_inference import derive_view_schemas
 from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
 from tests._helpers.tool_payloads import pytest_report_payload
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable
+    from types import ModuleType
 
 
 @dataclass(frozen=True)
@@ -67,7 +77,10 @@ class HarnessArtifacts:
         self,
         *,
         tables: Iterable[Mapping[str, Any]] = (),
+        views: Iterable[Mapping[str, Any]] = (),
+        view_modules: tuple[ModuleType, ...] | None = None,
         path: Path | None = None,
+        derive_views: bool = True,
     ) -> Path:
         """Write a minimal schema manifest for serving/export tests.
 
@@ -75,18 +88,54 @@ class HarnessArtifacts:
         ----------
         tables
             Table entries to include in the manifest.
+        views
+            Optional view entries to include in the manifest.
+        view_modules
+            Optional view builder modules to use for derivation.
         path
             Optional output path override.
+        derive_views
+            When True, derive docs view schemas from view builders and tables.
 
         Returns
         -------
         Path
             Path to the generated schema manifest file.
         """
+        table_entries = list(tables)
+        view_entries = list(views)
+        if derive_views:
+            table_schemas = {}
+            for table in table_entries:
+                if not isinstance(table, Mapping):
+                    continue
+                try:
+                    schema = table_schema_from_json_obj(table)
+                except TypeError:
+                    continue
+                table_schemas[schema.table_key] = schema
+            if table_schemas:
+                provider = MappingSchemaProvider(table_schemas)
+                modules = view_modules if view_modules is not None else view_builder_modules()
+                derived = derive_view_schemas(
+                    provider=provider,
+                    view_keys=discover_derived_docs_views(),
+                    modules=modules,
+                )
+                existing_keys = {
+                    _manifest_entry_key(entry) for entry in view_entries if isinstance(entry, Mapping)
+                }
+                for table_key, schema in derived.items():
+                    if table_key in existing_keys:
+                        continue
+                    entry = table_schema_to_json_obj(schema)
+                    entry["table_key"] = table_key
+                    entry["schema_hash"] = schema_hash(schema)
+                    view_entries.append(entry)
         payload = {
             "version": "v2",
-            "tables": list(tables),
-            "views": [],
+            "tables": table_entries,
+            "views": view_entries,
             "artifacts": [],
         }
         out = path or (self.paths.build_dir / "serving" / "artifacts" / "schema_manifest.json")
@@ -222,6 +271,17 @@ class HarnessArtifacts:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"")
         return out
+
+
+def _manifest_entry_key(entry: Mapping[str, object]) -> str:
+    table_key = entry.get("table_key")
+    if isinstance(table_key, str) and table_key.strip():
+        return table_key
+    schema = entry.get("schema")
+    name = entry.get("name")
+    if isinstance(schema, str) and schema.strip() and isinstance(name, str) and name.strip():
+        return f"{schema}.{name}"
+    return ""
 
 
 __all__ = ["HarnessArtifacts"]

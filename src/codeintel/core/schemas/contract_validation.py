@@ -77,6 +77,10 @@ def _binding_required_datasets(contracts: Mapping[str, DatasetContract]) -> froz
     )
 
 
+def _is_lenient(contract: DatasetContract) -> bool:
+    return contract.validation_profile == "lenient"
+
+
 def _validate_row_bindings(
     registry: DatasetRegistryLike,
     contracts_by_name: Mapping[str, DatasetContract],
@@ -99,12 +103,12 @@ def _validate_schema_alignment(
     missing_schema = [
         f"Dataset {name} missing TableSchema definition"
         for name, ds in registry.by_name.items()
-        if not ds.is_view and ds.schema is None
+        if not ds.is_view and ds.schema is None and not _is_lenient(ds)
     ]
     unnamed_columns = [
         f"Dataset {name} has unnamed column in schema"
         for name, ds in registry.by_name.items()
-        if not ds.is_view
+        if not ds.is_view and not _is_lenient(ds)
         for column in (ds.schema.columns if ds.schema is not None else ())
         if column.name is None
     ]
@@ -114,6 +118,7 @@ def _validate_schema_alignment(
         if key not in registry.by_table_key
         and not key.startswith("tmp_")
         and (include_views or not contract.is_view)
+        and not _is_lenient(contract)
     ]
     registry_errors = (
         [f"Table schemas missing from metadata registry: {', '.join(sorted(missing_in_registry))}"]
@@ -128,7 +133,7 @@ def _validate_schemas_match_contracts(
 ) -> list[str]:
     issues: list[str] = []
     for table_key, contract in contracts_by_table_key.items():
-        if table_key.startswith("tmp_") or contract.is_view:
+        if table_key.startswith("tmp_") or contract.is_view or _is_lenient(contract):
             continue
         if contract.schema is None:
             issues.append(f"DatasetContract missing schema for table {table_key}")
@@ -178,7 +183,7 @@ def _validate_table_columns(
         return []
     errors: list[str] = []
     for name, ds in registry.by_name.items():
-        if ds.is_view or ds.schema is None:
+        if ds.is_view or ds.schema is None or _is_lenient(ds):
             continue
         actual_columns = table_columns_lookup(ds.table_key)
         if actual_columns is None:
@@ -218,7 +223,7 @@ def _validate_schema_service_alignment(
         return []
     issues: list[str] = []
     for table_key, contract in contracts_by_table_key.items():
-        if table_key.startswith("tmp_") or contract.is_view:
+        if table_key.startswith("tmp_") or contract.is_view or _is_lenient(contract):
             continue
         if contract.schema is None:
             continue

@@ -256,6 +256,16 @@ class IcebergAddFilesResult:
     snapshot_id: int | None
 
 
+@result_type
+@dataclass(frozen=True)
+class IcebergRefreshCacheResult:
+    """Result payload for refreshing the Iceberg metadata cache."""
+
+    table_keys: tuple[str, ...]
+    refreshed: int
+    skipped: int
+
+
 @dataclass(frozen=True)
 class OperationListResult:
     """Result from op list command.

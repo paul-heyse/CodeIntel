@@ -12,7 +12,6 @@ import pytest
 
 from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_BUILDSPEC,
-    SERVING_ARTIFACT_DATASET_MANIFEST_PATHS,
     SERVING_ARTIFACT_SCHEMA_MANIFEST,
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
@@ -25,9 +24,7 @@ from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.schema_provider import get_schema_provider
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.manifests import dataset_manifest_path
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from tests._helpers.assertions import (
     assert_record_has_artifacts,
@@ -41,7 +38,7 @@ from tests._helpers.schemas import ensure_production_schemas, ensure_storage_con
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.build.serving.manifest import ServingSnapshotManifest
+    from codeintel.core.manifests import ServingSnapshotManifest
 
 
 @dataclass(frozen=True)
@@ -59,7 +56,6 @@ class _StubGateway:
 class _ModulesDataset:
     modules_entry: dict[str, object]
     modules_hash: str
-    dataset_manifest_paths: tuple[Path, ...]
 
 
 @dataclass(frozen=True)
@@ -82,10 +78,7 @@ def _seed_modules(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> 
 
 
 def _prepare_modules_dataset(
-    tmp_path: Path,
-    *,
-    con: duckdb.DuckDBPyConnection,
-    commit: str,
+    _tmp_path: Path,
 ) -> _ModulesDataset:
     ensure_storage_contract_catalog()
     schema_provider = get_schema_provider()
@@ -94,25 +87,9 @@ def _prepare_modules_dataset(
     modules_entry = modules_schema.to_json_obj()
     modules_entry["schema_hash"] = modules_hash
 
-    dataset_root = tmp_path / "datasets"
-    dataset_root.mkdir(parents=True, exist_ok=True)
-    arrow_table = con.execute("SELECT * FROM core.modules").fetch_arrow_table()
-    write_dataset(
-        dataset_root=dataset_root,
-        table_key="core.modules",
-        snapshot_id=commit,
-        data=arrow_table,
-        options=ArrowDatasetWriteOptions(schema_hash=modules_hash),
-    )
-    manifest_path = dataset_manifest_path(
-        dataset_root=dataset_root,
-        table_key="core.modules",
-        snapshot_id=commit,
-    )
     return _ModulesDataset(
         modules_entry=modules_entry,
         modules_hash=modules_hash,
-        dataset_manifest_paths=(manifest_path,),
     )
 
 
@@ -159,11 +136,7 @@ def _publish_snapshot(
         con.execute("CREATE TABLE t (id INTEGER)")
         con.execute("INSERT INTO t VALUES (1)")
         _seed_modules(con, repo=repo, commit=commit)
-        modules_dataset = _prepare_modules_dataset(
-            tmp_path,
-            con=con,
-            commit=commit,
-        )
+        modules_dataset = _prepare_modules_dataset(tmp_path)
 
         gateway = _StubGateway(
             config=StorageConfig(db_path=db_path, repo=repo, commit=commit),
@@ -185,7 +158,6 @@ def _publish_snapshot(
                 semantic_registry_path=specs.semantic_registry,
                 schema_manifest_path=specs.schema_manifest,
                 buildspec_path=specs.buildspec,
-                dataset_manifest_paths=modules_dataset.dataset_manifest_paths,
                 keep_last=keep_last,
             ),
         )
@@ -220,7 +192,6 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     expect_equal(pointer.semantic_layer_version, manifest.semantic_layer_version)
     expect_true(pointer.buildspec_path.exists())
     expect_true(pointer.snapshot_manifest_path.exists())
-    expect_true("core.modules" in manifest.datasets)
 
     snap_con = duckdb.connect(pointer.db_path, read_only=True)
     try:
@@ -275,11 +246,7 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("CREATE TABLE t (id INTEGER)")
     _seed_modules(con, repo="demo/repo", commit="c1")
-    modules_dataset = _prepare_modules_dataset(
-        tmp_path,
-        con=con,
-        commit="c1",
-    )
+    modules_dataset = _prepare_modules_dataset(tmp_path)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -300,7 +267,6 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
             semantic_registry_path=specs.semantic_registry,
             schema_manifest_path=specs.schema_manifest,
             buildspec_path=specs.buildspec,
-            dataset_manifest_paths=modules_dataset.dataset_manifest_paths,
             keep_last=1,
         ),
     )
@@ -312,7 +278,6 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
             semantic_registry_path=specs.semantic_registry,
             schema_manifest_path=specs.schema_manifest,
             buildspec_path=specs.buildspec,
-            dataset_manifest_paths=modules_dataset.dataset_manifest_paths,
             keep_last=1,
         ),
     )
@@ -338,11 +303,7 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
         )
         """
     )
-    modules_dataset = _prepare_modules_dataset(
-        tmp_path,
-        con=con,
-        commit="c1",
-    )
+    modules_dataset = _prepare_modules_dataset(tmp_path)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -364,7 +325,6 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
                 semantic_registry_path=specs.semantic_registry,
                 schema_manifest_path=specs.schema_manifest,
                 buildspec_path=specs.buildspec,
-                dataset_manifest_paths=modules_dataset.dataset_manifest_paths,
                 keep_last=10,
             ),
         )
@@ -376,11 +336,7 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
     _seed_modules(con, repo="demo/repo", commit="c1")
-    modules_dataset = _prepare_modules_dataset(
-        tmp_path,
-        con=con,
-        commit="c1",
-    )
+    modules_dataset = _prepare_modules_dataset(tmp_path)
     edges_ref = meta_table_ref("metadata.derived_lineage_edges")
     columns_ref = meta_table_ref("metadata.derived_lineage_columns")
     con.execute(f"DROP TABLE IF EXISTS {edges_ref}")
@@ -406,7 +362,6 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
                 semantic_registry_path=specs.semantic_registry,
                 schema_manifest_path=specs.schema_manifest,
                 buildspec_path=specs.buildspec,
-                dataset_manifest_paths=modules_dataset.dataset_manifest_paths,
                 keep_last=10,
             ),
         )
@@ -426,7 +381,6 @@ def test_serving_harness_publishes_snapshot(
             SERVING_ARTIFACT_SEMANTIC_REGISTRY,
             SERVING_ARTIFACT_SCHEMA_MANIFEST,
             SERVING_ARTIFACT_BUILDSPEC,
-            SERVING_ARTIFACT_DATASET_MANIFEST_PATHS,
         ),
     )
     manifest = serving_target_harness.publish_snapshot(run_id="publisher-harness")

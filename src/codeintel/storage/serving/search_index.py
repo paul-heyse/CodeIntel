@@ -6,9 +6,11 @@ isolated to ``codeintel.storage``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
 import duckdb
 
-from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.duckdb_policy_backend import (
     duckdb_default_catalog,
     duckdb_schema_exists,
@@ -20,23 +22,10 @@ from codeintel.storage.helpers.table_key import (
     split_table_key,
 )
 
-DuckDBConnection = duckdb.DuckDBPyConnection
+if TYPE_CHECKING:
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
-_SEARCH_DOCUMENTS_SCHEMA = TableSchema(
-    schema="docs",
-    name="search_documents",
-    columns=[
-        Column("doc_id", "VARCHAR", nullable=False),
-        Column("kind", "VARCHAR", nullable=False),
-        Column("name", "VARCHAR", nullable=False),
-        Column("module", "VARCHAR"),
-        Column("rel_path", "VARCHAR"),
-        Column("text", "VARCHAR"),
-        Column("ref_goid_h128", "VARCHAR"),
-        Column("repo", "VARCHAR"),
-        Column("commit", "VARCHAR"),
-    ],
-)
+DuckDBConnection = duckdb.DuckDBPyConnection
 
 __all__ = [
     "build_search_documents_table",
@@ -44,6 +33,147 @@ __all__ = [
     "fts_index_available",
     "fts_schema_for_table_key",
 ]
+
+
+def _modules_select(modules_ref: str) -> str:
+    return f"""
+        SELECT
+            CAST(
+                'module:' || COALESCE(repo, '') || ':' || COALESCE(commit, '') || ':' ||
+                    COALESCE(module, '') || ':' || COALESCE(path, '')
+                AS VARCHAR
+            ) AS doc_id,
+            CAST('module' AS VARCHAR) AS kind,
+            CAST(COALESCE(module, '') AS VARCHAR) AS name,
+            CAST(COALESCE(module, '') AS VARCHAR) AS module,
+            CAST(path AS VARCHAR) AS rel_path,
+            CAST(COALESCE(module, '') || ' ' || COALESCE(path, '') AS VARCHAR) AS text,
+            CAST(NULL AS VARCHAR) AS ref_goid_h128,
+            CAST(repo AS VARCHAR) AS repo,
+            CAST(commit AS VARCHAR) AS commit
+        FROM {modules_ref}
+    """
+
+
+def _docstrings_select(docstrings_ref: str) -> str:
+    return f"""
+        SELECT
+            CAST(
+                'docstring:' || repo || ':' || commit || ':' || rel_path || ':' ||
+                    module || ':' || qualname || ':' || COALESCE(kind, '') || ':' ||
+                    COALESCE(CAST(lineno AS VARCHAR), '')
+                AS VARCHAR
+            ) AS doc_id,
+            CAST('docstring' AS VARCHAR) AS kind,
+            CAST(COALESCE(qualname, '') AS VARCHAR) AS name,
+            CAST(COALESCE(module, '') AS VARCHAR) AS module,
+            CAST(rel_path AS VARCHAR) AS rel_path,
+            CAST(
+                COALESCE(short_desc, '') || '\n' ||
+                    COALESCE(long_desc, '') || '\n' ||
+                    COALESCE(raw_docstring, '')
+                AS VARCHAR
+            ) AS text,
+            CAST(NULL AS VARCHAR) AS ref_goid_h128,
+            CAST(repo AS VARCHAR) AS repo,
+            CAST(commit AS VARCHAR) AS commit
+        FROM {docstrings_ref}
+    """
+
+
+def _function_metrics_select(function_metrics_ref: str) -> str:
+    return f"""
+        SELECT
+            CAST(
+                'function:' || COALESCE(CAST(function_goid_h128 AS VARCHAR), '') || ':' ||
+                    COALESCE(repo, '') || ':' || COALESCE(commit, '')
+                AS VARCHAR
+            ) AS doc_id,
+            CAST('function' AS VARCHAR) AS kind,
+            CAST(COALESCE(qualname, '') AS VARCHAR) AS name,
+            CAST(NULL AS VARCHAR) AS module,
+            CAST(rel_path AS VARCHAR) AS rel_path,
+            CAST(
+                COALESCE(qualname, '') || ' ' || COALESCE(urn, '') || ' ' ||
+                    COALESCE(rel_path, '')
+                AS VARCHAR
+            ) AS text,
+            CAST(function_goid_h128 AS VARCHAR) AS ref_goid_h128,
+            CAST(repo AS VARCHAR) AS repo,
+            CAST(commit AS VARCHAR) AS commit
+        FROM {function_metrics_ref}
+    """
+
+
+def _scip_symbols_select(scip_symbols_ref: str) -> str:
+    return f"""
+        SELECT
+            CAST(
+                'symbol:' || repo || ':' || commit || ':' || rel_path || ':' || symbol
+                AS VARCHAR
+            ) AS doc_id,
+            CAST('symbol' AS VARCHAR) AS kind,
+            CAST(symbol AS VARCHAR) AS name,
+            CAST(NULL AS VARCHAR) AS module,
+            CAST(rel_path AS VARCHAR) AS rel_path,
+            CAST(COALESCE(documentation, '') AS VARCHAR) AS text,
+            CAST(NULL AS VARCHAR) AS ref_goid_h128,
+            CAST(repo AS VARCHAR) AS repo,
+            CAST(commit AS VARCHAR) AS commit
+        FROM {scip_symbols_ref}
+    """
+
+
+def _empty_search_documents_select() -> str:
+    return """
+        SELECT
+            CAST(NULL AS VARCHAR) AS doc_id,
+            CAST(NULL AS VARCHAR) AS kind,
+            CAST(NULL AS VARCHAR) AS name,
+            CAST(NULL AS VARCHAR) AS module,
+            CAST(NULL AS VARCHAR) AS rel_path,
+            CAST(NULL AS VARCHAR) AS text,
+            CAST(NULL AS VARCHAR) AS ref_goid_h128,
+            CAST(NULL AS VARCHAR) AS repo,
+            CAST(NULL AS VARCHAR) AS commit
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class _SearchDocumentsRefs:
+    search_documents_ref: str
+    modules_ref: str
+    docstrings_ref: str
+    function_metrics_ref: str
+    scip_symbols_ref: str
+
+
+def _create_search_documents_table(
+    *,
+    backend: DuckDBPolicyBackend,
+    refs: _SearchDocumentsRefs,
+) -> None:
+    backend.execute_sql(f"DROP TABLE IF EXISTS {refs.search_documents_ref}")
+    seed_select = None
+    if backend.table_exists(schema="core", table="modules"):
+        seed_select = _modules_select(refs.modules_ref)
+    elif backend.table_exists(schema="core", table="docstrings"):
+        seed_select = _docstrings_select(refs.docstrings_ref)
+    elif backend.table_exists(schema="analytics", table="function_metrics"):
+        seed_select = _function_metrics_select(refs.function_metrics_ref)
+    elif backend.table_exists(schema="core", table="scip_symbols"):
+        seed_select = _scip_symbols_select(refs.scip_symbols_ref)
+    else:
+        seed_select = _empty_search_documents_select()
+    backend.execute_sql(
+        f"""
+        CREATE TABLE {refs.search_documents_ref} AS
+        SELECT * FROM (
+            {seed_select}
+        )
+        WHERE 1 = 0
+        """
+    )
 
 
 def build_search_documents_table(con: DuckDBConnection) -> None:
@@ -63,85 +193,34 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
 
     backend = MinimalStorageGateway(con).policy
     backend.create_schema_if_not_exists("docs")
-    backend.create_table_from_schema(_SEARCH_DOCUMENTS_SCHEMA, drop_existing=True)
+    refs = _SearchDocumentsRefs(
+        search_documents_ref=search_documents_ref,
+        modules_ref=modules_ref,
+        docstrings_ref=docstrings_ref,
+        function_metrics_ref=function_metrics_ref,
+        scip_symbols_ref=scip_symbols_ref,
+    )
+    _create_search_documents_table(backend=backend, refs=refs)
 
     if backend.table_exists(schema="core", table="modules"):
         backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'module:' || COALESCE(repo, '') || ':' || COALESCE(commit, '') || ':' ||
-                    COALESCE(module, '') || ':' || COALESCE(path, '') AS doc_id,
-                'module' AS kind,
-                COALESCE(module, '') AS name,
-                COALESCE(module, '') AS module,
-                path AS rel_path,
-                COALESCE(module, '') || ' ' || COALESCE(path, '') AS text,
-                NULL AS ref_goid_h128,
-                repo,
-                commit
-            FROM {modules_ref}
-            """,
+            f"INSERT INTO {search_documents_ref} {_modules_select(modules_ref)}",
         )
 
     if backend.table_exists(schema="core", table="docstrings"):
         backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'docstring:' || repo || ':' || commit || ':' || rel_path || ':' ||
-                    module || ':' || qualname || ':' || COALESCE(kind, '') || ':' ||
-                    COALESCE(CAST(lineno AS VARCHAR), '') AS doc_id,
-                'docstring' AS kind,
-                COALESCE(qualname, '') AS name,
-                COALESCE(module, '') AS module,
-                rel_path,
-                COALESCE(short_desc, '') || '\n' ||
-                    COALESCE(long_desc, '') || '\n' ||
-                    COALESCE(raw_docstring, '') AS text,
-                NULL AS ref_goid_h128,
-                repo,
-                commit
-            FROM {docstrings_ref}
-            """,
+            f"INSERT INTO {search_documents_ref} {_docstrings_select(docstrings_ref)}",
         )
 
     if backend.table_exists(schema="analytics", table="function_metrics"):
         backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'function:' || COALESCE(CAST(function_goid_h128 AS VARCHAR), '') || ':' ||
-                    COALESCE(repo, '') || ':' || COALESCE(commit, '') AS doc_id,
-                'function' AS kind,
-                COALESCE(qualname, '') AS name,
-                NULL AS module,
-                rel_path,
-                COALESCE(qualname, '') || ' ' || COALESCE(urn, '') || ' ' || COALESCE(rel_path, '')
-                    AS text,
-                CAST(function_goid_h128 AS VARCHAR) AS ref_goid_h128,
-                repo,
-                commit
-            FROM {function_metrics_ref}
-            """,
+            f"INSERT INTO {search_documents_ref} "
+            f"{_function_metrics_select(function_metrics_ref)}",
         )
 
     if backend.table_exists(schema="core", table="scip_symbols"):
         backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'symbol:' || repo || ':' || commit || ':' || rel_path || ':' || symbol AS doc_id,
-                'symbol' AS kind,
-                symbol AS name,
-                NULL AS module,
-                rel_path,
-                COALESCE(documentation, '') AS text,
-                NULL AS ref_goid_h128,
-                repo,
-                commit
-            FROM {scip_symbols_ref}
-            """,
+            f"INSERT INTO {search_documents_ref} {_scip_symbols_select(scip_symbols_ref)}",
         )
 
 

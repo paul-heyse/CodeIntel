@@ -19,7 +19,6 @@ if TYPE_CHECKING:
         load_derived_lineage_columns,
         sync_dataset_dataflow_graph,
         sync_derived_lineage_columns,
-        sync_table_schema_registry_from_latest_manifest,
     )
     from codeintel.storage.metadata.validation import (
         SchemaValidationRun,
@@ -53,10 +52,6 @@ _EXPORTS: Final[dict[str, tuple[str, str]]] = {
     "sync_derived_lineage_columns": (
         "codeintel.storage.metadata.sync",
         "sync_derived_lineage_columns",
-    ),
-    "sync_table_schema_registry_from_latest_manifest": (
-        "codeintel.storage.metadata.sync",
-        "sync_table_schema_registry_from_latest_manifest",
     ),
     "record_schema_validation_run": (
         "codeintel.storage.metadata.validation",
@@ -96,6 +91,5 @@ __all__: tuple[str, ...] = (
     "record_schema_validation_run",
     "sync_dataset_dataflow_graph",
     "sync_derived_lineage_columns",
-    "sync_table_schema_registry_from_latest_manifest",
     "upsert_canonical_catalog",
 )

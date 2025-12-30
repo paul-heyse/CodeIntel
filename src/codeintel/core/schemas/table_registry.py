@@ -127,18 +127,6 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         indexes=(Index("idx_subsystem_coverage_cache_repo_commit", ("repo", "commit")),),
         description="Materialized subsystem coverage aggregates for docs views",
     ),
-    "docs.v_validation_summary": TableSchema(
-        schema="docs",
-        name="v_validation_summary",
-        columns=[
-            Column("repo", "VARCHAR", nullable=False),
-            Column("commit", "VARCHAR", nullable=False),
-            Column("validation_type", "VARCHAR", nullable=False),
-            Column("issue_count", "INTEGER"),
-            Column("affected_files", "INTEGER"),
-            Column("affected_functions", "INTEGER"),
-        ],
-    ),
     "build.output_manifests": TableSchema(
         schema="build",
         name="output_manifests",

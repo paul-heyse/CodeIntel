@@ -494,7 +494,9 @@ class SchemaCatalogTracking:
             ),
         )
 
-    def record_schema_manifest_runs_batch(self, records: Sequence[SchemaManifestRunRecord]) -> int:
+    def _record_schema_manifest_runs_batch(
+        self, records: Sequence[SchemaManifestRunRecord]
+    ) -> int:
         """Upsert run -> schema manifest catalog linkages.
 
         Returns
@@ -1119,7 +1121,7 @@ class SchemaCatalogTracking:
             upsert_canonical_catalog(self._gateway, entry)
             n_versions = self.record_schema_versions_batch(batches.schema_versions)
             n_registry = self.record_table_schema_registry_batch(batches.table_schema_registry)
-            n_runs = self.record_schema_manifest_runs_batch(batches.schema_manifest_runs)
+            n_runs = self._record_schema_manifest_runs_batch(batches.schema_manifest_runs)
 
         return PersistSchemaManifestResult(
             catalog_kind=batches.catalog_kind,

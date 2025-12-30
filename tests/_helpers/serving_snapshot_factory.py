@@ -8,9 +8,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 import duckdb
+import pyarrow.parquet as pq
+from hamilton.function_modifiers import tag as h_tag
+from sqlglot import exp, parse_one
 
 from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
@@ -18,17 +22,22 @@ from codeintel.build.serving.publisher import (
 )
 from codeintel.config.primitives import BuildPaths
 from codeintel.core.config.settings import IcebergSettings
+from codeintel.core.hamilton import tags as ht
 from codeintel.core.hashing import stable_hash
+from codeintel.core.iceberg.catalog import IcebergCatalogProvider
+from codeintel.core.iceberg.snapshot_properties import (
+    SnapshotPropertyInputs,
+    snapshot_properties_for_write,
+)
 from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.core.schemas import table_schema_from_json_obj
-from codeintel.core.schemas.contracts import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.primitives import Column, TableSchema, normalize_column_type
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.iceberg.migration import IcebergAddFilesRequest, add_files_to_iceberg
 from codeintel.storage.serving.search_index import build_search_documents_table
-from tests._helpers.columnar_streams import contract_schema_for_table_key
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
@@ -77,6 +86,14 @@ class _SnapshotPaths:
     pointer_path: Path
     snapshot_root: Path
     snapshot_manifest_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _IcebergWriteContext:
+    run_id: str
+    repo: str
+    commit: str
+    settings: IcebergSettings
 
 
 @dataclass(frozen=True)
@@ -183,10 +200,12 @@ class ServingSnapshotFactory:
             paths.db_path,
             serve_dir=paths.serve_dir,
             tables=tables,
-            run_id=run_id,
-            repo=self.repo,
-            commit=self.commit,
-            iceberg_settings=iceberg_settings,
+            context=_IcebergWriteContext(
+                run_id=run_id,
+                repo=self.repo,
+                commit=self.commit,
+                settings=iceberg_settings,
+            ),
         )
 
         snapshot = ServingSnapshot(
@@ -267,11 +286,12 @@ def _write_demo_db(db_path: Path, *, row_count: int, repo: str, commit: str) -> 
     con = duckdb.connect(str(db_path))
     try:
         ensure_production_schemas(con)
-        con.execute("CREATE TABLE docs.v_demo (id INTEGER, label VARCHAR)")
+        con.execute("CREATE TABLE docs.demo (id INTEGER, label VARCHAR)")
         con.execute(
-            "INSERT INTO docs.v_demo SELECT i, 'label-' || i::VARCHAR FROM range(1, ?) t(i)",
+            "INSERT INTO docs.demo SELECT i, 'label-' || i::VARCHAR FROM range(1, ?) t(i)",
             [row_count + 1],
         )
+        con.execute("CREATE OR REPLACE VIEW docs.v_demo AS SELECT id, label FROM docs.demo")
         module_payload = {
             "module": "pkg.mod",
             "path": "pkg/mod.py",
@@ -344,7 +364,11 @@ def _write_schema_manifest(path: Path, *, tables: list[dict[str, object]]) -> No
         paths=BuildPaths.from_explicit(build_dir=path.parent),
     )
     enriched = [_ensure_table_schema_hash(dict(table)) for table in tables]
-    artifacts.write_schema_manifest(path=path, tables=enriched)
+    artifacts.write_schema_manifest(
+        path=path,
+        tables=enriched,
+        view_modules=_demo_view_modules(),
+    )
 
 
 def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None:
@@ -368,17 +392,31 @@ def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None
     )
 
 
-def _write_dataset_manifests(
+def _iceberg_settings(serve_dir: Path) -> IcebergSettings:
+    catalog_dir = serve_dir / "iceberg"
+    catalog_path = (catalog_dir / "catalog.duckdb").resolve()
+    warehouse_path = (catalog_dir / "warehouse").resolve()
+    return IcebergSettings(
+        read_enabled=True,
+        write_enabled=True,
+        catalog_type="sql",
+        catalog_uri=f"duckdb:///{catalog_path}",
+        catalog_warehouse=str(warehouse_path),
+    )
+
+
+def _write_iceberg_tables(
     db_path: Path,
     *,
-    run_id: str,
     serve_dir: Path,
     tables: Iterable[dict[str, object]],
-) -> tuple[Path, ...]:
-    dataset_root = serve_dir / "datasets"
-    dataset_root.mkdir(parents=True, exist_ok=True)
+    context: _IcebergWriteContext,
+) -> None:
+    warehouse = Path(
+        context.settings.catalog_warehouse or (serve_dir / "iceberg" / "warehouse")
+    )
+    warehouse.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(db_path))
-    manifest_paths: list[Path] = []
     try:
         for table in tables:
             table_key = str(table.get("table_key", "")).strip()
@@ -390,42 +428,80 @@ def _write_dataset_manifests(
                 continue
             try:
                 relation = con.sql(f'SELECT * FROM "{schema_name}"."{table_name}"')
-                reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+                arrow_table = relation.fetch_arrow_table()
             except duckdb.Error:
                 continue
-            schema_hash = _schema_hash_from_table(table)
-            if schema_hash is None:
-                msg = f"schema_hash is required for dataset manifest: {table_key}"
-                raise ValueError(msg)
-            try:
-                contract_schema = contract_schema_for_table_key(table_key)
-            except ValueError:
-                table_schema = _table_schema_from_entry(table)
-                if table_schema is None:
-                    raise
-                contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-            aligned = align_reader_to_contract(
-                reader,
-                contract_schema,
-                extras_policy=extras_policy_from_schema(contract_schema),
-            )
-            write_dataset(
-                dataset_root=dataset_root,
+            if arrow_table is None:
+                continue
+            parquet_path = _parquet_path_for_table(
+                warehouse,
                 table_key=table_key,
-                snapshot_id=run_id,
-                data=aligned,
-                options=ArrowDatasetWriteOptions(schema_hash=schema_hash),
+                run_id=context.run_id,
             )
-            manifest_path = dataset_manifest_path(
-                dataset_root=dataset_root,
+            pq.write_table(arrow_table, parquet_path)
+            snapshot_properties = snapshot_properties_for_write(
+                SnapshotPropertyInputs(
+                    table_key=table_key,
+                    repo=context.repo,
+                    commit=context.commit,
+                    run_id=context.run_id,
+                )
+            )
+            request = IcebergAddFilesRequest(
                 table_key=table_key,
-                snapshot_id=run_id,
+                file_paths=(parquet_path,),
+                snapshot_properties=snapshot_properties,
             )
-            if manifest_path.is_file():
-                manifest_paths.append(manifest_path)
+            add_files_to_iceberg(request, settings=context.settings)
+            _ensure_snapshot_refs(
+                iceberg_settings=context.settings,
+                table_key=table_key,
+                run_id=context.run_id,
+                commit=context.commit,
+            )
     finally:
         con.close()
-    return tuple(manifest_paths)
+
+
+def _parquet_path_for_table(warehouse: Path, *, table_key: str, run_id: str) -> Path:
+    schema_name, table_name = split_table_key(table_key)
+    table_dir = warehouse / schema_name / table_name
+    table_dir.mkdir(parents=True, exist_ok=True)
+    return table_dir / f"{run_id}.parquet"
+
+
+def _ensure_snapshot_refs(
+    *,
+    iceberg_settings: IcebergSettings,
+    table_key: str,
+    run_id: str,
+    commit: str,
+) -> None:
+    provider = IcebergCatalogProvider(iceberg_settings)
+    try:
+        table = provider.load_table(table_key)
+    except (RuntimeError, ValueError, KeyError, OSError):
+        return
+    snapshot = table.current_snapshot()
+    if snapshot is None:
+        return
+    try:
+        with table.manage_snapshots() as manager:
+            if commit:
+                _ensure_tag(table, manager, snapshot.snapshot_id, f"commit/{commit}")
+            if run_id:
+                _ensure_tag(table, manager, snapshot.snapshot_id, f"run/{run_id}")
+    except (RuntimeError, ValueError, KeyError, OSError):
+        return
+
+
+def _ensure_tag(table: object, manager: object, snapshot_id: int, ref_name: str) -> None:
+    snapshot_by_name = getattr(table, "snapshot_by_name", None)
+    if callable(snapshot_by_name) and snapshot_by_name(ref_name) is not None:
+        return
+    create_tag = getattr(manager, "create_tag", None)
+    if callable(create_tag):
+        create_tag(snapshot_id, ref_name)
 
 
 def _write_snapshot_manifest(
@@ -444,25 +520,8 @@ def _write_snapshot_manifest(
         schema_manifest_path=str(snapshot.schema_manifest_path),
         buildspec_path=str(snapshot.buildspec_path),
         semantic_layer_version=semantic_layer_version,
-        datasets=_snapshot_dataset_entries(snapshot.dataset_manifest_paths),
     )
     manifest.write_json(snapshot.snapshot_manifest_path)
-
-
-def _snapshot_dataset_entries(
-    manifest_paths: Iterable[Path],
-) -> dict[str, SnapshotDatasetEntry]:
-    datasets: dict[str, SnapshotDatasetEntry] = {}
-    for manifest_path in manifest_paths:
-        manifest = read_dataset_manifest(manifest_path)
-        datasets[manifest.table_key] = SnapshotDatasetEntry(
-            manifest_path=str(manifest_path),
-            schema_hash=manifest.schema_hash,
-            partition_columns=manifest.partition_columns,
-            row_count=manifest.row_count,
-            stats=manifest.stats,
-        )
-    return datasets
 
 
 def _ensure_table_schema_hash(table: dict[str, object]) -> dict[str, object]:
@@ -635,7 +694,6 @@ def _publish_snapshot(snapshot: ServingSnapshot) -> None:
             semantic_registry_path=snapshot.registry_path,
             schema_manifest_path=snapshot.schema_manifest_path,
             buildspec_path=snapshot.buildspec_path,
-            dataset_manifest_paths=snapshot.dataset_manifest_paths,
             keep_last=2,
         )
         publish_serving_snapshot(gateway=gateway, request=request)
@@ -681,12 +739,24 @@ def _demo_views() -> list[dict[str, object]]:
     ]
 
 
+def _demo_view_modules() -> tuple[ModuleType, ...]:
+    module = ModuleType("tests.serving_snapshot_factory.demo_views")
+
+    @h_tag(output_kind=ht.OUTPUT_KIND_VIEW, table_key="docs.v_demo")
+    def v_demo() -> exp.Expression:
+        return parse_one("SELECT id, label FROM docs.demo", read="duckdb")
+
+    v_demo.__module__ = module.__name__
+    module.__dict__["v_demo"] = v_demo
+    return (module,)
+
+
 def _demo_tables() -> list[dict[str, object]]:
     return [
         {
             "schema": "docs",
-            "name": "v_demo",
-            "table_key": "docs.v_demo",
+            "name": "demo",
+            "table_key": "docs.demo",
             "primary_key": ["id"],
             "indexes": [],
             "columns": [

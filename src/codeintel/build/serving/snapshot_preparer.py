@@ -1,4 +1,4 @@
-"""Storage service for serving snapshot preparation."""
+"""Serving snapshot preparation helpers for build workflows."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
@@ -106,21 +105,8 @@ def _require_lineage_tables(con: DuckDBConnection) -> None:
 class ServingSnapshotService:
     """Prepare serving snapshot databases for publish workflows."""
 
-    def prepare_snapshot(
-        self,
-        *,
-        db_path: Path,
-        _snapshot_manifest: ServingSnapshotManifest,
-    ) -> None:
-        """Build serving snapshot tables and validate prerequisites.
-
-        Parameters
-        ----------
-        db_path
-            Path to the snapshot DuckDB database.
-        _snapshot_manifest
-            Snapshot manifest metadata (currently unused).
-        """
+    def prepare_snapshot(self, *, db_path: Path) -> None:
+        """Build serving snapshot tables and validate prerequisites."""
         config = StorageConfig(
             db_path=db_path,
             read_only=False,
@@ -154,6 +140,7 @@ class ServingSnapshotService:
         except RuntimeError as exc:
             msg = "Lineage metadata missing"
             raise LineageMetadataError(msg) from exc
+
 
 __all__ = [
     "LineageMetadataError",

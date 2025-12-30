@@ -103,6 +103,10 @@ from codeintel.core.iceberg.schema import (
     iceberg_field_ids_for_table_schema,
     table_schema_to_iceberg_schema,
 )
+from codeintel.core.iceberg.snapshot_properties import (
+    SnapshotPropertyInputs,
+    snapshot_properties_for_write,
+)
 from codeintel.core.schemas.contracts import (
     ARROW_SCHEMA_CONTRACT_VERSION,
     DEFAULT_EXTRAS_COLUMN,
@@ -112,7 +116,6 @@ from codeintel.core.schemas.contracts import (
 )
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import Column, TableSchema, TableWritePolicy
-from codeintel.core.serialization.stable import stable_stringify
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import DuckDBError, DuckDBRelation
@@ -134,7 +137,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.materializers.base import MaterializationContext
     from codeintel.storage.tracking.schema_catalog_models import IcebergStatsPayload
 
-    type IcebergInput = RecordBatchReader | pl.LazyFrame
+    type IcebergInput = RecordBatchReader | pa.Table | pl.LazyFrame | DuckDBRelation
 else:
     type IcebergInput = object
 
@@ -153,6 +156,7 @@ _RECOVERABLE_EXCEPTIONS = (
 
 _TABULAR_TYPES: tuple[type, ...] = (
     pa.RecordBatchReader,
+    pa.Table,
     pl.LazyFrame,
     DuckDBRelation,
 )
@@ -255,7 +259,7 @@ class IcebergDatasetSaver(DataSaver):
         return super().applies_to(type_)
 
     def save_data(self, data: object) -> dict[str, object]:
-        """Persist tabular data to Iceberg or fall back to Arrow datasets.
+        """Persist tabular data to Iceberg.
 
         Returns
         -------
@@ -530,10 +534,7 @@ def _build_plan(*, ctx: _MaterializeContext, data: IcebergInput) -> _IcebergPlan
     field_ids = iceberg_field_ids_for_table_schema(table_schema)
     name_mapping_digest = _name_mapping_digest(iceberg_bundle)
     inferred_settings = _load_inferred_settings(ctx=ctx)
-    write_settings = _build_write_settings(
-        ctx=ctx,
-        inferred_settings=inferred_settings,
-    )
+    write_settings = _build_write_settings(inferred_settings=inferred_settings)
     contract_metadata = ArrowSchemaMetadata(
         schema_hash=schema_hash(table_schema),
         contract_version=ARROW_SCHEMA_CONTRACT_VERSION,
@@ -598,18 +599,16 @@ def _load_inferred_settings(*, ctx: _MaterializeContext) -> dict[str, object] | 
     return dict(observation.derived_settings)
 
 
-def _build_write_settings(
-    *,
-    ctx: _MaterializeContext,
-    inferred_settings: dict[str, object] | None,
-) -> dict[str, object]:
-    settings = ctx.settings_view.build.arrow_dataset
-    dictionary_encode = settings.dictionary_encode
-    dictionary_max = settings.dictionary_max_cardinality if settings.dictionary_encode else None
+def _build_write_settings(*, inferred_settings: dict[str, object] | None) -> dict[str, object]:
+    compression: str | None = None
+    max_rows_per_file: int | None = None
+    row_group_size: int | None = None
+    data_page_size: int | None = None
+    dictionary_encode = False
+    dictionary_max_default = 256
+    dictionary_max = dictionary_max_default if dictionary_encode else None
     dictionary_columns: tuple[str, ...] | None = None
-    unify_dictionaries = settings.unify_dictionaries
-    row_group_size = settings.row_group_size
-    data_page_size = settings.data_page_size
+    unify_dictionaries = False
     if inferred_settings is not None:
         inferred_columns = _coerce_tuple(inferred_settings.get("dictionary_encode_columns"))
         inferred_max = _coerce_int(inferred_settings.get("dictionary_max_cardinality"))
@@ -630,10 +629,10 @@ def _build_write_settings(
         if inferred_page is not None:
             data_page_size = inferred_page
     if dictionary_columns is not None and dictionary_max is None:
-        dictionary_max = settings.dictionary_max_cardinality
+        dictionary_max = dictionary_max_default
     return {
-        "compression": settings.compression,
-        "max_rows_per_file": settings.max_rows_per_file,
+        "compression": compression,
+        "max_rows_per_file": max_rows_per_file,
         "row_group_size": row_group_size,
         "data_page_size": data_page_size,
         "dictionary_encode": dictionary_encode,
@@ -768,28 +767,23 @@ def _snapshot_properties(
     ctx: _MaterializeContext,
     plan: _IcebergPlan,
 ) -> dict[str, str]:
-    run_id = ctx.env.execution_context.run.run_id if ctx.env.execution_context else ""
-    properties = {
-        "run_id": run_id,
-        "commit": ctx.env.commit,
-        "repo": ctx.env.repo,
-        "table_key": ctx.table_key,
-        "target_name": ctx.target_name,
-        "schema_hash": schema_hash(plan.table_schema),
-        "producer_version": ctx.settings_view.build.engine_version,
-    }
-    payload = {key: stable_stringify(value) for key, value in properties.items() if value}
-    payload.update(_write_settings_payload(plan.write_settings))
-    return payload
-
-
-def _write_settings_payload(write_settings: dict[str, object]) -> dict[str, str]:
-    payload: dict[str, str] = {}
-    for key, value in write_settings.items():
-        if value is None:
-            continue
-        payload[f"ci.write.{key}"] = stable_stringify(value)
-    return payload
+    run_id = None
+    if ctx.env.execution_context is not None:
+        run_id_value = ctx.env.execution_context.run.run_id
+        if run_id_value:
+            run_id = run_id_value
+    return snapshot_properties_for_write(
+        SnapshotPropertyInputs(
+            table_key=ctx.table_key,
+            repo=ctx.env.repo,
+            commit=ctx.env.commit,
+            run_id=run_id,
+            target_name=ctx.target_name,
+            schema_hash=schema_hash(plan.table_schema),
+            producer_version=ctx.settings_view.build.engine_version,
+            write_settings=plan.write_settings,
+        )
+    )
 
 
 def _ensure_table(

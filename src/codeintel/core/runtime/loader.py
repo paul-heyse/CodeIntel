@@ -17,7 +17,6 @@ from codeintel.config.primitives import (
     SnapshotRef,
 )
 from codeintel.core.config.settings import (
-    ArrowDatasetSettings,
     BatchProcessorSettings,
     BuildSettings,
     CliSettings,
@@ -140,22 +139,11 @@ def _load_iceberg_settings() -> IcebergSettings:
 
 
 def _load_build_settings() -> BuildSettings:
-    def optional_int(name: str) -> int | None:
-        if not is_set(name):
-            return None
-        return get_int(name, default=None)
-
-    def optional_str(name: str) -> str | None:
-        if not is_set(name):
-            return None
-        return get_str(name, default=None)
-
     def optional_bool(name: str) -> bool | None:
         if not is_set(name):
             return None
         return get_bool(name, default=None)
 
-    dictionary_max_cardinality = optional_int("CODEINTEL_ARROW_DATASET_DICT_MAX_CARDINALITY")
     polars_streaming = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING")
     polars_streaming_fallback = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING_FALLBACK")
     polars_flags = split_csv(get_str("CODEINTEL_BUILD_POLARS_QUERY_OPT_FLAGS", default=None))
@@ -165,22 +153,6 @@ def _load_build_settings() -> BuildSettings:
         export_audit=ExportAuditSettings(
             log_path=_resolve_export_audit_log_path(),
             table_enabled=_resolve_export_audit_table_enabled(),
-        ),
-        arrow_dataset=ArrowDatasetSettings(
-            compression=optional_str("CODEINTEL_ARROW_DATASET_COMPRESSION"),
-            row_group_size=optional_int("CODEINTEL_ARROW_DATASET_ROW_GROUP_SIZE"),
-            data_page_size=optional_int("CODEINTEL_ARROW_DATASET_DATA_PAGE_SIZE"),
-            max_rows_per_file=optional_int("CODEINTEL_ARROW_DATASET_MAX_ROWS_PER_FILE"),
-            dictionary_encode=bool(optional_bool("CODEINTEL_ARROW_DATASET_DICT_ENCODE") or False),
-            dictionary_max_cardinality=dictionary_max_cardinality
-            if dictionary_max_cardinality is not None
-            else ArrowDatasetSettings().dictionary_max_cardinality,
-            unify_dictionaries=bool(
-                optional_bool("CODEINTEL_ARROW_DATASET_UNIFY_DICTIONARIES") or False
-            ),
-            enable_sink_parquet=bool(
-                optional_bool("CODEINTEL_ARROW_DATASET_ENABLE_SINK_PARQUET") or True
-            ),
         ),
         iceberg=iceberg,
         polars_profile=bool(optional_bool("CODEINTEL_BUILD_POLARS_PROFILE") or False),

@@ -2,14 +2,33 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.core.columnar.tabular_adapter import PolarsLazyFrame, to_lazyframe
+from codeintel.serving.semantic.iceberg_scans import (
+    IcebergScanError,
+    IcebergScanRequest,
+    iceberg_scan_for_query,
+)
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from codeintel.core.config.settings import IcebergSettings
+    from codeintel.serving.db.pointer import ServingSnapshotPointer
+
+try:
+    import polars as pl
+    from polars.exceptions import PolarsError
+except ImportError:  # pragma: no cover
+    pl = None
+    PolarsError = Exception
+
+LOG = logging.getLogger(__name__)
 
 
 def apply_tombstone_filter(
@@ -63,6 +82,53 @@ def apply_tombstone_filter(
     return cloned.where(not_exists)
 
 
+def apply_tombstone_filter_lazyframe(
+    lazyframe: PolarsLazyFrame,
+    *,
+    table_key: str,
+    primary_key: Sequence[str],
+    snapshot_id: int | None,
+    pointer: ServingSnapshotPointer,
+    settings: IcebergSettings,
+    batch_size: int | None,
+) -> PolarsLazyFrame:
+    """Apply tombstone filtering to a Polars LazyFrame."""
+    if (
+        not settings.tombstones_enabled
+        or not primary_key
+        or snapshot_id is None
+        or pl is None  # pragma: no cover
+    ):
+        return lazyframe
+    tombstone_key = _tombstone_table_key(table_key)
+    try:
+        scan_result = iceberg_scan_for_query(
+            request=IcebergScanRequest(
+                table_key=tombstone_key,
+                columns=(*tuple(primary_key), "snapshot_id"),
+                filters=[],
+                order_by=[],
+                column_types=None,
+                pointer=pointer,
+                settings=settings,
+                batch_size=batch_size,
+            )
+        )
+    except IcebergScanError as exc:
+        LOG.warning("Tombstone scan failed for %s: %s", tombstone_key, exc)
+        return lazyframe
+    tombstones = to_lazyframe(scan_result.scan)
+    try:
+        tombstones = tombstones.filter(pl.col("snapshot_id") <= snapshot_id)
+        joined = lazyframe.join(tombstones, on=list(primary_key), how="anti")
+    except PolarsError as exc:
+        LOG.warning("Polars tombstone anti-join failed: %s", exc)
+        return lazyframe
+    if isinstance(joined, pl.LazyFrame):
+        return joined
+    return lazyframe
+
+
 def _base_table(ast: exp.Select) -> exp.Table | None:
     from_expr = ast.args.get("from_")
     if not isinstance(from_expr, exp.From):
@@ -105,4 +171,4 @@ def _combine_predicates(predicates: Sequence[exp.Expression]) -> exp.Expression:
     return combined
 
 
-__all__ = ["apply_tombstone_filter"]
+__all__ = ["apply_tombstone_filter", "apply_tombstone_filter_lazyframe"]

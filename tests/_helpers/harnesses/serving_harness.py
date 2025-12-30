@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
 from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_BUILDSPEC,
-    SERVING_ARTIFACT_DATASET_MANIFEST_PATHS,
     SERVING_ARTIFACT_SCHEMA_MANIFEST,
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
@@ -30,7 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.hamilton.run_records import TargetRunRecord
-    from codeintel.build.serving.manifest import ServingSnapshotManifest
+    from codeintel.core.manifests import ServingSnapshotManifest
 
 
 @dataclass
@@ -110,8 +108,6 @@ class ServingTargetHarness:
         semantic_registry = _require_path(artifact_paths, SERVING_ARTIFACT_SEMANTIC_REGISTRY)
         schema_manifest = _require_path(artifact_paths, SERVING_ARTIFACT_SCHEMA_MANIFEST)
         buildspec = _require_path(artifact_paths, SERVING_ARTIFACT_BUILDSPEC)
-        dataset_manifest_paths = _dataset_manifest_paths_from_artifacts(artifact_paths)
-
         serve_dir = self.harness.ctx.build_paths.build_dir / "serving"
         request = PublishServingSnapshotRequest(
             run_id=run_id,
@@ -119,7 +115,6 @@ class ServingTargetHarness:
             semantic_registry_path=Path(semantic_registry),
             schema_manifest_path=Path(schema_manifest),
             buildspec_path=Path(buildspec),
-            dataset_manifest_paths=dataset_manifest_paths,
             keep_last=keep_last,
         )
         return publish_serving_snapshot(gateway=self.harness.ctx.gateway, request=request)
@@ -181,28 +176,6 @@ def _require_path(paths: dict[str, str | None], name: str) -> str:
         message = f"Missing artifact path for {name}"
         raise AssertionError(message)
     return path
-
-
-def _dataset_manifest_paths_from_artifacts(
-    paths: dict[str, str | None],
-) -> tuple[Path, ...]:
-    manifest_index = paths.get(SERVING_ARTIFACT_DATASET_MANIFEST_PATHS)
-    if manifest_index is None:
-        return ()
-    payload = json.loads(Path(manifest_index).read_text(encoding="utf-8"))
-    raw_paths = payload.get("dataset_manifest_paths")
-    if raw_paths is None:
-        return ()
-    if not isinstance(raw_paths, list):
-        message = "dataset_manifest_paths must be a list"
-        raise TypeError(message)
-    resolved: list[Path] = []
-    for raw in raw_paths:
-        if not isinstance(raw, str) or not raw:
-            message = "dataset_manifest_paths entries must be non-empty strings"
-            raise AssertionError(message)
-        resolved.append(Path(raw).resolve())
-    return tuple(resolved)
 
 
 __all__ = [

@@ -16,16 +16,16 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Protocol
 
+from codeintel.build.serving.snapshot_preparer import (
+    LineageMetadataError,
+    SearchIndexBuildError,
+    ServingSnapshotService,
+)
 from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME, META_DB_FILENAME
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata.meta_catalog import resolve_meta_db_path
-from codeintel.storage.serving.snapshot_service import (
-    LineageMetadataError,
-    SearchIndexBuildError,
-    ServingSnapshotService,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -120,7 +120,7 @@ def _prepare_snapshot_tables(
 ) -> None:
     service = ServingSnapshotService()
     try:
-        service.prepare_snapshot(db_path=snap_db, snapshot_manifest=snapshot_manifest)
+        service.prepare_snapshot(db_path=snap_db)
     except SearchIndexBuildError as exc:
         log.exception(
             "build.serving.publisher.search_index_failed run_id=%s",
