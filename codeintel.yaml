@@ -20,6 +20,7 @@ hamilton:
     materializers: []
 
 # Iceberg guardrails (env-driven; see docs/runtime_environment.md)
+# Defaults: prod => false, non-prod => true when catalog config is present.
 # CODEINTEL_ICEBERG_READ_ENABLED=false
 # CODEINTEL_ICEBERG_WRITE_ENABLED=false
 # CODEINTEL_ICEBERG_TOMBSTONES_ENABLED=false

@@ -246,7 +246,6 @@ def build_target_context_for_target(
             build_dir=build_dir,
             db_path=db_path,
             document_output_dir=build_dir / "document_output",
-            dataset_root_dir=build_dir / "document_output" / "datasets",
             scip_dir=build_dir / "scip",
             coverage_json=build_dir / "coverage" / "coverage.json",
             pytest_report=build_dir / "test-results" / "pytest-report.json",

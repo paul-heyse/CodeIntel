@@ -82,7 +82,7 @@ def _make_snapshot(factory: ServingSnapshotFactory) -> ServingSnapshot:
 
 @pytest.mark.anyio
 async def test_polars_execution_path_matches_expected_rows(tmp_path: Path) -> None:
-    """Polars engine returns expected rows from Arrow datasets."""
+    """Polars engine returns expected rows for snapshot-backed tables."""
     pytest.importorskip("polars")
     snapshot = _make_snapshot(ServingSnapshotFactory(tmp_path))
     manager = ServingDBManager(

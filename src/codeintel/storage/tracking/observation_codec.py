@@ -18,7 +18,6 @@ from codeintel.storage.tracking.schema_catalog_models import (
     DatasetStatsPayload,
     DerivedSettingsPayload,
     IcebergStatsPayload,
-    ParquetStatsPayload,
 )
 
 
@@ -159,8 +158,6 @@ class DatasetStatsInput:
     row_count: int
     batch_count: int
     total_bytes: int
-    manifest_stats: ParquetStatsPayload | None
-    manifest_row_count: int | None
     iceberg_stats: IcebergStatsPayload | None = None
 
 
@@ -180,10 +177,6 @@ def encode_dataset_stats(
         "batch_count": stats.batch_count,
         "total_bytes": stats.total_bytes,
     }
-    if stats.manifest_row_count is not None:
-        payload["manifest_row_count"] = stats.manifest_row_count
-    if stats.manifest_stats:
-        payload["parquet_stats"] = dict(stats.manifest_stats)
     if stats.iceberg_stats:
         payload["iceberg_stats"] = stats.iceberg_stats
     return payload
@@ -256,7 +249,6 @@ type _DatasetStatsKey = Literal[
     "row_count",
     "batch_count",
     "total_bytes",
-    "manifest_row_count",
 ]
 
 
@@ -264,7 +256,6 @@ _DATASET_INT_KEYS: tuple[_DatasetStatsKey, ...] = (
     "row_count",
     "batch_count",
     "total_bytes",
-    "manifest_row_count",
 )
 
 
@@ -299,12 +290,6 @@ def decode_dataset_stats(value: object | None) -> DatasetStatsPayload | None:
     for key in _DATASET_INT_KEYS:
         if not _apply_optional_dataset_int(payload, decoded, key):
             return None
-    parquet_stats = decoded.get("parquet_stats")
-    if parquet_stats is not None:
-        parquet_payload = _coerce_string_object_mapping(parquet_stats)
-        if parquet_payload is None:
-            return None
-        payload["parquet_stats"] = parquet_payload
     iceberg_stats = decoded.get("iceberg_stats")
     if iceberg_stats is not None:
         iceberg_payload = _coerce_iceberg_stats_payload(iceberg_stats)

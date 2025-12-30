@@ -1130,7 +1130,6 @@ def build_callgraph_fixture_repo(
         build_dir=build_dir,
         db_path=build_dir / "db" / "codeintel.duckdb",
         document_output_dir=build_dir / "output",
-        dataset_root_dir=build_dir / "output" / "datasets",
         scip_dir=build_dir / "scip",
         coverage_json=build_dir / "coverage" / "coverage.json",
         pytest_report=build_dir / "test-results" / "pytest-report.json",

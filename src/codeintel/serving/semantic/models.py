@@ -172,7 +172,7 @@ class SemanticQueryResponse(BaseModel):
     schema_hash
         Stable fingerprint of the resolved schema (when available).
     scan_metrics
-        Input scan metrics derived from dataset manifests when available.
+        Input scan metrics derived from Iceberg metadata when available.
     batch_size
         Batch size used for streaming execution.
     sql_fingerprint

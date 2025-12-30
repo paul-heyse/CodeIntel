@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
+from sqlglot import exp
 
 from codeintel.core.schemas.contracts import (
     arrow_schema_digest,
@@ -16,6 +18,7 @@ from codeintel.core.schemas.contracts import (
 from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -29,24 +32,12 @@ def _load_contract_schema(
 ) -> pa.Schema | None:
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
-    filter_clause = ""
-    if require_inferred:
-        filter_clause = (
-            "AND ("
-            "registry.inference_status IN ('inferred', 'override') "
-            "OR registry.inference_status IS NULL "
-            "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
-            ")"
-        )
     row = con.execute(
-        f"""
-        SELECT versions.renderer_cache
-        FROM {registry_ref} AS registry
-        JOIN {versions_ref} AS versions
-          ON registry.schema_digest = versions.schema_digest
-        WHERE registry.table_key = ?
-        {filter_clause}
-        """,
+        _contract_schema_sql(
+            registry_ref=registry_ref,
+            versions_ref=versions_ref,
+            require_inferred=require_inferred,
+        ),
         [table_key],
     ).fetchone()
     if row is None or row[0] is None:
@@ -65,13 +56,7 @@ def _load_observed_schema(
 ) -> pa.Schema | None:
     observations_ref = meta_table_ref("metadata.schema_observations")
     row = con.execute(
-        f"""
-        SELECT arrow_schema_ipc_b64
-        FROM {observations_ref}
-        WHERE table_key = ?
-        ORDER BY observed_at DESC
-        LIMIT 1
-        """,
+        _observed_schema_sql(observations_ref=observations_ref),
         [table_key],
     ).fetchone()
     if row is None or row[0] is None:
@@ -209,6 +194,90 @@ def arrow_schema_for_table_key(
         resolved_schema,
         column_lineage=column_lineage,
         pii_by_column=pii_by_column,
+    )
+
+
+@lru_cache(maxsize=8)
+def _contract_schema_sql(
+    *,
+    registry_ref: str,
+    versions_ref: str,
+    require_inferred: bool,
+) -> str:
+    registry = _table_expr(registry_ref, alias="registry")
+    versions = _table_expr(versions_ref, alias="versions")
+    join_on = exp.EQ(
+        this=exp.column("schema_digest", table="registry"),
+        expression=exp.column("schema_digest", table="versions"),
+    )
+    predicate = exp.EQ(
+        this=exp.column("table_key", table="registry"),
+        expression=exp.Parameter(),
+    )
+    if require_inferred:
+        predicate = exp.and_(predicate, _inferred_registry_predicate())
+    query = exp.select(exp.column("renderer_cache", table="versions")).from_(registry)
+    query = query.join(versions, on=join_on)
+    query = query.where(predicate)
+    return render_sql_duckdb(query)
+
+
+@lru_cache(maxsize=4)
+def _observed_schema_sql(*, observations_ref: str) -> str:
+    observations = _table_expr(observations_ref, alias="observations")
+    query = exp.select(exp.column("arrow_schema_ipc_b64", table="observations")).from_(
+        observations
+    )
+    query = query.where(
+        exp.EQ(
+            this=exp.column("table_key", table="observations"),
+            expression=exp.Parameter(),
+        )
+    )
+    query = query.order_by(
+        exp.Ordered(
+            this=exp.column("observed_at", table="observations"),
+            desc=True,
+        )
+    )
+    query = query.limit(1)
+    return render_sql_duckdb(query)
+
+
+def _inferred_registry_predicate() -> exp.Expression:
+    status_col = exp.column("inference_status", table="registry")
+    return exp.or_(
+        exp.In(
+            this=status_col,
+            expressions=[exp.Literal.string("inferred"), exp.Literal.string("override")],
+        ),
+        exp.Is(this=status_col, expression=exp.Null()),
+        exp.In(
+            this=exp.column("derivation_kind", table="registry"),
+            expressions=[
+                exp.Literal.string("inferred_relation"),
+                exp.Literal.string("view_inferred"),
+            ],
+        ),
+    )
+
+
+def _table_expr(table_ref: str, *, alias: str | None = None) -> exp.Table:
+    parts = table_ref.split(".")
+    catalog: str | None = None
+    schema: str | None = None
+    table: str
+    if len(parts) == 3:
+        catalog, schema, table = parts
+    elif len(parts) == 2:
+        schema, table = parts
+    else:
+        table = parts[0]
+    return exp.Table(
+        this=exp.to_identifier(table),
+        db=exp.to_identifier(schema) if schema else None,
+        catalog=exp.to_identifier(catalog) if catalog else None,
+        alias=exp.TableAlias(this=exp.to_identifier(alias)) if alias else None,
     )
 
 

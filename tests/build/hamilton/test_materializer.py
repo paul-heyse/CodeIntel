@@ -17,6 +17,8 @@ from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.config.view import SettingsView
 from codeintel.core.hashing import stable_hash
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
+from codeintel.core.iceberg.schema import iceberg_field_ids_for_table_schema
+from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.validation.mode import ContractValidationMode
 from tests._helpers.assertions.expectation_assertions import (
@@ -135,6 +137,111 @@ def test_iceberg_saver_writes_table(
     reader = table.scan().to_arrow_batch_reader()
     written_rows = sum(batch.num_rows for batch in reader)
     expect_equal(written_rows, expected=2)
+
+
+def test_iceberg_saver_snapshot_properties_persisted(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """IcebergDatasetSaver should persist snapshot properties."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    graph = _make_graph()
+    saver = IcebergDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
+    meta = saver.save_data(df.lazy())
+    expect_equal(meta["status"], expected="succeeded")
+
+    settings_view = SettingsView.from_build_env(env)
+    provider = IcebergCatalogProvider(settings_view.build.iceberg)
+    table = provider.load_table("core.modules")
+    snapshot = table.current_snapshot()
+    expect_true(snapshot is not None, message="Expected snapshot after write")
+    summary = getattr(snapshot, "summary", None)
+    props = summary.additional_properties if summary is not None else {}
+    expect_true(isinstance(props, dict), message="Expected snapshot properties mapping")
+    expect_equal(props.get("table_key"), expected="core.modules")
+    expect_equal(props.get("repo"), expected=env.snapshot.repo)
+    expect_equal(props.get("commit"), expected=env.snapshot.commit)
+    expected_hash = schema_hash(get_schema_service().require_table_schema("core.modules"))
+    expect_equal(props.get("schema_hash"), expected=expected_hash)
+
+
+def test_iceberg_saver_schema_evolution_preserves_field_ids(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """IcebergDatasetSaver should preserve field IDs across schema evolution."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    graph = _make_graph()
+    saver = IcebergDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    base_frame = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
+    base_meta = saver.save_data(base_frame.lazy())
+    expect_equal(base_meta["status"], expected="succeeded")
+
+    expected_schema = get_schema_service().require_table_schema("core.modules")
+    expected_ids = iceberg_field_ids_for_table_schema(expected_schema)
+
+    evolved = base_frame.with_columns(pl.lit("extra").alias("extra_flag"))
+    evolved_meta = saver.save_data(evolved.lazy())
+    expect_equal(evolved_meta["status"], expected="succeeded")
+
+    settings_view = SettingsView.from_build_env(env)
+    provider = IcebergCatalogProvider(settings_view.build.iceberg)
+    table = provider.load_table("core.modules")
+    table.refresh()
+    iceberg_schema = table.schema()
+    extra_field = iceberg_schema.find_field("extra_flag")
+    expect_true(extra_field is not None, message="Expected evolved column in Iceberg schema")
+    for name, expected_id in expected_ids.items():
+        field = iceberg_schema.find_field(name)
+        expect_equal(field.field_id, expected=expected_id)
+
+
+def test_iceberg_saver_appends_tombstones(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """IcebergDatasetSaver should emit tombstones for deleted rows."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    settings = replace(
+        env.settings,
+        iceberg=replace(env.settings.iceberg, tombstones_enabled=True),
+    )
+    env = replace(env, settings=settings)
+    graph = _make_graph()
+    saver = IcebergDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    df_first = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=2)
+    first_meta = saver.save_data(df_first.lazy())
+    expect_equal(first_meta["status"], expected="succeeded")
+
+    df_second = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
+    second_meta = saver.save_data(df_second.lazy())
+    expect_equal(second_meta["status"], expected="succeeded")
+
+    settings_view = SettingsView.from_build_env(env)
+    provider = IcebergCatalogProvider(settings_view.build.iceberg)
+    tombstone_table = provider.load_table("core.modules__tombstones")
+    reader = tombstone_table.scan().to_arrow_batch_reader()
+    tombstone_rows = sum(batch.num_rows for batch in reader)
+    expect_true(tombstone_rows > 0, message="Expected tombstone rows")
 
 
 def test_materialize_table_validates_when_schema_available(

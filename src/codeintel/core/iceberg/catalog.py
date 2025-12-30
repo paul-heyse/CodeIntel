@@ -107,6 +107,7 @@ class IcebergCatalogProvider:
         if self.settings.io_impl is not None:
             properties["io.impl"] = self.settings.io_impl
         properties.update(dict(self.settings.catalog_properties))
+        properties.update(dict(self.settings.io_options))
         return properties
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -38,7 +38,7 @@ from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.schemas.declared import source_declared_schema_provider
-from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
+from codeintel.core.schemas.output_registry import non_inferable_output_schemas
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.runtime.module_resolver import ResolvedModuleSet, resolve_module_set
 from codeintel.runtime.plugins.config import (
@@ -775,10 +775,14 @@ def _build_schema_index(
     env: BuildEnv,
 ) -> SchemaIndex:
     inference_service = get_schema_inference_service(driver=driver, catalog=catalog)
+    inferable_table_keys = inference_service.inferable_table_keys()
     declared_provider = source_declared_schema_provider(
         exclude_table_keys=catalog.table_outputs,
     )
-    override_provider = _override_schema_provider(env=env)
+    override_provider = _override_schema_provider(
+        env=env,
+        inferable_table_keys=inferable_table_keys,
+    )
     schema_index = build_schema_index(
         system=catalog,
         declared_provider=declared_provider,
@@ -789,8 +793,14 @@ def _build_schema_index(
     return schema_index
 
 
-def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:
-    override_schemas = dict(OUTPUT_TABLE_SCHEMAS)
+def _override_schema_provider(
+    *,
+    env: BuildEnv,
+    inferable_table_keys: Collection[str] | None = None,
+) -> SchemaProvider:
+    override_schemas = non_inferable_output_schemas(
+        inferable_table_keys=inferable_table_keys,
+    )
     try:
         override_schemas.update(env.gateway.schemas.load_override_registry())
     except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:

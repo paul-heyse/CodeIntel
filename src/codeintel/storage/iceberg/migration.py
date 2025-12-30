@@ -13,6 +13,7 @@ from pyiceberg.table import TableProperties
 from pyiceberg.table.sorting import SortOrder
 
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
+from codeintel.core.iceberg.properties import iceberg_location_properties
 from codeintel.core.iceberg.schema import name_mapping_from_arrow_schema
 from codeintel.core.iceberg.snapshot_properties import (
     SnapshotPropertyInputs,
@@ -84,6 +85,7 @@ def add_files_to_iceberg(
         identifier=identifier,
         arrow_schema=arrow_schema,
         name_mapping=name_mapping,
+        settings=settings,
     )
     snapshot_properties = snapshot_properties_for_write(
         SnapshotPropertyInputs(table_key=request.table_key)
@@ -127,12 +129,14 @@ def _ensure_table(
     identifier: tuple[str, ...],
     arrow_schema: pa.Schema,
     name_mapping: NameMapping | None,
+    settings: IcebergSettings,
 ) -> Table:
     catalog = provider.load()
     if catalog.table_exists(identifier):
         return catalog.load_table(identifier)
     iceberg_schema = pyarrow_to_schema(arrow_schema, name_mapping=name_mapping)
     properties = {"write.format.default": "parquet"}
+    properties.update(iceberg_location_properties(settings))
     if name_mapping is not None:
         properties[TableProperties.DEFAULT_NAME_MAPPING] = name_mapping.model_dump_json()
     return catalog.create_table(

@@ -419,12 +419,9 @@ def _scan_iceberg(
             reader = scan_result.scan.to_arrow_batch_reader()
     try:
         return con.from_arrow(reader)
-    except (duckdb.Error, TypeError, ValueError):
-        try:
-            return con.from_arrow(scan_result.scan.to_arrow())
-        except (duckdb.Error, TypeError, ValueError) as exc:
-            msg = f"Iceberg scan relation build failed for {table_key}"
-            raise DuckDBRelationQueryBuilderError(msg) from exc
+    except (duckdb.Error, TypeError, ValueError) as exc:
+        msg = f"Iceberg scan relation build failed for {table_key}"
+        raise DuckDBRelationQueryBuilderError(msg) from exc
 
 
 def _validate_pagination(*, limit: int, offset: int) -> None:

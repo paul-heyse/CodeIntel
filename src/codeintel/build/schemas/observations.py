@@ -11,15 +11,19 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.contracts import (
     ARROW_SCHEMA_CONTRACT_VERSION,
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
+    ArrowSchemaMetadata,
     ExtrasPolicy,
+    apply_contract_metadata_to_arrow_schema,
     encode_schema_ipc_b64,
     table_schema_from_arrow_schema,
+    update_arrow_schema_metadata,
 )
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
@@ -34,7 +38,6 @@ from codeintel.storage.tracking.observation_codec import (
 from codeintel.storage.tracking.schema_catalog_models import (
     DerivedSettingsPayload,
     IcebergStatsPayload,
-    ParquetStatsPayload,
     SchemaObservationRecord,
     SchemaVersionRecord,
     TableSchemaRegistryRecord,
@@ -69,8 +72,6 @@ class SchemaObservationInputs:
     target_name: str | None = None
     extras_policy: ExtrasPolicy | None = None
     drift_history: Sequence[Mapping[str, object] | None] | None = None
-    dataset_stats: ParquetStatsPayload | None = None
-    manifest_row_count: int | None = None
     iceberg_stats: IcebergStatsPayload | None = None
 
 
@@ -187,17 +188,17 @@ class SchemaObservationAccumulator:
             total_bytes=self.total_bytes,
             extras_policy=resolved_extras_policy,
         )
-        annotation = _SchemaAnnotationContext(
-            schema_hash_value=schema_hash_value,
+        schema_metadata = ArrowSchemaMetadata(
+            schema_hash=schema_hash_value,
             schema_digest=schema_digest,
             extras_policy=resolved_extras_policy,
             extras_column=DEFAULT_EXTRAS_COLUMN,
-        )
-        annotated_schema = _annotate_arrow_schema(
-            arrow_schema,
-            table_schema=merged,
-            annotation=annotation,
             pii_by_column=_pii_by_column(self.schema_hints),
+        )
+        annotated_schema = apply_contract_metadata_to_arrow_schema(
+            arrow_schema=arrow_schema,
+            table_schema=merged,
+            metadata=schema_metadata,
         )
         observed_at = utc_now()
         observation = SchemaObservationRecord(
@@ -214,8 +215,6 @@ class SchemaObservationAccumulator:
                     row_count=self.row_count,
                     batch_count=self.batch_count,
                     total_bytes=self.total_bytes,
-                    manifest_stats=resolved_inputs.dataset_stats,
-                    manifest_row_count=resolved_inputs.manifest_row_count,
                     iceberg_stats=resolved_inputs.iceberg_stats,
                 ),
             ),
@@ -758,127 +757,6 @@ def _drift_has_extras(drift_summary: Mapping[str, object] | None) -> bool:
     return isinstance(extra, list) and bool(extra)
 
 
-@dataclass(frozen=True, slots=True)
-class _SchemaAnnotationContext:
-    schema_hash_value: str
-    schema_digest: str
-    extras_policy: ExtrasPolicy
-    extras_column: str
-
-
-def _annotate_arrow_schema(
-    schema: pa.Schema,
-    *,
-    table_schema: TableSchema,
-    annotation: _SchemaAnnotationContext,
-    pii_by_column: Mapping[str, str] | None,
-) -> pa.Schema:
-    schema_metadata: dict[str, object] = {
-        "codeintel.table_key": table_schema.table_key,
-        "codeintel.schema_hash": annotation.schema_hash_value,
-        "codeintel.schema_digest": annotation.schema_digest,
-        "codeintel.primary_key": list(table_schema.primary_key),
-        "codeintel.schema_contract_version": ARROW_SCHEMA_CONTRACT_VERSION,
-        "codeintel.extras_policy": annotation.extras_policy,
-        "codeintel.extras_column": annotation.extras_column,
-    }
-    if table_schema.description is not None:
-        schema_metadata["codeintel.description"] = table_schema.description
-    merged_metadata = _merge_metadata(schema.metadata, schema_metadata)
-    fields: list[pa.Field] = []
-    key_roles = _key_roles(table_schema)
-    for column in table_schema.columns:
-        try:
-            field = schema.field(column.name)
-        except KeyError:
-            field = pa.field(column.name, pa.string(), nullable=True)
-        field_updates: dict[str, object] = {
-            "codeintel.column_type": column.type,
-            "codeintel.nullable": column.nullable,
-            "codeintel.schema_hash": annotation.schema_hash_value,
-            "codeintel.schema_digest": annotation.schema_digest,
-        }
-        if column.description is not None:
-            field_updates["codeintel.description"] = column.description
-        key_role = key_roles.get(column.name)
-        if key_role is not None:
-            field_updates["codeintel.key_role"] = key_role
-        if pii_by_column is not None:
-            pii_class = pii_by_column.get(column.name)
-            if pii_class is not None:
-                field_updates["codeintel.pii_class"] = pii_class
-        fields.append(_merge_field_metadata(field, field_updates))
-    return pa.schema(fields, metadata=merged_metadata)
-
-
-def _key_roles(table_schema: TableSchema) -> dict[str, str]:
-    roles: dict[str, str] = dict.fromkeys(table_schema.primary_key, "primary_key")
-    for index in table_schema.indexes:
-        if not index.unique:
-            continue
-        for column in index.columns:
-            roles.setdefault(column, "unique_index")
-    return roles
-
-
-def _merge_field_metadata(field: pa.Field, updates: Mapping[str, object]) -> pa.Field:
-    existing = _decode_metadata(field.metadata)
-    merged = dict(existing)
-    for key, value in updates.items():
-        if value is None or key in merged:
-            continue
-        merged[key] = value
-    return field.with_metadata(_encode_metadata(merged))
-
-
-def _merge_metadata(
-    existing: Mapping[bytes, bytes] | None,
-    updates: Mapping[str, object],
-) -> dict[bytes, bytes]:
-    decoded = _decode_metadata(existing)
-    merged = dict(decoded)
-    for key, value in updates.items():
-        if value is None or key in merged:
-            continue
-        merged[key] = value
-    return _encode_metadata(merged)
-
-
-def _decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
-    if not metadata:
-        return {}
-    decoded: dict[str, object] = {}
-    for key, raw in metadata.items():
-        decoded[key.decode("utf-8")] = _decode_metadata_value(raw)
-    return decoded
-
-
-def _decode_metadata_value(raw: bytes) -> object:
-    text = raw.decode("utf-8")
-    return _parse_json(text)
-
-
-def _parse_json(raw: str) -> object:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-
-
-def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes]:
-    encoded: dict[bytes, bytes] = {}
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        raw = (
-            value
-            if isinstance(value, str)
-            else json.dumps(value, sort_keys=True, separators=(",", ":"))
-        )
-        encoded[key.encode("utf-8")] = raw.encode("utf-8")
-    return encoded
-
-
 def _renderer_cache_from_arrow_schema(
     schema: pa.Schema,
     *,
@@ -903,12 +781,12 @@ def _apply_extras_policy(
         table_key=bundle.table_schema.table_key,
         drift_summary=bundle.observation.drift_summary,
     )
-    current_policy = _extras_policy_from_schema(bundle.arrow_schema)
+    current_policy = extras_policy_from_schema(bundle.arrow_schema)
     if desired_policy == current_policy:
         return bundle
-    updated_schema = _replace_schema_metadata(
-        bundle.arrow_schema,
-        {"codeintel.extras_policy": desired_policy},
+    updated_schema = update_arrow_schema_metadata(
+        schema=bundle.arrow_schema,
+        updates={"codeintel.extras_policy": desired_policy},
     )
     updated_renderer_cache = _renderer_cache_from_arrow_schema(
         updated_schema,
@@ -957,39 +835,6 @@ def _resolve_extras_policy(
 def _has_extra_columns(summary: Mapping[str, object]) -> bool:
     extra = summary.get("extra_columns")
     return isinstance(extra, list) and bool(extra)
-
-
-def _extras_policy_from_schema(schema: pa.Schema) -> ExtrasPolicy:
-    metadata = _decode_metadata(schema.metadata)
-    raw = metadata.get("codeintel.extras_policy")
-    if isinstance(raw, str):
-        coerced = _coerce_extras_policy(raw)
-        if coerced is not None:
-            return coerced
-    return DEFAULT_EXTRAS_POLICY
-
-
-def _coerce_extras_policy(raw: str) -> ExtrasPolicy | None:
-    if raw == "retain":
-        return "retain"
-    if raw == "reject":
-        return "reject"
-    if raw == "drop":
-        return "drop"
-    return None
-
-
-def _replace_schema_metadata(
-    schema: pa.Schema,
-    updates: Mapping[str, object],
-) -> pa.Schema:
-    decoded = _decode_metadata(schema.metadata)
-    merged = dict(decoded)
-    for key, value in updates.items():
-        if value is None:
-            continue
-        merged[key] = value
-    return schema.with_metadata(_encode_metadata(merged))
 
 
 def _null_count(values: pa.Array | pa.ChunkedArray) -> int:
