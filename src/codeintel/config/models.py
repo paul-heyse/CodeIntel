@@ -105,8 +105,6 @@ class CliPathsInput(BaseModel):
         DuckDB database path.
     document_output_dir : Path | None
         Directory for final datasets (defaults to repo_root / 'Document Output').
-    dataset_root_dir : Path | None
-        Directory for Arrow datasets (defaults to document_output_dir / 'datasets').
 
     Example
     -------
@@ -132,17 +130,12 @@ class CliPathsInput(BaseModel):
         default=None,
         description="Directory for final datasets (defaults to repo_root / 'Document Output')",
     )
-    dataset_root_dir: Path | None = Field(
-        default=None,
-        description="Directory for Arrow datasets (defaults to document_output_dir / 'datasets')",
-    )
 
     @field_validator(
         "repo_root",
         "build_dir",
         "db_path",
         "document_output_dir",
-        "dataset_root_dir",
         mode="before",
     )
     @classmethod
@@ -190,17 +183,10 @@ class CliPathsInput(BaseModel):
         elif not doc_dir.is_absolute():
             doc_dir = (repo_root / doc_dir).resolve()
 
-        dataset_root_dir = self.dataset_root_dir
-        if dataset_root_dir is None:
-            dataset_root_dir = (doc_dir / "datasets").resolve()
-        elif not dataset_root_dir.is_absolute():
-            dataset_root_dir = (repo_root / dataset_root_dir).resolve()
-
         self.repo_root = repo_root
         self.build_dir = build_dir
         self.db_path = db_path
         self.document_output_dir = doc_dir
-        self.dataset_root_dir = dataset_root_dir
         return self
 
     @property
@@ -245,11 +231,9 @@ class CliPathsInput(BaseModel):
             Internal paths configuration.
         """
         doc_dir = self.document_output_dir or (self.repo_root / "Document Output")
-        dataset_root_dir = self.dataset_root_dir or (doc_dir / "datasets")
         overrides = BuildPathOverrides(
             db_path=self.db_path,
             document_output_dir=doc_dir,
-            dataset_root_dir=dataset_root_dir,
             scip_dir=self.scip_dir,
             coverage_json=self.build_dir / "coverage" / "coverage.json",
             pytest_report=self.build_dir / "test-results" / "pytest-report.json",

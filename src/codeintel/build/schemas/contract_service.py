@@ -44,6 +44,7 @@ __all__ = [
     "iter_contracts",
     "iter_contracts_by_table_key",
     "overrides_from_output_descriptor",
+    "reset_contract_service_state",
 ]
 
 
@@ -444,6 +445,13 @@ def iter_contracts_by_table_key(
 def clear_contract_cache() -> None:
     """Clear cached dataset contracts."""
     _get_enriched_contract_for_table_key.cache_clear()
+
+
+def reset_contract_service_state() -> None:
+    """Reset the configured contract service state.
+
+    Intended for tests that need a fresh contract service configuration.
+    """
     _CONTRACT_SERVICE_STATE.service = None
     _CONTRACT_SERVICE_STATE.fingerprint = None
 

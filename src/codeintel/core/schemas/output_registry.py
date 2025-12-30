@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 from codeintel.config.datasets.primitives import (
     CREATED_AT_COL,
     CREATED_AT_COL_NULLABLE,
@@ -2177,6 +2179,32 @@ def _build_output_table_schemas() -> dict[str, TableSchema]:
 OUTPUT_TABLE_SCHEMAS = _build_output_table_schemas()
 
 
+def non_inferable_output_schemas(
+    *,
+    inferable_table_keys: Collection[str] | None = None,
+) -> dict[str, TableSchema]:
+    """Return output schema overrides excluding inferable tables.
+
+    Parameters
+    ----------
+    inferable_table_keys
+        Optional set of table keys inferred from the Hamilton DAG. When provided,
+        overrides for those keys are excluded.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Mapping of table keys to explicit overrides for non-inferable outputs.
+    """
+    if not inferable_table_keys:
+        return dict(OUTPUT_TABLE_SCHEMAS)
+    return {
+        table_key: schema
+        for table_key, schema in OUTPUT_TABLE_SCHEMAS.items()
+        if table_key not in inferable_table_keys
+    }
+
+
 __all__ = [
     "AST_OVERRIDE_TABLES",
     "BEHAVIORAL_COVERAGE_OVERRIDE_TABLES",
@@ -2225,4 +2253,5 @@ __all__ = [
     "TEST_GRAPH_METRICS_OVERRIDE_TABLES",
     "TEST_PROFILE_OVERRIDE_TABLES",
     "TYPING_OVERRIDE_TABLES",
+    "non_inferable_output_schemas",
 ]

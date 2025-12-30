@@ -35,6 +35,10 @@ class IcebergSettings:
     config_path: Path | None = None
     io_impl: str | None = None
     io_options: tuple[tuple[str, str], ...] = ()
+    location_provider_impl: str | None = None
+    write_data_path: str | None = None
+    write_metadata_path: str | None = None
+    object_store_partitioned_paths: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

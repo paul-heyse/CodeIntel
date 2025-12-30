@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
+
+from sqlglot import exp
 
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
@@ -22,6 +25,7 @@ from codeintel.storage.metadata.bootstrap import (
 )
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -229,12 +233,7 @@ def load_derived_lineage_columns(
     """
     table_ref = meta_table_ref("metadata.derived_lineage_columns")
     rows = con.execute(
-        f"""
-        SELECT downstream_column, upstream_table, upstream_column
-        FROM {table_ref}
-        WHERE repo = ? AND commit = ? AND downstream_table = ?
-        ORDER BY downstream_column, upstream_table, upstream_column
-        """,
+        _derived_lineage_columns_sql(table_ref),
         [repo, commit, downstream_table],
     ).fetchall()
     out: dict[str, list[tuple[str, str]]] = {}
@@ -243,3 +242,57 @@ def load_derived_lineage_columns(
             (str(upstream_table), str(upstream_column))
         )
     return out
+
+
+@lru_cache(maxsize=4)
+def _derived_lineage_columns_sql(table_ref: str) -> str:
+    table = _table_expr(table_ref, alias="lineage")
+    query = (
+        exp.select(
+            exp.column("downstream_column", table="lineage"),
+            exp.column("upstream_table", table="lineage"),
+            exp.column("upstream_column", table="lineage"),
+        )
+        .from_(table)
+        .where(
+            exp.and_(
+                exp.EQ(
+                    this=exp.column("repo", table="lineage"),
+                    expression=exp.Parameter(),
+                ),
+                exp.EQ(
+                    this=exp.column("commit", table="lineage"),
+                    expression=exp.Parameter(),
+                ),
+                exp.EQ(
+                    this=exp.column("downstream_table", table="lineage"),
+                    expression=exp.Parameter(),
+                ),
+            )
+        )
+        .order_by(
+            exp.column("downstream_column", table="lineage"),
+            exp.column("upstream_table", table="lineage"),
+            exp.column("upstream_column", table="lineage"),
+        )
+    )
+    return render_sql_duckdb(query)
+
+
+def _table_expr(table_ref: str, *, alias: str | None = None) -> exp.Table:
+    parts = table_ref.split(".")
+    catalog: str | None = None
+    schema: str | None = None
+    table: str
+    if len(parts) == 3:
+        catalog, schema, table = parts
+    elif len(parts) == 2:
+        schema, table = parts
+    else:
+        table = parts[0]
+    return exp.Table(
+        this=exp.to_identifier(table),
+        db=exp.to_identifier(schema) if schema else None,
+        catalog=exp.to_identifier(catalog) if catalog else None,
+        alias=exp.TableAlias(this=exp.to_identifier(alias)) if alias else None,
+    )

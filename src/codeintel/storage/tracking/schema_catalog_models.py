@@ -26,9 +26,6 @@ class ColumnStatsEntry(TypedDict, total=False):
 type ColumnStatsPayload = dict[str, ColumnStatsEntry]
 
 
-type ParquetStatsPayload = Mapping[str, object]
-
-
 class IcebergStatsPayload(TypedDict, total=False):
     """Typed payload for Iceberg metadata-derived statistics."""
 
@@ -51,8 +48,6 @@ class DatasetStatsPayload(TypedDict, total=False):
     row_count: int
     batch_count: int
     total_bytes: int
-    manifest_row_count: int
-    parquet_stats: ParquetStatsPayload
     iceberg_stats: IcebergStatsPayload
 
 
@@ -206,7 +201,6 @@ __all__ = [
     "IcebergStatsPayload",
     "MaterializationValidationRecord",
     "OverrideRegistryRefreshResult",
-    "ParquetStatsPayload",
     "SchemaCatalogRequest",
     "SchemaManifestRunRecord",
     "SchemaObservationRecord",

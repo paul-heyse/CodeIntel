@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from codeintel.core.config.settings import (
     BuildSettings,
     CliSettings,
     HamiltonExecutionSettings,
+    IcebergSettings,
     ObservabilitySettings,
     ServingSettings,
 )
@@ -48,8 +49,9 @@ class SettingsView:
             View bound to runtime settings.
         """
         resolved = settings or load_runtime_settings()
+        normalized_build = _normalize_build_settings(resolved.build)
         return cls(
-            build=resolved.build,
+            build=normalized_build,
             execution=resolved.execution,
             serving=resolved.serving,
             observability=resolved.observability,
@@ -76,8 +78,9 @@ class SettingsView:
             if env.execution_context is not None
             else None
         )
+        normalized_build = _normalize_build_settings(env.settings)
         return cls(
-            build=env.settings,
+            build=normalized_build,
             execution=env.execution_settings,
             observability=observability,
             variants=env.variants,
@@ -161,6 +164,76 @@ class SettingsView:
         if isinstance(override, int) and override >= 0:
             return override
         return base_min_rows
+
+
+def _normalize_build_settings(settings: BuildSettings) -> BuildSettings:
+    normalized_iceberg = _normalize_iceberg_settings(settings.iceberg)
+    if normalized_iceberg == settings.iceberg:
+        return settings
+    return replace(settings, iceberg=normalized_iceberg)
+
+
+def _normalize_iceberg_settings(settings: IcebergSettings) -> IcebergSettings:
+    catalog_name = settings.catalog_name.strip() if settings.catalog_name else "default"
+    catalog_type = settings.catalog_type.strip().lower() if settings.catalog_type else None
+    catalog_uri = settings.catalog_uri.strip() if settings.catalog_uri else None
+    catalog_warehouse = settings.catalog_warehouse.strip() if settings.catalog_warehouse else None
+    read_ref = settings.read_ref.strip() if settings.read_ref else None
+    io_impl = settings.io_impl.strip() if settings.io_impl else None
+    location_provider_impl = (
+        settings.location_provider_impl.strip() if settings.location_provider_impl else None
+    )
+    write_data_path = settings.write_data_path.strip() if settings.write_data_path else None
+    write_metadata_path = (
+        settings.write_metadata_path.strip() if settings.write_metadata_path else None
+    )
+
+    enforced_prefixes = tuple(
+        prefix.strip()
+        for prefix in settings.enforced_table_prefixes
+        if isinstance(prefix, str) and prefix.strip()
+    )
+
+    catalog_properties = _normalize_pairs(settings.catalog_properties)
+    io_options = _normalize_pairs(settings.io_options)
+
+    return IcebergSettings(
+        read_enabled=bool(settings.read_enabled),
+        write_enabled=bool(settings.write_enabled),
+        tombstones_enabled=bool(settings.tombstones_enabled),
+        flight_enabled=bool(settings.flight_enabled),
+        read_ref=read_ref or None,
+        enforced_table_prefixes=enforced_prefixes,
+        catalog_name=catalog_name or "default",
+        catalog_type=catalog_type or None,
+        catalog_uri=catalog_uri or None,
+        catalog_warehouse=catalog_warehouse or None,
+        catalog_properties=catalog_properties,
+        config_path=settings.config_path,
+        io_impl=io_impl or None,
+        io_options=io_options,
+        location_provider_impl=location_provider_impl or None,
+        write_data_path=write_data_path or None,
+        write_metadata_path=write_metadata_path or None,
+        object_store_partitioned_paths=settings.object_store_partitioned_paths,
+    )
+
+
+def _normalize_pairs(value: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    normalized: dict[str, str] = {}
+    for key, raw_value in value:
+        if not key:
+            continue
+        if not isinstance(key, str):
+            continue
+        key_str = key.strip()
+        if not key_str:
+            continue
+        if not isinstance(raw_value, str):
+            raw_value = str(raw_value)
+        val = raw_value.strip()
+        normalized[key_str] = val
+    return tuple(sorted(normalized.items()))
 
 
 __all__ = ["SettingsView"]

@@ -7,9 +7,12 @@ views and export artifacts alongside tables.
 from __future__ import annotations
 
 import json
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 import pytest
+from hamilton.function_modifiers import tag as h_tag
+from sqlglot import exp, parse_one
 
 from codeintel.build.schemas.diff import (
     ManifestDiffResult,
@@ -21,7 +24,10 @@ from codeintel.build.schemas.manifest import (
     SchemaManifest,
     TableProvenance,
 )
+from codeintel.core.hamilton import tags as ht
 from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.storage.views.schema_inference import derive_view_schemas
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -56,6 +62,53 @@ def _make_table(table_key: str, columns: list[tuple[str, ColumnType, bool]]) -> 
         columns=[
             Column(name=name, type=col_type, nullable=nullable)
             for name, col_type, nullable in columns
+        ],
+    )
+
+
+def _derive_view_schema(*, table_key: str, query: str, base_schema: TableSchema) -> TableSchema:
+    """Derive a docs view schema from a SQLGlot query and base table schema.
+
+    Returns
+    -------
+    TableSchema
+        Derived view schema.
+
+    Raises
+    ------
+    AssertionError
+        Raised when the derived schema is missing for the view key.
+    """
+    base_provider = MappingSchemaProvider({base_schema.table_key: base_schema})
+    module = ModuleType(f"test_manifest_view_{table_key.replace('.', '_')}")
+
+    @h_tag(output_kind=ht.OUTPUT_KIND_VIEW, table_key=table_key)
+    def _view() -> exp.Expression:
+        return parse_one(query, read="duckdb")
+
+    _view.__module__ = module.__name__
+    module.__dict__[_view.__name__] = _view
+    derived = derive_view_schemas(provider=base_provider, modules=(module,))
+    view_schema = derived.get(table_key)
+    if view_schema is None:
+        msg = f"Expected derived schema for {table_key}"
+        raise AssertionError(msg)
+    return view_schema
+
+
+def _summary_base_table() -> TableSchema:
+    """Return the base table schema used by docs.v_summary view fixtures.
+
+    Returns
+    -------
+    TableSchema
+        Base table schema for the docs.v_summary fixtures.
+    """
+    return _make_table(
+        "analytics.summary_base",
+        [
+            ("module", "VARCHAR", True),
+            ("total", "INTEGER", True),
         ],
     )
 
@@ -148,7 +201,7 @@ def sample_table() -> TableSchema:
 
 
 @pytest.fixture
-def sample_view() -> TableSchema:
+def sample_view(sample_table: TableSchema) -> TableSchema:
     """Create a sample view schema.
 
     Returns
@@ -156,12 +209,13 @@ def sample_view() -> TableSchema:
     TableSchema
         Sample view schema for testing.
     """
-    return _make_table(
-        "docs.v_function_summary",
-        [
-            ("function_name", "VARCHAR", True),
-            ("total_loc", "INTEGER", True),
-        ],
+    return _derive_view_schema(
+        table_key="docs.v_function_summary",
+        query=(
+            "SELECT function_goid_h128 AS function_name, loc AS total_loc "
+            "FROM analytics.function_metrics"
+        ),
+        base_schema=sample_table,
     )
 
 
@@ -401,11 +455,10 @@ def base_view() -> TableSchema:
     TableSchema
         Base view schema for diff tests.
     """
-    return _make_table(
-        "docs.v_summary",
-        [
-            ("name", "VARCHAR", True),
-        ],
+    return _derive_view_schema(
+        table_key="docs.v_summary",
+        query="SELECT module AS name FROM analytics.summary_base",
+        base_schema=_summary_base_table(),
     )
 
 
@@ -598,11 +651,10 @@ class TestManifestDiffV2:
         base_view: TableSchema,
     ) -> None:
         """Test diff when view column is modified."""
-        modified_view = _make_table(
-            "docs.v_summary",
-            [
-                ("name", "INTEGER", True),  # Changed type
-            ],
+        modified_view = _derive_view_schema(
+            table_key="docs.v_summary",
+            query="SELECT CAST(module AS INTEGER) AS name FROM analytics.summary_base",
+            base_schema=_summary_base_table(),
         )
         expected = SchemaManifest(
             version="v2",

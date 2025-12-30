@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import IO
 
 import pyarrow as pa
 import pytest
+from pyiceberg.table.statistics import StatisticsFile
 
+from codeintel.storage.iceberg.statistics_file import persist_iceberg_statistics
 from codeintel.storage.iceberg.stats import iceberg_stats_for_table
 
 pytestmark = pytest.mark.no_runtime_env
@@ -70,6 +74,60 @@ class _FakeTable:
         return _FakeInspect(manifest_rows=self.manifest_rows)
 
 
+class _FakeLocationProvider:
+    def __init__(self, base_dir: Path) -> None:
+        self._base_dir = base_dir
+        self.last_location: Path | None = None
+
+    def new_metadata_location(self, file_name: str) -> str:
+        path = self._base_dir / file_name
+        self.last_location = path
+        return str(path)
+
+
+class _FakeOutput:
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def create(self, *, overwrite: bool) -> IO[bytes]:
+        if self._path.exists() and not overwrite:
+            msg = f"Output already exists: {self._path}"
+            raise OSError(msg)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        return self._path.open("wb")
+
+
+class _FakeIO:
+    def new_output(self, location: str) -> _FakeOutput:
+        return _FakeOutput(Path(location))
+
+
+@dataclass
+class _FakeUpdateStatistics:
+    stats_file: StatisticsFile | None = None
+    committed: bool = False
+
+    def set_statistics(self, stats_file: StatisticsFile) -> _FakeUpdateStatistics:
+        self.stats_file = stats_file
+        return self
+
+    def commit(self) -> None:
+        self.committed = True
+
+
+class _FakeStatsTable:
+    def __init__(self, base_dir: Path) -> None:
+        self.io = _FakeIO()
+        self._location_provider = _FakeLocationProvider(base_dir)
+        self.update_ctx = _FakeUpdateStatistics()
+
+    def location_provider(self) -> _FakeLocationProvider:
+        return self._location_provider
+
+    def update_statistics(self) -> _FakeUpdateStatistics:
+        return self.update_ctx
+
+
 def test_iceberg_stats_for_table_parses_summary() -> None:
     """Return stats from snapshot summary and manifest count."""
     summary = _FakeSummary(
@@ -112,3 +170,25 @@ def test_iceberg_stats_for_table_empty_snapshot() -> None:
     """Return empty stats when no snapshot is available."""
     table = _FakeTable(snapshot=None, manifest_rows=0)
     assert iceberg_stats_for_table(table) == {}
+
+
+def test_persist_iceberg_statistics_writes_puffin(tmp_path: Path) -> None:
+    """Persist derived stats as a puffin statistics file."""
+    stats_dir = tmp_path / "stats"
+    stats_dir.mkdir()
+    table = _FakeStatsTable(stats_dir)
+    stats = {"snapshot_id": 42, "total_records": 3}
+    snapshot_properties = {"schema_hash": "hash-1"}
+
+    stats_file = persist_iceberg_statistics(
+        table=table,
+        table_key="core.modules",
+        stats=stats,
+        snapshot_properties=snapshot_properties,
+    )
+
+    assert stats_file is not None
+    assert table.update_ctx.committed is True
+    location = table.location_provider().last_location
+    assert location is not None
+    assert location.exists()

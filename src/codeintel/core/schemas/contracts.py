@@ -623,6 +623,101 @@ def arrow_schema_from_table_schema(
     return pa.schema(fields, metadata=_encode_metadata(schema_metadata))
 
 
+def apply_contract_metadata_to_arrow_schema(
+    *,
+    arrow_schema: pa.Schema,
+    table_schema: TableSchema,
+    metadata: ArrowSchemaMetadata | None = None,
+) -> pa.Schema:
+    """Apply CodeIntel contract metadata to an existing Arrow schema.
+
+    Parameters
+    ----------
+    arrow_schema
+        Arrow schema to annotate.
+    table_schema
+        TableSchema defining canonical column metadata.
+    metadata
+        Optional contract metadata overrides.
+
+    Returns
+    -------
+    pa.Schema
+        Arrow schema with contract metadata applied.
+    """
+    resolved_metadata = _normalize_contract_metadata(metadata)
+    resolved_hash = resolved_metadata.schema_hash or schema_hash(table_schema)
+    resolved_digest = resolved_metadata.schema_digest or fingerprint(table_schema.to_json_obj())
+    provenance_payload = _provenance_payload(resolved_metadata.provenance)
+    key_roles = _key_roles(table_schema)
+    field_context = _FieldMetadataContext(
+        schema_hash_value=resolved_hash,
+        schema_digest=resolved_digest,
+        provenance_payload=provenance_payload,
+        column_lineage=resolved_metadata.column_lineage,
+        pii_by_column=resolved_metadata.pii_by_column,
+        key_roles=key_roles,
+        iceberg_field_ids=resolved_metadata.iceberg_field_ids,
+    )
+    schema_context = _SchemaMetadataContext(
+        table_schema=table_schema,
+        schema_hash_value=resolved_hash,
+        schema_digest=resolved_digest,
+        provenance_payload=provenance_payload,
+        contract_version=resolved_metadata.contract_version or ARROW_SCHEMA_CONTRACT_VERSION,
+        extras_policy=resolved_metadata.extras_policy or DEFAULT_EXTRAS_POLICY,
+        extras_column=resolved_metadata.extras_column or DEFAULT_EXTRAS_COLUMN,
+        extras_schema=resolved_metadata.extras_schema,
+        iceberg_schema_id=resolved_metadata.iceberg_schema_id,
+        iceberg_name_mapping_digest=resolved_metadata.iceberg_name_mapping_digest,
+    )
+    schema_metadata = _schema_metadata(schema_context)
+
+    fields: list[pa.Field] = []
+    for column in table_schema.columns:
+        try:
+            field = arrow_schema.field(column.name)
+        except KeyError:
+            field = pa.field(
+                column.name,
+                _arrow_type_for_column_type(column.type),
+                nullable=column.nullable,
+            )
+        field_metadata = _field_metadata(column, field_context)
+        fields.append(field.with_metadata(_merge_metadata(field.metadata, field_metadata)))
+    return pa.schema(fields, metadata=_merge_metadata(arrow_schema.metadata, schema_metadata))
+
+
+def update_arrow_schema_metadata(
+    *,
+    schema: pa.Schema,
+    updates: Mapping[str, object],
+) -> pa.Schema:
+    """Update schema-level Arrow metadata with CodeIntel keys.
+
+    Parameters
+    ----------
+    schema
+        Arrow schema to update.
+    updates
+        Metadata updates to merge into the schema metadata mapping.
+
+    Returns
+    -------
+    pa.Schema
+        Updated Arrow schema.
+    """
+    if not updates:
+        return schema
+    filtered = {key: value for key, value in updates.items() if value is not None}
+    if not filtered:
+        return schema
+    merged = _merge_metadata(schema.metadata, filtered)
+    if merged is None:
+        return schema.remove_metadata()
+    return schema.with_metadata(merged)
+
+
 def arrow_contract_for_table_schema(
     *,
     table_schema: TableSchema,
@@ -669,6 +764,19 @@ def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes] | Non
             raw = json.dumps(value, sort_keys=True, separators=(",", ":"))
         encoded[key.encode("utf-8")] = raw.encode("utf-8")
     return encoded or None
+
+
+def _merge_metadata(
+    existing: Mapping[bytes, bytes] | None,
+    updates: Mapping[str, object],
+) -> dict[bytes, bytes] | None:
+    decoded = _decode_metadata(existing)
+    merged = dict(decoded)
+    for key, value in updates.items():
+        if value is None:
+            continue
+        merged[key] = value
+    return _encode_metadata(merged)
 
 
 def _decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
@@ -1676,6 +1784,7 @@ __all__ = [
     "ArrowSchemaMetadata",
     "ArrowSchemaProvenance",
     "ExtrasPolicy",
+    "apply_contract_metadata_to_arrow_schema",
     "arrow_contract_for_table_schema",
     "arrow_schema_digest",
     "arrow_schema_from_table_schema",
@@ -1701,4 +1810,5 @@ __all__ = [
     "to_json_schema",
     "try_decode_schema_ipc",
     "try_decode_schema_ipc_b64",
+    "update_arrow_schema_metadata",
 ]

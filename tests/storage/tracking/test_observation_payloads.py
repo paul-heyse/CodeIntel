@@ -10,34 +10,28 @@ from codeintel.build.schemas import observations
 pytestmark = pytest.mark.no_runtime_env
 
 ROW_COUNT = 3
-ROW_GROUPS = 1
 MIN_VALUE = 1
 MAX_VALUE = 2
 DISTINCT_COUNT = 2
 ICEBERG_SNAPSHOT_ID = 10
 
 
-def test_schema_observation_includes_parquet_stats() -> None:
-    """Ensure observation payload includes parquet stats metadata."""
+def test_schema_observation_includes_dataset_stats() -> None:
+    """Ensure observation payload includes dataset-level stats metadata."""
     schema = pa.schema([("value", pa.int64())])
     batch = pa.record_batch([[1, 2, 3]], schema=schema)
     accumulator = observations.SchemaObservationAccumulator(table_key="analytics.demo")
     accumulator.observe_batch(batch)
-    inputs = observations.SchemaObservationInputs(
-        dataset_stats={"row_groups": ROW_GROUPS},
-        manifest_row_count=ROW_COUNT,
-    )
-    bundle = accumulator.finalize(arrow_schema=schema, inputs=inputs)
+    bundle = accumulator.finalize(arrow_schema=schema)
 
     dataset_stats = bundle.observation.dataset_stats
     assert dataset_stats is not None
     assert "row_count" in dataset_stats
     assert dataset_stats["row_count"] == ROW_COUNT
-    assert "manifest_row_count" in dataset_stats
-    assert dataset_stats["manifest_row_count"] == ROW_COUNT
-    assert "parquet_stats" in dataset_stats
-    parquet_stats = dataset_stats["parquet_stats"]
-    assert parquet_stats["row_groups"] == ROW_GROUPS
+    assert "batch_count" in dataset_stats
+    assert dataset_stats["batch_count"] == 1
+    assert "total_bytes" in dataset_stats
+    assert dataset_stats["total_bytes"] >= 0
 
 
 def test_schema_observation_column_stats_are_populated() -> None:

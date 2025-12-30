@@ -12,6 +12,7 @@ import pytest
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.storage.metadata.meta_catalog import default_meta_db_path, meta_table_ref
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.serving_snapshot_factory import (
@@ -177,5 +178,46 @@ async def test_manager_export_pool_isolated_from_query_pool(tmp_path: Path) -> N
             )
             expect_true(query_con_id != export_con_id)
             expect_equal(value, (1,))
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_manager_refreshes_iceberg_cache_on_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ServingDBManager should refresh Iceberg metadata cache on load."""
+    factory = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path / "snapshot-1")
+    snapshot = factory.demo_snapshot(row_count=1)
+    iceberg = snapshot.iceberg_settings
+    if iceberg.catalog_type:
+        monkeypatch.setenv("CODEINTEL_ICEBERG_CATALOG_TYPE", iceberg.catalog_type)
+    if iceberg.catalog_uri:
+        monkeypatch.setenv("CODEINTEL_ICEBERG_CATALOG_URI", iceberg.catalog_uri)
+    if iceberg.catalog_warehouse:
+        monkeypatch.setenv("CODEINTEL_ICEBERG_CATALOG_WAREHOUSE", iceberg.catalog_warehouse)
+    monkeypatch.setenv("CODEINTEL_ICEBERG_READ_ENABLED", "1")
+    monkeypatch.setenv("CODEINTEL_ICEBERG_WRITE_ENABLED", "1")
+
+    manager = ServingDBManager(
+        pointer_path=snapshot.pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        meta_path = default_meta_db_path(snapshot.db_path)
+        con = duckdb.connect(str(snapshot.db_path))
+        try:
+            con.execute(f"ATTACH DATABASE '{meta_path}' AS \"metadata\"")
+            table_ref = meta_table_ref("metadata.iceberg_tables")
+            row = con.execute(
+                f"SELECT COUNT(*) FROM {table_ref} WHERE table_key = ?",
+                ["docs.v_demo"],
+            ).fetchone()
+        finally:
+            con.close()
+        expect_true(row is not None and row[0] >= 1, message="Expected iceberg cache rows")
     finally:
         await manager.stop()

@@ -116,7 +116,6 @@ def _prepare_snapshot_tables(
     *,
     snap_db: Path,
     run_id: str,
-    snapshot_manifest: ServingSnapshotManifest,
 ) -> None:
     service = ServingSnapshotService()
     try:
@@ -258,7 +257,6 @@ def publish_serving_snapshot(
     _prepare_snapshot_tables(
         snap_db=snap_db,
         run_id=request.run_id,
-        snapshot_manifest=manifest,
     )
 
     pointer = ServingSnapshotPointer(

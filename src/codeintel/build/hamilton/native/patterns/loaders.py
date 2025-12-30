@@ -117,8 +117,6 @@ def _load_iceberg_scan(
             table=table,
         )
     )
-    if options:
-        return scan_result.scan
     return scan_result.scan
 
 

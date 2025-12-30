@@ -98,6 +98,7 @@ from codeintel.core.execution.materialization import (
 from codeintel.core.hashing.fingerprint import stable_hash
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.core.iceberg.guardrails import require_iceberg_write
+from codeintel.core.iceberg.properties import iceberg_location_properties
 from codeintel.core.iceberg.schema import (
     IcebergSchemaBundle,
     iceberg_field_ids_for_table_schema,
@@ -135,6 +136,7 @@ if TYPE_CHECKING:
     from pyiceberg.typedef import Record
 
     from codeintel.build.hamilton.materializers.base import MaterializationContext
+    from codeintel.core.config.settings import IcebergSettings
     from codeintel.storage.tracking.schema_catalog_models import IcebergStatsPayload
 
     type IcebergInput = RecordBatchReader | pa.Table | pl.LazyFrame | DuckDBRelation
@@ -718,14 +720,16 @@ def _write_to_iceberg(
             previous_snapshot_id=previous_snapshot_id,
             current_snapshot_id=snapshot_id,
         )
-    iceberg_stats = None
+    iceberg_stats: IcebergStatsPayload | None = None
     try:
         iceberg_stats = iceberg_stats_for_table(table, snapshot_id=snapshot_id)
     except (RuntimeError, ValueError, TypeError, OSError):
         iceberg_stats = None
+    if not iceberg_stats:
+        iceberg_stats = _minimal_iceberg_stats(table=table, snapshot_id=snapshot_id)
     if iceberg_stats is not None and tombstone_stats is not None:
         _merge_tombstone_stats(iceberg_stats, tombstone_stats)
-    if iceberg_stats is not None:
+    if iceberg_stats:
         persist_iceberg_statistics(
             table=table,
             table_key=ctx.table_key,
@@ -733,6 +737,25 @@ def _write_to_iceberg(
             snapshot_properties=snapshot_properties,
         )
     return snapshot_id, iceberg_stats
+
+
+def _minimal_iceberg_stats(
+    *,
+    table: Table,
+    snapshot_id: int | None,
+) -> IcebergStatsPayload | None:
+    if snapshot_id is None:
+        return None
+    payload: IcebergStatsPayload = {"snapshot_id": snapshot_id}
+    try:
+        snapshot = table.snapshot_by_id(snapshot_id)
+    except (RuntimeError, TypeError, ValueError, OSError, AttributeError):
+        snapshot = None
+    if snapshot is not None:
+        schema_id = getattr(snapshot, "schema_id", None)
+        if isinstance(schema_id, int):
+            payload["schema_id"] = schema_id
+    return payload
 
 
 def _update_snapshot_refs(
@@ -804,9 +827,10 @@ def _ensure_table(
                 ctx.partition_columns,
             ),
             tag_sets=tag_sets,
+            settings=ctx.settings_view.build.iceberg,
         )
         return table
-    properties = _table_properties(plan=plan)
+    properties = _table_properties(plan=plan, settings=ctx.settings_view.build.iceberg)
     partition_spec = _partition_spec(
         table_schema=plan.table_schema,
         iceberg_schema=plan.iceberg_bundle.schema,
@@ -829,7 +853,7 @@ def _ensure_table(
     )
 
 
-def _table_properties(*, plan: _IcebergPlan) -> dict[str, str]:
+def _table_properties(*, plan: _IcebergPlan, settings: IcebergSettings) -> dict[str, str]:
     properties: dict[str, str] = {
         TableProperties.DEFAULT_NAME_MAPPING: plan.iceberg_bundle.name_mapping.model_dump_json()
     }
@@ -842,6 +866,7 @@ def _table_properties(*, plan: _IcebergPlan) -> dict[str, str]:
         properties[TableProperties.PARQUET_ROW_GROUP_LIMIT] = str(row_group_size)
     if data_page_size is not None:
         properties[TableProperties.PARQUET_PAGE_SIZE_BYTES] = str(data_page_size)
+    properties.update(iceberg_location_properties(settings))
     return properties
 
 
@@ -851,9 +876,10 @@ def _apply_table_updates(
     plan: _IcebergPlan,
     partition_columns: tuple[str, ...],
     tag_sets: Sequence[Mapping[str, object]],
+    settings: IcebergSettings,
 ) -> None:
     with table.transaction() as tx:
-        _apply_table_properties(tx=tx, properties=_table_properties(plan=plan))
+        _apply_table_properties(tx=tx, properties=_table_properties(plan=plan, settings=settings))
         _apply_schema_update(tx=tx, plan=plan)
         _apply_partition_update(
             tx=tx,
@@ -1614,6 +1640,7 @@ def _ensure_tombstone_table(*, ctx: _MaterializeContext, plan: _IcebergPlan) -> 
     properties = {
         TableProperties.DEFAULT_NAME_MAPPING: bundle.name_mapping.model_dump_json(),
     }
+    properties.update(iceberg_location_properties(ctx.settings_view.build.iceberg))
     return catalog.create_table(
         identifier,
         schema=bundle.schema,

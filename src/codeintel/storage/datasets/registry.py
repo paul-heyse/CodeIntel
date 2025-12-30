@@ -12,7 +12,6 @@ from codeintel.storage.metadata.meta_catalog import meta_table_ref
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from pathlib import Path
 
     from duckdb import DuckDBPyConnection
 
@@ -36,7 +35,6 @@ class DatasetRegistry:
     by_table_key: Mapping[str, DatasetContract]
     jsonl_datasets: Mapping[str, str]
     parquet_datasets: Mapping[str, str]
-    dataset_root_dir: Path | None = None
 
     @property
     def all_datasets(self) -> tuple[str, ...]:
@@ -128,32 +126,8 @@ class DatasetRegistry:
         """
         return tuple(name for name, ds in self.by_name.items() if ds.is_view)
 
-    def with_dataset_root(self, dataset_root_dir: Path | None) -> DatasetRegistry:
-        """Return a new registry with dataset root configured.
-
-        Parameters
-        ----------
-        dataset_root_dir
-            Root directory for Arrow dataset snapshots, when available.
-
-        Returns
-        -------
-        DatasetRegistry
-            New registry with dataset root metadata attached.
-        """
-        return DatasetRegistry(
-            by_name=self.by_name,
-            by_table_key=self.by_table_key,
-            jsonl_datasets=self.jsonl_datasets,
-            parquet_datasets=self.parquet_datasets,
-            dataset_root_dir=dataset_root_dir,
-        )
-
-
 def load_dataset_registry(
     con: DuckDBPyConnection,
-    *,
-    dataset_root_dir: Path | None = None,
 ) -> DatasetRegistry:
     """Load dataset metadata from DuckDB's metadata.datasets table.
 
@@ -164,8 +138,6 @@ def load_dataset_registry(
     ----------
     con
         DuckDB connection used to read metadata datasets.
-    dataset_root_dir
-        Optional Arrow dataset root path for downstream consumers.
 
     Returns
     -------
@@ -258,7 +230,6 @@ def load_dataset_registry(
         by_table_key=by_table,
         jsonl_datasets=jsonl_map,
         parquet_datasets=parquet_map,
-        dataset_root_dir=dataset_root_dir,
     )
 
 

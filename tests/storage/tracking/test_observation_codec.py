@@ -24,12 +24,10 @@ EXPECTED_DISTINCT_COUNT_MAX = 3
 EXPECTED_NULL_COUNT = 0
 EXPECTED_MIN_VALUE = 1
 EXPECTED_BATCH_COUNT = 1
-EXPECTED_ROW_GROUPS = 2
 EXPECTED_MAX_VALUE = 9
 EXPECTED_AVG_LENGTH = 4
 EXPECTED_ROW_COUNT = 5
 EXPECTED_TOTAL_BYTES = 10
-EXPECTED_MANIFEST_ROW_COUNT = 5
 EXPECTED_DICTIONARY_MAX_CARDINALITY = 2
 
 
@@ -69,22 +67,18 @@ def test_encode_column_stats_payload() -> None:
 
 
 def test_encode_dataset_stats_payload() -> None:
-    """Encode dataset stats payload with manifest metadata."""
+    """Encode dataset stats payload with Iceberg metadata."""
     payload = encode_dataset_stats(
         stats=DatasetStatsInput(
             row_count=EXPECTED_ROW_COUNT,
             batch_count=EXPECTED_BATCH_COUNT,
             total_bytes=EXPECTED_TOTAL_BYTES,
-            manifest_stats={"row_groups": EXPECTED_ROW_GROUPS},
-            manifest_row_count=EXPECTED_ROW_COUNT,
             iceberg_stats={"total_records": EXPECTED_ROW_COUNT},
         ),
     )
     assert payload.get("row_count") == EXPECTED_ROW_COUNT
     assert payload.get("batch_count") == EXPECTED_BATCH_COUNT
     assert payload.get("total_bytes") == EXPECTED_TOTAL_BYTES
-    assert payload.get("manifest_row_count") == EXPECTED_MANIFEST_ROW_COUNT
-    assert payload.get("parquet_stats") == {"row_groups": EXPECTED_ROW_GROUPS}
     assert payload.get("iceberg_stats") == {"total_records": EXPECTED_ROW_COUNT}
 
 

@@ -8,11 +8,15 @@ import polars as pl
 import pyarrow as pa
 import pytest
 
+from codeintel.core.iceberg.schema import iceberg_field_ids_for_table_schema
 from codeintel.core.schemas.contracts import (
     ARROW_SCHEMA_CONTRACT_VERSION,
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
+    ArrowSchemaMetadata,
     arrow_contract_for_table_schema,
+    decode_schema_ipc_b64,
+    encode_schema_ipc_b64,
     table_schema_from_arrow_schema,
     table_schema_from_polars_dataframe,
 )
@@ -197,3 +201,40 @@ def test_arrow_contract_roundtrip_preserves_table_schema() -> None:
         pytest.fail("Arrow contract extras_column metadata mismatch")
     if metadata.get("codeintel.table_key") != table_schema.table_key:
         pytest.fail("Arrow contract table_key metadata mismatch")
+
+
+def test_arrow_ipc_roundtrip_preserves_iceberg_metadata() -> None:
+    """Arrow IPC payloads should preserve Iceberg metadata."""
+    table_schema = TableSchema(
+        schema="analytics",
+        name="iceberg_metadata_roundtrip",
+        columns=[
+            Column("id", "BIGINT", nullable=False),
+            Column("name", "VARCHAR", nullable=True),
+        ],
+        primary_key=("id",),
+    )
+    field_ids = iceberg_field_ids_for_table_schema(table_schema)
+    metadata = ArrowSchemaMetadata(
+        iceberg_schema_id=101,
+        iceberg_name_mapping_digest="digest-1",
+        iceberg_field_ids=field_ids,
+    )
+    contract_schema = arrow_contract_for_table_schema(
+        table_schema=table_schema,
+        metadata=metadata,
+    )
+    payload = encode_schema_ipc_b64(contract_schema)
+    decoded = decode_schema_ipc_b64(payload)
+
+    schema_metadata = _decode_metadata(decoded.metadata)
+    if schema_metadata.get("codeintel.iceberg_schema_id") != 101:
+        pytest.fail("Iceberg schema_id metadata mismatch")
+    if schema_metadata.get("codeintel.iceberg_name_mapping_digest") != "digest-1":
+        pytest.fail("Iceberg name mapping digest metadata mismatch")
+    for column in table_schema.columns:
+        field = decoded.field(column.name)
+        field_metadata = _decode_metadata(field.metadata)
+        expected_id = field_ids[column.name]
+        if field_metadata.get("codeintel.iceberg_field_id") != expected_id:
+            pytest.fail(f"Iceberg field ID mismatch for {column.name}")
