@@ -1,7 +1,7 @@
 """Build-wide default settings."""
 
 from codeintel.core.config.settings import BuildSettings
-from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.config.view import SettingsView
 
 DEFAULT_PROFILE_NAME = "full"
 
@@ -14,7 +14,7 @@ def get_build_settings() -> BuildSettings:
     BuildSettings
         Loaded build settings.
     """
-    return load_runtime_settings().build
+    return SettingsView.from_runtime().build
 
 
 __all__ = ["DEFAULT_PROFILE_NAME", "BuildSettings", "get_build_settings"]

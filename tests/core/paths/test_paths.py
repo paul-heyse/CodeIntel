@@ -59,6 +59,12 @@ class TestNormalizePath:
         result = normalize_path("./src/file.py")
         expect_false(result.startswith("./"))
 
+    @staticmethod
+    def test_empty_path_returns_empty() -> None:
+        """Test that empty paths normalize to empty string."""
+        result = normalize_path("")
+        expect_equal(result, "")
+
 
 class TestNormalizeRelPath:
     """Tests for normalize_rel_path function."""

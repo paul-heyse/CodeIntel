@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,12 +16,12 @@ from codeintel.core.columnar.schema_alignment import (
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
-from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref, split_table_key
+from codeintel.storage.manifests import read_dataset_manifest, read_manifest_json
 from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
 
@@ -222,7 +221,7 @@ class ServingSnapshotService:
 
 
 def _load_schema_hashes(schema_manifest_path: Path) -> dict[str, str]:
-    payload = json.loads(schema_manifest_path.read_text(encoding="utf-8"))
+    payload = read_manifest_json(schema_manifest_path)
     obj = _expect_dict(payload, ctx="schema_manifest")
     version = str(obj.get("version", "")).strip()
     if version != "v2":

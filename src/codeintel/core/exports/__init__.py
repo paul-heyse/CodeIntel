@@ -11,6 +11,17 @@ from codeintel.core.exports.arrow_ipc import (
     default_ipc_write_options,
     iter_ipc_stream,
 )
+from codeintel.core.exports.codecs import (
+    ExportCodec,
+    ExportCodecError,
+    coerce_export_row,
+    coerce_export_value,
+    encode_batch,
+    encode_reader,
+    encode_row,
+    get_export_codec,
+    register_export_codec,
+)
 from codeintel.core.exports.formats import (
     EXPORT_FORMATS,
     CanonicalExportFormat,
@@ -28,13 +39,14 @@ from codeintel.core.exports.formats import (
     supports_line_chunks,
     supports_preview,
 )
-from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
 
 __all__ = [
     "ARROW_IPC_STREAM_MIME",
     "EXPORT_FORMATS",
     "ArrowIpcStreamError",
     "CanonicalExportFormat",
+    "ExportCodec",
+    "ExportCodecError",
     "ExportFormat",
     "ExportFormatSpec",
     "apply_ipc_metadata",
@@ -44,12 +56,17 @@ __all__ = [
     "coerce_export_value",
     "default_export_format",
     "default_ipc_write_options",
+    "encode_batch",
+    "encode_reader",
+    "encode_row",
     "export_format_choices",
+    "get_export_codec",
     "is_binary_export_format",
     "is_text_export_format",
     "iter_ipc_stream",
     "mime_type_for_export_format",
     "normalize_export_format",
+    "register_export_codec",
     "resolve_export_format_spec",
     "suffix_for_export_format",
     "supports_byte_chunks",

@@ -130,6 +130,7 @@ async def dispatch_semantic_export(
     ExportDispatchResult
         Response payload and optional metrics row count.
     """
+
     async def handle_json_rows(
         plan: ExportPlan,
         provider: ExportRowProvider,

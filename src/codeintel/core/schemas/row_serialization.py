@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from codeintel.core.schemas.service import get_schema_service
 
@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from codeintel.core.schemas.row_models import RowSerializer
+
+_Column = TypeVar("_Column", bound=str)
 
 
 @lru_cache(maxsize=2048)
@@ -59,8 +61,8 @@ def row_to_tuple(table_key: str, row: Mapping[str, object]) -> tuple[object, ...
 
 
 def row_to_tuple_by_columns(
-    row: Mapping[str, object],
-    columns: Sequence[str],
+    row: Mapping[_Column, object],
+    columns: Sequence[_Column],
 ) -> tuple[object, ...]:
     """Serialize a row mapping using an explicit column order.
 

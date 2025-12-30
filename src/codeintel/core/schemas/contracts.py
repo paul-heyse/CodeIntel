@@ -177,6 +177,14 @@ _SQLGLOT_MAP_TYPES = _sqlglot_types("MAP")
 _SQLGLOT_STRUCT_TYPES = _sqlglot_types("STRUCT")
 _SQLGLOT_UNION_TYPES = _sqlglot_types("UNION")
 
+_STRUCT_FIELD_TYPE = cast("type[exp.Expression] | None", getattr(exp, "StructField", None))
+
+
+def _is_struct_field(expr: exp.Expression) -> bool:
+    if isinstance(_STRUCT_FIELD_TYPE, type):
+        return isinstance(expr, _STRUCT_FIELD_TYPE)
+    return expr.__class__.__name__ == "StructField"
+
 
 @dataclass(frozen=True, slots=True)
 class ArrowSchemaProvenance:
@@ -358,7 +366,7 @@ def _arrow_map_type(data_type: exp.DataType) -> pa.DataType:
 def _arrow_struct_type(data_type: exp.DataType) -> pa.DataType:
     fields: list[pa.Field] = []
     for field_expr in data_type.expressions:
-        if not isinstance(field_expr, exp.StructField):
+        if not _is_struct_field(field_expr):
             msg = "STRUCT type must declare named fields"
             raise TypeError(msg)
         if not isinstance(field_expr.this, exp.Identifier):
@@ -379,7 +387,7 @@ def _arrow_union_type(data_type: exp.DataType) -> pa.DataType:
         raise ValueError(msg)
     fields: list[pa.Field] = []
     for field_expr in data_type.expressions:
-        if not isinstance(field_expr, exp.StructField):
+        if not _is_struct_field(field_expr):
             msg = "UNION members must be STRUCT fields"
             raise TypeError(msg)
         if not isinstance(field_expr.this, exp.Identifier):
@@ -436,35 +444,31 @@ def _arrow_decimal_type_from_sqlglot(data_type: exp.DataType) -> pa.DataType:
     return _decimal_for_precision_scale(precision, scale)
 
 
+_SQLGLOT_TYPE_HANDLERS: tuple[
+    tuple[frozenset[exp.DataType.Type], Callable[[exp.DataType], pa.DataType]],
+    ...,
+] = (
+    (_SQLGLOT_INTEGER_TYPES, _arrow_int32_type),
+    (_SQLGLOT_BIGINT_TYPES, _arrow_int64_type),
+    (_SQLGLOT_BIGINT_DECIMAL_TYPES, _arrow_big_decimal_type),
+    (_SQLGLOT_FLOAT_TYPES, _arrow_float64_type),
+    (_SQLGLOT_STRING_TYPES, _arrow_string_type),
+    (_SQLGLOT_JSON_TYPES, _arrow_string_type),
+    (_SQLGLOT_BOOLEAN_TYPES, _arrow_bool_type),
+    (_SQLGLOT_TIMESTAMPTZ_TYPES, _arrow_timestamptz_type),
+    (_SQLGLOT_TIMESTAMP_TYPES, _arrow_timestamp_type),
+    (_SQLGLOT_DECIMAL_TYPES, _arrow_decimal_type_from_sqlglot),
+    (_SQLGLOT_LIST_TYPES, _arrow_list_type),
+    (_SQLGLOT_MAP_TYPES, _arrow_map_type),
+    (_SQLGLOT_STRUCT_TYPES, _arrow_struct_type),
+    (_SQLGLOT_UNION_TYPES, _arrow_union_type),
+)
+
+
 def _arrow_type_from_sqlglot(data_type: exp.DataType) -> pa.DataType:
-    if data_type.this in _SQLGLOT_INTEGER_TYPES:
-        return _arrow_int32_type(data_type)
-    if data_type.this in _SQLGLOT_BIGINT_TYPES:
-        return _arrow_int64_type(data_type)
-    if data_type.this in _SQLGLOT_BIGINT_DECIMAL_TYPES:
-        return _arrow_big_decimal_type(data_type)
-    if data_type.this in _SQLGLOT_FLOAT_TYPES:
-        return _arrow_float64_type(data_type)
-    if data_type.this in _SQLGLOT_STRING_TYPES:
-        return _arrow_string_type(data_type)
-    if data_type.this in _SQLGLOT_JSON_TYPES:
-        return _arrow_string_type(data_type)
-    if data_type.this in _SQLGLOT_BOOLEAN_TYPES:
-        return _arrow_bool_type(data_type)
-    if data_type.this in _SQLGLOT_TIMESTAMPTZ_TYPES:
-        return _arrow_timestamptz_type(data_type)
-    if data_type.this in _SQLGLOT_TIMESTAMP_TYPES:
-        return _arrow_timestamp_type(data_type)
-    if data_type.this in _SQLGLOT_DECIMAL_TYPES:
-        return _arrow_decimal_type_from_sqlglot(data_type)
-    if data_type.this in _SQLGLOT_LIST_TYPES:
-        return _arrow_list_type(data_type)
-    if data_type.this in _SQLGLOT_MAP_TYPES:
-        return _arrow_map_type(data_type)
-    if data_type.this in _SQLGLOT_STRUCT_TYPES:
-        return _arrow_struct_type(data_type)
-    if data_type.this in _SQLGLOT_UNION_TYPES:
-        return _arrow_union_type(data_type)
+    for types, handler in _SQLGLOT_TYPE_HANDLERS:
+        if data_type.this in types:
+            return handler(data_type)
     msg = f"Unsupported SQL type: {data_type}"
     raise ValueError(msg)
 
@@ -1461,7 +1465,7 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
         name=name,
         columns=columns,
         primary_key=primary_key,
-        indexes=indexes,
+        indexes=tuple(indexes),
         description=description_value,
         write_policy=write_policy,
     )
@@ -1559,24 +1563,27 @@ def _column_from_json_schema(
 ) -> tuple[ColumnType, bool]:
     raw_type, nullable_by_type = _json_schema_type(prop)
     nullable = name not in required or nullable_by_type
+    column_type: ColumnType
     if raw_type is None:
-        return "JSON", nullable
-    if raw_type == "boolean":
-        return "BOOLEAN", nullable
-    if raw_type == "integer":
-        return "INTEGER", nullable
-    if raw_type == "number":
-        return "DOUBLE", nullable
-    if raw_type == "string":
-        if prop.get("format") == "date-time":
-            return "TIMESTAMP", nullable
-        return "VARCHAR", nullable
-    if raw_type == "object":
-        return "STRUCT", nullable
-    if raw_type == "array":
-        return _list_type_from_items(prop), nullable
-    msg = f"Unsupported JSON schema type: {raw_type!r}"
-    raise ValueError(msg)
+        column_type = "JSON"
+    elif raw_type == "string" and prop.get("format") == "date-time":
+        column_type = "TIMESTAMP"
+    elif raw_type == "array":
+        column_type = _list_type_from_items(prop)
+    else:
+        json_type_map: dict[str, ColumnType] = {
+            "boolean": "BOOLEAN",
+            "integer": "INTEGER",
+            "number": "DOUBLE",
+            "string": "VARCHAR",
+            "object": "STRUCT",
+        }
+        mapped_type = json_type_map.get(raw_type)
+        if mapped_type is None:
+            msg = f"Unsupported JSON schema type: {raw_type!r}"
+            raise ValueError(msg)
+        column_type = mapped_type
+    return column_type, nullable
 
 
 def _json_schema_type(prop: Mapping[str, Any]) -> tuple[str | None, bool]:

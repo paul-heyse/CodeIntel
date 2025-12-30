@@ -34,7 +34,7 @@ from codeintel.build.hamilton.native.patterns.specs import (
     TableOutputSpec,
     ToolTargetSpec,
 )
-from codeintel.build.hamilton.native.patterns.tool_target import (
+from codeintel.build.hamilton.native.patterns.target_builder import (
     IngestStep,
     ToolFinalizeContext,
     ToolRunContext,

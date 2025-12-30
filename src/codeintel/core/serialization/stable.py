@@ -8,8 +8,13 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
+from typing import ClassVar, Protocol, cast
 
 type JsonValue = str | int | float | bool | dict[str, JsonValue] | list[JsonValue] | None
+
+
+class _DataclassInstance(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, dataclasses.Field[object]]]
 
 
 def stable_stringify(value: object) -> str:
@@ -58,40 +63,44 @@ def stable_json_value(
     JsonValue
         JSON-compatible representation.
     """
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Enum):
-        return stable_json_value(value.value, omit_none=omit_none, omit_private_fields=omit_private_fields)
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return _dataclass_json_value(
-            value,
+    current = value
+    while isinstance(current, Enum):
+        current = current.value
+
+    if current is None or isinstance(current, (str, int, float, bool)):
+        result: JsonValue = current
+    elif isinstance(current, Path):
+        result = str(current)
+    elif isinstance(current, (datetime, date)):
+        result = current.isoformat()
+    elif isinstance(current, bytes):
+        result = current.decode("utf-8", errors="replace")
+    elif dataclasses.is_dataclass(current) and not isinstance(current, type):
+        result = _dataclass_json_value(
+            cast("_DataclassInstance", current),
             omit_none=omit_none,
             omit_private_fields=omit_private_fields,
         )
-    if isinstance(value, Mapping):
-        return _mapping_json_value(
-            value,
+    elif isinstance(current, Mapping):
+        result = _mapping_json_value(
+            current,
             omit_none=omit_none,
             omit_private_fields=omit_private_fields,
         )
-    if isinstance(value, (list, tuple)):
-        return [
+    elif isinstance(current, (list, tuple)):
+        result = [
             stable_json_value(item, omit_none=omit_none, omit_private_fields=omit_private_fields)
-            for item in value
+            for item in current
         ]
-    if isinstance(value, (set, frozenset)):
-        return _sorted_sequence_json_value(
-            value,
+    elif isinstance(current, (set, frozenset)):
+        result = _sorted_sequence_json_value(
+            current,
             omit_none=omit_none,
             omit_private_fields=omit_private_fields,
         )
-    return str(value)
+    else:
+        result = str(current)
+    return result
 
 
 def _mapping_json_value(
@@ -139,7 +148,7 @@ def _json_sort_key(value: JsonValue) -> str:
 
 
 def _dataclass_json_value(
-    value: object,
+    value: _DataclassInstance,
     *,
     omit_none: bool,
     omit_private_fields: bool,

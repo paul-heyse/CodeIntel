@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 
-from codeintel.core.schemas.row_serialization import row_to_tuple_by_columns
+from codeintel.core.schemas.row_serialization import row_to_tuple, row_to_tuple_by_columns
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -29,14 +29,38 @@ def load_columns_by_table() -> dict[str, list[str]]:
     }
 
 
-def serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) -> tuple[object, ...]:
-    """Serialize a mapping using a stable column sequence.
+def serialize_row(
+    row: Mapping[_Column, object],
+    columns: Sequence[_Column] | None,
+    *,
+    table_key: str | None = None,
+) -> tuple[object, ...]:
+    """Serialize a mapping using schema-backed or explicit columns.
+
+    Parameters
+    ----------
+    row
+        Row mapping keyed by column name.
+    columns
+        Explicit column order when table_key is not provided.
+    table_key
+        Optional table key for schema-backed serialization.
 
     Returns
     -------
     tuple[object, ...]
         Row values ordered according to the provided columns.
+
+    Raises
+    ------
+    ValueError
+        If columns are missing when table_key is not provided.
     """
+    if table_key is not None:
+        return row_to_tuple(table_key, cast("Mapping[str, object]", row))
+    if columns is None:
+        msg = "columns must be provided when table_key is not set"
+        raise ValueError(msg)
     return row_to_tuple_by_columns(row, columns)
 
 

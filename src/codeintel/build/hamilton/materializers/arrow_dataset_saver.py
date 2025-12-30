@@ -22,7 +22,10 @@ from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import duration_ms
-from codeintel.build.hamilton.materializers.base_pipeline import run_materialization_pipeline
+from codeintel.build.hamilton.materializers.base_pipeline import (
+    MaterializationPipelineInput,
+    run_materialization_pipeline,
+)
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
@@ -41,6 +44,7 @@ from codeintel.core.columnar import (
 )
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.config.settings import BuildSettings
+from codeintel.core.config.view import SettingsView
 from codeintel.core.execution.materialization import succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.contracts import (
@@ -56,9 +60,9 @@ from codeintel.storage.datasets.arrow_store import (
     build_dataset_manifest,
     write_dataset,
 )
-from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.manifests import dataset_manifest_path, write_dataset_manifest
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -171,6 +175,7 @@ class _MaterializeContext:
     target_name: str
     partition_columns: tuple[str, ...]
     collect_group: str | None
+    settings_view: SettingsView
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,12 +256,14 @@ class ArrowDatasetSaver(DataSaver):
         dict[str, object]
             Materialization metadata mapping.
         """
+
         def _materialize(
             _context: MaterializationContext,
             value: object,
             input_hash: str | None,
             start: float,
         ) -> MaterializationResult:
+            settings_view = SettingsView.from_build_env(self.env)
             ctx = _MaterializeContext(
                 env=self.env,
                 catalog=self.catalog,
@@ -264,6 +271,7 @@ class ArrowDatasetSaver(DataSaver):
                 target_name=self.target_name,
                 partition_columns=self.partition_columns,
                 collect_group=self.collect_group,
+                settings_view=settings_view,
             )
             manifest, manifest_path = _materialize_dataset(
                 ctx=ctx,
@@ -278,7 +286,7 @@ class ArrowDatasetSaver(DataSaver):
                 dataset_manifest_path=str(manifest_path),
             )
 
-        result = run_materialization_pipeline(
+        payload = MaterializationPipelineInput(
             env=self.env,
             catalog=self.catalog,
             target_name=self.target_name,
@@ -287,6 +295,9 @@ class ArrowDatasetSaver(DataSaver):
             recoverable_exceptions=_RECOVERABLE_EXCEPTIONS,
             none_error="Expected tabular data but received None",
             unknown_error="Unknown Arrow dataset materialization failure",
+        )
+        result = run_materialization_pipeline(
+            payload=payload,
             materialize=_materialize,
         )
         return result.to_mapping()
@@ -305,8 +316,8 @@ def _materialize_dataset(
             table_key=ctx.table_key,
             snapshot_id=plan.snapshot_id,
             options=plan.options,
-            arrow_settings=ctx.env.settings.arrow_dataset,
-            build_settings=ctx.env.settings,
+            arrow_settings=ctx.settings_view.build.arrow_dataset,
+            build_settings=ctx.settings_view.build,
         )
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
@@ -1172,7 +1183,7 @@ def _build_write_settings(
     ctx: _MaterializeContext,
     inferred_settings: dict[str, object] | None,
 ) -> dict[str, object]:
-    settings = ctx.env.settings.arrow_dataset
+    settings = ctx.settings_view.build.arrow_dataset
     dictionary_encode = settings.dictionary_encode
     dictionary_max = settings.dictionary_max_cardinality if settings.dictionary_encode else None
     dictionary_columns: tuple[str, ...] | None = None

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.core.serialization.stable import stable_json_value, stable_stringify
@@ -43,7 +43,7 @@ def test_stable_json_value_omits_private_and_none_fields() -> None:
 
 def test_stable_json_value_handles_path_and_datetime() -> None:
     """Ensure Path and datetime values serialize as strings."""
-    payload = {"path": Path("src/file.py"), "ts": datetime(2024, 1, 1, 0, 0, 0)}
+    payload = {"path": Path("src/file.py"), "ts": datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)}
     serialized = stable_json_value(payload)
     expect_is_instance(serialized, dict)
     expect_in("src/file.py", str(serialized))

@@ -368,6 +368,9 @@ def _normalize_node_type(node_type: object) -> object:
         args = _flatten_union_args(get_args(resolved))
         if not args:
             return resolved
+        non_none_args = [arg for arg in args if arg is not type(None)]
+        if non_none_args:
+            args = non_none_args
         normalized_args = [_resolve_type_alias(arg) for arg in args]
         unique_args = _dedupe_args(normalized_args)
         if len(unique_args) == 1:

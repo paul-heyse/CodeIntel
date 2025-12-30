@@ -1,4 +1,4 @@
-"""Reusable helpers for tool-backed native Hamilton targets."""
+"""Target scaffolding utilities for tool-backed native Hamilton targets."""
 
 from __future__ import annotations
 
@@ -473,6 +473,9 @@ def _attach_table_rows_node(
 
 
 def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
+    def _anchor_docstring() -> str:
+        return f"Finalize {inputs.spec.target_name} target materialization."
+
     def anchor_fn(**kwargs: object) -> TargetRunRecord:
         env = kwargs.get("env")
         catalog = kwargs.get("catalog")
@@ -559,7 +562,7 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
         inspect.Signature(params, return_annotation=TargetRunRecord),
     )
     anchor_fn.__name__ = f"t__{inputs.spec.target_name}"
-    anchor_fn.__doc__ = f"Finalize {inputs.spec.target_name} target materialization."
+    anchor_fn.__doc__ = _anchor_docstring()
     return codeintel_target(
         domain=inputs.spec.domain,
         target=inputs.spec.target_name,

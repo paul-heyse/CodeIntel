@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Literal, Protocol, TypeGuard
+from typing import Literal, Protocol, TypeGuard, cast
 
 from codeintel.core.schemas.contracts import ExtrasPolicy
 from codeintel.core.schemas.primitives import TableSchema
@@ -23,13 +23,40 @@ from codeintel.storage.tracking.schema_catalog_models import (
 class ColumnStatsLike(Protocol):
     """Protocol for column stats accumulators used by the encoder."""
 
-    null_count: int
-    non_null_count: int
-    distinct_max: int | None
-    min_value: object | None
-    max_value: object | None
-    length_sum: int
-    length_count: int
+    @property
+    def null_count(self) -> int:
+        """Return the null count."""
+        ...
+
+    @property
+    def non_null_count(self) -> int:
+        """Return the non-null count."""
+        ...
+
+    @property
+    def distinct_max(self) -> int | None:
+        """Return the max distinct count."""
+        ...
+
+    @property
+    def min_value(self) -> object | None:
+        """Return the minimum observed value."""
+        ...
+
+    @property
+    def max_value(self) -> object | None:
+        """Return the maximum observed value."""
+        ...
+
+    @property
+    def length_sum(self) -> int:
+        """Return the sum of observed lengths."""
+        ...
+
+    @property
+    def length_count(self) -> int:
+        """Return the count of observed lengths."""
+        ...
 
 
 _DEFAULT_DICT_MAX_CARDINALITY = 256
@@ -50,7 +77,13 @@ def encode_derived_settings(
     total_bytes: int,
     extras_policy: ExtrasPolicy,
 ) -> DerivedSettingsPayload | None:
-    """Compute derived settings payload from observed stats."""
+    """Compute derived settings payload from observed stats.
+
+    Returns
+    -------
+    DerivedSettingsPayload | None
+        Derived settings payload when any settings are inferred, otherwise None.
+    """
     settings: DerivedSettingsPayload = {"extras_policy": extras_policy}
     dictionary_columns: list[str] = []
     distinct_values: list[int] = []
@@ -90,7 +123,13 @@ def encode_derived_settings(
 def encode_column_stats(
     column_stats: Mapping[str, ColumnStatsLike],
 ) -> ColumnStatsPayload | None:
-    """Encode column stats accumulators into a payload."""
+    """Encode column stats accumulators into a payload.
+
+    Returns
+    -------
+    ColumnStatsPayload | None
+        Encoded column stats payload, or None when no stats are provided.
+    """
     if not column_stats:
         return None
     payload: ColumnStatsPayload = {}
@@ -119,7 +158,13 @@ def encode_dataset_stats(
     manifest_stats: ParquetStatsPayload | None,
     manifest_row_count: int | None,
 ) -> DatasetStatsPayload:
-    """Encode dataset statistics into a payload."""
+    """Encode dataset statistics into a payload.
+
+    Returns
+    -------
+    DatasetStatsPayload
+        Encoded dataset stats payload.
+    """
     payload: DatasetStatsPayload = {
         "row_count": row_count,
         "batch_count": batch_count,
@@ -150,7 +195,13 @@ def _json_safe_value(value: object) -> object:
 
 
 def decode_column_stats(value: object | None) -> ColumnStatsPayload | None:
-    """Decode column stats payloads from stored JSON values."""
+    """Decode column stats payloads from stored JSON values.
+
+    Returns
+    -------
+    ColumnStatsPayload | None
+        Decoded column stats payload, or None when invalid.
+    """
     decoded = _decode_optional_json_dict(value)
     if decoded is None:
         return None
@@ -206,7 +257,13 @@ _DATASET_INT_KEYS: tuple[_DatasetStatsKey, ...] = (
 
 
 def decode_dataset_stats(value: object | None) -> DatasetStatsPayload | None:
-    """Decode dataset stats payloads from stored JSON values."""
+    """Decode dataset stats payloads from stored JSON values.
+
+    Returns
+    -------
+    DatasetStatsPayload | None
+        Decoded dataset stats payload, or None when invalid.
+    """
     decoded = _decode_optional_json_dict(value)
     if decoded is None:
         return None
@@ -238,11 +295,17 @@ _DERIVED_INT_KEYS: tuple[_DerivedIntKey, ...] = (
 
 
 def decode_derived_settings(value: object | None) -> DerivedSettingsPayload | None:
-    """Decode derived settings payloads from stored JSON values."""
+    """Decode derived settings payloads from stored JSON values.
+
+    Returns
+    -------
+    DerivedSettingsPayload | None
+        Decoded derived settings payload, or None when invalid.
+    """
     decoded = _decode_optional_json_dict(value)
     if decoded is None:
         return None
-    payload: DerivedSettingsPayload = {}
+    payload: dict[str, object] = {}
     valid = _apply_optional_str(payload, decoded, "extras_policy") and _apply_optional_str_list(
         payload, decoded, "dictionary_encode_columns"
     )
@@ -257,7 +320,9 @@ def decode_derived_settings(value: object | None) -> DerivedSettingsPayload | No
         ) and _apply_optional_float(payload, decoded, "avg_row_bytes")
     if not valid:
         return None
-    return payload or None
+    if not payload:
+        return None
+    return cast("DerivedSettingsPayload", payload)
 
 
 def _decode_optional_json_dict(value: object | None) -> dict[str, object] | None:
@@ -293,7 +358,7 @@ def _apply_optional_dataset_int(
 
 
 def _apply_optional_str(
-    payload: DerivedSettingsPayload,
+    payload: MutableMapping[str, object],
     decoded: Mapping[str, object],
     key: str,
 ) -> bool:
@@ -307,7 +372,7 @@ def _apply_optional_str(
 
 
 def _apply_optional_str_list(
-    payload: DerivedSettingsPayload,
+    payload: MutableMapping[str, object],
     decoded: Mapping[str, object],
     key: str,
 ) -> bool:
@@ -326,7 +391,7 @@ def _apply_optional_str_list(
 
 
 def _apply_optional_derived_int(
-    payload: DerivedSettingsPayload,
+    payload: MutableMapping[str, object],
     decoded: Mapping[str, object],
     key: _DerivedIntKey,
 ) -> bool:
@@ -340,7 +405,7 @@ def _apply_optional_derived_int(
 
 
 def _apply_optional_bool(
-    payload: DerivedSettingsPayload,
+    payload: MutableMapping[str, object],
     decoded: Mapping[str, object],
     key: str,
 ) -> bool:
@@ -354,7 +419,7 @@ def _apply_optional_bool(
 
 
 def _apply_optional_float(
-    payload: DerivedSettingsPayload,
+    payload: MutableMapping[str, object],
     decoded: Mapping[str, object],
     key: str,
 ) -> bool:

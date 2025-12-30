@@ -1,0 +1,1 @@
+"""Manifest I/O tests."""

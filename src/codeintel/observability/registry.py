@@ -43,7 +43,13 @@ class InstrumentRegistry:
         group: str,
         builder: Callable[[Meter], _T],
     ) -> _T:
-        """Return a cached instrument group, creating it if needed."""
+        """Return a cached instrument group, creating it if needed.
+
+        Returns
+        -------
+        _T
+            Cached or newly created instrument group.
+        """
         group_map = self._cache.get_or_create(meter, dict)
         with self._lock:
             existing = group_map.get(group)
@@ -59,7 +65,13 @@ class _InstrumentRegistryHolder(SingletonHolder[InstrumentRegistry]):
 
 
 def get_instrument_registry() -> InstrumentRegistry:
-    """Return the shared instrument registry."""
+    """Return the shared instrument registry.
+
+    Returns
+    -------
+    InstrumentRegistry
+        Process-wide instrument registry instance.
+    """
     return _InstrumentRegistryHolder.get(InstrumentRegistry)
 
 
@@ -106,14 +118,26 @@ class InstrumentationRegistry:
         self._record(name, status="error", detail=detail)
 
     def snapshot(self) -> tuple[InstrumentationRecord, ...]:
-        """Return a stable snapshot of instrumentation records."""
+        """Return a stable snapshot of instrumentation records.
+
+        Returns
+        -------
+        tuple[InstrumentationRecord, ...]
+            Sorted tuple of instrumentation records.
+        """
         with self._lock:
             records = list(self._records.values())
         records.sort(key=lambda record: record.name)
         return tuple(records)
 
     def summary(self) -> dict[str, int]:
-        """Summarize instrumentation statuses."""
+        """Summarize instrumentation statuses.
+
+        Returns
+        -------
+        dict[str, int]
+            Mapping of status name to count.
+        """
         counts: dict[str, int] = {
             "enabled": 0,
             "unavailable": 0,
@@ -216,7 +240,13 @@ class _RegistryHolder(SingletonHolder[InstrumentationRegistry]):
 
 
 def get_instrumentation_registry() -> InstrumentationRegistry:
-    """Return the process-wide instrumentation registry."""
+    """Return the process-wide instrumentation registry.
+
+    Returns
+    -------
+    InstrumentationRegistry
+        Process-wide instrumentation registry instance.
+    """
     return _RegistryHolder.get(InstrumentationRegistry)
 
 

@@ -13,8 +13,8 @@ import pyarrow as pa
 from starlette.responses import StreamingResponse
 
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
+from codeintel.core.exports.codecs import iter_ndjson_bytes, iter_ndjson_bytes_from_reader
 from codeintel.serving.export.formats import mime_type_for_export_format
-from codeintel.serving.export.ndjson import iter_ndjson_bytes, iter_ndjson_bytes_from_reader
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping

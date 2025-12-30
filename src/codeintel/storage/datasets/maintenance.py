@@ -15,12 +15,12 @@ from codeintel.storage.datasets.arrow_store import (
     ExistingDataBehavior,
     build_dataset_manifest,
 )
-from codeintel.storage.datasets.manifests import (
+from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.storage.manifests import (
     dataset_manifest_path,
     read_dataset_manifest,
     write_dataset_manifest,
 )
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

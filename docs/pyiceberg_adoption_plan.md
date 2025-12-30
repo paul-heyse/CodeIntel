@@ -34,9 +34,13 @@ and streaming execution.
 ## Compatibility Notes (Hamilton + Serving/Storage Plans)
 
 - SQLGlot remains the semantic query source of truth; Iceberg expressions are a projection.
+- Iceberg row filters are pushdown-only; full SQLGlot filters are always enforced
+  in the execution engine (DuckDB/Polars) as residual predicates.
 - Arrow contract metadata stays derived from Hamilton schemas and aligns with Iceberg field IDs.
 - Data-quality modifiers in Hamilton remain primary; Iceberg stats complement validation.
 - No reintroduction of raw SQL templates or ad hoc view maps.
+- Iceberg integration should surface as Hamilton DataLoader/DataSaver nodes so
+  caching/telemetry/guardrails are uniformly applied.
 
 ## Implementation Detailing Requirements (Applies to All Phases)
 
@@ -120,6 +124,21 @@ Implementation detail to add:
 - Metadata cache refresh cadence:
   - On build completion and on serving snapshot load.
   - Explicit CLI command to force refresh.
+- Iceberg ColumnarStream:
+  - Add an `IcebergColumnarStream` wrapper that implements `ColumnarStream`.
+  - Back it with `DataScan.to_arrow_batch_reader()` and route through
+    `codeintel.core.columnar.tabular_adapter` to standardize conversions.
+- Hamilton integration:
+  - Add a Hamilton Iceberg DataAdapter (DataLoader/DataSaver) as the only I/O entrypoint.
+  - Ensure Iceberg materialization is represented as DAG nodes for lineage/telemetry.
+- DataAdapter spec:
+  - Loader class: `IcebergDataLoader` (inputs: table_key, ref, columns, row_filter).
+  - Saver class: `IcebergDataSaver` (inputs: table_key, write_mode, snapshot_props).
+  - Node naming: `<table_key>__iceberg_load` / `<table_key>__iceberg_save`.
+  - Tags: `io=iceberg`, `storage=duckdb`, `format=iceberg`.
+- Core boundary:
+  - Keep Iceberg logic in `core/iceberg` with dependencies limited to
+    `tabular_adapter`, `contracts`, `stable` serialization, and `SettingsView`.
 
 ## Catalog Data Model (DuckDB SQL + Advanced Types)
 
@@ -256,11 +275,20 @@ Implementation detail to add:
 - Name mapping:
   - When a column is renamed, store old name in name mapping table.
   - Use name mapping during schema evolution to avoid ID churn.
+- Name mapping storage:
+  - Persist `pyiceberg.table.name_mapping` payloads in the metadata cache.
+  - Include mapping versions in Arrow schema metadata for traceability.
 - Schema evolution rules:
   - Default: strict (no type widening without explicit allowlist).
   - Per-table override: allow `union_by_name` for ingest-style tables.
 - Arrow contract metadata:
   - Include `codeintel.iceberg_schema_id` and `codeintel.iceberg_field_id`.
+- Contract conversions:
+  - Use `codeintel.core.schemas.contracts` as the only Arrow/JSON schema surface.
+  - Avoid duplicating Arrow metadata composition outside the contracts module.
+- Schema merge for ingest:
+  - Use `pa.unify_schemas(..., promote_options=...)` to align external schemas.
+  - Bind promote policy to `ExtrasPolicy` (strict for `reject`, permissive for `retain`).
 
 ## Phase 3: Build Write Path (Iceberg Snapshots + Tombstones)
 
@@ -290,8 +318,14 @@ Implementation detail to add:
   - Append-only: `Table.append`.
   - Replace-partition: `dynamic_partition_overwrite`.
   - Full replace: `overwrite` with `overwrite_filter=ALWAYS_TRUE`.
+- Transaction guardrails:
+  - Use `Table.transaction()` to co-commit schema/spec/sort changes with writes.
+  - Gate commits with `AssertCurrentSchemaId`, `AssertDefaultSpecId`, and `AssertTableUUID`.
 - Snapshot properties (required):
   - `run_id`, `commit`, `repo`, `table_key`, `schema_hash`, `producer_version`.
+- Snapshot property hashing:
+  - Derive hashes with `stable_stringify` / `stable_json_value` to avoid drift.
+  - Pull inputs from `SettingsView` to keep config access centralized.
 - Tombstone schema:
   - Primary key columns mirrored from base table.
   - Required: `deleted_at`, `snapshot_id`, `run_id`, `commit`.
@@ -299,6 +333,22 @@ Implementation detail to add:
 - Incremental delete input:
   - Define a standard delete payload contract for ingestion nodes.
   - Validate delete keys against current schema before write.
+- External ingest path:
+  - Allow `Table.add_files` for pre-existing Parquet/Arrow files when no rewrite
+    is desired (external ingest flows).
+- Hamilton alignment:
+  - Derive partition spec/sort order from Hamilton tags and keep the mapping stable.
+  - Use `Parallelizable/Collect` for partitioned ingest and attach snapshot IDs at collect.
+- Tag mapping contract:
+  - Partition tags: `partition.key`, `partition.transform`, `partition.order`.
+  - Sort tags: `sort.key`, `sort.direction`, `sort.null_order`.
+  - Validation: reject unknown transforms and missing keys; fallback to default spec.
+- Write settings:
+  - Apply dictionary encoding + row-group sizing from `observation_codec` derived settings.
+  - Persist applied settings in snapshot properties for auditability.
+- Cache + snapshot consistency:
+  - Mark Iceberg write nodes as `@cache(behavior="disable")`.
+  - Force recompute when schema hash or snapshot properties change.
 
 ## Tombstone Diff Algorithm (Full Snapshot Writes)
 
@@ -365,6 +415,14 @@ Implementation detail to add:
 - Read-path injection points:
   - Polars engine: build `LazyFrame` from `DataScan` and keep predicate pushdown.
   - DuckDB engine: use `DataScan.to_duckdb()` or register Arrow readers as relations.
+- Pushdown strategy:
+  - Translate only safe SQLGlot predicates into Iceberg expressions for pruning.
+  - Always apply full SQLGlot filters in DuckDB/Polars as residual predicates.
+  - Maintain a capability matrix of supported expressions and types.
+- Pushdown matrix:
+  - Supported: equality, range comparisons, IN, IS NULL, AND/OR (no NOT by default).
+  - Not supported: UDFs, regex, cross-table predicates, non-deterministic functions.
+  - Residual policy: skip pushdown on mixed support and log coverage ratio.
 - Snapshot resolution:
   - Resolve `serving/<env>` ref first, fallback to `main`.
   - Surface missing refs as warnings in serving (not fatal) unless a strict flag is set.
@@ -376,6 +434,24 @@ Implementation detail to add:
   - Allow read path to proceed during rollout (`ICEBERG_TOMBSTONES_ENABLED=false`).
 - Schema metadata:
   - Always attach `arrow_schema_ipc` metadata to responses for contract stability.
+- File IO:
+  - Use explicit `pyarrow.fs.from_uri` resolution and `InputFile/OutputFile` APIs.
+  - Document location provider rules for data/metadata layout.
+- FileIO config:
+  - Resolve scheme-specific options via SettingsView (S3/GCS/Azure/local).
+  - Explicitly set `io.impl` for test environments to avoid auto-resolution drift.
+- Scan planning:
+  - Introduce an `IcebergScanPlan` structure to centralize scan options and reuse
+    across Polars/DuckDB engines.
+- IcebergScanPlan schema:
+  - `ref`, `snapshot_id`, `selected_fields`, `row_filter`, `case_sensitive`.
+  - `batch_size`, `limit`, `io_options`, `pushdown_coverage`.
+- IPC + Flight:
+  - Default serving contract remains Arrow IPC streams.
+  - Provide an optional Arrow Flight server path for high-throughput streaming.
+- Flight contract:
+  - Stream Arrow IPC with schema metadata headers and cancellation support.
+  - Gate behind `ICEBERG_FLIGHT_ENABLED` with auth config in SettingsView.
 
 ## SQLGlot Anti-Join Transform Pattern (Tombstone Filtering)
 
@@ -417,6 +493,8 @@ Notes:
 - Include snapshot scoping predicates in the AST before canonicalization to ensure
   query hashes reflect the snapshot boundary.
 - Use SQLGlot `diff` to compare pre/post-transform queries in guardrail checks.
+- Treat anti-join as a residual filter; do not rely on Iceberg pushdown for
+  correctness when tombstone filters are applied.
 
 ## Phase 5: Observability + Validation via Iceberg Metadata
 
@@ -444,6 +522,17 @@ Implementation detail to add:
   - Include `snapshot_id`, `schema_id`, `manifest_count`, `tombstone_count`.
 - Validation policy:
   - Warnings only for missing tombstone coverage; hard error for schema mismatch.
+- Statistics integration:
+  - Use `table.update_statistics()` and `table.inspect` for durable stats.
+  - Emit stats through `observation_codec` to avoid parallel payload encoders.
+- Validation engine:
+  - Use `pyarrow.compute` for columnar validation (Hamilton `@check_output` parity).
+  - Reserve custom validators for non-columnar edge cases only.
+- Pushdown metrics:
+  - Emit per-query pushdown coverage (translated predicate ratio) for analysis.
+- Observation stats wiring:
+  - Map `table.inspect` outputs to `DatasetStatsPayload` and `ColumnStatsPayload`.
+  - Persist derived settings in `DerivedSettingsPayload` for write tuning.
 
 ## Phase 6: CLI + Operational Tooling
 
@@ -467,6 +556,10 @@ Implementation detail to add:
 - Safety:
   - Require `--confirm` for destructive operations unless `--dry-run`.
   - Honor `ICEBERG_READ_ENABLED` for read-only deployments.
+- Snapshot maintenance:
+  - Add `iceberg.refs` and `iceberg.manage-snapshots` commands to create tags
+    and branches using `manage_snapshots()`.
+  - Add `iceberg.expire-snapshots` to call `MaintenanceTable.expire_snapshots()`.
 
 ## Phase 7: Migration + Backfill Strategy
 
@@ -497,6 +590,14 @@ Implementation detail to add:
   - Keep Iceberg tables intact for reactivation.
 - Dual-write acceptance:
   - Require identical row counts and schema ID alignment for N successive runs.
+- Canonicalization:
+  - Use `manifest_io`, `normalize_path`, and `table_key` helpers for legacy imports.
+  - Enforce consistent identifier parsing before creating Iceberg tables.
+- Migration checklist:
+  - Row counts match (+/- tolerance where expected).
+  - Schema IDs and name mappings match expected registry values.
+  - Pushdown coverage above target threshold for serving workloads.
+  - Tombstone counts align with previous snapshot diffs.
 
 ## Phase 8: Testing and Regression Gates
 
@@ -517,6 +618,9 @@ Implementation detail to add:
   - Field ID stability across rename + type preservation.
   - Snapshot property payload correctness.
   - Tombstone anti-join AST idempotency.
+- Additional unit tests:
+  - SQLGlot-to-Iceberg predicate mapping for supported expressions.
+  - Name-mapping persistence roundtrip in metadata cache.
 - Integration tests:
   - End-to-end write + read via Iceberg with tombstones applied.
   - Time-travel reads for `serving/<env>` refs.

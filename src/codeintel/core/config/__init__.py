@@ -8,10 +8,12 @@ from codeintel.core.config.settings import (
     HamiltonExecutionSettings,
     ServingSettings,
 )
+from codeintel.core.config.view import SettingsView
 
 __all__ = [
     "BuildSettings",
     "ExportAuditSettings",
     "HamiltonExecutionSettings",
     "ServingSettings",
+    "SettingsView",
 ]

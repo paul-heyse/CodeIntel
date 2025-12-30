@@ -26,8 +26,8 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.manifests import dataset_manifest_path
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from tests._helpers.assertions import (
     assert_record_has_artifacts,

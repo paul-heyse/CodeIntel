@@ -270,22 +270,25 @@ def to_record_batch_reader(
     if batch_size <= 0:
         msg = "batch_size must be positive"
         raise ValueError(msg)
+    reader: pa.RecordBatchReader | None = None
     if isinstance(value, pa.RecordBatchReader):
-        return value
-    if isinstance(value, ColumnarStream):
-        return value.to_reader(batch_size=batch_size)
-    if isinstance(value, pa.Table):
-        batches = value.to_batches(max_chunksize=batch_size)
-        return pa.RecordBatchReader.from_batches(value.schema, batches)
-    if isinstance(value, DuckDBRelation):
-        return value.fetch_arrow_reader()
-    if pl is not None and isinstance(value, pl.LazyFrame):
-        return _lazyframe_to_reader(value, batch_size=batch_size, options=options)
-    reader = coerce_arrow_reader(value, batch_size=batch_size)
-    if reader is not None:
-        return reader
-    msg = f"Unsupported tabular input: {type(value)!r}"
-    raise TypeError(msg)
+        reader = value
+    elif isinstance(value, ColumnarStream):
+        reader = value.to_reader(batch_size=batch_size)
+    elif isinstance(value, pa.Table):
+        table = cast("pa.Table", value)
+        batches = table.to_batches(max_chunksize=batch_size)
+        reader = pa.RecordBatchReader.from_batches(table.schema, batches)
+    elif isinstance(value, DuckDBRelation):
+        reader = value.fetch_arrow_reader()
+    elif pl is not None and isinstance(value, pl.LazyFrame):
+        reader = _lazyframe_to_reader(value, batch_size=batch_size, options=options)
+    if reader is None:
+        reader = coerce_arrow_reader(value, batch_size=batch_size)
+    if reader is None:
+        msg = f"Unsupported tabular input: {type(value)!r}"
+        raise TypeError(msg)
+    return reader
 
 
 def to_table(
@@ -347,24 +350,29 @@ def to_lazyframe(value: TabularInput) -> PolarsLazyFrame:
     if pl is None:  # pragma: no cover
         msg = "polars is required for LazyFrame conversion"
         raise RuntimeError(msg)
+    lazyframe: PolarsLazyFrame | None = None
     if isinstance(value, pl.LazyFrame):
-        return value
-    if isinstance(value, ColumnarStream):
-        return value.to_lazyframe()
-    if isinstance(value, pa.Table):
-        return _table_to_lazyframe(value)
-    if isinstance(value, pa.RecordBatchReader):
-        return _arrow_reader_to_lazyframe(value)
-    if isinstance(value, DuckDBRelation):
-        return _arrow_reader_to_lazyframe(value.fetch_arrow_reader())
-    reader = coerce_arrow_reader(value, batch_size=None)
-    if reader is not None:
-        return _arrow_reader_to_lazyframe(reader)
-    table = coerce_arrow_table(value)
-    if table is not None:
-        return _table_to_lazyframe(table)
-    msg = f"Unsupported tabular input for LazyFrame: {type(value)!r}"
-    raise TypeError(msg)
+        lazyframe = value
+    elif isinstance(value, ColumnarStream):
+        lazyframe = value.to_lazyframe()
+    elif isinstance(value, pa.Table):
+        lazyframe = _table_to_lazyframe(value)
+    elif isinstance(value, pa.RecordBatchReader):
+        lazyframe = _arrow_reader_to_lazyframe(value)
+    elif isinstance(value, DuckDBRelation):
+        lazyframe = _arrow_reader_to_lazyframe(value.fetch_arrow_reader())
+    else:
+        reader = coerce_arrow_reader(value, batch_size=None)
+        if reader is not None:
+            lazyframe = _arrow_reader_to_lazyframe(reader)
+        else:
+            table = coerce_arrow_table(value)
+            if table is not None:
+                lazyframe = _table_to_lazyframe(table)
+    if lazyframe is None:
+        msg = f"Unsupported tabular input for LazyFrame: {type(value)!r}"
+        raise TypeError(msg)
+    return lazyframe
 
 
 def to_relation(
@@ -547,6 +555,9 @@ def _resolve_polars_options(options: PolarsExecutionOptions | None) -> PolarsExe
 
 
 def _arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> PolarsLazyFrame:
+    if pl is None:  # pragma: no cover
+        msg = "polars is required for Arrow conversion"
+        raise RuntimeError(msg)
     frame = pl.from_arrow(reader)
     if isinstance(frame, pl.Series):
         return frame.to_frame().lazy()
@@ -554,6 +565,9 @@ def _arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> PolarsLazyFrame:
 
 
 def _table_to_lazyframe(table: pa.Table) -> PolarsLazyFrame:
+    if pl is None:  # pragma: no cover
+        msg = "polars is required for Arrow conversion"
+        raise RuntimeError(msg)
     frame = pl.from_arrow(table)
     if isinstance(frame, pl.Series):
         return frame.to_frame().lazy()

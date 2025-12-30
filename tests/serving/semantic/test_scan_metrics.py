@@ -10,8 +10,8 @@ from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import SemanticQueryRequest
 from codeintel.serving.settings import ServingSettings
-from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.gateway.pool import PoolConfig
+from codeintel.storage.manifests import read_dataset_manifest
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_not_none,

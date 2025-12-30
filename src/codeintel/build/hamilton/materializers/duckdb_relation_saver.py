@@ -17,7 +17,10 @@ from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import duration_ms
-from codeintel.build.hamilton.materializers.base_pipeline import run_materialization_pipeline
+from codeintel.build.hamilton.materializers.base_pipeline import (
+    MaterializationPipelineInput,
+    run_materialization_pipeline,
+)
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observations import (
@@ -176,7 +179,7 @@ class DuckDBRelationSaver(DataSaver):
                 row_count=row_count,
             )
 
-        result = run_materialization_pipeline(
+        payload = MaterializationPipelineInput(
             env=self.env,
             catalog=self.catalog,
             target_name=self.target_name,
@@ -185,6 +188,9 @@ class DuckDBRelationSaver(DataSaver):
             recoverable_exceptions=_RECOVERABLE_EXCEPTIONS,
             none_error="Expected relation data but received None",
             unknown_error="Unknown materialization failure",
+        )
+        result = run_materialization_pipeline(
+            payload=payload,
             materialize=_materialize,
             cleanup=_cleanup,
         )

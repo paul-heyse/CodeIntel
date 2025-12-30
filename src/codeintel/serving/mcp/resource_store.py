@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
+from codeintel.core.exports.codecs import encode_ndjson_line
 from codeintel.serving.errors import (
     ExportCorruptError,
     ExportExpiredError,
@@ -28,7 +29,6 @@ from codeintel.serving.export.formats import (
     suffix_for_export_format,
 )
 from codeintel.serving.export.models import ExportArtifactSpec
-from codeintel.serving.export.ndjson import encode_ndjson_line
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable

@@ -17,7 +17,13 @@ def problem_detail_from_error_response_with_context(
     correlation_id: str | None = None,
     errors: list[dict[str, Any]] | None = None,
 ) -> ProblemDetail:
-    """Convert an ErrorResponse into a ProblemDetail with transport context."""
+    """Convert an ErrorResponse into a ProblemDetail with transport context.
+
+    Returns
+    -------
+    ProblemDetail
+        Problem detail payload enriched with transport context.
+    """
     resolved_instance = instance
     if resolved_instance is None and context is not None:
         resolved_instance = context.resource_uri or context.operation

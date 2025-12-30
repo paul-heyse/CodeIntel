@@ -75,7 +75,6 @@ def hash_key(*args: object, **kwargs: object) -> str:
     return hashlib.md5(base_key.encode(), usedforsecurity=False).hexdigest()
 
 
-
 @dataclass(frozen=True)
 class CompositeKey:
     """A composite cache key with multiple components.

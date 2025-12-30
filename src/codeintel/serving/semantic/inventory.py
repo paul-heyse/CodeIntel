@@ -6,11 +6,11 @@ without querying the DuckDB catalog.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
+from codeintel.storage.manifests import read_manifest_json
 from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
 
 if TYPE_CHECKING:
@@ -148,7 +148,7 @@ class SchemaInventory:
         ValueError
             If the manifest version is unsupported.
         """
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_manifest_json(path)
         obj = _expect_dict(payload, ctx="schema_manifest")
         version = str(obj.get("version", "")).strip()
         if version != "v2":

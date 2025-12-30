@@ -33,7 +33,13 @@ def parse_python_module(path: Path) -> tuple[list[str], ast.AST] | None:
 
 
 def timed_parse(path: Path) -> tuple[list[str], ast.AST, float] | None:
-    """Parse a Python file and return lines, AST, and duration seconds."""
+    """Parse a Python file and return lines, AST, and duration seconds.
+
+    Returns
+    -------
+    tuple[list[str], ast.AST, float] | None
+        Parsed lines, AST, and elapsed seconds; None when parsing fails.
+    """
     start = time.perf_counter()
     parsed = parse_python_module(path)
     if parsed is None:
@@ -43,7 +49,13 @@ def timed_parse(path: Path) -> tuple[list[str], ast.AST, float] | None:
 
 
 def literal_value(node: ast.AST | None) -> object:
-    """Extract a Python literal value from an AST node, falling back to None."""
+    """Extract a Python literal value from an AST node, falling back to None.
+
+    Returns
+    -------
+    object
+        Extracted literal value, or None when not a literal.
+    """
     if node is None:
         return None
     result: object | None = None
@@ -69,25 +81,49 @@ def literal_value(node: ast.AST | None) -> object:
 
 
 def literal_str(node: ast.AST | None) -> str | None:
-    """Extract string literal content when available."""
+    """Extract string literal content when available.
+
+    Returns
+    -------
+    str | None
+        String literal value, or None when not a string literal.
+    """
     value = literal_value(node)
     return str(value) if isinstance(value, str) else None
 
 
 def literal_int(node: ast.AST | None) -> int | None:
-    """Extract integer literal content when available."""
+    """Extract integer literal content when available.
+
+    Returns
+    -------
+    int | None
+        Integer literal value, or None when not an int literal.
+    """
     value = literal_value(node)
     return int(value) if isinstance(value, int) else None
 
 
 def literal_bool(node: ast.AST | None) -> bool | None:
-    """Extract boolean literal content when available."""
+    """Extract boolean literal content when available.
+
+    Returns
+    -------
+    bool | None
+        Boolean literal value, or None when not a bool literal.
+    """
     value = literal_value(node)
     return bool(value) if isinstance(value, bool) else None
 
 
 def literal_int_sequence(node: ast.AST | None) -> list[int] | None:
-    """Extract a sequence of integer literals when available."""
+    """Extract a sequence of integer literals when available.
+
+    Returns
+    -------
+    list[int] | None
+        Integer literal sequence, or None when parsing fails.
+    """
     if not isinstance(node, (ast.List, ast.Tuple)):
         return None
     ints: list[int] = []
@@ -100,7 +136,13 @@ def literal_int_sequence(node: ast.AST | None) -> list[int] | None:
 
 
 def safe_unparse(node: ast.AST | None) -> str:
-    """Best-effort unparse that never raises."""
+    """Best-effort unparse that never raises.
+
+    Returns
+    -------
+    str
+        Unparsed source, or an empty string on failure.
+    """
     if node is None:
         return ""
     try:
@@ -110,7 +152,13 @@ def safe_unparse(node: ast.AST | None) -> str:
 
 
 def snippet_from_lines(lines: Iterable[str], lineno: int | None, end_lineno: int | None) -> str:
-    """Return a trimmed snippet from lines using 1-based line numbers."""
+    """Return a trimmed snippet from lines using 1-based line numbers.
+
+    Returns
+    -------
+    str
+        Trimmed snippet, or an empty string when no snippet is available.
+    """
     if lineno is None:
         return ""
     start_index = max(lineno - 1, 0)

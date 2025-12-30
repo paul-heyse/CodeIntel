@@ -14,7 +14,7 @@ from fastmcp.server.event_store import EventStore
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.config.view import SettingsView
 from codeintel.observability.lifecycle import ObservabilityLifecycle
 from codeintel.observability.runtime import get_observability
 from codeintel.serving.auth.policy import require_http_auth
@@ -105,7 +105,7 @@ def create_serving_app(
     )
     app.state.serving = state
 
-    observability_settings = load_runtime_settings().observability
+    observability_settings = SettingsView.from_runtime().require_observability()
     lifecycle = ObservabilityLifecycle(default_service_name="codeintel-serving")
     lifecycle.bootstrap(observability_settings)
 

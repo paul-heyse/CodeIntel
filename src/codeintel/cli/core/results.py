@@ -125,36 +125,8 @@ def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
         omit_private_fields=True,
     )
     if isinstance(serialized, dict):
-        return serialized
+        return cast("dict[str, object]", serialized)
     return {}
-
-
-def _serialize_value(value: object) -> object:
-    """Recursively serialize a value for JSON output.
-
-    Handle nested dataclasses, lists, dicts, and primitives.
-
-    Parameters
-    ----------
-    value
-        Value to serialize.
-
-    Returns
-    -------
-    object
-        Serialized value suitable for JSON.
-    """
-    if value is None:
-        return None
-
-    if isinstance(value, SerializableResult):
-        return value.to_dict()
-
-    return stable_json_value(
-        value,
-        omit_none=True,
-        omit_private_fields=True,
-    )
 
 
 def ensure_serializable[T](cls: type[T]) -> type[T]:
