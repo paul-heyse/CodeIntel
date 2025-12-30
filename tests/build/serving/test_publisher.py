@@ -26,6 +26,7 @@ from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
+from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.assertions import (
     assert_record_has_artifacts,
     assert_target_ok,
@@ -74,6 +75,42 @@ def _seed_modules(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> 
     con.execute(
         "INSERT INTO core.modules (repo, commit, module, path, row_hash) VALUES (?, ?, ?, ?, ?)",
         [repo, commit, "pkg.foo", "foo.py", "seed"],
+    )
+
+
+def _seed_search_documents(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> None:
+    exists = con.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'docs' AND table_name = 'search_documents'
+        LIMIT 1
+        """
+    ).fetchone()
+    if exists is None:
+        build_search_documents_table(con)
+    row = con.execute("SELECT COUNT(*) FROM docs.search_documents").fetchone()
+    count = int(row[0]) if row is not None and row[0] is not None else 0
+    if count > 0:
+        return
+    con.execute(
+        """
+        INSERT INTO docs.search_documents (
+            doc_id, kind, name, module, rel_path, text, ref_goid_h128, repo, commit
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            "module:demo",
+            "module",
+            "pkg.foo",
+            "pkg.foo",
+            "foo.py",
+            "pkg.foo foo.py",
+            None,
+            repo,
+            commit,
+        ],
     )
 
 
@@ -136,6 +173,7 @@ def _publish_snapshot(
         con.execute("CREATE TABLE t (id INTEGER)")
         con.execute("INSERT INTO t VALUES (1)")
         _seed_modules(con, repo=repo, commit=commit)
+        _seed_search_documents(con, repo=repo, commit=commit)
         modules_dataset = _prepare_modules_dataset(tmp_path)
 
         gateway = _StubGateway(
@@ -246,6 +284,7 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("CREATE TABLE t (id INTEGER)")
     _seed_modules(con, repo="demo/repo", commit="c1")
+    _seed_search_documents(con, repo="demo/repo", commit="c1")
     modules_dataset = _prepare_modules_dataset(tmp_path)
 
     gateway = _StubGateway(
@@ -336,6 +375,7 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
     _seed_modules(con, repo="demo/repo", commit="c1")
+    _seed_search_documents(con, repo="demo/repo", commit="c1")
     modules_dataset = _prepare_modules_dataset(tmp_path)
     edges_ref = meta_table_ref("metadata.derived_lineage_edges")
     columns_ref = meta_table_ref("metadata.derived_lineage_columns")

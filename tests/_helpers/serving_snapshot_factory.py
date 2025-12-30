@@ -247,6 +247,12 @@ class ServingSnapshotFactory:
             published_at=published_at,
             semantic_layer_version=semantic_layer_version,
         )
+        _assert_snapshot_refs_for_manifest(
+            schema_manifest_path=snapshot.schema_manifest_path,
+            iceberg_settings=iceberg_settings,
+            run_id=snapshot.run_id,
+            commit=snapshot.commit,
+        )
         return snapshot
 
     @staticmethod
@@ -399,7 +405,6 @@ def _iceberg_settings(serve_dir: Path) -> IcebergSettings:
     return IcebergSettings(
         read_enabled=True,
         write_enabled=True,
-        catalog_type="sql",
         catalog_uri=f"duckdb:///{catalog_path}",
         catalog_warehouse=str(warehouse_path),
     )
@@ -522,6 +527,37 @@ def _write_snapshot_manifest(
     manifest.write_json(snapshot.snapshot_manifest_path)
 
 
+def _assert_snapshot_ref(table: object, ref_name: str) -> None:
+    snapshot_by_name = getattr(table, "snapshot_by_name", None)
+    if not callable(snapshot_by_name):
+        msg = f"Iceberg table does not support snapshot refs: {ref_name}"
+        raise TypeError(msg)
+    snapshot = snapshot_by_name(ref_name)
+    if snapshot is None:
+        msg = f"Missing Iceberg snapshot ref: {ref_name}"
+        raise AssertionError(msg)
+
+
+def _assert_iceberg_snapshot_refs(
+    *,
+    iceberg_settings: IcebergSettings,
+    table_keys: tuple[str, ...],
+    run_id: str,
+    commit: str,
+) -> None:
+    provider = IcebergCatalogProvider(iceberg_settings)
+    for table_key in table_keys:
+        try:
+            table = provider.load_table(table_key)
+        except (RuntimeError, ValueError, KeyError, OSError) as exc:
+            msg = f"Expected Iceberg table for {table_key}"
+            raise AssertionError(msg) from exc
+        if commit:
+            _assert_snapshot_ref(table, f"commit/{commit}")
+        if run_id:
+            _assert_snapshot_ref(table, f"run/{run_id}")
+
+
 def _ensure_table_schema_hash(table: dict[str, object]) -> dict[str, object]:
     schema_hash = _schema_hash_from_table(table)
     if schema_hash is None:
@@ -570,6 +606,41 @@ def _table_schema_from_entry(table: Mapping[str, object]) -> TableSchema | None:
         return table_schema_from_json_obj(table)
     except (TypeError, ValueError):
         return None
+
+
+def _table_keys_from_schema_manifest(path: Path) -> tuple[str, ...]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tables_raw = payload.get("tables", [])
+    if not isinstance(tables_raw, list):
+        return ()
+    table_keys: list[str] = []
+    for table in tables_raw:
+        if not isinstance(table, dict):
+            continue
+        parsed = _table_schema_from_entry(table)
+        if parsed is None:
+            continue
+        table_keys.append(parsed.table_key)
+    return tuple(table_keys)
+
+
+def _assert_snapshot_refs_for_manifest(
+    *,
+    schema_manifest_path: Path,
+    iceberg_settings: IcebergSettings,
+    run_id: str,
+    commit: str,
+) -> None:
+    table_keys = _table_keys_from_schema_manifest(schema_manifest_path)
+    if not table_keys:
+        msg = f"No tables found in schema manifest: {schema_manifest_path}"
+        raise AssertionError(msg)
+    _assert_iceberg_snapshot_refs(
+        iceberg_settings=iceberg_settings,
+        table_keys=table_keys,
+        run_id=run_id,
+        commit=commit,
+    )
 
 
 def _columns_from_raw(columns_raw: list[object]) -> list[Column] | None:
@@ -701,8 +772,13 @@ def _publish_snapshot(snapshot: ServingSnapshot) -> None:
 
 def _snapshot_from_pointer(*, pointer_path: Path, serve_dir: Path) -> ServingSnapshot:
     pointer = ServingSnapshotPointer.load(pointer_path)
-    _ = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
     iceberg_settings = _iceberg_settings(serve_dir)
+    _assert_snapshot_refs_for_manifest(
+        schema_manifest_path=pointer.schema_manifest_path,
+        iceberg_settings=iceberg_settings,
+        run_id=pointer.run_id,
+        commit=pointer.commit,
+    )
     return ServingSnapshot(
         serve_dir=serve_dir,
         snapshot_root=pointer.snapshot_root,

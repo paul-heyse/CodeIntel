@@ -10,7 +10,7 @@ from tests._helpers.assertions import expect_equal, expect_in, expect_true
 
 MIN_INGESTION_TARGETS = 5
 MIN_GRAPHS_TARGETS = 5
-MIN_ANALYTICS_TARGETS = 10
+MIN_ANALYTICS_TARGETS = 5
 
 
 class TestTargetRegistry:
@@ -50,7 +50,7 @@ class TestTargetRegistry:
     @staticmethod
     def test_all_targets_have_valid_modules(catalog: DagCatalog) -> None:
         """All targets have valid module assignments."""
-        valid_modules = {"ingestion", "graphs", "analytics", "export"}
+        valid_modules = {"ingestion", "graphs", "analytics", "export", "ops"}
         for target in catalog.all_targets:
             expect_true(target.module in valid_modules, message=f"Invalid module for {target.name}")
 

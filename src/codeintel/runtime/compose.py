@@ -241,11 +241,13 @@ def _resolve_modules_for_runtime(
     resolved_config: _ResolvedRuntimeConfig,
 ) -> ResolvedModuleSet:
     include_planning_nodes = _planning_enabled(resolved_config.hamilton_config)
+    include_plan_materialization = _plan_materialization_enabled(resolved_config.hamilton_config)
     resolved = resolve_module_set(
         env=env,
         plugin_config=resolved_config.plugin_config,
         hamilton_config=resolved_config.hamilton_config,
         include_planning=include_planning_nodes,
+        include_plan_materialization=include_plan_materialization,
     )
     _enforce_pack_namespaces(resolved.packs, resolved_config.plugin_config)
     return resolved
@@ -295,7 +297,10 @@ def _merge_hamilton_config(
     plugin_config: Mapping[str, object],
 ) -> dict[str, Any]:
     merged = dict(base_config)
-    merged.update(plugin_config)
+    for key, value in plugin_config.items():
+        if key.startswith("ci_support_include_") and key in merged:
+            continue
+        merged[key] = value
     return merged
 
 
@@ -690,6 +695,13 @@ def _normalize_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def _planning_enabled(config: Mapping[str, Any]) -> bool:
     value = config.get("ci.enable_planning_nodes")
+    if isinstance(value, bool):
+        return value
+    return True
+
+
+def _plan_materialization_enabled(config: Mapping[str, Any]) -> bool:
+    value = config.get("ci.plan_materialization")
     if isinstance(value, bool):
         return value
     return True

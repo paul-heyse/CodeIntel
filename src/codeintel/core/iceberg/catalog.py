@@ -38,6 +38,34 @@ def _pyiceberg_home(config_path: Path | None) -> Iterator[Mapping[str, str]]:
             os.environ["PYICEBERG_HOME"] = prior
 
 
+_DEFAULT_DUCKDB_CATALOG_IMPL = "codeintel.storage.iceberg.duckdb_catalog.DuckDBCatalog"
+
+
+def _resolve_catalog_impl(
+    *,
+    catalog_type: str | None,
+    explicit_type: str | None,
+    explicit_impl: str | None,
+) -> dict[str, str]:
+    if explicit_type and catalog_type and explicit_type != catalog_type:
+        msg = "Conflicting Iceberg catalog type configuration."
+        raise ValueError(msg)
+
+    if explicit_impl:
+        if explicit_type:
+            msg = "Cannot set both catalog type and py-catalog-impl."
+            raise ValueError(msg)
+        if catalog_type and catalog_type not in {"sql", None}:
+            msg = "Cannot set catalog_type alongside py-catalog-impl."
+            raise ValueError(msg)
+        return {"py-catalog-impl": explicit_impl}
+    if explicit_type and explicit_type != "sql":
+        return {"type": explicit_type}
+    if catalog_type and catalog_type != "sql":
+        return {"type": catalog_type}
+    return {"py-catalog-impl": _DEFAULT_DUCKDB_CATALOG_IMPL}
+
+
 @dataclass(frozen=True, slots=True)
 class IcebergCatalogProvider:
     """Resolve Iceberg catalog connections and table identifiers."""
@@ -95,19 +123,27 @@ class IcebergCatalogProvider:
 
     def _catalog_properties(self) -> dict[str, str]:
         properties: dict[str, str] = {}
-        if self.settings.catalog_type is not None:
-            if self.settings.catalog_type != "sql":
-                msg = "Only the Iceberg SQL catalog is supported."
-                raise ValueError(msg)
-            properties["type"] = self.settings.catalog_type
         if self.settings.catalog_uri is not None:
             properties["uri"] = self.settings.catalog_uri
         if self.settings.catalog_warehouse is not None:
             properties["warehouse"] = self.settings.catalog_warehouse
         if self.settings.io_impl is not None:
             properties["io.impl"] = self.settings.io_impl
-        properties.update(dict(self.settings.catalog_properties))
-        properties.update(dict(self.settings.io_options))
+        catalog_properties = dict(self.settings.catalog_properties)
+        io_options = dict(self.settings.io_options)
+        explicit_impl = catalog_properties.pop("py-catalog-impl", None)
+        explicit_type = catalog_properties.pop("type", None)
+        if isinstance(explicit_type, str):
+            explicit_type = explicit_type.strip().lower()
+        properties.update(
+            _resolve_catalog_impl(
+                catalog_type=self.settings.catalog_type,
+                explicit_type=explicit_type,
+                explicit_impl=explicit_impl,
+            )
+        )
+        properties.update(catalog_properties)
+        properties.update(io_options)
         return properties
 
 

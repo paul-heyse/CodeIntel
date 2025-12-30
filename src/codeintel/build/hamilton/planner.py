@@ -46,7 +46,11 @@ def compute_plan(
     TypeError
         If the planning DAG does not return a BuildPlan.
     """
-    resolved_runtime = runtime or _compose_planning_runtime(env=env, config=config)
+    resolved_runtime = runtime or _compose_planning_runtime(
+        env=env,
+        config=config,
+        materialize=materialize,
+    )
     final_vars = _plan_final_vars(runtime=resolved_runtime, materialize=materialize)
     inputs = ExecutionInputs(
         env=env,
@@ -71,8 +75,9 @@ def _compose_planning_runtime(
     *,
     env: BuildEnv,
     config: Mapping[str, Any] | None,
+    materialize: bool,
 ) -> RuntimeBundle:
-    resolved_config = _planning_config(env=env, config=config)
+    resolved_config = _planning_config(env=env, config=config, materialize=materialize)
     return compose_runtime(env=env, config=resolved_config).bundle
 
 
@@ -80,12 +85,14 @@ def _planning_config(
     *,
     env: BuildEnv,
     config: Mapping[str, Any] | None,
+    materialize: bool,
 ) -> dict[str, Any]:
     resolved = dict(config or {})
     if env.profile and "profile" not in resolved:
         resolved["profile"] = env.profile
     resolved.update(env.variants.as_hamilton_config())
     resolved["variant_fingerprint"] = env.variants.variant_fingerprint
+    resolved["ci.plan_materialization"] = materialize
     return resolved
 
 

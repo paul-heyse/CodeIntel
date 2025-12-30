@@ -42,17 +42,6 @@ class PlanGraphInputs:
     preflight_block_map: Mapping[str, tuple[str, ...]]
 
 
-def plan_request(plan_request: PlanRequest) -> PlanRequest:
-    """Identity node for injected plan requests.
-
-    Returns
-    -------
-    PlanRequest
-        Plan request payload.
-    """
-    return plan_request
-
-
 def plan_context(
     catalog: DagCatalog,
     env: BuildEnv,
@@ -388,7 +377,6 @@ __all__ = [
     "plan",
     "plan_cache_probe",
     "plan_node_versions",
-    "plan_request",
     "plan_target_closure",
     "plan_target_subgraph_nodes",
 ]

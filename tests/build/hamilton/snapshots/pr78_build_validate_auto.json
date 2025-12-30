@@ -2,7 +2,568 @@
   "errors": [],
   "summary": {
     "error_count": 0,
-    "warning_count": 0
+    "warning_count": 56
   },
-  "warnings": []
+  "warnings": [
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "node": "t__ast",
+      "origin": "core",
+      "severity": "warning",
+      "target": "ast"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__call_graph",
+      "origin": "core",
+      "severity": "warning",
+      "target": "call_graph"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__cfg",
+      "origin": "core",
+      "severity": "warning",
+      "target": "cfg"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.planning.plan_targets",
+      "module_import": "codeintel.build.hamilton.native.planning.plan_targets",
+      "node": "t__ci_plan",
+      "origin": "core",
+      "severity": "warning",
+      "target": "ci_plan"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__config_ingest",
+      "origin": "core",
+      "severity": "warning",
+      "target": "config_ingest"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_coverage",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_coverage",
+      "node": "t__coverage_functions",
+      "origin": "core",
+      "severity": "warning",
+      "target": "coverage_functions"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__coverage_ingest",
+      "origin": "core",
+      "severity": "warning",
+      "target": "coverage_ingest"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "node": "t__cst",
+      "origin": "core",
+      "severity": "warning",
+      "target": "cst"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.export.decision_trace",
+      "module_import": "codeintel.build.hamilton.native.export.decision_trace",
+      "node": "t__decision_trace",
+      "origin": "core",
+      "severity": "warning",
+      "target": "decision_trace"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__dfg",
+      "origin": "core",
+      "severity": "warning",
+      "target": "dfg"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "node": "t__docstrings",
+      "origin": "core",
+      "severity": "warning",
+      "target": "docstrings"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.export.export_targets",
+      "module_import": "codeintel.build.hamilton.native.export.export_targets",
+      "node": "t__export_jsonl",
+      "origin": "core",
+      "severity": "warning",
+      "target": "export_jsonl"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.export.export_targets",
+      "module_import": "codeintel.build.hamilton.native.export.export_targets",
+      "node": "t__export_parquet",
+      "origin": "core",
+      "severity": "warning",
+      "target": "export_parquet"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_dependencies",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_dependencies",
+      "node": "t__external_deps",
+      "origin": "core",
+      "severity": "warning",
+      "target": "external_deps"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_functions",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_functions",
+      "node": "t__function_metrics",
+      "origin": "core",
+      "severity": "warning",
+      "target": "function_metrics"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.graphs.goids_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.goids_targets",
+      "node": "t__goids",
+      "origin": "core",
+      "severity": "warning",
+      "target": "goids"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel_targets.analytics.hello_target",
+      "module_import": "codeintel_targets.analytics.hello_target",
+      "node": "t__hello_example",
+      "origin": "workspace",
+      "severity": "warning",
+      "target": "hello_example"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.analytics.history_timeseries",
+      "module_import": "codeintel.build.hamilton.native.analytics.history_timeseries",
+      "node": "t__history_timeseries",
+      "origin": "core",
+      "severity": "warning",
+      "target": "history_timeseries"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__import_graph",
+      "origin": "core",
+      "severity": "warning",
+      "target": "import_graph"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__modules",
+      "origin": "core",
+      "severity": "warning",
+      "target": "modules"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "node": "t__profiles",
+      "origin": "core",
+      "severity": "warning",
+      "target": "profiles"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_risk",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_risk",
+      "node": "t__risk_factors",
+      "origin": "core",
+      "severity": "warning",
+      "target": "risk_factors"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.scip",
+      "module_import": "codeintel.build.hamilton.native.ingestion.scip",
+      "node": "t__scip",
+      "origin": "core",
+      "severity": "warning",
+      "target": "scip"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.scip_proto",
+      "module_import": "codeintel.build.hamilton.native.ingestion.scip_proto",
+      "node": "t__scip_proto",
+      "origin": "core",
+      "severity": "warning",
+      "target": "scip_proto"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.export.serving_artifacts",
+      "module_import": "codeintel.build.hamilton.native.export.serving_artifacts",
+      "node": "t__serving_artifacts",
+      "origin": "core",
+      "severity": "warning",
+      "target": "serving_artifacts"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "node": "t__test_profile",
+      "origin": "core",
+      "severity": "warning",
+      "target": "test_profile"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__tests_ingest",
+      "origin": "core",
+      "severity": "warning",
+      "target": "tests_ingest"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing kind tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__typing",
+      "origin": "core",
+      "severity": "warning",
+      "target": "typing"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "node": "t__ast",
+      "origin": "core",
+      "severity": "warning",
+      "target": "ast"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__call_graph",
+      "origin": "core",
+      "severity": "warning",
+      "target": "call_graph"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__cfg",
+      "origin": "core",
+      "severity": "warning",
+      "target": "cfg"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.planning.plan_targets",
+      "module_import": "codeintel.build.hamilton.native.planning.plan_targets",
+      "node": "t__ci_plan",
+      "origin": "core",
+      "severity": "warning",
+      "target": "ci_plan"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__config_ingest",
+      "origin": "core",
+      "severity": "warning",
+      "target": "config_ingest"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_coverage",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_coverage",
+      "node": "t__coverage_functions",
+      "origin": "core",
+      "severity": "warning",
+      "target": "coverage_functions"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__coverage_ingest",
+      "origin": "core",
+      "severity": "warning",
+      "target": "coverage_ingest"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "node": "t__cst",
+      "origin": "core",
+      "severity": "warning",
+      "target": "cst"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.export.decision_trace",
+      "module_import": "codeintel.build.hamilton.native.export.decision_trace",
+      "node": "t__decision_trace",
+      "origin": "core",
+      "severity": "warning",
+      "target": "decision_trace"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__dfg",
+      "origin": "core",
+      "severity": "warning",
+      "target": "dfg"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.extraction_targets",
+      "node": "t__docstrings",
+      "origin": "core",
+      "severity": "warning",
+      "target": "docstrings"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.export.export_targets",
+      "module_import": "codeintel.build.hamilton.native.export.export_targets",
+      "node": "t__export_jsonl",
+      "origin": "core",
+      "severity": "warning",
+      "target": "export_jsonl"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.export.export_targets",
+      "module_import": "codeintel.build.hamilton.native.export.export_targets",
+      "node": "t__export_parquet",
+      "origin": "core",
+      "severity": "warning",
+      "target": "export_parquet"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_dependencies",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_dependencies",
+      "node": "t__external_deps",
+      "origin": "core",
+      "severity": "warning",
+      "target": "external_deps"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_functions",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_functions",
+      "node": "t__function_metrics",
+      "origin": "core",
+      "severity": "warning",
+      "target": "function_metrics"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.graphs.goids_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.goids_targets",
+      "node": "t__goids",
+      "origin": "core",
+      "severity": "warning",
+      "target": "goids"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel_targets.analytics.hello_target",
+      "module_import": "codeintel_targets.analytics.hello_target",
+      "node": "t__hello_example",
+      "origin": "workspace",
+      "severity": "warning",
+      "target": "hello_example"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.analytics.history_timeseries",
+      "module_import": "codeintel.build.hamilton.native.analytics.history_timeseries",
+      "node": "t__history_timeseries",
+      "origin": "core",
+      "severity": "warning",
+      "target": "history_timeseries"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "module_import": "codeintel.build.hamilton.native.graphs.graph_targets",
+      "node": "t__import_graph",
+      "origin": "core",
+      "severity": "warning",
+      "target": "import_graph"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__modules",
+      "origin": "core",
+      "severity": "warning",
+      "target": "modules"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "node": "t__profiles",
+      "origin": "core",
+      "severity": "warning",
+      "target": "profiles"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_risk",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_risk",
+      "node": "t__risk_factors",
+      "origin": "core",
+      "severity": "warning",
+      "target": "risk_factors"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.scip",
+      "module_import": "codeintel.build.hamilton.native.ingestion.scip",
+      "node": "t__scip",
+      "origin": "core",
+      "severity": "warning",
+      "target": "scip"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.scip_proto",
+      "module_import": "codeintel.build.hamilton.native.ingestion.scip_proto",
+      "node": "t__scip_proto",
+      "origin": "core",
+      "severity": "warning",
+      "target": "scip_proto"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.export.serving_artifacts",
+      "module_import": "codeintel.build.hamilton.native.export.serving_artifacts",
+      "node": "t__serving_artifacts",
+      "origin": "core",
+      "severity": "warning",
+      "target": "serving_artifacts"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "module_import": "codeintel.build.hamilton.native.analytics.tables_profiles",
+      "node": "t__test_profile",
+      "origin": "core",
+      "severity": "warning",
+      "target": "test_profile"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__tests_ingest",
+      "origin": "core",
+      "severity": "warning",
+      "target": "tests_ingest"
+    },
+    {
+      "code": "missing_anchor_tag",
+      "message": "Target anchor missing schema_ref tag",
+      "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "module_import": "codeintel.build.hamilton.native.ingestion.ingest_targets",
+      "node": "t__typing",
+      "origin": "core",
+      "severity": "warning",
+      "target": "typing"
+    }
+  ]
 }

@@ -257,6 +257,39 @@ def _collect_batches_callable(
     return cast("Callable[..., Sequence[PolarsDataFrame]]", func)
 
 
+def _reader_from_table(
+    table: pa.Table,
+    *,
+    batch_size: int,
+) -> pa.RecordBatchReader:
+    batches = table.to_batches(max_chunksize=batch_size)
+    return pa.RecordBatchReader.from_batches(table.schema, batches)
+
+
+def _reader_from_known_types(
+    value: TabularInput,
+    *,
+    batch_size: int,
+    options: PolarsExecutionOptions | None,
+) -> pa.RecordBatchReader | None:
+    reader: pa.RecordBatchReader | None = None
+    if isinstance(value, pa.RecordBatchReader):
+        reader = value
+    elif _is_iceberg_scan(value):
+        reader = _iceberg_reader(cast("IcebergDataScan", value), batch_size=batch_size)
+    elif isinstance(value, ColumnarStream):
+        reader = value.to_reader(batch_size=batch_size)
+    elif isinstance(value, pl.DataFrame):
+        reader = _reader_from_table(value.to_arrow(), batch_size=batch_size)
+    elif isinstance(value, pa.Table):
+        reader = _reader_from_table(value, batch_size=batch_size)
+    elif isinstance(value, DuckDBRelation):
+        reader = value.fetch_arrow_reader()
+    elif isinstance(value, pl.LazyFrame):
+        reader = _lazyframe_to_reader(value, batch_size=batch_size, options=options)
+    return reader
+
+
 def to_record_batch_reader(
     value: TabularInput,
     *,
@@ -289,31 +322,40 @@ def to_record_batch_reader(
     if batch_size <= 0:
         msg = "batch_size must be positive"
         raise ValueError(msg)
-    reader: pa.RecordBatchReader | None = None
-    if isinstance(value, pa.RecordBatchReader):
-        reader = value
-    elif _is_iceberg_scan(value):
-        reader = _iceberg_reader(cast("IcebergDataScan", value), batch_size=batch_size)
-    elif isinstance(value, ColumnarStream):
-        reader = value.to_reader(batch_size=batch_size)
-    elif isinstance(value, pl.DataFrame):
-        table = value.to_arrow()
-        batches = table.to_batches(max_chunksize=batch_size)
-        reader = pa.RecordBatchReader.from_batches(table.schema, batches)
-    elif isinstance(value, pa.Table):
-        table = cast("pa.Table", value)
-        batches = table.to_batches(max_chunksize=batch_size)
-        reader = pa.RecordBatchReader.from_batches(table.schema, batches)
-    elif isinstance(value, DuckDBRelation):
-        reader = value.fetch_arrow_reader()
-    elif isinstance(value, pl.LazyFrame):
-        reader = _lazyframe_to_reader(value, batch_size=batch_size, options=options)
+    reader = _reader_from_known_types(
+        value,
+        batch_size=batch_size,
+        options=options,
+    )
     if reader is None:
         reader = coerce_arrow_reader(value, batch_size=batch_size)
     if reader is None:
         msg = f"Unsupported tabular input: {type(value)!r}"
         raise TypeError(msg)
     return reader
+
+
+def _table_from_known_types(
+    value: TabularInput,
+    *,
+    options: PolarsExecutionOptions | None,
+) -> pa.Table | None:
+    table: pa.Table | None = None
+    if isinstance(value, pa.Table):
+        table = value
+    elif _is_iceberg_scan(value):
+        table = _iceberg_table(cast("IcebergDataScan", value))
+    elif isinstance(value, pl.DataFrame):
+        table = value.to_arrow()
+    elif isinstance(value, DuckDBRelation):
+        reader = value.fetch_arrow_reader()
+        table = pa.Table.from_batches(list(reader), schema=reader.schema)
+    elif isinstance(value, ColumnarStream):
+        table = value.to_table()
+    elif isinstance(value, pl.LazyFrame):
+        frame = collect_lazyframe(value, options=_resolve_polars_options(options))
+        table = frame.to_arrow()
+    return table
 
 
 def to_table(
@@ -338,22 +380,14 @@ def to_table(
     pyarrow.Table
         Arrow table representation of the input.
     """
-    if isinstance(value, pa.Table):
-        return value
-    if _is_iceberg_scan(value):
-        return _iceberg_table(cast("IcebergDataScan", value))
-    if isinstance(value, pl.DataFrame):
-        return value.to_arrow()
-    if isinstance(value, DuckDBRelation):
-        reader = value.fetch_arrow_reader()
-        return pa.Table.from_batches(list(reader), schema=reader.schema)
-    if isinstance(value, ColumnarStream):
-        return value.to_table()
-    if isinstance(value, pl.LazyFrame):
-        frame = collect_lazyframe(value, options=_resolve_polars_options(options))
-        return frame.to_arrow()
-    reader = to_record_batch_reader(value, batch_size=batch_size, options=options)
-    return pa.Table.from_batches(list(reader), schema=reader.schema)
+    table = _table_from_known_types(
+        value,
+        options=options,
+    )
+    if table is None:
+        reader = to_record_batch_reader(value, batch_size=batch_size, options=options)
+        table = pa.Table.from_batches(list(reader), schema=reader.schema)
+    return table
 
 
 def _lazyframe_from_known_types(value: TabularInput) -> PolarsLazyFrame | None:

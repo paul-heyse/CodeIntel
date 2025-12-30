@@ -85,7 +85,9 @@ def all_types_table_schema() -> TableSchema:
             Column(name="bigint_col", type="BIGINT", nullable=True),
             Column(name="double_col", type="DOUBLE", nullable=True),
             Column(name="decimal_col", type="DECIMAL", nullable=True),
+            Column(name="decimal10_col", type="DECIMAL(10,0)", nullable=False),
             Column(name="decimal38_col", type="DECIMAL(38,0)", nullable=False),
+            Column(name="decimal_scale_col", type="DECIMAL(10,2)", nullable=True),
             Column(name="varchar_col", type="VARCHAR", nullable=False),
             Column(name="json_col", type="JSON", nullable=True),
             Column(name="timestamp_col", type="TIMESTAMP", nullable=True),
@@ -259,6 +261,14 @@ class TestColumnTypeMapping:
             pytest.fail(f"Expected 'integer', got {result['properties']['decimal38_col']['type']}")
 
     @staticmethod
+    def test_decimal10_maps_to_integer(all_types_table_schema: TableSchema) -> None:
+        """Verify DECIMAL(10,0) maps to JSON Schema integer."""
+        result = json_schema_from_table_schema(all_types_table_schema)
+
+        if result["properties"]["decimal10_col"]["type"] != "integer":
+            pytest.fail(f"Expected 'integer', got {result['properties']['decimal10_col']['type']}")
+
+    @staticmethod
     def test_double_maps_to_number(all_types_table_schema: TableSchema) -> None:
         """Verify DOUBLE maps to JSON Schema number."""
         result = json_schema_from_table_schema(all_types_table_schema)
@@ -275,6 +285,15 @@ class TestColumnTypeMapping:
 
         # decimal_col is nullable, so type is a list
         decimal_type = result["properties"]["decimal_col"]["type"]
+        if "number" not in decimal_type:
+            pytest.fail(f"Expected 'number' in type, got {decimal_type}")
+
+    @staticmethod
+    def test_decimal_scale_maps_to_number(all_types_table_schema: TableSchema) -> None:
+        """Verify DECIMAL(10,2) maps to JSON Schema number."""
+        result = json_schema_from_table_schema(all_types_table_schema)
+
+        decimal_type = result["properties"]["decimal_scale_col"]["type"]
         if "number" not in decimal_type:
             pytest.fail(f"Expected 'number' in type, got {decimal_type}")
 

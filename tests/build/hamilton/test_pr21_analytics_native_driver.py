@@ -57,7 +57,8 @@ def test_risk_factors_native_still_present_in_wave2(hamilton_runtime: RuntimeBun
 
     # risk_factors should have its native nodes
     expected_risk_factors_nodes = [
-        "t__risk_factors__compute",
+        "risk_factors__base",
+        "risk_factors__table",
         "t__risk_factors",
     ]
 

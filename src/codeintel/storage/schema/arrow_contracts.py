@@ -12,8 +12,8 @@ from sqlglot import exp
 
 from codeintel.core.schemas.contracts import (
     arrow_schema_digest,
-    arrow_schema_hash,
     arrow_schema_from_fields,
+    arrow_schema_hash,
     try_decode_schema_ipc_b64,
 )
 from codeintel.storage.helpers.json import decode_json_dict

@@ -37,7 +37,6 @@ def _iceberg_settings(tmp_path: Path) -> IcebergSettings:
     return IcebergSettings(
         read_enabled=True,
         write_enabled=True,
-        catalog_type="sql",
         catalog_uri=f"duckdb:///{catalog_path}",
         catalog_warehouse=str(warehouse_path),
     )
@@ -75,7 +74,6 @@ def _configure_iceberg_env(
     env = {
         "CODEINTEL_ICEBERG_READ_ENABLED": "1",
         "CODEINTEL_ICEBERG_WRITE_ENABLED": "1",
-        "CODEINTEL_ICEBERG_CATALOG_TYPE": settings.catalog_type or "sql",
         "CODEINTEL_ICEBERG_CATALOG_URI": settings.catalog_uri,
         "CODEINTEL_ICEBERG_CATALOG_WAREHOUSE": settings.catalog_warehouse,
     }

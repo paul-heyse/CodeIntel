@@ -25,6 +25,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _SUPPORT_NODES_MODULE = "codeintel.build.hamilton.nodes.support_nodes"
+_PLANNING_MATERIALIZATION_MARKERS = (
+    ".planning.plan_savers",
+    ".planning.plan_targets",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +64,7 @@ def resolve_module_set(
     plugin_config: PluginConfig,
     hamilton_config: Mapping[str, object],
     include_planning: bool = True,
+    include_plan_materialization: bool = True,
     codeintel_version: str | None = None,
 ) -> ResolvedModuleSet:
     """Resolve core, workspace, and plugin modules deterministically.
@@ -79,6 +84,7 @@ def resolve_module_set(
         pack_entries=pack_entries,
         plugin_config=plugin_config,
         include_planning=include_planning,
+        include_plan_materialization=include_plan_materialization,
     )
     config_digest = fingerprint(
         {
@@ -103,6 +109,7 @@ def resolve_module_set(
 def resolve_module_paths(
     *,
     include_planning: bool = True,
+    include_plan_materialization: bool = True,
     env: BuildEnv | None = None,
     plugin_config: PluginConfig | None = None,
     hamilton_config: Mapping[str, object] | None = None,
@@ -116,12 +123,16 @@ def resolve_module_paths(
         Ordered module import paths for the runtime.
     """
     if env is None:
-        return _core_module_paths(include_planning=include_planning)
+        return _core_module_paths(
+            include_planning=include_planning,
+            include_plan_materialization=include_plan_materialization,
+        )
     resolved = resolve_module_set(
         env=env,
         plugin_config=plugin_config or PluginConfig(),
         hamilton_config=hamilton_config or {},
         include_planning=include_planning,
+        include_plan_materialization=include_plan_materialization,
         codeintel_version=codeintel_version,
     )
     return resolved.module_paths
@@ -130,6 +141,7 @@ def resolve_module_paths(
 def resolve_modules(
     *,
     include_planning: bool = True,
+    include_plan_materialization: bool = True,
     env: BuildEnv | None = None,
     plugin_config: PluginConfig | None = None,
     hamilton_config: Mapping[str, object] | None = None,
@@ -150,7 +162,10 @@ def resolve_modules(
             dist_version=None,
         )
         return _import_modules(
-            _core_module_paths(include_planning=include_planning),
+            _core_module_paths(
+                include_planning=include_planning,
+                include_plan_materialization=include_plan_materialization,
+            ),
             spec=core_spec,
             strict=True,
         ).modules
@@ -159,6 +174,7 @@ def resolve_modules(
         plugin_config=plugin_config or PluginConfig(),
         hamilton_config=hamilton_config or {},
         include_planning=include_planning,
+        include_plan_materialization=include_plan_materialization,
         codeintel_version=codeintel_version,
     )
     return resolved.modules
@@ -218,6 +234,7 @@ def _resolve_modules(
     pack_entries: Sequence[TargetPackEntry],
     plugin_config: PluginConfig,
     include_planning: bool,
+    include_plan_materialization: bool,
 ) -> _ResolvedModules:
     descriptors: list[_ModuleDescriptor] = []
     seen: set[str] = set()
@@ -234,7 +251,10 @@ def _resolve_modules(
         dist_version=None,
     )
 
-    for path in _core_module_paths(include_planning=include_planning):
+    for path in _core_module_paths(
+        include_planning=include_planning,
+        include_plan_materialization=include_plan_materialization,
+    ):
         _append_descriptor(
             descriptors=descriptors,
             seen=seen,
@@ -245,7 +265,11 @@ def _resolve_modules(
 
     if plugin_config.allow_workspace_modules:
         for path in _workspace_module_paths(env=env):
-            if not include_planning and ".planning." in path:
+            if _skip_planning_path(
+                path,
+                include_planning=include_planning,
+                include_plan_materialization=include_plan_materialization,
+            ):
                 continue
             _append_descriptor(
                 descriptors=descriptors,
@@ -264,7 +288,11 @@ def _resolve_modules(
         )
         for module in entry.pack.modules:
             path = module.import_path
-            if not include_planning and ".planning." in path:
+            if _skip_planning_path(
+                path,
+                include_planning=include_planning,
+                include_plan_materialization=include_plan_materialization,
+            ):
                 continue
             _append_descriptor(
                 descriptors=descriptors,
@@ -309,12 +337,35 @@ def _append_descriptor(
     )
 
 
-def _core_module_paths(*, include_planning: bool) -> tuple[str, ...]:
+def _core_module_paths(
+    *,
+    include_planning: bool,
+    include_plan_materialization: bool,
+) -> tuple[str, ...]:
     paths = list(native_module_paths())
     paths.append(_SUPPORT_NODES_MODULE)
     if not include_planning:
         return tuple(path for path in paths if ".planning." not in path)
+    if not include_plan_materialization:
+        return tuple(path for path in paths if not _is_plan_materialization_path(path))
     return tuple(paths)
+
+
+def _skip_planning_path(
+    path: str,
+    *,
+    include_planning: bool,
+    include_plan_materialization: bool,
+) -> bool:
+    if not include_planning and ".planning." in path:
+        return True
+    if include_planning and not include_plan_materialization:
+        return _is_plan_materialization_path(path)
+    return False
+
+
+def _is_plan_materialization_path(path: str) -> bool:
+    return any(marker in path for marker in _PLANNING_MATERIALIZATION_MARKERS)
 
 
 def _workspace_module_paths(*, env: BuildEnv) -> tuple[str, ...]:

@@ -39,10 +39,24 @@ def _module_with_duplicate_anchors() -> ModuleType:
 
     @codeintel_target(domain="analytics", target="dup")
     def t__dup_one() -> int:
+        """Return a duplicate anchor value.
+
+        Returns
+        -------
+        int
+            Constant value for duplicate anchor testing.
+        """
         return 1
 
     @codeintel_target(domain="analytics", target="dup")
     def t__dup_two() -> int:
+        """Return a duplicate anchor value.
+
+        Returns
+        -------
+        int
+            Constant value for duplicate anchor testing.
+        """
         return 2
 
     _register_module_functions(
@@ -60,14 +74,35 @@ def _module_with_branching_chain() -> ModuleType:
 
     @codeintel_target(domain="analytics", target="beta")
     def t__beta() -> int:
+        """Return beta value for closure testing.
+
+        Returns
+        -------
+        int
+            Constant beta value for closure testing.
+        """
         return 1
 
     @codeintel_target(domain="analytics", target="gamma")
     def t__gamma() -> int:
+        """Return gamma value for closure testing.
+
+        Returns
+        -------
+        int
+            Constant gamma value for closure testing.
+        """
         return 1
 
     @codeintel_target(domain="analytics", target="alpha")
     def t__alpha(t__beta: int, t__gamma: int) -> int:
+        """Return alpha value for closure testing.
+
+        Returns
+        -------
+        int
+            Derived alpha value for closure testing.
+        """
         return t__beta + t__gamma
 
     _register_module_functions(
@@ -111,6 +146,13 @@ def _module_with_duplicate_outputs() -> ModuleType:
         m__core__dup_one: object,
         m__core__dup_two: object,
     ) -> int:
+        """Anchor duplicate outputs for validation.
+
+        Returns
+        -------
+        int
+            Constant anchor value for duplicate output checks.
+        """
         _ = (m__core__dup_one, m__core__dup_two)
         return 1
 
@@ -157,8 +199,19 @@ def _module_with_io_surface() -> ModuleType:
         return b"ok"
 
     @codeintel_target(domain="analytics", target="alpha")
-    def t__alpha(alpha_rows: pl.LazyFrame) -> int:
-        _ = alpha_rows
+    def t__alpha(
+        alpha_rows: pl.LazyFrame,
+        m__analytics__alpha_out: object,
+        m__artifact__alpha_meta: object,
+    ) -> int:
+        """Anchor output for IO surface validation.
+
+        Returns
+        -------
+        int
+            Constant anchor value for IO surface validation.
+        """
+        _ = (alpha_rows, m__analytics__alpha_out, m__artifact__alpha_meta)
         return 1
 
     _register_module_functions(

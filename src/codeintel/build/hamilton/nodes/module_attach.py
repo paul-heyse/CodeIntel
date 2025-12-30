@@ -7,7 +7,7 @@ from types import ModuleType
 from typing import Protocol, cast, get_args
 
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue, tag_spec_from_tags
-from codeintel.build.hamilton.tagging import apply_tags, validate_tag_spec
+from codeintel.build.hamilton.tagging import tag_from_spec, validate_tag_spec
 
 
 class _NamedCallable(Protocol):
@@ -82,19 +82,16 @@ def tagged_attach_node(
             msg = f"Conflicting tag {key} for {node_name}"
             raise ValueError(msg)
 
-    tags_to_add: dict[TagKey, TagValue] = {
-        key: value for key, value in desired_tags.items() if key not in existing_tags
-    }
-    tagged_fn = fn
-    if tags_to_add:
-        tagged_fn = apply_tags(fn, tags=tags_to_add)
-
     if existing_tags:
         existing_spec = tag_spec_from_tags(cast("Mapping[str, TagValue]", existing_tags))
         if existing_spec is not None and existing_spec.node_type != resolved_spec.node_type:
             msg = f"Existing node_type tag mismatch for {node_name}"
             raise ValueError(msg)
 
+    tagged_fn = fn
+    if desired_tags:
+        decorator = tag_from_spec(resolved_spec, target_=node_name)
+        tagged_fn = decorator(fn)
     attach_node(module, node_name=node_name, fn=tagged_fn)
 
 

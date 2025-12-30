@@ -61,7 +61,6 @@ def iceberg_settings_for_paths(build_paths: BuildPaths) -> IcebergSettings:
     return IcebergSettings(
         read_enabled=True,
         write_enabled=True,
-        catalog_type="sql",
         catalog_uri=f"duckdb:///{catalog_path}",
         catalog_warehouse=str(warehouse_path),
     )

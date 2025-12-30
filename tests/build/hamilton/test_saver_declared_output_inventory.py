@@ -64,8 +64,17 @@ def _module_with_saver_outputs() -> ModuleType:
     def t__alpha(
         alpha_rows: pl.LazyFrame,
         alpha_meta: bytes,
+        m__core__alpha: object,
+        m__artifact__alpha_meta: object,
     ) -> int:
-        _ = (alpha_rows, alpha_meta)
+        """Anchor saver outputs for inventory validation.
+
+        Returns
+        -------
+        int
+            Constant anchor value for saver inventory validation.
+        """
+        _ = (alpha_rows, alpha_meta, m__core__alpha, m__artifact__alpha_meta)
         return 1
 
     _register_module_functions(

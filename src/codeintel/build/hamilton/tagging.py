@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping
 from typing import ParamSpec, Protocol, TypeVar, cast
 
+import duckdb
 from hamilton.function_modifiers import schema as h_schema
 from hamilton.function_modifiers import tag as h_tag
 
@@ -261,7 +262,10 @@ def _resolve_table_schema(table_key: str) -> TableSchema | None:
         provider = get_schema_provider()
     except RuntimeError:
         return OUTPUT_TABLE_SCHEMAS.get(table_key)
-    schema = provider.get_table_schema(table_key)
+    try:
+        schema = provider.get_table_schema(table_key)
+    except duckdb.Error:
+        return OUTPUT_TABLE_SCHEMAS.get(table_key)
     return schema or OUTPUT_TABLE_SCHEMAS.get(table_key)
 
 

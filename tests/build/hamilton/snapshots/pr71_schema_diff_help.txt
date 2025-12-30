@@ -44,8 +44,8 @@ Diff a compiled schema manifest against an expected file.
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_ANY,     │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_ANY]     │
 │                                 [default: false]                             │
-│    INCLUDE-VIEWS                Include view schemas in the manifest  │
-│      --include-views            (v2 format). [env var:                       │
+│    INCLUDE-VIEWS                Include view schemas in the manifest (v2     │
+│      --include-views            format). [env var:                           │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_VIEWS,   │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_VIEWS]   │
 │                                 [default: false]                             │

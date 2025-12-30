@@ -52,11 +52,11 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.columnar.tabular_adapter import (
     PolarsExecutionOptions,
     collect_lazyframe,
 )
-from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id

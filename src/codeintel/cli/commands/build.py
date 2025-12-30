@@ -133,7 +133,7 @@ build_app.command(build_spec_app, name="spec")
 
 
 _BUILD_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
-_VALIDATE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+_VALIDATE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 _TRACE_CONFIG = CommandConfig(require_runtime=True, require_gateway=False)
 
 BUILD_RUN_PATH: CommandPath = ("build", "run")

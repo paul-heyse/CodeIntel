@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.dag_catalog import OutputDescriptor
 from codeintel.build.schemas import (
     ContractResolutionSettings,
     clear_contract_cache,
+    configure_contract_service,
+    configure_schema_service,
     get_contract_for_table_key,
     iter_contracts,
     reset_contract_service_state,
@@ -20,6 +23,9 @@ from codeintel.build.target_metadata import (
 from codeintel.build.targets import TargetDescriptor
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_false, expect_true
 from tests._helpers.catalog import make_target_descriptor
+
+if TYPE_CHECKING:
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 @dataclass(frozen=True)
@@ -47,13 +53,17 @@ class _StubTargetMetadataProvider(TargetMetadataProvider):
         return None
 
 
-def test_iter_contracts_initializes_target_metadata() -> None:
+def test_iter_contracts_initializes_target_metadata(
+    hamilton_runtime: RuntimeBundle,
+) -> None:
     """Verify full contract enumeration initializes target metadata."""
     reset_contract_service_state()
     reset_target_metadata_state()
     clear_contract_cache()
     expect_false(is_target_metadata_loaded())
 
+    configure_schema_service(runtime=hamilton_runtime)
+    configure_contract_service(runtime=hamilton_runtime)
     _ = list(iter_contracts())
 
     expect_true(is_target_metadata_loaded())

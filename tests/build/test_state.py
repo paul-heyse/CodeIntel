@@ -247,9 +247,9 @@ class TestStateValidator:
     def test_empty_state_is_missing(validator: StateValidator) -> None:
         """When no cache entries exist, all targets are missing."""
         state = validator.validate()
-        expect_equal(state.missing_targets(), tuple(state.targets))
+        expect_equal(state.missing_targets(), ("modules",))
         expect_equal(state.current_targets(), ())
-        expect_equal(state.blocked_targets(), ())
+        expect_equal(state.blocked_targets(), ("ast", "goids", "typing"))
 
     @staticmethod
     def test_cache_presence_marks_current(

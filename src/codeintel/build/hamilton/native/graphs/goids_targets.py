@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 import polars as pl
 import pyarrow as pa
@@ -61,10 +63,71 @@ class _GoidsFrames:
 def _coerce_line(value: object, *, default: int) -> int:
     if value is None or isinstance(value, bool):
         return default
-    try:
+    if isinstance(value, (int, float)):
         return int(value)
-    except (TypeError, ValueError):
-        return default
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+@dataclass(frozen=True, slots=True)
+class _ParsedGoidRow:
+    repo: str
+    commit: str
+    language: str
+    rel_path: str
+    module_name: str
+    node_type: str
+    qualname: str
+    parent_value: str | None
+    start_line: int
+    end_line: int
+
+
+def _parse_goid_row(row: Mapping[str, object]) -> _ParsedGoidRow | None:
+    node_type = row.get("node_type")
+    if not isinstance(node_type, str) or node_type not in _ALLOWED_NODE_TYPES:
+        return None
+    qualname = row.get("qualname")
+    if not isinstance(qualname, str) or not qualname:
+        return None
+    module_name = row.get("module_name")
+    if not isinstance(module_name, str) or not module_name:
+        return None
+    repo = row.get("repo")
+    commit = row.get("commit")
+    language = row.get("language")
+    if not (
+        isinstance(repo, str)
+        and repo
+        and isinstance(commit, str)
+        and commit
+        and isinstance(language, str)
+        and language
+    ):
+        return None
+    rel_path = row.get("rel_path")
+    if not isinstance(rel_path, str) or not rel_path:
+        return None
+    parent_qualname = row.get("parent_qualname")
+    parent_value = parent_qualname if isinstance(parent_qualname, str) else None
+    start_line = _coerce_line(row.get("start_line"), default=1)
+    end_line = _coerce_line(row.get("end_line"), default=start_line)
+    return _ParsedGoidRow(
+        repo=repo,
+        commit=commit,
+        language=language,
+        rel_path=rel_path,
+        module_name=module_name,
+        node_type=node_type,
+        qualname=qualname,
+        parent_value=parent_value,
+        start_line=start_line,
+        end_line=end_line,
+    )
 
 
 def _table_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
@@ -75,10 +138,10 @@ def _table_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
     return pa.Table.from_pylist(rows, schema=arrow_schema)
 
 
-def _build_goid_frames(
+def _joined_goid_inputs(
     q__core__ast_nodes: TabularInput,
     q__core__modules: TabularInput,
-) -> _GoidsFrames:
+) -> pl.DataFrame:
     ast_frame = to_lazyframe(q__core__ast_nodes).select(
         pl.col("path").alias("rel_path"),
         "node_type",
@@ -94,11 +157,15 @@ def _build_goid_frames(
         "commit",
         "language",
     )
-    joined = collect_lazyframe(
+    return collect_lazyframe(
         ast_frame.join(module_frame, on="rel_path", how="inner"),
         options=PolarsExecutionOptions(),
     )
 
+
+def _collect_goid_rows(
+    joined: pl.DataFrame,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     now = datetime.now(UTC)
     goid_rows: list[dict[str, object]] = []
     crosswalk_rows: list[dict[str, object]] = []
@@ -106,44 +173,31 @@ def _build_goid_frames(
     seen_crosswalk: set[tuple[str, str, str]] = set()
 
     for row in joined.iter_rows(named=True):
-        node_type = row.get("node_type")
-        if not isinstance(node_type, str) or node_type not in _ALLOWED_NODE_TYPES:
+        row_mapping = cast("Mapping[str, object]", row)
+        parsed = _parse_goid_row(row_mapping)
+        if parsed is None:
             continue
-        qualname = row.get("qualname")
-        if not isinstance(qualname, str) or not qualname:
-            continue
-        module_name = row.get("module_name")
-        if not isinstance(module_name, str) or not module_name:
-            continue
-        repo = row.get("repo")
-        commit = row.get("commit")
-        language = row.get("language")
-        if not all(isinstance(value, str) and value for value in (repo, commit, language)):
-            continue
-        rel_path = row.get("rel_path")
-        if not isinstance(rel_path, str) or not rel_path:
-            continue
-        parent_qualname = row.get("parent_qualname")
-        parent_value = parent_qualname if isinstance(parent_qualname, str) else None
-        start_line = _coerce_line(row.get("start_line"), default=1)
-        end_line = _coerce_line(row.get("end_line"), default=start_line)
-
-        kind = determine_kind(node_type, parent_value, rel_path, module_name)
+        kind = determine_kind(
+            parsed.node_type,
+            parsed.parent_value,
+            parsed.rel_path,
+            parsed.module_name,
+        )
         descriptor = GoidDescriptor(
-            repo=repo,
-            commit=commit,
-            language=language,
-            rel_path=rel_path,
+            repo=parsed.repo,
+            commit=parsed.commit,
+            language=parsed.language,
+            rel_path=parsed.rel_path,
             kind=kind,
-            qualname=qualname,
-            start_line=start_line,
-            end_line=end_line,
+            qualname=parsed.qualname,
+            start_line=parsed.start_line,
+            end_line=parsed.end_line,
         )
         result = compute_goid_result(descriptor)
         if result.goid_h128 in seen_goids:
             continue
         seen_goids.add(result.goid_h128)
-        crosswalk_key = (repo, commit, result.urn)
+        crosswalk_key = (parsed.repo, parsed.commit, result.urn)
         if crosswalk_key in seen_crosswalk:
             continue
         seen_crosswalk.add(crosswalk_key)
@@ -152,29 +206,29 @@ def _build_goid_frames(
             {
                 "goid_h128": result.goid_h128,
                 "urn": result.urn,
-                "repo": repo,
-                "commit": commit,
-                "rel_path": rel_path,
-                "language": language,
+                "repo": parsed.repo,
+                "commit": parsed.commit,
+                "rel_path": parsed.rel_path,
+                "language": parsed.language,
                 "kind": kind,
-                "qualname": qualname,
-                "start_line": start_line,
-                "end_line": end_line,
+                "qualname": parsed.qualname,
+                "start_line": parsed.start_line,
+                "end_line": parsed.end_line,
                 "created_at": now,
             }
         )
         crosswalk_rows.append(
             {
-                "repo": repo,
-                "commit": commit,
+                "repo": parsed.repo,
+                "commit": parsed.commit,
                 "goid": result.urn,
-                "lang": language,
-                "module_path": module_name,
-                "file_path": rel_path,
-                "start_line": start_line,
-                "end_line": end_line,
+                "lang": parsed.language,
+                "module_path": parsed.module_name,
+                "file_path": parsed.rel_path,
+                "start_line": parsed.start_line,
+                "end_line": parsed.end_line,
                 "scip_symbol": None,
-                "ast_qualname": qualname,
+                "ast_qualname": parsed.qualname,
                 "cst_node_id": None,
                 "chunk_id": None,
                 "symbol_id": None,
@@ -182,6 +236,18 @@ def _build_goid_frames(
             }
         )
 
+    return goid_rows, crosswalk_rows
+
+
+def _build_goid_frames(
+    q__core__ast_nodes: TabularInput,
+    q__core__modules: TabularInput,
+) -> _GoidsFrames:
+    joined = _joined_goid_inputs(
+        q__core__ast_nodes=q__core__ast_nodes,
+        q__core__modules=q__core__modules,
+    )
+    goid_rows, crosswalk_rows = _collect_goid_rows(joined)
     return _GoidsFrames(
         goids=_table_from_rows(GOIDS_TABLE_KEY, goid_rows),
         crosswalk=_table_from_rows(GOID_CROSSWALK_TABLE_KEY, crosswalk_rows),
@@ -193,7 +259,13 @@ def goids__frames(
     q__core__ast_nodes: TabularInput,
     q__core__modules: TabularInput,
 ) -> _GoidsFrames:
-    """Build GOID and crosswalk tables from AST nodes."""
+    """Build GOID and crosswalk tables from AST nodes.
+
+    Returns
+    -------
+    _GoidsFrames
+        GOID and crosswalk Arrow tables.
+    """
     return _build_goid_frames(
         q__core__ast_nodes=q__core__ast_nodes,
         q__core__modules=q__core__modules,
@@ -205,7 +277,13 @@ def goids__frames(
     spec=RelationTableSaveSpec(table_key=GOIDS_TABLE_KEY),
 )
 def goids__table(goids__frames: _GoidsFrames) -> pa.Table:
-    """Persist computed GOID rows."""
+    """Persist computed GOID rows.
+
+    Returns
+    -------
+    pyarrow.Table
+        GOID table output.
+    """
     return goids__frames.goids
 
 
@@ -214,7 +292,13 @@ def goids__table(goids__frames: _GoidsFrames) -> pa.Table:
     spec=RelationTableSaveSpec(table_key=GOID_CROSSWALK_TABLE_KEY),
 )
 def goids__crosswalk_table(goids__frames: _GoidsFrames) -> pa.Table:
-    """Persist computed GOID crosswalk rows."""
+    """Persist computed GOID crosswalk rows.
+
+    Returns
+    -------
+    pyarrow.Table
+        GOID crosswalk output.
+    """
     return goids__frames.crosswalk
 
 
@@ -232,7 +316,13 @@ def t__goids(
     catalog: DagCatalog,
     goids__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
-    """Finalize goids target run record."""
+    """Finalize goids target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for GOID materializations.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
@@ -246,9 +336,9 @@ def t__goids(
 
 
 __all__ = [
-    "GOID_CROSSWALK_TABLE_KEY",
     "GOIDS_TABLE_KEY",
     "GOIDS_TARGET_NAME",
+    "GOID_CROSSWALK_TABLE_KEY",
     "goids__crosswalk_table",
     "goids__frames",
     "goids__table",
