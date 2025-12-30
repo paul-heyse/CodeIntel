@@ -89,7 +89,7 @@ def get_schema_provider() -> SchemaProvider:
     except RuntimeError:
         service = None
     else:
-        return _ViewSchemaProvider(service.table_provider)
+        return service.table_provider
     catalog_schemas = contract_catalog_table_schemas()
     if not catalog_schemas:
         msg = "Contract catalog not loaded; schema provider unavailable"

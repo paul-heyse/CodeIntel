@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, cast
 from sqlglot import exp, parse_one
 
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.semantic.datasets import DatasetManifestIndex
 from codeintel.serving.semantic.engines.protocol import EngineContext
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.models import SemanticViewSpec
@@ -45,13 +44,11 @@ def _engine_context(
     )
     registry = SemanticRegistry(version="v1", views=(view,))
     inventory = SchemaInventory(schemas={})
-    dataset_manifests = DatasetManifestIndex(by_table_key={})
     settings = ServingSettings(serve_dir=tmp_path)
     return EngineContext(
         pointer=pointer,
         inventory=inventory,
         registry=registry,
-        dataset_manifests=dataset_manifests,
         view_registry=view_registry,
         settings=settings,
         warehouse=None,

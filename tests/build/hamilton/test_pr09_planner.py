@@ -8,7 +8,7 @@ from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.planning.model import BuildPlan, PlanRequest, PlanTargetEntry
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.build import (
-    TEST_BUILD_SETTINGS,
+    build_settings_for_paths,
     make_build_config,
     make_build_paths,
     make_snapshot,
@@ -48,7 +48,7 @@ def make_test_build_env(
             paths=paths,
             providers=providers,
             build_config=config,
-            settings=TEST_BUILD_SETTINGS,
+            settings=build_settings_for_paths(paths),
         )
     )
 

@@ -30,9 +30,9 @@ from codeintel.serving.semantic.polars_query_builder import (
 )
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.serving.semantic.routing import ast_supports_polars
+from codeintel.serving.semantic.tombstones import apply_tombstone_filter_lazyframe
 from codeintel.serving.semantic.view_registry import ViewInputs
 from codeintel.storage.duckdb_types import DuckDBError
-from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.schema import arrow_schema_for_table_key
 
 if TYPE_CHECKING:
@@ -656,67 +656,19 @@ class PolarsQueryEngine:
             LOG.warning("Iceberg scan failed for %s: %s", inputs.table_key, exc)
             return None
         lazyframe = to_lazyframe(scan_result.scan)
-        lazyframe = _apply_iceberg_tombstones(
+        lazyframe = apply_tombstone_filter_lazyframe(
             lazyframe,
-            ctx=ctx,
             table_key=inputs.table_key,
             primary_key=inputs.primary_key,
             snapshot_id=scan_result.snapshot_id,
+            pointer=ctx.pointer,
+            settings=ctx.settings.iceberg,
+            batch_size=ctx.settings.export_batch_size,
         )
         return _PolarsSource(
             lazyframe=lazyframe,
             iceberg_snapshot_id=scan_result.snapshot_id,
         )
-
-
-def _apply_iceberg_tombstones(
-    lazyframe: PolarsLazyFrame,
-    *,
-    ctx: EngineContext,
-    table_key: str,
-    primary_key: Sequence[str],
-    snapshot_id: int | None,
-) -> PolarsLazyFrame:
-    result = lazyframe
-    if (
-        not ctx.settings.iceberg.tombstones_enabled
-        or not primary_key
-        or snapshot_id is None
-        or pl is None  # pragma: no cover
-    ):
-        return result
-    tombstone_key = _tombstone_table_key(table_key)
-    try:
-        tombstone_scan = iceberg_scan_for_query(
-            request=IcebergScanRequest(
-                table_key=tombstone_key,
-                columns=(*tuple(primary_key), "snapshot_id"),
-                filters=[],
-                order_by=[],
-                column_types=None,
-                pointer=ctx.pointer,
-                settings=ctx.settings.iceberg,
-                batch_size=ctx.settings.export_batch_size,
-            )
-        )
-    except IcebergScanError as exc:
-        LOG.warning("Tombstone scan failed for %s: %s", tombstone_key, exc)
-        return result
-    tombstones = to_lazyframe(tombstone_scan.scan)
-    try:
-        tombstones = tombstones.filter(pl.col("snapshot_id") <= snapshot_id)
-        joined = result.join(tombstones, on=list(primary_key), how="anti")
-    except PolarsError as exc:
-        LOG.warning("Polars tombstone anti-join failed: %s", exc)
-        return result
-    if isinstance(joined, pl.LazyFrame):
-        result = joined
-    return result
-
-
-def _tombstone_table_key(table_key: str) -> str:
-    schema, table = split_table_key(table_key)
-    return f"{schema}.{table}__tombstones"
 
 
 def _columns_for_table(ctx: EngineContext, *, table_key: str) -> list[str]:
@@ -747,6 +699,7 @@ def _primary_key_for_table(
 
 
 _PROFILE_TUPLE_SIZE = 2
+
 
 def _contract_schema_for_table(ctx: EngineContext, *, table_key: str) -> pa.Schema | None:
     if ctx.warehouse is None:

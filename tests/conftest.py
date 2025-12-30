@@ -29,7 +29,7 @@ from tests._helpers import (
     TestScenario,
     provisioned_gateway,
 )
-from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.build import build_settings_for_paths
 from tests._helpers.columnar_streams import (
     contract_schema_for_table_key as contract_schema_for_table_key_fn,
 )
@@ -293,7 +293,7 @@ def runtime_env(tmp_path_factory: pytest.TempPathFactory) -> Iterator[BuildEnv]:
         paths=ctx.build_paths,
         providers=providers,
         config=BuildConfig.empty(),
-        settings=TEST_BUILD_SETTINGS,
+        settings=build_settings_for_paths(ctx.build_paths),
         profile=DEFAULT_PROFILE_NAME,
     )
     try:

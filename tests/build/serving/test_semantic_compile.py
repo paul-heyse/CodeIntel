@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from types import ModuleType
+
+from hamilton.function_modifiers import tag as h_tag
+from sqlglot import exp, parse_one
+
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import (
@@ -15,20 +20,13 @@ from codeintel.core.hamilton.semantic_tags import (
 )
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.storage.views.schema_inference import derive_view_schemas
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 
 def test_compile_registry_uses_explicit_columns_when_present() -> None:
     """Explicit semantic_columns overrides SchemaProvider-derived columns."""
-    provider = MappingSchemaProvider(
-        schemas={
-            "docs.v_demo": TableSchema(
-                schema="docs",
-                name="v_demo",
-                columns=[Column(name="id", type="INTEGER", nullable=False)],
-            )
-        }
-    )
+    provider = _derived_view_provider()
     tags = {
         "docs.v_demo": {
             TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
@@ -55,3 +53,26 @@ def test_compile_registry_filters_non_semantic_and_hidden() -> None:
 
     compiled = compile_semantic_registry_from_views(schema_provider=provider, view_tags=tags)
     expect_equal(compiled.views, [])
+
+
+def _view_module() -> ModuleType:
+    module = ModuleType("tests.semantic_compile_views")
+
+    @h_tag(output_kind=ht.OUTPUT_KIND_VIEW, table_key="docs.v_demo")
+    def v_demo() -> exp.Expression:
+        return parse_one("SELECT id FROM analytics.demo", read="duckdb")
+
+    v_demo.__module__ = module.__name__
+    module.__dict__["v_demo"] = v_demo
+    return module
+
+
+def _derived_view_provider() -> MappingSchemaProvider:
+    base_schema = TableSchema(
+        schema="analytics",
+        name="demo",
+        columns=[Column(name="id", type="INTEGER", nullable=False)],
+    )
+    base_provider = MappingSchemaProvider({base_schema.table_key: base_schema})
+    derived = derive_view_schemas(provider=base_provider, modules=(_view_module(),))
+    return MappingSchemaProvider(derived)

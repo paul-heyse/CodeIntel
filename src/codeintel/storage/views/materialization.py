@@ -20,7 +20,8 @@ from typing import TYPE_CHECKING
 import duckdb
 from sqlglot.errors import ParseError
 
-from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.datasets import DatasetRegistry
+from codeintel.storage.helpers.table_key import is_valid_table_key, split_table_key
 from codeintel.storage.metadata.sync import (
     sync_derived_lineage_columns,
     sync_derived_lineage_edges,
@@ -35,9 +36,12 @@ from codeintel.storage.views.dependencies import (
 from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from hamilton.driver import Driver
 
     from codeintel.core.hamilton.tag_query import TagQuery
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.gateway.protocol import MinimalGateway
 
 __all__ = ["ViewMaterializationOptions", "materialize_registered_views"]
@@ -110,36 +114,62 @@ def _ensure_dependency_tables(
     strict: bool,
 ) -> None:
     """Ensure referenced base tables exist before materializing views."""
+    candidates = _dependency_candidates(sql_by_view)
+    if not candidates:
+        return
+
+    dataset_map = _dataset_contract_map(gateway)
+    for table_key in candidates:
+        if not _should_ensure_dependency(table_key, dataset_map):
+            continue
+        _ensure_table_dependency(gateway, table_key=table_key, strict=strict)
+
+
+def _dependency_candidates(sql_by_view: Mapping[str, str]) -> tuple[str, ...]:
     view_keys = {key.lower() for key in sql_by_view}
     referenced: set[str] = set()
     for sql in sql_by_view.values():
         referenced.update(extract_referenced_table_keys(sql))
-    candidates = sorted(referenced - view_keys)
-    if not candidates:
-        return
+    return tuple(sorted(referenced - view_keys))
 
+
+def _dataset_contract_map(
+    gateway: MinimalGateway,
+) -> Mapping[str, DatasetContract] | None:
     datasets = getattr(gateway, "datasets", None)
-    dataset_map = None
     if isinstance(datasets, DatasetRegistry):
-        dataset_map = datasets.by_table_key
+        return datasets.by_table_key
+    return None
 
-    for table_key in candidates:
-        if not is_valid_table_key(table_key):
-            log.debug("Skipping unqualified view dependency: %s", table_key)
-            continue
-        if dataset_map is not None:
-            contract = dataset_map.get(table_key)
-            if contract is None:
-                log.debug("Skipping unknown view dependency: %s", table_key)
-                continue
-            if contract.is_view:
-                continue
-        try:
-            gateway.policy.ensure_table(table_key, create_if_missing=True)
-        except (duckdb.Error, KeyError, RuntimeError, ValueError):
-            log.exception("Failed to ensure view dependency table: %s", table_key)
-            if strict:
-                raise
+
+def _should_ensure_dependency(
+    table_key: str,
+    dataset_map: Mapping[str, DatasetContract] | None,
+) -> bool:
+    if not is_valid_table_key(table_key):
+        log.debug("Skipping unqualified view dependency: %s", table_key)
+        return False
+    if dataset_map is None:
+        return True
+    contract = dataset_map.get(table_key)
+    if contract is None:
+        log.debug("Skipping unknown view dependency: %s", table_key)
+        return False
+    return not contract.is_view
+
+
+def _ensure_table_dependency(
+    gateway: MinimalGateway,
+    *,
+    table_key: str,
+    strict: bool,
+) -> None:
+    try:
+        gateway.policy.ensure_table(table_key, create_if_missing=True)
+    except (duckdb.Error, KeyError, RuntimeError, ValueError):
+        log.exception("Failed to ensure view dependency table: %s", table_key)
+        if strict:
+            raise
 
 
 def _compile_view_definitions(

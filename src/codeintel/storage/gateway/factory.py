@@ -131,9 +131,19 @@ def _schema_service_mismatches() -> list[str]:
     catalog = get_contract_catalog()
     if catalog is None:
         return []
+    provider = schema_service.table_provider
+
+    def is_declared(table_key: str) -> bool:
+        derivation = provider.derivation(table_key)
+        if derivation is None:
+            return True
+        return derivation.source_kind == "declared_source"
+
     mismatches: list[str] = []
     for table_key, contract in catalog.items():
         if contract.is_view or table_key.startswith("tmp_") or contract.schema is None:
+            continue
+        if not is_declared(table_key):
             continue
         schema = schema_service.get_table_schema(table_key)
         if schema is None or schema != contract.schema:

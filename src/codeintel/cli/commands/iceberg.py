@@ -14,6 +14,7 @@ from codeintel.cli.handlers.iceberg import (
     iceberg_expire_snapshots_handler,
     iceberg_inspect_handler,
     iceberg_manage_snapshots_handler,
+    iceberg_refresh_cache_handler,
     iceberg_refs_handler,
     iceberg_time_travel_handler,
 )
@@ -51,6 +52,7 @@ ICEBERG_EXPIRE_PATH: CommandPath = ("iceberg", "expire-snapshots")
 ICEBERG_TIME_TRAVEL_PATH: CommandPath = ("iceberg", "time-travel")
 ICEBERG_MANAGE_PATH: CommandPath = ("iceberg", "manage-snapshots")
 ICEBERG_ADD_FILES_PATH: CommandPath = ("iceberg", "add-files")
+ICEBERG_REFRESH_CACHE_PATH: CommandPath = ("iceberg", "refresh-cache")
 
 _ICEBERG_INSPECT_FLAGS_FIELD = shared_flags_field(ICEBERG_INSPECT_PATH)
 _ICEBERG_REFS_FLAGS_FIELD = shared_flags_field(ICEBERG_REFS_PATH)
@@ -58,6 +60,7 @@ _ICEBERG_EXPIRE_FLAGS_FIELD = shared_flags_field(ICEBERG_EXPIRE_PATH)
 _ICEBERG_TIME_TRAVEL_FLAGS_FIELD = shared_flags_field(ICEBERG_TIME_TRAVEL_PATH)
 _ICEBERG_MANAGE_FLAGS_FIELD = shared_flags_field(ICEBERG_MANAGE_PATH)
 _ICEBERG_ADD_FILES_FLAGS_FIELD = shared_flags_field(ICEBERG_ADD_FILES_PATH)
+_ICEBERG_REFRESH_FLAGS_FIELD = shared_flags_field(ICEBERG_REFRESH_CACHE_PATH)
 
 
 @cli_command("iceberg.inspect", handler=iceberg_inspect_handler, config=_ICEBERG_CONFIG)
@@ -220,6 +223,23 @@ class IcebergAddFilesCommand:
         option_param(ICEBERG_REFRESH_CACHE, command_path=ICEBERG_ADD_FILES_PATH),
     ] = False
     flags: SharedFlagsProtocol = _ICEBERG_ADD_FILES_FLAGS_FIELD
+
+
+@cli_command(
+    "iceberg.refresh_cache",
+    handler=iceberg_refresh_cache_handler,
+    config=_ICEBERG_CONFIG,
+)
+@iceberg_app.command(name="refresh-cache")
+@dataclass
+class IcebergRefreshCacheCommand:
+    """Refresh the Iceberg metadata cache."""
+
+    table_key: Annotated[
+        str | None,
+        option_param(ICEBERG_TABLE_KEY, command_path=ICEBERG_REFRESH_CACHE_PATH),
+    ] = None
+    flags: SharedFlagsProtocol = _ICEBERG_REFRESH_FLAGS_FIELD
 
 
 __all__ = ["iceberg_app"]

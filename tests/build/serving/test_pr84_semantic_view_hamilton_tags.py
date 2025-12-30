@@ -8,7 +8,6 @@ from hamilton.driver import Driver
 
 from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_BUILDSPEC,
-    SERVING_ARTIFACT_DATASET_MANIFEST_PATHS,
     SERVING_ARTIFACT_SCHEMA_MANIFEST,
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
@@ -55,6 +54,5 @@ def test_serving_harness_emits_semantic_artifacts(
             SERVING_ARTIFACT_SEMANTIC_REGISTRY,
             SERVING_ARTIFACT_SCHEMA_MANIFEST,
             SERVING_ARTIFACT_BUILDSPEC,
-            SERVING_ARTIFACT_DATASET_MANIFEST_PATHS,
         ),
     )

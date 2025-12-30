@@ -30,6 +30,7 @@ from codeintel.core.errors.storage import (
     QueryError,
     TableNotFoundError,
 )
+from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.duckdb_types import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -39,7 +40,7 @@ from codeintel.storage.duckdb_types import (
     DuckDBInvalidInputException,
     DuckDBProgrammingError,
 )
-from codeintel.storage.helpers.table_key import is_valid_table_key
+from codeintel.storage.helpers.table_key import is_valid_table_key, split_table_key
 from codeintel.storage.query_results import coerce_int, coerce_optional_float
 from codeintel.storage.sqlglot_tools import extract_table_refs
 
@@ -87,6 +88,37 @@ def _relation_for_table_key(
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Failed to resolve relation for %s: %s", table_key, exc)
         return None
+
+
+def _resolve_table_columns(con: DuckDBConnection, table_key: str) -> list[str] | None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        provider = None
+    if provider is not None:
+        schema = provider.get_table_schema(table_key)
+        if schema is not None:
+            return list(schema.column_names())
+    try:
+        schema_name, table_name = split_table_key(table_key)
+    except ValueError:
+        return None
+    try:
+        rows = con.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            ORDER BY ordinal_position
+            """,
+            [schema_name, table_name],
+        ).fetchall()
+    except DuckDBError as exc:
+        log.debug("Failed to resolve columns for %s: %s", table_key, exc)
+        return None
+    if not rows:
+        return None
+    return [str(row[0]) for row in rows]
 
 
 class UnsafeSqlError(ValueError):
@@ -311,9 +343,9 @@ def table_has_rows_for_snapshot(
     query filters by those values. Otherwise, it checks for any row existence.
     """
     table_key = contract.table_key
-    schema = contract.schema
-    has_repo_col = schema is not None and any(c.name == "repo" for c in schema.columns)
-    has_commit_col = schema is not None and any(c.name == "commit" for c in schema.columns)
+    columns = _resolve_table_columns(con, table_key)
+    has_repo_col = columns is not None and "repo" in columns
+    has_commit_col = columns is not None and "commit" in columns
 
     try:
         relation = con.table(table_key)

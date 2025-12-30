@@ -6,20 +6,72 @@ without querying the DuckDB catalog.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.core.manifests import read_manifest_json
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
+from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
+from codeintel.storage.views.discovery import discover_view_builders
+from codeintel.storage.views.inventory import view_builder_modules
+from codeintel.storage.views.schema_inference import derive_view_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
+    from types import ModuleType
 
     from duckdb import DuckDBPyConnection
 
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import ColumnType
+
+LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _SchemaProviderFallback:
+    primary: SchemaProvider
+    fallback: SchemaProvider
+
+    def get_table_schema(self, table_key: str) -> TableSchema | None:
+        schema = self.primary.get_table_schema(table_key)
+        if schema is not None:
+            return schema
+        return self.fallback.get_table_schema(table_key)
+
+    def require_table_schema(self, table_key: str) -> TableSchema:
+        schema = self.get_table_schema(table_key)
+        if schema is None:
+            msg = f"Unknown table schema: {table_key}"
+            raise KeyError(msg)
+        return schema
+
+    def iter_table_schemas(self) -> list[TableSchema]:
+        seen: set[str] = set()
+        schemas: list[TableSchema] = []
+        for schema in self.primary.iter_table_schemas():
+            seen.add(schema.table_key)
+            schemas.append(schema)
+        for schema in self.fallback.iter_table_schemas():
+            if schema.table_key in seen:
+                continue
+            schemas.append(schema)
+        return schemas
+
+    def derivation(self, table_key: str) -> SchemaDerivation | None:
+        derivation = self.primary.derivation(table_key)
+        if derivation is not None:
+            return derivation
+        return self.fallback.derivation(table_key)
+
+
+def _docs_view_keys(*, modules: tuple[ModuleType, ...]) -> tuple[str, ...]:
+    builders = discover_view_builders(modules=modules)
+    keys = {builder.table_key for builder in builders if builder.table_key.startswith("docs.v_")}
+    return tuple(sorted(keys))
 
 
 def _expect_dict(value: object, *, ctx: str) -> dict[str, object]:
@@ -128,6 +180,49 @@ class SchemaInventory:
     """
 
     schemas: dict[str, TableSchema]
+
+    def with_derived_views(
+        self,
+        *,
+        provider: SchemaProvider | None = None,
+        modules: tuple[ModuleType, ...] | None = None,
+    ) -> SchemaInventory:
+        """Return a new inventory with derived docs view schemas merged in.
+
+        Parameters
+        ----------
+        provider
+            Optional schema provider used for derivation.
+        modules
+            Optional view builder modules to scan for view schemas.
+
+        Returns
+        -------
+        SchemaInventory
+            Inventory with derived docs view schemas merged in.
+        """
+        modules = modules or view_builder_modules()
+        view_keys = _docs_view_keys(modules=modules)
+        if not view_keys:
+            return self
+
+        fallback = MappingSchemaProvider(self.schemas)
+        base_provider = fallback if provider is None else _SchemaProviderFallback(provider, fallback)
+        try:
+            derived = derive_view_schemas(
+                provider=base_provider,
+                view_keys=view_keys,
+                modules=modules,
+            )
+        except (TypeError, ValueError) as exc:
+            LOG.debug("SchemaInventory view derivation failed: %s", exc)
+            return self
+        if not derived:
+            return self
+        merged = dict(self.schemas)
+        for table_key, schema in derived.items():
+            merged.setdefault(table_key, schema)
+        return SchemaInventory(schemas=merged)
 
     @classmethod
     def load(cls, path: Path) -> SchemaInventory:

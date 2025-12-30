@@ -16,7 +16,7 @@ from codeintel.build.providers import Providers, create_default_providers
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.runtime.runtime_bundle import RuntimeBundle
-from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.build import build_settings_for_paths
 from tests._helpers.context import SeedPack, TestContext, create_test_context
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
@@ -70,7 +70,7 @@ def build_test_env(
     """
     resolved_providers = spec.providers or create_default_providers(ToolsConfig.default())
     resolved_config = spec.build_config or BuildConfig.empty()
-    resolved_settings = spec.settings or TEST_BUILD_SETTINGS
+    resolved_settings = spec.settings or build_settings_for_paths(spec.paths)
     return BuildEnv(
         gateway=spec.gateway,
         snapshot=spec.snapshot,
@@ -256,7 +256,7 @@ class HamiltonBuildHarness:
             paths=ctx.build_paths,
             providers=resolved_providers,
             config=resolved_build_config,
-            settings=TEST_BUILD_SETTINGS,
+            settings=build_settings_for_paths(ctx.build_paths),
             profile=cfg.profile,
             validate_outputs=cfg.validate_outputs,
         )
@@ -306,7 +306,7 @@ class HamiltonBuildHarness:
             paths=ctx.build_paths,
             providers=resolved_providers,
             config=resolved_build_config,
-            settings=TEST_BUILD_SETTINGS,
+            settings=build_settings_for_paths(ctx.build_paths),
             profile=cfg.profile,
             validate_outputs=cfg.validate_outputs,
         )

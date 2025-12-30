@@ -75,6 +75,19 @@ class IcebergScanRequest:
     batch_size: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class IcebergRefScanRequest:
+    """Inputs required to build an Iceberg scan with a resolved ref name."""
+
+    table_key: str
+    selected_fields: Sequence[str]
+    row_filter: BooleanExpression | None
+    ref_name: str | None
+    settings: IcebergSettings
+    batch_size: int | None = None
+    table: Table | None = None
+
+
 def iceberg_table_exists(*, settings: IcebergSettings, table_key: str) -> bool:
     """Return True when an Iceberg table exists for the table key.
 
@@ -93,6 +106,30 @@ def iceberg_table_exists(*, settings: IcebergSettings, table_key: str) -> bool:
         return False
 
 
+def resolve_iceberg_ref_for_identity(
+    *,
+    run_id: str | None,
+    commit: str | None,
+    settings: IcebergSettings,
+) -> str | None:
+    """Resolve the Iceberg snapshot ref for a run/commit identity.
+
+    Returns
+    -------
+    str | None
+        Resolved Iceberg ref for the identity, or None when disabled.
+    """
+    if settings.read_ref:
+        return settings.read_ref
+    if not settings.read_enabled:
+        return None
+    if run_id:
+        return f"run/{run_id}"
+    if commit:
+        return f"commit/{commit}"
+    return "main"
+
+
 def resolve_iceberg_ref(
     *, pointer: ServingSnapshotPointer, settings: IcebergSettings
 ) -> str | None:
@@ -103,15 +140,11 @@ def resolve_iceberg_ref(
     str | None
         Resolved Iceberg ref for the serving snapshot, or None when disabled.
     """
-    if settings.read_ref:
-        return settings.read_ref
-    if not settings.read_enabled:
-        return None
-    if pointer.run_id:
-        return f"run/{pointer.run_id}"
-    if pointer.commit:
-        return f"commit/{pointer.commit}"
-    return "main"
+    return resolve_iceberg_ref_for_identity(
+        run_id=pointer.run_id,
+        commit=pointer.commit,
+        settings=settings,
+    )
 
 
 def required_scan_fields(
@@ -192,12 +225,14 @@ def iceberg_scan_for_query(*, request: IcebergScanRequest) -> IcebergScanResult:
     IcebergScanError
         If the Iceberg table cannot be loaded.
     """
-    provider = IcebergCatalogProvider(request.settings)
-    try:
-        table = provider.load_table(request.table_key)
-    except (RuntimeError, ValueError, KeyError, OSError) as exc:  # pragma: no cover
-        msg = f"Iceberg table load failed for {request.table_key}"
-        raise IcebergScanError(msg) from exc
+    table = request.table
+    if table is None:
+        provider = IcebergCatalogProvider(request.settings)
+        try:
+            table = provider.load_table(request.table_key)
+        except (RuntimeError, ValueError, KeyError, OSError) as exc:  # pragma: no cover
+            msg = f"Iceberg table load failed for {request.table_key}"
+            raise IcebergScanError(msg) from exc
 
     ref = resolve_iceberg_ref(pointer=request.pointer, settings=request.settings)
     snapshot_id = _resolve_snapshot_id(table, ref=ref)
@@ -226,6 +261,48 @@ def iceberg_scan_for_query(*, request: IcebergScanRequest) -> IcebergScanResult:
     )
 
     row_filter = filter_result.row_filter or AlwaysTrue()
+    if options:
+        scan = table.scan(
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            snapshot_id=snapshot_id,
+            case_sensitive=True,
+            options=options,
+        )
+    else:
+        scan = table.scan(
+            row_filter=row_filter,
+            selected_fields=selected_fields,
+            snapshot_id=snapshot_id,
+            case_sensitive=True,
+        )
+    return IcebergScanResult(scan=scan, plan=plan, snapshot_id=snapshot_id)
+
+
+def iceberg_scan_for_ref(*, request: IcebergRefScanRequest) -> IcebergScanResult:
+    """Build an Iceberg scan with a pre-resolved ref name."""
+    provider = IcebergCatalogProvider(request.settings)
+    try:
+        table = provider.load_table(request.table_key)
+    except (RuntimeError, ValueError, KeyError, OSError) as exc:  # pragma: no cover
+        msg = f"Iceberg table load failed for {request.table_key}"
+        raise IcebergScanError(msg) from exc
+
+    snapshot_id = _resolve_snapshot_id(table, ref=request.ref_name)
+    selected_fields = _selected_fields(request.selected_fields)
+    options = dict(request.settings.io_options)
+    plan = IcebergScanPlan(
+        table_key=request.table_key,
+        ref=request.ref_name,
+        snapshot_id=snapshot_id,
+        selected_fields=selected_fields,
+        row_filter=request.row_filter,
+        case_sensitive=True,
+        batch_size=request.batch_size,
+        io_options=options or None,
+        pushdown_coverage=None,
+    )
+    row_filter = request.row_filter or AlwaysTrue()
     if options:
         scan = table.scan(
             row_filter=row_filter,
@@ -446,13 +523,16 @@ def _startswith_expression(column: str, value: FilterValue) -> BooleanExpression
 
 __all__ = [
     "IcebergFilterResult",
+    "IcebergRefScanRequest",
     "IcebergScanError",
     "IcebergScanRequest",
     "IcebergScanResult",
     "iceberg_row_filter_from_filters",
     "iceberg_scan_for_query",
+    "iceberg_scan_for_ref",
     "iceberg_table_exists",
     "required_scan_fields",
     "resolve_iceberg_ref",
+    "resolve_iceberg_ref_for_identity",
     "resolve_iceberg_snapshot_id",
 ]

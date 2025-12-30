@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pyiceberg.table.metadata import TableMetadata
     from pyiceberg.table.refs import SnapshotRef
 
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.gateway.protocol import MinimalGateway
 
 
 SchemaFieldRow = dict[str, bool | int | str | None]
@@ -29,7 +29,7 @@ SchemaFieldRow = dict[str, bool | int | str | None]
 
 def refresh_iceberg_metadata_cache(
     *,
-    gateway: StorageGateway,
+    gateway: MinimalGateway,
     table_key: str,
     table: Table,
     now: datetime | None = None,
@@ -146,7 +146,7 @@ _ICEBERG_ARROW_COLUMNS = (
 
 def _replace_rows(
     *,
-    gateway: StorageGateway,
+    gateway: MinimalGateway,
     table_key: str,
     table_ref: str,
     columns: Iterable[str],

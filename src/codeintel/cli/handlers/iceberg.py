@@ -18,6 +18,7 @@ from codeintel.cli.core.result_types import (
     IcebergExpireSnapshotsResult,
     IcebergInspectResult,
     IcebergManageSnapshotsResult,
+    IcebergRefreshCacheResult,
     IcebergRefsResult,
     IcebergTimeTravelResult,
 )
@@ -29,7 +30,8 @@ from codeintel.cli.errors.results import (
 from codeintel.core.config.view import SettingsView
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.core.time import utc_now
-from codeintel.storage.iceberg.migration import add_files_to_iceberg
+from codeintel.storage.iceberg.cache import refresh_iceberg_metadata_cache
+from codeintel.storage.iceberg.migration import IcebergAddFilesRequest, add_files_to_iceberg
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
@@ -276,20 +278,16 @@ def iceberg_add_files_handler(
         )
 
     try:
-        if data_path.is_dir():
-            result = add_files_to_iceberg(
-                table_key=table_key,
-                data_dir=data_path,
-                settings=_load_iceberg_settings(),
-                gateway=ctx.gateway if refresh_cache else None,
-            )
-        else:
-            result = add_files_to_iceberg(
-                table_key=table_key,
-                file_paths=(data_path,),
-                settings=_load_iceberg_settings(),
-                gateway=ctx.gateway if refresh_cache else None,
-            )
+        request = IcebergAddFilesRequest(
+            table_key=table_key,
+            data_dir=data_path if data_path.is_dir() else None,
+            file_paths=None if data_path.is_dir() else (data_path,),
+            gateway=ctx.gateway if refresh_cache else None,
+        )
+        result = add_files_to_iceberg(
+            request,
+            settings=_load_iceberg_settings(),
+        )
     except ICEBERG_HANDLER_ERRORS as exc:
         return fail_project_error("iceberg.add_files", str(exc))
 
@@ -299,6 +297,60 @@ def iceberg_add_files_handler(
             created=result.created,
             file_count=result.file_count,
             snapshot_id=result.snapshot_id,
+        )
+    )
+
+
+def iceberg_refresh_cache_handler(
+    ctx: CommandContext,
+) -> CliResult[IcebergRefreshCacheResult | None]:
+    """Refresh the Iceberg metadata cache.
+
+    Returns
+    -------
+    CliResult[IcebergRefreshCacheResult | None]
+        CLI result with refresh payload or error info.
+    """
+    if not ctx.has_storage:
+        return fail_project_error(
+            "iceberg.refresh_cache",
+            "refresh_cache requires storage access (--db-path or project config)",
+        )
+    table_key = ctx.params.get_str("table_key")
+    if table_key:
+        table_keys = (table_key,)
+    else:
+        table_keys = tuple(
+            key
+            for key, dataset in ctx.gateway.datasets.by_table_key.items()
+            if not dataset.is_view
+        )
+    if not table_keys:
+        return CliResult.ok(IcebergRefreshCacheResult(table_keys=(), refreshed=0, skipped=0))
+    settings = _load_iceberg_settings()
+    provider = IcebergCatalogProvider(settings)
+    refreshed = 0
+    skipped = 0
+    for key in table_keys:
+        try:
+            if not provider.table_exists(key):
+                skipped += 1
+                continue
+            table = provider.load_table(key)
+        except ICEBERG_HANDLER_ERRORS:
+            skipped += 1
+            continue
+        refresh_iceberg_metadata_cache(
+            gateway=ctx.gateway,
+            table_key=key,
+            table=table,
+        )
+        refreshed += 1
+    return CliResult.ok(
+        IcebergRefreshCacheResult(
+            table_keys=table_keys,
+            refreshed=refreshed,
+            skipped=skipped,
         )
     )
 
@@ -456,6 +508,7 @@ __all__ = [
     "iceberg_expire_snapshots_handler",
     "iceberg_inspect_handler",
     "iceberg_manage_snapshots_handler",
+    "iceberg_refresh_cache_handler",
     "iceberg_refs_handler",
     "iceberg_time_travel_handler",
 ]

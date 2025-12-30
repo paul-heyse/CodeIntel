@@ -18,3 +18,8 @@ hamilton:
     parallel_backend: sequential
     max_workers: null
     materializers: []
+
+# Iceberg guardrails (env-driven; see docs/runtime_environment.md)
+# CODEINTEL_ICEBERG_READ_ENABLED=false
+# CODEINTEL_ICEBERG_WRITE_ENABLED=false
+# CODEINTEL_ICEBERG_TOMBSTONES_ENABLED=false

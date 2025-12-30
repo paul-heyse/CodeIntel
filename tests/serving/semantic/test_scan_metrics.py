@@ -6,12 +6,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.serving.db.manager import ServingDBManager
+from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.serving.semantic.iceberg_scans import resolve_iceberg_ref
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import SemanticQueryRequest
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
-from codeintel.storage.manifests.dataset_manifest import read_dataset_manifest
+from codeintel.storage.iceberg.stats import iceberg_stats_for_table
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_not_none,
@@ -23,17 +26,22 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.anyio
-async def test_query_scan_metrics_from_manifest(tmp_path: Path) -> None:
-    """Query scan metrics should reflect dataset manifest stats."""
+async def test_query_scan_metrics_from_iceberg(tmp_path: Path) -> None:
+    """Query scan metrics should reflect Iceberg stats."""
     snapshot = ServingSnapshotFactory(tmp_path).demo_snapshot(row_count=4)
-    manifest_path = snapshot.dataset_manifest_paths[0]
-    manifest = read_dataset_manifest(manifest_path)
-    stats = manifest.stats or {}
+    pointer = ServingSnapshotPointer.load(snapshot.pointer_path)
+    provider = IcebergCatalogProvider(snapshot.iceberg_settings)
+    table = provider.load_table("docs.v_demo")
+    ref = resolve_iceberg_ref(pointer=pointer, settings=snapshot.iceberg_settings)
+    snapshot_id = None
+    if ref:
+        tagged = table.snapshot_by_name(ref)
+        if tagged is not None:
+            snapshot_id = tagged.snapshot_id
+    stats = iceberg_stats_for_table(table, snapshot_id=snapshot_id)
 
-    expected_row_count = manifest.row_count or stats.get("rows_from_metadata")
-    expected_file_count = stats.get("file_count") or (
-        len(manifest.files) if manifest.files else None
-    )
+    expected_row_count = stats.get("total_records")
+    expected_file_count = stats.get("data_file_count")
     expected_total_bytes = stats.get("total_bytes")
 
     manager = ServingDBManager(
@@ -54,6 +62,7 @@ async def test_query_scan_metrics_from_manifest(tmp_path: Path) -> None:
                 result_engine="polars",
                 schema_enforcement="strict",
                 dataset_scan_metrics_enabled=True,
+                iceberg=snapshot.iceberg_settings,
             ),
         )
         result = kernel.query(SemanticQueryRequest(view_id="demo.view", limit=2))
@@ -61,7 +70,7 @@ async def test_query_scan_metrics_from_manifest(tmp_path: Path) -> None:
         expect_equal(metrics.row_count, expected_row_count)
         expect_equal(metrics.file_count, expected_file_count)
         expect_equal(metrics.total_bytes, expected_total_bytes)
-        expect_equal(metrics.scan_source, "dataset_manifest")
+        expect_equal(metrics.scan_source, "iceberg")
         expect_equal(metrics.pushdown_coverage, None)
     finally:
         await manager.stop()

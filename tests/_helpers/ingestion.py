@@ -29,7 +29,7 @@ from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.modules import ModulesAssertions
-from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.build import build_settings_for_paths
 from tests._helpers.catalog import make_target_descriptor
 from tests._helpers.columnar_tables import materialize_table_from_rows
 from tests._helpers.factories import make_snapshot
@@ -263,7 +263,7 @@ def build_target_context_for_target(
             paths=build_paths,
             providers=providers,
             build_config=BuildConfig.empty(),
-            settings=TEST_BUILD_SETTINGS,
+            settings=build_settings_for_paths(build_paths),
             profile=cfg.profile,
         )
     )

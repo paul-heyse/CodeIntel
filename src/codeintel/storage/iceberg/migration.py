@@ -14,6 +14,10 @@ from pyiceberg.table.sorting import SortOrder
 
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.core.iceberg.schema import name_mapping_from_arrow_schema
+from codeintel.core.iceberg.snapshot_properties import (
+    SnapshotPropertyInputs,
+    snapshot_properties_for_write,
+)
 from codeintel.storage.iceberg.cache import refresh_iceberg_metadata_cache
 from codeintel.storage.iceberg.statistics_file import persist_iceberg_statistics
 from codeintel.storage.iceberg.stats import iceberg_stats_for_table
@@ -39,14 +43,21 @@ class IcebergAddFilesResult:
     snapshot_id: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class IcebergAddFilesRequest:
+    """Input payload for adding Parquet files to an Iceberg table."""
+
+    table_key: str
+    data_dir: Path | None = None
+    file_paths: Sequence[Path] | None = None
+    snapshot_properties: Mapping[str, str] | None = None
+    gateway: StorageGateway | None = None
+
+
 def add_files_to_iceberg(
+    request: IcebergAddFilesRequest,
     *,
-    table_key: str,
-    data_dir: Path | None = None,
-    file_paths: Sequence[Path] | None = None,
     settings: IcebergSettings,
-    snapshot_properties: Mapping[str, str] | None = None,
-    gateway: StorageGateway | None = None,
 ) -> IcebergAddFilesResult:
     """Add Parquet files to an Iceberg table using add_files.
 
@@ -54,26 +65,19 @@ def add_files_to_iceberg(
     -------
     IcebergAddFilesResult
         Summary of the add_files outcome.
-
-    Raises
-    ------
-    ValueError
-        When no Parquet files are provided.
-    FileNotFoundError
-        When one or more files do not exist.
     """
     files = _resolve_parquet_files(
-        data_dir=data_dir,
-        file_paths=file_paths,
-        table_key=table_key,
+        data_dir=request.data_dir,
+        file_paths=request.file_paths,
+        table_key=request.table_key,
     )
 
     dataset = ds.dataset([str(path) for path in files], format="parquet")
     arrow_schema = dataset.schema
-    name_mapping = name_mapping_from_arrow_schema(arrow_schema, table_key=table_key)
+    name_mapping = name_mapping_from_arrow_schema(arrow_schema, table_key=request.table_key)
     provider = IcebergCatalogProvider(settings)
     catalog = provider.load()
-    identifier = provider.resolve_identifier(table_key)
+    identifier = provider.resolve_identifier(request.table_key)
     created = not catalog.table_exists(identifier)
     table = _ensure_table(
         provider=provider,
@@ -81,8 +85,13 @@ def add_files_to_iceberg(
         arrow_schema=arrow_schema,
         name_mapping=name_mapping,
     )
+    snapshot_properties = snapshot_properties_for_write(
+        SnapshotPropertyInputs(table_key=request.table_key)
+    )
+    snapshot_properties.update(request.snapshot_properties or {})
     table.add_files(
-        [str(path) for path in files], snapshot_properties=dict(snapshot_properties or {})
+        [str(path) for path in files],
+        snapshot_properties=snapshot_properties,
     )
     table.refresh()
     current_snapshot = table.current_snapshot()
@@ -94,18 +103,18 @@ def add_files_to_iceberg(
     if iceberg_stats is not None:
         persist_iceberg_statistics(
             table=table,
-            table_key=table_key,
+            table_key=request.table_key,
             stats=iceberg_stats,
-            snapshot_properties=dict(snapshot_properties or {}),
+            snapshot_properties=snapshot_properties,
         )
-    if gateway is not None:
+    if request.gateway is not None:
         refresh_iceberg_metadata_cache(
-            gateway=gateway,
-            table_key=table_key,
+            gateway=request.gateway,
+            table_key=request.table_key,
             table=table,
         )
     return IcebergAddFilesResult(
-        table_key=table_key,
+        table_key=request.table_key,
         created=created,
         file_count=len(files),
         snapshot_id=snapshot_id,
@@ -159,4 +168,4 @@ def _resolve_parquet_files(
     return files
 
 
-__all__ = ["IcebergAddFilesResult", "add_files_to_iceberg"]
+__all__ = ["IcebergAddFilesRequest", "IcebergAddFilesResult", "add_files_to_iceberg"]

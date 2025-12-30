@@ -90,11 +90,8 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 
-_TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
-
-
 def _skip_table_creation(table_key: str) -> bool:
-    return table_key in _TABLE_CREATION_DENYLIST or is_view_contract(table_key)
+    return is_view_contract(table_key)
 
 
 def _resolve_hash_column(table_schema: TableSchema | None) -> str | None:

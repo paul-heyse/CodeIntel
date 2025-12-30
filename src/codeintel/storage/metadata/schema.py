@@ -210,7 +210,6 @@ MATERIALIZATION_VALIDATIONS_TABLE = TableSchema(
         Column("issues", "JSON"),
         Column("checks", "JSON"),
         Column("skipped_checks", "JSON"),
-        Column("dataset_manifest_path", "VARCHAR"),
         Column("iceberg_snapshot_id", "BIGINT"),
         Column("created_at", "TIMESTAMPTZ", nullable=False),
     ],

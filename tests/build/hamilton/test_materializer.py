@@ -7,16 +7,16 @@ DAG-visible I/O, replacing the legacy ``native.materializer`` utilities.
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import polars as pl
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.build.hamilton.materializers import ArrowDatasetSaver, DuckDBRelationSaver
+from codeintel.build.hamilton.materializers import IcebergDatasetSaver
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.core.config.view import SettingsView
 from codeintel.core.hashing import stable_hash
-from codeintel.storage.manifests.dataset_manifest import read_dataset_manifest
+from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.validation.mode import ContractValidationMode
 from tests._helpers.assertions.expectation_assertions import (
@@ -104,56 +104,49 @@ def _module_row_for_schema(
     return tuple(values_by_column[name] for name in column_names)
 
 
-def test_materialize_table_uses_policy_and_insert_select(
+def test_iceberg_saver_writes_table(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBRelationSaver should replace snapshot rows via Warehouse policy."""
+    """IcebergDatasetSaver should persist rows and expose snapshot metadata."""
     harness = build_harness.with_force_targets("modules")
     env = harness.build_env()
     snapshot = env.snapshot
-    repo = snapshot.repo
-    commit = snapshot.commit
     graph = _make_graph()
-    saver = DuckDBRelationSaver(
+    saver = IcebergDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
         table_key="core.modules",
     )
 
-    df1 = _modules_rows(repo=repo, commit=commit, count=1)
-    env.gateway.con.register("tmp_modules_1", df1)
-    rel1 = env.gateway.con.table("tmp_modules_1")
-    meta1 = saver.save_data(rel1)
-    expect_equal(meta1["status"], expected="succeeded")
-    expect_equal(meta1["row_count"], expected=1)
+    df = _modules_rows(repo=snapshot.repo, commit=snapshot.commit, count=2)
+    meta = saver.save_data(df.lazy())
+    expect_equal(meta["status"], expected="succeeded")
+    expect_equal(meta["row_count"], expected=2)
+    snapshot_id = meta.get("iceberg_snapshot_id")
+    expect_true(
+        isinstance(snapshot_id, int),
+        message="Expected iceberg_snapshot_id to be an integer",
+    )
 
-    df2 = _modules_rows(repo=repo, commit=commit, count=2)
-    env.gateway.con.register("tmp_modules_2", df2)
-    rel2 = env.gateway.con.table("tmp_modules_2")
-    meta2 = saver.save_data(rel2)
-    expect_equal(meta2["status"], expected="succeeded")
-    expect_equal(meta2["row_count"], expected=2)
-
-    row = env.gateway.con.execute(
-        "SELECT COUNT(*) FROM core.modules WHERE repo=? AND commit=?",
-        [repo, commit],
-    ).fetchone()
-    expect_true(row is not None, message="Expected COUNT(*) query to return a row")
-    row_tuple = cast("tuple[int, ...]", row)
-    expect_equal(row_tuple[0], expected=2)
+    settings_view = SettingsView.from_build_env(env)
+    provider = IcebergCatalogProvider(settings_view.build.iceberg)
+    table = provider.load_table("core.modules")
+    reader = table.scan().to_arrow_batch_reader()
+    written_rows = sum(batch.num_rows for batch in reader)
+    expect_equal(written_rows, expected=2)
 
 
 def test_materialize_table_validates_when_schema_available(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBRelationSaver should succeed when schema validation is enabled."""
+    """IcebergDatasetSaver should succeed when schema validation is enabled."""
     harness = build_harness.with_force_targets("modules")
     env = replace(harness.build_env(), validate_outputs=True)
     repo = env.snapshot.repo
     commit = env.snapshot.commit
     graph = _make_graph()
-    saver = DuckDBRelationSaver(
+    saver = IcebergDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -161,17 +154,16 @@ def test_materialize_table_validates_when_schema_available(
     )
 
     df = _modules_rows(repo=repo, commit=commit, count=2)
-    env.gateway.con.register("tmp_modules_validate", df)
-    rel = env.gateway.con.table("tmp_modules_validate")
-    meta = saver.save_data(rel)
+    meta = saver.save_data(df.lazy())
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=df.height)
+    expect_equal(meta["validation_status"], expected="passed")
 
 
-def test_relation_saver_accepts_lazyframe(
+def test_iceberg_saver_accepts_duckdb_relation(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBRelationSaver should persist LazyFrame inputs."""
+    """IcebergDatasetSaver should persist DuckDBRelation inputs."""
     harness = build_harness.with_force_targets("modules")
     env = harness.build_env()
     repo = env.snapshot.repo
@@ -185,65 +177,21 @@ def test_relation_saver_accepts_lazyframe(
         schema_columns=tuple(schema.columns),
     )
     column_names = tuple(column.name for column in schema.columns)
-    frame = pl.DataFrame([row], schema=list(column_names)).lazy()
+    frame = pl.DataFrame([row], schema=list(column_names))
+    env.gateway.con.register("tmp_modules_relation", frame)
+    relation = env.gateway.con.table("tmp_modules_relation")
 
-    saver = DuckDBRelationSaver(
+    saver = IcebergDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
         table_key=table_key,
     )
 
-    meta = saver.save_data(frame.lazy())
+    meta = saver.save_data(relation)
 
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=1)
-
-    row_result = env.gateway.con.execute(
-        "SELECT * FROM core.modules WHERE repo=? AND commit=?",
-        [repo, commit],
-    ).fetchone()
-    expect_true(row_result is not None, message="Expected row materialization to persist data")
-    persisted = cast("tuple[object, ...]", row_result)
-    expect_equal(persisted, expected=row)
-
-
-def test_arrow_dataset_saver_writes_manifest(
-    build_harness: HamiltonBuildHarness,
-) -> None:
-    """ArrowDatasetSaver should emit a dataset manifest for persisted data."""
-    harness = build_harness.with_force_targets("modules")
-    env = harness.build_env()
-    snapshot = env.snapshot
-    graph = _make_graph()
-    saver = ArrowDatasetSaver(
-        env=env,
-        catalog=graph,
-        target_name="modules",
-        table_key="core.modules",
-    )
-
-    frame = pl.DataFrame(
-        {
-            "module": ["m1"],
-            "path": ["pkg/mod.py"],
-            "repo": [snapshot.repo],
-            "commit": [snapshot.commit],
-        }
-    )
-
-    meta = saver.save_data(frame)
-    expect_equal(meta["status"], expected="succeeded")
-    manifest_path = meta.get("dataset_manifest_path")
-    expect_true(
-        isinstance(manifest_path, str),
-        message="Expected dataset_manifest_path to be a string",
-    )
-    manifest_path_str = cast("str", manifest_path)
-    manifest = read_dataset_manifest(Path(manifest_path_str))
-    expect_equal(manifest.table_key, expected="core.modules")
-    expect_equal(manifest.snapshot_id, expected=snapshot.commit)
-    expect_equal(manifest.row_count, expected=1)
 
 
 def test_materialize_table_persists_validation_record(
@@ -253,7 +201,7 @@ def test_materialize_table_persists_validation_record(
     harness = build_harness.with_force_targets("modules")
     env = replace(harness.build_env(), validate_outputs=True)
     graph = _make_graph()
-    saver = DuckDBRelationSaver(
+    saver = IcebergDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -261,9 +209,7 @@ def test_materialize_table_persists_validation_record(
     )
 
     df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
-    env.gateway.con.register("tmp_modules_validation", df)
-    rel = env.gateway.con.table("tmp_modules_validation")
-    meta = saver.save_data(rel)
+    meta = saver.save_data(df.lazy())
 
     expect_equal(meta["status"], expected="succeeded")
     validations_ref = meta_table_ref("metadata.materialization_validations")
@@ -288,7 +234,7 @@ def test_strict_validation_fails_on_missing_columns(
         validation_mode=ContractValidationMode.STRICT,
     )
     graph = _make_graph()
-    saver = ArrowDatasetSaver(
+    saver = IcebergDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -342,7 +288,7 @@ def test_internal_outputs_skip_contract_checks(
             }
         ),
     )
-    saver = ArrowDatasetSaver(
+    saver = IcebergDatasetSaver(
         env=env,
         catalog=internal_graph,
         target_name="modules",

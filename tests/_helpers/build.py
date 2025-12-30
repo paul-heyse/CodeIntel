@@ -16,7 +16,11 @@ from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.targets import TargetDescriptor
 from codeintel.core.build_manifest import OutputManifest
-from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
+from codeintel.core.config.settings import (
+    BuildSettings,
+    ExportAuditSettings,
+    IcebergSettings,
+)
 from codeintel.core.runtime.loader import load_runtime_settings
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
@@ -34,29 +38,88 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
 
 _RUNTIME_BUILD_SETTINGS = load_runtime_settings().build
-TEST_BUILD_SETTINGS = BuildSettings(
-    engine_version="test",
-    export_audit=_RUNTIME_BUILD_SETTINGS.export_audit or ExportAuditSettings(),
-)
 
 
-def make_build_settings(engine_version: str = "test") -> BuildSettings:
-    """Return BuildSettings for tests.
+def iceberg_settings_for_paths(build_paths: BuildPaths) -> IcebergSettings:
+    """Create Iceberg settings rooted at a build directory.
 
     Parameters
     ----------
+    build_paths
+        Build paths to root the Iceberg catalog/warehouse.
+
+    Returns
+    -------
+    IcebergSettings
+        Iceberg settings configured for local test catalogs.
+    """
+    catalog_dir = build_paths.build_dir / "iceberg"
+    catalog_dir.mkdir(parents=True, exist_ok=True)
+    catalog_path = (catalog_dir / "catalog.duckdb").resolve()
+    warehouse_path = (catalog_dir / "warehouse").resolve()
+    warehouse_path.mkdir(parents=True, exist_ok=True)
+    return IcebergSettings(
+        read_enabled=True,
+        write_enabled=True,
+        catalog_type="sql",
+        catalog_uri=f"duckdb:///{catalog_path}",
+        catalog_warehouse=str(warehouse_path),
+    )
+
+
+def build_settings_for_paths(
+    build_paths: BuildPaths,
+    *,
+    engine_version: str = "test",
+) -> BuildSettings:
+    """Return BuildSettings configured for a specific build directory.
+
+    Parameters
+    ----------
+    build_paths
+        Build paths used to scope Iceberg catalogs and warehouses.
     engine_version
         Engine version identifier to embed in hashes.
 
     Returns
     -------
     BuildSettings
-        Build settings for tests.
+        Build settings configured for the provided build paths.
     """
     return BuildSettings(
         engine_version=engine_version,
         export_audit=_RUNTIME_BUILD_SETTINGS.export_audit or ExportAuditSettings(),
+        iceberg=iceberg_settings_for_paths(build_paths),
     )
+
+
+TEST_BUILD_SETTINGS = BuildSettings(
+    engine_version="test",
+    export_audit=_RUNTIME_BUILD_SETTINGS.export_audit or ExportAuditSettings(),
+)
+
+
+def make_build_settings(
+    engine_version: str = "test",
+    *,
+    build_paths: BuildPaths | None = None,
+) -> BuildSettings:
+    """Return BuildSettings for tests.
+
+    Parameters
+    ----------
+    engine_version
+        Engine version identifier to embed in hashes.
+    build_paths
+        Optional build paths used to scope Iceberg catalogs and warehouses.
+
+    Returns
+    -------
+    BuildSettings
+        Build settings for tests.
+    """
+    resolved_paths = build_paths or create_test_build_paths(Path.cwd())
+    return build_settings_for_paths(resolved_paths, engine_version=engine_version)
 
 
 def make_snapshot(

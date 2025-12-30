@@ -23,21 +23,6 @@
     "semantic_registry_path": { "type": "string" },
     "schema_manifest_path": { "type": "string" },
     "buildspec_path": { "type": "string" },
-    "semantic_layer_version": { "type": "string" },
-    "datasets": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["manifest_path", "partition_columns"],
-        "properties": {
-          "manifest_path": { "type": "string" },
-          "schema_hash": { "type": "string" },
-          "partition_columns": { "type": "array", "items": { "type": "string" } },
-          "row_count": { "type": "integer" },
-          "stats": { "type": "object" }
-        }
-      }
-    }
+    "semantic_layer_version": { "type": "string" }
   }
 }

@@ -16,6 +16,10 @@ from codeintel.core.iceberg.schema import (
     name_mapping_from_arrow_schema,
     table_schema_to_iceberg_schema,
 )
+from codeintel.core.iceberg.snapshot_properties import (
+    SnapshotPropertyInputs,
+    snapshot_properties_for_write,
+)
 from codeintel.core.iceberg.stream import IcebergColumnarStream
 
 __all__ = [
@@ -23,11 +27,13 @@ __all__ = [
     "IcebergColumnarStream",
     "IcebergGuardrailError",
     "IcebergScanPlan",
+    "SnapshotPropertyInputs",
     "arrow_schema_with_iceberg_ids",
     "iceberg_enforced_table",
     "iceberg_schema_to_arrow_schema",
     "name_mapping_from_arrow_schema",
     "require_iceberg_read",
     "require_iceberg_write",
+    "snapshot_properties_for_write",
     "table_schema_to_iceberg_schema",
 ]

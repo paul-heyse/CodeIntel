@@ -20,6 +20,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.storage.contracts.schema_provider import get_schema_provider
 
 if TYPE_CHECKING:
     from collections.abc import Hashable
@@ -78,6 +79,17 @@ CONFIG_PROJECTION_MODULE_EDGES_COLS = (
 NODE_ID_INDEX = 2
 
 
+def _schema_columns(table_key: str) -> list[str]:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        return []
+    schema = provider.get_table_schema(table_key)
+    if schema is None:
+        return []
+    return list(schema.column_names())
+
+
 @dataclass(frozen=True)
 class ProjectionContext:
     """Projection execution context."""
@@ -105,8 +117,8 @@ def _projection_rows(
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
     node_contract = get_contract_for_table_key(targets.node_table_key)
     edge_contract = get_contract_for_table_key(targets.edge_table_key)
-    node_columns = node_contract.schema.column_names() if node_contract.schema else []
-    edge_columns = edge_contract.schema.column_names() if edge_contract.schema else []
+    node_columns = _schema_columns(targets.node_table_key)
+    edge_columns = _schema_columns(targets.edge_table_key)
     node_id_col = node_columns[NODE_ID_INDEX] if len(node_columns) > NODE_ID_INDEX else "node"
     src_col = next((col for col in edge_columns if col.startswith("src_")), "src")
     dst_col = next((col for col in edge_columns if col.startswith("dst_")), "dst")
