@@ -1,8 +1,9 @@
-"""Unified graph runtime/engine test double.
+"""Unified graph runtime/engine test double for unit tests.
 
 Loads graphs from seeded DuckDB tables when a gateway/snapshot is provided,
 otherwise serves configured NetworkX graphs with defensive copies. All public
-methods record call names for assertions.
+methods record call names for assertions. Prefer real runtimes in integration
+tests for production parity.
 """
 
 from __future__ import annotations

@@ -286,15 +286,15 @@ def _derived_lineage_columns_sql(table_ref: str) -> str:
             exp.and_(
                 exp.EQ(
                     this=exp.column("repo", table="lineage"),
-                    expression=exp.Parameter(),
+                    expression=exp.Placeholder(),
                 ),
                 exp.EQ(
                     this=exp.column("commit", table="lineage"),
-                    expression=exp.Parameter(),
+                    expression=exp.Placeholder(),
                 ),
                 exp.EQ(
                     this=exp.column("downstream_table", table="lineage"),
-                    expression=exp.Parameter(),
+                    expression=exp.Placeholder(),
                 ),
             )
         )

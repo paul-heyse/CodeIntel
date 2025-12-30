@@ -152,6 +152,8 @@ output-format = "grouped"
 src = ["src"]
 extend-exclude = [
     "build/tmp_docs_views/**",
+    "build/tmp_inspect/**",
+    "build/tmp_test/**",
     "tmp_docs_view_check/**",
     "tmp_docs_view_check_rel/**",
 ]

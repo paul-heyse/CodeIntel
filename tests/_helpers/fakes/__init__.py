@@ -1,8 +1,10 @@
-"""Fake implementations for testing.
+"""Fake implementations for unit tests.
 
 This package provides fake implementations for:
 1. Ingestion tool runner and service (legacy)
 2. Build system protocols (new pattern)
+
+Use real gateways/harnesses in integration tests to preserve production parity.
 
 Example (new protocol-based fakes)
 ----------------------------------

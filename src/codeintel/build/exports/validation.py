@@ -39,6 +39,16 @@ if TYPE_CHECKING:
     from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 log = logging.getLogger(__name__)
+_arrow_compute_errors: list[type[BaseException]] = [TypeError, pa.ArrowInvalid]
+_arrow_not_implemented = getattr(pa, "ArrowNotImplementedError", None)
+if isinstance(_arrow_not_implemented, type):
+    _arrow_compute_errors.append(_arrow_not_implemented)
+_arrow_not_implemented_legacy = getattr(pa, "ArrowNotImplemented", None)
+if isinstance(_arrow_not_implemented_legacy, type) and (
+    _arrow_not_implemented_legacy is not _arrow_not_implemented
+):
+    _arrow_compute_errors.append(_arrow_not_implemented_legacy)
+_ARROW_COMPUTE_ERRORS = tuple(_arrow_compute_errors)
 
 
 def _get_generated_schema(table_key: str) -> dict[str, Any] | None:
@@ -398,7 +408,7 @@ def _validate_enum(
         return []
     try:
         mask = func(array, value_set=constraint.enum)
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return []
     mask = _apply_nullable_mask(mask, array, nullable=constraint.nullable)
     if _all_true(mask):
@@ -427,7 +437,7 @@ def _validate_range(
             if maximum_mask is None:
                 return []
             mask = maximum_mask if mask is None else _binary_compute("and_", mask, maximum_mask)
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return []
     if mask is None:
         return []
@@ -452,7 +462,7 @@ def _validate_length(
     if callable(length_fn):
         try:
             lengths = length_fn(array)
-        except (TypeError, pa.ArrowInvalid):
+        except _ARROW_COMPUTE_ERRORS:
             lengths = None
     if lengths is None:
         return errors
@@ -517,18 +527,18 @@ def _all_true(mask: pa.Array | pa.ChunkedArray) -> bool:
             if callable(as_py):
                 value = as_py()
                 return bool(value) if value is not None else False
-        except (TypeError, pa.ArrowInvalid):
+        except _ARROW_COMPUTE_ERRORS:
             pass
     try:
         return all(mask.to_pylist())
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return False
 
 
 def _first_false_indices(mask: pa.Array | pa.ChunkedArray, *, limit: int = 5) -> list[int]:
     try:
         values = mask.to_pylist()
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return []
     failures = [idx for idx, ok in enumerate(values) if not ok]
     return failures[:limit]
@@ -618,12 +628,13 @@ def _binary_compute(
     left: pa.Array | pa.ChunkedArray,
     right: object,
 ) -> pa.Array | pa.ChunkedArray | None:
+    name = _normalize_compute_name(name)
     func = getattr(pc, name, None)
     if not callable(func):
         return None
     try:
         return func(left, right)
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return None
 
 
@@ -636,8 +647,16 @@ def _unary_compute(
         return None
     try:
         return func(array)
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return None
+
+
+def _normalize_compute_name(name: str) -> str:
+    if name == "and_":
+        return "and"
+    if name == "or_":
+        return "or"
+    return name
 
 
 def _records_from_batch(batch: pa.RecordBatch) -> list[dict[str, Any]]:

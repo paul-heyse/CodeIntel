@@ -11,13 +11,13 @@ from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.factory import open_gateway
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_is_not_none
-from tests._helpers.env_vars import temporary_env
+from tests._helpers.env import temporary_env
 from tests._helpers.gateway import seed_contract_catalog
 
 
 def test_open_gateway_applies_init_sql(tmp_path: Path) -> None:
     """open_gateway executes init SQL on the opened connection."""
-    with temporary_env("CODEINTEL_DUCKDB_INIT_SQL", "CREATE TEMP TABLE ci_init_test(x INTEGER);"):
+    with temporary_env(CODEINTEL_DUCKDB_INIT_SQL="CREATE TEMP TABLE ci_init_test(x INTEGER);"):
         db_path = tmp_path / "session_init.duckdb"
         cfg = StorageConfig(
             db_path=db_path,
@@ -39,7 +39,7 @@ def test_open_gateway_applies_init_sql(tmp_path: Path) -> None:
 
 def test_read_pool_applies_init_sql(tmp_path: Path) -> None:
     """ReadPoolWarehouse connections execute init SQL."""
-    with temporary_env("CODEINTEL_DUCKDB_INIT_SQL", "CREATE TEMP TABLE ci_init_test2(x INTEGER);"):
+    with temporary_env(CODEINTEL_DUCKDB_INIT_SQL="CREATE TEMP TABLE ci_init_test2(x INTEGER);"):
         db_path = tmp_path / "pool.duckdb"
         con = duckdb.connect(str(db_path))
         con.close()

@@ -52,6 +52,17 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
+_arrow_compute_errors: list[type[BaseException]] = [TypeError, pa.ArrowInvalid]
+_arrow_not_implemented = getattr(pa, "ArrowNotImplementedError", None)
+if isinstance(_arrow_not_implemented, type):
+    _arrow_compute_errors.append(_arrow_not_implemented)
+_arrow_not_implemented_legacy = getattr(pa, "ArrowNotImplemented", None)
+if isinstance(_arrow_not_implemented_legacy, type) and (
+    _arrow_not_implemented_legacy is not _arrow_not_implemented
+):
+    _arrow_compute_errors.append(_arrow_not_implemented_legacy)
+_ARROW_COMPUTE_ERRORS = tuple(_arrow_compute_errors)
+
 
 @dataclass(frozen=True, slots=True)
 class SchemaObservationBundle:
@@ -913,9 +924,27 @@ def _array_length(values: pa.Array | pa.ChunkedArray) -> int:
 
 
 def _min_max(values: pa.Array | pa.ChunkedArray) -> tuple[object | None, object | None]:
+    if not _supports_min_max(values):
+        return None, None
     min_value = _compute_scalar("min", values)
     max_value = _compute_scalar("max", values)
     return min_value, max_value
+
+
+def _supports_min_max(values: pa.Array | pa.ChunkedArray) -> bool:
+    data_type = values.type
+    if (
+        pa.types.is_list(data_type)
+        or pa.types.is_large_list(data_type)
+        or pa.types.is_fixed_size_list(data_type)
+    ):
+        return False
+    if pa.types.is_struct(data_type) or pa.types.is_map(data_type) or pa.types.is_union(data_type):
+        return False
+    list_view = getattr(pa.types, "is_list_view", None)
+    if callable(list_view) and list_view(data_type):
+        return False
+    return True
 
 
 def _compute_scalar(name: str, values: pa.Array | pa.ChunkedArray) -> object | None:
@@ -924,7 +953,7 @@ def _compute_scalar(name: str, values: pa.Array | pa.ChunkedArray) -> object | N
         return None
     try:
         result = func(values)
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return None
     return _scalar_value(result)
 
@@ -944,7 +973,7 @@ def _count_distinct(values: pa.Array | pa.ChunkedArray) -> int | None:
         return None
     try:
         result = func(values)
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return None
     scalar = _scalar_value(result)
     if scalar is None or isinstance(scalar, bool):
@@ -965,7 +994,7 @@ def _length_stats(values: pa.Array | pa.ChunkedArray) -> tuple[int, int]:
         filled = _fill_null(lengths, 0)
         length_sum = _sum_scalar(filled)
         length_count = _count_scalar(lengths)
-    except (TypeError, pa.ArrowInvalid):
+    except _ARROW_COMPUTE_ERRORS:
         return 0, 0
     return length_sum, length_count
 

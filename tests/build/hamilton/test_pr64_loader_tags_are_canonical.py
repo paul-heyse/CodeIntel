@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from codeintel.build.hamilton.naming import query_node
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.tags import NODE_TYPE_LOADER_QUERY
 from codeintel.runtime.runtime_bundle import RuntimeBundle
@@ -19,12 +20,10 @@ def _variable_name(variable: object) -> str:
 def test_pr64_loader_tags_are_canonical(hamilton_runtime: RuntimeBundle) -> None:
     """q__ nodes should be tagged with loader.* node types."""
     variables = list(hamilton_runtime.dr.list_available_variables())
+    q_nodes = {_variable_name(var) for var in variables if _variable_name(var).startswith("q__")}
     expected_tagged = {
-        _variable_name(var)
-        for var in variables
-        if _variable_name(var).startswith("q__")
-        and not getattr(var, "user_defined", False)
-    }
+        query_node(table_key) for table_key in hamilton_runtime.catalog.table_outputs
+    } & q_nodes
 
     q_vars = hamilton_runtime.tag_query.query({ht.TAG_NODE_TYPE: NODE_TYPE_LOADER_QUERY})
 

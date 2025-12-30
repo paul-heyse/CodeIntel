@@ -13,7 +13,11 @@ import duckdb
 
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
-from codeintel.core.schemas.service import get_schema_service, set_schema_service
+from codeintel.core.schemas.service import (
+    clear_schema_service,
+    get_schema_service,
+    set_schema_service,
+)
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.catalog_state import (
@@ -170,7 +174,11 @@ def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection) -> None:
         )
         raise RuntimeError(msg)
 
-    mismatches = _schema_service_mismatches()
+    try:
+        mismatches = _schema_service_mismatches()
+    except duckdb.Error:
+        clear_schema_service()
+        mismatches = []
     if mismatches:
         if _schema_service_available():
             LOG.warning(

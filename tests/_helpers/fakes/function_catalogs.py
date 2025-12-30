@@ -1,13 +1,13 @@
-"""Mock function catalog implementations for testing.
+"""Mock function catalog implementations for unit tests.
 
 This module provides mock implementations of FunctionCatalog and
 FunctionCatalogProvider that satisfy the catalog protocols, enabling
-tests without real database connections or complex setup.
+unit tests without real database connections or complex setup.
 
-The mocks follow the Testing Charter:
+The mocks follow the Testing Charter for unit tests:
 - They implement the same interface as production code
 - They preserve key invariants (span lookups, URN resolution)
-- They can be used in dev/staging environments
+- Use real gateways/catalogs for integration tests
 
 Example
 -------

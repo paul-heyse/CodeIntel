@@ -987,23 +987,15 @@ def docs_views_ready_gateway(
     Returns
     -------
     ProvisionedGateway
-        Provisioned gateway with repo_map/modules/goids, coverage, and risk factors.
+        Provisioned gateway with docs export seeds and materialized views.
     """
-    ctx = provision_ingested_repo(
+    ctx = provision_docs_export_ready(
         repo_root,
         repo=repo,
         commit=commit,
-        options=ProvisionOptions(
-            include_typing=True,
-            include_coverage=True,
-            build_graph_metrics=True,
-            file_backed=file_backed,
-            db_path=db_path,
-            include_seed_goid=True,
-        ),
+        db_path=db_path,
+        file_backed=file_backed,
     )
-    ensure_schema_service()
-    seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit, repo_root=repo_root)
     _seed_minimal_subsystems(ctx.gateway, repo=repo, commit=commit)
     ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
     return ctx

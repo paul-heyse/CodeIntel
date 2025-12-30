@@ -97,6 +97,11 @@ def materialize_registered_views(
         sql_by_view=sql_by_view,
         strict=active.strict,
     )
+    _ensure_view_schemas(
+        gateway,
+        sql_by_view=sql_by_view,
+        strict=active.strict,
+    )
     _materialize_views(
         gateway,
         sql_by_view=sql_by_view,
@@ -123,6 +128,28 @@ def _ensure_dependency_tables(
         if not _should_ensure_dependency(table_key, dataset_map):
             continue
         _ensure_table_dependency(gateway, table_key=table_key, strict=strict)
+
+
+def _ensure_view_schemas(
+    gateway: MinimalGateway,
+    *,
+    sql_by_view: dict[str, str],
+    strict: bool,
+) -> None:
+    schemas: set[str] = set()
+    for view_key in sql_by_view:
+        if not is_valid_table_key(view_key):
+            log.debug("Skipping schema creation for invalid view key: %s", view_key)
+            continue
+        schema_name, _ = split_table_key(view_key)
+        schemas.add(schema_name)
+    for schema_name in sorted(schemas):
+        try:
+            gateway.policy.create_schema_if_not_exists(schema_name)
+        except (duckdb.Error, RuntimeError, ValueError):
+            log.exception("Failed to ensure view schema: %s", schema_name)
+            if strict:
+                raise
 
 
 def _dependency_candidates(sql_by_view: Mapping[str, str]) -> tuple[str, ...]:

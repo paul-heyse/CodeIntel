@@ -154,7 +154,6 @@ class RepoVariantOptions:
 
     repo_structure: Mapping[str, str] | None = None
     include_invalid: bool = False
-    include_macros: bool = False
     include_symlinks: bool = False
     module_paths: Sequence[str] | None = None
 
@@ -225,7 +224,7 @@ def build_target_context_for_target(
 
     gateway = cfg.gateway
     if gateway is None:
-        factory = cfg.gateway_factory or GatewayFactory().with_macros()
+        factory = cfg.gateway_factory or GatewayFactory()
         gateway = factory.open()
 
     snapshot = cfg.snapshot
@@ -294,11 +293,10 @@ def build_repo_with_variants(
     tmp_path: Path,
     *,
     include_invalid: bool = False,
-    include_macros: bool = False,
     include_symlinks: bool = False,
     extra_structure: Mapping[str, str] | None = None,
 ) -> Path:
-    """Construct a sample repository with optional invalid files, macros, and symlinks.
+    """Construct a sample repository with optional invalid files and symlinks.
 
     Returns
     -------
@@ -312,8 +310,6 @@ def build_repo_with_variants(
     }
     if include_invalid:
         structure["pkg/invalid.py"] = "this is not valid python"
-    if include_macros:
-        structure["macros/ingest.sql"] = "-- macros for ingestion\n"
     if extra_structure:
         structure.update(extra_structure)
     repo_root = tmp_path / "repo"
@@ -330,30 +326,22 @@ def repo_variants(
     base_structure: Mapping[str, str] | None = None,
     *,
     invalid_structure: Mapping[str, str] | None = None,
-    macro_structure: Mapping[str, str] | None = None,
 ) -> dict[str, RepoVariantOptions]:
-    """Construct common repo variants with invalid files, macros, and symlinks.
+    """Construct common repo variants with invalid files and symlinks.
 
     Returns
     -------
     dict[str, RepoVariantOptions]
-        Variants keyed by label (base, with_invalid, with_macros,
-        with_invalid_and_macros, with_symlink).
+        Variants keyed by label (base, with_invalid, with_symlink).
     """
     structure = base_structure or {
         "pkg/__init__.py": "",
         "pkg/mod.py": "def add(x: int, y: int) -> int:\n    return x + y\n",
     }
     invalid = invalid_structure or {"pkg/invalid.py": "this is not valid python"}
-    macros = macro_structure or {"macros/ingest.sql": "-- macros for ingestion\n"}
-
     return {
         "base": RepoVariantOptions(repo_structure=structure),
         "with_invalid": RepoVariantOptions(repo_structure={**structure, **invalid}),
-        "with_macros": RepoVariantOptions(repo_structure={**structure, **macros}),
-        "with_invalid_and_macros": RepoVariantOptions(
-            repo_structure={**structure, **invalid, **macros}
-        ),
         "with_symlink": RepoVariantOptions(repo_structure=structure, include_symlinks=True),
     }
 
@@ -379,10 +367,9 @@ def build_ingestion_context_bundle(
         repo_root = build_repo_with_variants(
             tmp_path,
             include_invalid=opts.include_invalid,
-            include_macros=opts.include_macros,
             include_symlinks=opts.include_symlinks,
         )
-    gateway = (gateway_factory or GatewayFactory().with_macros()).open()
+    gateway = (gateway_factory or GatewayFactory()).open()
     target = _make_ingestion_target("repo_scan", "Repository scan target for testing")
     ctx = build_target_context_for_target(
         target,
@@ -655,7 +642,7 @@ def make_scan_setup(
         write_tree(repo_root, opts.repo_structure)
     else:
         repo_root = build_repo_with_variants(tmp_path, include_invalid=opts.include_invalid)
-    gateway = (opts.gateway_factory or GatewayFactory().with_macros()).open()
+    gateway = (opts.gateway_factory or GatewayFactory()).open()
     profile = build_scan_profile(
         repo_root,
         include_globs=opts.include_globs,
@@ -733,7 +720,7 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     build_dir = repo_root / "build"
     db_path = build_dir / "db" / "codeintel.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    gateway = GatewayFactory().file_backed(db_path).with_macros().open()
+    gateway = GatewayFactory().file_backed(db_path).open()
     target = _make_ingestion_target("tests_ingest", "Tests ingestion target")
     ctx = build_target_context_for_target(
         target,
@@ -817,7 +804,7 @@ def module_inventory_context(
         },
     )
     snapshot = make_snapshot(repo="demo", commit="abc123", repo_root=repo_root)
-    gateway = (gateway_factory or GatewayFactory().with_macros()).open()
+    gateway = (gateway_factory or GatewayFactory()).open()
     profile = default_code_profile(repo_root)
     scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
     ctx = ModuleInventoryContext(

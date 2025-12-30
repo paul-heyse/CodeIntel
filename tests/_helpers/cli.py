@@ -7,10 +7,8 @@ variables and temporary repository layout for integration-style tests.
 from __future__ import annotations
 
 import os
-import sys
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from contextlib import contextmanager
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -36,6 +34,7 @@ from codeintel.core.errors.storage import (
 from codeintel.core.errors.storage import (
     StorageQueryError as StructuredStorageQueryError,
 )
+from tests.cli._harness import CliTestHarness
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -122,53 +121,39 @@ def run_cli(
     CliResult
         Captured process result with stdout/stderr decoded as text.
     """
-    merged_env = os.environ.copy()
+    harness = CliTestHarness()
     if env is not None:
-        merged_env.update(env)
+        harness = harness.with_env(**env)
+    if cwd is not None:
+        harness = harness.with_cwd(cwd)
 
-    stdout_buf = StringIO()
-    stderr_buf = StringIO()
-    original_env = os.environ.copy()
-    original_cwd = Path.cwd()
-    original_argv = sys.argv
-    try:
-        reset_bootstrap()
-        os.environ.clear()
-        os.environ.update(merged_env)
-        if cwd is not None:
-            os.chdir(cwd)
-        sys.argv = ["codeintel", *argv]
-        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-            try:
-                app(
-                    argv,
-                    result_action=["call_if_callable", "return_value"],
-                    exit_on_error=False,
-                    print_error=False,
-                )
-                exit_code = 0
-            except (
-                CoercionError,
-                UnknownCommandError,
-                UnknownOptionError,
-                ValidationError,
-                ResolutionError,
-                StorageConnectionError,
-                StorageError,
-                StorageQueryError,
-                StructuredStorageQueryError,
-                StorageSchemaError,
-                RuntimeError,
-                ValueError,
-                KeyboardInterrupt,
-                SystemExit,
-            ) as exc:
-                exit_code = handle_cli_error(exc, stderr_buf)
-    finally:
-        os.environ.clear()
-        os.environ.update(original_env)
-        os.chdir(original_cwd)
-        sys.argv = original_argv
+    with harness.capture_context(argv) as (stdout_buf, stderr_buf):
+        try:
+            reset_bootstrap()
+            app(
+                argv,
+                result_action=["call_if_callable", "return_value"],
+                exit_on_error=False,
+                print_error=False,
+            )
+            exit_code = 0
+        except (
+            CoercionError,
+            UnknownCommandError,
+            UnknownOptionError,
+            ValidationError,
+            ResolutionError,
+            StorageConnectionError,
+            StorageError,
+            StorageQueryError,
+            StructuredStorageQueryError,
+            StorageSchemaError,
+            RuntimeError,
+            ValueError,
+            KeyboardInterrupt,
+            SystemExit,
+        ) as exc:
+            exit_code = handle_cli_error(exc, stderr_buf)
 
     stdout = stdout_buf.getvalue()
     stderr = stderr_buf.getvalue()

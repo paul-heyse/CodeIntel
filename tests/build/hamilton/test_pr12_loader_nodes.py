@@ -14,6 +14,8 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import query_node
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.commands.build import BuildRunCommand
+from codeintel.core.hamilton import tags as ht
+from codeintel.core.hamilton.tags import NODE_TYPE_LOADER_QUERY
 from codeintel.runtime.compose import compose_runtime
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.assertions import assert_target_ok
@@ -58,8 +60,10 @@ class TestDriverLoaderNodes:
         query_var = var_by_name.get(query_name)
         if query_var is None:
             return
-        if not getattr(query_var, "user_defined", False):
-            pytest.fail("Query nodes should be external inputs when include_loader_nodes=False")
+        q_vars = runtime.tag_query.query({ht.TAG_NODE_TYPE: NODE_TYPE_LOADER_QUERY})
+        q_tagged = {getattr(var, "name", None) for var in q_vars}
+        if query_name in q_tagged:
+            pytest.fail("Query nodes should not be tagged when include_loader_nodes=False")
 
 
 class TestBuildEnvValidateOutputsFlag:

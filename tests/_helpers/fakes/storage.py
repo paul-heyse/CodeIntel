@@ -1,7 +1,7 @@
-"""Fake storage implementations for testing.
+"""Fake storage implementations for unit tests.
 
-This module provides fake implementations of storage protocols for tests
-that need deterministic storage behavior without a real database.
+These fakes provide deterministic storage behavior without a real database.
+Use real gateways/harnesses for integration tests to preserve production parity.
 """
 
 from __future__ import annotations
@@ -134,6 +134,8 @@ class FakeIngestStorage:
         paths: Sequence[str],
         *,
         path_column: str = "rel_path",
+        repo: str | None = None,
+        commit: str | None = None,
     ) -> int:
         """Delete rows where path_column matches any of the provided paths.
 
@@ -145,6 +147,10 @@ class FakeIngestStorage:
             List of path values to delete.
         path_column
             Name of the column containing paths.
+        repo
+            Optional repository filter.
+        commit
+            Optional commit filter.
 
         Returns
         -------
@@ -155,7 +161,12 @@ class FakeIngestStorage:
             StorageOpCall(
                 op="delete_by_paths",
                 target=table_key,
-                details={"paths": paths, "path_column": path_column},
+                details={
+                    "paths": paths,
+                    "path_column": path_column,
+                    "repo": repo,
+                    "commit": commit,
+                },
             )
         )
         return 0

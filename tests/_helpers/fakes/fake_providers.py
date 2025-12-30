@@ -1,7 +1,7 @@
-"""Fake implementations of build system protocols for testing.
+"""Fake implementations of build system protocols for unit tests.
 
-These fakes return pre-configured data without executing real tools,
-enabling fast and deterministic tests.
+These fakes return pre-configured data without executing real tools.
+Prefer real providers in integration tests to match production behavior.
 
 Example
 -------

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import contextlib
-import os
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 from hamilton.lifecycle import base as lifecycle_base
@@ -22,27 +20,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_instance,
     expect_is_none,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-
-@contextlib.contextmanager
-def _temporary_env(values: dict[str, str | None]) -> Iterator[None]:
-    saved: dict[str, str | None] = {key: os.environ.get(key) for key in values}
-    try:
-        for key, value in values.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        yield None
-    finally:
-        for key, value in saved.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+from tests._helpers.env import temporary_env
 
 
 class TestExecutionBackend:
@@ -88,7 +66,9 @@ class TestParallelConfig:
     @staticmethod
     def test_from_env() -> None:
         """Test creating config from environment."""
-        with _temporary_env({"HAMILTON_BACKEND": "threadpool", "HAMILTON_MAX_WORKERS": "4"}):
+        with temporary_env(
+            {"HAMILTON_BACKEND": "threadpool", "HAMILTON_MAX_WORKERS": "4"}
+        ):
             config = ParallelConfig.from_env()
             expect_equal(config.backend, ExecutionBackend.THREADPOOL)
             expect_equal(config.max_workers, 4)
@@ -96,7 +76,7 @@ class TestParallelConfig:
     @staticmethod
     def test_from_env_defaults() -> None:
         """Test defaults when env vars not set."""
-        with _temporary_env({"HAMILTON_BACKEND": None, "HAMILTON_MAX_WORKERS": None}):
+        with temporary_env({"HAMILTON_BACKEND": None, "HAMILTON_MAX_WORKERS": None}):
             config = ParallelConfig.from_env()
             expect_equal(config.backend, ExecutionBackend.SEQUENTIAL)
             expect_is_none(config.max_workers)
@@ -104,7 +84,7 @@ class TestParallelConfig:
     @staticmethod
     def test_from_env_invalid_backend() -> None:
         """Test handling invalid backend in env."""
-        with _temporary_env({"HAMILTON_BACKEND": "invalid_backend"}):
+        with temporary_env({"HAMILTON_BACKEND": "invalid_backend"}):
             config = ParallelConfig.from_env()
             expect_equal(config.backend, ExecutionBackend.SEQUENTIAL)  # Falls back
 
@@ -121,7 +101,7 @@ class TestParallelConfig:
     @staticmethod
     def test_from_cli_args_none() -> None:
         """Test None args fall back to env."""
-        with _temporary_env({"HAMILTON_BACKEND": "threadpool"}):
+        with temporary_env({"HAMILTON_BACKEND": "threadpool"}):
             config = ParallelConfig.from_cli_args(backend=None)
             expect_equal(config.backend, ExecutionBackend.THREADPOOL)
 

@@ -9,6 +9,7 @@ import pytest
 from tests._helpers import docs_views_ready_gateway
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.run_tracking import RunTrackingHarness, make_tracking
+from tests._helpers.schemas import ensure_schema_service, ensure_storage_contract_catalog
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -20,12 +21,12 @@ if TYPE_CHECKING:
 @pytest.fixture
 def macro_gateway(fresh_gateway: StorageGateway) -> StorageGateway:
     """
-    Provide a gateway with ingest macros ensured.
+    Provide a gateway alias for legacy macro-named tests.
 
     Returns
     -------
     StorageGateway
-        Macro-ready gateway instance.
+        Gateway instance with schema applied.
     """
     return fresh_gateway
 
@@ -82,9 +83,30 @@ def docs_views_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
 
 
 @pytest.fixture
+def docs_views_inferred_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
+    """
+    Provide a gateway with inferred docs views (schemas not pre-applied).
+
+    Yields
+    ------
+    StorageGateway
+        Gateway configured with inferred docs views and schema service enabled.
+    """
+    _ = tmp_path
+    ensure_storage_contract_catalog()
+    ensure_schema_service()
+    gateway = GatewayFactory().without_schema().without_views().relaxed().open()
+    try:
+        gateway.policy.ensure_all_views(overwrite=True, strict=True)
+        yield gateway
+    finally:
+        gateway.close()
+
+
+@pytest.fixture
 def run_tracking_harness(tmp_path: Path) -> Iterator[RunTrackingHarness]:
     """
-    Provide a macro-ready gateway and tracking accessor for run tracking tests.
+    Provide a schema-ready gateway and tracking accessor for run tracking tests.
 
     Yields
     ------

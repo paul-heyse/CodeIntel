@@ -62,7 +62,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def analytics_gateway() -> Iterator[StorageGateway]:
-    """Provide standard analytics gateway with schema and macros.
+    """Provide standard analytics gateway with schema applied.
 
     This fixture creates a gateway using the same configuration as the
     graph gateway, suitable for analytics plugin tests.
@@ -70,7 +70,7 @@ def analytics_gateway() -> Iterator[StorageGateway]:
     Yields
     ------
     StorageGateway
-        Gateway with schema and macros applied; automatically closed.
+        Gateway with schema applied; automatically closed.
     """
     gateway = build_test_gateway()
     yield gateway
@@ -79,7 +79,7 @@ def analytics_gateway() -> Iterator[StorageGateway]:
 
 @pytest.fixture
 def memory_gateway() -> Iterator[StorageGateway]:
-    """Provide a gateway with macros and schema validation enabled.
+    """Provide a gateway with schema validation enabled.
 
     Yields
     ------
@@ -190,7 +190,7 @@ def test_gateway(analytics_gateway: StorageGateway) -> StorageGateway:
     Returns
     -------
     StorageGateway
-        Gateway with schema and macros applied.
+        Gateway with schema applied.
     """
     return analytics_gateway
 

@@ -83,7 +83,7 @@ def core_gateway() -> Iterator[StorageGateway]:
     Yields
     ------
     StorageGateway
-        Gateway with schema and macros applied; automatically closed.
+        Gateway with schema applied; automatically closed.
     """
     gateway = build_test_gateway()
     yield gateway

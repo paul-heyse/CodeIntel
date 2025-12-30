@@ -61,6 +61,19 @@ def temporary_env(
                 os.environ[key] = value
 
 
+@contextmanager
+def unset_env(key: str) -> Iterator[None]:
+    """Temporarily unset an environment variable for the duration of the context.
+
+    Parameters
+    ----------
+    key
+        Environment variable name.
+    """
+    with temporary_env({key: None}):
+        yield
+
+
 def build_test_gateway(options: GatewayOptions | None = None) -> StorageGateway:
     """Create a StorageGateway with schemas and views ensured.
 
@@ -128,4 +141,5 @@ __all__ = [
     "create_provisioned_test_env",
     "create_test_env",
     "temporary_env",
+    "unset_env",
 ]

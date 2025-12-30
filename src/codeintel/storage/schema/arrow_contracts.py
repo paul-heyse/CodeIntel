@@ -216,7 +216,7 @@ def _contract_schema_sql(
     )
     predicate = exp.EQ(
         this=exp.column("table_key", table="registry"),
-        expression=exp.Parameter(),
+        expression=exp.Placeholder(),
     )
     if require_inferred:
         predicate = exp.and_(predicate, _inferred_registry_predicate())
@@ -233,7 +233,7 @@ def _observed_schema_sql(*, observations_ref: str) -> str:
     query = query.where(
         exp.EQ(
             this=exp.column("table_key", table="observations"),
-            expression=exp.Parameter(),
+            expression=exp.Placeholder(),
         )
     )
     query = query.order_by(

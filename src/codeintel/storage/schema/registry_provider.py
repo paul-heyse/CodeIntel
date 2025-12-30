@@ -231,7 +231,7 @@ def _registry_schema_sql_cached(
     if options.filter_by_table_key:
         predicate = exp.EQ(
             this=exp.column("table_key", table="r"),
-            expression=exp.Parameter(),
+            expression=exp.Placeholder(),
         )
     if options.inferred_only:
         inferred_predicate = _inferred_registry_predicate()

@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
 
+TEST_REPO = "test/repo"
+TEST_COMMIT = "abc123"
 VALIDATION_GOID_ALPHA = 900_001
 VALIDATION_GOID_BETA = 900_002
 
@@ -62,13 +64,13 @@ def test_resolve_function_goid_returns_none_when_no_identifiers(
 
 
 def test_get_function_summary_by_goid_returns_none_when_not_found(
-    fresh_gateway: StorageGateway,
+    docs_views_inferred_gateway: StorageGateway,
 ) -> None:
     """Verify get_function_summary_by_goid returns None when no match."""
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        gateway=docs_views_inferred_gateway,
+        repo=TEST_REPO,
+        commit=TEST_COMMIT,
     )
 
     result = repo.get_function_summary_by_goid(99999)
@@ -77,13 +79,13 @@ def test_get_function_summary_by_goid_returns_none_when_not_found(
 
 
 def test_list_function_summaries_for_file_returns_empty_when_no_match(
-    fresh_gateway: StorageGateway,
+    docs_views_inferred_gateway: StorageGateway,
 ) -> None:
     """Verify list_function_summaries_for_file returns empty list when no match."""
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        gateway=docs_views_inferred_gateway,
+        repo=TEST_REPO,
+        commit=TEST_COMMIT,
     )
 
     result = repo.list_function_summaries_for_file("nonexistent.py")

@@ -149,6 +149,7 @@ from tests._helpers.assertions.target_record_assertions import (
     assert_table_schema_valid,
     assert_target_ok,
 )
+from tests._helpers.assertions.view_assertions import assert_view_invariants
 
 __all__ = [
     "DEFAULT_DIFF_LIMIT",
@@ -221,6 +222,7 @@ __all__ = [
     "assert_typedness_bucket",
     "assert_valid",
     "assert_validation_error",
+    "assert_view_invariants",
     "build_dependency_graph",
     "compute_file_state_hash_from_disk",
     "compute_file_state_hash_from_table",

@@ -1,7 +1,7 @@
-"""Fake tool runner and service implementations for testing.
+"""Fake tool runner and service implementations for unit tests.
 
-This module provides fake implementations of ToolRunner and ToolService
-for tests that need deterministic tool behavior without running real tools.
+These fakes provide deterministic tool behavior without running real tools.
+Use real tool services/harnesses for integration tests to preserve parity.
 """
 
 from __future__ import annotations

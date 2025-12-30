@@ -137,35 +137,31 @@ class RowCoercions:
         return datetime.now(tz=UTC)
 
 
-_JSON_LIST_COLUMNS: set[str] = {
-    "entrypoints_json",
-    "examples",
-    "examples_json",
-    "includes",
-    "markers",
-    "matches",
-    "modules_json",
-    "owners",
-    "params",
-    "params_json",
-    "raises",
-    "raises_json",
-    "reference_modules",
-    "reference_paths",
-    "returns",
-    "returns_json",
-    "role_sources_json",
-    "stmts_json",
-    "tags",
-    "usage_modes",
-}
-_JSON_DICT_COLUMNS: set[str] = {
-    "annotation_ratio",
-    "evidence_json",
-    "metadata",
-    "modules",
-    "overlays",
-    "span",
+_JSON_DEFAULT_MISSING = object()
+_JSON_DEFAULTS: dict[str, dict[str, object]] = {
+    "core.cst_nodes": {"span": {}},
+    "analytics.typedness": {"annotation_ratio": {}},
+    "graph.cfg_blocks": {"stmts_json": []},
+    "analytics.external_dependencies": {
+        "modules_json": [],
+        "usage_modes": [],
+    },
+    "analytics.external_dependency_calls": {"modes": []},
+    "analytics.behavioral_coverage": {"behavior_tags": []},
+    "analytics.data_model_fields": {"constraints_json": {}},
+    "analytics.data_model_usage": {"usage_kinds_json": []},
+    "analytics.function_ast_features": {
+        "http_client_libs": [],
+        "http_server_libs": [],
+        "db_libs": [],
+        "message_libs": [],
+        "decorators": [],
+        "libraries_used": [],
+    },
+    "analytics.subsystems": {"modules_json": []},
+    "ci.plan_entries": {"requested_targets": []},
+    "metadata.canonical_catalogs": {"payload": {}},
+    "metadata.schema_versions": {"schema_json": {}},
 }
 
 
@@ -191,15 +187,36 @@ def _guard_json_stringification(schema: TableSchema, row: Mapping[str, object]) 
             raise ValueError(msg)
 
 
-def _json_default_for_column(column_name: str) -> object:
-    if column_name in _JSON_DICT_COLUMNS:
-        return {}
-    if column_name in _JSON_LIST_COLUMNS or column_name.endswith("_json"):
-        return []
-    return {}
+def _guard_missing_json_defaults(schema: TableSchema, row: Mapping[str, object]) -> None:
+    missing = [
+        column.name
+        for column in schema.columns
+        if column.type == "JSON"
+        and not column.nullable
+        and row.get(column.name) is _JSON_DEFAULT_MISSING
+    ]
+    if missing:
+        joined = ", ".join(missing)
+        msg = f"Missing JSON defaults for {schema.table_key}: {joined}"
+        raise ValueError(msg)
 
 
-def _default_for_column(column: Column) -> object:
+def _clone_json_default(value: object) -> object:
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, dict):
+        return dict(value)
+    return value
+
+
+def _json_default_for_column(schema: TableSchema, column: Column) -> object:
+    table_defaults = _JSON_DEFAULTS.get(schema.table_key, {})
+    if column.name not in table_defaults:
+        return _JSON_DEFAULT_MISSING
+    return _clone_json_default(table_defaults[column.name])
+
+
+def _default_for_column(schema: TableSchema, column: Column) -> object:
     column_type = column.type
     if column_type == "BOOLEAN":
         value: object = False
@@ -214,7 +231,7 @@ def _default_for_column(column: Column) -> object:
     elif column_type in {"TIMESTAMP", "TIMESTAMPTZ"}:
         value = datetime(1970, 1, 1, tzinfo=UTC)
     elif column_type == "JSON":
-        value = _json_default_for_column(column.name)
+        value = _json_default_for_column(schema, column)
     else:
         value = None
     return value
@@ -230,7 +247,7 @@ def _row_defaults(
         return row
     for column in schema.columns:
         if not column.nullable:
-            row[column.name] = _default_for_column(column)
+            row[column.name] = _default_for_column(schema, column)
     return row
 
 
@@ -255,10 +272,9 @@ class RowFactory:
             Mapping populated with table columns set to None.
         """
         schema = _table_schema_for_key(table_key)
-        return cast(
-            "Mapping[str, object]",
-            _row_defaults(schema, fill_non_nullable=fill_non_nullable),
-        )
+        row = _row_defaults(schema, fill_non_nullable=fill_non_nullable)
+        _guard_missing_json_defaults(schema, row)
+        return cast("Mapping[str, object]", row)
 
     @staticmethod
     def row_for(
@@ -277,6 +293,7 @@ class RowFactory:
         schema = _table_schema_for_key(table_key)
         row = _row_defaults(schema, fill_non_nullable=fill_non_nullable)
         row.update(fields)
+        _guard_missing_json_defaults(schema, row)
         _guard_json_stringification(schema, row)
         return _normalize_row(schema, row)
 
@@ -328,6 +345,7 @@ class RowFactory:
         for row in rows:
             resolved = _row_defaults(schema, fill_non_nullable=fill_non_nullable)
             resolved.update(row)
+            _guard_missing_json_defaults(schema, resolved)
             _guard_json_stringification(schema, resolved)
             buffer.append(resolved)
         return buffer.data

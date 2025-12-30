@@ -9,13 +9,11 @@ from __future__ import annotations
 from tests._helpers.gateway import (
     DuckDBConnection,
     GatewayFactory,
-    memory_con_with_macros,
     seed_tables,
 )
 
 __all__ = [
     "DuckDBConnection",
     "GatewayFactory",
-    "memory_con_with_macros",
     "seed_tables",
 ]

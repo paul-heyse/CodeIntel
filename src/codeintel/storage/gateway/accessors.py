@@ -11,13 +11,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.provider import MappingSchemaProvider
-from codeintel.core.schemas.service import get_schema_service
+from codeintel.core.schemas.service import clear_schema_service, get_schema_service
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.relation import relation_from_table_key as _relation_from_table_key
+from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
 from codeintel.storage.tracking.asset_tracking import AssetTracking
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
@@ -443,6 +444,16 @@ class DuckDBGateway:
 
     def close(self) -> None:
         """Close the underlying connection."""
+        try:
+            schema_service = get_schema_service()
+        except RuntimeError:
+            schema_service = None
+        if schema_service is not None and isinstance(
+            schema_service.table_provider,
+            RegistrySchemaProvider,
+        ):
+            if schema_service.table_provider.con is self.con:
+                clear_schema_service()
         self.con.close()
 
     def execute(

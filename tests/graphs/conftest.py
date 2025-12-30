@@ -8,7 +8,7 @@ technology usage.
 Available Fixtures
 ------------------
 graph_gateway
-    In-memory gateway with full schema and macros applied.
+    In-memory gateway with full schema and views applied.
 graph_snapshot
     Standard snapshot reference for testing.
 graph_executor_env
@@ -49,13 +49,12 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def graph_gateway() -> Iterator[StorageGateway]:
-    """Provide an in-memory gateway with full schema and macros for graph tests.
+    """Provide an in-memory gateway with full schema and views for graph tests.
 
     This fixture creates a gateway with:
     - Schema applied
     - Views ensured
     - Schema validated
-    - All ingest macros registered
 
     Yields
     ------

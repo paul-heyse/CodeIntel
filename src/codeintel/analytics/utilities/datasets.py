@@ -82,8 +82,8 @@ def _delete_sql_for_table(table_key: str) -> str:
     schema, table = table_key.split(".", 1)
     table_expr = exp.Table(this=exp.to_identifier(table), db=exp.to_identifier(schema))
     condition = exp.and_(
-        exp.EQ(this=exp.column("repo"), expression=exp.Parameter()),
-        exp.EQ(this=exp.column("commit"), expression=exp.Parameter()),
+        exp.EQ(this=exp.column("repo"), expression=exp.Placeholder()),
+        exp.EQ(this=exp.column("commit"), expression=exp.Placeholder()),
     )
     statement = exp.Delete(this=table_expr, where=condition)
     return statement.sql(dialect="duckdb")

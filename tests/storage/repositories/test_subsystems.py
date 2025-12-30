@@ -32,7 +32,9 @@ def subsystem_ctx(test_ctx: TestContext) -> TestContext:
     TestContext
         Context with subsystem analytics seeds applied.
     """
-    return test_ctx.require(SUBSYSTEM_ANALYTICS_PACK)
+    seeded = test_ctx.require(SUBSYSTEM_ANALYTICS_PACK)
+    seeded.gateway.policy.ensure_all_views(overwrite=True, strict=True)
+    return seeded
 
 
 def test_list_subsystems_returns_rows(

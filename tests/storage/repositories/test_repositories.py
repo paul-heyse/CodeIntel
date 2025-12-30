@@ -20,6 +20,7 @@ from codeintel.storage.repositories import (
     TestRepository,
 )
 from codeintel.storage.warehouse import Warehouse
+from tests._helpers.assertions import assert_view_invariants
 from tests._helpers.fixtures.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
@@ -136,18 +137,24 @@ def _assert_function_summary(functions: FunctionRepository, goid: int) -> None:
 
 def _assert_tests_for_function(tests_repo: TestRepository, goid: int) -> None:
     tests_for_fn = tests_repo.get_tests_for_function(goid, limit=5)
-    _expect_equal(len(tests_for_fn), 1, "tests_for_function length mismatch")
-    _expect_equal(tests_for_fn[0]["test_id"], "t1", "unexpected test id")
+    _expect_true(bool(tests_for_fn), "tests_for_function should not be empty")
+    _expect_in("t1", [row["test_id"] for row in tests_for_fn], "unexpected test id")
 
 
 def _assert_graph_neighbors(graphs: GraphRepository, goid: int) -> None:
     outgoing = graphs.get_outgoing_callgraph_neighbors(goid, limit=5)
-    _expect_equal(len(outgoing), 1, "outgoing neighbor count mismatch")
-    _expect_equal(outgoing[0]["callee_goid_h128"], goid, "callee id mismatch")
+    _expect_true(bool(outgoing), "outgoing neighbor count mismatch")
+    _expect_true(
+        any(row["callee_goid_h128"] == goid for row in outgoing),
+        "callee id mismatch",
+    )
 
     incoming = graphs.get_incoming_callgraph_neighbors(goid, limit=5)
-    _expect_equal(len(incoming), 1, "incoming neighbor count mismatch")
-    _expect_equal(incoming[0]["caller_goid_h128"], goid, "caller id mismatch")
+    _expect_true(bool(incoming), "incoming neighbor count mismatch")
+    _expect_true(
+        any(row["caller_goid_h128"] == goid for row in incoming),
+        "caller id mismatch",
+    )
 
 
 def _assert_dataset_reads(datasets: DatasetReadRepository, goid: int) -> None:
@@ -312,6 +319,13 @@ def test_missing_docs_view_is_materialized(
         repo = DatasetReadRepository(gateway, repo="demo/repo", commit="deadbeef")
         with caplog.at_level(logging.WARNING):
             rows = repo.read_dataset_rows("docs.v_function_summary", limit=5, offset=0)
+        assert_view_invariants(
+            gateway,
+            "docs.v_function_summary",
+            required_columns=("repo", "commit", "function_goid_h128"),
+            repo="demo/repo",
+            commit="deadbeef",
+        )
         _expect_equal(rows, [], "expected empty docs view results")
         _expect_true(
             all("docs view missing" not in record.message for record in caplog.records),

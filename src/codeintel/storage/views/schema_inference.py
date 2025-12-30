@@ -251,13 +251,31 @@ def _column_from_select_expr(expr: exp.Expression) -> Column:
         raise ValueError(msg)
     data_type = getattr(expr, "type", None)
     if not isinstance(data_type, exp.DataType):
-        msg = f"Select expression missing type annotation: {expr}"
-        raise TypeError(msg)
-    if data_type.this == exp.DataType.Type.UNKNOWN:
-        msg = f"Select expression has unknown type: {expr}"
-        raise ValueError(msg)
-    column_type = _column_type_from_sqlglot(data_type)
+        fallback = _infer_fallback_column_type(expr)
+        if fallback is None:
+            msg = f"Select expression missing type annotation: {expr}"
+            raise TypeError(msg)
+        column_type = fallback
+    elif data_type.this == exp.DataType.Type.UNKNOWN:
+        fallback = _infer_fallback_column_type(expr)
+        if fallback is None:
+            msg = f"Select expression has unknown type: {expr}"
+            raise ValueError(msg)
+        column_type = fallback
+    else:
+        column_type = _column_type_from_sqlglot(data_type)
     return Column(name=name, type=column_type, nullable=True)
+
+
+def _infer_fallback_column_type(expr: exp.Expression) -> ColumnType | None:
+    for node in expr.walk():
+        if isinstance(node, exp.Anonymous):
+            name = node.name or node.this
+            if isinstance(name, str) and name.strip().upper() == "TO_JSON":
+                return "JSON"
+        if isinstance(node, (exp.Array, exp.List, exp.Struct, exp.Map)):
+            return "JSON"
+    return None
 
 
 def _column_type_from_sqlglot(data_type: exp.DataType) -> ColumnType:

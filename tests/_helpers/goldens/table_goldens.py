@@ -138,7 +138,13 @@ def _format_schema(schema: pa.Schema) -> str:
     decoded_metadata = {
         key.decode("utf-8"): value.decode("utf-8") for key, value in metadata.items()
     }
-    base = schema.to_string(show_metadata=False) if hasattr(schema, "to_string") else str(schema)
+    if hasattr(schema, "to_string"):
+        try:
+            base = schema.to_string(show_metadata=False)
+        except TypeError:
+            base = schema.to_string()
+    else:
+        base = str(schema)
     if not decoded_metadata:
         return base
     payload = json.dumps(decoded_metadata, indent=2, sort_keys=True)

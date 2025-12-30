@@ -29,7 +29,6 @@ from tests._helpers.orchestration.entrypoints_orchestration import (
 from tests._helpers.orchestration.gateway import (
     DuckDBConnection,
     GatewayFactory,
-    memory_con_with_macros,
     seed_tables,
 )
 from tests._helpers.orchestration.graph_orchestration import (
@@ -96,7 +95,6 @@ __all__ = [
     "make_coverage_seed_from_app",
     "make_repo_context",
     "make_tools_config",
-    "memory_con_with_macros",
     "provision_docs_export_ready",
     "provision_existing_repo",
     "provision_gateway_with_repo",

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import contextlib
-import os
 import time
-from typing import TYPE_CHECKING
 
 import pytest
 from hamilton.node import Node
@@ -25,9 +22,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
+from tests._helpers.env import temporary_env
 
 
 def _make_test_node(name: str) -> Node:
@@ -57,22 +52,6 @@ def _make_test_node(name: str) -> Node:
     return Node.from_fn(_fn, name=name)
 
 
-@contextlib.contextmanager
-def _temporary_env(values: dict[str, str | None]) -> Iterator[None]:
-    saved: dict[str, str | None] = {key: os.environ.get(key) for key in values}
-    try:
-        for key, value in values.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        yield None
-    finally:
-        for key, value in saved.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
 
 
 class TestNodeTimingRecord:
@@ -276,14 +255,14 @@ class TestCreateProgressHook:
     @staticmethod
     def test_respects_ci_environment() -> None:
         """Test factory disables in CI environment."""
-        with _temporary_env({"CI": "true"}):
+        with temporary_env({"CI": "true"}):
             hook = create_progress_hook("Test", disable_in_ci=True)
             expect_true(hook.disable)
 
     @staticmethod
     def test_enabled_when_not_ci() -> None:
         """Test factory enables when not in CI."""
-        with _temporary_env({"CI": None}):
+        with temporary_env({"CI": None}):
             hook = create_progress_hook("Test", disable_in_ci=True)
             expect_false(hook.disable)
 

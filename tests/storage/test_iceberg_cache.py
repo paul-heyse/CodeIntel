@@ -42,7 +42,7 @@ def test_refresh_iceberg_metadata_cache_populates_meta_tables(tmp_path: Path) ->
     """Refreshing the cache should populate Iceberg metadata tables."""
     snapshot = ServingSnapshotFactory(tmp_path).demo_snapshot(row_count=1)
     provider = IcebergCatalogProvider(snapshot.iceberg_settings)
-    table = provider.load_table("docs.v_demo")
+    table = provider.load_table("docs.demo")
     gateway = open_gateway(
         StorageConfig.for_ingest(snapshot.db_path),
         seed_contract_catalog=seed_contract_catalog,
@@ -50,13 +50,13 @@ def test_refresh_iceberg_metadata_cache_populates_meta_tables(tmp_path: Path) ->
     try:
         refresh_iceberg_metadata_cache(
             gateway=gateway,
-            table_key="docs.v_demo",
+            table_key="docs.demo",
             table=table,
         )
         tables_ref = meta_table_ref("metadata.iceberg_tables")
         row = gateway.con.execute(
             f"SELECT current_snapshot_id, current_schema_id FROM {tables_ref} WHERE table_key = ?",
-            ["docs.v_demo"],
+            ["docs.demo"],
         ).fetchone()
         row = expect_is_not_none(row, message="Expected iceberg_tables row")
         expect_true(isinstance(row[0], int), message="Expected current_snapshot_id")
@@ -70,7 +70,7 @@ def test_refresh_iceberg_metadata_cache_populates_meta_tables(tmp_path: Path) ->
             WHERE table_key = ?
             LIMIT 1
             """,
-            ["docs.v_demo"],
+            ["docs.demo"],
         ).fetchone()
         arrow_row = expect_is_not_none(arrow_row, message="Expected iceberg_arrow_schema row")
         expect_true(arrow_row[0] is not None, message="Expected arrow_schema_ipc")

@@ -264,6 +264,26 @@ class CliTestHarness:
             os.environ.clear()
             os.environ.update(old_env)
 
+    @contextmanager
+    def capture_context(
+        self,
+        args: list[str],
+    ) -> Iterator[tuple[io.StringIO, io.StringIO]]:
+        """Public capture context for helper integrations.
+
+        Parameters
+        ----------
+        args
+            Command line arguments.
+
+        Yields
+        ------
+        tuple[io.StringIO, io.StringIO]
+            Stdout and stderr capture objects.
+        """
+        with self._capture_context(args) as captures:
+            yield captures
+
     def invoke(self, args: list[str]) -> CliInvocationResult:
         """Invoke CLI with arguments.
 

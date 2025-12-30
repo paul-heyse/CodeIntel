@@ -333,23 +333,38 @@ def _materialize_iceberg(
         plan=plan,
         output_role=output_role,
     )
-    reader = _build_observed_reader(
-        data=data,
-        settings_view=ctx.settings_view,
-        plan=plan,
-        validation=validation,
-    )
-    snapshot_id, iceberg_stats = _write_to_iceberg(
-        ctx=ctx,
-        plan=plan,
-        reader=reader,
-    )
-    _persist_observation_if_ready(
-        ctx=ctx,
-        observation=plan.observation,
-        arrow_schema=plan.arrow_schema,
-        iceberg_stats=iceberg_stats,
-    )
+    try:
+        reader = _build_observed_reader(
+            data=data,
+            settings_view=ctx.settings_view,
+            plan=plan,
+            validation=validation,
+        )
+        snapshot_id, iceberg_stats = _write_to_iceberg(
+            ctx=ctx,
+            plan=plan,
+            reader=reader,
+        )
+        _persist_observation_if_ready(
+            ctx=ctx,
+            observation=plan.observation,
+            arrow_schema=plan.arrow_schema,
+            iceberg_stats=iceberg_stats,
+        )
+    except _RECOVERABLE_EXCEPTIONS as exc:
+        metadata = _record_validation_failure(
+            ctx=ctx,
+            plan=plan,
+            validation=validation,
+            error=str(exc),
+        )
+        return failed_table_result(
+            table_key=ctx.table_key,
+            duration_ms=duration_ms(start),
+            input_hash=input_hash or "",
+            error=str(exc),
+            metadata=metadata,
+        )
     row_count = plan.observation.row_count
     outcome = _finalize_validation(
         ctx=ctx,
@@ -497,6 +512,45 @@ def _finalize_validation(
     error_detail = report.issues[0].message if report.issues else None
     error = error_detail or "Validation failed for materialized output"
     return _ValidationOutcome(metadata=metadata, error=error)
+
+
+def _record_validation_failure(
+    *,
+    ctx: _MaterializeContext,
+    plan: _IcebergPlan,
+    validation: _ValidationSetup,
+    error: str,
+) -> TableMaterializationMetadata | None:
+    collector = validation.collector
+    if collector is None:
+        return None
+    collector.record_issue(
+        code="materialization_failed",
+        message=error,
+        severity="error",
+    )
+    report = collector.finalize(row_count=plan.observation.row_count)
+    validation_id = new_uuid_str()
+    record = MaterializationValidationRecord(
+        validation_id=validation_id,
+        table_key=ctx.table_key,
+        repo=ctx.env.repo,
+        commit=ctx.env.commit,
+        target_name=ctx.target_name,
+        output_role=validation.policy.output_role,
+        validation_scope=validation.policy.scope,
+        validation_profile=validation.policy.profile,
+        status=report.status,
+        issues=report.issues_payload() or None,
+        checks=report.checks or None,
+        skipped_checks=report.skipped_checks or None,
+        iceberg_snapshot_id=None,
+    )
+    ctx.env.gateway.schemas.record_materialization_validations_batch([record])
+    return TableMaterializationMetadata(
+        validation_id=validation_id,
+        validation_status=report.status,
+    )
 
 
 def _record_batch_reader_for_data(
@@ -966,6 +1020,11 @@ class _DuckDBArrowReader(Protocol):
     def fetch_arrow_reader(self) -> pa.RecordBatchReader: ...
 
 
+def _supports_snapshot_replace(partition_columns: tuple[str, ...]) -> bool:
+    required = {"repo", "commit"}
+    return required.issubset(set(partition_columns))
+
+
 class _IcebergWriter:
     def __init__(
         self,
@@ -993,7 +1052,16 @@ class _IcebergWriter:
         policy = self._plan.table_schema.write_policy
         if policy is None:
             return TableWritePolicy()
-        return policy
+        if policy.mode != "upsert":
+            return policy
+        replace_scope: Literal["snapshot", "table"] = "snapshot"
+        if not _supports_snapshot_replace(self._partition_columns):
+            replace_scope = "table"
+        return TableWritePolicy(
+            mode="replace",
+            replace_scope=replace_scope,
+            use_staging=policy.use_staging,
+        )
 
     def _append(self, reader: pa.RecordBatchReader) -> int | None:
         with self._table.transaction() as tx:
@@ -1318,7 +1386,7 @@ def _compute_equal(expr: pc.Expression, value: object) -> pc.Expression:
 
 
 def _compute_and(left: pc.Expression, right: pc.Expression) -> pc.Expression:
-    and_fn = _resolve_compute_fn("and_")
+    and_fn = _resolve_compute_fn("and_kleene")
     return cast("pc.Expression", and_fn(left, right))
 
 

@@ -540,7 +540,7 @@ def coverage_and_graph_context(tmp_path: Path) -> TestContext:
 
 
 def build_test_gateway(options: GatewayOptions | None = None) -> StorageGateway:
-    """Create a StorageGateway with schema/views/macros ensured.
+    """Create a StorageGateway with schema/views ensured.
 
     Parameters
     ----------
@@ -550,7 +550,7 @@ def build_test_gateway(options: GatewayOptions | None = None) -> StorageGateway:
     Returns
     -------
     StorageGateway
-        Gateway ready for test use with macros ensured.
+        Gateway ready for test use with schema/views ensured.
 
     Raises
     ------
