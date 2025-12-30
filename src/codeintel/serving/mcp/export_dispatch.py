@@ -52,9 +52,10 @@ def write_export_to_store(
 
     Raises
     ------
-    ValueError
-        If the export format is unsupported.
+    RuntimeError
+        If dispatch returns an unexpected async result.
     """
+
     def handle_ndjson(
         _plan: ExportPlan,
         provider: ExportRowProvider,

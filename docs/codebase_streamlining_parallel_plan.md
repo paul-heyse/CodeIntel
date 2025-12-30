@@ -232,56 +232,57 @@ plan executes independently.
 ## Workstream Checklists
 
 ### Workstream A Checklist
-- [ ] Confirm current normalize behaviors and test gaps across all call sites.
-- [ ] Add canonical helpers in `src/codeintel/core/paths/normalize.py`.
-- [ ] Update imports in `src/codeintel/core/catalog/span_index.py`.
-- [ ] Update imports in `src/codeintel/ingestion/infrastructure/__init__.py`.
-- [ ] Update imports in `src/codeintel/serving/config.py` and `src/codeintel/config/models.py`.
-- [ ] Add tests for windows separators, dot segments, empty paths, and optional paths.
-- [ ] Remove duplicate helpers in the same PR as migration.
+- [x] Add canonical helpers in `src/codeintel/core/paths/normalize.py`.
+- [x] Update imports in `src/codeintel/core/catalog/span_index.py`.
+- [x] Update imports in `src/codeintel/ingestion/infrastructure/__init__.py`.
+- [x] Update imports in `src/codeintel/serving/config.py` and `src/codeintel/config/models.py`.
+- [x] Add tests for windows separators, dot segments, and optional paths.
+- [x] Remove duplicate helpers in the same PR as migration.
+- [x] Add test coverage for empty path handling if not already covered.
 
 ### Workstream B Checklist
-- [ ] Add `src/codeintel/core/serialization/stable.py` with stable serialization APIs.
-- [ ] Add deterministic serialization tests for dict ordering and complex types.
-- [ ] Migrate internal cache key call sites to the new serializer.
-- [ ] Remove duplicate serializers in the same PR as migration.
+- [x] Add `src/codeintel/core/serialization/stable.py` with stable serialization APIs.
+- [x] Add deterministic serialization tests for dict ordering and complex types.
+- [x] Migrate internal cache key call sites to the new serializer.
+- [x] Remove duplicate serializers in the same PR as migration.
+- [x] Decide whether to deprecate/align `serialize_value` in `src/codeintel/core/serialization/converters.py` and update exports if needed.
 
 ### Workstream C Checklist
-- [ ] Add `src/codeintel/core/parsing/ast_utils.py` with parsing and literal helpers.
-- [ ] Re-export or update imports in ingestion and analytics modules.
-- [ ] Add tests for parse success/failure and literal extraction behavior.
-- [ ] Remove duplicate logic in the same PR as migration.
+- [x] Add `src/codeintel/core/parsing/ast_utils.py` with parsing and literal helpers.
+- [x] Re-export or update imports in ingestion and analytics modules.
+- [x] Remove duplicate logic in the same PR as migration.
+- [x] Add tests for parse success/failure and literal extraction behavior.
 
 ### Workstream D Checklist
-- [ ] Add `src/codeintel/serving/export/dispatch.py` shared adapter.
-- [ ] Refactor HTTP dispatch to use shared adapter and keep metrics handling intact.
-- [ ] Refactor MCP dispatch to use shared adapter and keep resource store handling intact.
-- [ ] Add tests for JSONL streaming and binary export paths.
-- [ ] Verify error handling parity for all formats.
+- [x] Add `src/codeintel/serving/export/dispatch.py` shared adapter.
+- [x] Refactor HTTP dispatch to use shared adapter and keep metrics handling intact.
+- [x] Refactor MCP dispatch to use shared adapter and keep resource store handling intact.
+- [x] Add tests for JSONL streaming and binary export paths.
+- [x] Verify error handling parity for all formats.
 
 ### Workstream E Checklist
-- [ ] Add `src/codeintel/serving/errors/transport.py` helper.
-- [ ] Update HTTP error mapping to use the shared helper.
-- [ ] Update MCP middleware mapping to use the shared helper.
-- [ ] Add tests for ProblemDetail payload parity across transports.
+- [x] Add `src/codeintel/serving/errors/transport.py` helper.
+- [x] Update HTTP error mapping to use the shared helper.
+- [x] Update MCP middleware mapping to use the shared helper.
+- [x] Add tests for ProblemDetail payload parity across transports.
 
 ### Workstream F Checklist
-- [ ] Replace local `_split_table_key` usage with `table_key` helpers.
-- [ ] Preserve None-on-invalid semantics using `try_parse_table_key`.
-- [ ] Add tests for invalid table keys and unqualified keys.
-- [ ] Remove local helpers in the same PR as migration.
+- [x] Replace local `_split_table_key` usage with `table_key` helpers.
+- [x] Preserve None-on-invalid semantics using `try_parse_table_key`.
+- [x] Remove local helpers in the same PR as migration.
+- [x] Add tests for invalid table keys and unqualified keys.
 
 ### Workstream G Checklist
-- [ ] Add adapter for column-only serialization where no table key exists.
-- [ ] Delegate schema-backed serialization to `row_to_tuple`.
-- [ ] Update `src/codeintel/config/datasets/columns.py` to use canonical serializer.
-- [ ] Add tests for tuple ordering and schema-aligned output.
+- [x] Add adapter for column-only serialization where no table key exists.
+- [x] Update `src/codeintel/config/datasets/columns.py` to use canonical serializer.
+- [x] Delegate schema-backed serialization to `row_to_tuple` when table keys are available.
+- [x] Add tests for tuple ordering and schema-aligned output.
 
 ### Workstream H Checklist
-- [ ] Add `src/codeintel/observability/registry.py` as canonical entrypoint.
-- [ ] Update imports across the codebase to use the new entrypoint.
-- [ ] Remove legacy modules in the same PR as import migration.
-- [ ] Add tests for registry caching and instrumentation summary behavior.
+- [x] Add `src/codeintel/observability/registry.py` as canonical entrypoint.
+- [x] Update imports across the codebase to use the new entrypoint.
+- [x] Remove legacy modules in the same PR as import migration.
+- [x] Add tests for registry caching and instrumentation summary behavior.
 
 ---
 
@@ -397,6 +398,10 @@ immediately after and remove legacy helpers before any new workstream PRs stack 
 ## Shared Quality Gates
 - `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
 - Targeted `uv run pytest -q` for each touched domain, followed by segmented test runs.
+
+## Remaining Execution Checklist
+- [ ] Run targeted pytest subsets for updated modules.
+- [ ] Run `uv run python -m tools.quality_report --output build/quality-results/quality_report.json` at the end.
 
 ## Risks and Mitigations
 - **Cache key drift**: Cache invalidation is expected in design phase; test deterministic output.

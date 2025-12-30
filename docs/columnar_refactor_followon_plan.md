@@ -54,10 +54,8 @@ maintainability.
 
 - Replace `_python_type_for_column_type` with registry calls:
   `COLUMN_TYPE_REGISTRY.python_type_for(...)`.
-- Extract Arrow compatibility logic into a new helper module:
-  `src/codeintel/storage/validation/arrow_type_compat.py`.
-- In `columnar.py`, keep `_is_compatible_type` as a thin wrapper that delegates
-  to the new module.
+- Inline Arrow compatibility logic into `columnar.py` to avoid a separate compat
+  module while keeping `_is_compatible_type` as the single entrypoint.
 
 ### Implementation steps
 
@@ -67,14 +65,14 @@ maintainability.
      `COLUMN_TYPE_REGISTRY.python_type_for(...)`.
    - Ensure decimal handling remains identical to the current logic.
 2. Arrow compatibility helpers
-   - Add `arrow_type_compat.py` with:
-     - `is_compatible_arrow_type(column: Column, actual: pa.DataType) -> bool`
-     - `is_list_like(dtype: pa.DataType) -> bool`
-     - `decimal_scale_zero(column_type: str) -> bool`
+   - Keep helpers in `columnar.py`:
+     - `_is_compatible_arrow_type(column: Column, actual: pa.DataType) -> bool`
+     - `_is_list_like(dtype: pa.DataType) -> bool`
+     - `_decimal_scale_zero(column_type: str) -> bool`
    - Use a `dict[str, Callable[[pa.DataType], bool]]` keyed by base type to
      replace nested `if` blocks.
 3. Columnar validation integration
-   - Update `columnar.py` to call the new compatibility helpers.
+   - Keep `_is_compatible_type` as the wrapper for the local helpers.
    - Keep the public validation API unchanged.
 4. Tests
    - Add targeted tests in `tests/storage/validation/` for:

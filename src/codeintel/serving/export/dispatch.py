@@ -33,11 +33,23 @@ class ExportRowProvider:
     cancel_check: CancelCheck | None = None
 
     def iter_rows(self) -> Iterator[dict[str, object]]:
-        """Return an iterator over export rows."""
+        """Return an iterator over export rows.
+
+        Returns
+        -------
+        collections.abc.Iterator[dict[str, object]]
+            Iterator over export rows.
+        """
         return self.ops.export_rows(self.request, cancel_check=self.cancel_check)
 
     def collect_rows(self) -> list[dict[str, object]]:
-        """Collect all export rows into memory."""
+        """Collect all export rows into memory.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            List of export rows.
+        """
         return list(self.iter_rows())
 
 
@@ -57,7 +69,18 @@ def dispatch_export[T](
     cancel_check: CancelCheck | None,
     handlers: ExportDispatchHandlers[T],
 ) -> DispatchResult[T]:
-    """Dispatch an export request using the supplied handlers."""
+    """Dispatch an export request using the supplied handlers.
+
+    Returns
+    -------
+    DispatchResult[T]
+        Handler result for the resolved export delivery.
+
+    Raises
+    ------
+    ValueError
+        If the export format is unsupported.
+    """
     plan = build_export_plan(request)
     provider = ExportRowProvider(
         ops=ops,

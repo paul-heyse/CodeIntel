@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
-from codeintel.storage.datasets.manifests import read_dataset_manifest
+from codeintel.storage.manifests import read_dataset_manifest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

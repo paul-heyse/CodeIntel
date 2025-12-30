@@ -40,8 +40,8 @@ from typing import TYPE_CHECKING
 from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.core.config.view import SettingsView
 from codeintel.core.hamilton import tags as ht
-from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.gateway.accessors import DuckDBGateway
 
@@ -134,7 +134,7 @@ class ParallelConfig:
         ParallelConfig
             Configuration from environment.
         """
-        settings = load_runtime_settings()
+        settings = SettingsView.from_runtime()
         backend_str = (settings.execution.parallel_backend or "sequential").lower()
         try:
             backend = ExecutionBackend(backend_str)

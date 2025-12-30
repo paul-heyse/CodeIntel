@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from time import perf_counter
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
@@ -25,16 +26,23 @@ type MaterializeHandler = Callable[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class MaterializationPipelineInput:
+    """Input payload for running a materialization pipeline."""
+
+    env: BuildEnv
+    catalog: DagCatalog
+    target_name: str
+    table_key: str
+    data: object
+    recoverable_exceptions: tuple[type[Exception], ...]
+    none_error: str
+    unknown_error: str
+
+
 def run_materialization_pipeline(
     *,
-    env: BuildEnv,
-    catalog: DagCatalog,
-    target_name: str,
-    table_key: str,
-    data: object,
-    recoverable_exceptions: tuple[type[Exception], ...],
-    none_error: str,
-    unknown_error: str,
+    payload: MaterializationPipelineInput,
     materialize: MaterializeHandler,
     cleanup: CleanupHandler | None = None,
 ) -> MaterializationResult:
@@ -42,22 +50,8 @@ def run_materialization_pipeline(
 
     Parameters
     ----------
-    env
-        Build environment containing snapshot, gateway, and configuration.
-    catalog
-        DAG catalog describing build dependencies.
-    target_name
-        Name of the target being materialized.
-    table_key
-        Fully qualified table key for the output.
-    data
-        Data value produced by the upstream compute node.
-    recoverable_exceptions
-        Exception types that should map to a failed materialization result.
-    none_error
-        Error message when data is None.
-    unknown_error
-        Error message when materialization returns no result.
+    payload
+        Input payload describing materialization context and errors.
     materialize
         Callback that performs the actual write and returns a result.
     cleanup
@@ -72,41 +66,42 @@ def run_materialization_pipeline(
     input_hash: str | None = None
     try:
         prepared = resolve_materialization_context(
-            env=env,
-            catalog=catalog,
-            target_name=target_name,
+            env=payload.env,
+            catalog=payload.catalog,
+            target_name=payload.target_name,
         )
         if isinstance(prepared, MaterializationContextError):
             return failed_table_result(
-                table_key=table_key,
+                table_key=payload.table_key,
                 duration_ms=duration_ms(start),
                 input_hash=prepared.input_hash or "",
                 error=prepared.message,
             )
         input_hash = prepared.input_hash
-        if data is None:
+        if payload.data is None:
             return failed_table_result(
-                table_key=table_key,
+                table_key=payload.table_key,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
-                error=none_error,
+                error=payload.none_error,
             )
-        result = materialize(prepared, data, input_hash, start)
-        if result is None:
-            return failed_table_result(
-                table_key=table_key,
-                duration_ms=duration_ms(start),
-                input_hash=input_hash or "",
-                error=unknown_error,
-            )
-        return result
-    except recoverable_exceptions as exc:
+        result = materialize(prepared, payload.data, input_hash, start)
+    except payload.recoverable_exceptions as exc:
         return failed_table_result(
-            table_key=table_key,
+            table_key=payload.table_key,
             duration_ms=duration_ms(start),
             input_hash=input_hash or "",
             error=str(exc),
         )
+    else:
+        if result is None:
+            return failed_table_result(
+                table_key=payload.table_key,
+                duration_ms=duration_ms(start),
+                input_hash=input_hash or "",
+                error=payload.unknown_error,
+            )
+        return result
     finally:
         if cleanup is not None:
             cleanup()

@@ -55,9 +55,9 @@ from codeintel.build.schemas.compile import (
     SchemaManifestRequest,
     compile_schema_manifest,
 )
+from codeintel.core.config.view import SettingsView
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hashing.fingerprint import fingerprint
-from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.cache_log_ingest import (
     CacheLogIngestConfigError,
     ingest_cache_log_jsonl,
@@ -473,7 +473,7 @@ def _build_hamilton_tracker_adapter(
     run_id: str,
     domain: str | None,
 ) -> object | None:
-    runtime_settings = load_runtime_settings().observability
+    runtime_settings = SettingsView.from_runtime().require_observability()
     tracker_settings = runtime_settings.hamilton_tracker
     if not tracker_settings.enabled:
         return None

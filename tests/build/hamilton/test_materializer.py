@@ -16,7 +16,7 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.materializers import ArrowDatasetSaver, DuckDBRelationSaver
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.hashing import stable_hash
-from codeintel.storage.datasets.manifests import read_dataset_manifest
+from codeintel.storage.manifests import read_dataset_manifest
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,

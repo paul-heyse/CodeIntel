@@ -30,9 +30,9 @@ from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.columnar_streams import contract_schema_for_table_key
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT

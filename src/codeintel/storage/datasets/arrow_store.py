@@ -18,8 +18,8 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from codeintel.core.manifests import ArrowDatasetManifest
-from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.storage.manifests import dataset_manifest_path, write_dataset_manifest
 from codeintel.storage.schema import arrow_schema_hash
 
 if TYPE_CHECKING:

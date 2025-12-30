@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.storage.manifests.manifest_io import (
-    DATASET_MANIFEST_FILENAME,
     dataset_manifest_path,
     read_manifest_json,
     write_manifest_json,
@@ -14,6 +13,7 @@ from codeintel.storage.manifests.manifest_io import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
 
 def write_dataset_manifest(path: Path, manifest: ArrowDatasetManifest) -> Path:
     """Write a dataset manifest to disk.
@@ -146,8 +146,6 @@ def _coerce_mapping(value: object | None) -> dict[str, object] | None:
 
 
 __all__ = [
-    "DATASET_MANIFEST_FILENAME",
-    "dataset_manifest_path",
     "load_dataset_manifest",
     "read_dataset_manifest",
     "write_dataset_manifest",

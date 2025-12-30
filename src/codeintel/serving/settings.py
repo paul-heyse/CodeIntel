@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.core.config.settings import ServingSettings
-from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.config.view import SettingsView
 
 
 def get_serving_settings() -> ServingSettings:
@@ -14,7 +14,7 @@ def get_serving_settings() -> ServingSettings:
     ServingSettings
         Loaded settings.
     """
-    return load_runtime_settings().serving
+    return SettingsView.from_runtime().require_serving()
 
 
 __all__ = ["ServingSettings", "get_serving_settings"]

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping
+import re
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -12,9 +13,8 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from codeintel.core.schemas.contracts import DEFAULT_EXTRAS_COLUMN
-from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.primitives import Column, TableSchema, column_type_base
 from codeintel.storage.contracts.schema_provider import get_schema_provider
-from codeintel.storage.validation.arrow_type_compat import is_compatible_arrow_type
 
 if TYPE_CHECKING:
     from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
@@ -50,8 +50,121 @@ def _lookup_table_schema(table_key: str) -> TableSchema | None:
     return provider.get_table_schema(table_key)
 
 
+_DECIMAL_PATTERN = re.compile(r"^DECIMAL\\((\\d+),(\\d+)\\)$")
+
+
+def _decimal_scale_zero(column_type: str) -> bool:
+    compact = column_type.upper().replace(" ", "")
+    match = _DECIMAL_PATTERN.match(compact)
+    if match is None:
+        return False
+    return int(match.group(2)) == 0
+
+
+def _is_list_like(data_type: pa.DataType) -> bool:
+    checks = [
+        pa.types.is_list,
+        pa.types.is_large_list,
+        pa.types.is_fixed_size_list,
+    ]
+    list_view = getattr(pa.types, "is_list_view", None)
+    if callable(list_view):
+        checks.append(list_view)
+    large_list_view = getattr(pa.types, "is_large_list_view", None)
+    if callable(large_list_view):
+        checks.append(large_list_view)
+    return any(check(data_type) for check in checks)
+
+
+def _is_compatible_arrow_type(column: Column, actual_type: pa.DataType) -> bool:
+    normalized = _unwrap_dictionary_type(actual_type)
+    if pa.types.is_null(normalized):
+        return column.nullable
+    base = column_type_base(column.type)
+    compatibility = _compatibility_for_base(base, column.type, normalized)
+    if compatibility is None:
+        return True
+    return compatibility
+
+
+def _compatibility_for_base(
+    base: str,
+    column_type: str,
+    normalized: pa.DataType,
+) -> bool | None:
+    checker = _DIRECT_COMPAT_CHECKS.get(base)
+    if checker is not None:
+        return checker(normalized)
+    predicate = _predicate_for_base(base, column_type)
+    if predicate is None:
+        return None
+    return predicate(normalized)
+
+
+def _predicate_for_base(
+    base: str,
+    column_type: str,
+) -> Callable[[pa.DataType], bool] | None:
+    if base == "DECIMAL" and _decimal_scale_zero(column_type):
+        return _is_decimal_or_int
+    return _BASE_TYPE_PREDICATES.get(base)
+
+
+def _unwrap_dictionary_type(data_type: pa.DataType) -> pa.DataType:
+    if pa.types.is_dictionary(data_type):
+        return data_type.value_type
+    return data_type
+
+
+def _is_decimal_or_int(data_type: pa.DataType) -> bool:
+    return pa.types.is_integer(data_type) or pa.types.is_decimal(data_type)
+
+
+def _is_decimal_or_float(data_type: pa.DataType) -> bool:
+    return (
+        pa.types.is_floating(data_type)
+        or pa.types.is_decimal(data_type)
+        or pa.types.is_integer(data_type)
+    )
+
+
+def _is_string_like(data_type: pa.DataType) -> bool:
+    return pa.types.is_string(data_type) or pa.types.is_large_string(data_type)
+
+
+def _is_temporal(data_type: pa.DataType) -> bool:
+    return pa.types.is_timestamp(data_type) or pa.types.is_date(data_type)
+
+
+def _always_true(_: pa.DataType) -> bool:
+    return True
+
+
+def _build_base_type_predicates() -> dict[str, Callable[[pa.DataType], bool]]:
+    return {
+        "INTEGER": pa.types.is_integer,
+        "BIGINT": pa.types.is_integer,
+        "DOUBLE": _is_decimal_or_float,
+        "DECIMAL": _is_decimal_or_float,
+        "BOOLEAN": pa.types.is_boolean,
+        "VARCHAR": _is_string_like,
+        "TIMESTAMP": _is_temporal,
+        "TIMESTAMPTZ": _is_temporal,
+    }
+
+
+_BASE_TYPE_PREDICATES = _build_base_type_predicates()
+_DIRECT_COMPAT_CHECKS: dict[str, Callable[[pa.DataType], bool]] = {
+    "JSON": _always_true,
+    "STRUCT": pa.types.is_struct,
+    "LIST": _is_list_like,
+    "MAP": pa.types.is_map,
+    "UNION": pa.types.is_union,
+}
+
+
 def _is_compatible_type(column: Column, actual_type: pa.DataType) -> bool:
-    return is_compatible_arrow_type(column, actual_type)
+    return _is_compatible_arrow_type(column, actual_type)
 
 
 def _schema_errors(table_schema: TableSchema, actual_schema: pa.Schema) -> list[str]:

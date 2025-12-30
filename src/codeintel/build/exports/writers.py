@@ -9,7 +9,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from codeintel.core.exports.serialization import coerce_export_value
+from codeintel.core.exports.codecs import coerce_export_value, encode_batch
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
 
@@ -134,6 +134,14 @@ def write_jsonl_reader(
         Number of rows written to the JSONL output.
     """
     rows_written = 0
+    if record_type is None:
+        for batch in _iter_batches(reader):
+            if batch.num_rows == 0:
+                continue
+            rows_written += batch.num_rows
+            for chunk in encode_batch(batch, schema=reader.schema):
+                handle.write(chunk.decode("utf-8"))
+        return rows_written
     for batch in _iter_batches(reader):
         frame = _frame_for_batch(batch)
         if record_type is not None:

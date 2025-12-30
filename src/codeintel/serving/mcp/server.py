@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.config.view import SettingsView
 from codeintel.observability.lifecycle import ObservabilityLifecycle
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.mcp.app import build_mcp_app
@@ -40,7 +40,7 @@ def create_mcp_server(
         Configured MCP server.
     """
     cfg = settings
-    observability_settings = load_runtime_settings().observability
+    observability_settings = SettingsView.from_runtime().require_observability()
     lifecycle = ObservabilityLifecycle(default_service_name="codeintel-serving")
     lifecycle.bootstrap(observability_settings)
 

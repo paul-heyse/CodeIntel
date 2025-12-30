@@ -35,7 +35,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_tool_target_template,
     run_tool_step,
 )
-from codeintel.build.hamilton.native.patterns.tool_target import TabularByTable
+from codeintel.build.hamilton.native.patterns.target_builder import TabularByTable
 from codeintel.build.hamilton.native.target_decorators import TargetSpecDescriptor
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.run_records import TargetRunRecord

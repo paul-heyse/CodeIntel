@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME, META_DB_FILENAME
-from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.manifests import read_dataset_manifest
 from codeintel.storage.metadata.meta_catalog import resolve_meta_db_path
 from codeintel.storage.serving.snapshot_service import (
     DatasetManifestError,

@@ -20,6 +20,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
+from codeintel.core.config.view import SettingsView
 from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
@@ -111,35 +112,6 @@ class _TaggedValidation(check_output_custom):
         return nodes
 
 
-def _resolve_validation_profile(
-    *,
-    default_profile: str | None,
-    config_mode: str,
-) -> str | None:
-    if not isinstance(config_mode, str):
-        return default_profile
-    normalized = config_mode.strip().lower()
-    if normalized in {"strict", "lenient"}:
-        return normalized
-    if normalized in {"off", "none", ""}:
-        return None
-    return default_profile
-
-
-def _resolve_min_rows(
-    *,
-    table_key: str,
-    base_min_rows: int,
-    overrides: Mapping[str, int] | None,
-) -> int:
-    if not overrides or not isinstance(overrides, Mapping):
-        return base_min_rows
-    override = overrides.get(table_key)
-    if isinstance(override, int) and override >= 0:
-        return override
-    return base_min_rows
-
-
 def _validation_from_config(
     *,
     table_key: str,
@@ -154,14 +126,14 @@ def _validation_from_config(
     ) -> NodeTransformLifecycle:
         if not ci_validate_outputs:
             return _NoOpTransform()
-        profile = _resolve_validation_profile(
+        profile = SettingsView.resolve_validation_profile(
             default_profile=default_profile,
             config_mode=ci_validation_mode,
         )
         if profile is None:
             return _NoOpTransform()
         base_min_rows = ci_validation_min_rows if isinstance(ci_validation_min_rows, int) else 0
-        min_rows = _resolve_min_rows(
+        min_rows = SettingsView.resolve_min_rows(
             table_key=table_key,
             base_min_rows=base_min_rows,
             overrides=ci_validation_min_rows_by_table,

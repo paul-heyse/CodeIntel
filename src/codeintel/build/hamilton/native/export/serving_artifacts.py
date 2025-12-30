@@ -60,7 +60,7 @@ from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
-from codeintel.storage.datasets.manifests import dataset_manifest_path
+from codeintel.storage.manifests import dataset_manifest_path
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 
 LOG = logging.getLogger(__name__)
