@@ -9,18 +9,19 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
-import pyarrow.dataset as ds
 
-from codeintel.serving.semantic.datasets import (
-    DatasetScannerOptions,
-    dataset_filter_expression,
-    dataset_for_entry,
-    dataset_scanner_for_entry,
-)
+from codeintel.core.columnar.tabular_adapter import to_lazyframe
+from codeintel.core.iceberg.guardrails import iceberg_enforced_table, require_iceberg_read
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.guardrails import (
     warn_eager_materialization,
     warn_schema_drift_observed,
+)
+from codeintel.serving.semantic.iceberg_scans import (
+    IcebergScanError,
+    IcebergScanRequest,
+    iceberg_scan_for_query,
+    iceberg_table_exists,
 )
 from codeintel.serving.semantic.polars_query_builder import (
     PolarsQueryBuilderError,
@@ -31,16 +32,16 @@ from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.serving.semantic.routing import ast_supports_polars
 from codeintel.serving.semantic.view_registry import ViewInputs
 from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.schema import arrow_schema_for_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
     from typing import Literal
 
     from polars import DataFrame, LazyFrame, QueryOptFlags
 
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.serving.semantic.datasets import DatasetManifestEntry
     from codeintel.serving.semantic.models import FilterSpec
     from codeintel.serving.semantic.specs import SemanticQuerySpec
     from codeintel.serving.settings import ServingSettings
@@ -168,6 +169,22 @@ class PolarsExecutablePlan:
         """Release temporary resources after execution."""
         if self.explain_plan is not None:
             return
+
+
+@dataclass(frozen=True, slots=True)
+class _PolarsSource:
+    lazyframe: PolarsLazyFrame
+    iceberg_snapshot_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _IcebergScanInputs:
+    table_key: str
+    columns: Sequence[str]
+    filters: list[FilterSpec]
+    order_by: Sequence[str]
+    column_types: Mapping[str, ColumnType] | None
+    primary_key: Sequence[str]
 
 
 def _record_batches_from_frames(
@@ -417,76 +434,6 @@ def _maybe_to_string(value: object) -> str | None:
     return str(value)
 
 
-def _scan_arrow_dataset(
-    entry: DatasetManifestEntry,
-    *,
-    filter_expression: ds.Expression | None,
-    settings: ServingSettings,
-    contract_schema: pa.Schema | None,
-) -> PolarsLazyFrame | None:
-    if pl is None:  # pragma: no cover
-        msg = "polars is required for Polars query execution"
-        raise PolarsQueryBuilderError(msg)
-    dataset = dataset_for_entry(entry)
-    options = DatasetScannerOptions(
-        batch_size=settings.export_batch_size,
-        fragment_readahead=settings.dataset_fragment_readahead,
-        filter_expression=filter_expression,
-        metrics_enabled=settings.dataset_scan_metrics_enabled,
-        schema=contract_schema,
-    )
-    scanner = dataset_scanner_for_entry(entry, options=options)
-    scan_pyarrow_dataset = getattr(pl, "scan_pyarrow_dataset", None)
-    if not callable(scan_pyarrow_dataset):
-        LOG.debug("Polars scan_pyarrow_dataset unavailable; falling back to scan_parquet.")
-        return None
-    try:
-        scan = cast("Callable[..., PolarsLazyFrame]", scan_pyarrow_dataset)
-        return scan(scanner)
-    except TypeError:
-        try:
-            scan = cast("Callable[..., PolarsLazyFrame]", scan_pyarrow_dataset)
-            return scan(dataset)
-        except TypeError:
-            return None
-
-
-def _apply_sortedness(
-    lazyframe: PolarsLazyFrame,
-    *,
-    entry: DatasetManifestEntry,
-    settings: ServingSettings,
-) -> PolarsLazyFrame:
-    if not settings.polars_set_sorted:
-        return lazyframe
-    sort_keys = _manifest_sort_keys(entry)
-    if not sort_keys:
-        return lazyframe
-    set_sorted = getattr(lazyframe, "set_sorted", None)
-    if not callable(set_sorted):
-        return lazyframe
-    try:
-        result = set_sorted(sort_keys)
-    except PolarsError:
-        LOG.debug("Polars set_sorted failed; continuing without sortedness.")
-        return lazyframe
-    if pl is not None and isinstance(result, pl.LazyFrame):
-        return result
-    return lazyframe
-
-
-def _manifest_sort_keys(entry: DatasetManifestEntry) -> tuple[str, ...] | None:
-    stats = entry.manifest.stats or {}
-    raw = stats.get("sort_keys")
-    if not raw:
-        return None
-    if isinstance(raw, tuple):
-        return tuple(str(value) for value in raw)
-    if isinstance(raw, list):
-        return tuple(str(value) for value in raw)
-    return None
-
-
 @dataclass(frozen=True, slots=True)
 class PolarsQueryEngine:
     """Polars query engine for semantic specs."""
@@ -521,7 +468,7 @@ class PolarsQueryEngine:
             return False
         if ctx.view_registry.get(spec.table_key) is not None:
             return True
-        return ctx.dataset_manifests.get(spec.table_key) is not None
+        return iceberg_table_exists(settings=ctx.settings.iceberg, table_key=spec.table_key)
 
     def compile(self, query: ServingQuery, *, ctx: EngineContext) -> ExecutablePlan:
         """Compile a serving query into a Polars execution plan.
@@ -551,7 +498,7 @@ class PolarsQueryEngine:
         query_opt_flags = _resolve_query_opt_flags(ctx.settings.polars_query_opt_flags)
         try:
             lazyframe = apply_query_ast(
-                source,
+                source.lazyframe,
                 ast=query.ast,
                 allowed_columns=spec.allowed_columns,
                 column_types=spec.column_types,
@@ -579,7 +526,7 @@ class PolarsQueryEngine:
             query_opt_flags=query_opt_flags,
         )
 
-    def _resolve_source(self, spec: SemanticQuerySpec, *, ctx: EngineContext) -> PolarsLazyFrame:
+    def _resolve_source(self, spec: SemanticQuerySpec, *, ctx: EngineContext) -> _PolarsSource:
         if pl is None:  # pragma: no cover
             msg = "polars is required for Polars query execution"
             raise PolarsQueryBuilderError(msg)
@@ -596,65 +543,45 @@ class PolarsQueryEngine:
             if not isinstance(lazyframe, pl.LazyFrame):
                 msg = f"View builder for {spec.table_key} did not return a LazyFrame"
                 raise PolarsQueryBuilderError(msg)
-            return lazyframe
-        entry = ctx.dataset_manifests.get(spec.table_key)
-        if entry is None:
-            msg = f"No dataset manifest found for {spec.table_key}"
-            raise PolarsQueryBuilderError(msg)
-        contract_schema = _contract_schema_for_table(ctx, table_key=spec.table_key)
-        return self._scan_entry(
-            entry,
-            filters=spec.filters,
-            column_types=spec.column_types,
-            settings=ctx.settings,
-            contract_schema=contract_schema,
+            return _PolarsSource(lazyframe=lazyframe)
+        enforced = iceberg_enforced_table(
+            settings=ctx.settings.iceberg,
+            table_key=spec.table_key,
         )
-
-    @staticmethod
-    def _scan_entry(
-        entry: DatasetManifestEntry,
-        *,
-        filters: list[FilterSpec] | None,
-        column_types: Mapping[str, ColumnType] | None,
-        settings: ServingSettings,
-        contract_schema: pa.Schema | None,
-    ) -> PolarsLazyFrame:
-        if pl is None:  # pragma: no cover
-            msg = "polars is required for Polars query execution"
-            raise PolarsQueryBuilderError(msg)
-        filter_expression = dataset_filter_expression(
-            filters=filters or [],
-            column_types=column_types,
-        )
-        lazyframe = None
-        if settings.polars_use_arrow_scanner:
-            lazyframe = _scan_arrow_dataset(
-                entry,
-                filter_expression=filter_expression,
-                settings=settings,
-                contract_schema=contract_schema,
+        if enforced:
+            require_iceberg_read(
+                settings=ctx.settings.iceberg,
+                table_key=spec.table_key,
             )
-        hive_partitioning = bool(entry.manifest.partition_columns)
-        if lazyframe is None:
-            if entry.manifest.files:
-                paths = [str(entry.dataset_dir / path) for path in entry.manifest.files]
-                lazyframe = _scan_parquet(
-                    paths,
-                    hive_partitioning=hive_partitioning,
-                    use_pyarrow=settings.polars_use_arrow_scanner,
-                )
-            else:
-                glob = str(entry.dataset_dir / "**" / "*.parquet")
-                lazyframe = _scan_parquet(
-                    glob,
-                    hive_partitioning=hive_partitioning,
-                    use_pyarrow=settings.polars_use_arrow_scanner,
-                )
-        return _apply_sortedness(
-            lazyframe,
-            entry=entry,
-            settings=settings,
-        )
+            if not iceberg_table_exists(
+                settings=ctx.settings.iceberg,
+                table_key=spec.table_key,
+            ):
+                msg = f"Iceberg table missing for enforced table: {spec.table_key}"
+                raise PolarsQueryBuilderError(msg)
+        if ctx.settings.iceberg.read_enabled:
+            primary_key = _primary_key_for_table(
+                ctx, table_key=spec.table_key, view_id=spec.view_id
+            )
+            iceberg_source = self._scan_iceberg(
+                ctx,
+                inputs=_IcebergScanInputs(
+                    table_key=spec.table_key,
+                    columns=spec.columns,
+                    filters=spec.filters,
+                    order_by=spec.order_by,
+                    column_types=spec.column_types,
+                    primary_key=primary_key,
+                ),
+                enforced=enforced,
+            )
+            if iceberg_source is not None:
+                return iceberg_source
+            if enforced:
+                msg = f"Iceberg scan failed for enforced table: {spec.table_key}"
+                raise PolarsQueryBuilderError(msg)
+        msg = f"Iceberg scan unavailable for {spec.table_key}"
+        raise PolarsQueryBuilderError(msg)
 
     def _scan_table(
         self,
@@ -662,49 +589,164 @@ class PolarsQueryEngine:
         table_key: str,
         row_index: str | None,
     ) -> PolarsLazyFrame:
-        entry = ctx.dataset_manifests.get(table_key)
-        if entry is None:
-            msg = f"No dataset manifest found for {table_key}"
-            raise PolarsQueryBuilderError(msg)
-        contract_schema = _contract_schema_for_table(ctx, table_key=table_key)
-        lazyframe = self._scan_entry(
-            entry,
-            filters=None,
-            column_types=None,
-            settings=ctx.settings,
-            contract_schema=contract_schema,
+        enforced = iceberg_enforced_table(
+            settings=ctx.settings.iceberg,
+            table_key=table_key,
         )
-        if row_index:
-            lazyframe = lazyframe.with_row_index(name=row_index)
-        return lazyframe
+        if enforced:
+            require_iceberg_read(
+                settings=ctx.settings.iceberg,
+                table_key=table_key,
+            )
+            if not iceberg_table_exists(
+                settings=ctx.settings.iceberg,
+                table_key=table_key,
+            ):
+                msg = f"Iceberg table missing for enforced table: {table_key}"
+                raise PolarsQueryBuilderError(msg)
+        if ctx.settings.iceberg.read_enabled:
+            primary_key = _primary_key_for_table(ctx, table_key=table_key, view_id=None)
+            iceberg_source = self._scan_iceberg(
+                ctx,
+                inputs=_IcebergScanInputs(
+                    table_key=table_key,
+                    columns=_columns_for_table(ctx, table_key=table_key),
+                    filters=[],
+                    order_by=[],
+                    column_types=None,
+                    primary_key=primary_key,
+                ),
+                enforced=enforced,
+            )
+            if iceberg_source is not None:
+                lazyframe = iceberg_source.lazyframe
+                if row_index:
+                    lazyframe = lazyframe.with_row_index(name=row_index)
+                return lazyframe
+            if enforced:
+                msg = f"Iceberg scan failed for enforced table: {table_key}"
+                raise PolarsQueryBuilderError(msg)
+        msg = f"Iceberg scan unavailable for {table_key}"
+        raise PolarsQueryBuilderError(msg)
+
+    @staticmethod
+    def _scan_iceberg(
+        ctx: EngineContext,
+        *,
+        inputs: _IcebergScanInputs,
+        enforced: bool = False,
+    ) -> _PolarsSource | None:
+        try:
+            scan_result = iceberg_scan_for_query(
+                request=IcebergScanRequest(
+                    table_key=inputs.table_key,
+                    columns=inputs.columns,
+                    filters=inputs.filters,
+                    order_by=inputs.order_by,
+                    column_types=inputs.column_types,
+                    pointer=ctx.pointer,
+                    settings=ctx.settings.iceberg,
+                    batch_size=ctx.settings.export_batch_size,
+                )
+            )
+        except IcebergScanError as exc:
+            if enforced:
+                msg = f"Iceberg scan failed for enforced table: {inputs.table_key}"
+                raise PolarsQueryBuilderError(msg) from exc
+            LOG.warning("Iceberg scan failed for %s: %s", inputs.table_key, exc)
+            return None
+        lazyframe = to_lazyframe(scan_result.scan)
+        lazyframe = _apply_iceberg_tombstones(
+            lazyframe,
+            ctx=ctx,
+            table_key=inputs.table_key,
+            primary_key=inputs.primary_key,
+            snapshot_id=scan_result.snapshot_id,
+        )
+        return _PolarsSource(
+            lazyframe=lazyframe,
+            iceberg_snapshot_id=scan_result.snapshot_id,
+        )
+
+
+def _apply_iceberg_tombstones(
+    lazyframe: PolarsLazyFrame,
+    *,
+    ctx: EngineContext,
+    table_key: str,
+    primary_key: Sequence[str],
+    snapshot_id: int | None,
+) -> PolarsLazyFrame:
+    result = lazyframe
+    if (
+        not ctx.settings.iceberg.tombstones_enabled
+        or not primary_key
+        or snapshot_id is None
+        or pl is None  # pragma: no cover
+    ):
+        return result
+    tombstone_key = _tombstone_table_key(table_key)
+    try:
+        tombstone_scan = iceberg_scan_for_query(
+            request=IcebergScanRequest(
+                table_key=tombstone_key,
+                columns=(*tuple(primary_key), "snapshot_id"),
+                filters=[],
+                order_by=[],
+                column_types=None,
+                pointer=ctx.pointer,
+                settings=ctx.settings.iceberg,
+                batch_size=ctx.settings.export_batch_size,
+            )
+        )
+    except IcebergScanError as exc:
+        LOG.warning("Tombstone scan failed for %s: %s", tombstone_key, exc)
+        return result
+    tombstones = to_lazyframe(tombstone_scan.scan)
+    try:
+        tombstones = tombstones.filter(pl.col("snapshot_id") <= snapshot_id)
+        joined = result.join(tombstones, on=list(primary_key), how="anti")
+    except PolarsError as exc:
+        LOG.warning("Polars tombstone anti-join failed: %s", exc)
+        return result
+    if isinstance(joined, pl.LazyFrame):
+        result = joined
+    return result
+
+
+def _tombstone_table_key(table_key: str) -> str:
+    schema, table = split_table_key(table_key)
+    return f"{schema}.{table}__tombstones"
+
+
+def _columns_for_table(ctx: EngineContext, *, table_key: str) -> list[str]:
+    schema = ctx.inventory.get(table_key)
+    if schema is None:
+        return []
+    return [column.name for column in schema.columns]
+
+
+def _primary_key_for_table(
+    ctx: EngineContext,
+    *,
+    table_key: str,
+    view_id: str | None,
+) -> tuple[str, ...]:
+    schema = ctx.inventory.get(table_key)
+    if schema is not None and schema.primary_key:
+        return tuple(schema.primary_key)
+    if view_id is None:
+        return ()
+    try:
+        view = ctx.registry.by_id(view_id)
+    except KeyError:
+        return ()
+    if view.primary_key:
+        return tuple(view.primary_key)
+    return ()
 
 
 _PROFILE_TUPLE_SIZE = 2
-
-
-def _scan_parquet(
-    paths: list[str] | str,
-    *,
-    hive_partitioning: bool,
-    use_pyarrow: bool,
-) -> PolarsLazyFrame:
-    if pl is None:  # pragma: no cover
-        msg = "polars is required for Polars query execution"
-        raise PolarsQueryBuilderError(msg)
-    scan_parquet = cast("Callable[..., PolarsLazyFrame]", pl.scan_parquet)
-    kwargs: dict[str, object] = {}
-    if hive_partitioning:
-        kwargs["hive_partitioning"] = True
-    if use_pyarrow:
-        kwargs["use_pyarrow"] = True
-    signature = _signature(scan_parquet)
-    if signature is not None:
-        kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
-    try:
-        return scan_parquet(paths, **kwargs)
-    except TypeError:
-        return scan_parquet(paths)
-
 
 def _contract_schema_for_table(ctx: EngineContext, *, table_key: str) -> pa.Schema | None:
     if ctx.warehouse is None:

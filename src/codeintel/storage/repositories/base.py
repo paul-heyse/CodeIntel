@@ -23,13 +23,16 @@ Existence check:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from codeintel.core.repository import PagedResult
+from codeintel.core.schemas import arrow_schema_from_table_schema
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
     ConstantExpression,
@@ -45,6 +48,8 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation, StorageGateway
 
 RowDict = dict[str, object]
+
+log = logging.getLogger(__name__)
 
 
 def _combine_predicates(predicates: Sequence[Expression]) -> Expression | None:
@@ -96,18 +101,22 @@ class BaseRepository:
         -------
         DuckDBRelation
             Relation scoped to the repository snapshot when applicable.
-
-        Raises
-        ------
-        DuckDBCatalogException
-            If the requested table/view does not exist and cannot be created.
         """
         try:
             relation = self.gateway.relation_from_table_key(table_key)
         except DuckDBCatalogException:
             if table_key.startswith("docs."):
                 self.gateway.policy.ensure_all_views(overwrite=True, strict=False)
-                relation = self.gateway.relation_from_table_key(table_key)
+                try:
+                    relation = self.gateway.relation_from_table_key(table_key)
+                except DuckDBCatalogException:
+                    log.warning(
+                        "docs view missing; returning empty results table_key=%s repo=%s commit=%s",
+                        table_key,
+                        self.repo,
+                        self.commit,
+                    )
+                    return self._empty_relation_for_table(table_key)
             else:
                 raise
         columns = set(relation.columns)
@@ -117,6 +126,31 @@ class BaseRepository:
             )
             relation = relation.filter(predicate)
         return relation
+
+    def _empty_relation_for_table(self, table_key: str) -> DuckDBRelation:
+        table_schema = None
+        try:
+            provider = get_schema_provider()
+        except RuntimeError:
+            provider = None
+        if provider is not None:
+            table_schema = provider.get_table_schema(table_key)
+        if table_schema is None:
+            try:
+                table_schema = self.gateway.schemas.load_table_schema(table_key)
+            except (RuntimeError, TypeError, ValueError):
+                table_schema = None
+        if table_schema is None:
+            log.warning("schema missing for %s; returning empty relation", table_key)
+            return self.gateway.con.sql("SELECT NULL WHERE 1=0")
+        try:
+            arrow_schema = arrow_schema_from_table_schema(table_schema=table_schema)
+        except (TypeError, ValueError):
+            log.warning("failed to render schema for %s; returning empty relation", table_key)
+            return self.gateway.con.sql("SELECT NULL WHERE 1=0")
+        arrays = [pa.array([], type=field.type) for field in arrow_schema]
+        table = pa.Table.from_arrays(arrays, schema=arrow_schema)
+        return self.gateway.con.from_arrow(table)
 
     def _relation_to_dicts(
         self,

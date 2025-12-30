@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
 
 
@@ -29,6 +30,10 @@ class SchemaProvider(Protocol):
 
     def iter_table_schemas(self) -> Iterable[TableSchema]:
         """Iterate all known table schemas."""
+        ...
+
+    def derivation(self, table_key: str) -> SchemaDerivation | None:
+        """Return the derivation metadata for table_key, if available."""
         ...
 
 
@@ -86,6 +91,18 @@ class MappingSchemaProvider:
             Iterable of TableSchema values.
         """
         return self.schemas.values()
+
+    @staticmethod
+    def derivation(table_key: str) -> SchemaDerivation | None:
+        """Return derivation metadata when available.
+
+        Returns
+        -------
+        SchemaDerivation | None
+            None because mapping providers do not track provenance.
+        """
+        _ = table_key
+        return None
 
 
 __all__ = [

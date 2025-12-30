@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection
 
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
 
 
@@ -143,6 +144,18 @@ class RegistrySchemaProvider:
             schemas_by_key[table_key] = table_schema_from_json_obj(schema_json)
         for table_key in sorted(schemas_by_key):
             yield schemas_by_key[table_key]
+
+    @staticmethod
+    def derivation(table_key: str) -> SchemaDerivation | None:
+        """Return derivation metadata when available.
+
+        Returns
+        -------
+        SchemaDerivation | None
+            None because registry providers do not track provenance.
+        """
+        _ = table_key
+        return None
 
 
 __all__ = ["RegistrySchemaProvider"]

@@ -24,6 +24,7 @@ from codeintel.core.exports import (
     default_ipc_write_options,
     iter_ipc_stream,
 )
+from codeintel.core.iceberg.catalog import IcebergCatalogProvider
 from codeintel.core.schemas.hashing import schema_digest
 from codeintel.serving.errors import LineageMetadataMissingError, SearchIndexMissingError
 from codeintel.serving.meta.models import ServingKernelMetaResponse
@@ -50,6 +51,11 @@ from codeintel.serving.semantic.guardrails import (
     warn_contract_metadata_missing,
     warn_missing_contract_schema,
 )
+from codeintel.serving.semantic.iceberg_scans import (
+    iceberg_row_filter_from_filters,
+    iceberg_table_exists,
+    resolve_iceberg_ref,
+)
 from codeintel.serving.semantic.models import (
     ColumnLineageRef,
     QueryScanMetrics,
@@ -66,6 +72,7 @@ from codeintel.serving.semantic.sqlglot_query_builder import SqlglotQueryBuilder
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
 from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.iceberg.stats import iceberg_stats_for_table
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (
     SqlIngressPolicy,
@@ -80,18 +87,19 @@ from codeintel.storage.sqlglot_tools import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Generator, Mapping, Sequence
     from pathlib import Path
 
     from duckdb import DuckDBPyConnection
 
+    from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest
-    from codeintel.serving.semantic.datasets import DatasetManifestIndex
     from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.models import (
+        FilterSpec,
         SemanticExportRequest,
         SemanticQueryRequest,
         SemanticViewSpec,
@@ -424,13 +432,11 @@ class SemanticQueryKernel:
     ) -> EngineContext:
         ctx_registry = context.registry
         ctx_inventory = context.inventory
-        ctx_dataset_manifests = context.dataset_manifests
         ctx_view_registry = context.view_registry
         return EngineContext(
             pointer=pointer,
             inventory=ctx_inventory,
             registry=ctx_registry,
-            dataset_manifests=ctx_dataset_manifests,
             view_registry=ctx_view_registry,
             settings=self.settings,
             warehouse=warehouse,
@@ -440,25 +446,61 @@ class SemanticQueryKernel:
         self,
         *,
         table_key: str,
-        dataset_manifests: DatasetManifestIndex,
+        filters: Sequence[FilterSpec],
+        column_types: Mapping[str, ColumnType] | None,
+        pointer: ServingSnapshotPointer,
     ) -> QueryScanMetrics | None:
         if not self.settings.dataset_scan_metrics_enabled:
             return None
-        entry = dataset_manifests.get(table_key)
-        if entry is None:
+        iceberg_metrics = self._iceberg_scan_metrics(
+            table_key=table_key,
+            filters=filters,
+            column_types=column_types,
+            pointer=pointer,
+        )
+        if iceberg_metrics is not None:
+            return iceberg_metrics
+        return None
+
+    def _iceberg_scan_metrics(
+        self,
+        *,
+        table_key: str,
+        filters: Sequence[FilterSpec],
+        column_types: Mapping[str, ColumnType] | None,
+        pointer: ServingSnapshotPointer,
+    ) -> QueryScanMetrics | None:
+        iceberg = self.settings.iceberg
+        if not iceberg.read_enabled:
             return None
-        stats = entry.manifest.stats or {}
-        row_count = entry.manifest.row_count
-        if row_count is None:
-            row_count = _coerce_optional_int(stats.get("rows_from_metadata"))
-        file_count = _coerce_optional_int(stats.get("file_count"))
-        if file_count is None and entry.manifest.files:
-            file_count = len(entry.manifest.files)
-        total_bytes = _coerce_optional_int(stats.get("total_bytes"))
+        if not iceberg_table_exists(settings=iceberg, table_key=table_key):
+            return None
+        try:
+            provider = IcebergCatalogProvider(iceberg)
+            table = provider.load_table(table_key)
+            ref = resolve_iceberg_ref(pointer=pointer, settings=iceberg)
+            snapshot_id = None
+            if ref:
+                snapshot = table.snapshot_by_name(ref)
+                if snapshot is not None:
+                    snapshot_id = snapshot.snapshot_id
+            if snapshot_id is None:
+                current = table.current_snapshot()
+                snapshot_id = current.snapshot_id if current is not None else None
+            stats = iceberg_stats_for_table(table, snapshot_id=snapshot_id)
+        except (RuntimeError, ValueError, TypeError, OSError):
+            return None
+        coverage = iceberg_row_filter_from_filters(
+            filters=list(filters),
+            column_types=column_types,
+        ).coverage
         return QueryScanMetrics(
-            row_count=row_count,
-            file_count=file_count,
-            total_bytes=total_bytes,
+            row_count=_coerce_optional_int(stats.get("total_records")),
+            file_count=_coerce_optional_int(stats.get("data_file_count")),
+            total_bytes=_coerce_optional_int(stats.get("total_bytes")),
+            snapshot_id=_coerce_optional_int(stats.get("snapshot_id")) or snapshot_id,
+            pushdown_coverage=coverage,
+            scan_source="iceberg",
         )
 
     @staticmethod
@@ -683,7 +725,9 @@ class SemanticQueryKernel:
             )
             scan_metrics = self._scan_metrics_for_table_key(
                 table_key=serving_query.spec.table_key,
-                dataset_manifests=engine_ctx.dataset_manifests,
+                filters=serving_query.spec.filters,
+                column_types=serving_query.spec.column_types,
+                pointer=pointer,
             )
             batch_size = self.settings.export_batch_size
             rows, explain, engine = self._execute_engine_plan(
@@ -752,7 +796,9 @@ class SemanticQueryKernel:
             ).name.lower(),
             scan_metrics=self._scan_metrics_for_table_key(
                 table_key=serving_query.spec.table_key,
-                dataset_manifests=snapshot_context.dataset_manifests,
+                filters=serving_query.spec.filters,
+                column_types=serving_query.spec.column_types,
+                pointer=pointer,
             ),
             batch_size=self.settings.export_batch_size,
             query_hash=query_hash,

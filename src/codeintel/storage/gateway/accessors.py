@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
     from pathlib import Path
 
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.datasets import DatasetRegistry
@@ -74,6 +75,12 @@ class _FallbackSchemaProvider:
             if schema.table_key in seen:
                 continue
             yield schema
+
+    def derivation(self, table_key: str) -> SchemaDerivation | None:
+        primary_derivation = self.primary.derivation(table_key)
+        if primary_derivation is not None:
+            return primary_derivation
+        return self.fallback.derivation(table_key)
 
 
 def _schema_provider_for_gateway(*, datasets: DatasetRegistry) -> SchemaProvider:

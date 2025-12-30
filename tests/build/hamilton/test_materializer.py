@@ -16,12 +16,19 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.materializers import ArrowDatasetSaver, DuckDBRelationSaver
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.hashing import stable_hash
-from codeintel.storage.manifests import read_dataset_manifest
+from codeintel.storage.manifests.dataset_manifest import read_dataset_manifest
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.validation.mode import ContractValidationMode
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
 )
-from tests._helpers.catalog import build_catalog, make_target_descriptor
+from tests._helpers.catalog import (
+    CatalogBuildOptions,
+    build_catalog,
+    make_table_output,
+    make_target_descriptor,
+)
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 if TYPE_CHECKING:
@@ -237,3 +244,131 @@ def test_arrow_dataset_saver_writes_manifest(
     expect_equal(manifest.table_key, expected="core.modules")
     expect_equal(manifest.snapshot_id, expected=snapshot.commit)
     expect_equal(manifest.row_count, expected=1)
+
+
+def test_materialize_table_persists_validation_record(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """Materializers should persist validation results when enabled."""
+    harness = build_harness.with_force_targets("modules")
+    env = replace(harness.build_env(), validate_outputs=True)
+    graph = _make_graph()
+    saver = DuckDBRelationSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    df = _modules_rows(repo=env.snapshot.repo, commit=env.snapshot.commit, count=1)
+    env.gateway.con.register("tmp_modules_validation", df)
+    rel = env.gateway.con.table("tmp_modules_validation")
+    meta = saver.save_data(rel)
+
+    expect_equal(meta["status"], expected="succeeded")
+    validations_ref = meta_table_ref("metadata.materialization_validations")
+    row = env.gateway.con.execute(
+        f"SELECT status FROM {validations_ref} WHERE table_key = ? "
+        "ORDER BY created_at DESC LIMIT 1",
+        ["core.modules"],
+    ).fetchone()
+    expect_true(row is not None, message="Expected validation record")
+    row_tuple = cast("tuple[object, ...]", row)
+    expect_equal(row_tuple[0], expected="passed")
+
+
+def test_strict_validation_fails_on_missing_columns(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """Strict validation should fail when required columns are missing."""
+    harness = build_harness.with_force_targets("modules")
+    env = replace(
+        harness.build_env(),
+        validate_outputs=True,
+        validation_mode=ContractValidationMode.STRICT,
+    )
+    graph = _make_graph()
+    saver = ArrowDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    frame = pl.DataFrame(
+        {
+            "module": ["m1"],
+            "path": ["pkg/mod.py"],
+            "repo": [env.snapshot.repo],
+            "commit": [env.snapshot.commit],
+        }
+    ).lazy()
+
+    meta = saver.save_data(frame)
+
+    expect_equal(meta["status"], expected="failed")
+    validations_ref = meta_table_ref("metadata.materialization_validations")
+    row = env.gateway.con.execute(
+        f"SELECT status FROM {validations_ref} WHERE table_key = ? "
+        "ORDER BY created_at DESC LIMIT 1",
+        ["core.modules"],
+    ).fetchone()
+    expect_true(row is not None, message="Expected validation record")
+    row_tuple = cast("tuple[object, ...]", row)
+    expect_equal(row_tuple[0], expected="failed")
+
+
+def test_internal_outputs_skip_contract_checks(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """Internal outputs should skip contract validations even in strict mode."""
+    harness = build_harness.with_force_targets("modules")
+    env = replace(
+        harness.build_env(),
+        validate_outputs=True,
+        validation_mode=ContractValidationMode.STRICT,
+    )
+    internal_graph = build_catalog(
+        targets=(make_target_descriptor(name="modules", module="ingestion"),),
+        options=CatalogBuildOptions(
+            table_outputs_by_target={
+                "modules": (
+                    make_table_output(
+                        table_key="core.modules",
+                        target="modules",
+                        role="internal",
+                    ),
+                )
+            }
+        ),
+    )
+    saver = ArrowDatasetSaver(
+        env=env,
+        catalog=internal_graph,
+        target_name="modules",
+        table_key="core.modules",
+        output_role="internal",
+    )
+
+    frame = pl.DataFrame(
+        {
+            "module": ["m1"],
+            "path": ["pkg/mod.py"],
+            "repo": [env.snapshot.repo],
+            "commit": [env.snapshot.commit],
+        }
+    ).lazy()
+
+    meta = saver.save_data(frame)
+    expect_equal(meta["status"], expected="succeeded")
+
+    validations_ref = meta_table_ref("metadata.materialization_validations")
+    row = env.gateway.con.execute(
+        f"SELECT validation_scope, status FROM {validations_ref} WHERE table_key = ? "
+        "ORDER BY created_at DESC LIMIT 1",
+        ["core.modules"],
+    ).fetchone()
+    expect_true(row is not None, message="Expected validation record")
+    row_tuple = cast("tuple[object, ...]", row)
+    expect_equal(row_tuple[0], expected="internal")
+    expect_equal(row_tuple[1], expected="passed")

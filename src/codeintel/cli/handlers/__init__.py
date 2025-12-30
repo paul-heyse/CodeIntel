@@ -29,6 +29,14 @@ Examples
 from __future__ import annotations
 
 from codeintel.cli.context import CommandContext
+from codeintel.cli.core.result_types import (
+    IcebergAddFilesResult,
+    IcebergExpireSnapshotsResult,
+    IcebergInspectResult,
+    IcebergManageSnapshotsResult,
+    IcebergRefsResult,
+    IcebergTimeTravelResult,
+)
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.handlers._utilities import (
     get_handler_logger,
@@ -75,6 +83,14 @@ from codeintel.cli.handlers.health import (
 from codeintel.cli.handlers.history import (
     HistoryTimeseriesResult,
     history_timeseries_handler,
+)
+from codeintel.cli.handlers.iceberg import (
+    iceberg_add_files_handler,
+    iceberg_expire_snapshots_handler,
+    iceberg_inspect_handler,
+    iceberg_manage_snapshots_handler,
+    iceberg_refs_handler,
+    iceberg_time_travel_handler,
 )
 from codeintel.cli.handlers.jobs import (
     JobCancelResult,
@@ -129,6 +145,12 @@ __all__ = [
     "GraphTargetsResult",
     "HealthCheckResult",
     "HistoryTimeseriesResult",
+    "IcebergAddFilesResult",
+    "IcebergExpireSnapshotsResult",
+    "IcebergInspectResult",
+    "IcebergManageSnapshotsResult",
+    "IcebergRefsResult",
+    "IcebergTimeTravelResult",
     "JobCancelResult",
     "JobOutputResult",
     "JobStatusResult",
@@ -158,6 +180,12 @@ __all__ = [
     "graph_targets_plan_handler",
     "health_check_handler",
     "history_timeseries_handler",
+    "iceberg_add_files_handler",
+    "iceberg_expire_snapshots_handler",
+    "iceberg_inspect_handler",
+    "iceberg_manage_snapshots_handler",
+    "iceberg_refs_handler",
+    "iceberg_time_travel_handler",
     "import_database_handler",
     "is_health_check_passing",
     "jobs_cancel_handler",

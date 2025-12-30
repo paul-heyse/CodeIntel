@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.hashing.fingerprint import fingerprint, stable_hash
+from codeintel.core.iceberg.schema import (
+    iceberg_field_ids_for_table_schema,
+    table_schema_to_iceberg_schema,
+)
 from codeintel.core.schemas.contracts import (
     ARROW_SCHEMA_CONTRACT_VERSION,
     DEFAULT_EXTRAS_COLUMN,
@@ -193,12 +197,26 @@ def arrow_contract_renderer_cache(
         Renderer cache payload with serialized Arrow schema metadata.
     """
     extras_policy: ExtrasPolicy = _extras_policy_for_provenance(provenance)
+    iceberg_bundle = table_schema_to_iceberg_schema(schema)
+    name_mapping_payload = iceberg_bundle.name_mapping.model_dump(
+        by_alias=True,
+        exclude_none=True,
+    )
+    iceberg_schema_payload = iceberg_bundle.schema.model_dump(
+        by_alias=True,
+        exclude_none=True,
+    )
+    name_mapping_digest = stable_hash(name_mapping_payload)
+    field_ids = iceberg_field_ids_for_table_schema(schema)
     metadata = ArrowSchemaMetadata(
         schema_hash=provenance.schema_hash if provenance is not None else None,
         provenance=_arrow_provenance(provenance),
         contract_version=ARROW_SCHEMA_CONTRACT_VERSION,
         extras_policy=extras_policy,
         extras_column=DEFAULT_EXTRAS_COLUMN,
+        iceberg_schema_id=iceberg_bundle.schema.schema_id,
+        iceberg_name_mapping_digest=name_mapping_digest,
+        iceberg_field_ids=field_ids,
     )
     arrow_schema = arrow_contract_for_table_schema(table_schema=schema, metadata=metadata)
     return {
@@ -206,6 +224,11 @@ def arrow_contract_renderer_cache(
         "arrow_schema_contract_version": ARROW_SCHEMA_CONTRACT_VERSION,
         "extras_policy": extras_policy,
         "extras_column": DEFAULT_EXTRAS_COLUMN,
+        "iceberg_schema_id": iceberg_bundle.schema.schema_id,
+        "iceberg_schema_json": iceberg_schema_payload,
+        "iceberg_name_mapping_digest": name_mapping_digest,
+        "iceberg_name_mapping_json": name_mapping_payload,
+        "iceberg_field_ids": field_ids,
     }
 
 

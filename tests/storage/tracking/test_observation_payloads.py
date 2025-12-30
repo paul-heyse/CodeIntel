@@ -14,6 +14,7 @@ ROW_GROUPS = 1
 MIN_VALUE = 1
 MAX_VALUE = 2
 DISTINCT_COUNT = 2
+ICEBERG_SNAPSHOT_ID = 10
 
 
 def test_schema_observation_includes_parquet_stats() -> None:
@@ -61,3 +62,24 @@ def test_schema_observation_column_stats_are_populated() -> None:
     assert entry["min"] == MIN_VALUE
     assert "max" in entry
     assert entry["max"] == MAX_VALUE
+
+
+def test_schema_observation_includes_iceberg_stats() -> None:
+    """Ensure observation payload includes Iceberg stats metadata."""
+    schema = pa.schema([("value", pa.int64())])
+    batch = pa.record_batch([[1, 2, 3]], schema=schema)
+    accumulator = observations.SchemaObservationAccumulator(table_key="analytics.demo")
+    accumulator.observe_batch(batch)
+    inputs = observations.SchemaObservationInputs(
+        iceberg_stats={"snapshot_id": ICEBERG_SNAPSHOT_ID, "total_records": ROW_COUNT},
+    )
+    bundle = accumulator.finalize(arrow_schema=schema, inputs=inputs)
+
+    dataset_stats = bundle.observation.dataset_stats
+    assert dataset_stats is not None
+    assert "iceberg_stats" in dataset_stats
+    iceberg_stats = dataset_stats["iceberg_stats"]
+    assert "snapshot_id" in iceberg_stats
+    assert iceberg_stats["snapshot_id"] == ICEBERG_SNAPSHOT_ID
+    assert "total_records" in iceberg_stats
+    assert iceberg_stats["total_records"] == ROW_COUNT

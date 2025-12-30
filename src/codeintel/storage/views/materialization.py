@@ -88,6 +88,11 @@ def materialize_registered_views(
     if not sql_by_view:
         return {}
 
+    _ensure_dependency_tables(
+        gateway,
+        sql_by_view=sql_by_view,
+        strict=active.strict,
+    )
     _materialize_views(
         gateway,
         sql_by_view=sql_by_view,
@@ -96,6 +101,45 @@ def materialize_registered_views(
     )
     _sync_view_lineage(gateway, sql_by_view=sql_by_view)
     return dict(sql_by_view)
+
+
+def _ensure_dependency_tables(
+    gateway: MinimalGateway,
+    *,
+    sql_by_view: dict[str, str],
+    strict: bool,
+) -> None:
+    """Ensure referenced base tables exist before materializing views."""
+    view_keys = {key.lower() for key in sql_by_view}
+    referenced: set[str] = set()
+    for sql in sql_by_view.values():
+        referenced.update(extract_referenced_table_keys(sql))
+    candidates = sorted(referenced - view_keys)
+    if not candidates:
+        return
+
+    datasets = getattr(gateway, "datasets", None)
+    dataset_map = None
+    if isinstance(datasets, DatasetRegistry):
+        dataset_map = datasets.by_table_key
+
+    for table_key in candidates:
+        if not is_valid_table_key(table_key):
+            log.debug("Skipping unqualified view dependency: %s", table_key)
+            continue
+        if dataset_map is not None:
+            contract = dataset_map.get(table_key)
+            if contract is None:
+                log.debug("Skipping unknown view dependency: %s", table_key)
+                continue
+            if contract.is_view:
+                continue
+        try:
+            gateway.policy.ensure_table(table_key, create_if_missing=True)
+        except (duckdb.Error, KeyError, RuntimeError, ValueError):
+            log.exception("Failed to ensure view dependency table: %s", table_key)
+            if strict:
+                raise
 
 
 def _compile_view_definitions(

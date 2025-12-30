@@ -16,6 +16,7 @@ from codeintel.serving.semantic.registry_compiler import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
 
 
@@ -91,6 +92,18 @@ class FakeSchemaProvider:
             Iterable of known schemas.
         """
         return self._schemas.values()
+
+    @staticmethod
+    def derivation(table_key: str) -> SchemaDerivation | None:
+        """Return derivation metadata when available.
+
+        Returns
+        -------
+        SchemaDerivation | None
+            None because the fake provider does not track provenance.
+        """
+        _ = table_key
+        return None
 
 
 def test_registry_compiler_emits_view() -> None:

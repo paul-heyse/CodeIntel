@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, get_args
+from typing import TYPE_CHECKING
 
 import duckdb
 
@@ -17,22 +17,16 @@ from codeintel.build.serving.publisher import (
     publish_serving_snapshot,
 )
 from codeintel.config.primitives import BuildPaths
-from codeintel.core.columnar.schema_alignment import (
-    align_reader_to_contract,
-    extras_policy_from_schema,
-)
+from codeintel.core.config.settings import IcebergSettings
 from codeintel.core.hashing import stable_hash
-from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
+from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.core.schemas import table_schema_from_json_obj
 from codeintel.core.schemas.contracts import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
-from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
+from codeintel.core.schemas.primitives import Column, TableSchema, normalize_column_type
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.columnar_streams import contract_schema_for_table_key
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
@@ -61,7 +55,7 @@ class ServingSnapshot:
     repo: str
     commit: str
     run_id: str
-    dataset_manifest_paths: tuple[Path, ...] = ()
+    iceberg_settings: IcebergSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,11 +178,15 @@ class ServingSnapshotFactory:
         _write_registry(paths.registry_path, views=views)
         _write_schema_manifest(paths.schema_manifest_path, tables=tables)
         _write_buildspec(paths.buildspec_path, tables=tables)
-        dataset_manifest_paths = _write_dataset_manifests(
+        iceberg_settings = _iceberg_settings(paths.serve_dir)
+        _write_iceberg_tables(
             paths.db_path,
-            run_id=run_id,
             serve_dir=paths.serve_dir,
             tables=tables,
+            run_id=run_id,
+            repo=self.repo,
+            commit=self.commit,
+            iceberg_settings=iceberg_settings,
         )
 
         snapshot = ServingSnapshot(
@@ -203,7 +201,7 @@ class ServingSnapshotFactory:
             repo=self.repo,
             commit=self.commit,
             run_id=run_id,
-            dataset_manifest_paths=dataset_manifest_paths,
+            iceberg_settings=iceberg_settings,
         )
 
         if publish:
@@ -487,11 +485,20 @@ def _schema_hash_from_table(table: Mapping[str, object]) -> str | None:
 def _schema_hash_for_table_entry(table: Mapping[str, object]) -> str | None:
     schema = table.get("schema")
     name = table.get("name")
+    if (
+        not isinstance(schema, str)
+        or not schema.strip()
+        or not isinstance(name, str)
+        or not name.strip()
+    ):
+        table_key = table.get("table_key")
+        if not isinstance(table_key, str) or not table_key.strip():
+            return None
+        try:
+            schema, name = split_table_key(table_key)
+        except ValueError:
+            return None
     columns_raw = table.get("columns")
-    if not isinstance(schema, str) or not schema.strip():
-        return None
-    if not isinstance(name, str) or not name.strip():
-        return None
     if not isinstance(columns_raw, list):
         return None
     columns = _columns_from_raw(columns_raw)
@@ -509,23 +516,27 @@ def _table_schema_from_entry(table: Mapping[str, object]) -> TableSchema | None:
 
 
 def _columns_from_raw(columns_raw: list[object]) -> list[Column] | None:
-    allowed_types = set(get_args(ColumnType))
     columns: list[Column] = []
     for col in columns_raw:
+        if isinstance(col, Column):
+            columns.append(col)
+            continue
         if not isinstance(col, dict):
             return None
         col_name = col.get("name")
         col_type = col.get("type")
         if not isinstance(col_name, str) or not isinstance(col_type, str):
             return None
-        if col_type not in allowed_types:
+        try:
+            normalized_type = normalize_column_type(col_type)
+        except ValueError:
             return None
         description = col.get("description")
         description_str = description if isinstance(description, str) else None
         columns.append(
             Column(
                 name=col_name,
-                type=col_type,
+                type=normalized_type,
                 nullable=bool(col.get("nullable", True)),
                 description=description_str,
             )
@@ -634,10 +645,8 @@ def _publish_snapshot(snapshot: ServingSnapshot) -> None:
 
 def _snapshot_from_pointer(*, pointer_path: Path, serve_dir: Path) -> ServingSnapshot:
     pointer = ServingSnapshotPointer.load(pointer_path)
-    snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
-    dataset_manifest_paths = tuple(
-        Path(entry.manifest_path) for _, entry in sorted(snapshot_manifest.datasets.items())
-    )
+    _ = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
+    iceberg_settings = _iceberg_settings(serve_dir)
     return ServingSnapshot(
         serve_dir=serve_dir,
         snapshot_root=pointer.snapshot_root,
@@ -650,7 +659,7 @@ def _snapshot_from_pointer(*, pointer_path: Path, serve_dir: Path) -> ServingSna
         repo=pointer.repo,
         commit=pointer.commit,
         run_id=pointer.run_id,
-        dataset_manifest_paths=dataset_manifest_paths,
+        iceberg_settings=iceberg_settings,
     )
 
 

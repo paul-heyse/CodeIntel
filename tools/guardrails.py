@@ -164,6 +164,16 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         include_prefixes=("src/codeintel/build/",),
     ),
     Guardrail(
+        name="iceberg_equality_delete",
+        pattern=re.compile(r"\.delete\("),
+        message="Iceberg equality deletes are forbidden; use tombstone tables instead.",
+        include_prefixes=(
+            "src/codeintel/build/",
+            "src/codeintel/storage/iceberg/",
+        ),
+        allow_prefixes=("src/codeintel/storage/warehouse.py",),
+    ),
+    Guardrail(
         name="legacy_build_context_stack",
         pattern=re.compile(r"\bcodeintel\.build\.(context|context_base|result|protocols)\b"),
         message="Legacy build context stack is removed; use Hamilton BuildEnv/executor patterns.",

@@ -7,13 +7,58 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from codeintel.storage.manifests import read_manifest_json, write_manifest_json
+from codeintel.core.hashing.fingerprint import fingerprint
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
     from codeintel.core.schemas.primitives import TableSchema
+
+
+def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
+    """Write a JSON manifest with deterministic formatting."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def read_manifest_json(path: Path, *, expected_hash: str | None = None) -> dict[str, Any]:
+    """Read a JSON manifest file, optionally validating its hash.
+
+    Returns
+    -------
+    dict[str, Any]
+        Parsed manifest payload.
+    """
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if expected_hash is not None:
+        validate_manifest_hash(payload, expected_hash=expected_hash)
+    return payload
+
+
+def manifest_hash(payload: Mapping[str, Any]) -> str:
+    """Return a stable hash for a manifest payload.
+
+    Returns
+    -------
+    str
+        Stable hash for the manifest payload.
+    """
+    return fingerprint(dict(payload))
+
+
+def validate_manifest_hash(payload: Mapping[str, Any], *, expected_hash: str) -> None:
+    """Validate a manifest payload against an expected hash.
+
+    Raises
+    ------
+    ValueError
+        If the manifest hash does not match the expected hash.
+    """
+    actual = manifest_hash(payload)
+    if actual != expected_hash:
+        msg = f"Manifest hash mismatch: expected {expected_hash}, got {actual}"
+        raise ValueError(msg)
 
 
 class ManifestBase(ABC):
@@ -100,80 +145,6 @@ class ExportManifestData(ManifestBase):
 
 
 @dataclass(frozen=True)
-class ArrowDatasetManifest(ManifestBase):
-    """Manifest describing an Arrow dataset snapshot."""
-
-    dataset_id: str
-    snapshot_id: str
-    table_key: str
-    schema_hash: str | None
-    partition_columns: tuple[str, ...]
-    files: tuple[str, ...]
-    row_count: int | None = None
-    stats: Mapping[str, Any] | None = None
-    created_at: str | None = None
-    extras: Mapping[str, Any] | None = None
-
-    def to_json_obj(self) -> dict[str, object]:
-        """Return a JSON-serializable dataset manifest payload.
-
-        Returns
-        -------
-        dict[str, object]
-            JSON-serializable dataset manifest payload.
-        """
-        payload: dict[str, object] = {
-            "dataset_id": self.dataset_id,
-            "snapshot_id": self.snapshot_id,
-            "table_key": self.table_key,
-            "partition_columns": list(self.partition_columns),
-            "files": list(self.files),
-        }
-        if self.schema_hash is not None:
-            payload["schema_hash"] = self.schema_hash
-        if self.row_count is not None:
-            payload["row_count"] = self.row_count
-        if self.stats:
-            payload["stats"] = dict(self.stats)
-        if self.created_at is not None:
-            payload["created_at"] = self.created_at
-        if self.extras:
-            payload["extras"] = dict(self.extras)
-        return payload
-
-
-@dataclass(frozen=True)
-class SnapshotDatasetEntry(ManifestBase):
-    """Summary pointer to a dataset manifest within a serving snapshot."""
-
-    manifest_path: str
-    schema_hash: str | None
-    partition_columns: tuple[str, ...]
-    row_count: int | None = None
-    stats: Mapping[str, Any] | None = None
-
-    def to_json_obj(self) -> dict[str, object]:
-        """Return a JSON-serializable dataset entry payload.
-
-        Returns
-        -------
-        dict[str, object]
-            JSON-serializable dataset entry payload.
-        """
-        payload: dict[str, object] = {
-            "manifest_path": self.manifest_path,
-            "partition_columns": list(self.partition_columns),
-        }
-        if self.schema_hash is not None:
-            payload["schema_hash"] = self.schema_hash
-        if self.row_count is not None:
-            payload["row_count"] = self.row_count
-        if self.stats:
-            payload["stats"] = dict(self.stats)
-        return payload
-
-
-@dataclass(frozen=True)
 class IncrementalMarker(ManifestBase):
     """Metadata persisted to decide if an export can be reused."""
 
@@ -245,8 +216,6 @@ class ServingSnapshotManifest(ManifestBase):
         Path to semantic_registry.json.
     schema_manifest_path
         Path to schema_manifest.json.
-    datasets
-        Mapping of table key to dataset manifest metadata.
     buildspec_path
         Path to buildspec.json.
     semantic_layer_version
@@ -262,7 +231,6 @@ class ServingSnapshotManifest(ManifestBase):
     schema_manifest_path: str
     buildspec_path: str
     semantic_layer_version: str
-    datasets: dict[str, SnapshotDatasetEntry] = field(default_factory=dict)
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable manifest payload.
@@ -280,15 +248,6 @@ class ServingSnapshotManifest(ManifestBase):
             "db_path": self.db_path,
             "semantic_registry_path": self.semantic_registry_path,
             "schema_manifest_path": self.schema_manifest_path,
-            **(
-                {
-                    "datasets": {
-                        table_key: entry.to_json_obj() for table_key, entry in self.datasets.items()
-                    }
-                }
-                if self.datasets
-                else {}
-            ),
             "buildspec_path": self.buildspec_path,
             "semantic_layer_version": self.semantic_layer_version,
         }
@@ -307,94 +266,12 @@ class ServingSnapshotManifest(ManifestBase):
         ServingSnapshotManifest
             Loaded manifest instance.
 
-        Raises
-        ------
-        TypeError
-            If the datasets payload is not a mapping.
         """
         data = read_manifest_json(path)
-        raw_datasets = data.get("datasets") or {}
-        if not isinstance(raw_datasets, dict):
-            msg = "Snapshot manifest datasets must be a mapping"
-            raise TypeError(msg)
-        datasets: dict[str, SnapshotDatasetEntry] = {}
-        for table_key, raw_entry in raw_datasets.items():
-            datasets[str(table_key)] = _parse_snapshot_dataset_entry(
-                raw_entry,
-                table_key=str(table_key),
-            )
-        data["datasets"] = datasets
+        if "datasets" in data:
+            data = dict(data)
+            data.pop("datasets", None)
         return cls(**data)
-
-
-def _parse_snapshot_dataset_entry(
-    raw_entry: object,
-    *,
-    table_key: str,
-) -> SnapshotDatasetEntry:
-    if not isinstance(raw_entry, dict):
-        msg = f"Snapshot dataset entry must be an object: {table_key}"
-        raise TypeError(msg)
-    manifest_path = raw_entry.get("manifest_path")
-    if not isinstance(manifest_path, str) or not manifest_path:
-        msg = f"Snapshot dataset entry manifest_path is required: {table_key}"
-        raise TypeError(msg)
-    partition_columns = _parse_optional_str_list(
-        raw_entry.get("partition_columns"),
-        ctx=f"datasets[{table_key}].partition_columns",
-    )
-    schema_hash = _optional_str(raw_entry.get("schema_hash"))
-    row_count = _optional_int(raw_entry.get("row_count"))
-    stats = _coerce_mapping(raw_entry.get("stats"))
-    return SnapshotDatasetEntry(
-        manifest_path=manifest_path,
-        schema_hash=schema_hash,
-        partition_columns=partition_columns,
-        row_count=row_count,
-        stats=stats,
-    )
-
-
-def _parse_optional_str_list(value: object, *, ctx: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        msg = f"Expected list for {ctx}"
-        raise TypeError(msg)
-    return tuple(str(item) for item in value)
-
-
-def _optional_str(value: object | None) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    return str(value)
-
-
-def _optional_int(value: object | None) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        msg = "row_count must be an integer"
-        raise TypeError(msg)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
-    msg = f"row_count must be an integer, got {type(value).__name__}"
-    raise TypeError(msg)
-
-
-def _coerce_mapping(value: object | None) -> dict[str, object] | None:
-    if value is None:
-        return None
-    if isinstance(value, dict):
-        return {str(key): val for key, val in value.items()}
-    msg = "Snapshot dataset stats must be an object"
-    raise TypeError(msg)
 
 
 ExportArtifactKind = Literal["parquet", "jsonl", "json", "csv"]
@@ -631,7 +508,6 @@ class SchemaManifest(ManifestBase):
 
 
 __all__ = [
-    "ArrowDatasetManifest",
     "ArtifactProvenance",
     "ExportArtifact",
     "ExportArtifactKind",
@@ -643,8 +519,9 @@ __all__ = [
     "SchemaManifest",
     "ServingSnapshotManifest",
     "SkipCriteria",
-    "SnapshotDatasetEntry",
     "TableProvenance",
+    "manifest_hash",
     "read_manifest_json",
+    "validate_manifest_hash",
     "write_manifest_json",
 ]

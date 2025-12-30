@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,7 @@ from tests._helpers.fixtures.rows import (
     data_model_relationship_row,
     data_model_row,
 )
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.seeds.subsystems_analytics import SUBSYSTEM_ANALYTICS_PACK
 
 if TYPE_CHECKING:
@@ -299,3 +301,21 @@ def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
     _expect_equal(model.model_id, "ModelA", "model id mismatch")
     _expect_equal(len(model.fields), 1, "model fields mismatch")
     _expect_equal(len(model.relationships), 1, "model relationships mismatch")
+
+
+def test_missing_docs_view_is_materialized(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Docs views should be materialized on demand."""
+    gateway = GatewayFactory().without_schema().without_views().relaxed().open()
+    try:
+        repo = DatasetReadRepository(gateway, repo="demo/repo", commit="deadbeef")
+        with caplog.at_level(logging.WARNING):
+            rows = repo.read_dataset_rows("docs.v_function_summary", limit=5, offset=0)
+        _expect_equal(rows, [], "expected empty docs view results")
+        _expect_true(
+            all("docs view missing" not in record.message for record in caplog.records),
+            "expected docs view to materialize without fallback warnings",
+        )
+    finally:
+        gateway.close()

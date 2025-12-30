@@ -31,6 +31,7 @@ from codeintel.storage.tracking.schema_catalog_compile import (
     compile_schema_catalog_batches,
 )
 from codeintel.storage.tracking.schema_catalog_models import (
+    MaterializationValidationRecord,
     OverrideRegistryRefreshResult,
     SchemaCatalogRequest,
     SchemaManifestRunRecord,
@@ -278,6 +279,69 @@ class SchemaCatalogTracking:
             catalog=META_CATALOG_NAME,
             upsert=UpsertSpec(
                 conflict_columns=("observation_id",),
+                update_columns=(),
+            ),
+        )
+
+    def record_materialization_validations_batch(
+        self,
+        records: Sequence[MaterializationValidationRecord],
+    ) -> int:
+        """Insert materialization validation records.
+
+        Returns
+        -------
+        int
+            Number of rows processed.
+        """
+        if not records:
+            return 0
+
+        now = utc_now()
+        rows = [
+            (
+                record.validation_id,
+                record.table_key,
+                record.repo,
+                record.commit,
+                record.target_name,
+                record.output_role,
+                record.validation_scope,
+                record.validation_profile,
+                record.status,
+                normalize_duckdb_json_value(record.issues) if record.issues else None,
+                normalize_duckdb_json_value(record.checks) if record.checks else None,
+                normalize_duckdb_json_value(record.skipped_checks)
+                if record.skipped_checks
+                else None,
+                record.iceberg_snapshot_id,
+                record.created_at or now,
+            )
+            for record in records
+        ]
+
+        return self._backend.upsert(
+            "metadata.materialization_validations",
+            rows,
+            columns=(
+                "validation_id",
+                "table_key",
+                "repo",
+                "commit",
+                "target_name",
+                "output_role",
+                "validation_scope",
+                "validation_profile",
+                "status",
+                "issues",
+                "checks",
+                "skipped_checks",
+                "iceberg_snapshot_id",
+                "created_at",
+            ),
+            catalog=META_CATALOG_NAME,
+            upsert=UpsertSpec(
+                conflict_columns=("validation_id",),
                 update_columns=(),
             ),
         )

@@ -26,6 +26,7 @@ LOG = logging.getLogger(__name__)
 __all__ = [
     "TableValidationError",
     "ValidationMode",
+    "is_compatible_arrow_type",
     "validate_parquet_path",
     "validate_record_batch_reader",
     "validate_table",
@@ -85,6 +86,17 @@ def _is_compatible_arrow_type(column: Column, actual_type: pa.DataType) -> bool:
     if compatibility is None:
         return True
     return compatibility
+
+
+def is_compatible_arrow_type(column: Column, actual_type: pa.DataType) -> bool:
+    """Return True when the Arrow type is compatible with the column definition.
+
+    Returns
+    -------
+    bool
+        True when the Arrow type is compatible with the column.
+    """
+    return _is_compatible_arrow_type(column, actual_type)
 
 
 def _compatibility_for_base(

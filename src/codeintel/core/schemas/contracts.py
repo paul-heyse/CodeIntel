@@ -53,6 +53,8 @@ ARROW_SCHEMA_METADATA_KEYS: tuple[str, ...] = (
     "codeintel.extras_schema",
     "codeintel.description",
     "codeintel.provenance",
+    "codeintel.iceberg_schema_id",
+    "codeintel.iceberg_name_mapping_digest",
 )
 ARROW_FIELD_METADATA_KEYS: tuple[str, ...] = (
     "codeintel.column_type",
@@ -64,6 +66,7 @@ ARROW_FIELD_METADATA_KEYS: tuple[str, ...] = (
     "codeintel.pii_class",
     "codeintel.provenance",
     "codeintel.lineage_edges",
+    "codeintel.iceberg_field_id",
 )
 _ARROW_TYPE_MAP: dict[str, pa.DataType] = {
     "BOOLEAN": pa.bool_(),
@@ -237,6 +240,9 @@ class ArrowSchemaMetadata:
     extras_policy: ExtrasPolicy | None = None
     extras_column: str | None = None
     extras_schema: Mapping[str, str] | None = None
+    iceberg_schema_id: int | None = None
+    iceberg_name_mapping_digest: str | None = None
+    iceberg_field_ids: Mapping[str, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +253,7 @@ class _FieldMetadataContext:
     column_lineage: Mapping[str, Iterable[tuple[str, str]]] | None
     pii_by_column: Mapping[str, str] | None
     key_roles: Mapping[str, str]
+    iceberg_field_ids: Mapping[str, int] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,6 +266,8 @@ class _SchemaMetadataContext:
     extras_policy: ExtrasPolicy
     extras_column: str
     extras_schema: Mapping[str, str] | None
+    iceberg_schema_id: int | None
+    iceberg_name_mapping_digest: str | None
 
 
 def _validate_extras_policy(value: ExtrasPolicy) -> None:
@@ -522,6 +531,10 @@ def _field_metadata(
         lineage = context.column_lineage.get(column.name)
         if lineage:
             field_metadata["codeintel.lineage_edges"] = _lineage_payload(lineage)
+    if context.iceberg_field_ids is not None:
+        field_id = context.iceberg_field_ids.get(column.name)
+        if field_id is not None:
+            field_metadata["codeintel.iceberg_field_id"] = field_id
     return field_metadata
 
 
@@ -541,6 +554,12 @@ def _schema_metadata(context: _SchemaMetadataContext) -> dict[str, object]:
         schema_metadata["codeintel.description"] = context.table_schema.description
     if context.provenance_payload:
         schema_metadata["codeintel.provenance"] = dict(context.provenance_payload)
+    if context.iceberg_schema_id is not None:
+        schema_metadata["codeintel.iceberg_schema_id"] = context.iceberg_schema_id
+    if context.iceberg_name_mapping_digest is not None:
+        schema_metadata["codeintel.iceberg_name_mapping_digest"] = (
+            context.iceberg_name_mapping_digest
+        )
     return schema_metadata
 
 
@@ -575,6 +594,7 @@ def arrow_schema_from_table_schema(
         column_lineage=resolved_metadata.column_lineage,
         pii_by_column=resolved_metadata.pii_by_column,
         key_roles=key_roles,
+        iceberg_field_ids=resolved_metadata.iceberg_field_ids,
     )
     fields = [
         pa.field(
@@ -595,6 +615,8 @@ def arrow_schema_from_table_schema(
         extras_policy=resolved_metadata.extras_policy or DEFAULT_EXTRAS_POLICY,
         extras_column=resolved_metadata.extras_column or DEFAULT_EXTRAS_COLUMN,
         extras_schema=resolved_metadata.extras_schema,
+        iceberg_schema_id=resolved_metadata.iceberg_schema_id,
+        iceberg_name_mapping_digest=resolved_metadata.iceberg_name_mapping_digest,
     )
     schema_metadata = _schema_metadata(schema_context)
 

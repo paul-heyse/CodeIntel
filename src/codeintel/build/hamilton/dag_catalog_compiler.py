@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections import deque
 from dataclasses import dataclass, replace
 from types import MappingProxyType
@@ -255,12 +256,16 @@ def _compile_output_inventory(
         if output.kind == "table":
             _record_table_output(
                 output=output,
+                node=node,
+                nodes=nodes,
                 table_outputs=table_outputs,
                 table_by_target=table_by_target,
             )
         else:
             _record_artifact_output(
                 output=output,
+                node=node,
+                nodes=nodes,
                 artifact_outputs=artifact_outputs,
                 artifact_by_target=artifact_by_target,
             )
@@ -350,13 +355,22 @@ def _validate_table_key(*, table_key: str, node_name: str, strict: bool) -> None
 def _record_table_output(
     *,
     output: OutputDescriptor,
+    node: Node,
+    nodes: Mapping[str, Node],
     table_outputs: dict[str, OutputDescriptor],
     table_by_target: dict[str, list[OutputDescriptor]],
 ) -> None:
     if output.role != "contract":
         return
     if output.key in table_outputs:
-        msg = f"Duplicate contract table output: {output.key}"
+        existing = table_outputs[output.key]
+        msg = _duplicate_output_message(
+            output=output,
+            existing=existing,
+            node=node,
+            existing_node=nodes.get(existing.saver_node),
+            kind_label="table",
+        )
         raise RuntimeError(msg)
     table_outputs[output.key] = output
     table_by_target.setdefault(output.producer_target, []).append(output)
@@ -365,13 +379,22 @@ def _record_table_output(
 def _record_artifact_output(
     *,
     output: OutputDescriptor,
+    node: Node,
+    nodes: Mapping[str, Node],
     artifact_outputs: dict[str, OutputDescriptor],
     artifact_by_target: dict[str, list[OutputDescriptor]],
 ) -> None:
     if output.role != "contract":
         return
     if output.key in artifact_outputs:
-        msg = f"Duplicate contract artifact output: {output.key}"
+        existing = artifact_outputs[output.key]
+        msg = _duplicate_output_message(
+            output=output,
+            existing=existing,
+            node=node,
+            existing_node=nodes.get(existing.saver_node),
+            kind_label="artifact",
+        )
         raise RuntimeError(msg)
     artifact_outputs[output.key] = output
     artifact_by_target.setdefault(output.producer_target, []).append(output)
@@ -436,6 +459,51 @@ def _optional_tag(*, tags: Mapping[str, object], key: str) -> str | None:
     value = tags.get(key)
     if isinstance(value, str) and value:
         return value
+    return None
+
+
+def _duplicate_output_message(
+    *,
+    output: OutputDescriptor,
+    existing: OutputDescriptor,
+    node: Node | None,
+    existing_node: Node | None,
+    kind_label: str,
+) -> str:
+    existing_module = _node_module_provenance(existing_node)
+    new_module = _node_module_provenance(node)
+    return (
+        f"Duplicate contract {kind_label} output: {output.key}\n"
+        f"  existing: target={existing.producer_target} saver={existing.saver_node} "
+        f"module={existing_module}\n"
+        f"  new: target={output.producer_target} saver={output.saver_node} module={new_module}"
+    )
+
+
+def _node_module_provenance(node: Node | None) -> str:
+    module_name = _node_module_name(node)
+    if module_name is None:
+        return "unknown"
+    module = sys.modules.get(module_name)
+    file_path = getattr(module, "__file__", None) if module is not None else None
+    if isinstance(file_path, str) and file_path:
+        return f"{module_name} ({file_path})"
+    return module_name
+
+
+def _node_module_name(node: Node | None) -> str | None:
+    if node is None:
+        return None
+    originating_module = getattr(node, "originating_module", None)
+    if isinstance(originating_module, str) and originating_module:
+        return originating_module
+    originating = getattr(node, "originating_functions", None)
+    if not isinstance(originating, (list, tuple)) or not originating:
+        return None
+    fn = originating[0]
+    module = getattr(fn, "__module__", None)
+    if isinstance(module, str) and module:
+        return module
     return None
 
 

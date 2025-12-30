@@ -8,6 +8,7 @@ import pytest
 
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.tracking.observation_codec import (
+    DatasetStatsInput,
     decode_column_stats,
     decode_dataset_stats,
     decode_derived_settings,
@@ -70,17 +71,21 @@ def test_encode_column_stats_payload() -> None:
 def test_encode_dataset_stats_payload() -> None:
     """Encode dataset stats payload with manifest metadata."""
     payload = encode_dataset_stats(
-        row_count=5,
-        batch_count=EXPECTED_BATCH_COUNT,
-        total_bytes=EXPECTED_TOTAL_BYTES,
-        manifest_stats={"row_groups": EXPECTED_ROW_GROUPS},
-        manifest_row_count=5,
+        stats=DatasetStatsInput(
+            row_count=EXPECTED_ROW_COUNT,
+            batch_count=EXPECTED_BATCH_COUNT,
+            total_bytes=EXPECTED_TOTAL_BYTES,
+            manifest_stats={"row_groups": EXPECTED_ROW_GROUPS},
+            manifest_row_count=EXPECTED_ROW_COUNT,
+            iceberg_stats={"total_records": EXPECTED_ROW_COUNT},
+        ),
     )
     assert payload.get("row_count") == EXPECTED_ROW_COUNT
     assert payload.get("batch_count") == EXPECTED_BATCH_COUNT
     assert payload.get("total_bytes") == EXPECTED_TOTAL_BYTES
     assert payload.get("manifest_row_count") == EXPECTED_MANIFEST_ROW_COUNT
     assert payload.get("parquet_stats") == {"row_groups": EXPECTED_ROW_GROUPS}
+    assert payload.get("iceberg_stats") == {"total_records": EXPECTED_ROW_COUNT}
 
 
 def test_encode_derived_settings_payload() -> None:
@@ -132,6 +137,17 @@ def test_decode_dataset_stats_invalid_payload() -> None:
     """Reject invalid dataset stats payloads."""
     payload = {"row_count": "bad"}
     assert decode_dataset_stats(payload) is None
+
+
+def test_decode_dataset_stats_with_iceberg_stats() -> None:
+    """Decode dataset stats payloads with Iceberg stats."""
+    payload = {
+        "row_count": EXPECTED_ROW_COUNT,
+        "batch_count": EXPECTED_BATCH_COUNT,
+        "total_bytes": EXPECTED_TOTAL_BYTES,
+        "iceberg_stats": {"total_records": EXPECTED_ROW_COUNT},
+    }
+    assert decode_dataset_stats(payload) == payload
 
 
 def test_decode_derived_settings_valid_payload() -> None:

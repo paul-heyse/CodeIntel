@@ -29,6 +29,22 @@ type ColumnStatsPayload = dict[str, ColumnStatsEntry]
 type ParquetStatsPayload = Mapping[str, object]
 
 
+class IcebergStatsPayload(TypedDict, total=False):
+    """Typed payload for Iceberg metadata-derived statistics."""
+
+    snapshot_id: int
+    schema_id: int
+    snapshot_count: int
+    manifest_count: int
+    data_file_count: int
+    delete_file_count: int
+    total_records: int
+    total_bytes: int
+    tombstone_rows: int
+    tombstone_ratio: float
+    deleted_rows: int
+
+
 class DatasetStatsPayload(TypedDict, total=False):
     """Typed payload for dataset-level stats observations."""
 
@@ -37,6 +53,7 @@ class DatasetStatsPayload(TypedDict, total=False):
     total_bytes: int
     manifest_row_count: int
     parquet_stats: ParquetStatsPayload
+    iceberg_stats: IcebergStatsPayload
 
 
 class DerivedSettingsPayload(TypedDict, total=False):
@@ -109,6 +126,26 @@ class SchemaObservationRecord:
 
 
 @dataclass(frozen=True)
+class MaterializationValidationRecord:
+    """Validation record persisted for materialized outputs."""
+
+    validation_id: str
+    table_key: str
+    repo: str | None = None
+    commit: str | None = None
+    target_name: str | None = None
+    output_role: str = "contract"
+    validation_scope: str = "internal"
+    validation_profile: str | None = None
+    status: str = "skipped"
+    issues: list[dict[str, object]] | None = None
+    checks: Mapping[str, object] | None = None
+    skipped_checks: Mapping[str, str] | None = None
+    iceberg_snapshot_id: int | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class TableSchemaOverrideVersionRecord:
     """Record of a schema override version for an inferable table."""
 
@@ -166,6 +203,8 @@ __all__ = [
     "ColumnStatsPayload",
     "DatasetStatsPayload",
     "DerivedSettingsPayload",
+    "IcebergStatsPayload",
+    "MaterializationValidationRecord",
     "OverrideRegistryRefreshResult",
     "ParquetStatsPayload",
     "SchemaCatalogRequest",

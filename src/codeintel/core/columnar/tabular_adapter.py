@@ -4,33 +4,22 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from inspect import signature
-from typing import TYPE_CHECKING, Protocol, TypedDict, cast, runtime_checkable
+from typing import Protocol, TypedDict, cast, runtime_checkable
 
+import polars as pl
 import pyarrow as pa
+from polars.exceptions import PolarsError
+from pyiceberg.table import DataScan
 
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
 
-if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
-
-    from polars import DataFrame, LazyFrame
-
-    type PolarsDataFrame = DataFrame
-    type PolarsLazyFrame = LazyFrame
-else:
-    type PolarsDataFrame = object
-    type PolarsLazyFrame = object
-
-try:
-    import polars as pl
-except ImportError:  # pragma: no cover
-    pl = None
-try:
-    from polars.exceptions import PolarsError
-except ImportError:  # pragma: no cover
-    PolarsError = Exception
+type PolarsDataFrame = pl.DataFrame
+type PolarsLazyFrame = pl.LazyFrame
+type IcebergDataScan = DataScan
 
 
 @runtime_checkable
@@ -92,7 +81,13 @@ class ColumnarStream(Protocol):
 type TabularRelation = DuckDBRelation
 type TabularFrame = PolarsLazyFrame
 type TabularInput = (
-    TabularRelation | pa.RecordBatchReader | pa.Table | TabularFrame | ColumnarStream | object
+    TabularRelation
+    | pa.RecordBatchReader
+    | pa.Table
+    | TabularFrame
+    | ColumnarStream
+    | IcebergDataScan
+    | object
 )
 
 
@@ -117,6 +112,30 @@ class PolarsExecutionOptions:
     query_opt_flags: object | None = None
     inspect: bool = False
     streaming_fallback: bool = True
+
+
+def _is_iceberg_scan(value: object) -> bool:
+    return isinstance(value, DataScan)
+
+
+def _iceberg_reader(
+    scan: IcebergDataScan,
+    *,
+    batch_size: int | None = None,
+) -> pa.RecordBatchReader:
+    _ = batch_size
+    return scan.to_arrow_batch_reader()
+
+
+def _iceberg_lazyframe(scan: IcebergDataScan) -> PolarsLazyFrame:
+    frame = scan.to_polars()
+    if isinstance(frame, pl.DataFrame):
+        return frame.lazy()
+    return cast("PolarsLazyFrame", frame)
+
+
+def _iceberg_table(scan: IcebergDataScan) -> pa.Table:
+    return scan.to_arrow()
 
 
 def collect_lazyframe(
@@ -273,6 +292,8 @@ def to_record_batch_reader(
     reader: pa.RecordBatchReader | None = None
     if isinstance(value, pa.RecordBatchReader):
         reader = value
+    elif _is_iceberg_scan(value):
+        reader = _iceberg_reader(cast("IcebergDataScan", value), batch_size=batch_size)
     elif isinstance(value, ColumnarStream):
         reader = value.to_reader(batch_size=batch_size)
     elif isinstance(value, pa.Table):
@@ -281,7 +302,7 @@ def to_record_batch_reader(
         reader = pa.RecordBatchReader.from_batches(table.schema, batches)
     elif isinstance(value, DuckDBRelation):
         reader = value.fetch_arrow_reader()
-    elif pl is not None and isinstance(value, pl.LazyFrame):
+    elif isinstance(value, pl.LazyFrame):
         reader = _lazyframe_to_reader(value, batch_size=batch_size, options=options)
     if reader is None:
         reader = coerce_arrow_reader(value, batch_size=batch_size)
@@ -315,16 +336,46 @@ def to_table(
     """
     if isinstance(value, pa.Table):
         return value
+    if _is_iceberg_scan(value):
+        return _iceberg_table(cast("IcebergDataScan", value))
     if isinstance(value, DuckDBRelation):
         reader = value.fetch_arrow_reader()
         return pa.Table.from_batches(list(reader), schema=reader.schema)
     if isinstance(value, ColumnarStream):
         return value.to_table()
-    if pl is not None and isinstance(value, pl.LazyFrame):
+    if isinstance(value, pl.LazyFrame):
         frame = collect_lazyframe(value, options=_resolve_polars_options(options))
         return frame.to_arrow()
     reader = to_record_batch_reader(value, batch_size=batch_size, options=options)
     return pa.Table.from_batches(list(reader), schema=reader.schema)
+
+
+def _lazyframe_from_known_types(value: TabularInput) -> PolarsLazyFrame | None:
+    if isinstance(value, pl.LazyFrame):
+        lazyframe: PolarsLazyFrame | None = value
+    elif _is_iceberg_scan(value):
+        lazyframe = _iceberg_lazyframe(cast("IcebergDataScan", value))
+    elif isinstance(value, ColumnarStream):
+        lazyframe = value.to_lazyframe()
+    elif isinstance(value, pa.Table):
+        lazyframe = _table_to_lazyframe(value)
+    elif isinstance(value, pa.RecordBatchReader):
+        lazyframe = _arrow_reader_to_lazyframe(value)
+    elif isinstance(value, DuckDBRelation):
+        lazyframe = _arrow_reader_to_lazyframe(value.fetch_arrow_reader())
+    else:
+        lazyframe = None
+    return lazyframe
+
+
+def _lazyframe_from_interchange(value: object) -> PolarsLazyFrame | None:
+    reader = coerce_arrow_reader(value, batch_size=None)
+    if reader is not None:
+        return _arrow_reader_to_lazyframe(reader)
+    table = coerce_arrow_table(value)
+    if table is not None:
+        return _table_to_lazyframe(table)
+    return None
 
 
 def to_lazyframe(value: TabularInput) -> PolarsLazyFrame:
@@ -342,33 +393,12 @@ def to_lazyframe(value: TabularInput) -> PolarsLazyFrame:
 
     Raises
     ------
-    RuntimeError
-        If Polars is unavailable for conversion.
     TypeError
         If the value cannot be coerced into a LazyFrame.
     """
-    if pl is None:  # pragma: no cover
-        msg = "polars is required for LazyFrame conversion"
-        raise RuntimeError(msg)
-    lazyframe: PolarsLazyFrame | None = None
-    if isinstance(value, pl.LazyFrame):
-        lazyframe = value
-    elif isinstance(value, ColumnarStream):
-        lazyframe = value.to_lazyframe()
-    elif isinstance(value, pa.Table):
-        lazyframe = _table_to_lazyframe(value)
-    elif isinstance(value, pa.RecordBatchReader):
-        lazyframe = _arrow_reader_to_lazyframe(value)
-    elif isinstance(value, DuckDBRelation):
-        lazyframe = _arrow_reader_to_lazyframe(value.fetch_arrow_reader())
-    else:
-        reader = coerce_arrow_reader(value, batch_size=None)
-        if reader is not None:
-            lazyframe = _arrow_reader_to_lazyframe(reader)
-        else:
-            table = coerce_arrow_table(value)
-            if table is not None:
-                lazyframe = _table_to_lazyframe(table)
+    lazyframe = _lazyframe_from_known_types(value)
+    if lazyframe is None:
+        lazyframe = _lazyframe_from_interchange(value)
     if lazyframe is None:
         msg = f"Unsupported tabular input for LazyFrame: {type(value)!r}"
         raise TypeError(msg)
@@ -427,6 +457,13 @@ def register_ephemeral(
     """
     safe_prefix = _sanitize_name(prefix)
     name = f"{safe_prefix}_{uuid.uuid4().hex}"
+    if _is_iceberg_scan(obj):
+        obj = _iceberg_reader(
+            cast("IcebergDataScan", obj),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
+    elif isinstance(obj, ColumnarStream):
+        obj = obj.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
     conn.register(name, obj)
     return name
 
@@ -452,6 +489,8 @@ def coerce_arrow_reader(
     """
     if isinstance(value, pa.RecordBatchReader):
         return value
+    if _is_iceberg_scan(value):
+        return _iceberg_reader(cast("IcebergDataScan", value), batch_size=batch_size)
     reader = _import_c_stream(value)
     if reader is not None:
         return reader
@@ -477,6 +516,8 @@ def coerce_arrow_table(value: object) -> pa.Table | None:
     """
     if isinstance(value, pa.Table):
         return value
+    if _is_iceberg_scan(value):
+        return _iceberg_table(cast("IcebergDataScan", value))
     reader = _import_c_stream(value)
     if reader is not None:
         return pa.Table.from_batches(list(reader), schema=reader.schema)
@@ -489,9 +530,6 @@ def _lazyframe_to_reader(
     batch_size: int,
     options: PolarsExecutionOptions | None,
 ) -> pa.RecordBatchReader:
-    if pl is None:  # pragma: no cover
-        msg = "polars is required for LazyFrame conversion"
-        raise RuntimeError(msg)
     resolved = _resolve_polars_options(options)
 
     def _iter_batches() -> Iterator[pa.RecordBatch]:
@@ -555,9 +593,6 @@ def _resolve_polars_options(options: PolarsExecutionOptions | None) -> PolarsExe
 
 
 def _arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> PolarsLazyFrame:
-    if pl is None:  # pragma: no cover
-        msg = "polars is required for Arrow conversion"
-        raise RuntimeError(msg)
     frame = pl.from_arrow(reader)
     if isinstance(frame, pl.Series):
         return frame.to_frame().lazy()
@@ -565,9 +600,6 @@ def _arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> PolarsLazyFrame:
 
 
 def _table_to_lazyframe(table: pa.Table) -> PolarsLazyFrame:
-    if pl is None:  # pragma: no cover
-        msg = "polars is required for Arrow conversion"
-        raise RuntimeError(msg)
     frame = pl.from_arrow(table)
     if isinstance(frame, pl.Series):
         return frame.to_frame().lazy()

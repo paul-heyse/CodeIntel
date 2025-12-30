@@ -6,41 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-import pyarrow.dataset as ds
-
-from codeintel.core.columnar.schema_alignment import (
-    align_reader_to_contract,
-    extras_policy_from_schema,
-)
-from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
+from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
-from codeintel.storage.helpers.table_key import fully_qualified_table_ref, split_table_key
-from codeintel.storage.manifests import read_dataset_manifest, read_manifest_json
-from codeintel.storage.schema import arrow_schema_for_table_key
+from codeintel.storage.helpers.table_key import fully_qualified_table_ref
 from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
-
-
-DEFAULT_FRAGMENT_READAHEAD = 2
-
-
-@dataclass(frozen=True, slots=True)
-class DatasetViewRequest:
-    """Dataset manifest context for view registration."""
-
-    table_key: str
-    schema: str
-    table: str
-    manifest: ArrowDatasetManifest
-    manifest_path: Path
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 class ServingSnapshotError(RuntimeError):
@@ -53,10 +29,6 @@ class SearchIndexBuildError(ServingSnapshotError):
 
 class LineageMetadataError(ServingSnapshotError):
     """Raised when lineage metadata is missing from the snapshot."""
-
-
-class DatasetManifestError(ServingSnapshotError):
-    """Raised when dataset manifests are missing or inconsistent."""
 
 
 def _table_exists(
@@ -138,7 +110,7 @@ class ServingSnapshotService:
         self,
         *,
         db_path: Path,
-        snapshot_manifest: ServingSnapshotManifest,
+        _snapshot_manifest: ServingSnapshotManifest,
     ) -> None:
         """Build serving snapshot tables and validate prerequisites.
 
@@ -146,8 +118,8 @@ class ServingSnapshotService:
         ----------
         db_path
             Path to the snapshot DuckDB database.
-        snapshot_manifest
-            Snapshot manifest describing dataset and artifact metadata.
+        _snapshot_manifest
+            Snapshot manifest metadata (currently unused).
         """
         config = StorageConfig(
             db_path=db_path,
@@ -159,8 +131,6 @@ class ServingSnapshotService:
         session = DuckDBSession(config)
         con = session.open()
         try:
-            self._validate_datasets(snapshot_manifest)
-            self._register_dataset_views(con, snapshot_manifest=snapshot_manifest)
             self._build_search_index(con)
             self._validate_lineage(con)
         finally:
@@ -185,228 +155,7 @@ class ServingSnapshotService:
             msg = "Lineage metadata missing"
             raise LineageMetadataError(msg) from exc
 
-    @staticmethod
-    def _validate_datasets(snapshot_manifest: ServingSnapshotManifest) -> None:
-        try:
-            _validate_dataset_entries(snapshot_manifest)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            msg = "Dataset manifest validation failed"
-            raise DatasetManifestError(msg) from exc
-
-    @staticmethod
-    def _register_dataset_views(
-        con: DuckDBConnection,
-        *,
-        snapshot_manifest: ServingSnapshotManifest,
-    ) -> None:
-        if not snapshot_manifest.datasets:
-            return
-        backend = MinimalStorageGateway(con).policy
-        for table_key, entry in snapshot_manifest.datasets.items():
-            manifest_path = Path(entry.manifest_path)
-            manifest = read_dataset_manifest(manifest_path)
-            schema, table = split_table_key(table_key)
-            backend.create_schema_if_not_exists(schema)
-            request = DatasetViewRequest(
-                table_key=table_key,
-                schema=schema,
-                table=table,
-                manifest=manifest,
-                manifest_path=manifest_path,
-            )
-            _create_dataset_view(
-                con=con,
-                request=request,
-            )
-
-
-def _load_schema_hashes(schema_manifest_path: Path) -> dict[str, str]:
-    payload = read_manifest_json(schema_manifest_path)
-    obj = _expect_dict(payload, ctx="schema_manifest")
-    version = str(obj.get("version", "")).strip()
-    if version != "v2":
-        msg = f"Unsupported schema manifest version: {version or 'unknown'}"
-        raise ValueError(msg)
-    table_hashes = _extract_schema_hashes(obj.get("tables", []), ctx="tables")
-    view_hashes = _extract_schema_hashes(obj.get("views", []), ctx="views")
-    combined = dict(table_hashes)
-    for table_key, schema_hash in view_hashes.items():
-        if table_key in combined:
-            msg = f"Duplicate schema hash entry for {table_key}"
-            raise ValueError(msg)
-        combined[table_key] = schema_hash
-    return combined
-
-
-def _validate_dataset_entries(snapshot_manifest: ServingSnapshotManifest) -> None:
-    schema_hashes = _load_schema_hashes(Path(snapshot_manifest.schema_manifest_path))
-    for table_key, entry in snapshot_manifest.datasets.items():
-        manifest_path = Path(entry.manifest_path)
-        manifest = read_dataset_manifest(manifest_path)
-        if manifest.table_key != table_key:
-            msg = f"Dataset manifest table_key mismatch: {table_key} != {manifest.table_key}"
-            raise ValueError(msg)
-        if entry.schema_hash is None:
-            msg = f"Dataset schema hash missing for {table_key}"
-            raise ValueError(msg)
-        expected = schema_hashes.get(table_key)
-        if expected is None:
-            msg = f"Schema manifest missing hash for {table_key}"
-            raise KeyError(msg)
-        if entry.schema_hash != expected:
-            msg = f"Dataset schema hash mismatch for {table_key}: {entry.schema_hash} != {expected}"
-            raise ValueError(msg)
-        if manifest.schema_hash is not None and manifest.schema_hash != entry.schema_hash:
-            msg = (
-                "Dataset manifest schema hash mismatch for "
-                f"{table_key}: {manifest.schema_hash} != {entry.schema_hash}"
-            )
-            raise ValueError(msg)
-
-
-def _extract_schema_hashes(items: object, *, ctx: str) -> dict[str, str]:
-    hashes: dict[str, str] = {}
-    for idx, raw in enumerate(_expect_list(items, ctx=ctx)):
-        entry = _expect_dict(raw, ctx=f"{ctx}[{idx}]")
-        table_key = _table_key_from_manifest(entry, ctx=f"{ctx}[{idx}]")
-        raw_hash = entry.get("schema_hash")
-        if not isinstance(raw_hash, str) or not raw_hash:
-            msg = f"schema_hash is required for {ctx}[{idx}]"
-            raise TypeError(msg)
-        if table_key in hashes:
-            msg = f"Duplicate schema hash entry for {table_key}"
-            raise ValueError(msg)
-        hashes[table_key] = raw_hash
-    return hashes
-
-
-def _table_key_from_manifest(entry: dict[str, object], *, ctx: str) -> str:
-    table_key = entry.get("table_key")
-    if isinstance(table_key, str) and table_key:
-        return table_key
-    schema = entry.get("schema")
-    name = entry.get("name")
-    if not isinstance(schema, str) or not schema.strip():
-        msg = f"schema is required for {ctx}"
-        raise TypeError(msg)
-    if not isinstance(name, str) or not name.strip():
-        msg = f"name is required for {ctx}"
-        raise TypeError(msg)
-    return f"{schema}.{name}"
-
-
-def _expect_dict(value: object, *, ctx: str) -> dict[str, object]:
-    if not isinstance(value, dict):
-        msg = f"Expected object for {ctx}"
-        raise TypeError(msg)
-    return value
-
-
-def _expect_list(value: object, *, ctx: str) -> list[object]:
-    if not isinstance(value, list):
-        msg = f"Expected array for {ctx}"
-        raise TypeError(msg)
-    return value
-
-
-def _create_dataset_view(
-    *,
-    con: DuckDBConnection,
-    request: DatasetViewRequest,
-) -> None:
-    current_schema = _current_schema(con)
-    if current_schema != request.schema:
-        _set_schema(con, request.schema)
-    try:
-        contract_schema = _contract_schema_for_table(con, table_key=request.table_key)
-        relation = _dataset_read_parquet_relation(
-            con=con,
-            manifest=request.manifest,
-            manifest_path=request.manifest_path,
-            contract_schema=contract_schema,
-        )
-        relation.create_view(request.table)
-    finally:
-        if current_schema != request.schema:
-            _set_schema(con, current_schema)
-
-
-def _dataset_read_parquet_relation(
-    *,
-    con: DuckDBConnection,
-    manifest: ArrowDatasetManifest,
-    manifest_path: Path,
-    contract_schema: pa.Schema | None,
-) -> DuckDBRelation:
-    dataset_dir = manifest_path.parent.resolve()
-    partitioning: str | None = "hive" if manifest.partition_columns else None
-    if manifest.files:
-        paths = [str(dataset_dir / path) for path in manifest.files]
-        dataset = ds.dataset(paths, format="parquet", partitioning=partitioning)
-    else:
-        dataset = ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning)
-    scan_kwargs: dict[str, object] = {
-        "batch_size": DEFAULT_ARROW_BATCH_SIZE,
-        "fragment_readahead": DEFAULT_FRAGMENT_READAHEAD,
-    }
-    if contract_schema is not None:
-        scan_kwargs["schema"] = contract_schema
-    scanner = _scanner_with_schema(dataset, scan_kwargs)
-    if contract_schema is not None:
-        reader = scanner.to_reader()
-        aligned = align_reader_to_contract(
-            reader,
-            contract_schema,
-            extras_policy=extras_policy_from_schema(contract_schema),
-        )
-        try:
-            return con.from_arrow(aligned)
-        except (TypeError, ValueError):
-            return con.from_arrow(scanner)
-    try:
-        return con.from_arrow(scanner)
-    except (TypeError, ValueError):
-        reader = scanner.to_reader()
-        try:
-            return con.from_arrow(reader)
-        except (TypeError, ValueError):
-            return con.from_arrow(dataset)
-
-
-def _contract_schema_for_table(
-    con: DuckDBConnection,
-    *,
-    table_key: str,
-) -> pa.Schema | None:
-    try:
-        return arrow_schema_for_table_key(con, table_key=table_key)
-    except (DuckDBError, RuntimeError, TypeError, ValueError):
-        return None
-
-
-def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> ds.Scanner:
-    try:
-        return dataset.scanner(**scan_kwargs)
-    except TypeError:
-        scan_kwargs.pop("schema", None)
-        return dataset.scanner(**scan_kwargs)
-
-
-def _current_schema(con: DuckDBConnection) -> str:
-    row = con.execute("SELECT current_schema()").fetchone()
-    if row is None or row[0] is None:
-        msg = "DuckDB returned empty current_schema()"
-        raise RuntimeError(msg)
-    return str(row[0])
-
-
-def _set_schema(con: DuckDBConnection, schema: str) -> None:
-    escaped = schema.replace("'", "''")
-    con.execute(f"SET schema='{escaped}'")
-
-
 __all__ = [
-    "DatasetManifestError",
     "LineageMetadataError",
     "SearchIndexBuildError",
     "ServingSnapshotError",

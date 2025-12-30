@@ -32,12 +32,33 @@ class ArrowDatasetSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class IcebergSettings:
+    """Settings controlling Iceberg catalog usage and feature flags."""
+
+    read_enabled: bool = False
+    write_enabled: bool = False
+    tombstones_enabled: bool = False
+    flight_enabled: bool = False
+    read_ref: str | None = None
+    enforced_table_prefixes: tuple[str, ...] = ()
+    catalog_name: str = "default"
+    catalog_type: str | None = None
+    catalog_uri: str | None = None
+    catalog_warehouse: str | None = None
+    catalog_properties: tuple[tuple[str, str], ...] = ()
+    config_path: Path | None = None
+    io_impl: str | None = None
+    io_options: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class BuildSettings:
     """Build runtime settings injected into build execution."""
 
     engine_version: str
     export_audit: ExportAuditSettings = field(default_factory=ExportAuditSettings)
     arrow_dataset: ArrowDatasetSettings = field(default_factory=ArrowDatasetSettings)
+    iceberg: IcebergSettings = field(default_factory=IcebergSettings)
     polars_profile: bool = False
     polars_inspect: bool = False
     polars_query_opt_flags: tuple[str, ...] = ()
@@ -258,6 +279,7 @@ class ServingSettings:
     export_metrics_enabled: bool = False
     dataset_scan_metrics_enabled: bool = False
     dataset_fragment_readahead: int | None = None
+    iceberg: IcebergSettings = field(default_factory=IcebergSettings)
 
     # Arrow IPC Control Plane
     ipc_enable_options: bool = False

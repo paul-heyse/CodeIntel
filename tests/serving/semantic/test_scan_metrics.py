@@ -11,7 +11,7 @@ from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import SemanticQueryRequest
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
-from codeintel.storage.manifests import read_dataset_manifest
+from codeintel.storage.manifests.dataset_manifest import read_dataset_manifest
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_not_none,
@@ -61,5 +61,7 @@ async def test_query_scan_metrics_from_manifest(tmp_path: Path) -> None:
         expect_equal(metrics.row_count, expected_row_count)
         expect_equal(metrics.file_count, expected_file_count)
         expect_equal(metrics.total_bytes, expected_total_bytes)
+        expect_equal(metrics.scan_source, "dataset_manifest")
+        expect_equal(metrics.pushdown_coverage, None)
     finally:
         await manager.stop()

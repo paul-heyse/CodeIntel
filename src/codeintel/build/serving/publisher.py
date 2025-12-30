@@ -16,14 +16,12 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
+from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME, META_DB_FILENAME
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.manifests import read_dataset_manifest
 from codeintel.storage.metadata.meta_catalog import resolve_meta_db_path
 from codeintel.storage.serving.snapshot_service import (
-    DatasetManifestError,
     LineageMetadataError,
     SearchIndexBuildError,
     ServingSnapshotService,
@@ -63,8 +61,6 @@ class PublishServingSnapshotRequest:
         Path to compiled semantic registry artifact.
     schema_manifest_path
         Path to compiled schema manifest artifact.
-    dataset_manifest_paths
-        Paths to dataset manifest artifacts (Arrow datasets).
     buildspec_path
         Path to compiled BuildSpec artifact.
     keep_last
@@ -76,7 +72,6 @@ class PublishServingSnapshotRequest:
     semantic_registry_path: Path
     schema_manifest_path: Path
     buildspec_path: Path
-    dataset_manifest_paths: tuple[Path, ...] = ()
     keep_last: int = 10
 
 
@@ -140,13 +135,6 @@ def _prepare_snapshot_tables(
         )
         message = f"Lineage metadata missing for serving snapshot run_id={run_id}"
         raise RuntimeError(message) from exc
-    except DatasetManifestError as exc:
-        log.exception(
-            "build.serving.publisher.dataset_manifest_failed run_id=%s",
-            run_id,
-        )
-        message = f"Dataset manifest validation failed for serving snapshot run_id={run_id}"
-        raise RuntimeError(message) from exc
 
 
 def _copy_snapshot_database(*, snap_dir: Path, config: StorageConfig) -> Path:
@@ -182,29 +170,6 @@ def _copy_snapshot_artifacts(
         schema_manifest_path=snap_manifest,
         buildspec_path=snap_buildspec,
     )
-
-
-def _build_snapshot_datasets(
-    manifest_paths: tuple[Path, ...],
-) -> dict[str, SnapshotDatasetEntry]:
-    datasets: dict[str, SnapshotDatasetEntry] = {}
-    for manifest_path in manifest_paths:
-        if not manifest_path.is_file():
-            msg = f"Dataset manifest not found: {manifest_path}"
-            raise FileNotFoundError(msg)
-        manifest = read_dataset_manifest(manifest_path)
-        table_key = manifest.table_key
-        if table_key in datasets:
-            msg = f"Duplicate dataset manifest entry for {table_key}"
-            raise ValueError(msg)
-        datasets[table_key] = SnapshotDatasetEntry(
-            manifest_path=str(manifest_path.resolve()),
-            schema_hash=manifest.schema_hash,
-            partition_columns=manifest.partition_columns,
-            row_count=manifest.row_count,
-            stats=manifest.stats,
-        )
-    return datasets
 
 
 def _write_snapshot_manifest(path: Path, manifest: ServingSnapshotManifest) -> None:
@@ -275,7 +240,6 @@ def publish_serving_snapshot(
         artifacts.schema_manifest_path,
         artifacts.buildspec_path,
     )
-    datasets = _build_snapshot_datasets(request.dataset_manifest_paths)
     published_at = datetime.now(UTC)
 
     manifest = ServingSnapshotManifest(
@@ -288,7 +252,6 @@ def publish_serving_snapshot(
         schema_manifest_path=str(artifacts.schema_manifest_path),
         buildspec_path=str(artifacts.buildspec_path),
         semantic_layer_version=version,
-        datasets=datasets,
     )
     snapshot_manifest_path = snap_dir / "snapshot_manifest.json"
     _write_snapshot_manifest(snapshot_manifest_path, manifest)

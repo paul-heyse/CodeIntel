@@ -22,7 +22,6 @@ from codeintel.config.primitives import (
     SnapshotRef,
 )
 from codeintel.core.execution import ExecutionContext, new_run_context
-from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.core.registry import RegistryService
 from codeintel.core.runtime.loader import (
     RuntimeInputs,
@@ -31,7 +30,6 @@ from codeintel.core.runtime.loader import (
 )
 from codeintel.core.tools import ToolBinaries
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.semantic.datasets import DatasetManifestIndex, load_dataset_manifests
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.view_registry import ViewRegistry, view_spec_modules
 from codeintel.storage.backend import DuckDBSession
@@ -324,8 +322,6 @@ class ServingSnapshotContext:
         Unified execution context derived from the serving snapshot metadata.
     registry_service
         Canonical registry service used for semantic discovery.
-    dataset_manifests
-        Dataset manifest metadata for Arrow-backed tables.
     view_registry
         Polars view registry for semantic views.
     """
@@ -337,9 +333,6 @@ class ServingSnapshotContext:
     environment: dict[str, object] | None = None
     execution_context: ExecutionContext | None = None
     registry_service: RegistryService | None = None
-    dataset_manifests: DatasetManifestIndex = field(
-        default_factory=lambda: DatasetManifestIndex({})
-    )
     view_registry: ViewRegistry = field(
         default_factory=lambda: ViewRegistry.load(modules=view_spec_modules())
     )
@@ -428,8 +421,6 @@ def _load_snapshot_context(
         inventory_source = "manifest"
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
-    snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
-    dataset_manifests = load_dataset_manifests(snapshot_manifest)
     env_path = _resolve_environment_path(pointer, pointer_path=pointer_path)
     environment: dict[str, object] | None = None
     if env_path is not None:
@@ -448,7 +439,6 @@ def _load_snapshot_context(
         "schema_inventory": inventory.summary(),
         "schema_inventory_source": inventory_source,
         "buildspec_version": buildspec.spec_version,
-        "dataset_tables": len(dataset_manifests.by_table_key),
     }
     tools = None
     if isinstance(environment, dict):
@@ -465,7 +455,6 @@ def _load_snapshot_context(
         environment=environment,
         execution_context=_build_execution_context(pointer),
         registry_service=registry_service,
-        dataset_manifests=dataset_manifests,
         view_registry=ViewRegistry.load(modules=view_spec_modules()),
         summary=summary,
     )

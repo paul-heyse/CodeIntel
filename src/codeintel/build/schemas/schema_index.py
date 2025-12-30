@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.schemas.inference_service import SchemaInferenceService
     from codeintel.build.target_metadata import TargetSystem
+    from codeintel.core.schemas.authority import SchemaDerivation as AuthoritySchemaDerivation
 
 
 SchemaDerivationKind = Literal["explicit_override", "inferred_relation"]
@@ -385,6 +386,9 @@ class _SchemaIndexSeedProvider:
 
     def iter_table_schemas(self) -> Iterable[TableSchema]:
         return self.schema_index.iter_table_schemas(allow_inference=True)
+
+    def derivation(self, table_key: str) -> AuthoritySchemaDerivation | None:
+        return self.declared_provider.derivation(table_key)
 
 
 def build_schema_index(

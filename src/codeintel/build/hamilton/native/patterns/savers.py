@@ -2,26 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
+from typing import TYPE_CHECKING, ParamSpec, TypeVar, cast
 
-import hamilton.node as h_node
-from hamilton.function_modifiers import check_output_custom, resolve_from_config, source, value
-from hamilton.function_modifiers.base import NodeTransformLifecycle
+from hamilton.function_modifiers import source, value
 
-from codeintel.build.hamilton.data_quality import build_table_schema_validators
-from codeintel.build.hamilton.materializers import (
-    ArrowDatasetSaver,
-    DuckDBRelationSaver,
-    FileArtifactSaver,
-)
+from codeintel.build.hamilton.materializers import FileArtifactSaver, IcebergDatasetSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
-from codeintel.core.config.view import SettingsView
-from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
@@ -51,7 +42,7 @@ class ArtifactSaveSpec:
 
 @dataclass(frozen=True, slots=True)
 class DatasetSaveSpec:
-    """Specification for saving a table as an Arrow dataset."""
+    """Specification for saving a table as an Iceberg dataset."""
 
     table_key: str
     partition_columns: tuple[str, ...] = ()
@@ -63,7 +54,7 @@ class DatasetSaveSpec:
 
 @dataclass(frozen=True, slots=True)
 class RelationTableSaveSpec:
-    """Specification for saving a DuckDB relation table."""
+    """Specification for saving a relation table to Iceberg."""
 
     table_key: str
     validation_profile: str | None = "lenient"
@@ -73,81 +64,6 @@ class RelationTableSaveSpec:
 
 def _dep(value: object) -> ParametrizedDependency:
     return cast("ParametrizedDependency", value)
-
-
-class _NoOpTransform(NodeTransformLifecycle):
-    """No-op decorator used when validation is disabled."""
-
-    @classmethod
-    def get_lifecycle_name(cls) -> str:
-        return "codeintel_noop_validation"
-
-    @classmethod
-    def allows_multiple(cls) -> bool:
-        return True
-
-    def validate(self, fn: Callable[..., object]) -> None:
-        _ = (self, fn)
-
-    def __call__(self, fn: Callable[..., object]) -> Callable[..., object]:
-        return fn
-
-
-_VALIDATOR_NODE_TAG = "hamilton.data_quality.contains_dq_results"
-
-
-class _TaggedValidation(check_output_custom):
-    """Validator decorator that hides data-quality nodes from UI outputs."""
-
-    def transform_node(
-        self,
-        node_: h_node.Node,
-        config: dict[str, Any],
-        fn: Callable[..., object],
-    ) -> Collection[h_node.Node]:
-        nodes = super().transform_node(node_, config, fn)
-        for node in nodes:
-            if _VALIDATOR_NODE_TAG in node.tags or node.name.endswith("_raw"):
-                node.tags[ht.TAG_MCP_VISIBLE] = "0"
-        return nodes
-
-
-def _validation_from_config(
-    *,
-    table_key: str,
-    default_profile: str | None,
-) -> NodeTransformLifecycle:
-    def _factory(
-        *,
-        ci_validate_outputs: bool = False,
-        ci_validation_mode: str = "lenient",
-        ci_validation_min_rows: int = 0,
-        ci_validation_min_rows_by_table: Mapping[str, int] | None = None,
-    ) -> NodeTransformLifecycle:
-        if not ci_validate_outputs:
-            return _NoOpTransform()
-        profile = SettingsView.resolve_validation_profile(
-            default_profile=default_profile,
-            config_mode=ci_validation_mode,
-        )
-        if profile is None:
-            return _NoOpTransform()
-        base_min_rows = ci_validation_min_rows if isinstance(ci_validation_min_rows, int) else 0
-        min_rows = SettingsView.resolve_min_rows(
-            table_key=table_key,
-            base_min_rows=base_min_rows,
-            overrides=ci_validation_min_rows_by_table,
-        )
-        validators = build_table_schema_validators(
-            table_key=table_key,
-            profile=profile,
-            min_rows=min_rows,
-        )
-        if not validators:
-            return _NoOpTransform()
-        return _TaggedValidation(*validators)
-
-    return resolve_from_config(decorate_with=_factory)
 
 
 def save_artifact(
@@ -196,7 +112,7 @@ def save_dataset(
     context: SaverContext,
     spec: DatasetSaveSpec,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Return a decorator that tags and materializes Arrow dataset outputs.
+    """Return a decorator that tags and materializes Iceberg dataset outputs.
 
     Parameters
     ----------
@@ -211,7 +127,7 @@ def save_dataset(
         Decorator that tags and materializes the dataset output.
     """
     decorator = SaveToObjectMetadataDecorator(
-        [ArrowDatasetSaver],
+        [IcebergDatasetSaver],
         output_name_=spec.output_name or materialize_node(spec.table_key),
         env=_dep(source("env")),
         catalog=_dep(source("catalog")),
@@ -222,10 +138,6 @@ def save_dataset(
         validation_profile=_dep(value(spec.validation_profile)),
         output_role=_dep(value(spec.output_role)),
     )
-    validator = _validation_from_config(
-        table_key=spec.table_key,
-        default_profile=spec.validation_profile,
-    )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
         tagged = tag_dataset(
@@ -234,8 +146,7 @@ def save_dataset(
             table_key=spec.table_key,
             extra_tags=context.extra_tags,
         )(fn)
-        validated = validator(tagged)
-        return decorator(validated)
+        return decorator(tagged)
 
     return apply
 
@@ -260,7 +171,7 @@ def save_relation_table(
         Decorator that tags and materializes the relation table output.
     """
     decorator = SaveToObjectMetadataDecorator(
-        [DuckDBRelationSaver],
+        [IcebergDatasetSaver],
         output_name_=spec.output_name or materialize_node(spec.table_key),
         env=_dep(source("env")),
         catalog=_dep(source("catalog")),
@@ -268,10 +179,6 @@ def save_relation_table(
         table_key=_dep(value(spec.table_key)),
         validation_profile=_dep(value(spec.validation_profile)),
         output_role=_dep(value(spec.output_role)),
-    )
-    validator = _validation_from_config(
-        table_key=spec.table_key,
-        default_profile=spec.validation_profile,
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
@@ -281,8 +188,7 @@ def save_relation_table(
             table_key=spec.table_key,
             extra_tags=context.extra_tags,
         )(fn)
-        validated = validator(tagged)
-        return decorator(validated)
+        return decorator(tagged)
 
     return apply
 

@@ -75,6 +75,11 @@ class _SchemaIndexProvider:
     def iter_table_schemas(self) -> Iterable[TableSchema]:
         return self.schema_index.iter_table_schemas(allow_inference=self.allow_inference)
 
+    @staticmethod
+    def derivation(table_key: str) -> SchemaDerivation | None:
+        _ = table_key
+        return None
+
 
 def _dag_sources(schema_index: SchemaIndex) -> Mapping[str, tuple[str, str]]:
     return {

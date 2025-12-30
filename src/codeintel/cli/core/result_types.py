@@ -189,6 +189,73 @@ class StorageDatabaseImportResult:
     duration_seconds: float | None = None
 
 
+@result_type
+@dataclass(frozen=True)
+class IcebergInspectResult:
+    """Result payload for iceberg inspect commands."""
+
+    table_key: str
+    snapshots: list[dict[str, object]] | None = None
+    manifests: list[dict[str, object]] | None = None
+    entries: list[dict[str, object]] | None = None
+    refs: list[dict[str, object]] | None = None
+
+
+@result_type
+@dataclass(frozen=True)
+class IcebergRefsResult:
+    """Result payload for iceberg refs commands."""
+
+    table_key: str
+    refs: list[dict[str, object]]
+
+
+@result_type
+@dataclass(frozen=True)
+class IcebergExpireSnapshotsResult:
+    """Result payload for iceberg snapshot expiration."""
+
+    table_key: str
+    cutoff: str
+    expired_snapshot_ids: list[int]
+    dry_run: bool
+
+
+@result_type
+@dataclass(frozen=True)
+class IcebergTimeTravelResult:
+    """Result payload for iceberg time travel exports."""
+
+    table_key: str
+    snapshot_id: int
+    output_path: str
+    data_format: str
+    row_count: int | None = None
+
+
+@result_type
+@dataclass(frozen=True)
+class IcebergManageSnapshotsResult:
+    """Result payload for iceberg snapshot ref management."""
+
+    table_key: str
+    ref_name: str
+    ref_type: str
+    action: str
+    snapshot_id: int | None = None
+
+
+@result_type
+@dataclass(frozen=True)
+class IcebergAddFilesResult:
+    """Result payload for adding files to an Iceberg table."""
+
+    table_key: str
+    created: bool
+    file_count: int
+    snapshot_id: int | None
+
+
 @dataclass(frozen=True)
 class OperationListResult:
     """Result from op list command.

@@ -361,7 +361,37 @@ def _import_descriptors(
             dist_name=desc.dist_name,
             dist_version=desc.dist_version,
         )
-    return _ResolvedModules(modules=tuple(modules), provenance=provenance)
+    return _filter_package_modules(modules=tuple(modules), provenance=provenance)
+
+
+def _filter_package_modules(
+    *,
+    modules: tuple[ModuleType, ...],
+    provenance: dict[str, ModuleProvenance],
+) -> _ResolvedModules:
+    module_names = {module.__name__ for module in modules}
+    filtered: list[ModuleType] = []
+    filtered_provenance: dict[str, ModuleProvenance] = {}
+    for module in modules:
+        module_name = module.__name__
+        file_path = getattr(module, "__file__", None)
+        is_package = isinstance(file_path, str) and file_path.endswith("__init__.py")
+        has_submodule = any(
+            other_name != module_name and other_name.startswith(f"{module_name}.")
+            for other_name in module_names
+        )
+        if is_package and has_submodule:
+            log.info(
+                "runtime.module_resolver.skip_package module=%s file=%s",
+                module_name,
+                file_path,
+            )
+            continue
+        filtered.append(module)
+        prov = provenance.get(module_name)
+        if prov is not None:
+            filtered_provenance[module_name] = prov
+    return _ResolvedModules(modules=tuple(filtered), provenance=filtered_provenance)
 
 
 def _import_modules(
