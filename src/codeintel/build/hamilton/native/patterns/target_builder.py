@@ -9,6 +9,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
+import pyarrow as pa
+
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -37,7 +39,7 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.tabular.types import TabularFrame, TabularInput, TabularRelation
 from codeintel.core.errors import CodeIntelError
 from codeintel.core.hamilton import tags as ht
 
@@ -443,7 +445,7 @@ def _attach_table_rows_node(
                 annotation=IngestStep[TabularByTable],
             )
         ],
-        return_annotation=TabularInput | None,
+        return_annotation=TabularRelation | pa.RecordBatchReader | pa.Table | TabularFrame | None,
     )
     rows_fn = set_signature(rows_fn, signature)
     node_name = (

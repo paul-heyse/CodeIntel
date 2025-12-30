@@ -52,8 +52,12 @@ class MaterializationResult:
         Artifact name for file outputs.
     path
         Resolved artifact path for file outputs.
-    dataset_manifest_path
-        Path to the Arrow dataset manifest for table outputs.
+    iceberg_snapshot_id
+        Iceberg snapshot identifier for table outputs when available.
+    validation_id
+        Validation identifier persisted for table outputs when available.
+    validation_status
+        Validation status for table outputs when available.
     size_bytes
         Size of the artifact payload when available.
     duration_ms
@@ -69,7 +73,9 @@ class MaterializationResult:
     row_count: int | None = None
     artifact_name: str | None = None
     path: str | None = None
-    dataset_manifest_path: str | None = None
+    iceberg_snapshot_id: int | None = None
+    validation_id: str | None = None
+    validation_status: str | None = None
     size_bytes: int | None = None
     duration_ms: float = 0.0
     input_hash: str = ""
@@ -89,7 +95,9 @@ class MaterializationResult:
             "row_count": self.row_count,
             "artifact_name": self.artifact_name,
             "path": self.path,
-            "dataset_manifest_path": self.dataset_manifest_path,
+            "iceberg_snapshot_id": self.iceberg_snapshot_id,
+            "validation_id": self.validation_id,
+            "validation_status": self.validation_status,
             "size_bytes": self.size_bytes,
             "duration_ms": self.duration_ms,
             "input_hash": self.input_hash,
@@ -131,12 +139,23 @@ class MaterializationResult:
             row_count=_coerce_int(materialization.get("row_count")),
             artifact_name=artifact_name,
             path=_coerce_str(materialization.get("path")),
-            dataset_manifest_path=_coerce_str(materialization.get("dataset_manifest_path")),
+            iceberg_snapshot_id=_coerce_int(materialization.get("iceberg_snapshot_id")),
+            validation_id=_coerce_str(materialization.get("validation_id")),
+            validation_status=_coerce_str(materialization.get("validation_status")),
             size_bytes=_coerce_int(materialization.get("size_bytes")),
             duration_ms=_coerce_duration(materialization.get("duration_ms")),
             input_hash=input_hash,
             error=_coerce_str(materialization.get("error")),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TableMaterializationMetadata:
+    """Optional metadata for table materialization results."""
+
+    iceberg_snapshot_id: int | None = None
+    validation_id: str | None = None
+    validation_status: str | None = None
 
 
 def failed_artifact_result(
@@ -208,7 +227,12 @@ def succeeded_artifact_result(
 
 
 def failed_table_result(
-    *, table_key: str, duration_ms: float, input_hash: str, error: str
+    *,
+    table_key: str,
+    duration_ms: float,
+    input_hash: str,
+    error: str,
+    metadata: TableMaterializationMetadata | None = None,
 ) -> MaterializationResult:
     """Build a failed table result.
 
@@ -224,6 +248,9 @@ def failed_table_result(
         duration_ms=duration_ms,
         input_hash=input_hash,
         error=error,
+        iceberg_snapshot_id=metadata.iceberg_snapshot_id if metadata else None,
+        validation_id=metadata.validation_id if metadata else None,
+        validation_status=metadata.validation_status if metadata else None,
     )
 
 
@@ -233,7 +260,7 @@ def skipped_table_result(
     duration_ms: float,
     input_hash: str,
     row_count: int | None,
-    dataset_manifest_path: str | None = None,
+    metadata: TableMaterializationMetadata | None = None,
 ) -> MaterializationResult:
     """Build a skipped table result.
 
@@ -249,7 +276,9 @@ def skipped_table_result(
         duration_ms=duration_ms,
         input_hash=input_hash,
         error=None,
-        dataset_manifest_path=dataset_manifest_path,
+        iceberg_snapshot_id=metadata.iceberg_snapshot_id if metadata else None,
+        validation_id=metadata.validation_id if metadata else None,
+        validation_status=metadata.validation_status if metadata else None,
     )
 
 
@@ -259,7 +288,7 @@ def succeeded_table_result(
     duration_ms: float,
     input_hash: str,
     row_count: int,
-    dataset_manifest_path: str | None = None,
+    metadata: TableMaterializationMetadata | None = None,
 ) -> MaterializationResult:
     """Build a succeeded table result.
 
@@ -275,13 +304,16 @@ def succeeded_table_result(
         duration_ms=duration_ms,
         input_hash=input_hash,
         error=None,
-        dataset_manifest_path=dataset_manifest_path,
+        iceberg_snapshot_id=metadata.iceberg_snapshot_id if metadata else None,
+        validation_id=metadata.validation_id if metadata else None,
+        validation_status=metadata.validation_status if metadata else None,
     )
 
 
 __all__ = [
     "MaterializationResult",
     "MaterializationStatus",
+    "TableMaterializationMetadata",
     "failed_artifact_result",
     "failed_table_result",
     "skipped_artifact_result",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping, MutableMapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal, Protocol, TypeGuard, cast
@@ -16,6 +17,7 @@ from codeintel.storage.tracking.schema_catalog_models import (
     ColumnStatsPayload,
     DatasetStatsPayload,
     DerivedSettingsPayload,
+    IcebergStatsPayload,
     ParquetStatsPayload,
 )
 
@@ -150,13 +152,21 @@ def encode_column_stats(
     return payload
 
 
+@dataclass(frozen=True, slots=True)
+class DatasetStatsInput:
+    """Inputs for encoding dataset-level statistics."""
+
+    row_count: int
+    batch_count: int
+    total_bytes: int
+    manifest_stats: ParquetStatsPayload | None
+    manifest_row_count: int | None
+    iceberg_stats: IcebergStatsPayload | None = None
+
+
 def encode_dataset_stats(
     *,
-    row_count: int,
-    batch_count: int,
-    total_bytes: int,
-    manifest_stats: ParquetStatsPayload | None,
-    manifest_row_count: int | None,
+    stats: DatasetStatsInput,
 ) -> DatasetStatsPayload:
     """Encode dataset statistics into a payload.
 
@@ -166,14 +176,16 @@ def encode_dataset_stats(
         Encoded dataset stats payload.
     """
     payload: DatasetStatsPayload = {
-        "row_count": row_count,
-        "batch_count": batch_count,
-        "total_bytes": total_bytes,
+        "row_count": stats.row_count,
+        "batch_count": stats.batch_count,
+        "total_bytes": stats.total_bytes,
     }
-    if manifest_row_count is not None:
-        payload["manifest_row_count"] = manifest_row_count
-    if manifest_stats:
-        payload["parquet_stats"] = dict(manifest_stats)
+    if stats.manifest_row_count is not None:
+        payload["manifest_row_count"] = stats.manifest_row_count
+    if stats.manifest_stats:
+        payload["parquet_stats"] = dict(stats.manifest_stats)
+    if stats.iceberg_stats:
+        payload["iceberg_stats"] = stats.iceberg_stats
     return payload
 
 
@@ -256,6 +268,22 @@ _DATASET_INT_KEYS: tuple[_DatasetStatsKey, ...] = (
 )
 
 
+_ICEBERG_STATS_INT_KEYS: tuple[str, ...] = (
+    "snapshot_id",
+    "schema_id",
+    "snapshot_count",
+    "manifest_count",
+    "data_file_count",
+    "delete_file_count",
+    "total_records",
+    "total_bytes",
+    "tombstone_rows",
+    "deleted_rows",
+)
+
+_ICEBERG_STATS_FLOAT_KEYS: tuple[str, ...] = ("tombstone_ratio",)
+
+
 def decode_dataset_stats(value: object | None) -> DatasetStatsPayload | None:
     """Decode dataset stats payloads from stored JSON values.
 
@@ -277,7 +305,35 @@ def decode_dataset_stats(value: object | None) -> DatasetStatsPayload | None:
         if parquet_payload is None:
             return None
         payload["parquet_stats"] = parquet_payload
+    iceberg_stats = decoded.get("iceberg_stats")
+    if iceberg_stats is not None:
+        iceberg_payload = _coerce_iceberg_stats_payload(iceberg_stats)
+        if iceberg_payload is None:
+            return None
+        payload["iceberg_stats"] = iceberg_payload
     return payload or None
+
+
+def _coerce_iceberg_stats_payload(value: object) -> IcebergStatsPayload | None:
+    mapping = _coerce_string_object_mapping(value)
+    if mapping is None:
+        return None
+    payload: dict[str, object] = {}
+    for key in _ICEBERG_STATS_INT_KEYS:
+        raw = mapping.get(key)
+        if raw is None:
+            continue
+        if not _is_int(raw):
+            return None
+        payload[key] = int(raw)
+    for key in _ICEBERG_STATS_FLOAT_KEYS:
+        raw = mapping.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, int | float) or isinstance(raw, bool):
+            return None
+        payload[key] = float(raw)
+    return cast("IcebergStatsPayload", payload)
 
 
 type _DerivedIntKey = Literal[
@@ -442,6 +498,7 @@ def _is_floatlike(value: object) -> TypeGuard[int | float]:
 
 __all__ = [
     "ColumnStatsLike",
+    "DatasetStatsInput",
     "decode_column_stats",
     "decode_dataset_stats",
     "decode_derived_settings",

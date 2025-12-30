@@ -26,12 +26,14 @@ from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, n
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.table_key import try_parse_table_key
 from codeintel.storage.tracking.observation_codec import (
+    DatasetStatsInput,
     encode_column_stats,
     encode_dataset_stats,
     encode_derived_settings,
 )
 from codeintel.storage.tracking.schema_catalog_models import (
     DerivedSettingsPayload,
+    IcebergStatsPayload,
     ParquetStatsPayload,
     SchemaObservationRecord,
     SchemaVersionRecord,
@@ -69,6 +71,7 @@ class SchemaObservationInputs:
     drift_history: Sequence[Mapping[str, object] | None] | None = None
     dataset_stats: ParquetStatsPayload | None = None
     manifest_row_count: int | None = None
+    iceberg_stats: IcebergStatsPayload | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,11 +210,14 @@ class SchemaObservationAccumulator:
             target_name=resolved_inputs.target_name,
             column_stats=encode_column_stats(self.column_stats),
             dataset_stats=encode_dataset_stats(
-                row_count=self.row_count,
-                batch_count=self.batch_count,
-                total_bytes=self.total_bytes,
-                manifest_stats=resolved_inputs.dataset_stats,
-                manifest_row_count=resolved_inputs.manifest_row_count,
+                stats=DatasetStatsInput(
+                    row_count=self.row_count,
+                    batch_count=self.batch_count,
+                    total_bytes=self.total_bytes,
+                    manifest_stats=resolved_inputs.dataset_stats,
+                    manifest_row_count=resolved_inputs.manifest_row_count,
+                    iceberg_stats=resolved_inputs.iceberg_stats,
+                ),
             ),
             derived_settings=derived_settings,
             drift_summary=drift_summary,

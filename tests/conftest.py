@@ -36,6 +36,7 @@ from tests._helpers.columnar_streams import (
 from tests._helpers.columnar_streams import (
     reader_for_rows as reader_for_rows_fn,
 )
+from tests._helpers.diagnostics import maybe_log_runtime_modules
 from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.fixtures.rows import columnar_rows_for as columnar_rows_for_fn
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
@@ -315,7 +316,9 @@ def hamilton_runtime(runtime_env: BuildEnv) -> RuntimeBundle:
         config["profile"] = runtime_env.profile
     config.update(runtime_env.variants.as_hamilton_config())
     config["variant_fingerprint"] = runtime_env.variants.variant_fingerprint
-    return compose_runtime(env=runtime_env, config=config).bundle
+    runtime_bundle = compose_runtime(env=runtime_env, config=config).bundle
+    maybe_log_runtime_modules(runtime_bundle, label="hamilton_runtime")
+    return runtime_bundle
 
 
 def _should_skip_session_services(request: pytest.FixtureRequest) -> bool:

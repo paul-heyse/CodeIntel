@@ -2,27 +2,28 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import duckdb
 import pyarrow as pa
-import pyarrow.dataset as ds
 from sqlglot import exp
 
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.iceberg.guardrails import iceberg_enforced_table, require_iceberg_read
 from codeintel.core.schemas.primitives import column_type_base, normalize_column_type
-from codeintel.serving.semantic.datasets import (
-    DatasetScannerOptions,
-    dataset_filter_expression,
-    dataset_for_entry,
-    dataset_scanner_for_entry,
-)
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
-from codeintel.serving.semantic.models import FilterValue
+from codeintel.serving.semantic.iceberg_scans import (
+    IcebergScanError,
+    IcebergScanRequest,
+    iceberg_scan_for_query,
+    iceberg_table_exists,
+)
+from codeintel.serving.semantic.models import FilterSpec, FilterValue
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
@@ -35,13 +36,16 @@ from codeintel.storage.duckdb_types import (
 )
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 
+LOG = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from duckdb.typing import DuckDBPyType
 
+    from codeintel.core.config.settings import IcebergSettings
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.serving.semantic.datasets import DatasetManifestEntry, DatasetManifestIndex
+    from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.semantic.models import FilterScalar
 
 
@@ -65,10 +69,28 @@ class RelationScanOptions:
 class RelationBuildContext:
     """Context required to build DuckDB relation plans."""
 
-    dataset_manifests: DatasetManifestIndex
     scan_options: RelationScanOptions
     column_types: Mapping[str, ColumnType] | None = None
     contract_schema: pa.Schema | None = None
+    iceberg: IcebergRelationContext | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IcebergRelationContext:
+    """Inputs needed to resolve Iceberg scans inside DuckDB."""
+
+    settings: IcebergSettings
+    pointer: ServingSnapshotPointer
+
+
+@dataclass(frozen=True, slots=True)
+class IcebergScanInputs:
+    """Iceberg scan inputs for query pushdown."""
+
+    columns: Sequence[str]
+    filters: Sequence[FilterSpec]
+    order_by: Sequence[str]
+    column_types: Mapping[str, ColumnType] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,10 +123,14 @@ def build_relation_plan(
     DuckDBRelation
         Lazy relation representing the query plan.
     """
-    filter_expression = dataset_filter_expression(
-        filters=spec.filters,
-        column_types=context.column_types,
-    )
+    iceberg_inputs = None
+    if not _ast_has_joins(ast):
+        iceberg_inputs = IcebergScanInputs(
+            columns=spec.columns,
+            filters=spec.filters,
+            order_by=spec.order_by,
+            column_types=context.column_types,
+        )
     if _ast_has_joins(ast):
         relation = _relation_from_ast(
             con=con,
@@ -116,7 +142,7 @@ def build_relation_plan(
             con=con,
             table_key=spec.table_key,
             context=context,
-            filter_expression=filter_expression,
+            iceberg_inputs=iceberg_inputs,
         )
     return apply_query_ast(
         relation,
@@ -169,16 +195,37 @@ def _resolve_relation(
     con: DuckDBConnection,
     table_key: str,
     context: RelationBuildContext,
-    filter_expression: ds.Expression | None,
+    iceberg_inputs: IcebergScanInputs | None,
 ) -> DuckDBRelation:
-    entry = context.dataset_manifests.get(table_key)
-    if entry is not None:
-        return _scan_dataset(
-            con=con,
-            entry=entry,
-            context=context,
-            filter_expression=filter_expression,
+    iceberg_ctx = context.iceberg
+    enforced = False
+    if iceberg_ctx is not None:
+        enforced = iceberg_enforced_table(
+            settings=iceberg_ctx.settings,
+            table_key=table_key,
         )
+    if iceberg_ctx is not None and enforced:
+        require_iceberg_read(settings=iceberg_ctx.settings, table_key=table_key)
+        if not iceberg_table_exists(settings=iceberg_ctx.settings, table_key=table_key):
+            msg = f"Iceberg table missing for enforced table: {table_key}"
+            raise DuckDBRelationQueryBuilderError(msg)
+    if (
+        iceberg_ctx is not None
+        and iceberg_ctx.settings.read_enabled
+        and iceberg_table_exists(settings=iceberg_ctx.settings, table_key=table_key)
+    ):
+        try:
+            return _scan_iceberg(
+                con=con,
+                table_key=table_key,
+                context=context,
+                iceberg_inputs=iceberg_inputs,
+            )
+        except IcebergScanError as exc:
+            if enforced:
+                msg = f"Iceberg scan failed for enforced table: {table_key}"
+                raise DuckDBRelationQueryBuilderError(msg) from exc
+            LOG.warning("Falling back to dataset scan for %s", table_key)
     try:
         return con.table(table_key)
     except DuckDBCatalogException as exc:
@@ -236,7 +283,7 @@ def _relation_for_table(
         con=con,
         table_key=table_key,
         context=context,
-        filter_expression=None,
+        iceberg_inputs=None,
     )
 
 
@@ -330,57 +377,54 @@ def _table_key_from_table(table: exp.Table) -> str:
     return name
 
 
-def _scan_dataset(
+def _scan_iceberg(
     *,
     con: DuckDBConnection,
-    entry: DatasetManifestEntry,
+    table_key: str,
     context: RelationBuildContext,
-    filter_expression: ds.Expression | None,
+    iceberg_inputs: IcebergScanInputs | None,
 ) -> DuckDBRelation:
-    scan_paths = _parquet_scan_paths(entry)
-    hive_partitioning = bool(entry.manifest.partition_columns)
-    try:
-        return con.from_parquet(
-            scan_paths,
-            hive_partitioning=hive_partitioning,
-            union_by_name=True,
-        )
-    except (duckdb.Error, TypeError, ValueError):
-        dataset = dataset_for_entry(entry)
-        options = DatasetScannerOptions(
+    iceberg_ctx = context.iceberg
+    if iceberg_ctx is None:
+        msg = "Iceberg context is required for Iceberg scans"
+        raise IcebergScanError(msg)
+    inputs = iceberg_inputs or IcebergScanInputs(
+        columns=(),
+        filters=(),
+        order_by=(),
+        column_types=None,
+    )
+    scan_result = iceberg_scan_for_query(
+        request=IcebergScanRequest(
+            table_key=table_key,
+            columns=inputs.columns,
+            filters=list(inputs.filters),
+            order_by=inputs.order_by,
+            column_types=inputs.column_types,
+            pointer=iceberg_ctx.pointer,
+            settings=iceberg_ctx.settings,
             batch_size=context.scan_options.batch_size,
-            fragment_readahead=context.scan_options.fragment_readahead,
-            filter_expression=filter_expression,
-            metrics_enabled=context.scan_options.metrics_enabled,
-            schema=context.contract_schema,
         )
-        scanner = dataset_scanner_for_entry(
-            entry,
-            options=options,
+    )
+    reader = scan_result.scan.to_arrow_batch_reader()
+    if context.contract_schema is not None:
+        aligned = align_reader_to_contract(
+            reader,
+            context.contract_schema,
+            extras_policy=extras_policy_from_schema(context.contract_schema),
         )
-        if context.contract_schema is not None:
-            reader = scanner.to_reader()
-            aligned = align_reader_to_contract(
-                reader,
-                context.contract_schema,
-                extras_policy=extras_policy_from_schema(context.contract_schema),
-            )
-            try:
-                return con.from_arrow(aligned)
-            except (duckdb.Error, TypeError, ValueError):
-                return con.from_arrow(scanner)
         try:
-            return con.from_arrow(scanner)
+            return con.from_arrow(aligned)
         except (duckdb.Error, TypeError, ValueError):
-            reader = scanner.to_reader()
-            try:
-                return con.from_arrow(reader)
-            except (duckdb.Error, TypeError, ValueError):
-                return con.from_arrow(dataset)
-
-
-def _parquet_scan_paths(entry: DatasetManifestEntry) -> list[str]:
-    return [str(entry.dataset_dir)]
+            reader = scan_result.scan.to_arrow_batch_reader()
+    try:
+        return con.from_arrow(reader)
+    except (duckdb.Error, TypeError, ValueError):
+        try:
+            return con.from_arrow(scan_result.scan.to_arrow())
+        except (duckdb.Error, TypeError, ValueError) as exc:
+            msg = f"Iceberg scan relation build failed for {table_key}"
+            raise DuckDBRelationQueryBuilderError(msg) from exc
 
 
 def _validate_pagination(*, limit: int, offset: int) -> None:
@@ -1259,6 +1303,7 @@ def _order_by_expr(order_by: list[str], *, allowed_columns: frozenset[str]) -> s
 
 __all__ = [
     "DuckDBRelationQueryBuilderError",
+    "IcebergRelationContext",
     "RelationBuildContext",
     "RelationScanOptions",
     "apply_query_ast",

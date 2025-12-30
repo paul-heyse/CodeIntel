@@ -6,12 +6,10 @@ that make side effects (DuckDB writes, file outputs) visible in the Hamilton DAG
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.materializers.arrow_dataset_saver import ArrowDatasetSaver
 from codeintel.build.hamilton.materializers.artifact_saver import FileArtifactSaver
-from codeintel.build.hamilton.materializers.duckdb_relation_saver import DuckDBRelationSaver
+from codeintel.build.hamilton.materializers.iceberg_saver import IcebergDatasetSaver
 
 __all__ = [
-    "ArrowDatasetSaver",
-    "DuckDBRelationSaver",
     "FileArtifactSaver",
+    "IcebergDatasetSaver",
 ]

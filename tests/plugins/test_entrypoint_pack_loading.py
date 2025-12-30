@@ -15,7 +15,7 @@ from codeintel.runtime.plugins.config import PluginConfig
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from codeintel.runtime.module_resolver import ModuleProvenance
     from tests._helpers.context import TestContext
@@ -43,13 +43,33 @@ class FakeEntryPoint:
         return getattr(module, attr)
 
 
-def _write_pack(root: Path, name: str, *, target_module: str) -> None:
+def _write_pack(
+    root: Path,
+    name: str,
+    *,
+    target_module: str,
+    modules: Sequence[str] | None = None,
+) -> None:
     pkg_dir = root / name
     pkg_dir.mkdir(parents=True, exist_ok=True)
-    (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+    (pkg_dir / "__init__.py").write_text(
+        "\n".join(
+            [
+                "from .targets import VALUE",
+                "",
+                '__all__ = ["VALUE"]',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
     (pkg_dir / "targets.py").write_text(
         "VALUE = 1\n",
         encoding="utf-8",
+    )
+    resolved_modules = list(modules) if modules is not None else [target_module]
+    modules_block = "\n".join(
+        f'            TargetPackModule(import_path="{module}"),' for module in resolved_modules
     )
     (pkg_dir / "plugin.py").write_text(
         "\n".join(
@@ -61,7 +81,7 @@ def _write_pack(root: Path, name: str, *, target_module: str) -> None:
                 f'        name="{name}",',
                 '        version="0.1.0",',
                 "        modules=(",
-                f'            TargetPackModule(import_path="{target_module}"),',
+                modules_block,
                 "        ),",
                 '        requires_codeintel=">=0",',
                 "    )",
@@ -128,3 +148,46 @@ def test_entrypoint_pack_loading_records_provenance(
     beta_prov = _lookup_provenance(resolved.provenance, "beta_pack.targets")
     assert beta_prov.origin == "plugin"
     assert beta_prov.plugin_name == "beta_pack"
+
+
+def test_entrypoint_pack_filters_package_module(
+    test_ctx: TestContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Package modules should be dropped when a submodule is present."""
+    pack_root = test_ctx.repo_root / "plugin_packs"
+    _write_pack(
+        pack_root,
+        "gamma_pack",
+        target_module="gamma_pack.targets",
+        modules=["gamma_pack", "gamma_pack.targets"],
+    )
+
+    monkeypatch.syspath_prepend(str(pack_root))
+    entry_points = [
+        FakeEntryPoint(name="gamma", value="gamma_pack.plugin:codeintel_target_pack"),
+    ]
+    monkeypatch.setattr(
+        plugin_loader.importlib_metadata,
+        "entry_points",
+        lambda: entry_points,
+    )
+
+    env = build_test_env(
+        BuildEnvSpec(
+            gateway=test_ctx.gateway,
+            snapshot=test_ctx.snapshot,
+            paths=test_ctx.build_paths,
+        )
+    )
+    resolved = resolve_module_set(
+        env=env,
+        plugin_config=PluginConfig(),
+        hamilton_config={},
+        include_planning=False,
+        codeintel_version="unknown",
+    )
+
+    module_paths = resolved.module_paths
+    assert "gamma_pack.targets" in module_paths
+    assert "gamma_pack" not in module_paths

@@ -8,10 +8,13 @@ contracts so that DDL generation is consistent and testable.
 from __future__ import annotations
 
 from codeintel.core.schemas.primitives import Column, Index, TableSchema
+from codeintel.storage.iceberg.catalog_schema import ICEBERG_METADATA_TABLES
 
 __all__ = [
     "CANONICAL_CATALOGS_TABLE",
     "EXPORT_AUDIT_TABLE",
+    "ICEBERG_METADATA_TABLES",
+    "MATERIALIZATION_VALIDATIONS_TABLE",
     "METADATA_TABLES",
     "SCHEMA_MANIFEST_RUNS_TABLE",
     "SCHEMA_OBSERVATIONS_TABLE",
@@ -191,6 +194,34 @@ SCHEMA_OBSERVATIONS_TABLE = TableSchema(
     ),
 )
 
+MATERIALIZATION_VALIDATIONS_TABLE = TableSchema(
+    schema="metadata",
+    name="materialization_validations",
+    columns=[
+        Column("validation_id", "VARCHAR", nullable=False),
+        Column("table_key", "VARCHAR", nullable=False),
+        Column("repo", "VARCHAR"),
+        Column("commit", "VARCHAR"),
+        Column("target_name", "VARCHAR"),
+        Column("output_role", "VARCHAR", nullable=False),
+        Column("validation_scope", "VARCHAR", nullable=False),
+        Column("validation_profile", "VARCHAR"),
+        Column("status", "VARCHAR", nullable=False),
+        Column("issues", "JSON"),
+        Column("checks", "JSON"),
+        Column("skipped_checks", "JSON"),
+        Column("dataset_manifest_path", "VARCHAR"),
+        Column("iceberg_snapshot_id", "BIGINT"),
+        Column("created_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("validation_id",),
+    indexes=(
+        Index("idx_materialization_validations_table_key", ("table_key", "created_at")),
+        Index("idx_materialization_validations_repo_commit", ("repo", "commit", "created_at")),
+        Index("idx_materialization_validations_status", ("status", "created_at")),
+    ),
+)
+
 METADATA_TABLES: tuple[TableSchema, ...] = (
     EXPORT_AUDIT_TABLE,
     CANONICAL_CATALOGS_TABLE,
@@ -201,6 +232,8 @@ METADATA_TABLES: tuple[TableSchema, ...] = (
     SCHEMA_OBSERVATIONS_TABLE,
     SCHEMA_MANIFEST_RUNS_TABLE,
     SCHEMA_VALIDATION_RUNS_TABLE,
+    MATERIALIZATION_VALIDATIONS_TABLE,
+    *ICEBERG_METADATA_TABLES,
     TableSchema(
         schema="metadata",
         name="datasets",

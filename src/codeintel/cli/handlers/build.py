@@ -1640,28 +1640,9 @@ def _publish_serving_snapshot_from_build(
             semantic_registry_path=semantic_registry_path,
             schema_manifest_path=schema_manifest_path,
             buildspec_path=buildspec_path,
-            dataset_manifest_paths=_load_dataset_manifest_paths(artifacts_dir),
             keep_last=10,
         ),
     )
-
-
-def _load_dataset_manifest_paths(artifacts_dir: Path) -> tuple[Path, ...]:
-    manifest_index = artifacts_dir / "dataset_manifest_paths.json"
-    if not manifest_index.is_file():
-        return ()
-    payload = _json.loads(manifest_index.read_text(encoding="utf-8"))
-    raw_paths = payload.get("dataset_manifest_paths") or ()
-    if isinstance(raw_paths, (list, tuple)):
-        resolved: list[Path] = []
-        for raw in raw_paths:
-            if not isinstance(raw, str) or not raw:
-                msg = "dataset_manifest_paths entries must be non-empty strings"
-                raise ValueError(msg)
-            resolved.append(Path(raw).resolve())
-        return tuple(resolved)
-    msg = "dataset_manifest_paths must be a list of strings"
-    raise ValueError(msg)
 
 
 def build_history_handler(

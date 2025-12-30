@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ import pyarrow as pa
 from codeintel.core.columnar.schema import unify_schema_for_batches
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
+    IcebergRelationContext,
     RelationBuildContext,
     RelationScanOptions,
     build_relation_plan,
@@ -19,9 +21,15 @@ from codeintel.serving.semantic.guardrails import (
     warn_eager_materialization,
     warn_schema_drift_observed,
 )
+from codeintel.serving.semantic.iceberg_scans import (
+    iceberg_table_exists,
+    resolve_iceberg_snapshot_id,
+)
 from codeintel.serving.semantic.query_ast import ServingQuery
+from codeintel.serving.semantic.tombstones import apply_tombstone_filter
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.schema import arrow_schema_for_table_key
 
 if TYPE_CHECKING:
@@ -30,6 +38,8 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
     from codeintel.storage.warehouse import Warehouse
+
+LOG = logging.getLogger(__name__)
 
 
 def cleanup_temp_tables_if_needed(*, con: DuckDBPyConnection, temp_tables: Sequence[str]) -> None:
@@ -87,6 +97,39 @@ def _log_drift_if_present(ctx: EngineContext, *, table_key: str) -> None:
     if observation is None or observation.drift_summary is None:
         return
     warn_schema_drift_observed(table_key=table_key, drift_summary=observation.drift_summary)
+
+
+def _primary_key_for_table(
+    ctx: EngineContext,
+    *,
+    table_key: str,
+    view_id: str | None,
+) -> tuple[str, ...]:
+    schema = ctx.inventory.get(table_key)
+    if schema is not None and schema.primary_key:
+        return tuple(schema.primary_key)
+    if view_id is None:
+        return ()
+    try:
+        view = ctx.registry.by_id(view_id)
+    except KeyError:
+        return ()
+    if view.primary_key:
+        return tuple(view.primary_key)
+    return ()
+
+
+def _tombstone_table_key(table_key: str) -> str:
+    schema, table = split_table_key(table_key)
+    return f"{schema}.{table}__tombstones"
+
+
+def _view_kind(ctx: EngineContext, view_id: str) -> str | None:
+    try:
+        view = ctx.registry.by_id(view_id)
+    except KeyError:
+        return None
+    return view.kind
 
 
 class QueryBuilderError(ValueError):
@@ -189,13 +232,50 @@ class DuckDBQueryEngine:
             raise QueryBuilderError(msg)
         spec = query.spec
         contract_schema = _contract_schema_for_table(ctx, table_key=spec.table_key)
+        ast = query.ast
+        view_kind = _view_kind(ctx, spec.view_id)
+        if (
+            ctx.settings.iceberg.tombstones_enabled
+            and ctx.settings.iceberg.read_enabled
+            and view_kind in {None, "table"}
+            and iceberg_table_exists(settings=ctx.settings.iceberg, table_key=spec.table_key)
+        ):
+            primary_key = _primary_key_for_table(
+                ctx,
+                table_key=spec.table_key,
+                view_id=spec.view_id,
+            )
+            if primary_key:
+                tombstone_key = _tombstone_table_key(spec.table_key)
+                if not iceberg_table_exists(
+                    settings=ctx.settings.iceberg,
+                    table_key=tombstone_key,
+                ):
+                    LOG.warning(
+                        "Skipping tombstone scoping for %s: tombstone table missing",
+                        spec.table_key,
+                    )
+                else:
+                    snapshot_id = resolve_iceberg_snapshot_id(
+                        table_key=spec.table_key,
+                        pointer=ctx.pointer,
+                        settings=ctx.settings.iceberg,
+                    )
+                    if snapshot_id is not None:
+                        ast = apply_tombstone_filter(
+                            ast,
+                            table_key=spec.table_key,
+                            primary_key=primary_key,
+                            snapshot_id=snapshot_id,
+                        )
+                    else:
+                        LOG.warning("Skipping tombstone scoping for %s", spec.table_key)
         try:
             relation = build_relation_plan(
                 con=ctx.warehouse.gateway.con,
                 spec=spec,
-                ast=query.ast,
+                ast=ast,
                 context=RelationBuildContext(
-                    dataset_manifests=ctx.dataset_manifests,
                     scan_options=RelationScanOptions(
                         batch_size=ctx.settings.export_batch_size,
                         fragment_readahead=ctx.settings.dataset_fragment_readahead,
@@ -203,6 +283,10 @@ class DuckDBQueryEngine:
                     ),
                     column_types=spec.column_types,
                     contract_schema=contract_schema,
+                    iceberg=IcebergRelationContext(
+                        settings=ctx.settings.iceberg,
+                        pointer=ctx.pointer,
+                    ),
                 ),
             )
             return DuckDBRelationPlan(relation=relation, warehouse=ctx.warehouse)

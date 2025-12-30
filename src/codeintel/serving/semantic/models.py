@@ -145,6 +145,9 @@ class QueryScanMetrics(BaseModel):
     row_count: int | None = None
     file_count: int | None = None
     total_bytes: int | None = None
+    snapshot_id: int | None = None
+    pushdown_coverage: float | None = None
+    scan_source: str | None = None
 
 
 class SemanticQueryResponse(BaseModel):

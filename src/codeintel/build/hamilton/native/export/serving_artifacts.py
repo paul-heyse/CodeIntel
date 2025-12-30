@@ -60,7 +60,6 @@ from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
-from codeintel.storage.manifests import dataset_manifest_path
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 
 LOG = logging.getLogger(__name__)
@@ -73,7 +72,6 @@ SERVING_ARTIFACT_SEMANTIC_REGISTRY = "semantic_registry"
 SERVING_ARTIFACT_SCHEMA_MANIFEST = "schema_manifest"
 SERVING_ARTIFACT_BUILDSPEC = "buildspec"
 SERVING_ARTIFACT_ENVIRONMENT = "environment"
-SERVING_ARTIFACT_DATASET_MANIFEST_PATHS = "dataset_manifest_paths"
 SCHEMA_INFERENCE_ERRORS_TABLE_KEY = "core.schema_inference_errors"
 
 SERVING_ARTIFACTS_SAVE_CONTEXT = SaverContext(
@@ -287,43 +285,6 @@ def serving_artifacts__schema_manifest(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [FileArtifactSaver],
-    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_DATASET_MANIFEST_PATHS}"),
-    env=source("env"),
-    catalog=source("catalog"),
-    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
-    artifact_name=value(SERVING_ARTIFACT_DATASET_MANIFEST_PATHS),
-    path_template=value("{build_dir}/serving/artifacts/dataset_manifest_paths.json"),
-)
-@tag_compute(
-    domain="export",
-    target=SERVING_ARTIFACTS_TARGET_NAME,
-    target_="serving_artifacts__dataset_manifest_paths",
-)
-def serving_artifacts__dataset_manifest_paths(env: BuildEnv, catalog: DagCatalog) -> str:
-    """Emit dataset manifest paths for the current snapshot.
-
-    Returns
-    -------
-    str
-        Newline-terminated JSON payload with dataset_manifest_paths.
-    """
-    dataset_root = env.paths.dataset_root_dir
-    snapshot_id = env.commit
-    paths: list[str] = []
-    for table_key in sorted(catalog.table_outputs):
-        manifest_path = dataset_manifest_path(
-            dataset_root=dataset_root,
-            table_key=table_key,
-            snapshot_id=snapshot_id,
-        )
-        if manifest_path.is_file():
-            paths.append(str(manifest_path))
-    payload = {"dataset_manifest_paths": paths}
-    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-
-
 @save_relation_table(
     context=SERVING_ARTIFACTS_SAVE_CONTEXT,
     spec=RelationTableSaveSpec(table_key=SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
@@ -421,7 +382,6 @@ def serving_artifacts__materializations_base(
     m__artifact__semantic_registry: MaterializationResult,
     m__artifact__schema_manifest: MaterializationResult,
     m__artifact__buildspec: MaterializationResult,
-    m__artifact__dataset_manifest_paths: MaterializationResult,
 ) -> dict[str, MaterializationResult]:
     """Collect saver metadata for the base serving artifacts.
 
@@ -433,8 +393,6 @@ def serving_artifacts__materializations_base(
         Saver metadata for the schema manifest artifact.
     m__artifact__buildspec
         Saver metadata for the BuildSpec artifact.
-    m__artifact__dataset_manifest_paths
-        Saver metadata for the dataset manifest paths artifact.
 
     Returns
     -------
@@ -445,7 +403,6 @@ def serving_artifacts__materializations_base(
         SERVING_ARTIFACT_SEMANTIC_REGISTRY: m__artifact__semantic_registry,
         SERVING_ARTIFACT_SCHEMA_MANIFEST: m__artifact__schema_manifest,
         SERVING_ARTIFACT_BUILDSPEC: m__artifact__buildspec,
-        SERVING_ARTIFACT_DATASET_MANIFEST_PATHS: m__artifact__dataset_manifest_paths,
     }
 
 

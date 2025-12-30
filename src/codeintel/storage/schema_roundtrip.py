@@ -21,6 +21,30 @@ if TYPE_CHECKING:
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def _unwrap_list_type(column_type: str) -> str | None:
+    normalized = column_type.strip()
+    if not normalized.upper().startswith("LIST(") or not normalized.endswith(")"):
+        return None
+    depth = 0
+    for index, char in enumerate(normalized):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0 and index != len(normalized) - 1:
+                return None
+    if depth != 0:
+        return None
+    return normalized[5:-1].strip()
+
+
+def _duckdb_column_type(column_type: str) -> str:
+    inner = _unwrap_list_type(column_type)
+    if inner is None:
+        return column_type
+    return f"{_duckdb_column_type(inner)}[]"
+
+
 def _validate_identifier(identifier: str, *, kind: str) -> str:
     if _IDENTIFIER_RE.fullmatch(identifier) is None:
         msg = f"Invalid {kind} identifier: {identifier!r}"
@@ -32,7 +56,7 @@ def _column_defs_sql(table: TableSchema) -> str:
     parts: list[str] = []
     for column in table.columns:
         _validate_identifier(column.name, kind="column")
-        column_sql = f"{column.name} {column.type}"
+        column_sql = f"{column.name} {_duckdb_column_type(column.type)}"
         if not column.nullable:
             column_sql += " NOT NULL"
         parts.append(column_sql)

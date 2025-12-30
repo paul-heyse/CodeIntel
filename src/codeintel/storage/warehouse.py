@@ -23,7 +23,7 @@ import pyarrow as pa
 import sqlglot.expressions as exp
 from duckdb import ExplainType
 from sqlglot import parse_one
-from sqlglot.errors import ParseError
+from sqlglot.errors import ParseError, TokenError
 
 from codeintel.core.columnar import (
     TabularInput,
@@ -769,10 +769,8 @@ def _write_relation_inner(
     try:
         select_expr = _relation_select_expr(relation, columns=columns)
         _apply_select(select_expr)
-    except ParseError:
-        reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        table = pa.Table.from_batches(list(reader), schema=reader.schema)
-        with registered_temp_relation(gateway.con, table, prefix="ci_rel_") as name:
+    except (ParseError, TokenError):
+        with registered_temp_relation(gateway.con, relation, prefix="ci_rel_") as name:
             select_expr = exp.Select(
                 expressions=[exp.Column(this=exp.to_identifier(column)) for column in columns],
             ).from_(exp.Table(this=exp.to_identifier(name)))

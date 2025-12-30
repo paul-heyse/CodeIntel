@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
     from codeintel.build.schemas.observations import SchemaHints
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.contracts import ExtrasPolicy
     from codeintel.storage.gateway import StorageGateway
 
@@ -558,6 +559,16 @@ class HamiltonSchemaProvider(SchemaProvider):
         seen = {schema.table_key: schema for schema in self.declared.iter_table_schemas()}
         seen.update(self._cache)
         return tuple(seen[key] for key in sorted(seen))
+
+    def derivation(self, table_key: str) -> SchemaDerivation | None:
+        """Return derivation metadata from the declared provider when available.
+
+        Returns
+        -------
+        SchemaDerivation | None
+            Derivation metadata when available; otherwise None.
+        """
+        return self.declared.derivation(table_key)
 
     def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None:
         """Prefill the inference cache with known schemas.

@@ -25,6 +25,7 @@ from codeintel.core.config.settings import (
     GrpcObservabilitySettings,
     HamiltonExecutionSettings,
     HamiltonTrackerSettings,
+    IcebergSettings,
     LogLimitSettings,
     MetricExportSettings,
     MetricViewSettings,
@@ -85,6 +86,59 @@ def _resolve_export_audit_table_enabled() -> bool:
     return os.environ.get("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 
 
+def _parse_kv_pairs(value: str | None) -> tuple[tuple[str, str], ...]:
+    if not value:
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for raw in split_csv(value):
+        if "=" not in raw:
+            continue
+        key, val = raw.split("=", maxsplit=1)
+        key = key.strip()
+        val = val.strip()
+        if not key:
+            continue
+        pairs.append((key, val))
+    return tuple(pairs)
+
+
+def _load_iceberg_settings() -> IcebergSettings:
+    read_enabled = bool(get_bool("CODEINTEL_ICEBERG_READ_ENABLED", default=False))
+    write_enabled = bool(get_bool("CODEINTEL_ICEBERG_WRITE_ENABLED", default=False))
+    tombstones_enabled = bool(get_bool("CODEINTEL_ICEBERG_TOMBSTONES_ENABLED", default=False))
+    flight_enabled = bool(get_bool("CODEINTEL_ICEBERG_FLIGHT_ENABLED", default=False))
+    read_ref = get_str("CODEINTEL_ICEBERG_READ_REF", default=None)
+    enforced_prefixes = split_csv(get_str("CODEINTEL_ICEBERG_ENFORCE_PREFIXES", default=None))
+    catalog_name = get_str("CODEINTEL_ICEBERG_CATALOG_NAME", default="default") or "default"
+    catalog_type = get_str("CODEINTEL_ICEBERG_CATALOG_TYPE", default="sql")
+    if catalog_type is not None:
+        catalog_type = catalog_type.strip() or "sql"
+    catalog_uri = get_str("CODEINTEL_ICEBERG_CATALOG_URI", default=None)
+    catalog_warehouse = get_str("CODEINTEL_ICEBERG_CATALOG_WAREHOUSE", default=None)
+    catalog_properties = _parse_kv_pairs(
+        get_str("CODEINTEL_ICEBERG_CATALOG_PROPERTIES", default=None)
+    )
+    config_path = get_path("CODEINTEL_ICEBERG_CONFIG_PATH", default=None)
+    io_impl = get_str("CODEINTEL_ICEBERG_IO_IMPL", default=None)
+    io_options = _parse_kv_pairs(get_str("CODEINTEL_ICEBERG_IO_OPTIONS", default=None))
+    return IcebergSettings(
+        read_enabled=read_enabled,
+        write_enabled=write_enabled,
+        tombstones_enabled=tombstones_enabled,
+        flight_enabled=flight_enabled,
+        read_ref=read_ref,
+        enforced_table_prefixes=tuple(enforced_prefixes),
+        catalog_name=catalog_name,
+        catalog_type=catalog_type,
+        catalog_uri=catalog_uri,
+        catalog_warehouse=catalog_warehouse,
+        catalog_properties=catalog_properties,
+        config_path=config_path,
+        io_impl=io_impl,
+        io_options=io_options,
+    )
+
+
 def _load_build_settings() -> BuildSettings:
     def optional_int(name: str) -> int | None:
         if not is_set(name):
@@ -105,6 +159,7 @@ def _load_build_settings() -> BuildSettings:
     polars_streaming = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING")
     polars_streaming_fallback = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING_FALLBACK")
     polars_flags = split_csv(get_str("CODEINTEL_BUILD_POLARS_QUERY_OPT_FLAGS", default=None))
+    iceberg = _load_iceberg_settings()
     return BuildSettings(
         engine_version=_resolve_engine_version(),
         export_audit=ExportAuditSettings(
@@ -127,6 +182,7 @@ def _load_build_settings() -> BuildSettings:
                 optional_bool("CODEINTEL_ARROW_DATASET_ENABLE_SINK_PARQUET") or True
             ),
         ),
+        iceberg=iceberg,
         polars_profile=bool(optional_bool("CODEINTEL_BUILD_POLARS_PROFILE") or False),
         polars_inspect=bool(optional_bool("CODEINTEL_BUILD_POLARS_INSPECT") or False),
         polars_query_opt_flags=tuple(polars_flags),
@@ -199,6 +255,8 @@ def _load_serving_settings() -> ServingSettings:
             return default_when_unset
         return get_float(name, default=None)
 
+    iceberg = _load_iceberg_settings()
+
     serve_dir = get_path("CODEINTEL_SERVE_DIR", default=Path(".codeintel/serve")) or Path(
         ".codeintel/serve"
     )
@@ -242,6 +300,7 @@ def _load_serving_settings() -> ServingSettings:
         dataset_fragment_readahead=get_optional_int(
             "CODEINTEL_SERVE_DATASET_FRAGMENT_READAHEAD",
         ),
+        iceberg=iceberg,
         ipc_enable_options=get_required_bool("CODEINTEL_SERVE_IPC_ENABLE_OPTIONS", default=False),
         ipc_compression=get_str("CODEINTEL_SERVE_IPC_COMPRESSION", default=None),
         ipc_use_threads=get_required_bool("CODEINTEL_SERVE_IPC_USE_THREADS", default=True),

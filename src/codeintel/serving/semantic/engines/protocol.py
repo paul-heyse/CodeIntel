@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.serving.db.pointer import ServingSnapshotPointer
-    from codeintel.serving.semantic.datasets import DatasetManifestIndex
     from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.registry import SemanticRegistry
     from codeintel.serving.semantic.view_registry import ViewRegistry
@@ -34,7 +33,6 @@ class EngineContext:
     pointer: ServingSnapshotPointer
     inventory: SchemaInventory
     registry: SemanticRegistry
-    dataset_manifests: DatasetManifestIndex
     view_registry: ViewRegistry
     settings: ServingSettings
     warehouse: Warehouse | None = None

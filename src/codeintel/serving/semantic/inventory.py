@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.manifests import read_manifest_json
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
-from codeintel.storage.manifests import read_manifest_json
 from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
 
 if TYPE_CHECKING:

@@ -7,8 +7,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from codeintel.core.hashing import file_hash
-from codeintel.core.manifests import ExportManifestData, IncrementalMarker, SkipCriteria
-from codeintel.storage.manifests import read_manifest_json, write_manifest_json
+from codeintel.core.manifests import (
+    ExportManifestData,
+    IncrementalMarker,
+    SkipCriteria,
+    read_manifest_json,
+    write_manifest_json,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
