@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Mapping
 from types import ModuleType
 
@@ -17,6 +18,7 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 
 
 def _build_driver(module: ModuleType) -> h_driver.Driver:
+    sys.modules[module.__name__] = module
     return h_driver.Builder().with_modules(module).allow_module_overrides().build()
 
 

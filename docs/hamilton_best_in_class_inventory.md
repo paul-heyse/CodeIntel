@@ -126,15 +126,13 @@ modules. Record the schema source as `derived_views`.
 | artifact_name | output_kind | target | source_module | tag_status |
 | --- | --- | --- | --- | --- |
 | `build_decision_trace` | artifact | `decision_trace` | `src/codeintel/build/hamilton/native/export/decision_trace.py` | pending |
-| `datasets_manifest_jsonl` | artifact | `export_jsonl` | `src/codeintel/build/hamilton/native/export/export_targets.py` | pending |
-| `datasets_manifest_parquet` | artifact | `export_parquet` | `src/codeintel/build/hamilton/native/export/export_targets.py` | pending |
+| `export_jsonl_summary` | artifact | `export_jsonl` | `src/codeintel/build/hamilton/native/export/export_targets.py` | pending |
+| `export_parquet_summary` | artifact | `export_parquet` | `src/codeintel/build/hamilton/native/export/export_targets.py` | pending |
 | `semantic_registry` | artifact | `serving_artifacts` | `src/codeintel/build/hamilton/native/export/serving_artifacts.py` | pending |
 | `schema_manifest` | artifact | `serving_artifacts` | `src/codeintel/build/hamilton/native/export/serving_artifacts.py` | pending |
-| `dataset_manifest_paths` | artifact | `serving_artifacts` | `src/codeintel/build/hamilton/native/export/serving_artifacts.py` | pending |
 | `buildspec` | artifact | `serving_artifacts` | `src/codeintel/build/hamilton/native/export/serving_artifacts.py` | pending |
 | `environment` | artifact | `serving_artifacts` | `src/codeintel/build/hamilton/native/export/serving_artifacts.py` | pending |
 | `ci.plan.json` | artifact | `ci_plan` | `src/codeintel/build/hamilton/native/planning/plan_targets.py` | pending |
 | `ci.plan.explain.md` | artifact | `ci_plan` | `src/codeintel/build/hamilton/native/planning/plan_targets.py` | pending |
 | `scip_index` | artifact | `scip` | `src/codeintel/build/hamilton/native/ingestion/scip.py` | pending |
 | `scip_pb2` | artifact | `scip_proto` | `src/codeintel/build/hamilton/native/ingestion/scip_proto.py` | pending |
-

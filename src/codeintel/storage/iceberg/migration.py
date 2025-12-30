@@ -13,6 +13,7 @@ from pyiceberg.table import TableProperties
 from pyiceberg.table.sorting import SortOrder
 
 from codeintel.core.iceberg.catalog import IcebergCatalogProvider
+from codeintel.core.iceberg.guardrails import require_iceberg_write
 from codeintel.core.iceberg.properties import iceberg_location_properties
 from codeintel.core.iceberg.schema import name_mapping_from_arrow_schema
 from codeintel.core.iceberg.snapshot_properties import (
@@ -67,6 +68,11 @@ def add_files_to_iceberg(
     IcebergAddFilesResult
         Summary of the add_files outcome.
     """
+    if not settings.write_enabled:
+        require_iceberg_write(settings=settings, table_key=request.table_key)
+        msg = "Iceberg writes are disabled for this operation."
+        raise ValueError(msg)
+
     files = _resolve_parquet_files(
         data_dir=request.data_dir,
         file_paths=request.file_paths,

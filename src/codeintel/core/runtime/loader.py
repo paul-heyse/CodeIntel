@@ -64,6 +64,28 @@ class RuntimeInputs:
     profiles: ScanProfiles | None = None
 
 
+@dataclass(frozen=True)
+class _IcebergCatalogConfig:
+    catalog_name: str
+    catalog_type: str | None
+    catalog_uri: str | None
+    catalog_warehouse: str | None
+    catalog_properties: tuple[tuple[str, str], ...]
+    config_path: Path | None
+
+
+@dataclass(frozen=True)
+class _IcebergIOConfig:
+    io_impl: str | None
+    io_options: tuple[tuple[str, str], ...]
+    location_provider_impl: str | None
+    write_data_path: str | None
+    write_metadata_path: str | None
+    object_store_partitioned_paths: bool | None
+    read_ref: str | None
+    enforced_prefixes: tuple[str, ...]
+
+
 def _resolve_engine_version() -> str:
     override = os.environ.get("CODEINTEL_BUILD_ENGINE_VERSION", "").strip()
     if override:
@@ -107,8 +129,7 @@ def _iceberg_default_enabled(*, deployment_environment: str | None, configured: 
     return configured
 
 
-def _load_iceberg_settings() -> IcebergSettings:
-    deployment_environment = get_str("CODEINTEL_DEPLOYMENT_ENVIRONMENT", default=None)
+def _load_iceberg_catalog_config() -> _IcebergCatalogConfig:
     catalog_name = get_str("CODEINTEL_ICEBERG_CATALOG_NAME", default="default") or "default"
     catalog_type = get_str("CODEINTEL_ICEBERG_CATALOG_TYPE", default="sql")
     if catalog_type is not None:
@@ -119,6 +140,17 @@ def _load_iceberg_settings() -> IcebergSettings:
         get_str("CODEINTEL_ICEBERG_CATALOG_PROPERTIES", default=None)
     )
     config_path = get_path("CODEINTEL_ICEBERG_CONFIG_PATH", default=None)
+    return _IcebergCatalogConfig(
+        catalog_name=catalog_name,
+        catalog_type=catalog_type,
+        catalog_uri=catalog_uri,
+        catalog_warehouse=catalog_warehouse,
+        catalog_properties=catalog_properties,
+        config_path=config_path,
+    )
+
+
+def _load_iceberg_io_config() -> _IcebergIOConfig:
     io_impl = get_str("CODEINTEL_ICEBERG_IO_IMPL", default=None)
     io_options = _parse_kv_pairs(get_str("CODEINTEL_ICEBERG_IO_OPTIONS", default=None))
     location_provider_impl = get_str(
@@ -132,38 +164,61 @@ def _load_iceberg_settings() -> IcebergSettings:
         if is_set("CODEINTEL_ICEBERG_OBJECT_STORE_PARTITIONED_PATHS")
         else None
     )
-    configured = any([catalog_uri, catalog_warehouse, config_path])
-    default_enabled = _iceberg_default_enabled(
-        deployment_environment=deployment_environment,
-        configured=configured,
-    )
-    read_enabled = bool(get_bool("CODEINTEL_ICEBERG_READ_ENABLED", default=default_enabled))
-    write_enabled = bool(get_bool("CODEINTEL_ICEBERG_WRITE_ENABLED", default=default_enabled))
-    tombstones_enabled = bool(
-        get_bool("CODEINTEL_ICEBERG_TOMBSTONES_ENABLED", default=default_enabled)
-    )
-    flight_enabled = bool(get_bool("CODEINTEL_ICEBERG_FLIGHT_ENABLED", default=False))
     read_ref = get_str("CODEINTEL_ICEBERG_READ_REF", default=None)
     enforced_prefixes = split_csv(get_str("CODEINTEL_ICEBERG_ENFORCE_PREFIXES", default=None))
-    return IcebergSettings(
-        read_enabled=read_enabled,
-        write_enabled=write_enabled,
-        tombstones_enabled=tombstones_enabled,
-        flight_enabled=flight_enabled,
-        read_ref=read_ref,
-        enforced_table_prefixes=tuple(enforced_prefixes),
-        catalog_name=catalog_name,
-        catalog_type=catalog_type,
-        catalog_uri=catalog_uri,
-        catalog_warehouse=catalog_warehouse,
-        catalog_properties=catalog_properties,
-        config_path=config_path,
+    return _IcebergIOConfig(
         io_impl=io_impl,
         io_options=io_options,
         location_provider_impl=location_provider_impl,
         write_data_path=write_data_path,
         write_metadata_path=write_metadata_path,
         object_store_partitioned_paths=object_store_partitioned_paths,
+        read_ref=read_ref,
+        enforced_prefixes=tuple(enforced_prefixes),
+    )
+
+
+def _load_iceberg_settings() -> IcebergSettings:
+    deployment_environment = get_str("CODEINTEL_DEPLOYMENT_ENVIRONMENT", default=None)
+    catalog_config = _load_iceberg_catalog_config()
+    io_config = _load_iceberg_io_config()
+    configured = any(
+        [catalog_config.catalog_uri, catalog_config.catalog_warehouse, catalog_config.config_path]
+    )
+    default_enabled = _iceberg_default_enabled(
+        deployment_environment=deployment_environment,
+        configured=configured,
+    )
+    read_fallback_default = not _is_prod_environment(deployment_environment)
+    read_enabled = bool(get_bool("CODEINTEL_ICEBERG_READ_ENABLED", default=default_enabled))
+    read_fallback_enabled = bool(
+        get_bool("CODEINTEL_ICEBERG_READ_FALLBACK_ENABLED", default=read_fallback_default)
+    )
+    write_enabled = bool(get_bool("CODEINTEL_ICEBERG_WRITE_ENABLED", default=default_enabled))
+    tombstones_enabled = bool(
+        get_bool("CODEINTEL_ICEBERG_TOMBSTONES_ENABLED", default=default_enabled)
+    )
+    flight_enabled = bool(get_bool("CODEINTEL_ICEBERG_FLIGHT_ENABLED", default=False))
+    return IcebergSettings(
+        read_enabled=read_enabled,
+        read_fallback_enabled=read_fallback_enabled,
+        write_enabled=write_enabled,
+        tombstones_enabled=tombstones_enabled,
+        flight_enabled=flight_enabled,
+        read_ref=io_config.read_ref,
+        enforced_table_prefixes=io_config.enforced_prefixes,
+        catalog_name=catalog_config.catalog_name,
+        catalog_type=catalog_config.catalog_type,
+        catalog_uri=catalog_config.catalog_uri,
+        catalog_warehouse=catalog_config.catalog_warehouse,
+        catalog_properties=catalog_config.catalog_properties,
+        config_path=catalog_config.config_path,
+        io_impl=io_config.io_impl,
+        io_options=io_config.io_options,
+        location_provider_impl=io_config.location_provider_impl,
+        write_data_path=io_config.write_data_path,
+        write_metadata_path=io_config.write_metadata_path,
+        object_store_partitioned_paths=io_config.object_store_partitioned_paths,
     )
 
 

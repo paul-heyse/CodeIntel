@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from hamilton.function_modifiers import parameterize, resolve_from_config, source, value
+from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
@@ -26,7 +27,6 @@ from codeintel.build.tabular.types import TabularInput
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from hamilton.function_modifiers.base import NodeTransformLifecycle
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
     from hamilton.node import Node
 
@@ -59,6 +59,33 @@ class _ParameterizeWithTags(parameterize):
             node_tags.update(tags)
             updated.append(expanded.copy_with(tags=node_tags))
         return updated
+
+
+class _DropNodes(NodeTransformLifecycle):
+    """Drop nodes entirely when support-node generation is disabled."""
+
+    @classmethod
+    def get_lifecycle_name(cls) -> str:
+        return "codeintel_drop_nodes"
+
+    @classmethod
+    def allows_multiple(cls) -> bool:
+        return True
+
+    def validate(self, fn: Callable[..., object]) -> None:
+        _ = (self, fn)
+
+    def __call__(self, fn: Callable[..., object]) -> Callable[..., object]:
+        return fn
+
+    def expand_node(
+        self,
+        node_: Node,
+        config: dict[str, Any],
+        fn: Callable[..., object],
+    ) -> Collection[Node]:
+        _ = (node_, config, fn)
+        return []
 
 
 def _normalize_tags(tags: Mapping[TagKey, TagValue]) -> dict[str, str]:
@@ -144,7 +171,7 @@ def _decorate_query_nodes(
     ci_support_include_loader_nodes: bool = True,
 ) -> NodeTransformLifecycle:
     if not ci_support_include_loader_nodes:
-        return _ParameterizeWithTags(tags_by_output={})
+        return _DropNodes()
     if not ci_support_datasets:
         return _ParameterizeWithTags(tags_by_output={})
 

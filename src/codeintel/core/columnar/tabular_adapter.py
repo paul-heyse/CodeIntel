@@ -79,7 +79,7 @@ class ColumnarStream(Protocol):
 
 
 type TabularRelation = DuckDBRelation
-type TabularFrame = PolarsLazyFrame
+type TabularFrame = PolarsLazyFrame | PolarsDataFrame
 type TabularInput = (
     TabularRelation
     | pa.RecordBatchReader
@@ -296,6 +296,10 @@ def to_record_batch_reader(
         reader = _iceberg_reader(cast("IcebergDataScan", value), batch_size=batch_size)
     elif isinstance(value, ColumnarStream):
         reader = value.to_reader(batch_size=batch_size)
+    elif isinstance(value, pl.DataFrame):
+        table = value.to_arrow()
+        batches = table.to_batches(max_chunksize=batch_size)
+        reader = pa.RecordBatchReader.from_batches(table.schema, batches)
     elif isinstance(value, pa.Table):
         table = cast("pa.Table", value)
         batches = table.to_batches(max_chunksize=batch_size)
@@ -338,6 +342,8 @@ def to_table(
         return value
     if _is_iceberg_scan(value):
         return _iceberg_table(cast("IcebergDataScan", value))
+    if isinstance(value, pl.DataFrame):
+        return value.to_arrow()
     if isinstance(value, DuckDBRelation):
         reader = value.fetch_arrow_reader()
         return pa.Table.from_batches(list(reader), schema=reader.schema)
@@ -353,6 +359,8 @@ def to_table(
 def _lazyframe_from_known_types(value: TabularInput) -> PolarsLazyFrame | None:
     if isinstance(value, pl.LazyFrame):
         lazyframe: PolarsLazyFrame | None = value
+    elif isinstance(value, pl.DataFrame):
+        lazyframe = value.lazy()
     elif _is_iceberg_scan(value):
         lazyframe = _iceberg_lazyframe(cast("IcebergDataScan", value))
     elif isinstance(value, ColumnarStream):

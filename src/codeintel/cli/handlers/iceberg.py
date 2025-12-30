@@ -321,9 +321,7 @@ def iceberg_refresh_cache_handler(
         table_keys = (table_key,)
     else:
         table_keys = tuple(
-            key
-            for key, dataset in ctx.gateway.datasets.by_table_key.items()
-            if not dataset.is_view
+            key for key, dataset in ctx.gateway.datasets.by_table_key.items() if not dataset.is_view
         )
     if not table_keys:
         return CliResult.ok(IcebergRefreshCacheResult(table_keys=(), refreshed=0, skipped=0))

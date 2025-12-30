@@ -16,6 +16,7 @@ from codeintel.core.schemas.contracts import (
     DEFAULT_EXTRAS_POLICY,
     EXTRAS_POLICIES,
     ExtrasPolicy,
+    arrow_schema_from_fields,
 )
 
 _JSON_SEPARATORS = (",", ":")
@@ -131,7 +132,10 @@ def _target_schema(
             promote_options=context.promote_options,
         )
         resolved_fields = [_resolved_field(field, unified) for field in contract_schema]
-        base_schema = pa.schema(resolved_fields, metadata=contract_schema.metadata)
+        base_schema = arrow_schema_from_fields(
+            fields=resolved_fields,
+            metadata=contract_schema.metadata,
+        )
     if context.extras_column in base_schema.names:
         return base_schema
     if context.extras_policy != "retain" or not context.extra_fields:

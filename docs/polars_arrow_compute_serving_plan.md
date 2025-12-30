@@ -11,6 +11,9 @@ defaults to Polars/Arrow but can route complex queries to DuckDB + SQLGlot as an
 It is designed for columnar analytics workloads with optional SQL power where needed, without
 forcing SQL into the core compute pipeline.
 
+Note: dataset-manifest references in this plan are superseded by Iceberg metadata and per-dataset
+export manifests plus export summary markers.
+
 ## Decisions (Current)
 
 1. **Dataset store & manifests**
@@ -375,16 +378,14 @@ Acceptance:
   alongside the existing Document Output path.
 - Serving settings now include a `query_engine` selector (`auto|polars|duckdb`) without changing
   the existing `result_engine` output formatting.
-- Snapshot pointers can carry zero or more dataset manifest paths, ready for dataset-backed
-  serving snapshots.
+- Snapshot pointers no longer rely on dataset manifest paths; per-dataset export manifests and
+  Iceberg metadata cover serving snapshot needs.
 
 ## Outputs
 
-- **New schema**: `src/codeintel/config/schemas/serving/dataset_manifest.json`
-- **New manifest contract**: `codeintel.core.manifests.ArrowDatasetManifest`
 - **Snapshot pointer upgrade**:
   - JSON schema updated: `src/codeintel/config/schemas/serving/current.json`
-  - Pointer + manifest updated: `codeintel.serving.db.pointer.ServingSnapshotPointer`,
+  - Pointer updated: `codeintel.serving.db.pointer.ServingSnapshotPointer`,
     `codeintel.core.manifests.ServingSnapshotManifest`
 - **Config surface updates**:
   - Build paths include `dataset_root_dir` (`codeintel.config.primitives.BuildPaths`)
@@ -399,7 +400,6 @@ Acceptance:
 - `src/codeintel/core/runtime/loader.py`
 - `src/codeintel/core/manifests.py`
 - `src/codeintel/config/schemas/serving/current.json`
-- `src/codeintel/config/schemas/serving/dataset_manifest.json`
 - `src/codeintel/serving/db/pointer.py`
 - `src/codeintel/serving/operations/protocols.py`
 - `src/codeintel/build/serving/publisher.py`

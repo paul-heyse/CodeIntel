@@ -32,6 +32,9 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection
 
+_TABLE_REF_WITH_CATALOG_PARTS = 3
+_TABLE_REF_WITH_SCHEMA_PARTS = 2
+
 __all__ = [
     "bootstrap_metadata_datasets",
     "load_derived_lineage_columns",
@@ -53,6 +56,18 @@ class _DatasetUpsert:
     schema_version: str | None
 
 
+_DATASET_UPSERT_COLUMNS: tuple[str, ...] = (
+    "table_key",
+    "name",
+    "is_view",
+    "jsonl_filename",
+    "parquet_filename",
+    "family",
+    "description",
+    "schema_version",
+)
+
+
 @dataclass(frozen=True)
 class _SchemaSyncContext:
     catalog_hash: str
@@ -60,30 +75,11 @@ class _SchemaSyncContext:
     schema_versions: dict[str, tuple[str, str, object, object, datetime]]
     registry_rows: list[tuple[str, str, str, str, str, str | None, str | None, str]]
 
+
 def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> None:
     table_ref = meta_table_ref("metadata.datasets")
     con.execute(
-        f"""
-        INSERT INTO {table_ref} (
-            table_key,
-            name,
-            is_view,
-            jsonl_filename,
-            parquet_filename,
-            family,
-            description,
-            schema_version
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(table_key) DO UPDATE SET
-            name             = excluded.name,
-            is_view          = excluded.is_view,
-            jsonl_filename   = excluded.jsonl_filename,
-            parquet_filename = excluded.parquet_filename,
-            family           = excluded.family,
-            description      = excluded.description,
-            schema_version   = excluded.schema_version;
-        """,
+        _upsert_dataset_sql(table_ref),
         [
             payload.table_key,
             payload.name,
@@ -95,6 +91,38 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
             payload.schema_version,
         ],
     )
+
+
+@lru_cache(maxsize=4)
+def _upsert_dataset_sql(table_ref: str) -> str:
+    table_expr = _table_expr(table_ref)
+    schema = exp.Schema(
+        this=table_expr,
+        expressions=[exp.to_identifier(column) for column in _DATASET_UPSERT_COLUMNS],
+    )
+    placeholders = [exp.Placeholder() for _ in _DATASET_UPSERT_COLUMNS]
+    insert_expr = exp.Insert(
+        this=schema,
+        expression=exp.Values(expressions=[exp.Tuple(expressions=placeholders)]),
+    )
+    assignments = [
+        exp.EQ(
+            this=exp.Column(this=exp.to_identifier(column)),
+            expression=exp.Column(
+                this=exp.to_identifier(column),
+                table=exp.to_identifier("excluded"),
+            ),
+        )
+        for column in _DATASET_UPSERT_COLUMNS
+        if column != "table_key"
+    ]
+    conflict = exp.OnConflict(
+        conflict_keys=[exp.to_identifier("table_key")],
+        action=exp.Var(this="DO UPDATE"),
+        expressions=assignments,
+    )
+    insert_expr.set("conflict", conflict)
+    return render_sql_duckdb(insert_expr)
 
 
 def sync_dataset_dataflow_graph(con: DuckDBPyConnection) -> None:
@@ -284,9 +312,9 @@ def _table_expr(table_ref: str, *, alias: str | None = None) -> exp.Table:
     catalog: str | None = None
     schema: str | None = None
     table: str
-    if len(parts) == 3:
+    if len(parts) == _TABLE_REF_WITH_CATALOG_PARTS:
         catalog, schema, table = parts
-    elif len(parts) == 2:
+    elif len(parts) == _TABLE_REF_WITH_SCHEMA_PARTS:
         schema, table = parts
     else:
         table = parts[0]

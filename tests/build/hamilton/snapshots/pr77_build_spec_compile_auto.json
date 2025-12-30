@@ -583,8 +583,8 @@
       "artifacts": [
         {
           "kind": null,
-          "name": "datasets_manifest_jsonl",
-          "path_template": "{export_dir}/datasets_manifest.json"
+          "name": "export_jsonl_summary",
+          "path_template": "{export_dir}/export_jsonl.summary.json"
         }
       ],
       "deps": [
@@ -600,8 +600,8 @@
       "artifacts": [
         {
           "kind": null,
-          "name": "datasets_manifest_parquet",
-          "path_template": "{export_dir}/datasets_manifest.json"
+          "name": "export_parquet_summary",
+          "path_template": "{export_dir}/export_parquet.summary.json"
         }
       ],
       "deps": [

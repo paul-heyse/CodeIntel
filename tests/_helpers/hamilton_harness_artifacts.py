@@ -123,7 +123,9 @@ class HarnessArtifacts:
                     modules=modules,
                 )
                 existing_keys = {
-                    _manifest_entry_key(entry) for entry in view_entries if isinstance(entry, Mapping)
+                    _manifest_entry_key(entry)
+                    for entry in view_entries
+                    if isinstance(entry, Mapping)
                 }
                 for table_key, schema in derived.items():
                     if table_key in existing_keys:

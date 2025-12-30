@@ -12,8 +12,8 @@ import pytest
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.storage.metadata.meta_catalog import default_meta_db_path, meta_table_ref
 from codeintel.storage.gateway.pool import PoolConfig
+from codeintel.storage.metadata.meta_catalog import default_meta_db_path, meta_table_ref
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.serving_snapshot_factory import (
     ServingSnapshotFactory,

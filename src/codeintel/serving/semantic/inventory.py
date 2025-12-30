@@ -207,7 +207,9 @@ class SchemaInventory:
             return self
 
         fallback = MappingSchemaProvider(self.schemas)
-        base_provider = fallback if provider is None else _SchemaProviderFallback(provider, fallback)
+        base_provider = (
+            fallback if provider is None else _SchemaProviderFallback(provider, fallback)
+        )
         try:
             derived = derive_view_schemas(
                 provider=base_provider,

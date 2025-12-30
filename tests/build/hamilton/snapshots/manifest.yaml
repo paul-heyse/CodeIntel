@@ -209,7 +209,7 @@ cases:
   # ========================================================================
 
   - name: "pr90_targets_list_show_tags"
-    tags: ["pr90", "phase4", "targets", "json", "tiny"]
+    tags: ["pr90", "phase4", "status", "json", "tiny"]
     args:
       [
         "targets",

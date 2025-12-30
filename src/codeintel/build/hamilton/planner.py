@@ -118,11 +118,11 @@ def _execution_input_mapping(inputs: ExecutionInputs) -> dict[str, object]:
     mapping: dict[str, object] = {
         "env": inputs.env,
         "catalog": inputs.catalog,
+        "cache_index": inputs.cache_index,
+        "cache_key_resolver": inputs.cache_key_resolver,
     }
     optional: dict[str, object | None] = {
         "tag_query": inputs.tag_query,
-        "cache_index": inputs.cache_index,
-        "cache_key_resolver": inputs.cache_key_resolver,
         "schema_index": inputs.schema_index,
         "semantic_registry": inputs.semantic_registry,
         "runtime_fingerprint": inputs.runtime_fingerprint,

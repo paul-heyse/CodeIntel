@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 from pyiceberg.types import ListType, MapType, NestedField, StructType
+from sqlglot import exp
 
 from codeintel.core.iceberg.schema import iceberg_schema_to_arrow_schema
 from codeintel.core.schemas.contracts import encode_schema_ipc
 from codeintel.core.time import utc_now
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -25,6 +28,9 @@ if TYPE_CHECKING:
 
 
 SchemaFieldRow = dict[str, bool | int | str | None]
+
+_TABLE_REF_WITH_CATALOG_PARTS = 3
+_TABLE_REF_WITH_SCHEMA_PARTS = 2
 
 
 def refresh_iceberg_metadata_cache(
@@ -153,13 +159,55 @@ def _replace_rows(
     rows: list[tuple[object, ...]],
 ) -> None:
     con = gateway.con
-    con.execute(f"DELETE FROM {table_ref} WHERE table_key = ?", [table_key])
+    con.execute(_delete_by_table_key_sql(table_ref), [table_key])
     if not rows:
         return
-    column_sql = ", ".join(columns)
-    placeholders = ", ".join(["?"] * len(rows[0]))
-    sql = f"INSERT INTO {table_ref} ({column_sql}) VALUES ({placeholders})"
+    sql = _insert_rows_sql(table_ref, tuple(columns))
     con.executemany(sql, rows)
+
+
+@lru_cache(maxsize=16)
+def _delete_by_table_key_sql(table_ref: str) -> str:
+    table_expr = _table_expr(table_ref)
+    statement = exp.Delete(
+        this=table_expr,
+        where=exp.EQ(
+            this=exp.column("table_key"),
+            expression=exp.Placeholder(),
+        ),
+    )
+    return render_sql_duckdb(statement)
+
+
+@lru_cache(maxsize=32)
+def _insert_rows_sql(table_ref: str, columns: tuple[str, ...]) -> str:
+    table_expr = _table_expr(table_ref)
+    schema = exp.Schema(
+        this=table_expr,
+        expressions=[exp.to_identifier(column) for column in columns],
+    )
+    placeholders = [exp.Placeholder() for _ in columns]
+    values = exp.Values(expressions=[exp.Tuple(expressions=placeholders)])
+    statement = exp.Insert(this=schema, expression=values)
+    return render_sql_duckdb(statement)
+
+
+def _table_expr(table_ref: str) -> exp.Table:
+    parts = table_ref.split(".")
+    catalog: str | None = None
+    schema: str | None = None
+    table: str
+    if len(parts) == _TABLE_REF_WITH_CATALOG_PARTS:
+        catalog, schema, table = parts
+    elif len(parts) == _TABLE_REF_WITH_SCHEMA_PARTS:
+        schema, table = parts
+    else:
+        table = parts[0]
+    return exp.Table(
+        this=exp.to_identifier(table),
+        db=exp.to_identifier(schema) if schema else None,
+        catalog=exp.to_identifier(catalog) if catalog else None,
+    )
 
 
 def _iceberg_table_row(

@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, TYPE_CHECKING, cast
 
 import pyarrow as pa
 import pytest
+from pyiceberg.table.puffin import MAGIC_BYTES
 from pyiceberg.table.statistics import StatisticsFile
 
 from codeintel.storage.iceberg.statistics_file import persist_iceberg_statistics
 from codeintel.storage.iceberg.stats import iceberg_stats_for_table
+
+if TYPE_CHECKING:
+    from pyiceberg.table import Table
 
 pytestmark = pytest.mark.no_runtime_env
 
@@ -22,6 +27,25 @@ EXPECTED_TOTAL_RECORDS = 5
 EXPECTED_DATA_FILE_COUNT = 2
 EXPECTED_TOTAL_BYTES = 100
 EXPECTED_MANIFEST_COUNT = 4
+
+
+def _read_puffin_properties(path: Path) -> dict[str, str]:
+    payload = path.read_bytes()
+    magic_len = len(MAGIC_BYTES)
+    flags_len = 4
+    if not payload.startswith(MAGIC_BYTES) or not payload.endswith(MAGIC_BYTES):
+        return {}
+    footer_size_start = len(payload) - (magic_len + flags_len + 4)
+    footer_size_end = len(payload) - (magic_len + flags_len)
+    footer_size = int.from_bytes(payload[footer_size_start:footer_size_end], "little")
+    footer_start = magic_len + flags_len
+    footer_end = footer_start + footer_size
+    footer_payload = payload[footer_start:footer_end]
+    footer = json.loads(footer_payload.decode("utf-8"))
+    props = footer.get("properties")
+    if isinstance(props, dict):
+        return {str(key): str(value) for key, value in props.items()}
+    return {}
 
 
 @dataclass(frozen=True)
@@ -98,7 +122,8 @@ class _FakeOutput:
 
 
 class _FakeIO:
-    def new_output(self, location: str) -> _FakeOutput:
+    @staticmethod
+    def new_output(location: str) -> _FakeOutput:
         return _FakeOutput(Path(location))
 
 
@@ -177,11 +202,11 @@ def test_persist_iceberg_statistics_writes_puffin(tmp_path: Path) -> None:
     stats_dir = tmp_path / "stats"
     stats_dir.mkdir()
     table = _FakeStatsTable(stats_dir)
-    stats = {"snapshot_id": 42, "total_records": 3}
+    stats = {"snapshot_id": 42, "schema_id": 7, "total_records": 3}
     snapshot_properties = {"schema_hash": "hash-1"}
 
     stats_file = persist_iceberg_statistics(
-        table=table,
+        table=cast("Table", table),
         table_key="core.modules",
         stats=stats,
         snapshot_properties=snapshot_properties,
@@ -192,3 +217,8 @@ def test_persist_iceberg_statistics_writes_puffin(tmp_path: Path) -> None:
     location = table.location_provider().last_location
     assert location is not None
     assert location.exists()
+    properties = _read_puffin_properties(location)
+    assert properties.get("codeintel.table_key") == "core.modules"
+    assert properties.get("codeintel.stats.snapshot_id") == "42"
+    assert properties.get("codeintel.stats.schema_id") == "7"
+    assert properties.get("codeintel.snapshot.schema_hash") == "hash-1"

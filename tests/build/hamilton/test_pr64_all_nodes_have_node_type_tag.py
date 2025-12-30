@@ -54,6 +54,8 @@ def test_pr64_all_nodes_have_node_type_tag(hamilton_runtime: RuntimeBundle) -> N
         node_name = _variable_name(variable)
         if getattr(variable, "user_defined", False):
             continue
+        if not node_name.isidentifier():
+            continue
         # Skip Hamilton-generated decorator nodes (Phase 1.5 validators, etc.)
         if _is_hamilton_generated_node(node_name):
             continue

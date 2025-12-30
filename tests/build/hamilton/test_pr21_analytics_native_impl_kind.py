@@ -41,7 +41,7 @@ def test_native_analytics_marked_in_plan(
     env = _make_env(build_harness, config)
 
     # Compute plan for each migrated target
-    native_targets = ["coverage_functions", "external_deps", "module_profile"]
+    native_targets = ["coverage_functions", "external_deps", "profiles"]
 
     for target_name in native_targets:
         request = PlanRequest(

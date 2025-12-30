@@ -22,6 +22,7 @@ class IcebergSettings:
     """Settings controlling Iceberg catalog usage and feature flags."""
 
     read_enabled: bool = False
+    read_fallback_enabled: bool = False
     write_enabled: bool = False
     tombstones_enabled: bool = False
     flight_enabled: bool = False

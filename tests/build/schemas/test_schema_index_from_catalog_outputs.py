@@ -21,8 +21,7 @@ if TYPE_CHECKING:
 
 class _FakeInferenceService:
     @staticmethod
-    def inferable_table_keys(*, catalog: object) -> frozenset[str]:
-        _ = catalog
+    def inferable_table_keys() -> frozenset[str]:
         return frozenset({"analytics.inferable"})
 
     @staticmethod

@@ -27,5 +27,5 @@ def test_buildspec_compiler_outputs_match_dag(hamilton_runtime: RuntimeBundle) -
     if export is None:
         pytest.fail("Expected BuildSpec to include export_jsonl target")
     artifact_names = {a.name for a in export.artifacts}
-    if "datasets_manifest_jsonl" not in artifact_names:
-        pytest.fail("Expected export_jsonl artifacts to include datasets_manifest_jsonl")
+    if "export_jsonl_summary" not in artifact_names:
+        pytest.fail("Expected export_jsonl artifacts to include export_jsonl_summary")

@@ -214,8 +214,7 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
 
     if backend.table_exists(schema="analytics", table="function_metrics"):
         backend.execute_sql(
-            f"INSERT INTO {search_documents_ref} "
-            f"{_function_metrics_select(function_metrics_ref)}",
+            f"INSERT INTO {search_documents_ref} {_function_metrics_select(function_metrics_ref)}",
         )
 
     if backend.table_exists(schema="core", table="scip_symbols"):

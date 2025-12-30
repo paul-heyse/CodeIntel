@@ -6,10 +6,10 @@ import importlib
 
 import pytest
 
-from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts_by_table_key, reset_contract_service_state
 from codeintel.build.target_metadata import (
-    clear_target_metadata_cache,
     is_target_metadata_loaded,
+    reset_target_metadata_state,
 )
 
 
@@ -28,7 +28,8 @@ def test_history_helper_does_not_resolve_contracts_on_import() -> None:
 
 def test_contract_enumeration_initializes_targets() -> None:
     """Ensure contract enumeration initializes the Hamilton DAG."""
-    clear_target_metadata_cache()
+    reset_contract_service_state()
+    reset_target_metadata_state()
     contracts = iter_contracts_by_table_key()
     _ = next(iter(contracts), None)
     _require(condition=is_target_metadata_loaded(), message="Target metadata not loaded")

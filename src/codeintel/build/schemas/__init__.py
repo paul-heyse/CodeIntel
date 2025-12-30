@@ -48,6 +48,7 @@ from codeintel.build.schemas.contract_service import (
     clear_contract_cache,
     configure_contract_service,
     get_contract_provider,
+    reset_contract_service_state,
 )
 from codeintel.build.schemas.diff import (
     ColumnDiff,
@@ -186,5 +187,6 @@ __all__ = [
     "iter_row_bindings",
     "iter_table_schemas",
     "require_table_schema",
+    "reset_contract_service_state",
     "unified_schema_provider",
 ]

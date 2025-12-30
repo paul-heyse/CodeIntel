@@ -31,7 +31,6 @@ from codeintel.build.exports.manifest import (
     compute_file_hash,
     read_incremental_marker,
     should_skip_export,
-    write_dataset_manifest,
     write_incremental_marker,
     write_per_dataset_manifest,
 )
@@ -73,7 +72,6 @@ __all__ = [
     "run_validated_exports",
     "should_skip_export",
     "validate_export_files",
-    "write_dataset_manifest",
     "write_incremental_marker",
     "write_per_dataset_manifest",
 ]

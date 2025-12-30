@@ -215,8 +215,9 @@ def test_arrow_ipc_roundtrip_preserves_iceberg_metadata() -> None:
         primary_key=("id",),
     )
     field_ids = iceberg_field_ids_for_table_schema(table_schema)
+    iceberg_schema_id = 101
     metadata = ArrowSchemaMetadata(
-        iceberg_schema_id=101,
+        iceberg_schema_id=iceberg_schema_id,
         iceberg_name_mapping_digest="digest-1",
         iceberg_field_ids=field_ids,
     )
@@ -228,7 +229,7 @@ def test_arrow_ipc_roundtrip_preserves_iceberg_metadata() -> None:
     decoded = decode_schema_ipc_b64(payload)
 
     schema_metadata = _decode_metadata(decoded.metadata)
-    if schema_metadata.get("codeintel.iceberg_schema_id") != 101:
+    if schema_metadata.get("codeintel.iceberg_schema_id") != iceberg_schema_id:
         pytest.fail("Iceberg schema_id metadata mismatch")
     if schema_metadata.get("codeintel.iceberg_name_mapping_digest") != "digest-1":
         pytest.fail("Iceberg name mapping digest metadata mismatch")

@@ -7,7 +7,9 @@ To get to **best-in-class** data/storage ops (functionality + extensibility + ha
 
 ## 1) Make snapshots transactional: one “SnapshotRoot” with a single SnapshotManifest (don’t put per-table manifests in the pointer)
 
-Your Phase 5 mentions extending the pointer schema so it “includes dataset_manifest_path(s)” and having `ServingDBManager` load dataset manifests alongside the semantic registry and schema manifest. That works, but it’s not “best-in-class” operationally because:
+Your Phase 5 mention of pointer schema dataset-manifest paths can be dropped now that per-dataset export
+manifests and Iceberg metadata are available. That older approach works, but it’s not “best-in-class”
+operationally because:
 
 * a pointer that directly references many manifests grows and churns as tables change
 * partial/failed publishes become harder to reason about

@@ -412,9 +412,7 @@ def _write_iceberg_tables(
     tables: Iterable[dict[str, object]],
     context: _IcebergWriteContext,
 ) -> None:
-    warehouse = Path(
-        context.settings.catalog_warehouse or (serve_dir / "iceberg" / "warehouse")
-    )
+    warehouse = Path(context.settings.catalog_warehouse or (serve_dir / "iceberg" / "warehouse"))
     warehouse.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(db_path))
     try:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sqlglot import exp
@@ -29,6 +30,15 @@ except ImportError:  # pragma: no cover
     PolarsError = Exception
 
 LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class TombstoneScanContext:
+    """Context required to resolve tombstone scans for a table."""
+
+    pointer: ServingSnapshotPointer
+    settings: IcebergSettings
+    batch_size: int | None
 
 
 def apply_tombstone_filter(
@@ -88,13 +98,17 @@ def apply_tombstone_filter_lazyframe(
     table_key: str,
     primary_key: Sequence[str],
     snapshot_id: int | None,
-    pointer: ServingSnapshotPointer,
-    settings: IcebergSettings,
-    batch_size: int | None,
+    context: TombstoneScanContext,
 ) -> PolarsLazyFrame:
-    """Apply tombstone filtering to a Polars LazyFrame."""
+    """Apply tombstone filtering to a Polars LazyFrame.
+
+    Returns
+    -------
+    PolarsLazyFrame
+        LazyFrame with tombstone anti-join applied when available.
+    """
     if (
-        not settings.tombstones_enabled
+        not context.settings.tombstones_enabled
         or not primary_key
         or snapshot_id is None
         or pl is None  # pragma: no cover
@@ -109,9 +123,9 @@ def apply_tombstone_filter_lazyframe(
                 filters=[],
                 order_by=[],
                 column_types=None,
-                pointer=pointer,
-                settings=settings,
-                batch_size=batch_size,
+                pointer=context.pointer,
+                settings=context.settings,
+                batch_size=context.batch_size,
             )
         )
     except IcebergScanError as exc:
@@ -171,4 +185,8 @@ def _combine_predicates(predicates: Sequence[exp.Expression]) -> exp.Expression:
     return combined
 
 
-__all__ = ["apply_tombstone_filter", "apply_tombstone_filter_lazyframe"]
+__all__ = [
+    "TombstoneScanContext",
+    "apply_tombstone_filter",
+    "apply_tombstone_filter_lazyframe",
+]

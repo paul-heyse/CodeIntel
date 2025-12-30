@@ -126,6 +126,7 @@ class DatasetRegistry:
         """
         return tuple(name for name, ds in self.by_name.items() if ds.is_view)
 
+
 def load_dataset_registry(
     con: DuckDBPyConnection,
 ) -> DatasetRegistry:

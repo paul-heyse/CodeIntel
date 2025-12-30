@@ -10,7 +10,11 @@ from pyiceberg.io.pyarrow import pyarrow_to_schema, schema_to_pyarrow
 from pyiceberg.table.name_mapping import MappedField, NameMapping
 
 from codeintel.core.hashing.fingerprint import stable_hash
-from codeintel.core.schemas.contracts import ArrowSchemaMetadata, arrow_schema_from_table_schema
+from codeintel.core.schemas.contracts import (
+    ArrowSchemaMetadata,
+    arrow_schema_from_fields,
+    arrow_schema_from_table_schema,
+)
 from codeintel.core.schemas.primitives import TableSchema
 
 if TYPE_CHECKING:
@@ -197,7 +201,7 @@ def _merge_schema_metadata(base_schema: pa.Schema, with_ids: pa.Schema) -> pa.Sc
     for base_field, id_field in zip(base_schema, with_ids, strict=True):
         merged_fields.append(_merge_field_metadata(base_field, id_field))
     merged_metadata = base_schema.metadata or with_ids.metadata
-    return pa.schema(merged_fields, metadata=merged_metadata)
+    return arrow_schema_from_fields(fields=merged_fields, metadata=merged_metadata)
 
 
 def _merge_field_metadata(base_field: pa.Field, id_field: pa.Field) -> pa.Field:

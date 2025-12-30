@@ -4,13 +4,14 @@ This module consolidates file-artifact export targets:
 - ``export_jsonl``: JSONL export of selected dataset registry tables
 - ``export_parquet``: Parquet export of selected dataset registry tables
 
-Both targets delegate to the canonical export engine and record the shared
-``datasets_manifest.json`` artifact for downstream consumers.
+Both targets delegate to the canonical export engine and record a lightweight
+summary marker for downstream consumers.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from hamilton.function_modifiers import source, value
@@ -33,14 +34,15 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.tabular.types import TabularInput
+from codeintel.core.manifests import write_manifest_json
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput, Path)
 
 EXPORT_JSONL_TARGET_NAME = "export_jsonl"
 EXPORT_PARQUET_TARGET_NAME = "export_parquet"
 
-EXPORT_JSONL_ARTIFACT_NAME = "datasets_manifest_jsonl"
-EXPORT_PARQUET_ARTIFACT_NAME = "datasets_manifest_parquet"
+EXPORT_JSONL_ARTIFACT_NAME = "export_jsonl_summary"
+EXPORT_PARQUET_ARTIFACT_NAME = "export_parquet_summary"
 
 DEFAULT_JSONL_DATASETS: tuple[str, ...] = ("modules", "function_metrics")
 DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("function_metrics",)
@@ -48,7 +50,7 @@ DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("function_metrics",)
 
 @dataclass(frozen=True)
 class ExportManifestRequest:
-    """Configuration for producing a dataset export manifest."""
+    """Configuration for producing a dataset export summary marker."""
 
     target_name: str
     artifact_name: str
@@ -71,18 +73,24 @@ def _export_manifest_plan(
     )
     if export_options.datasets is None:
         export_options = replace(export_options, datasets=list(request.default_datasets))
+    selected_datasets = tuple(export_options.datasets or ())
 
     def _write(output_path: Path) -> int:
-        export_all_datasets(
+        written = export_all_datasets(
             env.gateway,
             output_path.parent,
             fmt=request.fmt,
             settings=env.settings.export_audit,
             options=export_options,
         )
-        if not output_path.exists():
-            msg = f"Export manifest not written: {output_path}"
-            raise ValueError(msg)
+        summary = {
+            "format": request.fmt,
+            "datasets": list(selected_datasets),
+            "artifact_count": len(written),
+            "artifacts": sorted(path.name for path in written),
+            "exported_at": datetime.now(UTC).isoformat(),
+        }
+        write_manifest_json(output_path, summary)
         return output_path.stat().st_size
 
     return ArtifactWritePlan(write_to=_write)
@@ -128,7 +136,7 @@ def t__export_jsonl__compute(
     catalog=source("catalog"),
     target_name=value(EXPORT_JSONL_TARGET_NAME),
     artifact_name=value(EXPORT_JSONL_ARTIFACT_NAME),
-    path_template=value("{export_dir}/datasets_manifest.json"),
+    path_template=value("{export_dir}/export_jsonl.summary.json"),
 )
 @tag_compute(domain="export", target=EXPORT_JSONL_TARGET_NAME, target_="export_jsonl__content")
 def export_jsonl__content(
@@ -148,7 +156,7 @@ def export_jsonl__content(
 def t__export_jsonl(
     env: BuildEnv,
     catalog: DagCatalog,
-    m__artifact__datasets_manifest_jsonl: MaterializationResult,
+    m__artifact__export_jsonl_summary: MaterializationResult,
 ) -> TargetRunRecord:
     """Export datasets to JSONL format for Document Output.
 
@@ -165,7 +173,7 @@ def t__export_jsonl(
     return record_from_file_artifact_materialization(
         context=context,
         expected_artifact_name=EXPORT_JSONL_ARTIFACT_NAME,
-        materialization=m__artifact__datasets_manifest_jsonl,
+        materialization=m__artifact__export_jsonl_summary,
     )
 
 
@@ -202,7 +210,7 @@ def t__export_parquet__compute(
     catalog=source("catalog"),
     target_name=value(EXPORT_PARQUET_TARGET_NAME),
     artifact_name=value(EXPORT_PARQUET_ARTIFACT_NAME),
-    path_template=value("{export_dir}/datasets_manifest.json"),
+    path_template=value("{export_dir}/export_parquet.summary.json"),
 )
 @tag_tool(domain="export", target=EXPORT_PARQUET_TARGET_NAME, target_="export_parquet__bytes")
 def export_parquet__bytes(
@@ -222,7 +230,7 @@ def export_parquet__bytes(
 def t__export_parquet(
     env: BuildEnv,
     catalog: DagCatalog,
-    m__artifact__datasets_manifest_parquet: MaterializationResult,
+    m__artifact__export_parquet_summary: MaterializationResult,
 ) -> TargetRunRecord:
     """Export datasets to Parquet format for Document Output.
 
@@ -239,7 +247,7 @@ def t__export_parquet(
     return record_from_file_artifact_materialization(
         context=context,
         expected_artifact_name=EXPORT_PARQUET_ARTIFACT_NAME,
-        materialization=m__artifact__datasets_manifest_parquet,
+        materialization=m__artifact__export_parquet_summary,
     )
 
 

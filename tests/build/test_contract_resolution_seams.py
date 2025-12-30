@@ -10,11 +10,12 @@ from codeintel.build.schemas import (
     clear_contract_cache,
     get_contract_for_table_key,
     iter_contracts,
+    reset_contract_service_state,
 )
 from codeintel.build.target_metadata import (
     TargetMetadataProvider,
-    clear_target_metadata_cache,
     is_target_metadata_loaded,
+    reset_target_metadata_state,
 )
 from codeintel.build.targets import TargetDescriptor
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_false, expect_true
@@ -48,7 +49,8 @@ class _StubTargetMetadataProvider(TargetMetadataProvider):
 
 def test_iter_contracts_initializes_target_metadata() -> None:
     """Verify full contract enumeration initializes target metadata."""
-    clear_target_metadata_cache()
+    reset_contract_service_state()
+    reset_target_metadata_state()
     clear_contract_cache()
     expect_false(is_target_metadata_loaded())
 
@@ -59,7 +61,8 @@ def test_iter_contracts_initializes_target_metadata() -> None:
 
 def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
     """Verify injected TargetMetadataProvider overrides are applied."""
-    clear_target_metadata_cache()
+    reset_contract_service_state()
+    reset_target_metadata_state()
     clear_contract_cache()
 
     table_key = "analytics.function_metrics"

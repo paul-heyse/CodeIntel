@@ -1110,12 +1110,13 @@ class HamiltonBuildResult:
         TargetRunRecord | None
             Execution record for the target, if present.
         """
-        catalog = self.runtime.catalog if self.runtime is not None else None
-        node_name = target_to_node_name(target_name, catalog=catalog)
-        if node_name is not None:
-            value = self.outputs.get(node_name)
-            if isinstance(value, TargetRunRecord):
-                return value
+        if self.runtime is not None:
+            catalog = self.runtime.catalog
+            node_name = target_to_node_name(target_name, catalog=catalog)
+            if node_name is not None:
+                value = self.outputs.get(node_name)
+                if isinstance(value, TargetRunRecord):
+                    return value
         for value in self.outputs.values():
             if isinstance(value, TargetRunRecord) and value.target == target_name:
                 return value

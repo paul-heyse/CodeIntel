@@ -14,6 +14,7 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic import tombstones as tombstones_module
 from codeintel.serving.semantic.iceberg_scans import IcebergScanError
 from codeintel.serving.semantic.tombstones import (
+    TombstoneScanContext,
     apply_tombstone_filter,
     apply_tombstone_filter_lazyframe,
 )
@@ -21,7 +22,7 @@ from codeintel.serving.semantic.tombstones import (
 
 def test_apply_tombstone_filter_is_idempotent() -> None:
     """Avoid duplicating tombstone predicates on repeated calls."""
-    ast = cast('exp.Select', parse_one('SELECT * FROM "core"."modules"', read="duckdb"))
+    ast = cast("exp.Select", parse_one('SELECT * FROM "core"."modules"', read="duckdb"))
     filtered = apply_tombstone_filter(
         ast,
         table_key="core.modules",
@@ -63,9 +64,11 @@ def test_apply_tombstone_filter_lazyframe_noop_when_disabled(tmp_path: Path) -> 
         table_key="core.modules",
         primary_key=("module",),
         snapshot_id=42,
-        pointer=pointer,
-        settings=settings,
-        batch_size=1000,
+        context=TombstoneScanContext(
+            pointer=pointer,
+            settings=settings,
+            batch_size=1000,
+        ),
     )
     assert result is lazyframe
 
@@ -94,7 +97,7 @@ def test_apply_tombstone_filter_lazyframe_warns_on_missing_table(
     )
 
     def _raise_scan(*_: object, **__: object) -> None:
-        raise IcebergScanError("missing tombstone table")
+        raise IcebergScanError
 
     monkeypatch.setattr(tombstones_module, "iceberg_scan_for_query", _raise_scan)
     caplog.set_level("WARNING")
@@ -104,9 +107,11 @@ def test_apply_tombstone_filter_lazyframe_warns_on_missing_table(
         table_key="core.modules",
         primary_key=("module",),
         snapshot_id=42,
-        pointer=pointer,
-        settings=settings,
-        batch_size=1000,
+        context=TombstoneScanContext(
+            pointer=pointer,
+            settings=settings,
+            batch_size=1000,
+        ),
     )
 
     assert result is lazyframe

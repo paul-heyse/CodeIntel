@@ -30,7 +30,10 @@ from codeintel.serving.semantic.polars_query_builder import (
 )
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.serving.semantic.routing import ast_supports_polars
-from codeintel.serving.semantic.tombstones import apply_tombstone_filter_lazyframe
+from codeintel.serving.semantic.tombstones import (
+    TombstoneScanContext,
+    apply_tombstone_filter_lazyframe,
+)
 from codeintel.serving.semantic.view_registry import ViewInputs
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.schema import arrow_schema_for_table_key
@@ -661,9 +664,11 @@ class PolarsQueryEngine:
             table_key=inputs.table_key,
             primary_key=inputs.primary_key,
             snapshot_id=scan_result.snapshot_id,
-            pointer=ctx.pointer,
-            settings=ctx.settings.iceberg,
-            batch_size=ctx.settings.export_batch_size,
+            context=TombstoneScanContext(
+                pointer=ctx.pointer,
+                settings=ctx.settings.iceberg,
+                batch_size=ctx.settings.export_batch_size,
+            ),
         )
         return _PolarsSource(
             lazyframe=lazyframe,

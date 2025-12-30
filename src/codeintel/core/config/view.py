@@ -199,6 +199,7 @@ def _normalize_iceberg_settings(settings: IcebergSettings) -> IcebergSettings:
 
     return IcebergSettings(
         read_enabled=bool(settings.read_enabled),
+        read_fallback_enabled=bool(settings.read_fallback_enabled),
         write_enabled=bool(settings.write_enabled),
         tombstones_enabled=bool(settings.tombstones_enabled),
         flight_enabled=bool(settings.flight_enabled),
@@ -229,9 +230,8 @@ def _normalize_pairs(value: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str
         key_str = key.strip()
         if not key_str:
             continue
-        if not isinstance(raw_value, str):
-            raw_value = str(raw_value)
-        val = raw_value.strip()
+        raw_str = raw_value if isinstance(raw_value, str) else str(raw_value)
+        val = raw_str.strip()
         normalized[key_str] = val
     return tuple(sorted(normalized.items()))
 

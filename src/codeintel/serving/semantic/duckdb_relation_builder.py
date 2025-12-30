@@ -225,6 +225,9 @@ def _resolve_relation(
             if enforced:
                 msg = f"Iceberg scan failed for enforced table: {table_key}"
                 raise DuckDBRelationQueryBuilderError(msg) from exc
+            if not iceberg_ctx.settings.read_fallback_enabled:
+                msg = f"Iceberg scan failed with fallback disabled for {table_key}"
+                raise DuckDBRelationQueryBuilderError(msg) from exc
             LOG.warning("Falling back to dataset scan for %s", table_key)
     try:
         return con.table(table_key)
