@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.repository import PagedResult
+from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
@@ -105,11 +106,7 @@ class BaseRepository:
         try:
             relation = self.gateway.relation_from_table_key(table_key)
         except DuckDBCatalogException:
-            if table_key.startswith("docs."):
-                self.gateway.policy.ensure_all_views(overwrite=True, strict=False)
-                relation = self.gateway.relation_from_table_key(table_key)
-            else:
-                raise
+            raise
         columns = set(relation.columns)
         if "repo" in columns and "commit" in columns:
             predicate = (ColumnExpression("repo") == ConstantExpression(self.repo)) & (
@@ -202,12 +199,16 @@ class BaseRepository:
         reader = relation.fetch_record_batch(batch_size)
         if table_key is None or BaseRepository._has_nested_arrow_types(reader.schema):
             return reader
-        table_schema = None
-        try:
-            table_schema = self.gateway.schemas.load_table_schema(table_key)
-        except (RuntimeError, TypeError, ValueError):
-            table_schema = None
-        return validate_record_batch_reader(table_key, reader, table_schema=table_schema)
+        resolution = resolve_table_schema(
+            table_key,
+            observation_provider=self.gateway.schemas,
+        )
+        return validate_record_batch_reader(
+            table_key,
+            reader,
+            table_schema=resolution.table_schema,
+            schema_observation=resolution.observation,
+        )
 
     @staticmethod
     def _has_nested_arrow_types(schema: pa.Schema) -> bool:

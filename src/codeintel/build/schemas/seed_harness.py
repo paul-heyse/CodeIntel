@@ -1,26 +1,35 @@
-"""Mini seed harness for deterministic schema compilation.
+"""Seed harness for deterministic schema compilation.
 
-The harness creates empty LazyFrames from declared schemas to seed q__ inputs
-for schema inference without relying on DuckDB.
+The harness builds q__ inputs from observed Arrow schemas when available,
+falling back to declared schemas as needed. Optional dataset scanning can
+sample real data when configured.
 """
 
 from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-import polars as pl
 import pyarrow as pa
 
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
+from codeintel.core.columnar.dataset_scanner import (
+    empty_reader_from_schema,
+    sample_reader,
+    scan_dataset_reader,
+)
+from codeintel.core.columnar.ipc import schema_from_ipc_payload
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.datasets.paths import dataset_snapshot_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+    from pathlib import Path
     from types import ModuleType
 
     from codeintel.core.schemas.provider import SchemaProvider
+    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 
 def qparam_to_table_key(qparam: str) -> str:
@@ -92,30 +101,64 @@ def extract_qparams_for_target_module(target: str, module: ModuleType) -> set[st
     return qparams
 
 
+class SchemaObservationProvider(Protocol):
+    """Protocol for resolving schema observation records."""
+
+    def load_latest_schema_observation(
+        self,
+        *,
+        table_key: str,
+    ) -> SchemaObservationRecord | None:
+        """Return the latest schema observation for a table key."""
+        ...
+
+
+SeedScanMode = Literal["none", "sample"]
+
+
+@dataclass(frozen=True, slots=True)
+class SeedScanSettings:
+    """Options for scanning datasets when seeding q__ inputs."""
+
+    mode: SeedScanMode = "none"
+    sample_rows: int = DEFAULT_ARROW_BATCH_SIZE
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+    fragment_readahead: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SeedDatasetConfig:
+    """Configuration for dataset-backed seed scans."""
+
+    dataset_root_dir: Path | None = None
+    snapshot_id: str | None = None
+    scan_settings: SeedScanSettings = field(default_factory=SeedScanSettings)
+
+
 @dataclass
-class MiniSeedHarness:
-    """Seed upstream empty tables and build q__ LazyFrame inputs for compute execution."""
+class DatasetSeedHarness:
+    """Seed upstream inputs using observed Arrow schemas and optional scans."""
 
     schema_provider: SchemaProvider
-    _seeded: dict[str, pl.LazyFrame] = field(default_factory=dict)
+    observation_provider: SchemaObservationProvider | None = None
+    dataset_root_dir: Path | None = None
+    snapshot_id: str | None = None
+    scan_settings: SeedScanSettings = field(default_factory=SeedScanSettings)
+    _schema_cache: dict[str, pa.Schema] = field(default_factory=dict, repr=False)
 
-    def seed_table(self, table_key: str) -> pl.LazyFrame:
-        """Create and cache an empty LazyFrame for the declared schema.
+    def seed_table(self, table_key: str) -> pa.RecordBatchReader:
+        """Create a reader seed for the requested table key.
 
         Returns
         -------
-        pl.LazyFrame
-            Empty LazyFrame for the requested schema.
+        pa.RecordBatchReader
+            Empty or sampled reader matching the observed/declared schema.
         """
-        cached = self._seeded.get(table_key)
-        if cached is not None:
-            return cached
-        table_schema = self.schema_provider.require_table_schema(table_key)
-        arrow_schema = arrow_schema_from_table_schema(table_schema=table_schema)
-        reader = pa.RecordBatchReader.from_batches(arrow_schema, [])
-        frame = arrow_reader_to_lazyframe(reader)
-        self._seeded[table_key] = frame
-        return frame
+        schema = self._schema_for_table(table_key)
+        reader = self._scan_reader(table_key, schema)
+        if reader is not None:
+            return reader
+        return empty_reader_from_schema(schema)
 
     def seeded_table_keys(self) -> tuple[str, ...]:
         """Return seeded table keys in deterministic order.
@@ -123,44 +166,89 @@ class MiniSeedHarness:
         Returns
         -------
         tuple[str, ...]
-            Seeded table keys sorted lexicographically.
+            Sorted table keys seeded by this harness.
         """
-        return tuple(sorted(self._seeded))
+        return tuple(sorted(self._schema_cache))
 
-    def seed_input(self, qparam: str) -> pl.LazyFrame:
-        """Return an empty LazyFrame for a q__ parameter.
-
-        Parameters
-        ----------
-        qparam
-            q__ parameter name in the form ``q__schema__table``.
+    def seed_input(self, qparam: str) -> pa.RecordBatchReader:
+        """Return a reader seed for a q__ parameter.
 
         Returns
         -------
-        pl.LazyFrame
-            Empty LazyFrame for the referenced upstream schema.
+        pa.RecordBatchReader
+            Reader seeded for the referenced q__ input.
         """
         table_key = qparam_to_table_key(qparam)
         return self.seed_table(table_key)
 
-    def build_inputs(self, qparams: set[str]) -> Mapping[str, pl.LazyFrame]:
+    def build_inputs(self, qparams: set[str]) -> Mapping[str, pa.RecordBatchReader]:
         """Build a deterministic mapping of q__ inputs for compute execution.
-
-        Parameters
-        ----------
-        qparams
-            Set of q__ parameter names.
 
         Returns
         -------
-        Mapping[str, pl.LazyFrame]
-            Mapping from q__ parameter name to empty LazyFrames.
+        Mapping[str, pa.RecordBatchReader]
+            Mapping from q__ parameter name to seeded readers.
         """
         return {q: self.seed_input(q) for q in sorted(qparams)}
 
+    def _schema_for_table(self, table_key: str) -> pa.Schema:
+        cached = self._schema_cache.get(table_key)
+        if cached is not None:
+            return cached
+        observed = self._observed_schema(table_key)
+        if observed is not None:
+            self._schema_cache[table_key] = observed
+            return observed
+        table_schema = self.schema_provider.require_table_schema(table_key)
+        arrow_schema = arrow_schema_from_table_schema(table_schema=table_schema)
+        self._schema_cache[table_key] = arrow_schema
+        return arrow_schema
+
+    def _observed_schema(self, table_key: str) -> pa.Schema | None:
+        if self.observation_provider is None:
+            return None
+        try:
+            observation = self.observation_provider.load_latest_schema_observation(
+                table_key=table_key
+            )
+        except (RuntimeError, TypeError, ValueError):
+            return None
+        if observation is None:
+            return None
+        return schema_from_ipc_payload(observation.arrow_schema_ipc_b64)
+
+    def _scan_reader(self, table_key: str, schema: pa.Schema) -> pa.RecordBatchReader | None:
+        if self.scan_settings.mode == "none":
+            return None
+        if self.dataset_root_dir is None or self.snapshot_id is None:
+            return None
+        snapshot_dir = dataset_snapshot_dir(
+            self.dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=self.snapshot_id,
+        )
+        if not snapshot_dir.is_dir():
+            return None
+        reader = scan_dataset_reader(
+            snapshot_dir,
+            columns=schema.names,
+            batch_size=self.scan_settings.batch_size,
+            fragment_readahead=self.scan_settings.fragment_readahead,
+        )
+        if reader is None:
+            return None
+        return sample_reader(reader, max_rows=self.scan_settings.sample_rows)
+
+
+MiniSeedHarness = DatasetSeedHarness
+
 
 __all__ = [
+    "DatasetSeedHarness",
     "MiniSeedHarness",
+    "SeedDatasetConfig",
+    "SeedScanMode",
+    "SeedScanSettings",
     "extract_qparams_for_target_module",
     "extract_qparams_from_callable",
     "qparam_to_table_key",

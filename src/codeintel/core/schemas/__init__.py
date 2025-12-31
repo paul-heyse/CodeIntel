@@ -24,13 +24,18 @@ from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.hashing import canonical_type, schema_hash
 from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.primitives import Column, ColumnType, Index, TableSchema
-from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
+from codeintel.core.schemas.provider import (
+    FallbackSchemaProvider,
+    MappingSchemaProvider,
+    SchemaProvider,
+)
 from codeintel.core.schemas.row_models import (
     GeneratedRowBinding,
     row_binding_for_table_schema,
 )
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.schemas.service import (
+    ArrowSchemaProvider,
     DatasetSchemaLike,
     DatasetSchemaProvider,
     SchemaRecord,
@@ -41,11 +46,13 @@ from codeintel.core.schemas.service import (
 )
 
 __all__ = [
+    "ArrowSchemaProvider",
     "Column",
     "ColumnType",
     "DatasetContract",
     "DatasetSchemaLike",
     "DatasetSchemaProvider",
+    "FallbackSchemaProvider",
     "GeneratedRowBinding",
     "Index",
     "MappingSchemaProvider",

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
 from typing import cast
 
 import polars as pl
 import pyarrow as pa
 
+from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.arrow_gen import ARROW_SCHEMA_CONTRACT_VERSION, EXTRAS_POLICIES
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 from codeintel.storage.helpers.table_key import split_table_key, validate_table_key
@@ -34,7 +34,7 @@ def table_schema_from_arrow_schema(
     TableSchema
         TableSchema derived from the Arrow schema.
     """
-    metadata = _decode_metadata(arrow_schema.metadata)
+    metadata = decode_metadata(arrow_schema.metadata)
     _validate_contract_metadata(metadata)
     resolved_key = _resolve_table_key(table_key=table_key, metadata=metadata)
     schema_name, table_name = split_table_key(resolved_key)
@@ -135,7 +135,7 @@ def _resolve_table_key(*, table_key: str | None, metadata: Mapping[str, object])
 
 
 def _column_from_field(field: pa.Field) -> Column:
-    metadata = _decode_metadata(field.metadata)
+    metadata = decode_metadata(field.metadata)
     column_type = _column_type_from_metadata(metadata)
     if column_type is None:
         column_type = _column_type_from_arrow_type(field.type)
@@ -163,7 +163,7 @@ def _primary_key_from_metadata(metadata: Mapping[str, object]) -> tuple[str, ...
 def _primary_key_from_fields(schema: pa.Schema) -> tuple[str, ...]:
     primary: list[str] = []
     for field in schema:
-        metadata = _decode_metadata(field.metadata)
+        metadata = decode_metadata(field.metadata)
         role = metadata.get("codeintel.key_role")
         if role == "primary_key":
             primary.append(field.name)
@@ -380,24 +380,6 @@ _ARROW_TYPE_RESOLVERS: tuple[
     _union_column_type,
     _null_column_type,
 )
-
-
-def _decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
-    if not metadata:
-        return {}
-    decoded: dict[str, object] = {}
-    for key, raw in metadata.items():
-        key_str = key.decode("utf-8")
-        raw_str = raw.decode("utf-8")
-        decoded[key_str] = _decode_metadata_value(raw_str)
-    return decoded
-
-
-def _decode_metadata_value(raw: str) -> object:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
 
 
 def _validate_contract_metadata(metadata: Mapping[str, object]) -> None:

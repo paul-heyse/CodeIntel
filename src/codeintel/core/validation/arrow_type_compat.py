@@ -18,7 +18,7 @@ def decimal_scale_zero(column_type: str) -> bool:
     Returns
     -------
     bool
-        True when the decimal scale is zero.
+        True when the decimal scale is zero; otherwise False.
     """
     compact = column_type.upper().replace(" ", "")
     match = _DECIMAL_PATTERN.match(compact)
@@ -33,7 +33,7 @@ def is_list_like(dtype: pa.DataType) -> bool:
     Returns
     -------
     bool
-        True when the type is list-like.
+        True when the type is a list-like Arrow type; otherwise False.
     """
     checks = [
         pa.types.is_list,
@@ -55,7 +55,7 @@ def is_compatible_arrow_type(column: Column, actual_type: pa.DataType) -> bool:
     Returns
     -------
     bool
-        True when the Arrow type is compatible.
+        True when the Arrow type is compatible with the column definition.
     """
     normalized = _unwrap_dictionary_type(actual_type)
     if pa.types.is_null(normalized):

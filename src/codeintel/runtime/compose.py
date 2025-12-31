@@ -29,7 +29,10 @@ from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.nodes.support_spec import support_spec_from_catalog
 from codeintel.build.schemas.contract_service import configure_contract_service
-from codeintel.build.schemas.inference_service import get_schema_inference_service
+from codeintel.build.schemas.inference_service import (
+    SeedDatasetConfig,
+    get_schema_inference_service,
+)
 from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
 from codeintel.build.schemas.service import configure_schema_service
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_tag_query
@@ -774,7 +777,11 @@ def _build_schema_index(
     catalog: DagCatalog,
     env: BuildEnv,
 ) -> SchemaIndex:
-    inference_service = get_schema_inference_service(driver=driver, catalog=catalog)
+    inference_service = get_schema_inference_service(
+        driver=driver,
+        catalog=catalog,
+        seed_dataset=_seed_dataset_config(env),
+    )
     declared_provider = source_declared_schema_provider(
         exclude_table_keys=catalog.table_outputs,
     )
@@ -787,6 +794,14 @@ def _build_schema_index(
     )
     _prefill_schema_index(env=env, schema_index=schema_index)
     return schema_index
+
+
+def _seed_dataset_config(env: BuildEnv) -> SeedDatasetConfig:
+    snapshot_id = env.snapshot.commit.strip()
+    return SeedDatasetConfig(
+        dataset_root_dir=env.paths.dataset_root_dir,
+        snapshot_id=snapshot_id or None,
+    )
 
 
 def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:

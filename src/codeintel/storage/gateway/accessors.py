@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.core.schemas.provider import FallbackSchemaProvider, MappingSchemaProvider
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.duckdb.context import DuckDBContext
@@ -24,10 +24,9 @@ from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.gateway.config import StorageConfig
@@ -45,37 +44,6 @@ __all__ = [
 ]
 
 
-@dataclass(frozen=True, slots=True)
-class _FallbackSchemaProvider:
-    """Schema provider that falls back to a secondary source."""
-
-    primary: SchemaProvider
-    fallback: SchemaProvider
-
-    def get_table_schema(self, table_key: str) -> TableSchema | None:
-        schema = self.primary.get_table_schema(table_key)
-        if schema is not None:
-            return schema
-        return self.fallback.get_table_schema(table_key)
-
-    def require_table_schema(self, table_key: str) -> TableSchema:
-        schema = self.get_table_schema(table_key)
-        if schema is None:
-            msg = f"Unknown table schema: {table_key}"
-            raise KeyError(msg)
-        return schema
-
-    def iter_table_schemas(self) -> Iterable[TableSchema]:
-        seen: set[str] = set()
-        for schema in self.primary.iter_table_schemas():
-            seen.add(schema.table_key)
-            yield schema
-        for schema in self.fallback.iter_table_schemas():
-            if schema.table_key in seen:
-                continue
-            yield schema
-
-
 def _schema_provider_for_gateway(*, datasets: DatasetRegistry) -> SchemaProvider:
     schemas = {
         table_key: contract.schema
@@ -87,7 +55,7 @@ def _schema_provider_for_gateway(*, datasets: DatasetRegistry) -> SchemaProvider
         service = get_schema_service()
     except RuntimeError:
         return fallback
-    return _FallbackSchemaProvider(primary=service.table_provider, fallback=fallback)
+    return FallbackSchemaProvider(primary=service.table_provider, fallback=fallback)
 
 
 @dataclass(frozen=True)

@@ -58,7 +58,7 @@ BUILD_RUN_TARGETS = OptionSpec(
 BUILD_RUN_MODULE = OptionSpec(
     arg_name="module",
     names=("--module", "-m"),
-    help="Build all targets in a module (ingestion, graphs, analytics, export).",
+    help="Build all targets in a module (ingestion, graphs, analytics, export, views).",
     show_choices=True,
 )
 BUILD_RUN_SHOW_TAGS = OptionSpec(
@@ -170,7 +170,7 @@ BUILD_RUN_NO_WORKSPACE_TARGETS = OptionSpec(
 BUILD_STATUS_MODULE = OptionSpec(
     arg_name="module",
     names=("--module", "-m"),
-    help="Filter status to a specific module (ingestion, graphs, analytics, export).",
+    help="Filter status to a specific module (ingestion, graphs, analytics, export, views).",
     show_choices=True,
 )
 
@@ -199,7 +199,7 @@ BUILD_PLAN_TARGETS = OptionSpec(
 BUILD_PLAN_MODULE = OptionSpec(
     arg_name="module",
     names=("--module", "-m"),
-    help="Plan all targets in a module (ingestion, graphs, analytics, export).",
+    help="Plan all targets in a module (ingestion, graphs, analytics, export, views).",
     show_choices=True,
 )
 BUILD_PLAN_ALL = OptionSpec(
@@ -246,7 +246,7 @@ BUILD_GRAPH_TARGETS = OptionSpec(
 BUILD_GRAPH_MODULE = OptionSpec(
     arg_name="module",
     names=("--module", "-m"),
-    help="Show DAG for all targets in a module (ingestion, graphs, analytics, export).",
+    help="Show DAG for all targets in a module (ingestion, graphs, analytics, export, views).",
     show_choices=True,
 )
 BUILD_GRAPH_ALL = OptionSpec(

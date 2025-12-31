@@ -1,7 +1,7 @@
 """Pipeline run tracking persistence for DuckDB.
 
 This module provides persistent tracking of pipeline runs and their steps,
-enabling observability and debugging of ingestion, graphs, analytics, and export
+enabling observability and debugging of ingestion, graphs, analytics, export, and views
 executions.
 
 All DuckDB access is encapsulated here, following the storage layer pattern.
@@ -63,7 +63,7 @@ def _coerce_row_counts(raw: dict[str, object]) -> dict[str, int]:
     return {key: coerce_int(value, ctx=f"row_counts[{key}]") for key, value in raw.items()}
 
 
-ModuleKind = Literal["ingestion", "graphs", "analytics", "export", "build"]
+ModuleKind = Literal["ingestion", "graphs", "analytics", "export", "views", "build"]
 """Classification of pipeline module."""
 
 
@@ -122,7 +122,7 @@ class PipelineStepRecord:
     run_id
         Parent run identifier.
     module
-        Module that executed this step (ingestion, graphs, analytics, export).
+        Module that executed this step (ingestion, graphs, analytics, export, views).
     stage
         Stage within the module (e.g., scan, parse, index).
     name

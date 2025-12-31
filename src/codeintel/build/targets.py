@@ -9,7 +9,7 @@ from codeintel.build.hamilton.dag_catalog import TargetDescriptor
 if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog
 
-TargetModule = Literal["ingestion", "graphs", "analytics", "export"]
+TargetModule = Literal["ingestion", "graphs", "analytics", "export", "views"]
 """Classification of which target module produces an output."""
 
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -11,6 +9,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard
 
 import pyarrow as pa
 
+from codeintel.core.columnar.ipc import schema_from_ipc_payload
 from codeintel.core.execution.ids import new_uuid_str
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
@@ -41,8 +40,10 @@ from codeintel.storage.tracking.schema_catalog_models import (
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
     from collections.abc import Set as AbstractSet
+
+    from duckdb import DuckDBPyConnection
 
     from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
@@ -62,6 +63,9 @@ _INFERRED_REGISTRY_FILTER = (
     "registry.inference_status IN ('inferred', 'override') "
     "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
     ")"
+)
+_OBSERVED_DERIVATION_FILTER = (
+    "AND registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
 )
 
 
@@ -154,6 +158,179 @@ class _OverrideRecordContext:
     version_id: str
     catalog_hash: str | None
     now: datetime
+
+
+def _load_latest_observed_schema_from_connection(
+    con: DuckDBPyConnection,
+    *,
+    table_key: str,
+) -> TableSchema | None:
+    observations_ref = meta_table_ref("metadata.schema_observations")
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
+    versions_ref = meta_table_ref("metadata.schema_versions")
+    row = con.execute(
+        f"""
+        SELECT v.schema_json
+        FROM {observations_ref} AS o
+        JOIN {versions_ref} AS v
+          ON o.schema_digest = v.schema_digest
+        JOIN {registry_ref} AS registry
+          ON registry.table_key = o.table_key
+        WHERE o.table_key = ?
+        {_OBSERVED_DERIVATION_FILTER}
+        ORDER BY o.observed_at DESC
+        LIMIT 1
+        """,
+        [table_key],
+    ).fetchone()
+    if row is None:
+        return None
+    schema_json = decode_json_dict(row[0])
+    if not schema_json:
+        return None
+    return table_schema_from_json_obj(schema_json)
+
+
+def _load_latest_observed_schema_rows(
+    con: DuckDBPyConnection,
+) -> list[tuple[object, object]]:
+    observations_ref = meta_table_ref("metadata.schema_observations")
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
+    versions_ref = meta_table_ref("metadata.schema_versions")
+    rows = con.execute(
+        f"""
+        SELECT table_key, schema_json
+        FROM (
+          SELECT
+            o.table_key AS table_key,
+            v.schema_json AS schema_json,
+            ROW_NUMBER() OVER (
+              PARTITION BY o.table_key ORDER BY o.observed_at DESC
+            ) AS rn
+          FROM {observations_ref} AS o
+          JOIN {versions_ref} AS v
+            ON o.schema_digest = v.schema_digest
+          JOIN {registry_ref} AS registry
+            ON registry.table_key = o.table_key
+          WHERE 1 = 1
+          {_OBSERVED_DERIVATION_FILTER}
+        )
+        WHERE rn = 1
+        """
+    ).fetchall()
+    return list(rows)
+
+
+def load_table_schema_from_connection(
+    con: DuckDBPyConnection,
+    *,
+    table_key: str,
+) -> TableSchema | None:
+    """Load a TableSchema from schema catalog tables."""
+    observed = _load_latest_observed_schema_from_connection(con, table_key=table_key)
+    if observed is not None:
+        return observed
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
+    versions_ref = meta_table_ref("metadata.schema_versions")
+    row = con.execute(
+        f"""
+        SELECT v.schema_json
+        FROM {registry_ref} AS registry
+        JOIN {versions_ref} AS v
+          ON registry.schema_digest = v.schema_digest
+        WHERE registry.table_key = ?
+        {_INFERRED_REGISTRY_FILTER}
+        """,
+        [table_key],
+    ).fetchone()
+    if row is None:
+        row = con.execute(
+            f"""
+            SELECT v.schema_json
+            FROM {registry_ref} AS registry
+            JOIN {versions_ref} AS v
+              ON registry.schema_digest = v.schema_digest
+            WHERE registry.table_key = ?
+            """,
+            [table_key],
+        ).fetchone()
+    if row is None:
+        return None
+    schema_json = decode_json_dict(row[0])
+    if not schema_json:
+        return None
+    return table_schema_from_json_obj(schema_json)
+
+
+def iter_table_schemas_from_connection(
+    con: DuckDBPyConnection,
+) -> Iterable[TableSchema]:
+    """Iterate all registered TableSchema values from metadata tables."""
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
+    versions_ref = meta_table_ref("metadata.schema_versions")
+    observed_rows = _load_latest_observed_schema_rows(con)
+    inferred_rows = con.execute(
+        f"""
+        SELECT registry.table_key, v.schema_json
+        FROM {registry_ref} AS registry
+        JOIN {versions_ref} AS v
+          ON registry.schema_digest = v.schema_digest
+        WHERE 1 = 1
+        {_INFERRED_REGISTRY_FILTER}
+        """
+    ).fetchall()
+    schemas_by_key: dict[str, TableSchema] = {}
+    for table_key, schema_json_raw in observed_rows:
+        schema_json = decode_json_dict(schema_json_raw)
+        if not schema_json:
+            continue
+        schemas_by_key[str(table_key)] = table_schema_from_json_obj(schema_json)
+    for table_key, schema_json_raw in inferred_rows:
+        schema_json = decode_json_dict(schema_json_raw)
+        if not schema_json:
+            continue
+        schemas_by_key[str(table_key)] = table_schema_from_json_obj(schema_json)
+    fallback_rows = con.execute(
+        f"""
+        SELECT registry.table_key, v.schema_json
+        FROM {registry_ref} AS registry
+        JOIN {versions_ref} AS v
+          ON registry.schema_digest = v.schema_digest
+        ORDER BY registry.table_key
+        """
+    ).fetchall()
+    for table_key, schema_json_raw in fallback_rows:
+        if str(table_key) in schemas_by_key:
+            continue
+        schema_json = decode_json_dict(schema_json_raw)
+        if not schema_json:
+            continue
+        schemas_by_key[str(table_key)] = table_schema_from_json_obj(schema_json)
+    for table_key in sorted(schemas_by_key):
+        yield schemas_by_key[table_key]
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaCatalogProvider:
+    """SchemaProvider backed by metadata schema catalog tables."""
+
+    con: DuckDBPyConnection
+
+    def get_table_schema(self, table_key: str) -> TableSchema | None:
+        """Return the latest registered TableSchema for the table key."""
+        return load_table_schema_from_connection(self.con, table_key=table_key)
+
+    def require_table_schema(self, table_key: str) -> TableSchema:
+        """Return schema for table_key, raising when unknown."""
+        schema = self.get_table_schema(table_key)
+        if schema is None:
+            msg = f"Unknown table schema: {table_key}"
+            raise KeyError(msg)
+        return schema
+
+    def iter_table_schemas(self) -> Iterable[TableSchema]:
+        """Iterate all registered table schemas."""
+        return iter_table_schemas_from_connection(self.con)
 
 
 class SchemaCatalogTracking:
@@ -476,36 +653,7 @@ class SchemaCatalogTracking:
         TableSchema | None
             Loaded TableSchema when present; otherwise None.
         """
-        registry_ref = meta_table_ref("metadata.table_schema_registry")
-        versions_ref = meta_table_ref("metadata.schema_versions")
-        row = self._con.execute(
-            f"""
-            SELECT v.schema_json
-            FROM {registry_ref} AS registry
-            JOIN {versions_ref} AS v
-              ON registry.schema_digest = v.schema_digest
-            WHERE registry.table_key = ?
-            {_INFERRED_REGISTRY_FILTER}
-            """,
-            [table_key],
-        ).fetchone()
-        if row is None:
-            row = self._con.execute(
-                f"""
-                SELECT v.schema_json
-                FROM {registry_ref} AS registry
-                JOIN {versions_ref} AS v
-                  ON registry.schema_digest = v.schema_digest
-                WHERE registry.table_key = ?
-                """,
-                [table_key],
-            ).fetchone()
-        if row is None:
-            return None
-        schema_json = decode_json_dict(row[0])
-        if not schema_json:
-            return None
-        return table_schema_from_json_obj(schema_json)
+        return load_table_schema_from_connection(self._con, table_key=table_key)
 
     def load_latest_schema_observation(
         self,
@@ -1414,24 +1562,12 @@ def _schema_from_renderer_cache(renderer_cache_raw: object) -> pa.Schema | None:
     payload = renderer_cache.get("arrow_schema_ipc_b64")
     if not isinstance(payload, str):
         return None
-    return _schema_from_ipc_payload(payload)
+    return schema_from_ipc_payload(payload)
 
 
 def _renderer_cache_has_arrow_schema(renderer_cache: Mapping[str, object]) -> bool:
     payload = renderer_cache.get("arrow_schema_ipc_b64")
     return isinstance(payload, str) and bool(payload)
-
-
-def _schema_from_ipc_payload(payload: str) -> pa.Schema | None:
-    try:
-        raw = base64.b64decode(payload)
-    except (ValueError, binascii.Error):
-        return None
-    try:
-        buffer = pa.py_buffer(raw)
-        return pa.ipc.read_schema(pa.BufferReader(buffer))
-    except (OSError, pa.ArrowInvalid, ValueError):
-        return None
 
 
 def _schema_metadata_value(schema: pa.Schema, key: str) -> str | None:
@@ -1551,9 +1687,9 @@ def _decode_optional_derived_settings(value: object | None) -> DerivedSettingsPa
                 valid = False
                 break
     if valid:
-        valid = _apply_optional_bool(payload, decoded, "unify_dictionaries") and _apply_optional_float(
-            payload, decoded, "avg_row_bytes"
-        )
+        valid = _apply_optional_bool(
+            payload, decoded, "unify_dictionaries"
+        ) and _apply_optional_float(payload, decoded, "avg_row_bytes")
     if not valid:
         return None
     return payload or None
@@ -1683,6 +1819,7 @@ def _contract_drift_payload(report: _ContractDriftReport) -> dict[str, object]:
 __all__ = [
     "OverrideRegistryRefreshResult",
     "PersistSchemaManifestResult",
+    "SchemaCatalogProvider",
     "SchemaCatalogRequest",
     "SchemaCatalogTracking",
     "SchemaManifestRunRecord",

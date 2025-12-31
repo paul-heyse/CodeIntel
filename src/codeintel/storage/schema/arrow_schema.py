@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
-import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.ipc import schema_from_ipc_payload
+from codeintel.core.columnar.schema_metadata import merge_field_metadata
 from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
@@ -52,7 +52,7 @@ def _load_contract_schema(
     ipc_payload = renderer_cache.get("arrow_schema_ipc_b64")
     if not isinstance(ipc_payload, str):
         return None
-    return _schema_from_ipc_payload(ipc_payload)
+    return schema_from_ipc_payload(ipc_payload)
 
 
 def _load_observed_schema(
@@ -61,12 +61,16 @@ def _load_observed_schema(
     table_key: str,
 ) -> pa.Schema | None:
     observations_ref = meta_table_ref("metadata.schema_observations")
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
     row = con.execute(
         f"""
         SELECT arrow_schema_ipc_b64
-        FROM {observations_ref}
-        WHERE table_key = ?
-        ORDER BY observed_at DESC
+        FROM {observations_ref} AS o
+        JOIN {registry_ref} AS r
+          ON r.table_key = o.table_key
+        WHERE o.table_key = ?
+          AND r.derivation_kind IN ('inferred_relation', 'view_inferred')
+        ORDER BY o.observed_at DESC
         LIMIT 1
         """,
         [table_key],
@@ -75,19 +79,7 @@ def _load_observed_schema(
         return None
     if not isinstance(row[0], str):
         return None
-    return _schema_from_ipc_payload(row[0])
-
-
-def _schema_from_ipc_payload(payload: str) -> pa.Schema | None:
-    try:
-        raw = base64.b64decode(payload)
-    except (ValueError, binascii.Error):
-        return None
-    try:
-        buffer = pa.py_buffer(raw)
-        return pa.ipc.read_schema(pa.BufferReader(buffer))
-    except (OSError, pa.ArrowInvalid, ValueError):
-        return None
+    return schema_from_ipc_payload(row[0])
 
 
 def _apply_runtime_metadata(
@@ -111,52 +103,9 @@ def _apply_runtime_metadata(
             if lineage:
                 updates["codeintel.lineage_edges"] = _lineage_payload(lineage)
         if updates:
-            updated_field = _merge_field_metadata(field, updates)
+            updated_field = merge_field_metadata(field, updates)
         fields.append(updated_field)
     return pa.schema(fields, metadata=schema.metadata)
-
-
-def _merge_field_metadata(field: pa.Field, updates: Mapping[str, object]) -> pa.Field:
-    existing = _decode_metadata(field.metadata)
-    merged = dict(existing)
-    for key, value in updates.items():
-        if value is None or key in merged:
-            continue
-        merged[key] = value
-    return field.with_metadata(_encode_metadata(merged))
-
-
-def _decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
-    if not metadata:
-        return {}
-    decoded: dict[str, object] = {}
-    for key, raw in metadata.items():
-        key_str = key.decode("utf-8")
-        raw_str = raw.decode("utf-8")
-        decoded[key_str] = _decode_metadata_value(raw_str)
-    return decoded
-
-
-def _decode_metadata_value(raw: str) -> object:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-
-
-def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes] | None:
-    if not metadata:
-        return None
-    encoded: dict[bytes, bytes] = {}
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        if isinstance(value, str):
-            raw = value
-        else:
-            raw = json.dumps(value, sort_keys=True, separators=(",", ":"))
-        encoded[key.encode("utf-8")] = raw.encode("utf-8")
-    return encoded or None
 
 
 def _lineage_payload(lineage: list[tuple[str, str]]) -> list[dict[str, str]]:
@@ -200,18 +149,16 @@ def arrow_schema_for_table_key(
             commit=commit,
             downstream_table=table_key,
         )
+    observed_schema = _load_observed_schema(
+        con,
+        table_key=table_key,
+    )
     contract_schema = _load_contract_schema(
         con,
         table_key=table_key,
         require_inferred=True,
     )
-    observed_schema = None
-    if contract_schema is None:
-        observed_schema = _load_observed_schema(
-            con,
-            table_key=table_key,
-        )
-    resolved_schema = contract_schema or observed_schema
+    resolved_schema = observed_schema or contract_schema
     if resolved_schema is None:
         return None
     return _apply_runtime_metadata(
@@ -219,6 +166,30 @@ def arrow_schema_for_table_key(
         column_lineage=column_lineage,
         pii_by_column=pii_by_column,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class RegistryArrowSchemaProvider:
+    """Arrow schema provider backed by registry metadata."""
+
+    con: DuckDBPyConnection
+    repo: str | None = None
+    commit: str | None = None
+
+    def get_arrow_schema(self, table_key: str) -> pa.Schema | None:
+        """Return Arrow schema for the table key.
+
+        Returns
+        -------
+        pa.Schema | None
+            Arrow schema for the table when available.
+        """
+        return arrow_schema_for_table_key(
+            self.con,
+            table_key=table_key,
+            repo=self.repo,
+            commit=self.commit,
+        )
 
 
 def arrow_schema_hash(schema: pa.Schema) -> str | None:
@@ -264,6 +235,7 @@ def _schema_metadata_value(schema: pa.Schema, key: str) -> str | None:
 
 
 __all__ = [
+    "RegistryArrowSchemaProvider",
     "arrow_schema_digest",
     "arrow_schema_for_table_key",
     "arrow_schema_hash",

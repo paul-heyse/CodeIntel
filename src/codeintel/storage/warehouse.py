@@ -410,8 +410,6 @@ class Warehouse:
             Optional database path included in the metadata artifact.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
-        if self._is_writable_gateway() and any(view.startswith("docs.") for view in views):
-            self.ensure_all_views(overwrite=True, strict=False)
         meta = {
             "db_path": str(db_path) if db_path is not None else None,
             "analyze": analyze,
@@ -431,9 +429,7 @@ class Warehouse:
             return False
         schema, _ = split_table_key(table_key)
         contract = self.gateway.datasets.by_table_key.get(table_key)
-        if schema == "docs" or (contract is not None and contract.is_view):
-            self.ensure_all_views(overwrite=True, strict=False)
-            return True
+        _ = (schema, contract)
         return False
 
     def _is_writable_gateway(self) -> bool:

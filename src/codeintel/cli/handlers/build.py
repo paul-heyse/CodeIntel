@@ -157,7 +157,7 @@ class TargetScope(Enum):
     ALL = "all"
 
 
-_VALID_MODULES: tuple[str, ...] = ("ingestion", "graphs", "analytics", "export")
+_VALID_MODULES: tuple[str, ...] = ("ingestion", "graphs", "analytics", "export", "views")
 _CACHE_LOG_KEY_TUPLE_LEN: int = 2
 _PILOT_TARGET_TOKEN = "@pilot"
 
@@ -813,7 +813,7 @@ def build_status_handler(
     ctx
         Command context with params:
         - project_root: Optional project root override.
-        - module: Optional module filter (ingestion, graphs, analytics, export).
+        - module: Optional module filter (ingestion, graphs, analytics, export, views).
 
     Returns
     -------
@@ -1065,7 +1065,7 @@ def build_run_handler(
         Command context with params:
         - project_root: Optional project root override.
         - targets: Target names to build.
-        - module: Module name (ingestion, graphs, analytics, export).
+        - module: Module name (ingestion, graphs, analytics, export, views).
         - all_targets: Build all targets.
         - dry_run: Show plan without executing.
         - force: Force recompute of specific targets.
@@ -1804,7 +1804,7 @@ def build_plan_handler(
     ctx
         Command context with params:
         - targets: Target names to plan.
-        - module: Module name (ingestion, graphs, analytics, export).
+        - module: Module name (ingestion, graphs, analytics, export, views).
         - all_targets: Plan all targets.
         - force: Mark specific targets as forced.
         - output_file: Optional output file path.

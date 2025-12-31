@@ -6,6 +6,7 @@ Native target implementations live under:
 - ``codeintel.build.hamilton.native.graphs``
 - ``codeintel.build.hamilton.native.analytics``
 - ``codeintel.build.hamilton.native.export``
+- ``codeintel.build.hamilton.native.views``
 
 This module provides deterministic module discovery without maintaining a
 hand-edited list of module paths.
@@ -29,6 +30,7 @@ _NATIVE_DOMAINS: tuple[str, ...] = (
     "analytics",
     "export",
     "planning",
+    "views",
 )
 
 

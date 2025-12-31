@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 import duckdb
 from sqlglot.errors import ParseError
 
+from codeintel.storage.constants import SCHEMAS
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.sync import (
     sync_derived_lineage_columns,
@@ -43,6 +44,26 @@ if TYPE_CHECKING:
 __all__ = ["ViewMaterializationOptions", "materialize_registered_views"]
 
 log = logging.getLogger(__name__)
+
+_DENY_EXTERNAL_VIEW_FUNCS: frozenset[str] = frozenset(
+    {
+        "read_avro",
+        "read_csv",
+        "read_csv_auto",
+        "read_delta",
+        "read_excel",
+        "read_json",
+        "read_json_auto",
+        "read_ndjson",
+        "read_orc",
+        "read_parquet",
+        "read_sqlite",
+        "iceberg_scan",
+        "delta_scan",
+        "parquet_scan",
+        "sqlite_scan",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,12 +131,16 @@ def _compile_view_definitions(
     builders = discover_view_builders(dr=dr, tag_query=tag_query, modules=modules)
 
     sql_by_view: dict[str, str] = {}
+    policy = SqlIngressPolicy(
+        allowed_schemas=frozenset(SCHEMAS),
+        deny_functions=_DENY_EXTERNAL_VIEW_FUNCS,
+    )
     for spec in builders:
         view_name = spec.table_key
         try:
             expr = spec.builder()
             sql = expr.sql(dialect="duckdb")
-            assert_select_perimeter(sql, policy=SqlIngressPolicy())
+            assert_select_perimeter(sql, policy=policy)
             sql_by_view[view_name] = sql
         except ParseError as exc:
             log.exception("Failed to parse SQL for view: %s", view_name)

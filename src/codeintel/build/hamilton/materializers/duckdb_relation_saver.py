@@ -24,18 +24,16 @@ from codeintel.build.hamilton.materializers.base import (
 )
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.schemas import get_schema_provider
-from codeintel.build.schemas.observations import (
-    SchemaObservationAccumulator,
-    SchemaObservationInputs,
-    observe_batches,
-    persist_observation_bundle,
-    schema_hints_from_tag_sets,
-    table_schema_from_tag_sets,
+from codeintel.build.schemas.observation_pipeline import (
+    build_observation_inputs,
+    build_observation_setup,
+    persist_observation,
 )
+from codeintel.build.schemas.observations import observe_batches
 from codeintel.build.tabular.duckdb_relation import register_ephemeral
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
-from codeintel.storage.duckdb_types import DuckDBError, DuckDBRelation
+from codeintel.storage.duckdb_types import DuckDBRelation
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:
@@ -323,34 +321,28 @@ def _persist_schema_observation(
     catalog: DagCatalog,
 ) -> None:
     tag_sets = _schema_tag_sets_for_table(catalog=catalog, table_key=table_key)
-    declared_schema = _declared_schema_hint(table_key)
-    if declared_schema is None:
-        declared_schema = table_schema_from_tag_sets(
-            table_key=table_key,
-            tag_sets=tag_sets,
-        )
-    schema_hints = schema_hints_from_tag_sets(tag_sets)
-    accumulator = SchemaObservationAccumulator(
+    setup = build_observation_setup(
         table_key=table_key,
-        declared_schema=declared_schema,
-        schema_hints=schema_hints,
+        tag_sets=tag_sets,
+        declared_schema=_declared_schema_hint(table_key),
     )
+    accumulator = setup.accumulator
     try:
-        drift_history: tuple[Mapping[str, object] | None, ...] | None = None
-        try:
-            drift_history = env.gateway.schemas.load_recent_drift_summaries(table_key=table_key)
-        except (DuckDBError, RuntimeError, TypeError, ValueError):
-            drift_history = None
         reader = relation.fetch_arrow_reader()
         observe_batches(reader, accumulator=accumulator)
-        inputs = SchemaObservationInputs(
+        inputs = build_observation_inputs(
+            gateway=env.gateway,
+            table_key=table_key,
             repo=env.repo,
             commit=env.commit,
             target_name=target_name,
-            drift_history=drift_history,
         )
-        bundle = accumulator.finalize(arrow_schema=reader.schema, inputs=inputs)
-        persist_observation_bundle(gateway=env.gateway, bundle=bundle)
+        persist_observation(
+            gateway=env.gateway,
+            observation=accumulator,
+            arrow_schema=reader.schema,
+            inputs=inputs,
+        )
     except (TypeError, ValueError, pa.ArrowInvalid) as exc:
         LOG.warning("Schema observation failed for %s: %s", table_key, exc)
 

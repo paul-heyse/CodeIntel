@@ -88,7 +88,42 @@ class MappingSchemaProvider:
         return self.schemas.values()
 
 
+@dataclass(frozen=True)
+class FallbackSchemaProvider:
+    """Schema provider that falls back to a secondary source."""
+
+    primary: SchemaProvider
+    fallback: SchemaProvider
+
+    def get_table_schema(self, table_key: str) -> TableSchema | None:
+        """Return schema for table_key, or None when unknown."""
+        schema = self.primary.get_table_schema(table_key)
+        if schema is not None:
+            return schema
+        return self.fallback.get_table_schema(table_key)
+
+    def require_table_schema(self, table_key: str) -> TableSchema:
+        """Return schema for table_key, raising when unknown."""
+        schema = self.get_table_schema(table_key)
+        if schema is None:
+            msg = f"Unknown table schema: {table_key}"
+            raise KeyError(msg)
+        return schema
+
+    def iter_table_schemas(self) -> Iterable[TableSchema]:
+        """Iterate all known table schemas with fallback semantics."""
+        seen: set[str] = set()
+        for schema in self.primary.iter_table_schemas():
+            seen.add(schema.table_key)
+            yield schema
+        for schema in self.fallback.iter_table_schemas():
+            if schema.table_key in seen:
+                continue
+            yield schema
+
+
 __all__ = [
+    "FallbackSchemaProvider",
     "MappingSchemaProvider",
     "SchemaProvider",
 ]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -11,6 +11,7 @@ from typing import cast
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
@@ -35,7 +36,7 @@ def align_reader_to_contract(
     reader: pa.RecordBatchReader,
     contract_schema: pa.Schema,
     *,
-    extras_policy: ExtrasPolicy,
+    extras_policy: ExtrasPolicy | None = None,
     promote_options: pc.CastOptions | None = None,
 ) -> pa.RecordBatchReader:
     """Align a RecordBatchReader to a contract schema.
@@ -47,7 +48,8 @@ def align_reader_to_contract(
     contract_schema
         Canonical Arrow schema contract to align to.
     extras_policy
-        Policy for handling extra columns (retain, reject, drop).
+        Policy for handling extra columns (retain, reject, drop). When None,
+        resolve from Arrow schema metadata.
     promote_options
         Optional casting options to allow explicit type promotion.
 
@@ -62,15 +64,16 @@ def align_reader_to_contract(
         If extras_policy is invalid or unexpected columns are present under
         a reject policy.
     """
-    _validate_extras_policy(extras_policy)
+    resolved_policy = extras_policy or extras_policy_from_schema(contract_schema)
+    _validate_extras_policy(resolved_policy)
     extras_column = _extras_column_name(contract_schema)
     contract_names = {field.name for field in contract_schema}
     extra_fields = _extra_field_names(reader.schema, contract_names, extras_column)
-    if extras_policy == "reject" and extra_fields:
+    if resolved_policy == "reject" and extra_fields:
         msg = f"Unexpected columns for contract: {sorted(extra_fields)}"
         raise ValueError(msg)
     context = _AlignmentContext(
-        extras_policy=extras_policy,
+        extras_policy=resolved_policy,
         extras_column=extras_column,
         extra_fields=extra_fields,
         promote_options=promote_options,
@@ -111,7 +114,7 @@ def extras_policy_from_schema(
     ExtrasPolicy
         Resolved extras policy.
     """
-    metadata = _decode_metadata(schema.metadata)
+    metadata = decode_metadata(schema.metadata)
     raw = metadata.get("codeintel.extras_policy")
     if isinstance(raw, str) and raw in EXTRAS_POLICIES:
         return cast("ExtrasPolicy", raw)
@@ -215,7 +218,7 @@ def _coerce_array(
 
 
 def _is_json_field(field: pa.Field) -> bool:
-    metadata = _decode_metadata(field.metadata)
+    metadata = decode_metadata(field.metadata)
     return metadata.get("codeintel.column_type") == "JSON"
 
 
@@ -292,29 +295,11 @@ def _extra_field_names(
 
 
 def _extras_column_name(contract_schema: pa.Schema) -> str:
-    metadata = _decode_metadata(contract_schema.metadata)
+    metadata = decode_metadata(contract_schema.metadata)
     raw = metadata.get("codeintel.extras_column")
     if isinstance(raw, str) and raw:
         return raw
     return DEFAULT_EXTRAS_COLUMN
-
-
-def _decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
-    if not metadata:
-        return {}
-    decoded: dict[str, object] = {}
-    for key, raw in metadata.items():
-        key_str = key.decode("utf-8")
-        raw_str = raw.decode("utf-8")
-        decoded[key_str] = _decode_metadata_value(raw_str)
-    return decoded
-
-
-def _decode_metadata_value(raw: str) -> object:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
 
 
 def _validate_extras_policy(extras_policy: ExtrasPolicy) -> None:

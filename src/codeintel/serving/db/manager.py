@@ -421,15 +421,15 @@ def _load_snapshot_context(
     if registry is None:
         msg = "Semantic registry was not loaded for the serving snapshot"
         raise ValueError(msg)
-    inventory = _load_inventory_from_registry(pointer)
-    inventory_source = "registry"
-    if inventory is None:
+    snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
+    dataset_manifests = load_dataset_manifests(snapshot_manifest)
+    inventory = SchemaInventory.from_dataset_manifests(dataset_manifests)
+    inventory_source = "datasets"
+    if not inventory.schemas:
         inventory = SchemaInventory.load(pointer.schema_manifest_path)
         inventory_source = "manifest"
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
-    snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
-    dataset_manifests = load_dataset_manifests(snapshot_manifest)
     env_path = _resolve_environment_path(pointer, pointer_path=pointer_path)
     environment: dict[str, object] | None = None
     if env_path is not None:

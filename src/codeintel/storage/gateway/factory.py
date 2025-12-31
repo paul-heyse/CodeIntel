@@ -13,6 +13,7 @@ import duckdb
 
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
+from codeintel.core.schemas.provider import FallbackSchemaProvider
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import META_CATALOG_NAME
@@ -34,7 +35,8 @@ from codeintel.storage.metadata import (
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
-from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
+from codeintel.storage.schema.arrow_schema import RegistryArrowSchemaProvider
+from codeintel.storage.tracking.schema_catalog import SchemaCatalogProvider
 from codeintel.storage.validation import (
     ContractValidationMode,
     clear_contract_validation_cache,
@@ -98,27 +100,44 @@ def _registry_has_schemas(con: duckdb.DuckDBPyConnection) -> bool:
     return row is not None
 
 
+def _is_catalog_provider(provider: SchemaProvider) -> bool:
+    if isinstance(provider, SchemaCatalogProvider):
+        return True
+    if isinstance(provider, FallbackSchemaProvider):
+        return isinstance(provider.primary, SchemaCatalogProvider)
+    return False
+
+
 def _maybe_set_schema_service_from_catalog(con: duckdb.DuckDBPyConnection) -> None:
     try:
         service = get_schema_service()
     except RuntimeError:
         service = None
-    if service is not None:
-        if isinstance(service.table_provider, RegistrySchemaProvider):
-            return
-        if _registry_has_schemas(con):
-            service = SchemaService(table_provider=RegistrySchemaProvider(con))
-            set_schema_service(service)
-            clear_schema_provider_cache()
-        return
+    schemas = contract_catalog_table_schemas()
+    fallback_provider = MappingSchemaProvider(schemas) if schemas else None
     if _registry_has_schemas(con):
-        service = SchemaService(table_provider=RegistrySchemaProvider(con))
+        provider: SchemaProvider
+        catalog_provider = SchemaCatalogProvider(con)
+        if fallback_provider is not None:
+            provider = FallbackSchemaProvider(
+                primary=catalog_provider,
+                fallback=fallback_provider,
+            )
+        else:
+            provider = catalog_provider
+        if service is not None and _is_catalog_provider(service.table_provider):
+            return
+        service = SchemaService(
+            table_provider=provider,
+            arrow_provider=RegistryArrowSchemaProvider(con),
+        )
         set_schema_service(service)
         clear_schema_provider_cache()
         return
-    schemas = contract_catalog_table_schemas()
-    if schemas:
-        service = SchemaService(table_provider=MappingSchemaProvider(schemas))
+    if service is not None:
+        return
+    if fallback_provider is not None:
+        service = SchemaService(table_provider=fallback_provider)
         set_schema_service(service)
         clear_schema_provider_cache()
 
@@ -315,7 +334,9 @@ def open_gateway(
     """
     try:
         session_config = config
-        include_views_for_bootstrap = False
+        include_views_for_bootstrap = True
+        if config.ensure_views:
+            LOG.warning("DuckDB view materialization disabled; ignoring ensure_views=True.")
         if not config.read_only and config.apply_schema:
             session_config = replace(config, apply_schema=False)
         session = DuckDBSession(session_config)
@@ -323,7 +344,6 @@ def open_gateway(
         attach_meta_database(con, config=config)
         if not config.read_only:
             apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
-            include_views_for_bootstrap = config.ensure_views and config.apply_schema
             if seed_contract_catalog is not None:
                 seed_contract_catalog(con)
         _ensure_contract_catalog(con)
@@ -337,9 +357,7 @@ def open_gateway(
         _maybe_set_schema_service_from_catalog(con)
         datasets = load_dataset_registry(con)
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
-        include_views = config.ensure_views and not config.read_only
-        if include_views:
-            gateway.policy.ensure_all_views(overwrite=True, strict=config.validate_schema)
+        include_views = False
         _apply_contract_validation(
             con=con,
             config=config,

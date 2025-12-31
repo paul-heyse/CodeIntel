@@ -498,7 +498,7 @@ class TableProvenance(ManifestBase):
     producer_target
         Optional Hamilton target name responsible for the schema output.
     producer_module
-        Optional Hamilton target module (ingestion/graphs/analytics/export).
+        Optional Hamilton target module (ingestion/graphs/analytics/export/views).
     producer_version
         Optional Hamilton target spec version string.
     """

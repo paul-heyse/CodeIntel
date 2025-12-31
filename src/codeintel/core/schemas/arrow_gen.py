@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
@@ -11,6 +10,7 @@ from typing import Literal
 import pyarrow as pa
 from sqlglot import exp
 
+from codeintel.core.columnar.schema_metadata import encode_metadata
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import (
@@ -492,19 +492,6 @@ def _arrow_type_for_column_type(column_type: ColumnType) -> pa.DataType:
     return _ARROW_TYPE_MAP.get(base, pa.string())
 
 
-def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes] | None:
-    encoded: dict[bytes, bytes] = {}
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        if isinstance(value, str):
-            raw = value
-        else:
-            raw = json.dumps(value, sort_keys=True, separators=(",", ":"))
-        encoded[key.encode("utf-8")] = raw.encode("utf-8")
-    return encoded or None
-
-
 def _key_roles(table_schema: TableSchema) -> dict[str, str]:
     roles: dict[str, str] = dict.fromkeys(table_schema.primary_key, "primary_key")
     for index in table_schema.indexes:
@@ -610,7 +597,7 @@ def arrow_schema_from_table_schema(
             column.name,
             _arrow_type_for_column_type(column.type),
             nullable=column.nullable,
-            metadata=_encode_metadata(_field_metadata(column, field_context)),
+            metadata=encode_metadata(_field_metadata(column, field_context)),
         )
         for column in table_schema.columns
     ]
@@ -627,7 +614,7 @@ def arrow_schema_from_table_schema(
     )
     schema_metadata = _schema_metadata(schema_context)
 
-    return pa.schema(fields, metadata=_encode_metadata(schema_metadata))
+    return pa.schema(fields, metadata=encode_metadata(schema_metadata))
 
 
 def arrow_contract_for_table_schema(

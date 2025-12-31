@@ -1,0 +1,349 @@
+"""Shared schema constraint validation helpers."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Mapping
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
+
+from codeintel.core.columnar.schema_metadata import decode_metadata
+from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
+from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.validation.arrow_type_compat import is_compatible_arrow_type
+
+if TYPE_CHECKING:
+    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
+
+
+def schema_errors(
+    table_schema: TableSchema,
+    actual_schema: pa.Schema,
+    *,
+    extras_column: str | None = None,
+) -> list[str]:
+    """Validate Arrow schema structure against a TableSchema.
+
+    Returns
+    -------
+    list[str]
+        Human-readable schema validation errors.
+    """
+    resolved_extras = extras_column or _extras_column_name(actual_schema)
+    expected_names = [column.name for column in table_schema.columns]
+    actual_names = [name for name in actual_schema.names if name != resolved_extras]
+
+    errors: list[str] = []
+    missing = [name for name in expected_names if name not in actual_names]
+    extra = [name for name in actual_names if name not in expected_names]
+    if missing:
+        errors.append(f"Missing columns: {', '.join(missing)}")
+    if extra:
+        errors.append(f"Unexpected columns: {', '.join(extra)}")
+    if not missing and not extra and expected_names != actual_names:
+        errors.append(
+            "Column order mismatch: expected "
+            f"{', '.join(expected_names)} but got {', '.join(actual_names)}"
+        )
+
+    by_name = {column.name: column for column in table_schema.columns}
+    for name in expected_names:
+        if name not in actual_schema.names:
+            continue
+        column = by_name[name]
+        actual_field = actual_schema.field(name)
+        if not is_compatible_arrow_type(column, actual_field.type):
+            errors.append(
+                f"Column {name} type mismatch: expected {column.type}, got {actual_field.type}"
+            )
+    return errors
+
+
+def arrow_table_errors(table: pa.Table) -> list[str]:
+    """Return Arrow validation errors for a table.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages for the table, if any.
+    """
+    try:
+        table.validate()
+    except pa.ArrowInvalid as exc:
+        return [f"Arrow validation failed: {exc}"]
+    return []
+
+
+def arrow_batch_errors(batch: pa.RecordBatch) -> list[str]:
+    """Return Arrow validation errors for a record batch.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages for the record batch, if any.
+    """
+    try:
+        batch.validate()
+    except pa.ArrowInvalid as exc:
+        return [f"Arrow validation failed: {exc}"]
+    return []
+
+
+def nullability_errors_for_table(table_schema: TableSchema, table: pa.Table) -> list[str]:
+    """Validate non-nullable columns for an Arrow table.
+
+    Returns
+    -------
+    list[str]
+        Nullability validation errors for the table, if any.
+    """
+    errors: list[str] = []
+    for column in table_schema.columns:
+        if column.nullable:
+            continue
+        if column.name not in table.column_names:
+            continue
+        if not _all_valid(table.column(column.name)):
+            errors.append(f"Column {column.name} contains nulls but is non-nullable")
+    return errors
+
+
+def nullability_errors_for_batch(
+    table_schema: TableSchema,
+    batch: pa.RecordBatch,
+) -> list[str]:
+    """Validate non-nullable columns for a record batch.
+
+    Returns
+    -------
+    list[str]
+        Nullability validation errors for the record batch, if any.
+    """
+    errors: list[str] = []
+    names = list(batch.schema.names)
+    for column in table_schema.columns:
+        if column.nullable:
+            continue
+        if column.name not in names:
+            continue
+        index = names.index(column.name)
+        if not _all_valid(batch.column(index)):
+            errors.append(f"Column {column.name} contains nulls but is non-nullable")
+    return errors
+
+
+def observation_errors_for_table(
+    table_schema: TableSchema,
+    table: pa.Table,
+    observation: SchemaObservationRecord | None,
+) -> list[str]:
+    """Validate a table against observation-derived ranges.
+
+    Returns
+    -------
+    list[str]
+        Range validation errors based on the observation.
+    """
+    stats_by_name = _column_stats_lookup(observation)
+    if not stats_by_name:
+        return []
+    errors: list[str] = []
+    for column in table_schema.columns:
+        if column.name not in table.column_names:
+            continue
+        stats = stats_by_name.get(column.name)
+        if stats is None:
+            continue
+        errors.extend(_range_errors(column.name, table.column(column.name), stats))
+    return errors
+
+
+def observation_errors_for_batch(
+    table_schema: TableSchema,
+    batch: pa.RecordBatch,
+    observation: SchemaObservationRecord | None,
+) -> list[str]:
+    """Validate a record batch against observation-derived ranges.
+
+    Returns
+    -------
+    list[str]
+        Range validation errors based on the observation.
+    """
+    stats_by_name = _column_stats_lookup(observation)
+    if not stats_by_name:
+        return []
+    errors: list[str] = []
+    names = list(batch.schema.names)
+    for column in table_schema.columns:
+        if column.name not in names:
+            continue
+        stats = stats_by_name.get(column.name)
+        if stats is None:
+            continue
+        index = names.index(column.name)
+        errors.extend(_range_errors(column.name, batch.column(index), stats))
+    return errors
+
+
+def validate_parquet_path(
+    path: Path,
+    *,
+    table_schema: TableSchema,
+    observation: SchemaObservationRecord | None = None,
+) -> list[str]:
+    """Validate a Parquet file against schema constraints.
+
+    Returns
+    -------
+    list[str]
+        Validation errors accumulated across all batches.
+    """
+    parquet_file = pq.ParquetFile(path)
+    errors = schema_errors(table_schema, parquet_file.schema_arrow)
+    for batch in parquet_file.iter_batches():
+        errors.extend(arrow_batch_errors(batch))
+        errors.extend(nullability_errors_for_batch(table_schema, batch))
+        errors.extend(observation_errors_for_batch(table_schema, batch, observation))
+    return errors
+
+
+def iter_reader_batch_errors(
+    reader: pa.RecordBatchReader,
+    *,
+    table_schema: TableSchema,
+    observation: SchemaObservationRecord | None = None,
+) -> Iterator[tuple[int, list[str]]]:
+    """Yield per-batch validation errors for a reader.
+
+    Yields
+    ------
+    tuple[int, list[str]]
+        Pairs of batch index and validation errors.
+    """
+    for batch_index, batch in enumerate(reader):
+        errors: list[str] = []
+        errors.extend(arrow_batch_errors(batch))
+        errors.extend(nullability_errors_for_batch(table_schema, batch))
+        errors.extend(observation_errors_for_batch(table_schema, batch, observation))
+        yield batch_index, errors
+
+
+def _column_stats_lookup(
+    observation: SchemaObservationRecord | None,
+) -> Mapping[str, Mapping[str, object]]:
+    if observation is None:
+        return {}
+    stats = observation.column_stats
+    if isinstance(stats, Mapping):
+        return stats
+    return {}
+
+
+def _range_errors(
+    name: str,
+    values: pa.Array | pa.ChunkedArray,
+    stats: Mapping[str, object],
+) -> list[str]:
+    errors: list[str] = []
+    min_value = stats.get("min")
+    max_value = stats.get("max")
+    if min_value is not None and _any_out_of_range(values, min_value, op="lt"):
+        errors.append(f"Column {name} has values below observed min {min_value}")
+    if max_value is not None and _any_out_of_range(values, max_value, op="gt"):
+        errors.append(f"Column {name} has values above observed max {max_value}")
+    return errors
+
+
+def _any_out_of_range(
+    values: pa.Array | pa.ChunkedArray,
+    bound: object,
+    *,
+    op: Literal["lt", "gt"],
+) -> bool:
+    scalar = _coerce_scalar(bound, values.type)
+    if scalar is None:
+        return False
+    less = getattr(pc, "less", None)
+    greater = getattr(pc, "greater", None)
+    compare = less if op == "lt" else greater
+    if not callable(compare):
+        return False
+    try:
+        mask = compare(values, scalar)
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
+        return False
+    return _any_true(mask)
+
+
+def _any_true(values: pa.Array | pa.ChunkedArray) -> bool:
+    any_fn = getattr(pc, "any", None)
+    if callable(any_fn):
+        result = any_fn(values)
+        as_py = getattr(result, "as_py", None)
+        if callable(as_py):
+            return bool(as_py() or False)
+    if isinstance(values, pa.ChunkedArray):
+        return any(_any_true(chunk) for chunk in values.chunks)
+    try:
+        return any(values.to_pylist())
+    except (TypeError, pa.ArrowInvalid):
+        return False
+
+
+def _all_valid(values: pa.Array | pa.ChunkedArray) -> bool:
+    is_valid = getattr(pc, "is_valid", None)
+    if not callable(is_valid):
+        return not _has_nulls(values)
+    try:
+        mask = is_valid(values)
+        all_fn = getattr(pc, "all", None)
+        if callable(all_fn):
+            result = all_fn(mask)
+            as_py = getattr(result, "as_py", None)
+            if callable(as_py):
+                value = as_py()
+                return bool(value) if value is not None else False
+        return not _has_nulls(values)
+    except (TypeError, pa.ArrowInvalid):
+        return not _has_nulls(values)
+
+
+def _has_nulls(values: pa.Array | pa.ChunkedArray) -> bool:
+    null_count = values.null_count
+    if null_count is not None and null_count >= 0:
+        return null_count > 0
+    if isinstance(values, pa.ChunkedArray):
+        return any((chunk.null_count or 0) > 0 for chunk in values.chunks)
+    return False
+
+
+def _coerce_scalar(bound: object, data_type: pa.DataType) -> pa.Scalar | None:
+    try:
+        return pa.scalar(bound, type=data_type)
+    except (TypeError, pa.ArrowInvalid):
+        return None
+
+
+def _extras_column_name(schema: pa.Schema) -> str:
+    metadata = decode_metadata(schema.metadata)
+    raw = metadata.get("codeintel.extras_column")
+    if isinstance(raw, str) and raw:
+        return raw
+    return DEFAULT_EXTRAS_COLUMN
+
+
+__all__ = [
+    "arrow_batch_errors",
+    "arrow_table_errors",
+    "iter_reader_batch_errors",
+    "nullability_errors_for_batch",
+    "nullability_errors_for_table",
+    "observation_errors_for_batch",
+    "observation_errors_for_table",
+    "schema_errors",
+    "validate_parquet_path",
+]

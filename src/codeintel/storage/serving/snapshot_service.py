@@ -17,13 +17,13 @@ from codeintel.core.columnar.schema_alignment import (
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
+from codeintel.storage.datasets.contracts import arrow_schema_from_manifest
 from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref, split_table_key
-from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
 
 if TYPE_CHECKING:
@@ -319,7 +319,7 @@ def _create_dataset_view(
     if current_schema != request.schema:
         _set_schema(con, request.schema)
     try:
-        contract_schema = _contract_schema_for_table(con, table_key=request.table_key)
+        contract_schema = _contract_schema_for_manifest(request.manifest)
         relation = _dataset_read_parquet_relation(
             con=con,
             manifest=request.manifest,
@@ -374,14 +374,10 @@ def _dataset_read_parquet_relation(
             return con.from_arrow(dataset)
 
 
-def _contract_schema_for_table(
-    con: DuckDBConnection,
-    *,
-    table_key: str,
-) -> pa.Schema | None:
+def _contract_schema_for_manifest(manifest: ArrowDatasetManifest) -> pa.Schema | None:
     try:
-        return arrow_schema_for_table_key(con, table_key=table_key)
-    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return arrow_schema_from_manifest(manifest)
+    except (TypeError, ValueError):
         return None
 
 

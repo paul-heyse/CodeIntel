@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.core.schemas.row_models import GeneratedRowBinding
+from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 
@@ -45,7 +45,14 @@ def get_row_bindings() -> dict[str, GeneratedRowBinding]:
         SchemaService is configured, DAG-first schemas are used.
     """
     bindings: dict[str, GeneratedRowBinding] = {}
-    service = get_schema_service()
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        service = None
+    if service is None:
+        for schema in TABLE_SCHEMAS.values():
+            bindings[schema.table_key] = row_binding_for_table_schema(schema)
+        return bindings
     for schema in service.iter_table_schemas():
         binding = service.get_row_binding(schema.table_key)
         if binding is not None:

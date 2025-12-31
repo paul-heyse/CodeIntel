@@ -18,10 +18,7 @@ from codeintel.serving.semantic.datasets import (
     dataset_scanner_for_entry,
 )
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
-from codeintel.serving.semantic.guardrails import (
-    warn_eager_materialization,
-    warn_schema_drift_observed,
-)
+from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.serving.semantic.polars_query_builder import (
     PolarsQueryBuilderError,
     apply_query_ast,
@@ -29,9 +26,8 @@ from codeintel.serving.semantic.polars_query_builder import (
 )
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.serving.semantic.routing import ast_supports_polars
+from codeintel.serving.semantic.schema_contracts import contract_schema_for_table_key
 from codeintel.serving.semantic.view_registry import ViewInputs
-from codeintel.storage.duckdb_types import DuckDBError
-from codeintel.storage.schema import arrow_schema_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
@@ -707,33 +703,10 @@ def _scan_parquet(
 
 
 def _contract_schema_for_table(ctx: EngineContext, *, table_key: str) -> pa.Schema | None:
-    if ctx.warehouse is None:
-        return None
-    _log_drift_if_present(ctx, table_key=table_key)
-    try:
-        return arrow_schema_for_table_key(
-            ctx.warehouse.gateway.con,
-            table_key=table_key,
-            repo=ctx.pointer.repo,
-            commit=ctx.pointer.commit,
-        )
-    except (DuckDBError, RuntimeError, TypeError, ValueError):
-        return None
-
-
-def _log_drift_if_present(ctx: EngineContext, *, table_key: str) -> None:
-    if ctx.warehouse is None:
-        return
-    try:
-        schemas = getattr(ctx.warehouse.gateway, "schemas", None)
-        if schemas is None:
-            return
-        observation = schemas.load_latest_schema_observation(table_key=table_key)
-    except (DuckDBError, RuntimeError, TypeError, ValueError):
-        return
-    if observation is None or observation.drift_summary is None:
-        return
-    warn_schema_drift_observed(table_key=table_key, drift_summary=observation.drift_summary)
+    return contract_schema_for_table_key(
+        dataset_manifests=ctx.dataset_manifests,
+        table_key=table_key,
+    )
 
 
 __all__ = ["PolarsExecutablePlan", "PolarsQueryEngine"]

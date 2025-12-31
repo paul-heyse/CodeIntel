@@ -39,7 +39,13 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
 
 
-_VALID_MODULES: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
+_VALID_MODULES: tuple[TargetModule, ...] = (
+    "ingestion",
+    "graphs",
+    "analytics",
+    "export",
+    "views",
+)
 
 _ALLOWED_DERIVATION_KINDS: frozenset[str] = frozenset(get_args(ManifestDerivationKind))
 

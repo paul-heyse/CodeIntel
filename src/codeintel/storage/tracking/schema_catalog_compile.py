@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import pyarrow as pa
-
+from codeintel.core.columnar.ipc import schema_to_ipc_payload
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.arrow_gen import (
     ARROW_SCHEMA_CONTRACT_VERSION,
@@ -203,38 +201,13 @@ def arrow_contract_renderer_cache(
         extras_column=DEFAULT_EXTRAS_COLUMN,
     )
     arrow_schema = arrow_contract_for_table_schema(table_schema=schema, metadata=metadata)
-    ipc_bytes = _serialize_schema_ipc(arrow_schema)
+    ipc_payload = schema_to_ipc_payload(arrow_schema)
     return {
-        "arrow_schema_ipc_b64": base64.b64encode(ipc_bytes).decode("ascii"),
+        "arrow_schema_ipc_b64": ipc_payload,
         "arrow_schema_contract_version": ARROW_SCHEMA_CONTRACT_VERSION,
         "extras_policy": extras_policy,
         "extras_column": DEFAULT_EXTRAS_COLUMN,
     }
-
-
-def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
-    serialize_schema = getattr(pa.ipc, "serialize_schema", None)
-    if callable(serialize_schema):
-        result = serialize_schema(schema)
-        buffer = cast("pa.Buffer", result)
-        return buffer.to_pybytes()
-    write_schema = getattr(pa.ipc, "write_schema", None)
-    if callable(write_schema):
-        sink = pa.BufferOutputStream()
-        write_schema(schema, sink)
-        buffer = sink.getvalue()
-        return buffer.to_pybytes()
-    new_stream = getattr(pa.ipc, "new_stream", None)
-    if callable(new_stream):
-        sink = pa.BufferOutputStream()
-        writer = new_stream(sink, schema)
-        close = getattr(writer, "close", None)
-        if callable(close):
-            close()
-        buffer = sink.getvalue()
-        return buffer.to_pybytes()
-    msg = "pyarrow.ipc.serialize_schema, write_schema, and new_stream are unavailable"
-    raise TypeError(msg)
 
 
 def _build_registry_record(

@@ -28,15 +28,16 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.observation_pipeline import (
+    build_observation_inputs,
+    build_observation_setup,
+    persist_observation,
+)
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
-    SchemaObservationInputs,
     instrument_reader_for_observation,
     merge_table_schema_hints,
     observe_batches,
-    persist_observation_bundle,
-    schema_hints_from_tag_sets,
-    table_schema_from_tag_sets,
 )
 from codeintel.core.columnar import (
     LazyFrameStream,
@@ -47,12 +48,20 @@ from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.config.settings import BuildSettings
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
+from codeintel.core.schemas.arrow_gen import (
+    EXTRAS_POLICIES,
+    ArrowSchemaMetadata,
+    ArrowSchemaProvenance,
+    ExtrasPolicy,
+    arrow_schema_from_table_schema,
+)
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_lazyframe,
 )
-from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.arrow_store import (
     ArrowDatasetManifestRequest,
@@ -62,7 +71,6 @@ from codeintel.storage.datasets.arrow_store import (
 )
 from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
-from codeintel.storage.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -387,32 +395,34 @@ def _build_materialization_plan(
     data: TabularData,
 ) -> _MaterializationPlan:
     tag_sets = _schema_tag_sets_for_table(catalog=ctx.catalog, table_key=ctx.table_key)
-    schema_hints = schema_hints_from_tag_sets(tag_sets)
-    declared_schema = _declared_schema_hint(table_key=ctx.table_key)
-    if declared_schema is None:
-        declared_schema = table_schema_from_tag_sets(
-            table_key=ctx.table_key,
-            tag_sets=tag_sets,
-        )
+    setup = build_observation_setup(
+        table_key=ctx.table_key,
+        tag_sets=tag_sets,
+        declared_schema=_declared_schema_hint(table_key=ctx.table_key),
+    )
     table_schema = _table_schema_for_data(
         table_key=ctx.table_key,
         data=data,
-        declared_schema=declared_schema,
-        schema_hints=schema_hints,
+        declared_schema=setup.declared_schema,
+        schema_hints=setup.schema_hints,
     )
     arrow_schema = _arrow_schema_for_data(data=data)
-    observation = SchemaObservationAccumulator(
-        table_key=ctx.table_key,
-        declared_schema=declared_schema,
-        schema_hints=schema_hints,
-    )
-    contract_schema = arrow_schema
+    observation = setup.accumulator
     resolved_partitions = _resolve_partition_columns(
         table_schema=table_schema,
         requested=ctx.partition_columns,
     )
     schema_hash_value = schema_hash(table_schema)
+    schema_digest_value = schema_digest(table_schema)
     inferred_settings = _load_inferred_settings(ctx=ctx)
+    provenance = _schema_provenance(ctx.table_key)
+    contract_schema = _contract_schema_for_table(
+        table_schema=table_schema,
+        schema_hash_value=schema_hash_value,
+        schema_digest_value=schema_digest_value,
+        inferred_settings=inferred_settings,
+        provenance=provenance,
+    )
     write_settings = _build_write_settings(
         ctx=ctx,
         inferred_settings=inferred_settings,
@@ -422,6 +432,7 @@ def _build_materialization_plan(
         table_key=ctx.table_key,
         inferred_settings=inferred_settings,
         write_settings=write_settings,
+        provenance=provenance,
     )
     options = _build_write_options(
         partition_columns=resolved_partitions,
@@ -1066,17 +1077,65 @@ def _manifest_extras(
     table_key: str,
     inferred_settings: dict[str, object] | None,
     write_settings: dict[str, object],
+    provenance: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     extras: dict[str, object] = {"table_schema": table_schema.to_json_obj()}
-    provenance = _schema_provenance(table_key)
-    if provenance:
-        extras["provenance"] = provenance
+    resolved_provenance = provenance or _schema_provenance(table_key)
+    if resolved_provenance:
+        extras["provenance"] = resolved_provenance
     if inferred_settings:
         extras["inferred_settings"] = dict(inferred_settings)
     settings_payload = _write_settings_payload(write_settings)
     if settings_payload:
         extras["write_settings"] = settings_payload
     return extras
+
+
+def _contract_schema_for_table(
+    *,
+    table_schema: TableSchema,
+    schema_hash_value: str,
+    schema_digest_value: str,
+    inferred_settings: dict[str, object] | None,
+    provenance: Mapping[str, str] | None,
+) -> pa.Schema:
+    extras_policy = _extras_policy_from_settings(inferred_settings)
+    metadata = ArrowSchemaMetadata(
+        schema_hash=schema_hash_value,
+        schema_digest=schema_digest_value,
+        extras_policy=extras_policy,
+        provenance=_arrow_schema_provenance(provenance),
+    )
+    return arrow_schema_from_table_schema(
+        table_schema=table_schema,
+        metadata=metadata,
+    )
+
+
+def _extras_policy_from_settings(
+    inferred_settings: Mapping[str, object] | None,
+) -> ExtrasPolicy | None:
+    if inferred_settings is None:
+        return None
+    raw = inferred_settings.get("extras_policy")
+    if isinstance(raw, str) and raw in EXTRAS_POLICIES:
+        return cast("ExtrasPolicy", raw)
+    return None
+
+
+def _arrow_schema_provenance(
+    provenance: Mapping[str, str] | None,
+) -> ArrowSchemaProvenance | None:
+    if provenance is None:
+        return None
+    derivation_kind = provenance.get("derivation_kind")
+    derivation_source = provenance.get("derivation_source")
+    if not isinstance(derivation_kind, str) and not isinstance(derivation_source, str):
+        return None
+    return ArrowSchemaProvenance(
+        derivation_kind=derivation_kind if isinstance(derivation_kind, str) else None,
+        derivation_source=derivation_source if isinstance(derivation_source, str) else None,
+    )
 
 
 def _schema_provenance(table_key: str) -> dict[str, str] | None:
@@ -1184,12 +1243,11 @@ def _arrow_schema_for_data(*, data: TabularData) -> pa.Schema:
 
 
 def _load_inferred_settings(*, ctx: _MaterializeContext) -> dict[str, object] | None:
-    try:
-        observation = ctx.env.gateway.schemas.load_latest_schema_observation(
-            table_key=ctx.table_key
-        )
-    except (DuckDBError, RuntimeError, TypeError, ValueError):
-        return None
+    resolution = resolve_table_schema(
+        ctx.table_key,
+        observation_provider=ctx.env.gateway.schemas,
+    )
+    observation = resolution.observation
     if observation is None or observation.derived_settings is None:
         return None
     return dict(observation.derived_settings)
@@ -1306,26 +1364,21 @@ def _persist_observation_if_ready(
     arrow_schema: pa.Schema,
     manifest: ArrowDatasetManifest | None,
 ) -> None:
-    try:
-        drift_history: tuple[Mapping[str, object] | None, ...] | None = None
-        try:
-            drift_history = ctx.env.gateway.schemas.load_recent_drift_summaries(
-                table_key=ctx.table_key
-            )
-        except (DuckDBError, RuntimeError, TypeError, ValueError):
-            drift_history = None
-        inputs = SchemaObservationInputs(
-            repo=ctx.env.repo,
-            commit=ctx.env.commit,
-            target_name=ctx.target_name,
-            drift_history=drift_history,
-            dataset_stats=manifest.stats if manifest is not None else None,
-            manifest_row_count=manifest.row_count if manifest is not None else None,
-        )
-        bundle = observation.finalize(arrow_schema=arrow_schema, inputs=inputs)
-        persist_observation_bundle(gateway=ctx.env.gateway, bundle=bundle)
-    except (TypeError, ValueError, pa.ArrowInvalid) as exc:
-        LOG.warning("Schema observation persistence failed for %s: %s", ctx.table_key, exc)
+    inputs = build_observation_inputs(
+        gateway=ctx.env.gateway,
+        table_key=ctx.table_key,
+        repo=ctx.env.repo,
+        commit=ctx.env.commit,
+        target_name=ctx.target_name,
+        dataset_stats=manifest.stats if manifest is not None else None,
+        manifest_row_count=manifest.row_count if manifest is not None else None,
+    )
+    persist_observation(
+        gateway=ctx.env.gateway,
+        observation=observation,
+        arrow_schema=arrow_schema,
+        inputs=inputs,
+    )
 
 
 __all__ = ["ArrowDatasetSaver"]

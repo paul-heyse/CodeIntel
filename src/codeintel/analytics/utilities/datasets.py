@@ -16,9 +16,8 @@ from sqlglot import exp
 if TYPE_CHECKING:
     from codeintel.analytics.utilities.persistence import DeleteScope
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.schemas.primitives import ColumnType, TableSchema
+    from codeintel.core.schemas.primitives import ColumnType
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 from codeintel.build.schemas import (
     ContractResolutionMode,
@@ -26,35 +25,11 @@ from codeintel.build.schemas import (
     get_contract_for_table_key,
 )
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
-from codeintel.core.schemas.service import get_schema_service
 from codeintel.storage.validation.columnar import validate_table
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
-
-
-def _load_inferred_schema(
-    gateway: StorageGateway | None,
-    table_key: str,
-) -> TableSchema | None:
-    if gateway is None:
-        return None
-    try:
-        return gateway.schemas.load_table_schema(table_key)
-    except (RuntimeError, TypeError, ValueError):
-        return None
-
-
-def _load_latest_observation(
-    gateway: StorageGateway | None,
-    table_key: str,
-) -> SchemaObservationRecord | None:
-    if gateway is None:
-        return None
-    try:
-        return gateway.schemas.load_latest_schema_observation(table_key=table_key)
-    except (RuntimeError, TypeError, ValueError):
-        return None
 
 
 def _table_supports_snapshot_delete(table_key: str) -> bool:
@@ -244,10 +219,13 @@ def validate_contract_rows(
     """
     if not rows:
         return []
-    table_schema = _load_inferred_schema(gateway, table_key)
-    if table_schema is None:
-        table_schema = get_schema_service().get_table_schema(table_key)
-    observation = _load_latest_observation(gateway, table_key)
+    observation_provider = gateway.schemas if gateway is not None else None
+    resolution = resolve_table_schema(
+        table_key,
+        observation_provider=observation_provider,
+    )
+    table_schema = resolution.table_schema
+    observation = resolution.observation
     records: list[dict[str, object]]
     if table_schema is None:
         frame = pl.from_dicts(rows)

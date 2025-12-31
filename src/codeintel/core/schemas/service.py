@@ -65,6 +65,14 @@ class DatasetSchemaProvider(Protocol):
         ...
 
 
+class ArrowSchemaProvider(Protocol):
+    """Protocol for resolving Arrow schemas by table key."""
+
+    def get_arrow_schema(self, table_key: str) -> pa.Schema | None:
+        """Return the Arrow schema for a table key."""
+        ...
+
+
 def _default_row_binding_factory(table_schema: TableSchema) -> GeneratedRowBinding:
     return row_binding_for_table_schema(table_schema=table_schema)
 
@@ -89,6 +97,7 @@ class SchemaService:
 
     table_provider: SchemaProvider
     dataset_provider: DatasetSchemaProvider | None = None
+    arrow_provider: ArrowSchemaProvider | None = None
     json_schema_factory: Callable[[TableSchema, str | None], dict[str, Any]] | None = None
     row_binding_factory: Callable[[TableSchema], GeneratedRowBinding] = _default_row_binding_factory
     _table_cache: dict[str, TableSchema | None] = field(default_factory=dict, repr=False)
@@ -246,6 +255,11 @@ class SchemaService:
         """
         if table_key in self._arrow_cache:
             return self._arrow_cache[table_key]
+        if self.arrow_provider is not None:
+            arrow_schema = self.arrow_provider.get_arrow_schema(table_key)
+            if arrow_schema is not None:
+                self._arrow_cache[table_key] = arrow_schema
+                return arrow_schema
         table_schema = self.get_table_schema(table_key)
         if table_schema is None:
             self._arrow_cache[table_key] = None
@@ -414,6 +428,7 @@ def clear_schema_service() -> None:
 
 
 __all__ = [
+    "ArrowSchemaProvider",
     "DatasetSchemaLike",
     "DatasetSchemaProvider",
     "SchemaRecord",

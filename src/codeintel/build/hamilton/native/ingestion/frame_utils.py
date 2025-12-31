@@ -10,9 +10,11 @@ import pyarrow as pa
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.columnar.rows import columnar_row_count
-from codeintel.core.columnar.schema_alignment import align_reader_to_contract
+from codeintel.core.columnar.schema_alignment import (
+    align_reader_to_contract,
+    extras_policy_from_schema,
+)
 from codeintel.core.schemas.arrow_gen import (
-    DEFAULT_EXTRAS_POLICY,
     ArrowSchemaMetadata,
     ExtrasPolicy,
     arrow_contract_for_table_schema,
@@ -27,8 +29,11 @@ def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
     pl.LazyFrame
         Empty LazyFrame with the table's schema applied.
     """
-    schema = get_schema_service().require_table_schema(table_key)
-    arrow_schema = arrow_contract_for_table_schema(table_schema=schema)
+    schema_service = get_schema_service()
+    arrow_schema = schema_service.get_arrow_schema(table_key)
+    if arrow_schema is None:
+        schema = schema_service.require_table_schema(table_key)
+        arrow_schema = arrow_contract_for_table_schema(table_schema=schema)
     reader = pa.RecordBatchReader.from_batches(arrow_schema, [])
     return arrow_reader_to_lazyframe(reader)
 
@@ -37,7 +42,7 @@ def lazyframe_for_table_columns(
     table_key: str,
     columns: Mapping[str, Sequence[object]],
     *,
-    extras_policy: ExtrasPolicy = DEFAULT_EXTRAS_POLICY,
+    extras_policy: ExtrasPolicy | None = None,
 ) -> pl.LazyFrame:
     """Build a LazyFrame for columnar data using the schema's column order.
 
@@ -49,6 +54,7 @@ def lazyframe_for_table_columns(
         Columnar mapping of column names to sequences of values.
     extras_policy
         Policy for handling extra columns when aligning to the contract schema.
+        When None, resolve from Arrow schema metadata.
 
     Returns
     -------
@@ -61,17 +67,25 @@ def lazyframe_for_table_columns(
     row_count = columnar_row_count(columns)
     if row_count == 0:
         return empty_lazyframe_for_table(table_key)
-    table_schema = get_schema_service().require_table_schema(table_key)
-    metadata = ArrowSchemaMetadata(extras_policy=extras_policy)
-    contract_schema = arrow_contract_for_table_schema(
-        table_schema=table_schema,
-        metadata=metadata,
-    )
+    schema_service = get_schema_service()
+    contract_schema = schema_service.get_arrow_schema(table_key)
+    if contract_schema is None:
+        table_schema = schema_service.require_table_schema(table_key)
+        metadata = (
+            ArrowSchemaMetadata(extras_policy=extras_policy) if extras_policy is not None else None
+        )
+        contract_schema = arrow_contract_for_table_schema(
+            table_schema=table_schema,
+            metadata=metadata,
+        )
     reader = _reader_from_columns(columns)
+    resolved_policy = (
+        extras_policy if extras_policy is not None else extras_policy_from_schema(contract_schema)
+    )
     aligned = align_reader_to_contract(
         reader,
         contract_schema,
-        extras_policy=extras_policy,
+        extras_policy=resolved_policy,
     )
     return arrow_reader_to_lazyframe(aligned)
 

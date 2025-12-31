@@ -40,10 +40,15 @@ def normalize_ingest_frame(
     if frame is None:
         return None
     normalized = dedupe_frame_for_table(frame, table_key=table_key)
-    schema = get_schema_service().get_table_schema(table_key)
-    if schema is None:
-        return normalized
-    ordered_columns = schema.column_names()
+    schema_service = get_schema_service()
+    arrow_schema = schema_service.get_arrow_schema(table_key)
+    if arrow_schema is None:
+        schema = schema_service.get_table_schema(table_key)
+        if schema is None:
+            return normalized
+        ordered_columns = schema.column_names()
+    else:
+        ordered_columns = [str(name) for name in arrow_schema.names]
     if add_missing:
         normalized = _add_missing_columns(normalized, ordered_columns)
     return _reorder_columns(

@@ -61,18 +61,17 @@ from codeintel.serving.semantic.models import (
 )
 from codeintel.serving.semantic.planner import SemanticQueryPlanner
 from codeintel.serving.semantic.query_ast import ServingQuery, build_serving_query
+from codeintel.serving.semantic.schema_contracts import contract_schema_for_table_key
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import SqlglotQueryBuilderError
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
-from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (
     SqlIngressPolicy,
     UnsafeSqlError,
     assert_select_perimeter,
 )
-from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.sqlglot_tools import (
     extract_column_lineage_duckdb,
     extract_table_keys_duckdb,
@@ -82,8 +81,6 @@ from codeintel.storage.sqlglot_tools import (
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from pathlib import Path
-
-    from duckdb import DuckDBPyConnection
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
@@ -232,20 +229,14 @@ def _build_ipc_metadata(input_data: _IpcMetadataInput) -> dict[str, object]:
 
 
 def _contract_schema_for_table(
-    con: DuckDBPyConnection,
     *,
+    dataset_manifests: DatasetManifestIndex,
     table_key: str,
-    pointer: ServingSnapshotPointer,
 ) -> pa.Schema | None:
-    try:
-        return arrow_schema_for_table_key(
-            con,
-            table_key=table_key,
-            repo=pointer.repo,
-            commit=pointer.commit,
-        )
-    except (DuckDBError, RuntimeError, TypeError, ValueError):
-        return None
+    return contract_schema_for_table_key(
+        dataset_manifests=dataset_manifests,
+        table_key=table_key,
+    )
 
 
 def _check_contract_metadata(
@@ -797,9 +788,8 @@ class SemanticQueryKernel:
                 compiled_plan = engine.compile(plan.serving_query, ctx=engine_ctx)
                 try:
                     contract_schema = _contract_schema_for_table(
-                        warehouse.gateway.con,
+                        dataset_manifests=plan.snapshot_context.dataset_manifests,
                         table_key=plan.resolved.view.table_key,
-                        pointer=live_pointer,
                     )
                     if contract_schema is None:
                         warn_missing_contract_schema(table_key=plan.resolved.view.table_key)
@@ -891,9 +881,8 @@ class SemanticQueryKernel:
                 table_key=resolved.view.table_key,
             )
             contract_schema = _contract_schema_for_table(
-                warehouse.gateway.con,
+                dataset_manifests=snapshot_context.dataset_manifests,
                 table_key=resolved.view.table_key,
-                pointer=pointer,
             )
             if contract_schema is None:
                 warn_missing_contract_schema(table_key=resolved.view.table_key)

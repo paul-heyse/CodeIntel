@@ -9,8 +9,6 @@ from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.core.schemas.authority import SchemaAuthority
 from codeintel.core.schemas.declared import source_declared_schema_provider
 from codeintel.runtime.runtime_bundle import RuntimeBundle
-from codeintel.storage.views.inventory import discover_derived_docs_views, view_builder_modules
-from codeintel.storage.views.schema_inference import derive_view_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -192,12 +190,8 @@ class UnifiedSchemaProvider:
     def _view_schema_map(self) -> dict[str, TableSchema]:
         if self._view_schema_loaded:
             return self._view_schema_cache
-        view_keys = discover_derived_docs_views()
-        self._view_schema_cache = derive_view_schemas(
-            provider=self.schema_authority,
-            view_keys=view_keys,
-            modules=view_builder_modules(),
-        )
+        # View schemas now flow from observed outputs; avoid SQL-based inference here.
+        self._view_schema_cache = {}
         self._view_schema_loaded = True
         return self._view_schema_cache
 

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Iterator, Mapping
 from inspect import signature
 
 import pyarrow as pa
+
+from codeintel.core.columnar.schema_metadata import merge_metadata
 
 ARROW_IPC_STREAM_MIME = "application/vnd.apache.arrow.stream"
 
@@ -164,29 +165,15 @@ def _filter_kwargs(
     return {key: value for key, value in kwargs.items() if key in params}
 
 
-def _encode_metadata_value(value: object) -> bytes:
-    return json.dumps(value).encode("utf-8")
-
-
-def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes]:
-    return {
-        str(key).encode("utf-8"): _encode_metadata_value(value) for key, value in metadata.items()
-    }
-
-
 def _merge_schema_metadata(
     schema: pa.Schema,
     metadata: Mapping[str, object],
     *,
     overwrite: bool = False,
 ) -> pa.Schema:
-    existing = schema.metadata or {}
-    merged = dict(existing)
-    encoded = _encode_metadata(metadata)
-    for key, value in encoded.items():
-        if not overwrite and key in merged:
-            continue
-        merged[key] = value
+    merged = merge_metadata(schema.metadata, metadata, overwrite=overwrite)
+    if merged == schema.metadata:
+        return schema
     return schema.with_metadata(merged)
 
 
@@ -262,13 +249,9 @@ def _apply_batch_metadata(
     replace = getattr(batch, "replace_schema_metadata", None)
     if not callable(replace):
         return batch
-    existing = batch.schema.metadata or {}
-    merged = dict(existing)
-    encoded = _encode_metadata(metadata)
-    for key, value in encoded.items():
-        if key in merged:
-            continue
-        merged[key] = value
+    merged = merge_metadata(batch.schema.metadata, metadata, overwrite=False)
+    if merged == batch.schema.metadata:
+        return batch
     return replace(merged)
 
 

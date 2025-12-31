@@ -308,7 +308,7 @@ class BuildConfig:
         TargetParameters
             Merged parameters.
         """
-        modules = ["ingestion", "graphs", "analytics", "export"]
+        modules = ["ingestion", "graphs", "analytics", "export", "views"]
 
         result_values: dict[str, Any] = {}
         defaults = DEFAULT_PARAMETERS.get(target_name)

@@ -5,13 +5,13 @@ from __future__ import annotations
 import inspect
 import types
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Literal, TypeGuard, cast, get_args, get_origin
 
 import hamilton.driver as h_driver
 import polars as pl
@@ -30,7 +30,7 @@ from codeintel.build.schemas.observations import (
     schema_hints_from_tag_sets,
     table_schema_from_tag_sets,
 )
-from codeintel.build.schemas.seed_harness import MiniSeedHarness
+from codeintel.build.schemas.seed_harness import DatasetSeedHarness, SeedDatasetConfig
 from codeintel.build.tabular.types import InferableTabularInput, TabularInput
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -49,24 +49,28 @@ from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
     from codeintel.build.schemas.observations import SchemaHints
+    from codeintel.build.schemas.seed_harness import SchemaObservationProvider
     from codeintel.core.schemas.arrow_gen import ExtrasPolicy
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
     "HamiltonSchemaProvider",
+    "InferabilityRecord",
     "SchemaInferenceService",
     "SchemaObservationAccumulator",
     "SchemaObservationBundle",
     "SchemaObservationContext",
+    "SeedDatasetConfig",
     "get_schema_inference_service",
     "infer_schema_for_table_key",
     "infer_table_schemas",
+    "inferability_inventory",
     "inferable_native_table_keys",
     "observe_schema_from_batches",
     "observe_schema_from_reader",
@@ -74,6 +78,11 @@ __all__ = [
 ]
 
 _SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
+_INFERABLE_RUNTIME_TYPES: tuple[type[object], ...] = (
+    pa.RecordBatchReader,
+    pa.Table,
+    pl.LazyFrame,
+)
 
 
 @dataclass(frozen=True)
@@ -93,6 +102,22 @@ class _InferenceContext:
     catalog: DagCatalog
 
 
+@dataclass(frozen=True, slots=True)
+class InferabilityRecord:
+    """Describe inferability metadata for a DAG-produced table."""
+
+    table_key: str
+    status: Literal["inferable", "non_inferable"]
+    target_name: str
+    saver_node: str
+    sink: str
+    compute_node: str | None
+    reason: str | None
+    qparams: tuple[str, ...] | None
+    requires_env: bool | None
+    requires_catalog: bool | None
+
+
 def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
     sig = inspect.signature(fn)
     return_annotation = sig.return_annotation
@@ -101,17 +126,49 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
     return _is_tabular_annotation(return_annotation)
 
 
+def _is_record_batch_arg(annotation: object) -> bool:
+    return annotation is pa.RecordBatch
+
+
+def _is_batch_iterable_annotation(annotation: object) -> bool:
+    origin = get_origin(annotation)
+    if origin is None:
+        return False
+    if isinstance(origin, type):
+        try:
+            if not issubclass(origin, Iterable):
+                return False
+        except TypeError:
+            return False
+    else:
+        return False
+    args = get_args(annotation)
+    return any(_is_record_batch_arg(arg) for arg in args)
+
+
+def _is_arrow_table(value: object) -> TypeGuard[pa.Table]:
+    return isinstance(value, pa.Table)
+
+
+def _is_record_batch_reader(value: object) -> TypeGuard[pa.RecordBatchReader]:
+    return isinstance(value, pa.RecordBatchReader)
+
+
 def _is_tabular_annotation(annotation: object) -> bool:
-    inferable_types = tuple(get_args(InferableTabularInput))
-    if annotation in inferable_types or annotation in {InferableTabularInput, TabularInput}:
+    if annotation in _INFERABLE_RUNTIME_TYPES or annotation in {
+        InferableTabularInput,
+        TabularInput,
+    }:
         return True
-    if isinstance(annotation, type) and issubclass(annotation, inferable_types):
+    if isinstance(annotation, type) and issubclass(annotation, _INFERABLE_RUNTIME_TYPES):
         return True
     origin = get_origin(annotation)
     if origin in {types.UnionType, typing.Union}:
         return any(
             _is_tabular_annotation(arg) for arg in get_args(annotation) if arg is not type(None)
         )
+    if _is_batch_iterable_annotation(annotation):
+        return True
     if isinstance(annotation, str):
         return any(
             token in annotation
@@ -120,6 +177,9 @@ def _is_tabular_annotation(annotation: object) -> bool:
                 "InferableTabularInput",
                 "pa.RecordBatchReader",
                 "pyarrow.RecordBatchReader",
+                "pa.RecordBatch",
+                "pyarrow.RecordBatch",
+                "RecordBatch",
                 "pa.Table",
                 "pyarrow.Table",
                 "pl.LazyFrame",
@@ -133,6 +193,9 @@ def _is_tabular_annotation(annotation: object) -> bool:
             "InferableTabularInput",
             "pa.RecordBatchReader",
             "pyarrow.RecordBatchReader",
+            "pa.RecordBatch",
+            "pyarrow.RecordBatch",
+            "RecordBatch",
             "pa.Table",
             "pyarrow.Table",
             "pl.LazyFrame",
@@ -151,6 +214,26 @@ def _schema_inference_gateway(
         yield gateway
     finally:
         gateway.close()
+
+
+def _seed_harness(
+    *,
+    declared_provider: SchemaProvider,
+    observation_provider: SchemaObservationProvider | None,
+    seed_dataset: SeedDatasetConfig | None,
+) -> DatasetSeedHarness:
+    if seed_dataset is None:
+        return DatasetSeedHarness(
+            schema_provider=declared_provider,
+            observation_provider=observation_provider,
+        )
+    return DatasetSeedHarness(
+        schema_provider=declared_provider,
+        observation_provider=observation_provider,
+        dataset_root_dir=seed_dataset.dataset_root_dir,
+        snapshot_id=seed_dataset.snapshot_id,
+        scan_settings=seed_dataset.scan_settings,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -200,6 +283,28 @@ def _schema_tag_sets_for_table(
         if node.tags.get(hamilton_tags.TAG_TABLE_KEY) == table_key
     )
     return tuple(tag_sets)
+
+
+def _schema_observation_context(
+    *,
+    catalog: DagCatalog,
+    table_key: str,
+    declared_provider: SchemaProvider,
+    target_name: str | None = None,
+) -> SchemaObservationContext:
+    tag_sets = _schema_tag_sets_for_table(catalog=catalog, table_key=table_key)
+    declared_schema = declared_provider.get_table_schema(table_key)
+    if declared_schema is None:
+        declared_schema = table_schema_from_tag_sets(
+            table_key=table_key,
+            tag_sets=tag_sets,
+        )
+    schema_hints = schema_hints_from_tag_sets(tag_sets)
+    return SchemaObservationContext(
+        declared_schema=declared_schema,
+        schema_hints=schema_hints,
+        target_name=target_name,
+    )
 
 
 def _schema_output_tag_sets(
@@ -312,13 +417,6 @@ def _inference_requirements(
             qparams.add(dep.name)
             continue
 
-        if dep.user_defined:
-            msg = (
-                f"Compute node {compute_name} depends on unsupported input {dep.name}; "
-                "schema inference supports only env, catalog, and q__ inputs."
-            )
-            raise ValueError(msg)
-
         if dep.name.startswith("t__") and not dep.name.endswith("__compute"):
             msg = (
                 f"Compute node {compute_name} depends on target node {dep.name}; "
@@ -331,6 +429,12 @@ def _inference_requirements(
             msg = (
                 f"Compute node {compute_name} depends on data_saver node {dep.name}; "
                 "schema inference requires compute-only graphs."
+            )
+            raise ValueError(msg)
+        if dep.user_defined and not _is_tabular_annotation(dep.type):
+            msg = (
+                f"Compute node {compute_name} depends on non-tabular input {dep.name}; "
+                "schema inference requires tabular compute dependencies."
             )
             raise ValueError(msg)
 
@@ -376,9 +480,15 @@ def _infer_table_schema_for_compute(
     context: _InferenceContext,
     declared_provider: SchemaProvider,
     job: _ComputeInferenceJob,
+    observation_context: SchemaObservationContext | None,
+    seed_dataset: SeedDatasetConfig | None,
 ) -> TableSchema:
     with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
-        harness = MiniSeedHarness(schema_provider=declared_provider)
+        harness = _seed_harness(
+            declared_provider=declared_provider,
+            observation_provider=gateway.schemas,
+            seed_dataset=seed_dataset,
+        )
         overrides: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
         inputs: dict[str, object] = {}
         if job.requires_env:
@@ -397,6 +507,7 @@ def _infer_table_schema_for_compute(
         return _table_schema_from_tabular(
             cast("InferableTabularInput", expr_obj),
             table_key=job.table_key,
+            observation_context=observation_context,
         )
 
 
@@ -406,6 +517,7 @@ def infer_schema_for_table_key(
     catalog: DagCatalog,
     table_key: str,
     declared_provider: SchemaProvider,
+    seed_dataset: SeedDatasetConfig | None = None,
 ) -> TableSchema:
     """Infer schema for a single output table produced by a native compute node.
 
@@ -419,6 +531,8 @@ def infer_schema_for_table_key(
         Output table key to infer (schema.table).
     declared_provider
         Provider used to seed upstream input tables.
+    seed_dataset
+        Optional dataset-backed seed configuration for q__ inputs.
 
     Returns
     -------
@@ -438,19 +552,21 @@ def infer_schema_for_table_key(
 
     try:
         job = _resolve_inference_job(context=context, table_key=table_key)
+        observation_context = _schema_observation_context(
+            catalog=catalog,
+            table_key=table_key,
+            declared_provider=declared_provider,
+            target_name=job.target_name,
+        )
         inferred = _infer_table_schema_for_compute(
             context=context,
             declared_provider=declared_provider,
             job=job,
+            observation_context=observation_context,
+            seed_dataset=seed_dataset,
         )
-        tag_sets = _schema_tag_sets_for_table(catalog=catalog, table_key=table_key)
-        declared_schema = declared_provider.get_table_schema(table_key)
-        if declared_schema is None:
-            declared_schema = table_schema_from_tag_sets(
-                table_key=table_key,
-                tag_sets=tag_sets,
-            )
-        schema_hints = schema_hints_from_tag_sets(tag_sets)
+        declared_schema = observation_context.declared_schema
+        schema_hints = observation_context.schema_hints
         return merge_table_schema_hints(
             inferred,
             declared_schema,
@@ -597,6 +713,60 @@ def inferable_native_table_keys(*, driver: h_driver.Driver, catalog: DagCatalog)
     return frozenset(inferable)
 
 
+def inferability_inventory(
+    *,
+    driver: h_driver.Driver,
+    catalog: DagCatalog,
+) -> tuple[InferabilityRecord, ...]:
+    """Return inferability diagnostics for DAG-produced table outputs.
+
+    Parameters
+    ----------
+    driver
+        Hamilton driver used to inspect compute nodes.
+    catalog
+        DAG catalog defining outputs for each build target.
+
+    Returns
+    -------
+    tuple[InferabilityRecord, ...]
+        Diagnostic records keyed by table output.
+    """
+    context = _InferenceContext(driver=driver, catalog=catalog)
+    records: list[InferabilityRecord] = []
+    for table_key, output in sorted(catalog.table_outputs.items()):
+        compute_node = _output_data_node(context=context, table_key=table_key)
+        status: Literal["inferable", "non_inferable"] = "inferable"
+        reason: str | None = None
+        qparams: tuple[str, ...] | None = None
+        requires_env: bool | None = None
+        requires_catalog: bool | None = None
+        try:
+            job = _resolve_inference_job(context=context, table_key=table_key)
+            compute_node = job.compute_name
+            qparams = tuple(sorted(job.qparams))
+            requires_env = job.requires_env
+            requires_catalog = job.requires_catalog
+        except (KeyError, TypeError, ValueError) as exc:
+            status = "non_inferable"
+            reason = str(exc)
+        records.append(
+            InferabilityRecord(
+                table_key=table_key,
+                status=status,
+                target_name=output.producer_target,
+                saver_node=output.saver_node,
+                sink=output.sink,
+                compute_node=compute_node,
+                reason=reason,
+                qparams=qparams,
+                requires_env=requires_env,
+                requires_catalog=requires_catalog,
+            )
+        )
+    return tuple(records)
+
+
 def _build_inference_jobs(
     *,
     context: _InferenceContext,
@@ -617,6 +787,7 @@ def _infer_job_schema(
     job: _ComputeInferenceJob,
     base_overrides: Mapping[str, object],
     env: BuildEnv,
+    observation_context: SchemaObservationContext | None,
 ) -> TableSchema:
     inputs: dict[str, object] = {}
     overrides = dict(base_overrides)
@@ -634,6 +805,7 @@ def _infer_job_schema(
     return _table_schema_from_tabular(
         cast("InferableTabularInput", expr_obj),
         table_key=job.table_key,
+        observation_context=observation_context,
     )
 
 
@@ -643,6 +815,7 @@ def infer_table_schemas(
     driver: h_driver.Driver,
     catalog: DagCatalog,
     declared_provider: SchemaProvider,
+    seed_dataset: SeedDatasetConfig | None = None,
 ) -> dict[str, TableSchema]:
     """Infer schemas for multiple output tables in a single session.
 
@@ -656,6 +829,8 @@ def infer_table_schemas(
         DAG catalog defining outputs for each build target.
     declared_provider
         Provider used to seed upstream input tables.
+    seed_dataset
+        Optional dataset-backed seed configuration for q__ inputs.
 
     Returns
     -------
@@ -671,7 +846,11 @@ def infer_table_schemas(
     union_qparams = _union_qparams(jobs)
 
     with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
-        harness = MiniSeedHarness(schema_provider=declared_provider)
+        harness = _seed_harness(
+            declared_provider=declared_provider,
+            observation_provider=gateway.schemas,
+            seed_dataset=seed_dataset,
+        )
         base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
         env = _inference_env(
             gateway=gateway,
@@ -680,25 +859,92 @@ def infer_table_schemas(
 
         inferred: dict[str, TableSchema] = {}
         for job in jobs:
-            inferred[job.table_key] = _infer_job_schema(
+            observation_context = _schema_observation_context(
+                catalog=catalog,
+                table_key=job.table_key,
+                declared_provider=declared_provider,
+                target_name=job.target_name,
+            )
+            inferred_schema = _infer_job_schema(
                 context=context,
                 job=job,
                 base_overrides=base_overrides,
                 env=env,
+                observation_context=observation_context,
+            )
+            inferred[job.table_key] = merge_table_schema_hints(
+                inferred_schema,
+                observation_context.declared_schema,
+                schema_hints=observation_context.schema_hints,
             )
 
     return inferred
 
 
-def _table_schema_from_tabular(obj: InferableTabularInput, *, table_key: str) -> TableSchema:
-    if isinstance(obj, pa.Table):
-        return table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
-    if isinstance(obj, pa.RecordBatchReader):
-        return table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
-    if isinstance(obj, pl.LazyFrame):
-        return table_schema_from_polars_lazyframe(frame=obj, table_key=table_key)
-    msg = f"Unsupported tabular output for schema inference: {type(obj)}"
-    raise TypeError(msg)
+def _normalize_record_batch_iterable(
+    batches: Iterable[object],
+) -> tuple[pa.Schema, Iterable[pa.RecordBatch]]:
+    iterator = iter(batches)
+    try:
+        first = next(iterator)
+    except StopIteration as exc:
+        msg = "Record batch iterable yielded no batches."
+        raise ValueError(msg) from exc
+    if not isinstance(first, pa.RecordBatch):
+        msg = f"Expected RecordBatch iterable, got {type(first)}."
+        raise TypeError(msg)
+    first_batch = cast("pa.RecordBatch", first)
+
+    def _iter_batches() -> Iterator[pa.RecordBatch]:
+        yield first_batch
+        for batch in iterator:
+            if not isinstance(batch, pa.RecordBatch):
+                msg = f"Expected RecordBatch iterable, got {type(batch)}."
+                raise TypeError(msg)
+            yield batch
+
+    return first_batch.schema, _iter_batches()
+
+
+def _table_schema_from_tabular(
+    obj: InferableTabularInput,
+    *,
+    table_key: str,
+    observation_context: SchemaObservationContext | None = None,
+) -> TableSchema:
+    if _is_arrow_table(obj):
+        table_schema = table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
+    elif _is_record_batch_reader(obj):
+        if observation_context is None:
+            table_schema = table_schema_from_arrow_schema(
+                arrow_schema=obj.schema,
+                table_key=table_key,
+            )
+        else:
+            bundle = observe_schema_from_reader(
+                obj,
+                table_key=table_key,
+                context=observation_context,
+            )
+            table_schema = bundle.table_schema
+    elif isinstance(obj, pl.LazyFrame):
+        table_schema = table_schema_from_polars_lazyframe(frame=obj, table_key=table_key)
+    elif isinstance(obj, Iterable):
+        schema, normalized = _normalize_record_batch_iterable(obj)
+        if observation_context is None:
+            table_schema = table_schema_from_arrow_schema(arrow_schema=schema, table_key=table_key)
+        else:
+            bundle = observe_schema_from_batches(
+                batches=normalized,
+                schema=schema,
+                table_key=table_key,
+                context=observation_context,
+            )
+            table_schema = bundle.table_schema
+    else:
+        msg = f"Unsupported tabular output for schema inference: {type(obj)}"
+        raise TypeError(msg)
+    return table_schema
 
 
 def table_schema_from_tabular(obj: InferableTabularInput, *, table_key: str) -> TableSchema:
@@ -806,6 +1052,7 @@ class SchemaInferenceService:
 
     driver: h_driver.Driver
     catalog: DagCatalog
+    seed_dataset: SeedDatasetConfig | None = None
 
     def infer_table_schema(
         self, table_key: str, *, declared_provider: SchemaProvider
@@ -829,6 +1076,7 @@ class SchemaInferenceService:
             catalog=self.catalog,
             table_key=table_key,
             declared_provider=declared_provider,
+            seed_dataset=self.seed_dataset,
         )
 
     def infer_table_schemas(
@@ -856,6 +1104,7 @@ class SchemaInferenceService:
             driver=self.driver,
             catalog=self.catalog,
             declared_provider=declared_provider,
+            seed_dataset=self.seed_dataset,
         )
 
     def inferable_table_keys(self) -> frozenset[str]:
@@ -873,6 +1122,7 @@ def get_schema_inference_service(
     *,
     driver: h_driver.Driver,
     catalog: DagCatalog,
+    seed_dataset: SeedDatasetConfig | None = None,
 ) -> SchemaInferenceService:
     """Return a runtime-bound SchemaInferenceService.
 
@@ -882,10 +1132,16 @@ def get_schema_inference_service(
         Hamilton driver used for inference execution.
     catalog
         DAG catalog defining outputs for each build target.
+    seed_dataset
+        Optional dataset-backed seed configuration for q__ inputs.
 
     Returns
     -------
     SchemaInferenceService
         Service bound to the provided driver and catalog.
     """
-    return SchemaInferenceService(driver=driver, catalog=catalog)
+    return SchemaInferenceService(
+        driver=driver,
+        catalog=catalog,
+        seed_dataset=seed_dataset,
+    )

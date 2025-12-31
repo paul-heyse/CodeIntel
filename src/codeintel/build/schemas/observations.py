@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from contextlib import suppress
@@ -14,6 +13,13 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.columnar.ipc import schema_to_ipc_payload
+from codeintel.core.columnar.schema_metadata import (
+    decode_metadata,
+    encode_metadata,
+    merge_field_metadata,
+    merge_metadata,
+)
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.arrow_gen import (
@@ -200,7 +206,7 @@ class SchemaObservationAccumulator:
             table_key=self.table_key,
             schema_digest=schema_digest,
             schema_hash=schema_hash_value,
-            arrow_schema_ipc_b64=_serialize_schema_ipc_b64(annotated_schema),
+            arrow_schema_ipc_b64=schema_to_ipc_payload(annotated_schema),
             repo=resolved_inputs.repo,
             commit=resolved_inputs.commit,
             target_name=resolved_inputs.target_name,
@@ -871,7 +877,7 @@ def _annotate_arrow_schema(
     }
     if table_schema.description is not None:
         schema_metadata["codeintel.description"] = table_schema.description
-    merged_metadata = _merge_metadata(schema.metadata, schema_metadata)
+    merged_metadata = merge_metadata(schema.metadata, schema_metadata)
     fields: list[pa.Field] = []
     key_roles = _key_roles(table_schema)
     for column in table_schema.columns:
@@ -894,7 +900,7 @@ def _annotate_arrow_schema(
             pii_class = pii_by_column.get(column.name)
             if pii_class is not None:
                 field_updates["codeintel.pii_class"] = pii_class
-        fields.append(_merge_field_metadata(field, field_updates))
+        fields.append(merge_field_metadata(field, field_updates))
     return pa.schema(fields, metadata=merged_metadata)
 
 
@@ -908,64 +914,6 @@ def _key_roles(table_schema: TableSchema) -> dict[str, str]:
     return roles
 
 
-def _merge_field_metadata(field: pa.Field, updates: Mapping[str, object]) -> pa.Field:
-    existing = _decode_metadata(field.metadata)
-    merged = dict(existing)
-    for key, value in updates.items():
-        if value is None or key in merged:
-            continue
-        merged[key] = value
-    return field.with_metadata(_encode_metadata(merged))
-
-
-def _merge_metadata(
-    existing: Mapping[bytes, bytes] | None,
-    updates: Mapping[str, object],
-) -> dict[bytes, bytes]:
-    decoded = _decode_metadata(existing)
-    merged = dict(decoded)
-    for key, value in updates.items():
-        if value is None or key in merged:
-            continue
-        merged[key] = value
-    return _encode_metadata(merged)
-
-
-def _decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
-    if not metadata:
-        return {}
-    decoded: dict[str, object] = {}
-    for key, raw in metadata.items():
-        decoded[key.decode("utf-8")] = _decode_metadata_value(raw)
-    return decoded
-
-
-def _decode_metadata_value(raw: bytes) -> object:
-    text = raw.decode("utf-8")
-    return _parse_json(text)
-
-
-def _parse_json(raw: str) -> object:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-
-
-def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes]:
-    encoded: dict[bytes, bytes] = {}
-    for key, value in metadata.items():
-        if value is None:
-            continue
-        raw = (
-            value
-            if isinstance(value, str)
-            else json.dumps(value, sort_keys=True, separators=(",", ":"))
-        )
-        encoded[key.encode("utf-8")] = raw.encode("utf-8")
-    return encoded
-
-
 def _renderer_cache_from_arrow_schema(
     schema: pa.Schema,
     *,
@@ -973,37 +921,11 @@ def _renderer_cache_from_arrow_schema(
     extras_column: str,
 ) -> dict[str, object]:
     return {
-        "arrow_schema_ipc_b64": _serialize_schema_ipc_b64(schema),
+        "arrow_schema_ipc_b64": schema_to_ipc_payload(schema),
         "arrow_schema_contract_version": ARROW_SCHEMA_CONTRACT_VERSION,
         "extras_policy": extras_policy,
         "extras_column": extras_column,
     }
-
-
-def _serialize_schema_ipc_b64(schema: pa.Schema) -> str:
-    return base64.b64encode(_serialize_schema_ipc(schema)).decode("ascii")
-
-
-def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
-    serialize_schema = getattr(pa.ipc, "serialize_schema", None)
-    if callable(serialize_schema):
-        buffer = cast("pa.Buffer", serialize_schema(schema))
-        return buffer.to_pybytes()
-    write_schema = getattr(pa.ipc, "write_schema", None)
-    if callable(write_schema):
-        sink = pa.BufferOutputStream()
-        write_schema(schema, sink)
-        return sink.getvalue().to_pybytes()
-    new_stream = getattr(pa.ipc, "new_stream", None)
-    if callable(new_stream):
-        sink = pa.BufferOutputStream()
-        writer = new_stream(sink, schema)
-        close = getattr(writer, "close", None)
-        if callable(close):
-            close()
-        return sink.getvalue().to_pybytes()
-    msg = "Arrow IPC schema serialization is unavailable"
-    raise TypeError(msg)
 
 
 def _apply_extras_policy(
@@ -1036,7 +958,7 @@ def _apply_extras_policy(
         updated_settings["extras_policy"] = desired_policy
     updated_observation = replace(
         bundle.observation,
-        arrow_schema_ipc_b64=_serialize_schema_ipc_b64(updated_schema),
+        arrow_schema_ipc_b64=schema_to_ipc_payload(updated_schema),
         derived_settings=updated_settings,
     )
     updated_schema_version = replace(
@@ -1073,7 +995,7 @@ def _has_extra_columns(summary: Mapping[str, object]) -> bool:
 
 
 def _extras_policy_from_schema(schema: pa.Schema) -> ExtrasPolicy:
-    metadata = _decode_metadata(schema.metadata)
+    metadata = decode_metadata(schema.metadata)
     raw = metadata.get("codeintel.extras_policy")
     if isinstance(raw, str):
         coerced = _coerce_extras_policy(raw)
@@ -1096,13 +1018,13 @@ def _replace_schema_metadata(
     schema: pa.Schema,
     updates: Mapping[str, object],
 ) -> pa.Schema:
-    decoded = _decode_metadata(schema.metadata)
+    decoded = decode_metadata(schema.metadata)
     merged = dict(decoded)
     for key, value in updates.items():
         if value is None:
             continue
         merged[key] = value
-    return schema.with_metadata(_encode_metadata(merged))
+    return schema.with_metadata(encode_metadata(merged))
 
 
 def _null_count(values: pa.Array | pa.ChunkedArray) -> int:

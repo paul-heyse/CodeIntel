@@ -71,7 +71,7 @@ class StorageConfig:
             db_path=db_path,
             read_only=False,
             apply_schema=True,
-            ensure_views=True,
+            ensure_views=False,
             validate_schema=True,
             validation_mode=validation_mode,
             validation_summary_path=validation_summary_path
@@ -113,7 +113,7 @@ class StorageConfig:
             db_path=db_path,
             read_only=True,
             apply_schema=False,
-            ensure_views=True,
+            ensure_views=False,
             validate_schema=True,
             validation_mode=validation_mode,
             validation_summary_path=validation_summary_path
