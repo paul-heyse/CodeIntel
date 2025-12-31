@@ -152,6 +152,58 @@ def _resolve_start_line(node_type: str, start_line: object) -> int | None:
     return None
 
 
+_ALLOWED_NODE_TYPES = frozenset({"Module", "ClassDef", "FunctionDef", "AsyncFunctionDef"})
+
+
+def _descriptor_from_row(
+    *,
+    row: dict[str, object],
+    module_by_path: dict[str, str],
+    language_by_path: dict[str, str],
+    repo: str,
+    commit: str,
+) -> tuple[_ResolvedDescriptor, tuple[str, str, str, int]] | None:
+    node_type = row.get("node_type")
+    if not isinstance(node_type, str) or node_type not in _ALLOWED_NODE_TYPES:
+        return None
+    path = row.get("path")
+    if not isinstance(path, str):
+        return None
+    module_name = module_by_path.get(path)
+    language = language_by_path.get(path)
+    if module_name is None or language is None:
+        return None
+    start_line = _resolve_start_line(node_type, row.get("lineno"))
+    if start_line is None:
+        return None
+    end_line = row.get("end_lineno")
+    resolved_end = end_line if isinstance(end_line, int) else start_line
+    qualname = _resolve_qualname(
+        node_type=node_type,
+        module_name=module_name,
+        name=row.get("name"),
+        qualname=row.get("qualname"),
+        parent_qualname=row.get("parent_qualname"),
+    )
+    if qualname is None:
+        return None
+    parent_qualname = row.get("parent_qualname")
+    parent_value = parent_qualname if isinstance(parent_qualname, str) else module_name
+    kind = determine_kind(node_type, parent_value, path, module_name)
+    descriptor = GoidDescriptor(
+        repo=repo,
+        commit=commit,
+        language=language,
+        rel_path=path,
+        kind=kind,
+        qualname=qualname,
+        start_line=start_line,
+        end_line=resolved_end,
+    )
+    dedupe_key = (path, node_type, qualname, start_line)
+    return _ResolvedDescriptor(descriptor=descriptor, module_name=module_name), dedupe_key
+
+
 def _collect_descriptors(
     *,
     ast_nodes_frame: pl.DataFrame,
@@ -162,53 +214,22 @@ def _collect_descriptors(
 ) -> list[_ResolvedDescriptor]:
     descriptors: list[_ResolvedDescriptor] = []
     seen: set[tuple[str, str, str, int]] = set()
-    allowed_nodes = {"Module", "ClassDef", "FunctionDef", "AsyncFunctionDef"}
 
     for row in ast_nodes_frame.iter_rows(named=True):
-        node_type = row.get("node_type")
-        if not isinstance(node_type, str):
-            continue
-        if node_type not in allowed_nodes:
-            continue
-        path = row.get("path")
-        if not isinstance(path, str) or path not in module_by_path:
-            continue
-        module_name = module_by_path[path]
-        language = language_by_path.get(path)
-        if language is None:
-            continue
-        start_line = _resolve_start_line(node_type, row.get("lineno"))
-        if start_line is None:
-            continue
-        end_line = row.get("end_lineno")
-        resolved_end = end_line if isinstance(end_line, int) else start_line
-        qualname = _resolve_qualname(
-            node_type=node_type,
-            module_name=module_name,
-            name=row.get("name"),
-            qualname=row.get("qualname"),
-            parent_qualname=row.get("parent_qualname"),
+        result = _descriptor_from_row(
+            row=row,
+            module_by_path=module_by_path,
+            language_by_path=language_by_path,
+            repo=repo,
+            commit=commit,
         )
-        if qualname is None:
+        if result is None:
             continue
-        dedupe_key = (path, node_type, qualname, start_line)
+        resolved, dedupe_key = result
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
-        parent_qualname = row.get("parent_qualname")
-        parent_value = parent_qualname if isinstance(parent_qualname, str) else module_name
-        kind = determine_kind(node_type, parent_value, path, module_name)
-        descriptor = GoidDescriptor(
-            repo=repo,
-            commit=commit,
-            language=language,
-            rel_path=path,
-            kind=kind,
-            qualname=qualname,
-            start_line=start_line,
-            end_line=resolved_end,
-        )
-        descriptors.append(_ResolvedDescriptor(descriptor=descriptor, module_name=module_name))
+        descriptors.append(resolved)
     return descriptors
 
 

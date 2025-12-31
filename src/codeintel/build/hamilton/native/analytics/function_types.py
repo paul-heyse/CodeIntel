@@ -38,6 +38,33 @@ FUNCTION_TYPES_CONTRACT = TableContractSpec(
     clip_column=None,
     input_name="function_types__base",
 )
+FUNCTION_TYPES_COLUMNS = (
+    "function_goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "language",
+    "kind",
+    "qualname",
+    "start_line",
+    "end_line",
+    "total_params",
+    "annotated_params",
+    "unannotated_params",
+    "param_typed_ratio",
+    "has_return_annotation",
+    "return_type",
+    "return_type_source",
+    "type_comment",
+    "param_types",
+    "fully_typed",
+    "partial_typed",
+    "untyped",
+    "typedness_bucket",
+    "typedness_source",
+    "created_at",
+)
 
 
 def function_types__base(function_analytics_result: FunctionAnalyticsResult) -> pl.LazyFrame:
@@ -51,6 +78,7 @@ def function_types__base(function_analytics_result: FunctionAnalyticsResult) -> 
     return rows_to_frame(
         FUNCTION_TYPES_TABLE_KEY,
         function_analytics_result.types_rows,
+        columns=FUNCTION_TYPES_COLUMNS,
     )
 
 

@@ -154,10 +154,24 @@ def graph_metrics_result(
     _q__graph__symbol_use_edges: InferableTabularInput,
     _q__analytics__subsystem_modules: InferableTabularInput,
 ) -> GraphMetricsRows:
+    """Compute base graph metrics rows.
+
+    Returns
+    -------
+    GraphMetricsRows
+        Container with function and module graph metric rows.
+    """
     return build_graph_metrics_rows(env.gateway, env.snapshot)
 
 
 def graph_metrics_functions__base(graph_metrics_result: GraphMetricsRows) -> pl.LazyFrame:
+    """Build base graph metrics rows for functions.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing function graph metrics rows.
+    """
     if not graph_metrics_result.function_rows:
         return empty_frame_for_table(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)
     return rows_to_frame(GRAPH_METRICS_FUNCTIONS_TABLE_KEY, graph_metrics_result.function_rows)
@@ -176,10 +190,24 @@ def graph_metrics_functions__base(graph_metrics_result: GraphMetricsRows) -> pl.
 def graph_metrics_functions__table(
     graph_metrics_functions__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist function graph metrics rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted function graph metrics frame.
+    """
     return graph_metrics_functions__base
 
 
 def graph_metrics_modules__base(graph_metrics_result: GraphMetricsRows) -> pl.LazyFrame:
+    """Build base graph metrics rows for modules.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing module graph metrics rows.
+    """
     if not graph_metrics_result.module_rows:
         return empty_frame_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
     return rows_to_frame(GRAPH_METRICS_MODULES_TABLE_KEY, graph_metrics_result.module_rows)
@@ -198,6 +226,13 @@ def graph_metrics_modules__base(graph_metrics_result: GraphMetricsRows) -> pl.La
 def graph_metrics_modules__table(
     graph_metrics_modules__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist module graph metrics rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted module graph metrics frame.
+    """
     return graph_metrics_modules__base
 
 
@@ -215,6 +250,13 @@ def t__graph_metrics(
     catalog: DagCatalog,
     graph_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
+    """Finalize graph metrics target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the graph metrics target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
@@ -231,6 +273,13 @@ def graph_metrics_functions_ext__base(
     env: BuildEnv,
     _q__analytics__graph_metrics_functions: InferableTabularInput,
 ) -> pl.LazyFrame:
+    """Build extended graph metrics rows for functions.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing extended function metrics rows.
+    """
     rows = build_graph_metrics_functions_ext_rows(
         env.gateway,
         repo=env.repo,
@@ -252,6 +301,13 @@ def graph_metrics_functions_ext__base(
 def graph_metrics_functions_ext__table(
     graph_metrics_functions_ext__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist extended function graph metrics rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted extended function metrics frame.
+    """
     return graph_metrics_functions_ext__base
 
 
@@ -259,6 +315,13 @@ def graph_metrics_modules_ext__base(
     env: BuildEnv,
     _q__analytics__graph_metrics_modules: InferableTabularInput,
 ) -> pl.LazyFrame:
+    """Build extended graph metrics rows for modules.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing extended module metrics rows.
+    """
     rows = build_graph_metrics_modules_ext_rows(
         env.gateway,
         repo=env.repo,
@@ -280,6 +343,13 @@ def graph_metrics_modules_ext__base(
 def graph_metrics_modules_ext__table(
     graph_metrics_modules_ext__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist extended module graph metrics rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted extended module metrics frame.
+    """
     return graph_metrics_modules_ext__base
 
 
@@ -297,6 +367,13 @@ def t__graph_metrics_ext(
     catalog: DagCatalog,
     graph_metrics_ext__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
+    """Finalize extended graph metrics target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the extended graph metrics target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
@@ -313,6 +390,13 @@ def symbol_graph_metrics_functions__base(
     env: BuildEnv,
     _q__graph__symbol_use_edges: InferableTabularInput,
 ) -> pl.LazyFrame:
+    """Build symbol graph metrics rows for functions.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing symbol function metrics rows.
+    """
     rows = build_symbol_graph_metrics_function_rows(
         env.gateway,
         repo=env.repo,
@@ -334,6 +418,13 @@ def symbol_graph_metrics_functions__base(
 def symbol_graph_metrics_functions__table(
     symbol_graph_metrics_functions__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist symbol function graph metrics rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted symbol function metrics frame.
+    """
     return symbol_graph_metrics_functions__base
 
 
@@ -341,6 +432,13 @@ def symbol_graph_metrics_modules__base(
     env: BuildEnv,
     _q__graph__symbol_use_edges: InferableTabularInput,
 ) -> pl.LazyFrame:
+    """Build symbol graph metrics rows for modules.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing symbol module metrics rows.
+    """
     rows = build_symbol_graph_metrics_module_rows(
         env.gateway,
         repo=env.repo,
@@ -362,6 +460,13 @@ def symbol_graph_metrics_modules__base(
 def symbol_graph_metrics_modules__table(
     symbol_graph_metrics_modules__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist symbol module graph metrics rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted symbol module metrics frame.
+    """
     return symbol_graph_metrics_modules__base
 
 
@@ -379,6 +484,13 @@ def t__symbol_graph_metrics(
     catalog: DagCatalog,
     symbol_graph_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
+    """Finalize symbol graph metrics target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the symbol graph metrics target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
@@ -396,6 +508,13 @@ def graph_stats__base(
     _q__graph__call_graph_edges: InferableTabularInput,
     _q__graph__import_graph_edges: InferableTabularInput,
 ) -> pl.LazyFrame:
+    """Build base graph stats rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing graph stats rows.
+    """
     rows = build_graph_stats_rows(env.gateway, repo=env.repo, commit=env.commit)
     return rows_to_frame(GRAPH_STATS_TABLE_KEY, rows)
 
@@ -411,6 +530,13 @@ def graph_stats__base(
 )
 @table_contract(GRAPH_STATS_CONTRACT)
 def graph_stats__table(graph_stats__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist graph stats rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted graph stats frame.
+    """
     return graph_stats__base
 
 
@@ -420,6 +546,13 @@ def t__graph_stats(
     catalog: DagCatalog,
     m__analytics__graph_stats: MaterializationResult,
 ) -> TargetRunRecord:
+    """Finalize graph stats target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the graph stats target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,

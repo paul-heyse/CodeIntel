@@ -49,9 +49,7 @@ GRAPH_VALIDATION_CONTRACT = TableContractSpec(
 )
 
 
-def _report_findings(
-    reporter: GraphValidationReporter, findings: list[dict[str, object]]
-) -> None:
+def _report_findings(reporter: GraphValidationReporter, findings: list[dict[str, object]]) -> None:
     for finding in findings:
         graph_name = str(finding.get("check_name") or "graph_validation")
         entity_ref = finding.get("path") or finding.get("entity_id") or finding.get("graph_name")
@@ -81,7 +79,13 @@ def graph_validation__base(
     _q__graph__import_graph_edges: InferableTabularInput,
     _q__graph__symbol_use_edges: InferableTabularInput,
 ) -> pl.LazyFrame:
-    """Build graph validation rows from validation findings."""
+    """Build graph validation rows from validation findings.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing graph validation rows.
+    """
     runtime = GraphRuntimeOptions(snapshot=env.snapshot)
     report = run_graph_validations_with_runner(
         env.gateway,
@@ -107,6 +111,13 @@ def graph_validation__base(
 )
 @table_contract(GRAPH_VALIDATION_CONTRACT)
 def graph_validation__table(graph_validation__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist graph validation rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted graph validation frame.
+    """
     return graph_validation__base
 
 
@@ -116,6 +127,13 @@ def t__graph_validation(
     catalog: DagCatalog,
     m__analytics__graph_validation: MaterializationResult,
 ) -> TargetRunRecord:
+    """Finalize graph validation target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the graph validation target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,

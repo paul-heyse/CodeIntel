@@ -19,12 +19,14 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns import (
-    RelationTableSaveSpec,
+    DatasetSaveSpec,
     SaverContext,
-    save_relation_table,
+    save_dataset,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_dataset
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 
 LOG = logging.getLogger(__name__)
 
@@ -33,13 +35,19 @@ HISTORY_TIMESERIES_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=HISTORY_TIMESERIES_TARGET_NAME,
 )
-
-
-@save_relation_table(
-    context=HISTORY_TIMESERIES_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=HISTORY_TIMESERIES_TABLE_KEY),
+HISTORY_TIMESERIES_CONTRACT = TableContractSpec(
+    table_key=HISTORY_TIMESERIES_TABLE_KEY,
+    domain="analytics",
+    target=HISTORY_TIMESERIES_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="history_timeseries__base",
 )
-def history_timeseries__rows(env: BuildEnv) -> pl.LazyFrame:
+
+
+def history_timeseries__base(env: BuildEnv) -> pl.LazyFrame:
     """Build a frame for analytics.history_timeseries.
 
     Returns
@@ -57,6 +65,27 @@ def history_timeseries__rows(env: BuildEnv) -> pl.LazyFrame:
         gateway_resolver=resolver,
         options=options,
     )
+
+
+@save_dataset(
+    context=HISTORY_TIMESERIES_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(table_key=HISTORY_TIMESERIES_TABLE_KEY),
+)
+@tag_dataset(
+    domain="analytics",
+    target=HISTORY_TIMESERIES_TARGET_NAME,
+    table_key=HISTORY_TIMESERIES_TABLE_KEY,
+)
+@table_contract(HISTORY_TIMESERIES_CONTRACT)
+def history_timeseries__table(history_timeseries__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist history timeseries rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted history timeseries frame.
+    """
+    return history_timeseries__base
 
 
 @codeintel_target(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
@@ -88,6 +117,7 @@ def t__history_timeseries(
 
 __all__ = [
     "HISTORY_TIMESERIES_TARGET_NAME",
-    "history_timeseries__rows",
+    "history_timeseries__base",
+    "history_timeseries__table",
     "t__history_timeseries",
 ]

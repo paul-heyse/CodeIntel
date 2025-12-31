@@ -38,17 +38,14 @@ def summarize_graph_for_function_profile(
             .filter(predicate)
             .set_alias("edges")
         )
-        cg_out = (
-            aggregate_relation(
-                edges,
-                aggs=[
-                    "count(*) as call_edge_out_count",
-                    "count(distinct callee_goid_h128) as call_fan_out",
-                ],
-                group_by="caller_goid_h128",
-            )
-            .set_alias("cg_out")
-        )
+        cg_out = aggregate_relation(
+            edges,
+            aggs=[
+                "count(*) as call_edge_out_count",
+                "count(distinct callee_goid_h128) as call_fan_out",
+            ],
+            group_by="caller_goid_h128",
+        ).set_alias("cg_out")
         cg_in = aggregate_relation(
             edges.filter(~ColumnExpression("callee_goid_h128").isnull()),
             aggs=[

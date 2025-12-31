@@ -85,7 +85,9 @@ DATA_MODEL_RELATIONSHIPS_CONTRACT = TableContractSpec(
     input_name="data_model_relationships__base",
 )
 DATA_MODEL_USAGE_TARGET_NAME = "data_model_usage"
-DATA_MODEL_USAGE_SAVE_CONTEXT = SaverContext(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
+DATA_MODEL_USAGE_SAVE_CONTEXT = SaverContext(
+    domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME
+)
 DATA_MODEL_USAGE_CONTRACT = TableContractSpec(
     table_key=DATA_MODEL_USAGE_TABLE_KEY,
     domain="analytics",
@@ -109,11 +111,25 @@ def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
 
 
 def data_models_result(env: BuildEnv, _q__core__modules: InferableTabularInput) -> DataModelsResult:
+    """Compute data model rows from storage inputs.
+
+    Returns
+    -------
+    DataModelsResult
+        Computed data model rows and metadata.
+    """
     inputs = load_data_models_inputs(env.gateway, env.snapshot)
     return compute_data_models_from_inputs(inputs, env.snapshot)
 
 
 def data_models__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
+    """Build data model summary rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing data model rows.
+    """
     return rows_to_frame(
         DATA_MODELS_TABLE_KEY,
         data_models_result.model_rows,
@@ -128,10 +144,24 @@ def data_models__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
 @tag_dataset(domain="analytics", target=DATA_MODELS_TARGET_NAME, table_key=DATA_MODELS_TABLE_KEY)
 @table_contract(DATA_MODELS_CONTRACT)
 def data_models__table(data_models__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist data model summary rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted data model summary frame.
+    """
     return data_models__base
 
 
 def data_model_fields__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
+    """Build data model field rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing data model field rows.
+    """
     return rows_to_frame(
         DATA_MODEL_FIELDS_TABLE_KEY,
         data_models_result.field_rows,
@@ -150,10 +180,24 @@ def data_model_fields__base(data_models_result: DataModelsResult) -> pl.LazyFram
 )
 @table_contract(DATA_MODEL_FIELDS_CONTRACT)
 def data_model_fields__table(data_model_fields__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist data model field rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted data model field frame.
+    """
     return data_model_fields__base
 
 
 def data_model_relationships__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
+    """Build data model relationship rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing data model relationship rows.
+    """
     return rows_to_frame(
         DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
         data_models_result.relationship_rows,
@@ -174,6 +218,13 @@ def data_model_relationships__base(data_models_result: DataModelsResult) -> pl.L
 def data_model_relationships__table(
     data_model_relationships__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist data model relationship rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted data model relationship frame.
+    """
     return data_model_relationships__base
 
 
@@ -191,6 +242,13 @@ def t__data_models(
     catalog: DagCatalog,
     data_models__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
+    """Finalize data model target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the data model target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
@@ -209,6 +267,13 @@ def data_model_usage__base(
     _q__core__goids: InferableTabularInput,
     _q__analytics__data_models: InferableTabularInput,
 ) -> pl.LazyFrame:
+    """Build data model usage rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing data model usage rows.
+    """
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
     module_map = _module_map(modules_frame)
     if not module_map:
@@ -236,6 +301,13 @@ def data_model_usage__base(
 )
 @table_contract(DATA_MODEL_USAGE_CONTRACT)
 def data_model_usage__table(data_model_usage__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist data model usage rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted data model usage frame.
+    """
     return data_model_usage__base
 
 
@@ -245,6 +317,13 @@ def t__data_model_usage(
     catalog: DagCatalog,
     m__analytics__data_model_usage: MaterializationResult,
 ) -> TargetRunRecord:
+    """Finalize data model usage target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the data model usage target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,

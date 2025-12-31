@@ -138,6 +138,13 @@ def semantic_roles_result(
     _q__analytics__function_contracts: InferableTabularInput,
     _q__analytics__graph_metrics_functions: InferableTabularInput,
 ) -> SemanticRolesResult:
+    """Compute semantic role rows for functions and modules.
+
+    Returns
+    -------
+    SemanticRolesResult
+        Container with semantic role rows for functions and modules.
+    """
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
     features_frame = tabular_to_lazyframe(q__analytics__function_ast_features).collect()
     module_map = _module_map(modules_frame)
@@ -161,6 +168,13 @@ def semantic_roles_result(
 
 
 def semantic_roles_functions__base(semantic_roles_result: SemanticRolesResult) -> pl.LazyFrame:
+    """Build semantic role rows for functions.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing semantic role rows for functions.
+    """
     if not semantic_roles_result.function_rows:
         return empty_frame_for_table(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY)
     return rows_to_frame(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY, semantic_roles_result.function_rows)
@@ -179,10 +193,24 @@ def semantic_roles_functions__base(semantic_roles_result: SemanticRolesResult) -
 def semantic_roles_functions__table(
     semantic_roles_functions__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
+    """Persist semantic role rows for functions.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted semantic roles functions frame.
+    """
     return semantic_roles_functions__base
 
 
 def semantic_roles_modules__base(semantic_roles_result: SemanticRolesResult) -> pl.LazyFrame:
+    """Build semantic role rows for modules.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing semantic role rows for modules.
+    """
     if not semantic_roles_result.module_rows:
         return empty_frame_for_table(SEMANTIC_ROLES_MODULES_TABLE_KEY)
     return rows_to_frame(SEMANTIC_ROLES_MODULES_TABLE_KEY, semantic_roles_result.module_rows)
@@ -199,6 +227,13 @@ def semantic_roles_modules__base(semantic_roles_result: SemanticRolesResult) -> 
 )
 @table_contract(SEMANTIC_ROLES_MODULES_CONTRACT)
 def semantic_roles_modules__table(semantic_roles_modules__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist semantic role rows for modules.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted semantic roles modules frame.
+    """
     return semantic_roles_modules__base
 
 
@@ -216,6 +251,13 @@ def t__semantic_roles(
     catalog: DagCatalog,
     semantic_roles__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
+    """Finalize semantic roles target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the semantic roles target.
+    """
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,

@@ -37,7 +37,7 @@ from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.queries.expressions import snapshot_filter
 from codeintel.storage.query_results import coerce_int
-from codeintel.storage.schema import arrow_schema_for_table_key
+from codeintel.storage.schema.duckdb_contracts import contract_schema_for_table_key
 from codeintel.storage.snapshot_scoping import RepoCommitScope
 from codeintel.storage.staging import registered_temp_relation
 from codeintel.storage.upsert import UpsertSpec
@@ -828,7 +828,7 @@ def _contract_schema_for_table(
     table_key: str,
 ) -> pa.Schema | None:
     try:
-        return arrow_schema_for_table_key(gateway.con, table_key=table_key)
+        return contract_schema_for_table_key(con=gateway.con, table_key=table_key)
     except (DuckDBError, RuntimeError, TypeError, ValueError):
         return None
 

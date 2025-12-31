@@ -111,9 +111,7 @@ def _normalize_view_keys(
         if resolved in selected:
             continue
         selected.add(resolved)
-        pending.extend(
-            dep for dep in view_map[resolved].dependencies if dep.lower() in lower_map
-        )
+        pending.extend(dep for dep in view_map[resolved].dependencies if dep.lower() in lower_map)
     if missing:
         msg = f"Unknown view keys requested: {sorted(missing)}"
         raise KeyError(msg)
@@ -129,9 +127,7 @@ def _view_dependency_graph(
     deps: dict[str, frozenset[str]] = {}
     for view_key in view_keys:
         ref_set = {
-            dep.lower()
-            for dep in view_map[view_key].dependencies
-            if dep.lower() in selected_lower
+            dep.lower() for dep in view_map[view_key].dependencies if dep.lower() in selected_lower
         }
         deps[view_key.lower()] = frozenset(ref_set - {view_key.lower()})
     return deps

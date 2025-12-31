@@ -141,10 +141,11 @@ def _subsystem_disagreement_findings_impl(
         Findings for subsystem disagreement anomalies.
     """
     try:
+        agrees_value = False
         predicate = (
             (ColumnExpression("repo") == ConstantExpression(repo))
             & (ColumnExpression("commit") == ConstantExpression(commit))
-            & (ColumnExpression("agrees") == ConstantExpression(False))
+            & (ColumnExpression("agrees") == ConstantExpression(agrees_value))
         )
         relation = (
             gateway.relation_from_table_key("analytics.subsystem_agreement")

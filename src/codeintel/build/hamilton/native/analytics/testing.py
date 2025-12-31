@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.analytics.testing.behavioral.tags import build_behavior_rows
@@ -31,6 +33,7 @@ from codeintel.build.hamilton.native.patterns import (
     save_dataset,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
@@ -109,8 +112,10 @@ BEHAVIORAL_COVERAGE_CONTRACT = TableContractSpec(
     input_name="behavioral_coverage__base",
 )
 
+_MODULE = sys.modules[__name__]
 
-def test_coverage_edges__base(
+
+def _coverage_edges__base(
     env: BuildEnv,
     _q__analytics__coverage_lines: InferableTabularInput,
     _q__analytics__test_catalog: InferableTabularInput,
@@ -127,6 +132,11 @@ def test_coverage_edges__base(
     return rows_to_frame(TEST_COVERAGE_TABLE_KEY, rows)
 
 
+attach_node(_MODULE, node_name="test_coverage_edges__base", fn=_coverage_edges__base)
+test_coverage_edges__base = _MODULE.test_coverage_edges__base
+del _coverage_edges__base
+
+
 @save_dataset(
     context=TEST_COVERAGE_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=TEST_COVERAGE_TABLE_KEY),
@@ -137,7 +147,7 @@ def test_coverage_edges__base(
     table_key=TEST_COVERAGE_TABLE_KEY,
 )
 @table_contract(TEST_COVERAGE_CONTRACT)
-def test_coverage_edges__table(test_coverage_edges__base: pl.LazyFrame) -> pl.LazyFrame:
+def _coverage_edges__table(test_coverage_edges__base: pl.LazyFrame) -> pl.LazyFrame:
     """Persist test coverage edges.
 
     Returns
@@ -146,6 +156,11 @@ def test_coverage_edges__table(test_coverage_edges__base: pl.LazyFrame) -> pl.La
         Persisted test coverage edges frame.
     """
     return test_coverage_edges__base
+
+
+attach_node(_MODULE, node_name="test_coverage_edges__table", fn=_coverage_edges__table)
+test_coverage_edges__table = _MODULE.test_coverage_edges__table
+del _coverage_edges__table
 
 
 @codeintel_target(domain="analytics", target=TEST_COVERAGE_TARGET_NAME)
@@ -175,7 +190,7 @@ def t__test_coverage_edges(
     )
 
 
-def test_graph_metrics_result(
+def _graph_metrics_result(
     env: BuildEnv,
     _q__analytics__test_coverage_edges: InferableTabularInput,
     _q__analytics__goid_risk_factors: InferableTabularInput,
@@ -190,7 +205,12 @@ def test_graph_metrics_result(
     return compute_test_graph_metrics_pure(env.gateway, env.snapshot)
 
 
-def test_graph_metrics_tests__base(
+attach_node(_MODULE, node_name="test_graph_metrics_result", fn=_graph_metrics_result)
+test_graph_metrics_result = _MODULE.test_graph_metrics_result
+del _graph_metrics_result
+
+
+def _graph_metrics_tests__base(
     test_graph_metrics_result: TestGraphMetricsResult,
 ) -> pl.LazyFrame:
     """Build test graph metrics rows for tests.
@@ -207,6 +227,11 @@ def test_graph_metrics_tests__base(
     )
 
 
+attach_node(_MODULE, node_name="test_graph_metrics_tests__base", fn=_graph_metrics_tests__base)
+test_graph_metrics_tests__base = _MODULE.test_graph_metrics_tests__base
+del _graph_metrics_tests__base
+
+
 @save_dataset(
     context=TEST_GRAPH_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=TEST_GRAPH_TESTS_TABLE_KEY),
@@ -217,7 +242,7 @@ def test_graph_metrics_tests__base(
     table_key=TEST_GRAPH_TESTS_TABLE_KEY,
 )
 @table_contract(TEST_GRAPH_TESTS_CONTRACT)
-def test_graph_metrics_tests__table(
+def _graph_metrics_tests__table(
     test_graph_metrics_tests__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
     """Persist test graph metrics rows for tests.
@@ -230,7 +255,12 @@ def test_graph_metrics_tests__table(
     return test_graph_metrics_tests__base
 
 
-def test_graph_metrics_functions__base(
+attach_node(_MODULE, node_name="test_graph_metrics_tests__table", fn=_graph_metrics_tests__table)
+test_graph_metrics_tests__table = _MODULE.test_graph_metrics_tests__table
+del _graph_metrics_tests__table
+
+
+def _graph_metrics_functions__base(
     test_graph_metrics_result: TestGraphMetricsResult,
 ) -> pl.LazyFrame:
     """Build test graph metrics rows for functions.
@@ -247,6 +277,15 @@ def test_graph_metrics_functions__base(
     )
 
 
+attach_node(
+    _MODULE,
+    node_name="test_graph_metrics_functions__base",
+    fn=_graph_metrics_functions__base,
+)
+test_graph_metrics_functions__base = _MODULE.test_graph_metrics_functions__base
+del _graph_metrics_functions__base
+
+
 @save_dataset(
     context=TEST_GRAPH_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY),
@@ -257,7 +296,7 @@ def test_graph_metrics_functions__base(
     table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY,
 )
 @table_contract(TEST_GRAPH_FUNCTIONS_CONTRACT)
-def test_graph_metrics_functions__table(
+def _graph_metrics_functions__table(
     test_graph_metrics_functions__base: pl.LazyFrame,
 ) -> pl.LazyFrame:
     """Persist test graph metrics rows for functions.
@@ -268,6 +307,15 @@ def test_graph_metrics_functions__table(
         Persisted test graph metrics frame for functions.
     """
     return test_graph_metrics_functions__base
+
+
+attach_node(
+    _MODULE,
+    node_name="test_graph_metrics_functions__table",
+    fn=_graph_metrics_functions__table,
+)
+test_graph_metrics_functions__table = _MODULE.test_graph_metrics_functions__table
+del _graph_metrics_functions__table
 
 
 test_graph_metrics__table_materializations = make_table_materializations_collector(
@@ -303,7 +351,7 @@ def t__test_graph_metrics(
     )
 
 
-def test_profile__base(
+def _profile__base(
     env: BuildEnv,
     _q__analytics__test_catalog: InferableTabularInput,
     _q__analytics__test_coverage_edges: InferableTabularInput,
@@ -323,12 +371,17 @@ def test_profile__base(
     return rows_to_frame(TEST_PROFILE_TABLE_KEY, result.rows)
 
 
+attach_node(_MODULE, node_name="test_profile__base", fn=_profile__base)
+test_profile__base = _MODULE.test_profile__base
+del _profile__base
+
+
 @save_dataset(
     context=TEST_PROFILE_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=TEST_PROFILE_TABLE_KEY),
 )
 @table_contract(TEST_PROFILE_CONTRACT)
-def test_profile__table(test_profile__base: pl.LazyFrame) -> pl.LazyFrame:
+def _profile__table(test_profile__base: pl.LazyFrame) -> pl.LazyFrame:
     """Persist test profile rows.
 
     Returns
@@ -337,6 +390,11 @@ def test_profile__table(test_profile__base: pl.LazyFrame) -> pl.LazyFrame:
         Persisted test profile frame.
     """
     return test_profile__base
+
+
+attach_node(_MODULE, node_name="test_profile__table", fn=_profile__table)
+test_profile__table = _MODULE.test_profile__table
+del _profile__table
 
 
 @codeintel_target(domain="analytics", target=TEST_PROFILE_TARGET_NAME)

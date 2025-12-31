@@ -75,7 +75,7 @@ def risk_factors__base(
     tested = (
         coverage.group_by("function_goid_h128")
         .len()
-        .with_columns(pl.lit(True).alias("has_tests"))
+        .with_columns(pl.lit(value=True).alias("has_tests"))
         .select(["function_goid_h128", "has_tests"])
     )
 
@@ -97,7 +97,7 @@ def risk_factors__base(
             risk_level,
             pl.col("fan_in_count").fill_null(0).cast(pl.Int64),
             pl.col("fan_out_count").fill_null(0).cast(pl.Int64),
-            pl.col("has_tests").fill_null(False).cast(pl.Boolean),
+            pl.col("has_tests").fill_null(value=False).cast(pl.Boolean),
         )
     )
     return frame.select(
