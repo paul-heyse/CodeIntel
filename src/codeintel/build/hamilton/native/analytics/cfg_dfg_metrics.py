@@ -1,0 +1,800 @@
+"""CFG/DFG analytics tables built with inferable tabular nodes."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+import polars as pl
+
+from codeintel.analytics.cfg_dfg.cfg_core import CfgInputs, cfg_rows_for_fn
+from codeintel.analytics.cfg_dfg.compute import CfgMetricsResult, DfgMetricsResult
+from codeintel.analytics.cfg_dfg.dfg_core import (
+    DfgInputs,
+    build_dfg_context,
+    dfg_block_rows,
+    dfg_ext_row,
+    dfg_fn_row,
+)
+from codeintel.analytics.cfg_dfg.helpers import parse_block_idx
+from codeintel.analytics.graphs.constants import (
+    MAX_CFG_CENTRALITY_SAMPLE,
+    MAX_CFG_EIGEN_SAMPLE,
+    MAX_DFG_CENTRALITY_SAMPLE,
+)
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
+from codeintel.build.hamilton.native.materialization_records import (
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns import (
+    DatasetSaveSpec,
+    SaverContext,
+    make_table_materializations_collector,
+    save_dataset,
+)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.graphs.runtime.context import GraphContext, GraphContextSpec, resolve_graph_context
+
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
+
+CFG_DFG_METRICS_TARGET_NAME = "cfg_dfg_metrics"
+
+CFG_FUNCTION_METRICS_TABLE_KEY = "analytics.cfg_function_metrics"
+CFG_BLOCK_METRICS_TABLE_KEY = "analytics.cfg_block_metrics"
+CFG_FUNCTION_METRICS_EXT_TABLE_KEY = "analytics.cfg_function_metrics_ext"
+DFG_FUNCTION_METRICS_TABLE_KEY = "analytics.dfg_function_metrics"
+DFG_BLOCK_METRICS_TABLE_KEY = "analytics.dfg_block_metrics"
+DFG_FUNCTION_METRICS_EXT_TABLE_KEY = "analytics.dfg_function_metrics_ext"
+
+CFG_DFG_TABLE_KEYS = (
+    CFG_FUNCTION_METRICS_TABLE_KEY,
+    CFG_BLOCK_METRICS_TABLE_KEY,
+    CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+    DFG_FUNCTION_METRICS_TABLE_KEY,
+    DFG_BLOCK_METRICS_TABLE_KEY,
+    DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+)
+
+CFG_DFG_SAVE_CONTEXT = SaverContext(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
+
+CFG_FUNCTION_METRICS_CONTRACT = TableContractSpec(
+    table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
+    domain="analytics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="cfg_function_metrics__base",
+)
+CFG_BLOCK_METRICS_CONTRACT = TableContractSpec(
+    table_key=CFG_BLOCK_METRICS_TABLE_KEY,
+    domain="analytics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="cfg_block_metrics__base",
+)
+CFG_FUNCTION_METRICS_EXT_CONTRACT = TableContractSpec(
+    table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+    domain="analytics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="cfg_function_metrics_ext__base",
+)
+DFG_FUNCTION_METRICS_CONTRACT = TableContractSpec(
+    table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
+    domain="analytics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="dfg_function_metrics__base",
+)
+DFG_BLOCK_METRICS_CONTRACT = TableContractSpec(
+    table_key=DFG_BLOCK_METRICS_TABLE_KEY,
+    domain="analytics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="dfg_block_metrics__base",
+)
+DFG_FUNCTION_METRICS_EXT_CONTRACT = TableContractSpec(
+    table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+    domain="analytics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="dfg_function_metrics_ext__base",
+)
+
+CFG_FUNCTION_METRICS_COLUMNS = (
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "rel_path",
+    "module",
+    "qualname",
+    "cfg_block_count",
+    "cfg_edge_count",
+    "cfg_has_cycles",
+    "cfg_scc_count",
+    "cfg_longest_path_len",
+    "cfg_avg_shortest_path_len",
+    "cfg_branching_factor_mean",
+    "cfg_branching_factor_max",
+    "cfg_linear_block_fraction",
+    "cfg_dom_tree_height",
+    "cfg_dominance_frontier_size_mean",
+    "cfg_dominance_frontier_size_max",
+    "cfg_loop_count",
+    "cfg_loop_nesting_depth_max",
+    "cfg_bc_betweenness_max",
+    "cfg_bc_betweenness_mean",
+    "cfg_bc_closeness_mean",
+    "cfg_bc_eigenvector_max",
+    "created_at",
+    "metrics_version",
+)
+CFG_BLOCK_METRICS_COLUMNS = (
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "block_idx",
+    "is_entry",
+    "is_exit",
+    "is_branch",
+    "is_join",
+    "dom_depth",
+    "dominates_exit",
+    "bc_betweenness",
+    "bc_closeness",
+    "bc_eigenvector",
+    "in_loop_scc",
+    "loop_header",
+    "loop_nesting_depth",
+    "created_at",
+    "metrics_version",
+)
+CFG_FUNCTION_METRICS_EXT_COLUMNS = (
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "unreachable_block_count",
+    "loop_header_count",
+    "true_edge_count",
+    "false_edge_count",
+    "back_edge_count",
+    "exception_edge_count",
+    "fallthrough_edge_count",
+    "loop_edge_count",
+    "entry_exit_simple_paths",
+    "created_at",
+    "metrics_version",
+)
+DFG_FUNCTION_METRICS_COLUMNS = (
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "rel_path",
+    "module",
+    "qualname",
+    "dfg_block_count",
+    "dfg_edge_count",
+    "dfg_phi_edge_count",
+    "dfg_symbol_count",
+    "dfg_component_count",
+    "dfg_scc_count",
+    "dfg_has_cycles",
+    "dfg_longest_chain_len",
+    "dfg_avg_shortest_path_len",
+    "dfg_avg_in_degree",
+    "dfg_avg_out_degree",
+    "dfg_max_in_degree",
+    "dfg_max_out_degree",
+    "dfg_branchy_block_fraction",
+    "dfg_bc_betweenness_max",
+    "dfg_bc_betweenness_mean",
+    "dfg_bc_eigenvector_max",
+    "created_at",
+    "metrics_version",
+)
+DFG_BLOCK_METRICS_COLUMNS = (
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "block_idx",
+    "dfg_in_degree",
+    "dfg_out_degree",
+    "dfg_phi_in_degree",
+    "dfg_phi_out_degree",
+    "dfg_bc_betweenness",
+    "dfg_bc_closeness",
+    "dfg_bc_eigenvector",
+    "dfg_in_chain",
+    "dfg_in_scc",
+    "created_at",
+    "metrics_version",
+)
+DFG_FUNCTION_METRICS_EXT_COLUMNS = (
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "data_flow_edge_count",
+    "intra_block_edge_count",
+    "use_kind_phi_count",
+    "use_kind_data_flow_count",
+    "use_kind_intra_block_count",
+    "use_kind_other_count",
+    "phi_edge_ratio",
+    "entry_exit_simple_paths",
+    "created_at",
+    "metrics_version",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _CfgDfgMetricsAnalysis:
+    cfg: CfgMetricsResult
+    dfg: DfgMetricsResult
+
+
+@dataclass(frozen=True, slots=True)
+class _CfgDfgMetricsInputs:
+    cfg_blocks: pl.DataFrame
+    cfg_edges: pl.DataFrame
+    dfg_edges: pl.DataFrame
+    goids: pl.DataFrame
+    modules: pl.DataFrame
+
+
+def _rows_to_frame(
+    rows: tuple[tuple[object, ...], ...],
+    columns: tuple[str, ...],
+    table_key: str,
+) -> pl.LazyFrame:
+    if not rows:
+        return empty_frame_for_table(table_key)
+    frame = pl.DataFrame(rows, schema=list(columns), orient="row")
+    return frame.lazy()
+
+
+def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
+    module_by_path: dict[str, str] = {}
+    for row in modules_frame.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_by_path[path] = module
+    return module_by_path
+
+
+def _function_metadata(
+    goids_frame: pl.DataFrame,
+    modules_frame: pl.DataFrame,
+) -> dict[int, tuple[str, str | None, str | None]]:
+    module_by_path = _module_by_path(modules_frame)
+    metadata: dict[int, tuple[str, str | None, str | None]] = {}
+    for row in goids_frame.iter_rows(named=True):
+        if row.get("kind") not in {"function", "method"}:
+            continue
+        goid_raw = row.get("goid_h128")
+        goid = normalize_decimal_id(goid_raw)
+        if goid is None:
+            continue
+        rel_path = row.get("rel_path")
+        if not isinstance(rel_path, str):
+            continue
+        qualname = row.get("qualname")
+        module = module_by_path.get(rel_path)
+        metadata[int(goid)] = (rel_path, module, qualname if isinstance(qualname, str) else None)
+    return metadata
+
+
+def _cfg_blocks_by_fn(
+    cfg_blocks_frame: pl.DataFrame,
+) -> dict[int, list[tuple[int, str, int, int]]]:
+    blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = {}
+    for row in cfg_blocks_frame.iter_rows(named=True):
+        fn = normalize_decimal_id(row.get("function_goid_h128"))
+        block_idx = normalize_decimal_id(row.get("block_idx"))
+        if fn is None or block_idx is None:
+            continue
+        kind = row.get("kind")
+        in_deg = normalize_decimal_id(row.get("in_degree")) or 0
+        out_deg = normalize_decimal_id(row.get("out_degree")) or 0
+        blocks_by_fn.setdefault(int(fn), []).append(
+            (int(block_idx), str(kind), int(in_deg), int(out_deg))
+        )
+    return blocks_by_fn
+
+
+def _cfg_edges_by_fn(
+    cfg_edges_frame: pl.DataFrame,
+) -> dict[int, list[tuple[int, int, str]]]:
+    edges_by_fn: dict[int, list[tuple[int, int, str]]] = {}
+    for row in cfg_edges_frame.iter_rows(named=True):
+        fn = normalize_decimal_id(row.get("function_goid_h128"))
+        if fn is None:
+            continue
+        src_idx = parse_block_idx(row.get("src_block_id"))
+        dst_idx = parse_block_idx(row.get("dst_block_id"))
+        if src_idx is None or dst_idx is None:
+            continue
+        edge_kind = row.get("edge_kind")
+        edges_by_fn.setdefault(int(fn), []).append(
+            (src_idx, dst_idx, str(edge_kind) if edge_kind is not None else "unknown")
+        )
+    return edges_by_fn
+
+
+def _dfg_edges_by_fn(
+    dfg_edges_frame: pl.DataFrame,
+) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
+    edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = {}
+    for row in dfg_edges_frame.iter_rows(named=True):
+        fn = normalize_decimal_id(row.get("function_goid_h128"))
+        if fn is None:
+            continue
+        src_idx = parse_block_idx(row.get("src_block_id"))
+        dst_idx = parse_block_idx(row.get("dst_block_id"))
+        if src_idx is None or dst_idx is None:
+            continue
+        src_var = row.get("src_var")
+        dst_var = row.get("dst_var")
+        if not isinstance(src_var, str) or not isinstance(dst_var, str):
+            continue
+        use_kind = row.get("use_kind")
+        edges_by_fn.setdefault(int(fn), []).append(
+            (
+                src_idx,
+                dst_idx,
+                src_var,
+                dst_var,
+                bool(row.get("via_phi")),
+                str(use_kind) if use_kind is not None else "unknown",
+            )
+        )
+    return edges_by_fn
+
+
+def _graph_context(
+    env: BuildEnv,
+    now: datetime,
+    *,
+    betweenness_cap: int,
+    eigen_cap: int,
+) -> GraphContext:
+    return resolve_graph_context(
+        GraphContextSpec(
+            repo=env.repo,
+            commit=env.commit,
+            use_gpu=False,
+            now=now,
+            betweenness_cap=betweenness_cap,
+            eigen_cap=eigen_cap,
+        )
+    )
+
+
+def _build_cfg_metrics(
+    env: BuildEnv,
+    metadata: dict[int, tuple[str, str | None, str | None]],
+    cfg_blocks_frame: pl.DataFrame,
+    cfg_edges_frame: pl.DataFrame,
+    graph_ctx: GraphContext,
+) -> CfgMetricsResult:
+    fn_rows: list[tuple[object, ...]] = []
+    ext_rows: list[tuple[object, ...]] = []
+    block_rows: list[tuple[object, ...]] = []
+    cfg_inputs = CfgInputs(
+        repo=env.repo,
+        commit=env.commit,
+        blocks_by_fn=_cfg_blocks_by_fn(cfg_blocks_frame),
+        edges_by_fn=_cfg_edges_by_fn(cfg_edges_frame),
+        now=graph_ctx.resolved_now(),
+        graph_ctx=graph_ctx,
+    )
+    for fn_goid, meta in metadata.items():
+        rows = cfg_rows_for_fn(fn_goid=fn_goid, meta=meta, inputs=cfg_inputs)
+        if rows is None:
+            continue
+        fn_rows.append(rows.fn_row)
+        ext_rows.append(rows.ext_row)
+        block_rows.extend(rows.block_rows)
+    return CfgMetricsResult(
+        fn_rows=tuple(fn_rows),
+        block_rows=tuple(block_rows),
+        ext_rows=tuple(ext_rows),
+    )
+
+
+def _build_dfg_metrics(
+    env: BuildEnv,
+    metadata: dict[int, tuple[str, str | None, str | None]],
+    dfg_edges_frame: pl.DataFrame,
+    graph_ctx: GraphContext,
+) -> DfgMetricsResult:
+    fn_rows: list[tuple[object, ...]] = []
+    ext_rows: list[tuple[object, ...]] = []
+    block_rows: list[tuple[object, ...]] = []
+    dfg_edges_by_fn = _dfg_edges_by_fn(dfg_edges_frame)
+    for fn_goid, meta in metadata.items():
+        ctx = build_dfg_context(
+            DfgInputs(
+                fn_goid=fn_goid,
+                meta=meta,
+                edges=dfg_edges_by_fn.get(fn_goid, []),
+                repo=env.repo,
+                commit=env.commit,
+                now=graph_ctx.resolved_now(),
+                graph_ctx=graph_ctx,
+            )
+        )
+        if ctx is None:
+            continue
+        fn_rows.append(dfg_fn_row(ctx))
+        ext_rows.append(dfg_ext_row(ctx))
+        block_rows.extend(dfg_block_rows(ctx))
+    return DfgMetricsResult(
+        fn_rows=tuple(fn_rows),
+        block_rows=tuple(block_rows),
+        ext_rows=tuple(ext_rows),
+    )
+
+
+def cfg_dfg_metrics_inputs(
+    q__graph__cfg_blocks: InferableTabularInput,
+    q__graph__cfg_edges: InferableTabularInput,
+    q__graph__dfg_edges: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+) -> _CfgDfgMetricsInputs:
+    """Collect CFG/DFG metrics inputs from inferred tabular nodes.
+
+    Returns
+    -------
+    _CfgDfgMetricsInputs
+        Collected frames for CFG/DFG metrics computation.
+    """
+    return _CfgDfgMetricsInputs(
+        cfg_blocks=tabular_to_lazyframe(q__graph__cfg_blocks).collect(),
+        cfg_edges=tabular_to_lazyframe(q__graph__cfg_edges).collect(),
+        dfg_edges=tabular_to_lazyframe(q__graph__dfg_edges).collect(),
+        goids=tabular_to_lazyframe(q__core__goids).collect(),
+        modules=tabular_to_lazyframe(q__core__modules).collect(),
+    )
+
+
+def cfg_dfg_metrics_analysis(
+    env: BuildEnv,
+    cfg_dfg_metrics_inputs: _CfgDfgMetricsInputs,
+) -> _CfgDfgMetricsAnalysis:
+    """Compute CFG/DFG metrics rows using graph tables and function metadata.
+
+    Parameters
+    ----------
+    env
+        Build environment with repo/commit metadata.
+    cfg_dfg_metrics_inputs
+        Collected CFG/DFG inputs from upstream graph and core tables.
+
+    Returns
+    -------
+    _CfgDfgMetricsAnalysis
+        CFG/DFG metrics payloads for downstream table nodes.
+    """
+    metadata = _function_metadata(
+        cfg_dfg_metrics_inputs.goids,
+        cfg_dfg_metrics_inputs.modules,
+    )
+    now = datetime.now(UTC)
+    cfg_ctx = _graph_context(
+        env,
+        now,
+        betweenness_cap=MAX_CFG_CENTRALITY_SAMPLE,
+        eigen_cap=MAX_CFG_EIGEN_SAMPLE,
+    )
+    dfg_ctx = _graph_context(
+        env,
+        now,
+        betweenness_cap=MAX_DFG_CENTRALITY_SAMPLE,
+        eigen_cap=MAX_CFG_EIGEN_SAMPLE,
+    )
+    cfg = _build_cfg_metrics(
+        env,
+        metadata,
+        cfg_dfg_metrics_inputs.cfg_blocks,
+        cfg_dfg_metrics_inputs.cfg_edges,
+        cfg_ctx,
+    )
+    dfg = _build_dfg_metrics(
+        env,
+        metadata,
+        cfg_dfg_metrics_inputs.dfg_edges,
+        dfg_ctx,
+    )
+    return _CfgDfgMetricsAnalysis(cfg=cfg, dfg=dfg)
+
+
+def cfg_function_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+    """Build CFG function metrics rows from the analysis payload.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame of CFG function metrics rows.
+    """
+    return _rows_to_frame(
+        cfg_dfg_metrics_analysis.cfg.fn_rows,
+        CFG_FUNCTION_METRICS_COLUMNS,
+        CFG_FUNCTION_METRICS_TABLE_KEY,
+    )
+
+
+def cfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+    """Build CFG block metrics rows from the analysis payload.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame of CFG block metrics rows.
+    """
+    return _rows_to_frame(
+        cfg_dfg_metrics_analysis.cfg.block_rows,
+        CFG_BLOCK_METRICS_COLUMNS,
+        CFG_BLOCK_METRICS_TABLE_KEY,
+    )
+
+
+def cfg_function_metrics_ext__base(
+    cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
+) -> pl.LazyFrame:
+    """Build CFG function metrics ext rows from the analysis payload.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame of CFG function metrics ext rows.
+    """
+    return _rows_to_frame(
+        cfg_dfg_metrics_analysis.cfg.ext_rows,
+        CFG_FUNCTION_METRICS_EXT_COLUMNS,
+        CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+    )
+
+
+def dfg_function_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+    """Build DFG function metrics rows from the analysis payload.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame of DFG function metrics rows.
+    """
+    return _rows_to_frame(
+        cfg_dfg_metrics_analysis.dfg.fn_rows,
+        DFG_FUNCTION_METRICS_COLUMNS,
+        DFG_FUNCTION_METRICS_TABLE_KEY,
+    )
+
+
+def dfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+    """Build DFG block metrics rows from the analysis payload.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame of DFG block metrics rows.
+    """
+    return _rows_to_frame(
+        cfg_dfg_metrics_analysis.dfg.block_rows,
+        DFG_BLOCK_METRICS_COLUMNS,
+        DFG_BLOCK_METRICS_TABLE_KEY,
+    )
+
+
+def dfg_function_metrics_ext__base(
+    cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
+) -> pl.LazyFrame:
+    """Build DFG function metrics ext rows from the analysis payload.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame of DFG function metrics ext rows.
+    """
+    return _rows_to_frame(
+        cfg_dfg_metrics_analysis.dfg.ext_rows,
+        DFG_FUNCTION_METRICS_EXT_COLUMNS,
+        DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+    )
+
+
+@save_dataset(
+    context=CFG_DFG_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(
+        table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
+)
+@table_contract(CFG_FUNCTION_METRICS_CONTRACT)
+def cfg_function_metrics__table(cfg_function_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Return the cleaned/enriched CFG function metrics frame.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Cleaned/enriched CFG function metrics frame.
+    """
+    return cfg_function_metrics__base
+
+
+@save_dataset(
+    context=CFG_DFG_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(
+        table_key=CFG_BLOCK_METRICS_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
+)
+@table_contract(CFG_BLOCK_METRICS_CONTRACT)
+def cfg_block_metrics__table(cfg_block_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Return the cleaned/enriched CFG block metrics frame.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Cleaned/enriched CFG block metrics frame.
+    """
+    return cfg_block_metrics__base
+
+
+@save_dataset(
+    context=CFG_DFG_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(
+        table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
+)
+@table_contract(CFG_FUNCTION_METRICS_EXT_CONTRACT)
+def cfg_function_metrics_ext__table(
+    cfg_function_metrics_ext__base: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Return the cleaned/enriched CFG function metrics ext frame.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Cleaned/enriched CFG function metrics ext frame.
+    """
+    return cfg_function_metrics_ext__base
+
+
+@save_dataset(
+    context=CFG_DFG_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(
+        table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
+)
+@table_contract(DFG_FUNCTION_METRICS_CONTRACT)
+def dfg_function_metrics__table(dfg_function_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Return the cleaned/enriched DFG function metrics frame.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Cleaned/enriched DFG function metrics frame.
+    """
+    return dfg_function_metrics__base
+
+
+@save_dataset(
+    context=CFG_DFG_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(
+        table_key=DFG_BLOCK_METRICS_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
+)
+@table_contract(DFG_BLOCK_METRICS_CONTRACT)
+def dfg_block_metrics__table(dfg_block_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Return the cleaned/enriched DFG block metrics frame.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Cleaned/enriched DFG block metrics frame.
+    """
+    return dfg_block_metrics__base
+
+
+@save_dataset(
+    context=CFG_DFG_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(
+        table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
+)
+@table_contract(DFG_FUNCTION_METRICS_EXT_CONTRACT)
+def dfg_function_metrics_ext__table(
+    dfg_function_metrics_ext__base: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Return the cleaned/enriched DFG function metrics ext frame.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Cleaned/enriched DFG function metrics ext frame.
+    """
+    return dfg_function_metrics_ext__base
+
+
+cfg_dfg_metrics__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
+    table_keys=CFG_DFG_TABLE_KEYS,
+    node_name="cfg_dfg_metrics__table_materializations",
+)
+
+
+@codeintel_target(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
+def t__cfg_dfg_metrics(
+    env: BuildEnv,
+    catalog: DagCatalog,
+    cfg_dfg_metrics__table_materializations: dict[str, MaterializationResult],
+) -> TargetRunRecord:
+    """Finalize cfg_dfg_metrics target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the cfg_dfg_metrics target.
+    """
+    context = MaterializationRecordContext(
+        env=env,
+        catalog=catalog,
+        target_name=CFG_DFG_METRICS_TARGET_NAME,
+    )
+    return record_from_materializations(
+        context=context,
+        artifact_materializations=None,
+        table_materializations=cfg_dfg_metrics__table_materializations,
+    )
+
+
+__all__ = [
+    "cfg_block_metrics__base",
+    "cfg_block_metrics__table",
+    "cfg_dfg_metrics__table_materializations",
+    "cfg_dfg_metrics_inputs",
+    "cfg_function_metrics__base",
+    "cfg_function_metrics__table",
+    "cfg_function_metrics_ext__base",
+    "cfg_function_metrics_ext__table",
+    "dfg_block_metrics__base",
+    "dfg_block_metrics__table",
+    "dfg_function_metrics__base",
+    "dfg_function_metrics__table",
+    "dfg_function_metrics_ext__base",
+    "dfg_function_metrics_ext__table",
+    "t__cfg_dfg_metrics",
+]

@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.storage.helpers.sql_params import render_sql
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.query_results import (
     coerce_int,
     coerce_optional_int,
@@ -158,26 +158,25 @@ class FunctionGoidLoader:
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        relation = self._gateway.con.sql(
-            render_sql(
-                """
-                SELECT
-                    goid_h128,
-                    urn,
-                    repo,
-                    commit,
-                    rel_path,
-                    language,
-                    kind,
-                    qualname,
-                    start_line,
-                    end_line
-                FROM core.goids
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND kind IN ('function', 'method')
-                """,
-                {"repo": self._snapshot.repo, "commit": self._snapshot.commit},
+        predicate = (ColumnExpression("repo") == ConstantExpression(self._snapshot.repo)) & (
+            ColumnExpression("commit") == ConstantExpression(self._snapshot.commit)
+        )
+        kind_literals = [ConstantExpression("function"), ConstantExpression("method")]
+        relation = (
+            self._gateway.relation_from_table_key("core.goids")
+            .filter(predicate)
+            .filter(ColumnExpression("kind").isin(*kind_literals))
+            .select(
+                "goid_h128",
+                "urn",
+                "repo",
+                "commit",
+                "rel_path",
+                "language",
+                "kind",
+                "qualname",
+                "start_line",
+                "end_line",
             )
         )
         for record in records_from_relation(relation):

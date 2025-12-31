@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.native.analytics.cfg_dfg_metrics import (
+    cfg_block_metrics__base,
+    cfg_block_metrics__table,
+    cfg_dfg_metrics__table_materializations,
+    cfg_function_metrics__base,
+    cfg_function_metrics__table,
+    cfg_function_metrics_ext__base,
+    cfg_function_metrics_ext__table,
+    dfg_block_metrics__base,
+    dfg_block_metrics__table,
+    dfg_function_metrics__base,
+    dfg_function_metrics__table,
+    dfg_function_metrics_ext__base,
+    dfg_function_metrics_ext__table,
+    t__cfg_dfg_metrics,
+)
 from codeintel.build.hamilton.native.analytics.function_ast_features import (
     function_ast_features__base,
     function_ast_features__table,
@@ -17,8 +33,8 @@ from codeintel.build.hamilton.native.analytics.tables_coverage import (
     t__coverage_functions,
 )
 from codeintel.build.hamilton.native.analytics.tables_dependencies import (
-    external_deps__calls_table,
-    external_deps__table,
+    external_dependencies__table,
+    external_dependency_calls__table,
     external_deps__table_materializations,
     t__external_deps,
 )
@@ -39,9 +55,22 @@ from codeintel.build.hamilton.native.analytics.tables_risk import (
 )
 
 __all__ = [
+    "cfg_block_metrics__base",
+    "cfg_block_metrics__table",
+    "cfg_dfg_metrics__table_materializations",
+    "cfg_function_metrics__base",
+    "cfg_function_metrics__table",
+    "cfg_function_metrics_ext__base",
+    "cfg_function_metrics_ext__table",
     "coverage_functions__table",
-    "external_deps__calls_table",
-    "external_deps__table",
+    "dfg_block_metrics__base",
+    "dfg_block_metrics__table",
+    "dfg_function_metrics__base",
+    "dfg_function_metrics__table",
+    "dfg_function_metrics_ext__base",
+    "dfg_function_metrics_ext__table",
+    "external_dependencies__table",
+    "external_dependency_calls__table",
     "external_deps__table_materializations",
     "function_ast_features__base",
     "function_ast_features__table",
@@ -53,6 +82,7 @@ __all__ = [
     "module_profile__table",
     "risk_factors__base",
     "risk_factors__table",
+    "t__cfg_dfg_metrics",
     "t__coverage_functions",
     "t__external_deps",
     "t__function_ast_features",

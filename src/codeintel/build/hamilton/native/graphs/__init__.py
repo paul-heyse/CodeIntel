@@ -46,6 +46,16 @@ from codeintel.build.hamilton.native.graphs.import_graph import (
     import_modules_empty,
     import_modules_existing,
 )
+from codeintel.build.hamilton.native.graphs.symbol_use import (
+    SYMBOL_USE_EDGES_TABLE_KEY,
+    SYMBOL_USES_TARGET_NAME,
+    symbol_use_edges__table,
+    symbol_use_edges_compute,
+    symbol_use_edges_empty,
+    symbol_use_edges_existing,
+    symbol_uses__table_materializations,
+    t__symbol_uses,
+)
 from codeintel.build.hamilton.native.graphs.variants import (
     call_graph_edges,
     call_graph_nodes,
@@ -54,6 +64,7 @@ from codeintel.build.hamilton.native.graphs.variants import (
     dfg_edges,
     import_graph_edges,
     import_modules,
+    symbol_use_edges,
 )
 
 __all__ = [
@@ -68,6 +79,8 @@ __all__ = [
     "IMPORT_GRAPH_EDGES_TABLE_KEY",
     "IMPORT_GRAPH_TARGET_NAME",
     "IMPORT_MODULES_TABLE_KEY",
+    "SYMBOL_USES_TARGET_NAME",
+    "SYMBOL_USE_EDGES_TABLE_KEY",
     "call_graph_edges",
     "call_graph_edges_compute",
     "call_graph_edges_empty",
@@ -96,8 +109,15 @@ __all__ = [
     "import_modules_compute",
     "import_modules_empty",
     "import_modules_existing",
+    "symbol_use_edges",
+    "symbol_use_edges__table",
+    "symbol_use_edges_compute",
+    "symbol_use_edges_empty",
+    "symbol_use_edges_existing",
+    "symbol_uses__table_materializations",
     "t__call_graph",
     "t__cfg",
     "t__dfg",
     "t__import_graph",
+    "t__symbol_uses",
 ]

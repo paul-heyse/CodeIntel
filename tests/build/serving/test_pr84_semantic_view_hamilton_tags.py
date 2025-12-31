@@ -13,8 +13,8 @@ from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
 )
+from codeintel.build.hamilton.native.views import view_outputs
 from codeintel.core.hamilton import tags as ht
-from codeintel.storage.views import sqlglot_views
 from tests._helpers.assertions import (
     assert_record_has_artifacts,
     assert_target_ok,
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 def test_semantic_view_decorator_applies_hamilton_tags() -> None:
     """semantic_view should apply `output_kind=semantic_view` and required tag fields."""
-    dr = Driver({}, sqlglot_views)
+    dr = Driver({}, view_outputs)
     nodes = dr.list_available_variables(
         tag_filter={ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW},
     )

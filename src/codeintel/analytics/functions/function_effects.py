@@ -19,8 +19,8 @@ from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.graphs.runtime import resolve_graph_runtime
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.query_results import coerce_int
 
 if TYPE_CHECKING:
@@ -393,18 +393,17 @@ def _compute_transitive_effects(
 def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> dict[int, int]:
     counts: dict[int, int] = {}
     try:
-        relation = gateway.con.sql(
-            render_sql(
-                """
-                SELECT caller_goid_h128, COUNT(*) AS unresolved_count
-                FROM graph.call_graph_edges
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND (callee_goid_h128 IS NULL OR callee_goid_h128 = -1)
-                GROUP BY caller_goid_h128
-                """,
-                {"repo": repo, "commit": commit},
+        relation = gateway.relation_from_table_key("graph.call_graph_edges").filter(
+            (ColumnExpression("repo") == ConstantExpression(repo))
+            & (ColumnExpression("commit") == ConstantExpression(commit))
+            & (
+                ColumnExpression("callee_goid_h128").isnull()
+                | (ColumnExpression("callee_goid_h128") == ConstantExpression(-1))
             )
+        )
+        relation = relation.aggregate(
+            "count(*) as unresolved_count",
+            "caller_goid_h128",
         )
         rows = relation.fetchall()
     except DuckDBError:

@@ -1,17 +1,17 @@
-"""Hamilton-native view materialization using Polars + precompiled SQL plans."""
+"""Hamilton-native view materialization using SQLGlot AST + DuckDB relations."""
 
 from __future__ import annotations
 
 import inspect
 import json
 import logging
-import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
 import polars as pl
+from sqlglot import exp
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -43,20 +43,12 @@ from codeintel.storage.metadata.sync import (
     sync_derived_lineage_edges,
 )
 from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
+from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 VIEWS_TARGET_NAME = "views"
 VIEWS_DOMAIN = "views"
 
-_VIEW_PLAN_PATH = Path(__file__).resolve().parents[4] / "storage" / "views" / "view_plan_map.json"
-
-_MANUAL_VIEW_KEYS: frozenset[str] = frozenset(
-    {
-        "docs.v_data_models",
-        "docs.v_data_models_normalized",
-    }
-)
-
-_TABLE_ALIAS_RE = re.compile(r"[^a-zA-Z0-9_]")
+_VIEW_AST_PATH = Path(__file__).resolve().parents[4] / "storage" / "views" / "view_ast_map.json"
 
 LOG = logging.getLogger(__name__)
 
@@ -85,82 +77,83 @@ _VIEW_SQL_POLICY = SqlIngressPolicy(
 )
 
 
-class ViewPlanSpec(TypedDict):
-    """Serialized view plan specification."""
+class ViewAstSpec(TypedDict):
+    """Serialized view AST specification."""
 
     node_name: str
-    sql: str
-    dependencies: list[str]
+    ast: list[dict[str, object]]
     tags: dict[str, str]
 
 
 @dataclass(frozen=True, slots=True)
 class ViewPlan:
-    """Execution plan for a single SQL-defined view."""
+    """Execution plan for a single view."""
 
     table_key: str
     node_name: str
+    ast: exp.Expression
     sql: str
     dependencies: tuple[str, ...]
     tags: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
-class _ViewInputs:
-    data_models: pl.LazyFrame
-    fields: pl.LazyFrame
-    relationships: pl.LazyFrame
-
-
-def _load_view_map() -> dict[str, ViewPlanSpec]:
-    raw = json.loads(_VIEW_PLAN_PATH.read_text(encoding="utf-8"))
+def _load_view_map() -> dict[str, ViewAstSpec]:
+    raw = json.loads(_VIEW_AST_PATH.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        msg = "view_plan_map.json must contain a mapping"
+        msg = "view_ast_map.json must contain a mapping"
         raise TypeError(msg)
-    view_map: dict[str, ViewPlanSpec] = {}
+    view_map: dict[str, ViewAstSpec] = {}
     for key, value in raw.items():
         if not isinstance(key, str) or not isinstance(value, dict):
             continue
         node_name = value.get("node_name")
-        sql = value.get("sql")
-        dependencies = value.get("dependencies")
+        ast = value.get("ast")
         tags = value.get("tags")
         if (
             not isinstance(node_name, str)
-            or not isinstance(sql, str)
-            or not isinstance(dependencies, list)
+            or not isinstance(ast, list)
             or not isinstance(tags, dict)
         ):
             continue
         tag_map = {str(tag_key): str(tag_value) for tag_key, tag_value in tags.items()}
         view_map[key] = {
             "node_name": node_name,
-            "sql": sql,
-            "dependencies": [str(dep) for dep in dependencies],
+            "ast": ast,
             "tags": tag_map,
         }
     return view_map
 
 
-def _all_dependencies(view_map: Mapping[str, ViewPlanSpec]) -> tuple[str, ...]:
-    deps: set[str] = set()
-    for spec in view_map.values():
-        deps.update(spec["dependencies"])
-    return tuple(sorted(deps))
+def _table_key_from_table(table: exp.Table) -> str:
+    name = table.name
+    schema = table.db
+    if schema:
+        return f"{schema}.{name}"
+    return name
 
 
-def _table_alias(table_key: str) -> str:
-    cleaned = table_key.strip()
-    cleaned = cleaned.replace("-", "_").replace(".", "__").replace("/", "__")
-    cleaned = _TABLE_ALIAS_RE.sub("_", cleaned)
-    cleaned = re.sub(r"_{3,}", "__", cleaned)
-    cleaned = cleaned.strip("_")
-    if not cleaned:
-        msg = f"Invalid table key for alias: {table_key!r}"
-        raise ValueError(msg)
-    if cleaned[0].isdigit():
-        cleaned = f"t_{cleaned}"
-    return cleaned
+def _table_keys_from_ast(ast: exp.Expression) -> tuple[str, ...]:
+    keys = {_table_key_from_table(table) for table in ast.find_all(exp.Table)}
+    return tuple(sorted(key for key in keys if key))
+
+
+def _rewrite_ast_tables(ast: exp.Expression) -> exp.Expression:
+    def _transform(node: exp.Expression) -> exp.Expression:
+        if not isinstance(node, exp.Table):
+            return node
+        table_key = _table_key_from_table(node)
+        alias = node.args.get("alias")
+        return exp.Table(
+            this=exp.Identifier(this=table_key, quoted=True),
+            alias=alias,
+        )
+
+    return ast.transform(_transform)
+
+
+def _render_view_sql(ast: exp.Expression) -> str:
+    rewritten = _rewrite_ast_tables(ast.copy())
+    return render_sql_duckdb(rewritten)
 
 
 def _validate_view_sql(*, table_key: str, sql: str) -> None:
@@ -267,12 +260,19 @@ def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pl.
 def _view_signature(param_names: Sequence[str]) -> inspect.Signature:
     params = [
         inspect.Parameter(
+            "env",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=BuildEnv,
+        )
+    ]
+    params.extend(
+        inspect.Parameter(
             name,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
             annotation=pl.LazyFrame,
         )
         for name in param_names
-    ]
+    )
     return inspect.Signature(params, return_annotation=pl.LazyFrame)
 
 
@@ -307,226 +307,42 @@ def _decorate_view_node(
     return decorated
 
 
-def _build_sql_view_node(
+def _build_ast_view_node(
     *,
     plan: ViewPlan,
     param_by_table: Mapping[str, str],
-    alias_map: Mapping[str, str],
 ) -> Callable[..., pl.LazyFrame]:
-    def view_fn(**kwargs: object) -> pl.LazyFrame:
-        tables: dict[str, pl.LazyFrame] = {}
-        for table_key, param_name in param_by_table.items():
-            value = kwargs.get(param_name)
-            if value is None:
-                msg = f"Missing dependency {param_name} for {plan.table_key}"
-                raise ValueError(msg)
-            tables[alias_map[table_key]] = _ensure_lazyframe(value, param_name=param_name)
-        ctx = pl.SQLContext(frames=tables)
-        return ctx.execute(plan.sql, eager=False)
+    def view_fn(env: BuildEnv, **kwargs: object) -> pl.LazyFrame:
+        con = env.gateway.con
+        registered: list[str] = []
+        try:
+            for table_key, param_name in param_by_table.items():
+                value = kwargs.get(param_name)
+                if value is None:
+                    msg = f"Missing dependency {param_name} for {plan.table_key}"
+                    raise ValueError(msg)
+                frame = _ensure_lazyframe(value, param_name=param_name)
+                con.register(table_key, frame)
+                registered.append(table_key)
+            relation = con.sql(plan.sql)
+            return relation.pl(lazy=True)
+        finally:
+            for table_key in registered:
+                con.unregister(table_key)
 
     view_fn = set_signature(view_fn, _view_signature(tuple(param_by_table.values())))
     view_fn.__name__ = plan.node_name
     view_fn.__module__ = __name__
-    view_fn.__doc__ = f"Compute {plan.table_key} using Polars SQL."
+    view_fn.__doc__ = f"Compute {plan.table_key} using DuckDB relations."
     return _decorate_view_node(view_fn, plan=plan)
 
 
-def _coerce_list(value: object) -> list[object]:
-    if value is None:
-        return []
-    if isinstance(value, pl.Series):
-        return value.to_list()
-    if isinstance(value, list):
-        return value
-    return [value]
-
-
-def _list_to_json(expr: pl.Expr) -> pl.Expr:
-    return expr.map_elements(
-        lambda value: json.dumps(_coerce_list(value)),
-        return_dtype=pl.String,
-    )
-
-
-def _data_model_fields(
-    frame: pl.LazyFrame,
-    *,
-    normalized: bool,
-) -> pl.LazyFrame:
-    if normalized:
-        struct_exprs = [
-            pl.col("field_name").alias("field_name"),
-            pl.col("field_type").alias("field_type"),
-            pl.col("required").alias("required"),
-            pl.col("has_default").alias("has_default"),
-            pl.col("default_expr").alias("default_expr"),
-            pl.col("constraints_json").alias("constraints"),
-            pl.col("source").alias("source"),
-            pl.col("rel_path").alias("rel_path"),
-            pl.col("lineno").alias("lineno"),
-            pl.col("created_at").alias("created_at"),
-        ]
-    else:
-        struct_exprs = [
-            pl.col("field_name").alias("name"),
-            pl.col("field_type").alias("type"),
-            pl.col("required").alias("required"),
-            pl.col("has_default").alias("has_default"),
-            pl.col("default_expr").alias("default_expr"),
-            pl.col("constraints_json").alias("constraints"),
-            pl.col("source").alias("source"),
-            pl.col("lineno").alias("lineno"),
-        ]
-    return (
-        frame.sort("field_name")
-        .with_columns(pl.struct(struct_exprs).alias("field_struct"))
-        .group_by("repo", "commit", "model_id", maintain_order=True)
-        .agg(pl.col("field_struct").alias("fields"))
-    )
-
-
-def _data_model_relationships(
-    frame: pl.LazyFrame,
-    *,
-    normalized: bool,
-) -> pl.LazyFrame:
-    if normalized:
-        struct_exprs = [
-            pl.col("field_name").alias("field_name"),
-            pl.col("target_model_id").alias("target_model_id"),
-            pl.col("target_module").alias("target_module"),
-            pl.col("target_model_name").alias("target_model_name"),
-            pl.col("relationship_kind").alias("relationship_kind"),
-            pl.col("multiplicity").alias("multiplicity"),
-            pl.col("via").alias("via"),
-            pl.col("evidence_json").alias("evidence"),
-            pl.col("rel_path").alias("rel_path"),
-            pl.col("lineno").alias("lineno"),
-            pl.col("created_at").alias("created_at"),
-        ]
-    else:
-        struct_exprs = [
-            pl.col("field_name").alias("field"),
-            pl.col("target_model_id").alias("target_model_id"),
-            pl.col("target_model_name").alias("target_model_name"),
-            pl.col("target_module").alias("target_module"),
-            pl.col("multiplicity").alias("multiplicity"),
-            pl.col("relationship_kind").alias("kind"),
-            pl.col("via").alias("via"),
-            pl.col("rel_path").alias("rel_path"),
-            pl.col("lineno").alias("lineno"),
-            pl.col("evidence_json").alias("evidence"),
-        ]
-    return (
-        frame.sort("field_name")
-        .with_columns(pl.struct(struct_exprs).alias("relationship_struct"))
-        .group_by("repo", "commit", "source_model_id", maintain_order=True)
-        .agg(pl.col("relationship_struct").alias("relationships"))
-        .rename({"source_model_id": "model_id"})
-    )
-
-
-def _resolve_data_model_inputs(
-    *,
-    kwargs: Mapping[str, object],
-    param_by_table: Mapping[str, str],
-) -> _ViewInputs:
-    return _ViewInputs(
-        data_models=_ensure_lazyframe(
-            kwargs.get(param_by_table["analytics.data_models"]),
-            param_name=param_by_table["analytics.data_models"],
-        ),
-        fields=_ensure_lazyframe(
-            kwargs.get(param_by_table["analytics.data_model_fields"]),
-            param_name=param_by_table["analytics.data_model_fields"],
-        ),
-        relationships=_ensure_lazyframe(
-            kwargs.get(param_by_table["analytics.data_model_relationships"]),
-            param_name=param_by_table["analytics.data_model_relationships"],
-        ),
-    )
-
-
-def _build_data_models_view(
-    *,
-    plan: ViewPlan,
-    param_by_table: Mapping[str, str],
-    normalized: bool,
-) -> Callable[..., pl.LazyFrame]:
-    def view_fn(**kwargs: object) -> pl.LazyFrame:
-        inputs = _resolve_data_model_inputs(
-            kwargs=kwargs,
-            param_by_table=param_by_table,
-        )
-        base = inputs.data_models.with_columns(
-            pl.coalesce([pl.col("base_classes_json"), pl.lit("[]")]).alias("base_classes_json")
-        )
-        fields = _data_model_fields(inputs.fields, normalized=normalized)
-        relationships = _data_model_relationships(inputs.relationships, normalized=normalized)
-        joined = (
-            base.join(fields, on=["repo", "commit", "model_id"], how="left")
-            .join(relationships, on=["repo", "commit", "model_id"], how="left")
-            .with_columns(
-                pl.col("fields").fill_null(pl.lit([])).alias("fields"),
-                pl.col("relationships").fill_null(pl.lit([])).alias("relationships"),
-            )
-        )
-        if normalized:
-            return joined.select(
-                [
-                    "repo",
-                    "commit",
-                    "model_id",
-                    "goid_h128",
-                    "model_name",
-                    "module",
-                    "rel_path",
-                    "model_kind",
-                    "base_classes_json",
-                    "fields",
-                    "relationships",
-                    "doc_short",
-                    "doc_long",
-                    "created_at",
-                ]
-            )
-        encoded = joined.with_columns(
-            _list_to_json(pl.col("fields")).alias("fields"),
-            _list_to_json(pl.col("relationships")).alias("relationships"),
-        )
-        return encoded.select(
-            [
-                "repo",
-                "commit",
-                "model_id",
-                "goid_h128",
-                "model_name",
-                "module",
-                "rel_path",
-                "model_kind",
-                "base_classes_json",
-                "fields",
-                "relationships",
-                "doc_short",
-                "doc_long",
-                "created_at",
-            ]
-        )
-
-    view_fn = set_signature(view_fn, _view_signature(tuple(param_by_table.values())))
-    view_fn.__name__ = plan.node_name
-    view_fn.__module__ = __name__
-    view_fn.__doc__ = f"Compute {plan.table_key} using Polars expressions."
-    return _decorate_view_node(view_fn, plan=plan)
-
-
-_VIEW_PLAN_MAP = _load_view_map()
-_VIEW_KEYS = frozenset(_VIEW_PLAN_MAP)
-
-_ALIAS_BY_TABLE_KEY = {key: _table_alias(key) for key in _all_dependencies(_VIEW_PLAN_MAP)}
+_VIEW_AST_MAP = _load_view_map()
+_VIEW_KEYS = frozenset(_VIEW_AST_MAP)
 
 _DEPENDENCIES_BY_VIEW = {
-    view_key: tuple(spec["dependencies"]) for view_key, spec in _VIEW_PLAN_MAP.items()
+    view_key: _table_keys_from_ast(exp.Expression.load(spec["ast"]))
+    for view_key, spec in _VIEW_AST_MAP.items()
 }
 
 _BASE_TABLE_KEYS = tuple(
@@ -535,19 +351,31 @@ _BASE_TABLE_KEYS = tuple(
     )
 )
 
-
 _VIEW_PLANS: dict[str, ViewPlan] = {}
-for view_key, spec in _VIEW_PLAN_MAP.items():
-    sql = spec["sql"]
-    _validate_view_sql(table_key=view_key, sql=sql)
+for view_key, spec in _VIEW_AST_MAP.items():
+    ast = exp.Expression.load(spec["ast"])
     tags = _normalize_view_tags(spec["tags"])
+    sql = _render_view_sql(ast)
+    _validate_view_sql(table_key=view_key, sql=sql)
     _VIEW_PLANS[view_key] = ViewPlan(
         table_key=view_key,
         node_name=spec["node_name"],
+        ast=ast,
         sql=sql,
         dependencies=_DEPENDENCIES_BY_VIEW[view_key],
         tags=tags,
     )
+
+
+def view_plan_map() -> dict[str, ViewPlan]:
+    """Return compiled view plans keyed by table key.
+
+    Returns
+    -------
+    dict[str, ViewPlan]
+        Mapping of view table keys to compiled view plans.
+    """
+    return dict(_VIEW_PLANS)
 
 
 _SOURCE_LOADERS: dict[str, Callable[..., pl.LazyFrame]] = {}
@@ -560,31 +388,13 @@ for table_key in _BASE_TABLE_KEYS:
 
 _VIEW_NODES: dict[str, Callable[..., pl.LazyFrame]] = {}
 for view_key, plan in _VIEW_PLANS.items():
-    if view_key in _MANUAL_VIEW_KEYS:
-        continue
     param_by_table = {
         dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
         for dep in plan.dependencies
     }
-    view_fn = _build_sql_view_node(
+    view_fn = _build_ast_view_node(
         plan=plan,
         param_by_table=param_by_table,
-        alias_map=_ALIAS_BY_TABLE_KEY,
-    )
-    globals()[plan.node_name] = view_fn
-    _VIEW_NODES[view_key] = view_fn
-
-
-for view_key in _MANUAL_VIEW_KEYS:
-    plan = _VIEW_PLANS[view_key]
-    param_by_table = {
-        dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
-        for dep in plan.dependencies
-    }
-    view_fn = _build_data_models_view(
-        plan=plan,
-        param_by_table=param_by_table,
-        normalized=view_key.endswith("_normalized"),
     )
     globals()[plan.node_name] = view_fn
     _VIEW_NODES[view_key] = view_fn
@@ -756,5 +566,6 @@ def t__views(
 __all__ = [
     "VIEW_TABLE_KEYS",
     "t__views",
+    "view_plan_map",
     "views__table_materializations",
 ]

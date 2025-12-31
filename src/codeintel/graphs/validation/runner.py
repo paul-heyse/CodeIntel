@@ -44,8 +44,8 @@ from codeintel.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, Expression
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -314,14 +314,13 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
     def _count(
         table_key: str,
         *,
-        where: str | None = None,
-        params: dict[str, object] | None = None,
+        predicate: Expression | None = None,
     ) -> int:
-        sql = f"SELECT COUNT(*) FROM {table_key}"
-        if where:
-            sql += f" WHERE {where}"
         try:
-            result = gateway.con.sql(render_sql(sql, params)).fetchone()
+            relation = gateway.relation_from_table_key(table_key)
+            if predicate is not None:
+                relation = relation.filter(predicate)
+            result = relation.aggregate("count(*) as cnt").fetchone()
             if result is None:
                 return 0
             return int(cast("SupportsInt", result[0]))
@@ -329,31 +328,29 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
             log.warning("Validation snapshot count failed for %s: %s", table_key, exc)
             return -1
 
+    snapshot_predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
     counts = {
-        "modules": _count(
-            "core.modules",
-            where="repo = $repo AND commit = $commit",
-            params={"repo": repo, "commit": commit},
-        ),
-        "goids": _count(
-            "core.goids",
-            where="repo = $repo AND commit = $commit",
-            params={"repo": repo, "commit": commit},
-        ),
+        "modules": _count("core.modules", predicate=snapshot_predicate),
+        "goids": _count("core.goids", predicate=snapshot_predicate),
         "module_goids": _count(
             "core.goids",
-            where="repo = $repo AND commit = $commit AND kind = 'module'",
-            params={"repo": repo, "commit": commit},
+            predicate=snapshot_predicate
+            & (ColumnExpression("kind") == ConstantExpression("module")),
         ),
         "class_goids": _count(
             "core.goids",
-            where="repo = $repo AND commit = $commit AND kind = 'class'",
-            params={"repo": repo, "commit": commit},
+            predicate=snapshot_predicate
+            & (ColumnExpression("kind") == ConstantExpression("class")),
         ),
         "function_goids": _count(
             "core.goids",
-            where="repo = $repo AND commit = $commit AND kind IN ('function', 'method')",
-            params={"repo": repo, "commit": commit},
+            predicate=snapshot_predicate
+            & ColumnExpression("kind").isin(
+                ConstantExpression("function"),
+                ConstantExpression("method"),
+            ),
         ),
         "call_nodes": _count("graph.call_graph_nodes"),
         "call_edges": _count("graph.call_graph_edges"),

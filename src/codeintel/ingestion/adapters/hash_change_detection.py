@@ -20,7 +20,7 @@ from codeintel.ingestion.ports.change_detection import (
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.helpers.sql_params import render_sql
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -159,28 +159,25 @@ class HashChangeDetectionAdapter:
         gateway = getattr(self._storage, "_gateway", None)
         if gateway is not None:
             gateway.policy.ensure_table(FILE_STATE_TABLE_KEY)
-            relation = gateway.con.sql(
-                render_sql(
-                    """
-                    WITH ranked AS (
-                        SELECT
-                            rel_path,
-                            size_bytes,
-                            mtime_ns,
-                            content_hash,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY rel_path
-                                ORDER BY mtime_ns DESC
-                            ) AS rn
-                        FROM core.file_state
-                        WHERE repo = $repo AND language = $language
-                    )
-                    SELECT rel_path, size_bytes, mtime_ns, content_hash
-                    FROM ranked
-                    WHERE rn = 1
-                    """,
-                    {"repo": repo, "language": language},
+            predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+                ColumnExpression("language") == ConstantExpression(language)
+            )
+            ranked = (
+                gateway.relation_from_table_key(FILE_STATE_TABLE_KEY)
+                .filter(predicate)
+                .select(
+                    "rel_path",
+                    "size_bytes",
+                    "mtime_ns",
+                    "content_hash",
+                    "row_number() over (partition by rel_path order by mtime_ns desc) as rn",
                 )
+            )
+            relation = ranked.filter(ColumnExpression("rn") == ConstantExpression(1)).select(
+                "rel_path",
+                "size_bytes",
+                "mtime_ns",
+                "content_hash",
             )
             rows = [
                 {

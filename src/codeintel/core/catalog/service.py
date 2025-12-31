@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 from codeintel.core.catalog.function_span import FunctionSpan
 from codeintel.core.catalog.span_index import SpanIndex
 from codeintel.core.paths import normalize_path
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.helpers.module_index import load_module_map
-from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
@@ -75,18 +75,15 @@ def _load_function_rows(
     columns = ["goid_h128", "rel_path", "qualname", "start_line", "end_line"]
     if include_urn:
         columns.insert(1, "urn")
-    select_cols = ", ".join(columns)
-    relation = gateway.con.sql(
-        render_sql(
-            f"""
-            SELECT {select_cols}
-            FROM core.goids
-            WHERE repo = $repo
-              AND commit = $commit
-              AND kind IN ('function', 'method')
-            """,
-            {"repo": repo, "commit": commit},
-        )
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    kind_literals = [ConstantExpression("function"), ConstantExpression("method")]
+    relation = (
+        gateway.relation_from_table_key("core.goids")
+        .filter(predicate)
+        .filter(ColumnExpression("kind").isin(*kind_literals))
+        .select(*columns)
     )
     return cast("list[dict[str, Any]]", records_from_relation(relation))
 

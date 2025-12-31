@@ -93,6 +93,16 @@ def _pick_dfg_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
     )
 
 
+def _pick_symbol_use_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
+    return _pick_relation(
+        graph_backend=graph_backend,
+        empty_node="symbol_use_edges_empty",
+        existing_node="symbol_use_edges_existing",
+        compute_node="symbol_use_edges_compute",
+        param_name="edges",
+    )
+
+
 @resolve_from_config(decorate_with=_pick_call_graph_nodes)
 def call_graph_nodes(nodes: TabularFrame) -> TabularFrame:
     """Return the selected call graph nodes frame.
@@ -177,6 +187,18 @@ def dfg_edges(edges: TabularFrame) -> TabularFrame:
     return edges
 
 
+@resolve_from_config(decorate_with=_pick_symbol_use_edges)
+def symbol_use_edges(edges: TabularFrame) -> TabularFrame:
+    """Return the selected symbol use edges frame.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Selected symbol use edges frame.
+    """
+    return edges
+
+
 __all__ = [
     "call_graph_edges",
     "call_graph_nodes",
@@ -185,4 +207,5 @@ __all__ = [
     "dfg_edges",
     "import_graph_edges",
     "import_modules",
+    "symbol_use_edges",
 ]

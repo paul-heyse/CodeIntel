@@ -234,7 +234,6 @@ def test_subsystem_profile_view_prefers_cache(docs_views_gateway: StorageGateway
     ).fetchone()
     if row is None:
         pytest.fail("No subsystem profile row returned")
-        return
     name, module_count, function_count, risk_level = row
     _require(condition=name == "Cached Name", message="Expected cached name to be used")
     _require(
@@ -280,7 +279,6 @@ def test_subsystem_coverage_view_prefers_cache(docs_views_gateway: StorageGatewa
     ).fetchone()
     if row is None:
         pytest.fail("No subsystem coverage row returned")
-        return
     test_count, total_functions_covered, risk_level = row
     _require(
         condition=test_count == EXPECTED_TEST_COUNT_99,

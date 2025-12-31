@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.errors import BuildProblemError
-from codeintel.build.exports.exprs import build_export_expr, compile_export_sql
+from codeintel.build.exports.exprs import build_export_relation_plan
 from codeintel.build.schemas import iter_contracts
 from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
 from codeintel.core.config.settings import ExportAuditSettings
@@ -311,9 +311,13 @@ def build_export_relation(
     ExportRelation
         Export relation adapter.
     """
-    expr = build_export_expr(gateway, table_key, limit=row_limit, offset=row_offset)
-    sql = compile_export_sql(expr)
-    return gateway.exports.build_export_relation(sql=sql)
+    relation = build_export_relation_plan(
+        gateway,
+        table_key,
+        limit=row_limit,
+        offset=row_offset,
+    )
+    return gateway.exports.build_export_relation(relation=relation)
 
 
 # ---------------------------------------------------------------------------

@@ -50,8 +50,7 @@ def _collect_imports(current_module: str, tree: ast.AST) -> list[tuple[str, tupl
     imports: list[tuple[str, tuple[str, ...]]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                imports.append((alias.name, ()))
+            imports.extend((alias.name, ()) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             module_part = node.module
             base = _resolve_import_from(
@@ -62,8 +61,7 @@ def _collect_imports(current_module: str, tree: ast.AST) -> list[tuple[str, tupl
             if base is None:
                 continue
             if module_part is None:
-                for alias in node.names:
-                    imports.append((f"{base}.{alias.name}", ()))
+                imports.extend((f"{base}.{alias.name}", ()) for alias in node.names)
             else:
                 imports.append((base, tuple(alias.name for alias in node.names)))
     return imports
@@ -99,7 +97,7 @@ def import_graph_analysis(
         if not isinstance(module_name, str) or not module_name:
             continue
         modules.add(module_name)
-        if language not in (None, "python"):
+        if language not in {None, "python"}:
             continue
         if not isinstance(rel_path, str) or not rel_path:
             continue

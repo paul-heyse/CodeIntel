@@ -1,6 +1,8 @@
-"""DuckDB-backed schema resolution for serving engines."""
+"""DuckDB-backed contract resolution helpers for serving engines."""
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
@@ -9,12 +11,41 @@ from codeintel.core.columnar.schema_metadata import (
     merge_field_metadata,
     merge_metadata,
 )
+from codeintel.core.schemas.arrow_gen import ArrowSchemaMetadata, arrow_schema_from_table_schema
 from codeintel.storage.duckdb_types import (
     DuckDBCatalogException,
     DuckDBConnection,
     DuckDBRelation,
 )
-from codeintel.storage.schema.arrow_schema import arrow_schema_for_table_key
+from codeintel.storage.metadata import load_derived_lineage_columns
+from codeintel.storage.tracking.schema_catalog import load_table_schema_from_connection
+
+if TYPE_CHECKING:
+    from codeintel.core.schemas.primitives import TableSchema
+
+
+def table_schema_for_table_key(
+    *,
+    con: DuckDBConnection | None,
+    table_key: str,
+) -> TableSchema | None:
+    """Return the TableSchema for a table key using DuckDB metadata.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection for metadata lookups.
+    table_key
+        Fully qualified table key.
+
+    Returns
+    -------
+    TableSchema | None
+        Resolved TableSchema or None when unavailable.
+    """
+    if con is None:
+        return None
+    return load_table_schema_from_connection(con, table_key=table_key)
 
 
 def contract_schema_for_table_key(
@@ -36,7 +67,7 @@ def contract_schema_for_table_key(
     relation_schema = _relation_schema_for_table(con, table_key=table_key)
     if relation_schema is None:
         return None
-    metadata_schema = arrow_schema_for_table_key(
+    metadata_schema = _metadata_schema_for_table(
         con,
         table_key=table_key,
         repo=repo,
@@ -45,6 +76,28 @@ def contract_schema_for_table_key(
     if metadata_schema is None:
         return relation_schema
     return _merge_schema_metadata(relation_schema, metadata_schema)
+
+
+def _metadata_schema_for_table(
+    con: DuckDBConnection,
+    *,
+    table_key: str,
+    repo: str | None,
+    commit: str | None,
+) -> pa.Schema | None:
+    table_schema = load_table_schema_from_connection(con, table_key=table_key)
+    if table_schema is None:
+        return None
+    column_lineage = None
+    if repo and commit:
+        column_lineage = load_derived_lineage_columns(
+            con,
+            repo=repo,
+            commit=commit,
+            downstream_table=table_key,
+        )
+    metadata = ArrowSchemaMetadata(column_lineage=column_lineage)
+    return arrow_schema_from_table_schema(table_schema=table_schema, metadata=metadata)
 
 
 def _relation_schema_for_table(
@@ -101,4 +154,4 @@ def _fetch_arrow_reader(
     return relation.fetch_record_batch(batch_size)
 
 
-__all__ = ["contract_schema_for_table_key"]
+__all__ = ["contract_schema_for_table_key", "table_schema_for_table_key"]

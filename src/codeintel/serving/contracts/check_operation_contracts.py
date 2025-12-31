@@ -190,9 +190,11 @@ class _DummyKernel:
         return "SELECT 1"
 
     @staticmethod
-    def export_fingerprint(request: SemanticExportRequest) -> tuple[str, str | None]:
+    def export_fingerprint(
+        request: SemanticExportRequest,
+    ) -> tuple[str, str | None, str | None, str | None]:
         _ = request
-        return ("q_dummy", None)
+        return ("q_dummy", None, None, None)
 
     @staticmethod
     def export_to_parquet(

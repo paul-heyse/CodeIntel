@@ -201,21 +201,20 @@ def _load_symbol_module_edges_from_db(
     inbound: dict[str, set[str]] = defaultdict(set)
     outbound: dict[str, set[str]] = defaultdict(set)
 
-    relation = gateway.con.sql(
-        """
-        SELECT
-            module_uses.module AS use_module,
-            module_defs.module AS def_module
-        FROM graph.symbol_use_edges AS edges
-        LEFT JOIN core.modules AS module_defs
-          ON edges.def_path = module_defs.path
-        LEFT JOIN core.modules AS module_uses
-          ON edges.use_path = module_uses.path
-        WHERE module_defs.module IS NOT NULL
-          AND module_defs.module <> ''
-          AND module_uses.module IS NOT NULL
-          AND module_uses.module <> ''
-        """
+    edges = gateway.relation_from_table_key("graph.symbol_use_edges").set_alias("edges")
+    module_defs = gateway.relation_from_table_key("core.modules").set_alias("module_defs")
+    module_uses = gateway.relation_from_table_key("core.modules").set_alias("module_uses")
+    relation = (
+        edges.join(module_defs, "edges.def_path = module_defs.path", how="left")
+        .join(module_uses, "edges.use_path = module_uses.path", how="left")
+        .select(
+            "module_uses.module as use_module",
+            "module_defs.module as def_module",
+        )
+        .filter(~ColumnExpression("module_defs.module").isnull())
+        .filter(ColumnExpression("module_defs.module") != ConstantExpression(""))
+        .filter(~ColumnExpression("module_uses.module").isnull())
+        .filter(ColumnExpression("module_uses.module") != ConstantExpression(""))
     )
     for use_module, def_module in relation.fetchall():
         src = str(use_module)

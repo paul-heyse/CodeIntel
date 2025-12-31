@@ -79,7 +79,9 @@ class _SlowExportKernel:
     def export_sql(self, request: SemanticExportRequest) -> str:
         return self.inner.export_sql(request)
 
-    def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
+    def export_fingerprint(
+        self, request: SemanticExportRequest
+    ) -> tuple[str, str | None, str | None, str | None]:
         return self.inner.export_fingerprint(request)
 
     def export_to_parquet(

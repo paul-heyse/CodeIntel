@@ -8,17 +8,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import SupportsInt, cast
 
-from duckdb import SQLExpression
-
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
-from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.repositories.base import BaseRepository
 
 _DEFAULT_CREATED_AT = datetime.fromtimestamp(0, tz=UTC)
-
-
-def _sql_escape(value: str) -> str:
-    return value.replace("'", "''")
 
 
 def _as_int(value: object) -> int | None:
@@ -150,15 +144,22 @@ class DataModelsRepository(BaseRepository):
         list[dict[str, object]]
             Raw metadata rows for class GOIDs and module mapping.
         """
-        sql = (
-            "SELECT g.goid_h128 AS goid_h128, g.rel_path, g.qualname, g.start_line, "
-            "g.end_line, m.module AS module "
-            "FROM core.goids AS g "
-            "LEFT JOIN core.modules AS m "
-            "ON g.rel_path = m.path AND g.repo = m.repo AND g.commit = m.commit "
-            "WHERE g.repo = $repo AND g.commit = $commit AND g.kind = 'class'"
+        goids = self._relation("core.goids").filter(
+            ColumnExpression("kind") == ConstantExpression("class")
         )
-        relation = self.gateway.con.sql(render_sql(sql, {"repo": self.repo, "commit": self.commit}))
+        modules = self._relation("core.modules").select("module", "path")
+        relation = goids.join(
+            modules,
+            ColumnExpression("rel_path") == ColumnExpression("path"),
+            how="left",
+        ).select(
+            "goid_h128",
+            "rel_path",
+            "qualname",
+            "start_line",
+            "end_line",
+            "module",
+        )
         return self._relation_to_dicts(relation)
 
     def list_class_docstrings_rows(self) -> list[dict[str, object]]:
@@ -241,8 +242,8 @@ class DataModelsRepository(BaseRepository):
             return []
         relation = self._relation("analytics.data_model_fields")
         if model_ids is not None:
-            literals = ", ".join(f"'{_sql_escape(model_id)}'" for model_id in model_ids)
-            relation = relation.filter(SQLExpression(f"model_id IN ({literals})"))
+            literals = [ConstantExpression(model_id) for model_id in model_ids]
+            relation = relation.filter(ColumnExpression("model_id").isin(*literals))
 
         relation = relation.select(
             "repo",
@@ -308,8 +309,8 @@ class DataModelsRepository(BaseRepository):
             return []
         relation = self._relation("analytics.data_model_relationships")
         if model_ids is not None:
-            literals = ", ".join(f"'{_sql_escape(model_id)}'" for model_id in model_ids)
-            relation = relation.filter(SQLExpression(f"source_model_id IN ({literals})"))
+            literals = [ConstantExpression(model_id) for model_id in model_ids]
+            relation = relation.filter(ColumnExpression("source_model_id").isin(*literals))
 
         relation = relation.select(
             "repo",
@@ -382,8 +383,8 @@ class DataModelsRepository(BaseRepository):
         allowed = set(model_ids) if model_ids else None
         relation = self._relation("docs.v_data_models_normalized")
         if allowed is not None:
-            literals = ", ".join(f"'{_sql_escape(model_id)}'" for model_id in allowed)
-            relation = relation.filter(SQLExpression(f"model_id IN ({literals})"))
+            literals = [ConstantExpression(model_id) for model_id in allowed]
+            relation = relation.filter(ColumnExpression("model_id").isin(*literals))
 
         relation = relation.select(
             "repo",

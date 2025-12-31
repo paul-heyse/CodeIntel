@@ -71,13 +71,20 @@ async def export_view(
     correlation_id = get_correlation_id(request)
     start = time.perf_counter()
 
-    query_hash, schema_hash = ops.export_fingerprint(payload)
-    headers = export_hash_headers(query_hash=query_hash, schema_hash=schema_hash)
+    query_hash, schema_hash, ast_fingerprint, sql_fingerprint = ops.export_fingerprint(payload)
+    headers = export_hash_headers(
+        query_hash=query_hash,
+        schema_hash=schema_hash,
+        ast_fingerprint=ast_fingerprint,
+        sql_fingerprint=sql_fingerprint,
+    )
     metrics = ExportMetricsContext(
         view_id=view_id,
         correlation_id=correlation_id,
         query_hash=query_hash,
         schema_hash=schema_hash,
+        ast_fingerprint=ast_fingerprint,
+        sql_fingerprint=sql_fingerprint,
     )
 
     cancel_token = CancelToken.from_timeout(ops.settings.export_timeout_s)

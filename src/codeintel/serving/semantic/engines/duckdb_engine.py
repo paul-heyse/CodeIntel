@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.columnar.schema import unify_schema_for_batches
+from codeintel.serving.semantic.duckdb_contracts import contract_schema_for_table_key
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
     RelationBuildContext,
@@ -17,7 +18,6 @@ from codeintel.serving.semantic.duckdb_relation_builder import (
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.serving.semantic.query_ast import ServingQuery
-from codeintel.serving.semantic.schema_contracts import contract_schema_for_table_key
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:

@@ -1,0 +1,278 @@
+"""Entrypoint analytics tables built with inferable tabular nodes."""
+
+from __future__ import annotations
+
+import json
+
+import polars as pl
+
+from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
+from codeintel.analytics.entrypoints.compute import (
+    ENTRYPOINT_TESTS_COLS,
+    ENTRYPOINTS_COLS,
+    EntrypointsResult,
+    compute_entrypoints_pure,
+)
+from codeintel.analytics.entrypoints.core import EntrypointBuildInputs
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.table_utils import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
+from codeintel.build.hamilton.native.materialization_records import (
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns import (
+    DatasetSaveSpec,
+    SaverContext,
+    make_table_materializations_collector,
+    save_dataset,
+)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_dataset
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.catalog.service import CatalogService
+from codeintel.core.data_models.ids import normalize_decimal_id
+
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
+
+ENTRYPOINTS_TARGET_NAME = "entrypoints"
+ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
+ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
+ENTRYPOINT_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
+ENTRYPOINTS_SAVE_CONTEXT = SaverContext(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
+ENTRYPOINTS_CONTRACT = TableContractSpec(
+    table_key=ENTRYPOINTS_TABLE_KEY,
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="entrypoints__base",
+)
+ENTRYPOINT_TESTS_CONTRACT = TableContractSpec(
+    table_key=ENTRYPOINT_TESTS_TABLE_KEY,
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    ops_module=None,
+    columns_to_pass=(),
+    required_cols=(),
+    clip_column=None,
+    input_name="entrypoint_tests__base",
+)
+
+
+def _parse_json_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed]
+    return []
+
+
+def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
+    module_map: dict[str, str] = {}
+    for row in modules_frame.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_map[path] = module
+    return module_map
+
+
+def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeatures]:
+    features_map: dict[int, FunctionAstFeatures] = {}
+    for row in features_frame.iter_rows(named=True):
+        goid_raw = row.get("function_goid_h128")
+        goid_value = normalize_decimal_id(goid_raw)
+        if goid_value is None:
+            continue
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        if not isinstance(rel_path, str) or not isinstance(qualname, str):
+            continue
+        features_map[int(goid_value)] = FunctionAstFeatures(
+            goid=int(goid_value),
+            rel_path=rel_path,
+            qualname=qualname,
+            is_async=bool(row.get("is_async")),
+            decorators=tuple(_parse_json_list(row.get("decorators"))),
+            imports={},
+            libraries_used=frozenset(_parse_json_list(row.get("libraries_used"))),
+            io_flags=IoFlags(
+                uses_network=bool(row.get("uses_network")),
+                uses_db=bool(row.get("uses_db")),
+                uses_filesystem=bool(row.get("uses_filesystem")),
+                uses_subprocess=bool(row.get("uses_subprocess")),
+            ),
+            uses_concurrency_lib=bool(row.get("uses_concurrency_lib")),
+            uses_threading=bool(row.get("uses_threading")),
+            uses_asyncio_lib=bool(row.get("uses_asyncio_lib")),
+            http_client_libs=frozenset(_parse_json_list(row.get("http_client_libs"))),
+            http_server_libs=frozenset(_parse_json_list(row.get("http_server_libs"))),
+            db_libs=frozenset(_parse_json_list(row.get("db_libs"))),
+            message_libs=frozenset(_parse_json_list(row.get("message_libs"))),
+            config_read_count=int(row.get("config_read_count") or 0),
+            feature_flag_count=int(row.get("feature_flag_count") or 0),
+            extra={},
+        )
+    return features_map
+
+
+def entrypoints_result(
+    env: BuildEnv,
+    q__core__modules: InferableTabularInput,
+    q__analytics__function_ast_features: InferableTabularInput,
+    _q__analytics__test_catalog: InferableTabularInput,
+    _q__analytics__test_profile: InferableTabularInput,
+    _q__analytics__test_coverage_edges: InferableTabularInput,
+    _q__analytics__subsystems: InferableTabularInput,
+) -> EntrypointsResult:
+    """Compute entrypoint rows using module and AST feature inputs.
+
+    Returns
+    -------
+    EntrypointsResult
+        Entrypoints result containing entrypoint and test rows.
+    """
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    features_frame = tabular_to_lazyframe(q__analytics__function_ast_features).collect()
+    module_map = _module_map(modules_frame)
+    if not module_map:
+        return EntrypointsResult(entrypoint_rows=(), test_rows=())
+    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
+    inputs = EntrypointBuildInputs(
+        catalog_provider=catalog,
+        module_map=module_map,
+        features_map=_features_by_goid(features_frame),
+    )
+    return compute_entrypoints_pure(env.gateway, env.snapshot, inputs)
+
+
+def entrypoints__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:
+    """Build entrypoint rows from computed entrypoints metadata.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing entrypoint rows.
+    """
+    return rows_to_frame(
+        ENTRYPOINTS_TABLE_KEY,
+        entrypoints_result.entrypoint_rows,
+        columns=ENTRYPOINTS_COLS,
+    )
+
+
+@save_dataset(
+    context=ENTRYPOINTS_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(table_key=ENTRYPOINTS_TABLE_KEY),
+)
+@tag_dataset(
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    table_key=ENTRYPOINTS_TABLE_KEY,
+)
+@table_contract(ENTRYPOINTS_CONTRACT)
+def entrypoints__table(entrypoints__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist entrypoint rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted entrypoints frame.
+    """
+    return entrypoints__base
+
+
+def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:
+    """Build entrypoint test rows from computed entrypoints metadata.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Lazy frame containing entrypoint test rows.
+    """
+    if not entrypoints_result.test_rows:
+        return empty_frame_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
+    return rows_to_frame(
+        ENTRYPOINT_TESTS_TABLE_KEY,
+        entrypoints_result.test_rows,
+        columns=ENTRYPOINT_TESTS_COLS,
+    )
+
+
+@save_dataset(
+    context=ENTRYPOINTS_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(table_key=ENTRYPOINT_TESTS_TABLE_KEY),
+)
+@tag_dataset(
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    table_key=ENTRYPOINT_TESTS_TABLE_KEY,
+)
+@table_contract(ENTRYPOINT_TESTS_CONTRACT)
+def entrypoint_tests__table(entrypoint_tests__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist entrypoint test rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Persisted entrypoint tests frame.
+    """
+    return entrypoint_tests__base
+
+
+entrypoints__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    table_keys=ENTRYPOINT_TABLE_KEYS,
+    node_name="entrypoints__table_materializations",
+)
+
+
+@codeintel_target(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
+def t__entrypoints(
+    env: BuildEnv,
+    catalog: DagCatalog,
+    entrypoints__table_materializations: dict[str, MaterializationResult],
+) -> TargetRunRecord:
+    """Finalize entrypoints target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the entrypoints target.
+    """
+    context = MaterializationRecordContext(
+        env=env,
+        catalog=catalog,
+        target_name=ENTRYPOINTS_TARGET_NAME,
+    )
+    return record_from_materializations(
+        context=context,
+        artifact_materializations=None,
+        table_materializations=entrypoints__table_materializations,
+    )
+
+
+__all__ = [
+    "entrypoint_tests__base",
+    "entrypoint_tests__table",
+    "entrypoints__base",
+    "entrypoints__table",
+    "entrypoints__table_materializations",
+    "t__entrypoints",
+]

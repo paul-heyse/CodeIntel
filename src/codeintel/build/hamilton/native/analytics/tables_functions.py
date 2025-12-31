@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import polars as pl
 
+from codeintel.analytics.functions.metrics import (
+    FunctionAnalyticsResult,
+    compute_function_analytics_result_from_table,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import function_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -20,7 +25,6 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -43,43 +47,31 @@ FUNCTION_METRICS_CONTRACT = TableContractSpec(
 )
 
 
-def function_metrics__base(q__core__goids: InferableTabularInput) -> pl.LazyFrame:
-    """Build a minimal function metrics frame from core.goids.
+def function_analytics_result(
+    env: BuildEnv, _q__core__goids: InferableTabularInput
+) -> FunctionAnalyticsResult:
+    """Compute function analytics rows from core.goids.
 
-    Parameters
-    ----------
-    q__core__goids
-        Relation for ``core.goids``.
+    Returns
+    -------
+    FunctionAnalyticsResult
+        Metrics/types rows plus validation reporter.
+    """
+    relation = env.gateway.relation_from_table_key("core.goids")
+    return compute_function_analytics_result_from_table(relation, env.snapshot)
+
+
+def function_metrics__base(function_analytics_result: FunctionAnalyticsResult) -> pl.LazyFrame:
+    """Build function metrics rows from computed analytics.
 
     Returns
     -------
     pl.LazyFrame
         Lazy frame with function metrics columns.
     """
-    frame = tabular_to_lazyframe(q__core__goids)
-    end_line = pl.coalesce([pl.col("end_line"), pl.col("start_line")])
-    frame = frame.rename({"goid_h128": "function_goid_h128"})
-    frame = frame.with_columns(
-        end_line.alias("end_line"),
-        (end_line - pl.col("start_line") + 1).clip(lower_bound=0).alias("loc"),
-        pl.lit(0).cast(pl.Int64).alias("cyclomatic_complexity"),
-    )
-    return frame.select(
-        [
-            "function_goid_h128",
-            "urn",
-            "repo",
-            "commit",
-            "rel_path",
-            "language",
-            "kind",
-            "qualname",
-            "start_line",
-            "end_line",
-            "loc",
-            "cyclomatic_complexity",
-            "created_at",
-        ]
+    return rows_to_frame(
+        FUNCTION_METRICS_TABLE_KEY,
+        function_analytics_result.metrics_rows,
     )
 
 
@@ -127,6 +119,7 @@ def t__function_metrics(
 
 
 __all__ = [
+    "function_analytics_result",
     "function_metrics__base",
     "function_metrics__table",
     "t__function_metrics",

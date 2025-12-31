@@ -62,6 +62,8 @@ class QueryEngineRegistry:
             If the preference is unknown or no engine can satisfy the query.
         """
         normalized = preference.lower().strip() or "auto"
+        if normalized == "polars":
+            normalized = "duckdb"
         if normalized == "auto":
             candidates = auto_preference(query, ctx=ctx)
             engine = self._select_first(candidates, query=query, ctx=ctx)

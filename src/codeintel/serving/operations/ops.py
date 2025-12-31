@@ -324,7 +324,9 @@ class ServingOperations:
                 details={"reason": str(exc)},
             ) from exc
 
-    def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
+    def export_fingerprint(
+        self, request: SemanticExportRequest
+    ) -> tuple[str, str | None, str | None, str | None]:
         """Return export fingerprints.
 
         Parameters
@@ -334,8 +336,8 @@ class ServingOperations:
 
         Returns
         -------
-        tuple[str, str | None]
-            Query hash and optional schema hash.
+        tuple[str, str | None, str | None, str | None]
+            Query hash, schema hash, AST fingerprint, and SQL fingerprint.
 
         Raises
         ------

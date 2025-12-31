@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -125,6 +125,7 @@ class DatasetScannerOptions:
     filter_expression: ds.Expression | None = None
     metrics_enabled: bool = False
     schema: pa.Schema | None = None
+    columns: Sequence[str] | None = None
 
 
 def dataset_for_entry(entry: DatasetManifestEntry) -> ds.Dataset:
@@ -183,25 +184,75 @@ def dataset_scanner_for_entry(
     pyarrow.dataset.Scanner
         Scanner configured for batched streaming reads.
     """
+    tuned_options = apply_tuning_options(entry, options=options)
     start = perf_counter()
     dataset = dataset_for_entry(entry)
-    if options.metrics_enabled:
+    if tuned_options.metrics_enabled:
         _log_scan_metrics(
             entry,
             dataset=dataset,
-            filter_expression=options.filter_expression,
+            filter_expression=tuned_options.filter_expression,
             duration_ms=(perf_counter() - start) * 1000,
             memory_bytes=_total_allocated_bytes(),
         )
-    scan_kwargs: dict[str, object] = {"batch_size": options.batch_size}
-    if options.fragment_readahead is not None:
-        scan_kwargs["fragment_readahead"] = options.fragment_readahead
+    scan_kwargs: dict[str, object] = {"batch_size": tuned_options.batch_size}
+    if tuned_options.fragment_readahead is not None:
+        scan_kwargs["fragment_readahead"] = tuned_options.fragment_readahead
+    if tuned_options.columns is not None:
+        scan_kwargs["columns"] = list(tuned_options.columns)
     return _build_scanner(
         dataset,
-        filter_expression=options.filter_expression,
+        filter_expression=tuned_options.filter_expression,
         scan_kwargs=scan_kwargs,
-        schema=options.schema,
+        schema=tuned_options.schema,
     )
+
+
+def apply_tuning_options(
+    entry: DatasetManifestEntry,
+    *,
+    options: DatasetScannerOptions,
+) -> DatasetScannerOptions:
+    """Apply dataset tuning metadata to scanner options.
+
+    Parameters
+    ----------
+    entry
+        Dataset manifest entry with tuning metadata.
+    options
+        Base scanner options to adjust.
+
+    Returns
+    -------
+    DatasetScannerOptions
+        Scanner options updated with tuning overrides when present.
+    """
+    batch_size = _tuned_batch_size(entry, default=options.batch_size)
+    return DatasetScannerOptions(
+        batch_size=batch_size,
+        fragment_readahead=options.fragment_readahead,
+        filter_expression=options.filter_expression,
+        metrics_enabled=options.metrics_enabled,
+        schema=options.schema,
+        columns=options.columns,
+    )
+
+
+def _tuned_batch_size(entry: DatasetManifestEntry, *, default: int) -> int:
+    tuning = entry.tuning_metadata
+    if tuning is None:
+        return default
+    candidates = [
+        tuning.write_settings,
+        tuning.inferred_settings,
+    ]
+    for payload in candidates:
+        if not payload:
+            continue
+        row_group_size = _coerce_int(payload.get("row_group_size"))
+        if row_group_size is not None and row_group_size > 0:
+            return min(default, row_group_size)
+    return default
 
 
 def load_dataset_manifests(
@@ -489,6 +540,7 @@ __all__ = [
     "DatasetManifestEntry",
     "DatasetManifestIndex",
     "DatasetScannerOptions",
+    "apply_tuning_options",
     "dataset_filter_expression",
     "dataset_for_entry",
     "dataset_scanner_for_entry",

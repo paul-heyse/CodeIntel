@@ -19,6 +19,8 @@ class ExportArtifactSpec:
     format: ExportFormat = "jsonl"
     query_hash: str | None = None
     schema_hash: str | None = None
+    ast_fingerprint: str | None = None
+    sql_fingerprint: str | None = None
 
 
 __all__ = ["ExportArtifactSpec"]

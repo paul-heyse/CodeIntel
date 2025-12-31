@@ -21,6 +21,7 @@ from codeintel.serving.semantic.datasets import (
     dataset_for_entry,
     dataset_scanner_for_entry,
 )
+from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
 from codeintel.serving.semantic.models import FilterValue
 from codeintel.serving.semantic.specs import SemanticQuerySpec
@@ -105,6 +106,9 @@ def build_relation_plan(
         filters=spec.filters,
         column_types=context.column_types,
     )
+    projection_columns = None
+    if not _ast_has_joins(ast):
+        projection_columns = _projection_columns_from_ast(ast)
     if _ast_has_joins(ast):
         relation = _relation_from_ast(
             con=con,
@@ -117,6 +121,7 @@ def build_relation_plan(
             table_key=spec.table_key,
             context=context,
             filter_expression=filter_expression,
+            projection_columns=projection_columns,
         )
     return apply_query_ast(
         relation,
@@ -164,12 +169,37 @@ def apply_query_ast(
     return relation
 
 
+def validate_query_ast(
+    *,
+    ast: exp.Expression,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None = None,
+) -> None:
+    """Validate that a SQLGlot AST can be applied to a relation.
+
+    Parameters
+    ----------
+    ast
+        SQLGlot expression to validate.
+    allowed_columns
+        Allowed column set for selection/filtering/ordering.
+    column_types
+        Optional column type mapping for operator validation.
+    """
+    _parse_ast_components(
+        ast=ast,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
 def _resolve_relation(
     *,
     con: DuckDBConnection,
     table_key: str,
     context: RelationBuildContext,
     filter_expression: ds.Expression | None,
+    projection_columns: Sequence[str] | None = None,
 ) -> DuckDBRelation:
     entry = context.dataset_manifests.get(table_key)
     if entry is not None:
@@ -178,6 +208,7 @@ def _resolve_relation(
             entry=entry,
             context=context,
             filter_expression=filter_expression,
+            projection_columns=projection_columns,
         )
     try:
         return con.table(table_key)
@@ -189,6 +220,17 @@ def _resolve_relation(
 def _ast_has_joins(ast: exp.Select) -> bool:
     joins = ast.args.get("joins")
     return bool(joins)
+
+
+def _projection_columns_from_ast(ast: exp.Expression) -> tuple[str, ...] | None:
+    if any(isinstance(node, exp.Star) for node in ast.find_all(exp.Star)):
+        return None
+    columns = {
+        column.name for column in ast.find_all(exp.Column) if column.name and column.name != "*"
+    }
+    if not columns:
+        return None
+    return tuple(sorted(columns))
 
 
 def _relation_from_ast(
@@ -336,47 +378,52 @@ def _scan_dataset(
     entry: DatasetManifestEntry,
     context: RelationBuildContext,
     filter_expression: ds.Expression | None,
+    projection_columns: Sequence[str] | None,
 ) -> DuckDBRelation:
     scan_paths = _parquet_scan_paths(entry)
     hive_partitioning = bool(entry.manifest.partition_columns)
     try:
-        return con.from_parquet(
-            scan_paths,
+        return scan_parquet(
+            con,
+            scan_paths=scan_paths,
             hive_partitioning=hive_partitioning,
             union_by_name=True,
+            columns=projection_columns,
         )
     except (duckdb.Error, TypeError, ValueError):
-        dataset = dataset_for_entry(entry)
-        options = DatasetScannerOptions(
-            batch_size=context.scan_options.batch_size,
-            fragment_readahead=context.scan_options.fragment_readahead,
-            filter_expression=filter_expression,
-            metrics_enabled=context.scan_options.metrics_enabled,
-            schema=context.contract_schema,
+        pass
+    dataset = dataset_for_entry(entry)
+    options = DatasetScannerOptions(
+        batch_size=context.scan_options.batch_size,
+        fragment_readahead=context.scan_options.fragment_readahead,
+        filter_expression=filter_expression,
+        metrics_enabled=context.scan_options.metrics_enabled,
+        schema=context.contract_schema,
+        columns=projection_columns,
+    )
+    scanner = dataset_scanner_for_entry(
+        entry,
+        options=options,
+    )
+    if context.contract_schema is not None:
+        reader = scanner.to_reader()
+        aligned = align_reader_to_contract(
+            reader,
+            context.contract_schema,
+            extras_policy=extras_policy_from_schema(context.contract_schema),
         )
-        scanner = dataset_scanner_for_entry(
-            entry,
-            options=options,
-        )
-        if context.contract_schema is not None:
-            reader = scanner.to_reader()
-            aligned = align_reader_to_contract(
-                reader,
-                context.contract_schema,
-                extras_policy=extras_policy_from_schema(context.contract_schema),
-            )
-            try:
-                return con.from_arrow(aligned)
-            except (duckdb.Error, TypeError, ValueError):
-                return con.from_arrow(scanner)
         try:
-            return con.from_arrow(scanner)
+            return scan_arrow(con, source=aligned)
         except (duckdb.Error, TypeError, ValueError):
-            reader = scanner.to_reader()
-            try:
-                return con.from_arrow(reader)
-            except (duckdb.Error, TypeError, ValueError):
-                return con.from_arrow(dataset)
+            return scan_arrow(con, source=scanner)
+    try:
+        return scan_arrow(con, source=scanner)
+    except (duckdb.Error, TypeError, ValueError):
+        reader = scanner.to_reader()
+        try:
+            return scan_arrow(con, source=reader)
+        except (duckdb.Error, TypeError, ValueError):
+            return scan_arrow(con, source=dataset)
 
 
 def _parquet_scan_paths(entry: DatasetManifestEntry) -> list[str]:
@@ -473,6 +520,51 @@ def _duckdb_expr_from_select(
     )
 
 
+def _string_unary_projection(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    if isinstance(expr, exp.Lower):
+        return _duckdb_string_unary_expr(
+            expr.this,
+            func_name="lower",
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Upper):
+        return _duckdb_string_unary_expr(
+            expr.this,
+            func_name="upper",
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    return None
+
+
+def _string_predicate_projection(
+    expr: exp.Expression,
+    *,
+    context: _PredicateContext,
+) -> Expression | None:
+    if isinstance(expr, exp.Contains):
+        return _duckdb_string_predicate_expr(
+            expr.this,
+            expr.expression,
+            func_name="contains",
+            context=context,
+        )
+    if isinstance(expr, exp.StartsWith):
+        return _duckdb_string_predicate_expr(
+            expr.this,
+            expr.expression,
+            func_name="starts_with",
+            context=context,
+        )
+    return None
+
+
 def _duckdb_expr_from_projection(
     expr: exp.Expression,
     *,
@@ -485,53 +577,39 @@ def _duckdb_expr_from_projection(
         column_types=column_types,
         ctx="select",
     )
-    if isinstance(expr, exp.Column):
+    if isinstance(expr, exp.Star):
+        _require_allowed_column(column="*", allowed_columns=allowed_columns, ctx="select")
+        result = ColumnExpression("*")
+    elif isinstance(expr, exp.Column):
         column = _column_name(expr)
         _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
         result = ColumnExpression(column)
-    elif isinstance(expr, exp.Lower):
-        result = _duckdb_string_unary_expr(
-            expr.this,
-            func_name="lower",
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    elif isinstance(expr, exp.Upper):
-        result = _duckdb_string_unary_expr(
-            expr.this,
-            func_name="upper",
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    elif isinstance(expr, exp.Coalesce):
-        result = _duckdb_coalesce_expr(
-            expr.expressions,
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    elif isinstance(expr, exp.Contains):
-        result = _duckdb_string_predicate_expr(
-            expr.this,
-            expr.expression,
-            func_name="contains",
-            context=predicate_context,
-        )
-    elif isinstance(expr, exp.StartsWith):
-        result = _duckdb_string_predicate_expr(
-            expr.this,
-            expr.expression,
-            func_name="starts_with",
-            context=predicate_context,
-        )
-    elif isinstance(expr, exp.Anonymous):
-        result = _duckdb_function_expr(
+    else:
+        unary = _string_unary_projection(
             expr,
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
-    elif isinstance(expr, (exp.Boolean, exp.Literal)):
-        result = ConstantExpression(_literal_value(expr))
-
+        if unary is not None:
+            result = unary
+        elif isinstance(expr, exp.Coalesce):
+            result = _duckdb_coalesce_expr(
+                expr.expressions,
+                allowed_columns=allowed_columns,
+                column_types=column_types,
+            )
+        else:
+            predicate_expr = _string_predicate_projection(expr, context=predicate_context)
+            if predicate_expr is not None:
+                result = predicate_expr
+            elif isinstance(expr, exp.Anonymous):
+                result = _duckdb_function_expr(
+                    expr,
+                    allowed_columns=allowed_columns,
+                    column_types=column_types,
+                )
+            elif isinstance(expr, (exp.Boolean, exp.Literal)):
+                result = ConstantExpression(_literal_value(expr))
     if result is None:
         msg = f"Unsupported select expression: {type(expr).__name__}"
         raise DuckDBRelationQueryBuilderError(msg)
@@ -1263,4 +1341,5 @@ __all__ = [
     "RelationScanOptions",
     "apply_query_ast",
     "build_relation_plan",
+    "validate_query_ast",
 ]

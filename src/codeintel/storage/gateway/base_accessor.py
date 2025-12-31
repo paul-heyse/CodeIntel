@@ -9,11 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import sqlglot.expressions as exp
-
-from codeintel.storage.constants import DUCKDB_DIALECT
-from codeintel.storage.helpers.table_key import split_table_key
-
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation, StorageGateway
 
@@ -53,8 +48,4 @@ class BaseTableAccessor:
         DuckDBRelation
             Relation bound to the table.
         """
-        schema, name = split_table_key(table_key)
-        select_expr = exp.select("*").from_(
-            exp.Table(this=exp.to_identifier(name), db=exp.to_identifier(schema))
-        )
-        return self.con.sql(select_expr.sql(dialect=DUCKDB_DIALECT))
+        return self.gateway.relation_from_table_key(table_key)

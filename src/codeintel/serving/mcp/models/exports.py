@@ -71,6 +71,14 @@ class ExportQuerySpec(BaseModel):
         description="Stable fingerprint of query inputs (filters/select/order/limit/offset).",
         examples=["q_7c9a2c2b0f0d6a31"],
     )
+    ast_fingerprint: str | None = Field(
+        default=None,
+        description="Fingerprint of the canonical query AST when available.",
+    )
+    sql_fingerprint: str | None = Field(
+        default=None,
+        description="Fingerprint of the canonical SQL rendering when available.",
+    )
 
 
 class ExportSchemaSummary(BaseModel):

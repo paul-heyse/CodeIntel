@@ -100,6 +100,10 @@ class StoredMetadata:
         Stable fingerprint of query inputs, when available.
     schema_hash
         Stable fingerprint of the resolved schema, when available.
+    ast_fingerprint
+        Fingerprint of the canonical query AST, when available.
+    sql_fingerprint
+        Fingerprint of the canonical SQL rendering, when available.
     """
 
     export_id: str
@@ -116,6 +120,8 @@ class StoredMetadata:
     size_bytes: int = 0
     query_hash: str | None = None
     schema_hash: str | None = None
+    ast_fingerprint: str | None = None
+    sql_fingerprint: str | None = None
 
 
 class ResourceStore:
@@ -339,6 +345,8 @@ class ResourceStore:
             size_bytes=path.stat().st_size,
             query_hash=spec.query_hash,
             schema_hash=spec.schema_hash,
+            ast_fingerprint=spec.ast_fingerprint,
+            sql_fingerprint=spec.sql_fingerprint,
         )
         try:
             self._write_metadata_sidecar(metadata)
@@ -444,6 +452,8 @@ class ResourceStore:
             size_bytes=path.stat().st_size,
             query_hash=spec.query_hash,
             schema_hash=spec.schema_hash,
+            ast_fingerprint=spec.ast_fingerprint,
+            sql_fingerprint=spec.sql_fingerprint,
         )
         try:
             self._write_metadata_sidecar(metadata)
@@ -523,6 +533,8 @@ class ResourceStore:
             size_bytes=size_bytes,
             query_hash=spec.query_hash,
             schema_hash=spec.schema_hash,
+            ast_fingerprint=spec.ast_fingerprint,
+            sql_fingerprint=spec.sql_fingerprint,
         )
         try:
             self._write_metadata_sidecar(metadata)
@@ -555,6 +567,8 @@ class ResourceStore:
             "size_bytes": metadata.size_bytes,
             "query_hash": metadata.query_hash,
             "schema_hash": metadata.schema_hash,
+            "ast_fingerprint": metadata.ast_fingerprint,
+            "sql_fingerprint": metadata.sql_fingerprint,
         }
         meta_path.write_text(
             json.dumps(meta_dict, indent=2, sort_keys=True, default=str),
@@ -624,6 +638,8 @@ class ResourceStore:
             size_bytes=meta_dict.get("size_bytes", 0),
             query_hash=meta_dict.get("query_hash"),
             schema_hash=meta_dict.get("schema_hash"),
+            ast_fingerprint=meta_dict.get("ast_fingerprint"),
+            sql_fingerprint=meta_dict.get("sql_fingerprint"),
         )
 
     def get_preview(

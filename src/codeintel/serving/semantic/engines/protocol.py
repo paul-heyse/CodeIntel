@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from codeintel.serving.semantic.datasets import DatasetManifestIndex
     from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.registry import SemanticRegistry
-    from codeintel.serving.semantic.view_registry import ViewRegistry
     from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
 
@@ -35,7 +34,6 @@ class EngineContext:
     inventory: SchemaInventory
     registry: SemanticRegistry
     dataset_manifests: DatasetManifestIndex
-    view_registry: ViewRegistry
     settings: ServingSettings
     warehouse: Warehouse | None = None
 

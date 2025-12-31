@@ -363,20 +363,14 @@ class Warehouse:
             If the requested table/view is missing and cannot be materialized.
         """
         limited = max(0, limit)
-        schema, name = split_table_key(table_key)
-        select_expr = (
-            exp.select("*")
-            .from_(exp.Table(this=exp.to_identifier(name), db=exp.to_identifier(schema)))
-            .limit(limited)
-        )
-        sql = select_expr.sql(dialect=DUCKDB_DIALECT)
         try:
-            relation = self.gateway.con.sql(sql)
+            relation = self.gateway.relation_from_table_key(table_key)
         except DuckDBCatalogException:
             if self._maybe_materialize_view(table_key):
-                relation = self.gateway.con.sql(sql)
+                relation = self.gateway.relation_from_table_key(table_key)
             else:
                 raise
+        relation = relation.limit(limited)
         if not analyze:
             return relation.explain()
         self.gateway.policy.execute_sql("PRAGMA enable_profiling")

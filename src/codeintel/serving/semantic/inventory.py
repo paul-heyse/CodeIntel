@@ -1,7 +1,7 @@
 """Schema inventory for serving layer introspection.
 
-Provides table/view metadata for agents to understand available data structures
-without querying the DuckDB catalog.
+Provides table/view metadata for serving operations, preferring DuckDB
+catalog metadata with manifest fallbacks when needed.
 """
 
 from __future__ import annotations
@@ -10,22 +10,20 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-
-from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
 from codeintel.serving.semantic.datasets import (
     DatasetManifestEntry,
     DatasetManifestIndex,
-    dataset_for_entry,
 )
+from codeintel.serving.semantic.duckdb_contracts import table_schema_for_table_key
 from codeintel.storage.datasets.contracts import table_schema_from_manifest
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
     from codeintel.core.schemas.primitives import ColumnType
+    from codeintel.storage.duckdb_types import DuckDBConnection
 
 
 def _expect_dict(value: object, *, ctx: str) -> dict[str, object]:
@@ -175,8 +173,38 @@ class SchemaInventory:
         return cls(schemas=schemas)
 
     @classmethod
+    def from_duckdb(
+        cls,
+        *,
+        con: DuckDBConnection,
+        table_keys: Iterable[str],
+    ) -> SchemaInventory:
+        """Load inventory from DuckDB metadata tables.
+
+        Parameters
+        ----------
+        con
+            DuckDB connection with metadata catalog attached.
+        table_keys
+            Table keys to resolve from the DuckDB catalog.
+
+        Returns
+        -------
+        SchemaInventory
+            Inventory constructed from DuckDB metadata.
+        """
+        schemas: dict[str, TableSchema] = {}
+        for table_key in table_keys:
+            table_key_str = str(table_key)
+            schema = table_schema_for_table_key(con=con, table_key=table_key_str)
+            if schema is None:
+                continue
+            schemas[schema.table_key] = schema
+        return cls(schemas=schemas)
+
+    @classmethod
     def from_dataset_manifests(cls, manifests: DatasetManifestIndex) -> SchemaInventory:
-        """Load inventory from dataset manifests and Parquet schemas.
+        """Load inventory from dataset manifests.
 
         Parameters
         ----------
@@ -260,20 +288,7 @@ class SchemaInventory:
 
 def _schema_from_manifest_entry(entry: DatasetManifestEntry) -> TableSchema | None:
     try:
-        schema = table_schema_from_manifest(entry.manifest)
-    except (TypeError, ValueError):
-        schema = None
-    if schema is not None:
-        return schema
-    try:
-        dataset = dataset_for_entry(entry)
-    except (OSError, pa.ArrowInvalid, ValueError):
-        return None
-    try:
-        return table_schema_from_arrow_schema(
-            arrow_schema=dataset.schema,
-            table_key=entry.manifest.table_key,
-        )
+        return table_schema_from_manifest(entry.manifest)
     except (TypeError, ValueError):
         return None
 

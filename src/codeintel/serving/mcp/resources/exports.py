@@ -171,6 +171,8 @@ def _build_export_meta_response(export_id: str, store: ResourceStore) -> dict[st
         limit=meta.row_count,
         offset=0,
         query_hash=meta.query_hash,
+        ast_fingerprint=meta.ast_fingerprint,
+        sql_fingerprint=meta.sql_fingerprint,
     )
 
     schema_summary = ExportSchemaSummary(

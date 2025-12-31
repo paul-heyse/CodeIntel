@@ -66,6 +66,8 @@ class ExportPreparation:
     spec: ExportArtifactSpec
     query_hash: str
     schema_hash: str | None
+    ast_fingerprint: str | None
+    sql_fingerprint: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +133,7 @@ class ExportWorkflow:
         *,
         format_type: ExportFormat,
         snapshot_dict: dict[str, str],
-    ) -> tuple[ExportArtifactSpec, str, str | None]:
+    ) -> tuple[ExportArtifactSpec, str, str | None, str | None, str | None]:
         description = _safe_view_description(self.ops, request.view_id)
         column_types = _column_types_from_description(description)
         columns = tuple(column_types)
@@ -140,7 +142,12 @@ class ExportWorkflow:
             self.settings.export_timeout_s,
             request,
         )
-        query_hash, schema_hash = await self.limiter.run_with_timeout(
+        (
+            query_hash,
+            schema_hash,
+            ast_fingerprint,
+            sql_fingerprint,
+        ) = await self.limiter.run_with_timeout(
             self.ops.export_fingerprint,
             self.settings.export_timeout_s,
             request,
@@ -155,9 +162,11 @@ class ExportWorkflow:
                 export_format=format_type,
                 query_hash=query_hash,
                 schema_hash=schema_hash,
+                ast_fingerprint=ast_fingerprint,
+                sql_fingerprint=sql_fingerprint,
             )
         )
-        return spec, query_hash, schema_hash
+        return spec, query_hash, schema_hash, ast_fingerprint, sql_fingerprint
 
     async def _prepare_export(
         self, request: SemanticExportRequest, *, format_type: ExportFormat
@@ -177,7 +186,13 @@ class ExportWorkflow:
             semantic_layer_hash=ptr.semantic_layer_version,
             buildspec_hash=buildspec_hash,
         )
-        spec, query_hash, schema_hash = await self._build_export_spec(
+        (
+            spec,
+            query_hash,
+            schema_hash,
+            ast_fingerprint,
+            sql_fingerprint,
+        ) = await self._build_export_spec(
             request,
             format_type=format_type,
             snapshot_dict=snapshot_dict,
@@ -188,6 +203,8 @@ class ExportWorkflow:
             spec=spec,
             query_hash=query_hash,
             schema_hash=schema_hash,
+            ast_fingerprint=ast_fingerprint,
+            sql_fingerprint=sql_fingerprint,
         )
 
     async def _store_export(

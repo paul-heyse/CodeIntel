@@ -16,6 +16,7 @@ from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
@@ -48,7 +49,7 @@ if TYPE_CHECKING:
 
     from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.gateway.protocol import MinimalGateway
 
     class SchemaIndex(Protocol):
         """Protocol for schema index consumers without build-layer imports."""
@@ -394,17 +395,19 @@ class SchemaCatalogProvider:
 class SchemaCatalogTracking:
     """Persist and read schema catalogs from metadata tables."""
 
-    def __init__(self, gateway: StorageGateway) -> None:
+    def __init__(self, gateway: MinimalGateway) -> None:
         """Initialize schema catalog tracking accessor.
 
         Parameters
         ----------
         gateway
-            Storage gateway providing database access.
+            Minimal gateway providing connection and policy access.
         """
         self._gateway = gateway
         self._con = gateway.con
         self._backend = gateway.policy
+        config = getattr(gateway, "config", None)
+        self._read_only = bool(config.read_only) if isinstance(config, StorageConfig) else False
 
     def record_schema_versions_batch(self, records: Sequence[SchemaVersionRecord]) -> int:
         """Insert schema versions with content-addressed deduplication.
@@ -1154,7 +1157,7 @@ class SchemaCatalogTracking:
         RuntimeError
             If the gateway is read-only.
         """
-        if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
+        if self._read_only:
             msg = "Cannot backfill renderer cache in a read-only storage gateway"
             raise RuntimeError(msg)
 
@@ -1245,7 +1248,7 @@ class SchemaCatalogTracking:
         RuntimeError
             If the gateway is read-only.
         """
-        if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
+        if self._read_only:
             msg = "Cannot persist schema manifest into a read-only storage gateway"
             raise RuntimeError(msg)
 
@@ -1295,7 +1298,7 @@ class SchemaCatalogTracking:
         ValueError
             If strict provenance checks fail.
         """
-        if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
+        if self._read_only:
             msg = "Cannot refresh override registry in a read-only storage gateway"
             raise RuntimeError(msg)
 
@@ -1558,7 +1561,7 @@ class SchemaCatalogTracking:
             msg = "schema_digest or version_id is required to update override registry"
             raise ValueError(msg)
 
-        if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
+        if self._read_only:
             msg = "Cannot update override registry in a read-only storage gateway"
             raise RuntimeError(msg)
 

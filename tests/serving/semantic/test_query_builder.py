@@ -1,15 +1,16 @@
-"""Tests for the Polars semantic query builder."""
+"""Tests for the DuckDB relation query builder."""
 
 from __future__ import annotations
 
+import duckdb
 import pytest
 from sqlglot import exp, parse_one
 
-from codeintel.serving.semantic.models import FilterSpec
-from codeintel.serving.semantic.polars_query_builder import (
-    PolarsQueryBuilderError,
+from codeintel.serving.semantic.duckdb_relation_builder import (
+    DuckDBRelationQueryBuilderError,
     apply_query_ast,
 )
+from codeintel.serving.semantic.models import FilterSpec
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
 from tests._helpers.assertions.expectation_assertions import expect_equal
@@ -17,10 +18,15 @@ from tests._helpers.assertions.expectation_assertions import expect_equal
 pytestmark = pytest.mark.no_runtime_env
 
 
-def test_polars_ast_builder_filters_orders_and_paginates() -> None:
-    """Polars AST builder applies filters, ordering, and pagination."""
-    pl = pytest.importorskip("polars")
-    lazy = pl.DataFrame({"id": [1, 2, 3], "label": ["one", "two", "three"]}).lazy()
+def test_relation_ast_builder_filters_orders_and_paginates() -> None:
+    """Relation AST builder applies filters, ordering, and pagination."""
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA docs")
+    con.execute("CREATE TABLE docs.v_demo (id INTEGER, label VARCHAR)")
+    con.executemany(
+        "INSERT INTO docs.v_demo VALUES (?, ?)",
+        [(1, "one"), (2, "two"), (3, "three")],
+    )
     spec = SemanticQuerySpec(
         view_id="demo.view",
         table_key="docs.v_demo",
@@ -38,35 +44,41 @@ def test_polars_ast_builder_filters_orders_and_paginates() -> None:
         column_types=spec.column_types,
     )
     result = apply_query_ast(
-        lazy,
+        con.sql("SELECT * FROM docs.v_demo"),
         ast=ast,
         allowed_columns=spec.allowed_columns,
         column_types=spec.column_types,
-    ).collect()
-    expect_equal(result.to_dicts(), [{"id": 3, "label": "three"}, {"id": 2, "label": "two"}])
+    ).fetchall()
+    expect_equal(result, [(3, "three"), (2, "two")])
 
 
-def test_polars_ast_builder_supports_alias_and_lower() -> None:
+def test_relation_ast_builder_supports_alias_and_lower() -> None:
     """AST builder supports projection aliases and lower()."""
-    pl = pytest.importorskip("polars")
-    lazy = pl.DataFrame({"label": ["One", "Two"]}).lazy()
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA docs")
+    con.execute("CREATE TABLE docs.v_demo (label VARCHAR)")
+    con.executemany(
+        "INSERT INTO docs.v_demo VALUES (?)",
+        [("One",), ("Two",)],
+    )
     ast = parse_one(
         "SELECT lower(label) AS label_lower FROM docs.v_demo",
         dialect="duckdb",
     )
     result = apply_query_ast(
-        lazy,
+        con.sql("SELECT * FROM docs.v_demo"),
         ast=ast,
         allowed_columns=frozenset({"label"}),
         column_types={"label": "VARCHAR"},
-    ).collect()
-    expect_equal(result.to_dicts(), [{"label_lower": "one"}, {"label_lower": "two"}])
+    ).fetchall()
+    expect_equal(result, [("one",), ("two",)])
 
 
-def test_polars_ast_builder_rejects_unknown_column() -> None:
+def test_relation_ast_builder_rejects_unknown_column() -> None:
     """AST builder rejects unknown columns."""
-    pl = pytest.importorskip("polars")
-    lazy = pl.DataFrame({"id": [1]}).lazy()
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA docs")
+    con.execute("CREATE TABLE docs.v_demo (id INTEGER)")
     spec = SemanticQuerySpec(
         view_id="demo.view",
         table_key="docs.v_demo",
@@ -78,14 +90,15 @@ def test_polars_ast_builder_rejects_unknown_column() -> None:
         offset=0,
     )
     ast = build_sqlglot_query(spec=spec, allowed_columns=spec.allowed_columns)
-    with pytest.raises(PolarsQueryBuilderError, match="Unknown select column"):
-        apply_query_ast(lazy, ast=ast, allowed_columns=frozenset())
+    with pytest.raises(DuckDBRelationQueryBuilderError, match="Unknown select column"):
+        apply_query_ast(con.sql("SELECT * FROM docs.v_demo"), ast=ast, allowed_columns=frozenset())
 
 
-def test_polars_ast_builder_validates_operators() -> None:
+def test_relation_ast_builder_validates_operators() -> None:
     """AST builder rejects unsupported operators."""
-    pl = pytest.importorskip("polars")
-    lazy = pl.DataFrame({"id": [1]}).lazy()
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA docs")
+    con.execute("CREATE TABLE docs.v_demo (id INTEGER)")
     table = exp.Table(this=exp.to_identifier("v_demo"), db=exp.to_identifier("docs"))
     predicate = exp.Anonymous(
         this="contains",
@@ -96,11 +109,11 @@ def test_polars_ast_builder_validates_operators() -> None:
     )
     ast = exp.select(exp.Column(this=exp.to_identifier("id"))).from_(table).where(predicate)
     with pytest.raises(
-        PolarsQueryBuilderError,
+        DuckDBRelationQueryBuilderError,
         match="Operator contains is not supported for column type INTEGER",
     ):
         apply_query_ast(
-            lazy,
+            con.sql("SELECT * FROM docs.v_demo"),
             ast=ast,
             allowed_columns=frozenset({"id"}),
             column_types={"id": "INTEGER"},

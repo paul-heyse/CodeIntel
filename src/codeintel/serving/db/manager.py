@@ -33,13 +33,16 @@ from codeintel.core.tools import ToolBinaries
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.datasets import DatasetManifestIndex, load_dataset_manifests
 from codeintel.serving.semantic.inventory import SchemaInventory
-from codeintel.serving.semantic.view_registry import ViewRegistry, view_spec_modules
+from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
     from codeintel.build.spec import BuildSpec
+    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.serving.semantic.registry import SemanticRegistry
     from codeintel.storage.warehouse import Warehouse
 
@@ -323,8 +326,6 @@ class ServingSnapshotContext:
         Canonical registry service used for semantic discovery.
     dataset_manifests
         Dataset manifest metadata for Arrow-backed tables.
-    view_registry
-        Polars view registry for semantic views.
     """
 
     pointer: ServingSnapshotPointer
@@ -336,9 +337,6 @@ class ServingSnapshotContext:
     registry_service: RegistryService | None = None
     dataset_manifests: DatasetManifestIndex = field(
         default_factory=lambda: DatasetManifestIndex({})
-    )
-    view_registry: ViewRegistry = field(
-        default_factory=lambda: ViewRegistry.load(modules=view_spec_modules())
     )
     summary: dict[str, object] = field(default_factory=dict)
 
@@ -391,6 +389,95 @@ def _resolve_environment_path(
     return None
 
 
+def _inventory_table_keys(
+    *,
+    registry: SemanticRegistry,
+    dataset_manifests: DatasetManifestIndex,
+) -> tuple[str, ...]:
+    keys = set(dataset_manifests.table_keys())
+    keys.update(view.table_key for view in registry.views)
+    return tuple(sorted(keys))
+
+
+def _load_inventory_from_duckdb(
+    *,
+    db_path: Path,
+    table_keys: tuple[str, ...],
+) -> SchemaInventory:
+    session = DuckDBSession(StorageConfig.for_readonly(db_path))
+    with contextlib.closing(session.open_reader()) as con:
+        return SchemaInventory.from_duckdb(con=con, table_keys=table_keys)
+
+
+def _merge_missing_schemas(
+    *,
+    target: dict[str, TableSchema],
+    source: Mapping[str, TableSchema],
+    missing: set[str],
+) -> bool:
+    added = False
+    for table_key in missing:
+        schema = source.get(table_key)
+        if schema is None:
+            continue
+        target[table_key] = schema
+        added = True
+    return added
+
+
+def _load_schema_inventory(
+    *,
+    pointer: ServingSnapshotPointer,
+    registry: SemanticRegistry,
+    dataset_manifests: DatasetManifestIndex,
+) -> tuple[SchemaInventory, str]:
+    table_keys = _inventory_table_keys(
+        registry=registry,
+        dataset_manifests=dataset_manifests,
+    )
+    if not table_keys:
+        inventory = SchemaInventory.load(pointer.schema_manifest_path)
+        return inventory, "schema_manifest"
+
+    schemas: dict[str, TableSchema] = {}
+    sources: list[str] = []
+
+    try:
+        duckdb_inventory = _load_inventory_from_duckdb(
+            db_path=pointer.db_path,
+            table_keys=table_keys,
+        )
+    except (DuckDBError, OSError, RuntimeError, ValueError):
+        duckdb_inventory = SchemaInventory(schemas={})
+    if duckdb_inventory.schemas:
+        schemas.update(duckdb_inventory.schemas)
+        sources.append("duckdb")
+
+    missing = set(table_keys) - set(schemas)
+    if missing:
+        manifest_inventory = SchemaInventory.from_dataset_manifests(dataset_manifests)
+        if manifest_inventory.schemas and _merge_missing_schemas(
+            target=schemas,
+            source=manifest_inventory.schemas,
+            missing=missing,
+        ):
+            sources.append("manifest")
+        missing = set(table_keys) - set(schemas)
+
+    if missing:
+        registry_inventory = SchemaInventory.load(pointer.schema_manifest_path)
+        if registry_inventory.schemas and _merge_missing_schemas(
+            target=schemas,
+            source=registry_inventory.schemas,
+            missing=missing,
+        ):
+            sources.append("schema_manifest")
+
+    if not sources:
+        return SchemaInventory(schemas={}), "empty"
+    return SchemaInventory(schemas=schemas), "+".join(sources)
+
+
 def _load_snapshot_context(
     pointer: ServingSnapshotPointer,
     *,
@@ -403,11 +490,11 @@ def _load_snapshot_context(
         raise ValueError(msg)
     snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
     dataset_manifests = load_dataset_manifests(snapshot_manifest)
-    inventory = SchemaInventory.from_dataset_manifests(dataset_manifests)
-    inventory_source = "datasets"
-    if not inventory.schemas:
-        inventory = SchemaInventory.load(pointer.schema_manifest_path)
-        inventory_source = "manifest"
+    inventory, inventory_source = _load_schema_inventory(
+        pointer=pointer,
+        registry=registry,
+        dataset_manifests=dataset_manifests,
+    )
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
     env_path = _resolve_environment_path(pointer, pointer_path=pointer_path)
@@ -446,6 +533,5 @@ def _load_snapshot_context(
         execution_context=_build_execution_context(pointer),
         registry_service=registry_service,
         dataset_manifests=dataset_manifests,
-        view_registry=ViewRegistry.load(modules=view_spec_modules()),
         summary=summary,
     )

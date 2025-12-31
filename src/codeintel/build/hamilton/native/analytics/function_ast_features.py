@@ -50,8 +50,6 @@ FUNCTION_AST_FEATURES_CONTRACT = TableContractSpec(
     input_name="function_ast_features__base",
 )
 
-_FUNCTION_KINDS: tuple[str, ...] = ("function", "method")
-
 
 @dataclass(frozen=True, slots=True)
 class _FunctionNodeInfo:
@@ -125,31 +123,28 @@ def _default_feature_row(row: dict[str, object]) -> dict[str, object]:
     }
 
 
-def function_ast_features__base(
-    env: BuildEnv,
-    q__core__goids: InferableTabularInput,
-    q__core__modules: InferableTabularInput,
-) -> pl.LazyFrame:
-    """Build function AST features using parsed source files."""
-    goids = tabular_to_lazyframe(q__core__goids).collect()
-    if goids.is_empty():
-        return empty_frame_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
-
-    modules = tabular_to_lazyframe(q__core__modules).collect()
+def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    for row in modules.iter_rows(named=True):
+    for row in modules_frame.iter_rows(named=True):
         rel_path = row.get("path")
         module_name = row.get("module")
         language = row.get("language")
-        if language not in (None, "python"):
+        if language not in {None, "python"}:
             continue
         if isinstance(rel_path, str) and isinstance(module_name, str):
             module_by_path[rel_path] = module_name
+    return module_by_path
 
+
+def _load_module_nodes(
+    env: BuildEnv,
+    module_by_path: dict[str, str],
+) -> tuple[dict[str, dict[tuple[str, int], _FunctionNodeInfo]], dict[str, list[str]]]:
     nodes_by_path: dict[str, dict[tuple[str, int], _FunctionNodeInfo]] = {}
     lines_by_path: dict[str, list[str]] = {}
+    repo_root = Path(env.snapshot.repo_root)
     for rel_path, module_name in module_by_path.items():
-        module_path = Path(env.snapshot.repo_root) / rel_path
+        module_path = repo_root / rel_path
         parsed = parse_python_module(module_path)
         if parsed is None:
             continue
@@ -159,64 +154,101 @@ def function_ast_features__base(
         for info in _collect_function_nodes(tree, module_name):
             node_map[info.qualname, info.start_line] = info
         nodes_by_path[rel_path] = node_map
+    return nodes_by_path, lines_by_path
+
+
+def _feature_row_from_goid(
+    row: dict[str, object],
+    nodes_by_path: dict[str, dict[tuple[str, int], _FunctionNodeInfo]],
+    lines_by_path: dict[str, list[str]],
+    *,
+    repo_root: Path,
+) -> dict[str, object]:
+    rel_path = row.get("rel_path")
+    qualname = row.get("qualname")
+    start_line = row.get("start_line")
+    if not isinstance(rel_path, str) or not isinstance(qualname, str):
+        return _default_feature_row(row)
+    if not isinstance(start_line, int):
+        return _default_feature_row(row)
+    info = nodes_by_path.get(rel_path, {}).get((qualname, start_line))
+    if info is None:
+        return _default_feature_row(row)
+    goid = row.get("goid_h128")
+    if not isinstance(goid, int):
+        return _default_feature_row(row)
+    lines = lines_by_path.get(rel_path, [])
+    fn = FunctionAst(
+        goid=goid,
+        rel_path=rel_path,
+        qualname=qualname,
+        start_line=start_line,
+        end_line=info.end_line,
+        node=info.node,
+        lines=lines,
+    )
+    try:
+        features = compute_function_features(fn, repo_root=repo_root)
+    except (SyntaxError, ValueError, TypeError):
+        return _default_feature_row(row)
+    return {
+        "repo": row.get("repo"),
+        "commit": row.get("commit"),
+        "function_goid_h128": row.get("goid_h128"),
+        "rel_path": features.rel_path,
+        "qualname": features.qualname,
+        "is_async": features.is_async,
+        "uses_network": features.io_flags.uses_network,
+        "uses_db": features.io_flags.uses_db,
+        "uses_filesystem": features.io_flags.uses_filesystem,
+        "uses_subprocess": features.io_flags.uses_subprocess,
+        "uses_concurrency_lib": features.uses_concurrency_lib,
+        "uses_threading": features.uses_threading,
+        "uses_asyncio_lib": features.uses_asyncio_lib,
+        "http_client_libs": json.dumps(sorted(features.http_client_libs)),
+        "http_server_libs": json.dumps(sorted(features.http_server_libs)),
+        "db_libs": json.dumps(sorted(features.db_libs)),
+        "message_libs": json.dumps(sorted(features.message_libs)),
+        "config_read_count": features.config_read_count,
+        "feature_flag_count": features.feature_flag_count,
+        "decorators": json.dumps(list(features.decorators)),
+        "libraries_used": json.dumps(sorted(features.libraries_used)),
+        "created_at": row.get("created_at"),
+    }
+
+
+def function_ast_features__base(
+    env: BuildEnv,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+) -> pl.LazyFrame:
+    """Build function AST features using parsed source files.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame with function AST feature columns.
+    """
+    goids = tabular_to_lazyframe(q__core__goids).collect()
+    if goids.is_empty():
+        return empty_frame_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
+
+    modules = tabular_to_lazyframe(q__core__modules).collect()
+    module_by_path = _module_by_path(modules)
+    nodes_by_path, lines_by_path = _load_module_nodes(env, module_by_path)
 
     rows: list[dict[str, object]] = []
+    repo_root = Path(env.snapshot.repo_root)
     for row in goids.iter_rows(named=True):
-        if row.get("kind") not in _FUNCTION_KINDS:
-            continue
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
-        start_line = row.get("start_line")
-        if not isinstance(rel_path, str) or not isinstance(qualname, str):
-            rows.append(_default_feature_row(row))
-            continue
-        if not isinstance(start_line, int):
-            rows.append(_default_feature_row(row))
-            continue
-        info = nodes_by_path.get(rel_path, {}).get((qualname, start_line))
-        if info is None:
-            rows.append(_default_feature_row(row))
-            continue
-        lines = lines_by_path.get(rel_path, [])
-        fn = FunctionAst(
-            goid=int(row.get("goid_h128")),
-            rel_path=rel_path,
-            qualname=qualname,
-            start_line=start_line,
-            end_line=info.end_line,
-            node=info.node,
-            lines=lines,
-        )
-        try:
-            features = compute_function_features(fn, repo_root=env.snapshot.repo_root)
-        except (SyntaxError, ValueError, TypeError):
-            rows.append(_default_feature_row(row))
+        if row.get("kind") not in {"function", "method"}:
             continue
         rows.append(
-            {
-                "repo": row.get("repo"),
-                "commit": row.get("commit"),
-                "function_goid_h128": row.get("goid_h128"),
-                "rel_path": features.rel_path,
-                "qualname": features.qualname,
-                "is_async": features.is_async,
-                "uses_network": features.io_flags.uses_network,
-                "uses_db": features.io_flags.uses_db,
-                "uses_filesystem": features.io_flags.uses_filesystem,
-                "uses_subprocess": features.io_flags.uses_subprocess,
-                "uses_concurrency_lib": features.uses_concurrency_lib,
-                "uses_threading": features.uses_threading,
-                "uses_asyncio_lib": features.uses_asyncio_lib,
-                "http_client_libs": json.dumps(sorted(features.http_client_libs)),
-                "http_server_libs": json.dumps(sorted(features.http_server_libs)),
-                "db_libs": json.dumps(sorted(features.db_libs)),
-                "message_libs": json.dumps(sorted(features.message_libs)),
-                "config_read_count": features.config_read_count,
-                "feature_flag_count": features.feature_flag_count,
-                "decorators": json.dumps(list(features.decorators)),
-                "libraries_used": json.dumps(sorted(features.libraries_used)),
-                "created_at": row.get("created_at"),
-            }
+            _feature_row_from_goid(
+                row,
+                nodes_by_path,
+                lines_by_path,
+                repo_root=repo_root,
+            )
         )
 
     if not rows:

@@ -5,20 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
+from codeintel.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.function_ast_features import (
     function_ast_features__base,
 )
 from codeintel.build.hamilton.native.analytics.function_types import function_types__base
+from codeintel.core.schemas.generated_rows.analytics import AnalyticsFunctionTypesRow
+from codeintel.core.validation.reporters import FunctionValidationReporter
 
-if TYPE_CHECKING:
+try:
     import polars as pl
+except ModuleNotFoundError:
+    pytest.skip("polars is required for analytics scaffold tests", allow_module_level=True)
 
-pl = pytest.importorskip("polars")
 pytestmark = pytest.mark.no_runtime_env
 
 
@@ -72,11 +76,47 @@ def _sample_modules_frame() -> pl.DataFrame:
     )
 
 
+def _sample_function_types_row() -> AnalyticsFunctionTypesRow:
+    return {
+        "function_goid_h128": 1,
+        "urn": "urn:goid:1",
+        "repo": "repo",
+        "commit": "commit",
+        "rel_path": "src/app.py",
+        "language": "python",
+        "kind": "function",
+        "qualname": "app.main",
+        "start_line": 1,
+        "end_line": 2,
+        "total_params": 0,
+        "annotated_params": 0,
+        "unannotated_params": 0,
+        "param_typed_ratio": 0.0,
+        "has_return_annotation": False,
+        "return_type": None,
+        "return_type_source": None,
+        "type_comment": None,
+        "param_types": None,
+        "fully_typed": False,
+        "partial_typed": False,
+        "untyped": True,
+        "typedness_bucket": "untyped",
+        "typedness_source": "ast",
+        "created_at": datetime(2024, 1, 1, tzinfo=UTC),
+    }
+
+
 def test_function_types_base_columns() -> None:
     """Ensure function types base nodes expose the expected columns."""
-    frame = function_types__base(_sample_goids_frame())
-    result = frame.collect()
-    assert result.columns == [
+    reporter = FunctionValidationReporter(repo="repo", commit="commit")
+    analytics_result = FunctionAnalyticsResult(
+        metrics_rows=[],
+        types_rows=[_sample_function_types_row()],
+        reporter=reporter,
+    )
+    frame = function_types__base(analytics_result)
+    collected = frame.collect()
+    assert collected.columns == [
         "function_goid_h128",
         "urn",
         "repo",

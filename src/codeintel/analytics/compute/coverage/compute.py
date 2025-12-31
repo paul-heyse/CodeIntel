@@ -17,9 +17,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.storage.duckdb_types import DuckDBRelation
+from codeintel.analytics.duckdb_helpers import aggregate_relation
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, DuckDBRelation
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -78,121 +78,79 @@ def build_coverage_functions_expr(
     )
 
     try:
-        return gateway.con.sql(
-            render_sql(
-                """
-            WITH goids AS (
-                SELECT
-                    goid_h128,
-                    urn,
-                    repo,
-                    commit,
-                    rel_path,
-                    language,
-                    kind,
-                    qualname,
-                    start_line,
-                    end_line
-                FROM core.goids
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND kind IN ('function', 'method')
-            ),
-            coverage AS (
-                SELECT
-                    repo,
-                    commit,
-                    rel_path,
-                    line,
-                    is_executable,
-                    is_covered
-                FROM analytics.coverage_lines
-                WHERE repo = $repo
-                  AND commit = $commit
-            ),
-            joined AS (
-                SELECT
-                    goids.goid_h128,
-                    goids.urn,
-                    goids.repo,
-                    goids.commit,
-                    goids.rel_path,
-                    goids.language,
-                    goids.kind,
-                    goids.qualname,
-                    goids.start_line,
-                    goids.end_line,
-                    coverage.is_executable,
-                    coverage.is_covered
-                FROM goids
-                LEFT JOIN coverage
-                  ON goids.repo = coverage.repo
-                 AND goids.commit = coverage.commit
-                 AND goids.rel_path = coverage.rel_path
-                 AND coverage.line >= goids.start_line
-                 AND coverage.line <= COALESCE(goids.end_line, goids.start_line)
-            ),
-            aggregated AS (
-                SELECT
-                    goid_h128,
-                    urn,
-                    repo,
-                    commit,
-                    rel_path,
-                    language,
-                    kind,
-                    qualname,
-                    start_line,
-                    end_line,
-                    SUM(CASE WHEN is_executable THEN 1 ELSE 0 END) AS executable_lines_raw,
-                    SUM(
-                        CASE
-                            WHEN is_executable AND is_covered THEN 1
-                            ELSE 0
-                        END
-                    ) AS covered_lines_raw
-                FROM joined
-                GROUP BY
-                    goid_h128,
-                    urn,
-                    repo,
-                    commit,
-                    rel_path,
-                    language,
-                    kind,
-                    qualname,
-                    start_line,
-                    end_line
+        predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
+            ColumnExpression("commit") == ConstantExpression(snapshot.commit)
+        )
+        kind_literals = [ConstantExpression("function"), ConstantExpression("method")]
+        goids = (
+            gateway.relation_from_table_key("core.goids")
+            .filter(predicate)
+            .filter(ColumnExpression("kind").isin(*kind_literals))
+            .select(
+                "goid_h128",
+                "urn",
+                "repo",
+                "commit",
+                "rel_path",
+                "language",
+                "kind",
+                "qualname",
+                "start_line",
+                "end_line",
             )
-            SELECT
-                goid_h128 AS function_goid_h128,
-                urn,
-                repo,
-                commit,
-                rel_path,
-                language,
-                kind,
-                qualname,
-                start_line,
-                end_line,
-                COALESCE(executable_lines_raw, 0) AS executable_lines,
-                COALESCE(covered_lines_raw, 0) AS covered_lines,
-                CASE
-                    WHEN COALESCE(executable_lines_raw, 0) = 0 THEN NULL
-                    ELSE CAST(COALESCE(covered_lines_raw, 0) AS DOUBLE)
-                         / NULLIF(CAST(COALESCE(executable_lines_raw, 0) AS DOUBLE), 0)
-                END AS coverage_ratio,
-                COALESCE(covered_lines_raw, 0) > 0 AS tested,
-                CASE
-                    WHEN COALESCE(executable_lines_raw, 0) = 0 THEN 'no_executable_code'
-                    WHEN COALESCE(covered_lines_raw, 0) = 0 THEN 'no_tests'
-                    ELSE ''
-                END AS untested_reason,
-                NOW() AS created_at
-            FROM aggregated
-                """,
-                {"repo": snapshot.repo, "commit": snapshot.commit},
-            )
+            .set_alias("goids")
+        )
+        coverage = (
+            gateway.relation_from_table_key("analytics.coverage_lines")
+            .filter(predicate)
+            .select("repo", "commit", "rel_path", "line", "is_executable", "is_covered")
+            .set_alias("coverage")
+        )
+        joined = goids.join(
+            coverage,
+            "goids.repo = coverage.repo "
+            "AND goids.commit = coverage.commit "
+            "AND goids.rel_path = coverage.rel_path "
+            "AND coverage.line >= goids.start_line "
+            "AND coverage.line <= coalesce(goids.end_line, goids.start_line)",
+            how="left",
+        )
+        aggregated = aggregate_relation(
+            joined,
+            aggs=[
+                "sum(case when is_executable then 1 else 0 end) as executable_lines_raw",
+                "sum(case when is_executable and is_covered then 1 else 0 end) as covered_lines_raw",
+            ],
+            group_by=(
+                "goid_h128, urn, repo, commit, rel_path, language, kind, qualname, "
+                "start_line, end_line"
+            ),
+        )
+        return aggregated.select(
+            "goid_h128 as function_goid_h128",
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+            "coalesce(executable_lines_raw, 0) as executable_lines",
+            "coalesce(covered_lines_raw, 0) as covered_lines",
+            "case "
+            "when coalesce(executable_lines_raw, 0) = 0 then null "
+            "else cast(coalesce(covered_lines_raw, 0) as double) / "
+            "nullif(cast(coalesce(executable_lines_raw, 0) as double), 0) "
+            "end as coverage_ratio",
+            "coalesce(covered_lines_raw, 0) > 0 as tested",
+            "case "
+            "when coalesce(executable_lines_raw, 0) = 0 then 'no_executable_code' "
+            "when coalesce(covered_lines_raw, 0) = 0 then 'no_tests' "
+            "else '' "
+            "end as untested_reason",
+            "now() as created_at",
         )
     except DuckDBError as exc:
         LOG.warning("coverage_functions: failed to access tables: %s", exc)

@@ -46,20 +46,39 @@ RISK_LEVEL_HIGH_THRESHOLD = 5
 RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
 
-def risk_factors__base(q__analytics__function_metrics: InferableTabularInput) -> pl.LazyFrame:
-    """Build a minimal risk factors frame from function metrics.
-
-    Parameters
-    ----------
-    q__analytics__function_metrics
-        Relation for ``analytics.function_metrics``.
+def risk_factors__base(
+    q__analytics__function_metrics: InferableTabularInput,
+    q__graph__call_graph_edges: InferableTabularInput,
+    q__analytics__test_coverage_edges: InferableTabularInput,
+) -> pl.LazyFrame:
+    """Build risk factors using function metrics, call graph, and test coverage.
 
     Returns
     -------
     pl.LazyFrame
-        Lazy frame with risk factor columns.
+        Lazy frame containing risk factor rows.
     """
     frame = tabular_to_lazyframe(q__analytics__function_metrics)
+    edges = tabular_to_lazyframe(q__graph__call_graph_edges)
+    coverage = tabular_to_lazyframe(q__analytics__test_coverage_edges)
+
+    fan_in = (
+        edges.group_by("callee_goid_h128")
+        .len()
+        .rename({"callee_goid_h128": "function_goid_h128", "len": "fan_in_count"})
+    )
+    fan_out = (
+        edges.group_by("caller_goid_h128")
+        .len()
+        .rename({"caller_goid_h128": "function_goid_h128", "len": "fan_out_count"})
+    )
+    tested = (
+        coverage.group_by("function_goid_h128")
+        .len()
+        .with_columns(pl.lit(True).alias("has_tests"))
+        .select(["function_goid_h128", "has_tests"])
+    )
+
     risk_score = pl.col("cyclomatic_complexity").fill_null(0).cast(pl.Int64)
     risk_level = (
         pl.when(risk_score >= RISK_LEVEL_HIGH_THRESHOLD)
@@ -69,12 +88,17 @@ def risk_factors__base(q__analytics__function_metrics: InferableTabularInput) ->
         .otherwise(pl.lit("low"))
         .alias("risk_level")
     )
-    frame = frame.with_columns(
-        risk_score.alias("risk_score"),
-        risk_level,
-        pl.lit(0).cast(pl.Int64).alias("fan_in_count"),
-        pl.lit(0).cast(pl.Int64).alias("fan_out_count"),
-        pl.lit(value=False).alias("has_tests"),
+    frame = (
+        frame.join(fan_in, on="function_goid_h128", how="left")
+        .join(fan_out, on="function_goid_h128", how="left")
+        .join(tested, on="function_goid_h128", how="left")
+        .with_columns(
+            risk_score.alias("risk_score"),
+            risk_level,
+            pl.col("fan_in_count").fill_null(0).cast(pl.Int64),
+            pl.col("fan_out_count").fill_null(0).cast(pl.Int64),
+            pl.col("has_tests").fill_null(False).cast(pl.Boolean),
+        )
     )
     return frame.select(
         [

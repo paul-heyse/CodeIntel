@@ -31,12 +31,12 @@ from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.search.engine import (
     SEARCH_TABLE_NAME,
     SEARCH_TABLE_SCHEMA,
-    build_search_query,
+    build_search_relation,
     is_fts_available,
 )
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
+from codeintel.serving.semantic.duckdb_contracts import contract_schema_for_table_key
 from codeintel.serving.semantic.engines.duckdb_engine import DuckDBQueryEngine
-from codeintel.serving.semantic.engines.polars_engine import PolarsQueryEngine
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.engines.registry import QueryEngineRegistry, build_engine_registry
 from codeintel.serving.semantic.fingerprints import (
@@ -61,25 +61,21 @@ from codeintel.serving.semantic.models import (
 )
 from codeintel.serving.semantic.planner import SemanticQueryPlanner
 from codeintel.serving.semantic.query_ast import ServingQuery, build_serving_query
-from codeintel.serving.semantic.schema_contracts import contract_schema_for_table_key
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import SqlglotQueryBuilderError
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
 from codeintel.storage.metadata import load_derived_lineage_columns
-from codeintel.storage.queries.safe import (
-    SqlIngressPolicy,
-    UnsafeSqlError,
-    assert_select_perimeter,
-)
 from codeintel.storage.sqlglot_tools import (
     extract_column_lineage_duckdb,
     extract_table_keys_duckdb,
+    fingerprint_expression_duckdb,
+    render_sql_duckdb,
     semantic_diff_sql_duckdb,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Generator
     from pathlib import Path
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
@@ -93,8 +89,7 @@ if TYPE_CHECKING:
         SemanticQueryRequest,
         SemanticViewSpec,
     )
-    from codeintel.serving.semantic.planner import ResolvedViewContext
-    from codeintel.serving.semantic.templates import DbApiQuery
+    from codeintel.serving.semantic.planner import PlanInputs, ResolvedViewContext
     from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
 
@@ -171,6 +166,8 @@ class _IpcMetadataInput:
     schema_hash: str | None
     schema_digest: str | None
     engine: str | None
+    ast_fingerprint: str | None
+    sql_fingerprint: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +179,8 @@ class _SemanticQueryStream:
     schema_digest: str | None
     scan_metrics: QueryScanMetrics | None
     batch_size: int | None
+    ast_fingerprint: str | None
+    sql_fingerprint: str | None
 
     def __iter__(self) -> Iterator[bytes]:
         return self
@@ -201,6 +200,22 @@ class _IpcQueryPlan:
     query_hash: str
     schema_hash: str | None
     schema_digest: str | None
+    ast_fingerprint: str | None
+    sql_fingerprint: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _QueryExecutionPlan:
+    resolved: ResolvedViewContext
+    inputs: PlanInputs
+    effective_limit: int
+    serving_query: ServingQuery
+    ast_fingerprint: str | None
+    scan_metrics: QueryScanMetrics | None
+    batch_size: int
+    rows: list[dict[str, object]]
+    explain: QueryExplain
+    engine_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +223,20 @@ class _IpcExportPlan:
     plan: ExecutablePlan
     reader: pa.RecordBatchReader
     metadata: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class _ExportPlanContext:
+    resolved: ResolvedViewContext
+    serving_query: ServingQuery
+    plan: ExecutablePlan
+    engine_name: str
+    query_hash: str
+    schema_hash: str | None
+    schema_digest: str | None
+    ast_fingerprint: str | None
+    sql_fingerprint: str | None
+    contract_schema: pa.Schema | None
 
 
 def _build_ipc_metadata(input_data: _IpcMetadataInput) -> dict[str, object]:
@@ -225,6 +254,10 @@ def _build_ipc_metadata(input_data: _IpcMetadataInput) -> dict[str, object]:
         metadata["codeintel.schema_digest"] = input_data.schema_digest
     if input_data.engine is not None:
         metadata["codeintel.query_engine"] = input_data.engine
+    if input_data.ast_fingerprint is not None:
+        metadata["codeintel.ast_fingerprint"] = input_data.ast_fingerprint
+    if input_data.sql_fingerprint is not None:
+        metadata["codeintel.sql_fingerprint"] = input_data.sql_fingerprint
     return metadata
 
 
@@ -335,24 +368,7 @@ class SemanticQueryKernel:
     def __post_init__(self) -> None:
         """Initialize planner after dataclass construction."""
         self._planner = SemanticQueryPlanner(db=self.db, settings=self.settings)
-        self._engine_registry = build_engine_registry(
-            (
-                PolarsQueryEngine(),
-                DuckDBQueryEngine(),
-            )
-        )
-
-    def _execute_sql(
-        self,
-        *,
-        warehouse: Warehouse,
-        sql: str,
-        params: Sequence[object] | None = None,
-    ) -> list[dict[str, object]]:
-        backend = warehouse.gateway.policy
-        result = backend.execute_sql(sql, params=params)
-        reader = result.fetch_record_batch(self.settings.export_batch_size)
-        return _sanitize_rows(self._rows_from_reader(reader, cancel_check=None))
+        self._engine_registry = build_engine_registry((DuckDBQueryEngine(),))
 
     @staticmethod
     def _snapshot_dict(pointer: ServingSnapshotPointer) -> ServingSnapshotIdentity:
@@ -372,12 +388,13 @@ class SemanticQueryKernel:
         view_id: str,
         spec: SemanticQuerySpec,
         inventory: SchemaInventory,
-    ) -> tuple[str, str | None]:
+        ast_fingerprint: str | None = None,
+    ) -> tuple[str, str | None, str | None]:
         filter_dicts = [f.model_dump(mode="json") for f in spec.filters]
         schema_hash_value = self._planner.schema_hash_for_table_key(
             inventory=inventory, table_key=spec.table_key
         )
-        ast_hash = self._ast_hash_for_spec(spec=spec)
+        ast_hash = ast_fingerprint or self._ast_hash_for_spec(spec=spec)
         inputs = SemanticQueryFingerprintInput(
             snapshot=self._snapshot_dict(pointer).model_dump(mode="json"),
             view_id=view_id,
@@ -391,7 +408,7 @@ class SemanticQueryKernel:
             ast_hash=ast_hash,
         )
         query_hash = fingerprint_semantic_query(inputs)
-        return query_hash, schema_hash_value
+        return query_hash, schema_hash_value, ast_hash
 
     @staticmethod
     def _schema_digest_for_table_key(*, inventory: SchemaInventory, table_key: str) -> str | None:
@@ -404,8 +421,21 @@ class SemanticQueryKernel:
     def _ast_hash_for_spec(*, spec: SemanticQuerySpec) -> str | None:
         try:
             serving_query = build_serving_query(spec=spec)
-            sql = serving_query.ast.sql(dialect=DUCKDB_DIALECT)
-            return sqlglot_canonical_sha256(sql)
+            return fingerprint_expression_duckdb(serving_query.ast)
+        except (SqlglotError, SqlglotQueryBuilderError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _ast_fingerprint_for_query(query: ServingQuery) -> str | None:
+        try:
+            return fingerprint_expression_duckdb(query.ast)
+        except (SqlglotError, SqlglotQueryBuilderError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _sql_fingerprint_for_query(query: ServingQuery) -> str | None:
+        try:
+            return sqlglot_canonical_sha256(render_sql_duckdb(query.ast))
         except (SqlglotError, SqlglotQueryBuilderError, TypeError, ValueError):
             return None
 
@@ -419,13 +449,11 @@ class SemanticQueryKernel:
         ctx_registry = context.registry
         ctx_inventory = context.inventory
         ctx_dataset_manifests = context.dataset_manifests
-        ctx_view_registry = context.view_registry
         return EngineContext(
             pointer=pointer,
             inventory=ctx_inventory,
             registry=ctx_registry,
             dataset_manifests=ctx_dataset_manifests,
-            view_registry=ctx_view_registry,
             settings=self.settings,
             warehouse=warehouse,
         )
@@ -466,16 +494,6 @@ class SemanticQueryKernel:
             _raise_if_cancelled(cancel_check)
             rows.extend(_records_from_batch(batch))
         return rows
-
-    def _execute_dbapi_query(
-        self, *, warehouse: Warehouse, query: DbApiQuery
-    ) -> list[dict[str, object]]:
-        try:
-            assert_select_perimeter(query.sql, policy=SqlIngressPolicy())
-        except UnsafeSqlError as exc:
-            raise ValueError(str(exc)) from exc
-        else:
-            return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
 
     @staticmethod
     def _log_ast_diff(
@@ -532,6 +550,51 @@ class SemanticQueryKernel:
         finally:
             plan.cleanup()
         return rows, explain, engine_name
+
+    def _execute_query_plan(
+        self,
+        *,
+        request: SemanticQueryRequest,
+        cancel_check: CancelCheck | None,
+    ) -> _QueryExecutionPlan:
+        with self.db.connect() as (warehouse, pointer):
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_query(
+                ctx=resolved, request=request
+            )
+            serving_query = self._planner.build_query(
+                ctx=resolved,
+                inputs=inputs,
+                limit=effective_limit + 1,
+            )
+            ast_fingerprint = self._ast_fingerprint_for_query(serving_query)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=self._planner.snapshot_context(pointer),
+                warehouse=warehouse,
+            )
+            scan_metrics = self._scan_metrics_for_table_key(
+                table_key=serving_query.spec.table_key,
+                dataset_manifests=engine_ctx.dataset_manifests,
+            )
+            batch_size = self.settings.export_batch_size
+            rows, explain, engine_name = self._execute_engine_plan(
+                query=serving_query,
+                ctx=engine_ctx,
+                cancel_check=cancel_check,
+            )
+        return _QueryExecutionPlan(
+            resolved=resolved,
+            inputs=inputs,
+            effective_limit=effective_limit,
+            serving_query=serving_query,
+            ast_fingerprint=ast_fingerprint,
+            scan_metrics=scan_metrics,
+            batch_size=batch_size,
+            rows=rows,
+            explain=explain,
+            engine_name=engine_name,
+        )
 
     def _resolve_view_context_for_export(
         self, *, pointer: ServingSnapshotPointer, view_id: str
@@ -660,58 +723,40 @@ class SemanticQueryKernel:
         SemanticQueryResponse
             Query results.
         """
-        with self.db.connect() as (warehouse, pointer):
-            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._planner.plan_inputs_for_query(
-                ctx=resolved, request=request
-            )
-            serving_query = self._planner.build_query(
-                ctx=resolved,
-                inputs=inputs,
-                limit=effective_limit + 1,
-            )
-            engine_ctx = self._engine_context(
-                pointer=pointer,
-                context=self._planner.snapshot_context(pointer),
-                warehouse=warehouse,
-            )
-            scan_metrics = self._scan_metrics_for_table_key(
-                table_key=serving_query.spec.table_key,
-                dataset_manifests=engine_ctx.dataset_manifests,
-            )
-            batch_size = self.settings.export_batch_size
-            rows, explain, engine = self._execute_engine_plan(
-                query=serving_query,
-                ctx=engine_ctx,
-                cancel_check=cancel_check,
-            )
+        plan = self._execute_query_plan(request=request, cancel_check=cancel_check)
 
-        truncated = len(rows) > effective_limit
-        if truncated:
-            rows = rows[:effective_limit]
+        truncated = len(plan.rows) > plan.effective_limit
+        rows = plan.rows[: plan.effective_limit] if truncated else plan.rows
 
         fingerprint_spec = self._planner.build_spec(
-            ctx=resolved, inputs=inputs, limit=effective_limit
+            ctx=plan.resolved,
+            inputs=plan.inputs,
+            limit=plan.effective_limit,
         )
-        query_hash, schema_hash_value = self._fingerprint_semantic_plan(
-            pointer=resolved.pointer,
-            view_id=resolved.view.id,
+        query_hash, schema_hash_value, ast_fingerprint = self._fingerprint_semantic_plan(
+            pointer=plan.resolved.pointer,
+            view_id=plan.resolved.view.id,
             spec=fingerprint_spec,
-            inventory=resolved.inventory,
+            inventory=plan.resolved.inventory,
+            ast_fingerprint=plan.ast_fingerprint,
         )
-
-        sql_fingerprint = sqlglot_canonical_sha256(explain.sql) if explain.sql is not None else None
+        sql_fingerprint = None
+        if plan.explain.sql is not None:
+            sql_fingerprint = sqlglot_canonical_sha256(plan.explain.sql)
+        if sql_fingerprint is None:
+            sql_fingerprint = self._sql_fingerprint_for_query(plan.serving_query)
         return SemanticQueryResponse(
             view_id=request.view_id,
-            columns=inputs.columns,
+            columns=plan.inputs.columns,
             rows=rows,
             truncated=truncated,
-            engine=engine,
-            snapshot=self._snapshot_dict(resolved.pointer),
+            engine=plan.engine_name,
+            snapshot=self._snapshot_dict(plan.resolved.pointer),
             query_hash=query_hash,
             schema_hash=schema_hash_value,
-            scan_metrics=scan_metrics,
-            batch_size=batch_size,
+            ast_fingerprint=ast_fingerprint,
+            scan_metrics=plan.scan_metrics,
+            batch_size=plan.batch_size,
             sql_fingerprint=sql_fingerprint,
         )
 
@@ -725,11 +770,14 @@ class SemanticQueryKernel:
             inputs=inputs,
             limit=effective_limit,
         )
-        query_hash, schema_hash_value = self._fingerprint_semantic_plan(
+        ast_fingerprint = self._ast_fingerprint_for_query(serving_query)
+        sql_fingerprint = self._sql_fingerprint_for_query(serving_query)
+        query_hash, schema_hash_value, ast_fingerprint = self._fingerprint_semantic_plan(
             pointer=resolved.pointer,
             view_id=resolved.view.id,
             spec=serving_query.spec,
             inventory=resolved.inventory,
+            ast_fingerprint=ast_fingerprint,
         )
         return _IpcQueryPlan(
             snapshot_context=snapshot_context,
@@ -755,6 +803,68 @@ class SemanticQueryKernel:
                 inventory=resolved.inventory,
                 table_key=resolved.view.table_key,
             ),
+            ast_fingerprint=ast_fingerprint,
+            sql_fingerprint=sql_fingerprint,
+        )
+
+    def _prepare_export_plan(
+        self,
+        *,
+        warehouse: Warehouse,
+        pointer: ServingSnapshotPointer,
+        request: SemanticExportRequest,
+    ) -> _ExportPlanContext:
+        snapshot_context = self._planner.snapshot_context(pointer)
+        resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+        inputs, effective_limit = self._planner.plan_inputs_for_export(
+            ctx=resolved,
+            request=request,
+        )
+        serving_query = self._planner.build_query(
+            ctx=resolved,
+            inputs=inputs,
+            limit=effective_limit,
+        )
+        engine_ctx = self._engine_context(
+            pointer=pointer,
+            context=snapshot_context,
+            warehouse=warehouse,
+        )
+        engine = self._engine_registry.select(
+            preference=self.settings.query_engine,
+            query=serving_query,
+            ctx=engine_ctx,
+        )
+        plan = engine.compile(serving_query, ctx=engine_ctx)
+        ast_fingerprint = self._ast_fingerprint_for_query(serving_query)
+        sql_fingerprint = self._sql_fingerprint_for_query(serving_query)
+        query_hash, schema_hash_value, ast_fingerprint = self._fingerprint_semantic_plan(
+            pointer=resolved.pointer,
+            view_id=resolved.view.id,
+            spec=serving_query.spec,
+            inventory=resolved.inventory,
+            ast_fingerprint=ast_fingerprint,
+        )
+        schema_digest_value = self._schema_digest_for_table_key(
+            inventory=resolved.inventory,
+            table_key=resolved.view.table_key,
+        )
+        contract_schema = _contract_schema_for_table(
+            warehouse=warehouse,
+            pointer=pointer,
+            table_key=resolved.view.table_key,
+        )
+        return _ExportPlanContext(
+            resolved=resolved,
+            serving_query=serving_query,
+            plan=plan,
+            engine_name=engine.name.lower(),
+            query_hash=query_hash,
+            schema_hash=schema_hash_value,
+            schema_digest=schema_digest_value,
+            ast_fingerprint=ast_fingerprint,
+            sql_fingerprint=sql_fingerprint,
+            contract_schema=contract_schema,
         )
 
     def query_ipc_stream(
@@ -821,6 +931,8 @@ class SemanticQueryKernel:
                             schema_hash=plan.schema_hash,
                             schema_digest=plan.schema_digest,
                             engine=engine.name.lower(),
+                            ast_fingerprint=plan.ast_fingerprint,
+                            sql_fingerprint=plan.sql_fingerprint,
                         )
                     )
                     write_options = _ipc_write_options(self.settings)
@@ -841,6 +953,8 @@ class SemanticQueryKernel:
             schema_digest=plan.schema_digest,
             scan_metrics=plan.scan_metrics,
             batch_size=plan.batch_size,
+            ast_fingerprint=plan.ast_fingerprint,
+            sql_fingerprint=plan.sql_fingerprint,
         )
 
     def _build_ipc_export_plan(
@@ -851,79 +965,49 @@ class SemanticQueryKernel:
         request: SemanticExportRequest,
         cancel_check: CancelCheck | None,
     ) -> _IpcExportPlan:
-        snapshot_context = self._planner.snapshot_context(pointer)
-        resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-        inputs, effective_limit = self._planner.plan_inputs_for_export(
-            ctx=resolved,
+        export_context = self._prepare_export_plan(
+            warehouse=warehouse,
+            pointer=pointer,
             request=request,
         )
-        serving_query = self._planner.build_query(
-            ctx=resolved,
-            inputs=inputs,
-            limit=effective_limit,
-        )
-        engine_ctx = self._engine_context(
-            pointer=pointer,
-            context=snapshot_context,
-            warehouse=warehouse,
-        )
-        engine = self._engine_registry.select(
-            preference=self.settings.query_engine,
-            query=serving_query,
-            ctx=engine_ctx,
-        )
-        plan = engine.compile(serving_query, ctx=engine_ctx)
         try:
-            query_hash, schema_hash_value = self._fingerprint_semantic_plan(
-                pointer=resolved.pointer,
-                view_id=resolved.view.id,
-                spec=serving_query.spec,
-                inventory=resolved.inventory,
-            )
-            schema_digest_value = self._schema_digest_for_table_key(
-                inventory=resolved.inventory,
-                table_key=resolved.view.table_key,
-            )
-            contract_schema = _contract_schema_for_table(
-                warehouse=warehouse,
-                pointer=pointer,
-                table_key=resolved.view.table_key,
-            )
-            if contract_schema is None:
-                warn_missing_contract_schema(table_key=resolved.view.table_key)
+            if export_context.contract_schema is None:
+                warn_missing_contract_schema(table_key=export_context.resolved.view.table_key)
             else:
                 _check_contract_metadata(
-                    contract_schema=contract_schema,
-                    table_key=resolved.view.table_key,
-                    schema_hash_value=schema_hash_value,
-                    schema_digest_value=schema_digest_value,
+                    contract_schema=export_context.contract_schema,
+                    table_key=export_context.resolved.view.table_key,
+                    schema_hash_value=export_context.schema_hash,
+                    schema_digest_value=export_context.schema_digest,
                 )
             _raise_if_cancelled(cancel_check)
-            reader = plan.to_reader(batch_size=self.settings.export_batch_size)
-            if contract_schema is not None:
+            reader = export_context.plan.to_reader(batch_size=self.settings.export_batch_size)
+            if export_context.contract_schema is not None:
                 reader = align_reader_to_contract(
                     reader,
-                    contract_schema,
-                    extras_policy=extras_policy_from_schema(contract_schema),
+                    export_context.contract_schema,
+                    extras_policy=extras_policy_from_schema(export_context.contract_schema),
                 )
             metadata = _build_ipc_metadata(
                 _IpcMetadataInput(
-                    pointer=resolved.pointer,
-                    table_key=resolved.view.table_key,
-                    view_id=resolved.view.id,
-                    query_hash=query_hash,
-                    schema_hash=schema_hash_value,
-                    schema_digest=schema_digest_value,
-                    engine=engine.name.lower(),
+                    pointer=export_context.resolved.pointer,
+                    table_key=export_context.resolved.view.table_key,
+                    view_id=export_context.resolved.view.id,
+                    query_hash=export_context.query_hash,
+                    schema_hash=export_context.schema_hash,
+                    schema_digest=export_context.schema_digest,
+                    engine=export_context.engine_name,
+                    ast_fingerprint=export_context.ast_fingerprint,
+                    sql_fingerprint=export_context.sql_fingerprint,
                 )
             )
             return _IpcExportPlan(
-                plan=plan,
+                plan=export_context.plan,
                 reader=reader,
                 metadata=metadata,
             )
         except Exception:
-            plan.cleanup()
+            export_context.plan.cleanup()
             raise
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
@@ -977,6 +1061,12 @@ class SemanticQueryKernel:
             except (SqlglotError, TypeError, ValueError):
                 table_keys = []
                 column_lineage = {}
+            ast_fingerprint = self._ast_fingerprint_for_query(serving_query)
+            sql_fingerprint = None
+            if explain.sql:
+                sql_fingerprint = sqlglot_canonical_sha256(explain.sql)
+            if sql_fingerprint is None:
+                sql_fingerprint = self._sql_fingerprint_for_query(serving_query)
             return SemanticExplainResponse(
                 view_id=request.view_id,
                 sql=explain.sql or "",
@@ -984,6 +1074,8 @@ class SemanticQueryKernel:
                 snapshot=self._snapshot_dict(pointer),
                 table_keys=table_keys,
                 column_lineage=column_lineage,
+                sql_fingerprint=sql_fingerprint,
+                ast_fingerprint=ast_fingerprint,
             )
 
     def compile_query_sql(self, request: SemanticQueryRequest) -> str:
@@ -1061,11 +1153,13 @@ class SemanticQueryKernel:
             backend = warehouse.gateway.policy
             if not backend.table_exists(schema=SEARCH_TABLE_SCHEMA, table=SEARCH_TABLE_NAME):
                 raise SearchIndexMissingError
-            query = build_search_query(
-                request, fts_available=is_fts_available(warehouse.gateway.con)
+            relation = build_search_relation(
+                warehouse.gateway.con,
+                request,
+                fts_available=is_fts_available(warehouse.gateway.con),
             )
-
-            rows = self._execute_dbapi_query(warehouse=warehouse, query=query)
+            reader = relation.fetch_record_batch(self.settings.export_batch_size)
+            rows = _sanitize_rows(self._rows_from_reader(reader, cancel_check=None))
 
         truncated = len(rows) > request.limit
         if truncated:
@@ -1088,7 +1182,9 @@ class SemanticQueryKernel:
             query_hash=query_hash,
         )
 
-    def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
+    def export_fingerprint(
+        self, request: SemanticExportRequest
+    ) -> tuple[str, str | None, str | None, str | None]:
         """Return a stable fingerprint for an export request.
 
         Parameters
@@ -1098,8 +1194,8 @@ class SemanticQueryKernel:
 
         Returns
         -------
-        tuple[str, str | None]
-            (query_hash, schema_hash) for the export request.
+        tuple[str, str | None, str | None, str | None]
+            (query_hash, schema_hash, ast_fingerprint, sql_fingerprint) for the export request.
         """
         pointer = self.db.current_pointer()
         resolved = self._resolve_view_context_for_export(pointer=pointer, view_id=request.view_id)
@@ -1109,12 +1205,17 @@ class SemanticQueryKernel:
         fingerprint_spec = self._planner.build_spec(
             ctx=resolved, inputs=inputs, limit=effective_limit
         )
-        return self._fingerprint_semantic_plan(
+        serving_query = build_serving_query(spec=fingerprint_spec)
+        ast_fingerprint = self._ast_fingerprint_for_query(serving_query)
+        sql_fingerprint = self._sql_fingerprint_for_query(serving_query)
+        query_hash, schema_hash_value, ast_fingerprint = self._fingerprint_semantic_plan(
             pointer=pointer,
             view_id=resolved.view.id,
             spec=fingerprint_spec,
             inventory=resolved.inventory,
+            ast_fingerprint=ast_fingerprint,
         )
+        return query_hash, schema_hash_value, ast_fingerprint, sql_fingerprint
 
     def export_rows(
         self,

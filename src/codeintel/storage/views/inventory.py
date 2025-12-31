@@ -1,12 +1,11 @@
 """Deterministic view inventory helpers.
 
-This module replaces legacy constant lists of docs views with Hamilton tag discovery over
-canonical view-builder modules.
+This module discovers view table keys from Hamilton tag metadata. Legacy SQL
+view-builder modules are no longer required.
 """
 
 from __future__ import annotations
 
-import importlib
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -29,7 +28,7 @@ def _view_modules() -> tuple[ModuleType, ...]:
     tuple[ModuleType, ...]
         Modules containing view-builder node functions.
     """
-    return (importlib.import_module("codeintel.storage.views.sqlglot_views"),)
+    return ()
 
 
 def view_builder_modules() -> tuple[ModuleType, ...]:
@@ -55,11 +54,15 @@ def discover_view_table_keys(
     tuple[str, ...]
         Discovered view table keys, sorted deterministically.
     """
-    discovered = discover_view_builders(
-        dr=dr,
-        tag_query=tag_query,
-        modules=view_builder_modules(),
-    )
+    modules = view_builder_modules()
+    try:
+        discovered = discover_view_builders(
+            dr=dr,
+            tag_query=tag_query,
+            modules=modules if modules else None,
+        )
+    except ValueError:
+        return ()
     keys = {d.table_key for d in discovered}
     return tuple(sorted(keys))
 

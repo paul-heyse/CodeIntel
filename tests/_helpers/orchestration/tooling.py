@@ -303,7 +303,6 @@ def _run_pytest_report(
         message = f"pytest report unavailable: status={result.status} reason={result.reason}"
         raise RuntimeError(message)
     return write_pytest_report(build_dir, filename=report_path.name)
-    return report_path
 
 
 def _run_scip_index(context: ToolingContext, build_dir: Path) -> Path:

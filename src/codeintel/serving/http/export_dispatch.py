@@ -54,6 +54,8 @@ class ExportMetricsContext:
     correlation_id: str
     query_hash: str
     schema_hash: str | None
+    ast_fingerprint: str | None = None
+    sql_fingerprint: str | None = None
 
     def to_metrics(self, *, row_count: int, duration_ms: float) -> QueryMetrics:
         """Build QueryMetrics record for the export response.
@@ -85,7 +87,13 @@ class ExportDispatchOptions:
     timeout_s: float | None = None
 
 
-def export_hash_headers(*, query_hash: str, schema_hash: str | None) -> dict[str, str]:
+def export_hash_headers(
+    *,
+    query_hash: str,
+    schema_hash: str | None,
+    ast_fingerprint: str | None = None,
+    sql_fingerprint: str | None = None,
+) -> dict[str, str]:
     """Return stable hash headers used for export caching.
 
     Returns
@@ -96,6 +104,10 @@ def export_hash_headers(*, query_hash: str, schema_hash: str | None) -> dict[str
     headers: dict[str, str] = {"X-CodeIntel-Query-Hash": query_hash}
     if schema_hash is not None:
         headers["X-CodeIntel-Schema-Hash"] = schema_hash
+    if ast_fingerprint is not None:
+        headers["X-CodeIntel-AST-Fingerprint"] = ast_fingerprint
+    if sql_fingerprint is not None:
+        headers["X-CodeIntel-SQL-Fingerprint"] = sql_fingerprint
     return headers
 
 
@@ -177,6 +189,10 @@ def _json_dict_response(
     }
     if metrics.schema_hash is not None:
         payload["schema_hash"] = metrics.schema_hash
+    if metrics.ast_fingerprint is not None:
+        payload["ast_fingerprint"] = metrics.ast_fingerprint
+    if metrics.sql_fingerprint is not None:
+        payload["sql_fingerprint"] = metrics.sql_fingerprint
     return JSONResponse(
         content=payload,
         media_type=plan.mime_type,

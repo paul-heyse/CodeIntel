@@ -391,6 +391,16 @@ def _base_hamilton_config(
     config.update(env.variants.as_hamilton_config())
     config["variant_fingerprint"] = env.variants.variant_fingerprint
     config.update(options.plugin_overrides())
+    graph_backend = env.config.get("hamilton.graph_backend")
+    if graph_backend is not None:
+        if not isinstance(graph_backend, str):
+            msg = "hamilton.graph_backend must be a string"
+            raise TypeError(msg)
+        allowed_backends = {"compute", "existing", "empty"}
+        if graph_backend not in allowed_backends:
+            msg = f"Unsupported hamilton.graph_backend={graph_backend!r}"
+            raise ValueError(msg)
+        config["graph_backend"] = graph_backend
     config["ci_validate_outputs"] = bool(env.validate_outputs)
     config["ci_validation_mode"] = env.validation_mode.value
     return config

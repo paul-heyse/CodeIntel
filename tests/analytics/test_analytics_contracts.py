@@ -230,7 +230,6 @@ def _assert_row_matches_table(row_type: type[Mapping[str, object]], table_key: s
     contract = contracts.get(table_key)
     if contract is None or contract.schema is None:
         pytest.fail(f"{table_key} has no contract schema")
-        return
     expected_cols = [col.name for col in contract.schema.columns]
     annotations = get_type_hints(row_type)
     actual_cols: Sequence[str] = list(annotations.keys())

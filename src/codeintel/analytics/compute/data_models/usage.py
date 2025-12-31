@@ -24,7 +24,7 @@ from codeintel.build.hamilton.native.ingestion.frame_utils import (
 )
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.paths import normalize_path
-from codeintel.storage.helpers.sql_params import render_sql
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.repositories import DataModelsRepository
 
 if TYPE_CHECKING:
@@ -432,22 +432,29 @@ def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelI
 def _subsystem_by_module(
     gateway: StorageGateway, repo: str, commit: str
 ) -> dict[str, tuple[str, str]]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT
-                modules.module AS module,
-                modules.subsystem_id AS subsystem_id,
-                subsystems.name AS name
-            FROM analytics.subsystem_modules AS modules
-            LEFT JOIN analytics.subsystems AS subsystems
-              ON modules.repo = subsystems.repo
-             AND modules.commit = subsystems.commit
-             AND modules.subsystem_id = subsystems.subsystem_id
-            WHERE modules.repo = $repo AND modules.commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    modules = (
+        gateway.relation_from_table_key("analytics.subsystem_modules")
+        .filter(predicate)
+        .set_alias("modules")
+    )
+    subsystems = gateway.relation_from_table_key("analytics.subsystems").set_alias("subsystems")
+    relation = (
+        modules.join(
+            subsystems,
+            "modules.repo = subsystems.repo "
+            "AND modules.commit = subsystems.commit "
+            "AND modules.subsystem_id = subsystems.subsystem_id",
+            how="left",
         )
+        .select(
+            "modules.module as module",
+            "modules.subsystem_id as subsystem_id",
+            "subsystems.name as name",
+        )
+        .set_alias("modules")
     )
     rows = relation.fetchall()
     mapping: dict[str, tuple[str, str]] = {}
@@ -535,15 +542,13 @@ def build_data_model_usage_rows(
             len(missing),
         )
 
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT function_goid_h128, param_types
-            FROM analytics.function_types
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": snapshot.repo, "commit": snapshot.commit},
-        )
+    predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
+        ColumnExpression("commit") == ConstantExpression(snapshot.commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("analytics.function_types")
+        .filter(predicate)
+        .select("function_goid_h128", "param_types")
     )
     param_types: dict[int, dict[str, str]] = {}
     for goid_raw, raw_param_types in relation.fetchall():

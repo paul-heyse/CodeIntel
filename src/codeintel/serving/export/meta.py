@@ -48,6 +48,8 @@ class ExportArtifactInputs:
     export_format: ExportFormat
     query_hash: str | None
     schema_hash: str | None
+    ast_fingerprint: str | None
+    sql_fingerprint: str | None
 
 
 def build_export_artifact_spec(inputs: ExportArtifactInputs) -> ExportArtifactSpec:
@@ -72,6 +74,8 @@ def build_export_artifact_spec(inputs: ExportArtifactInputs) -> ExportArtifactSp
         format=inputs.export_format,
         query_hash=inputs.query_hash,
         schema_hash=inputs.schema_hash,
+        ast_fingerprint=inputs.ast_fingerprint,
+        sql_fingerprint=inputs.sql_fingerprint,
     )
 
 

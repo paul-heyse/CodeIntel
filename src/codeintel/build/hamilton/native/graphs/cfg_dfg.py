@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import ast
+import dataclasses
+from dataclasses import dataclass
+from pathlib import Path
+
 import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
@@ -9,42 +14,217 @@ from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_fo
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
+from codeintel.graphs.compute.cfg import build_cfg, cfg_to_rows
+from codeintel.graphs.compute.dfg import build_dfg, dfg_to_rows
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 
 
-def cfg_blocks_compute(q__core__goids: InferableTabularInput) -> TabularFrame:
-    """Build placeholder CFG blocks from core.goids.
+@dataclass(frozen=True, slots=True)
+class _FunctionNodeInfo:
+    node: ast.FunctionDef | ast.AsyncFunctionDef
+    start_line: int
+    end_line: int | None
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class _FunctionGoidInfo:
+    goid: int
+    rel_path: str
+    name: str
+    start_line: int
+    end_line: int
+
+
+@dataclass(frozen=True, slots=True)
+class _CfgDfgAnalysis:
+    cfg_blocks: tuple[CFGBlockRow, ...]
+    cfg_edges: tuple[CFGEdgeRow, ...]
+    dfg_edges: tuple[DFGEdgeRow, ...]
+
+
+def _collect_ast_function_keys(
+    ast_nodes_frame: pl.DataFrame,
+) -> tuple[dict[str, set[tuple[int, str]]], set[str]]:
+    function_keys_by_path: dict[str, set[tuple[int, str]]] = {}
+    paths: set[str] = set()
+    for row in ast_nodes_frame.iter_rows(named=True):
+        path = row.get("path")
+        if not isinstance(path, str) or not path:
+            continue
+        paths.add(path)
+        node_type = row.get("node_type")
+        if node_type not in {"FunctionDef", "AsyncFunctionDef"}:
+            continue
+        name = row.get("name")
+        lineno = row.get("lineno")
+        if not isinstance(name, str) or not isinstance(lineno, int):
+            continue
+        function_keys_by_path.setdefault(path, set()).add((lineno, name))
+    return function_keys_by_path, paths
+
+
+def _collect_goids_by_path(
+    goids_frame: pl.DataFrame,
+    function_keys_by_path: dict[str, set[tuple[int, str]]],
+) -> dict[str, list[_FunctionGoidInfo]]:
+    goids_by_path: dict[str, list[_FunctionGoidInfo]] = {}
+    for row in goids_frame.iter_rows(named=True):
+        if row.get("kind") not in {"function", "method"}:
+            continue
+        if row.get("language") not in {None, "python"}:
+            continue
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        start_line = row.get("start_line")
+        if not isinstance(rel_path, str) or not isinstance(qualname, str):
+            continue
+        if not isinstance(start_line, int):
+            continue
+        name = qualname.split(".")[-1]
+        key_set = function_keys_by_path.get(rel_path)
+        if key_set is not None and (start_line, name) not in key_set:
+            continue
+        goid_value = normalize_decimal_id(row.get("goid_h128"))
+        if goid_value is None:
+            continue
+        end_line = row.get("end_line")
+        resolved_end = end_line if isinstance(end_line, int) else start_line
+        info = _FunctionGoidInfo(
+            goid=int(goid_value),
+            rel_path=rel_path,
+            name=name,
+            start_line=start_line,
+            end_line=resolved_end,
+        )
+        goids_by_path.setdefault(rel_path, []).append(info)
+    return goids_by_path
+
+
+def _build_cfg_dfg_rows(
+    repo_root: Path,
+    goids_by_path: dict[str, list[_FunctionGoidInfo]],
+    paths: set[str],
+) -> tuple[list[CFGBlockRow], list[CFGEdgeRow], list[DFGEdgeRow]]:
+    cfg_blocks: list[CFGBlockRow] = []
+    cfg_edges: list[CFGEdgeRow] = []
+    dfg_edges: list[DFGEdgeRow] = []
+    for rel_path, goid_entries in goids_by_path.items():
+        if rel_path not in paths:
+            continue
+        module_path = repo_root / rel_path
+        parsed = parse_python_module(module_path)
+        if parsed is None:
+            continue
+        _, tree = parsed
+        nodes_by_line = _collect_function_nodes(tree)
+        for info in goid_entries:
+            node_info = nodes_by_line.get((info.start_line, info.name))
+            if node_info is None:
+                continue
+            cfg_result = build_cfg(info.goid, node_info.node, info.rel_path)
+            block_rows, edge_rows = cfg_to_rows(
+                cfg_result,
+                info.rel_path,
+                info.start_line,
+                info.end_line,
+            )
+            cfg_blocks.extend(block_rows)
+            cfg_edges.extend(edge_rows)
+            dfg_result = build_dfg(info.goid, cfg_result.blocks, cfg_result.edges)
+            dfg_edges.extend(dfg_to_rows(dfg_result))
+    return cfg_blocks, cfg_edges, dfg_edges
+
+
+def _collect_function_nodes(tree: ast.AST) -> dict[tuple[int, str], _FunctionNodeInfo]:
+    nodes: dict[tuple[int, str], _FunctionNodeInfo] = {}
+
+    def _visit(node: ast.AST) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            start_line = getattr(node, "lineno", None)
+            if isinstance(start_line, int):
+                nodes[start_line, node.name] = _FunctionNodeInfo(
+                    node=node,
+                    start_line=start_line,
+                    end_line=getattr(node, "end_lineno", None),
+                    name=node.name,
+                )
+            for child in node.body:
+                _visit(child)
+            return
+        if isinstance(node, ast.ClassDef):
+            for child in node.body:
+                _visit(child)
+            return
+        if isinstance(node, ast.Module):
+            for child in node.body:
+                _visit(child)
+
+    _visit(tree)
+    return nodes
+
+
+def cfg_dfg_analysis(
+    env: BuildEnv,
+    q__core__goids: InferableTabularInput,
+    q__core__ast_nodes: InferableTabularInput,
+) -> _CfgDfgAnalysis:
+    """Build CFG/DFG row payloads from AST and goid inputs.
 
     Parameters
     ----------
+    env
+        Build environment with repository snapshot info.
     q__core__goids
-        Relation for ``core.goids``.
+        Core goid table input.
+    q__core__ast_nodes
+        Core AST nodes table input.
+
+    Returns
+    -------
+    _CfgDfgAnalysis
+        Container of CFG blocks/edges and DFG edges rows.
+    """
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    if goids_frame.is_empty():
+        return _CfgDfgAnalysis(cfg_blocks=(), cfg_edges=(), dfg_edges=())
+
+    ast_nodes_frame = tabular_to_lazyframe(q__core__ast_nodes).collect()
+    function_keys_by_path, paths = _collect_ast_function_keys(ast_nodes_frame)
+    goids_by_path = _collect_goids_by_path(goids_frame, function_keys_by_path)
+    resolved_paths = paths or set(goids_by_path)
+    repo_root = Path(env.snapshot.repo_root)
+    cfg_blocks, cfg_edges, dfg_edges = _build_cfg_dfg_rows(
+        repo_root,
+        goids_by_path,
+        resolved_paths,
+    )
+
+    return _CfgDfgAnalysis(
+        cfg_blocks=tuple(cfg_blocks),
+        cfg_edges=tuple(cfg_edges),
+        dfg_edges=tuple(dfg_edges),
+    )
+
+
+def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> TabularFrame:
+    """Build CFG blocks from parsed AST inputs.
 
     Returns
     -------
     polars.LazyFrame
-        Lazy frame for computed CFG blocks.
+        Lazy frame of CFG block rows.
     """
-    frame = tabular_to_lazyframe(q__core__goids)
-    start_line = pl.coalesce([pl.col("start_line"), pl.lit(0)]).cast(pl.Int64)
-    end_line = pl.coalesce([pl.col("end_line"), pl.col("start_line"), pl.lit(0)]).cast(pl.Int64)
-    frame = frame.with_columns(
-        pl.col("goid_h128").alias("function_goid_h128"),
-        pl.lit(0).cast(pl.Int64).alias("block_idx"),
-        pl.concat_str([pl.col("goid_h128").cast(pl.Utf8), pl.lit(":0")]).alias("block_id"),
-        pl.lit("entry").alias("label"),
-        pl.col("rel_path").alias("file_path"),
-        start_line.alias("start_line"),
-        end_line.alias("end_line"),
-        pl.lit("entry").alias("kind"),
-        pl.lit("[]").alias("stmts_json"),
-        pl.lit(0).cast(pl.Int64).alias("in_degree"),
-        pl.lit(0).cast(pl.Int64).alias("out_degree"),
-    )
-    return frame.select(
+    if not cfg_dfg_analysis.cfg_blocks:
+        return empty_frame_for_table(CFG_BLOCKS_TABLE_KEY)
+    frame = pl.DataFrame([dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_blocks])
+    return frame.lazy().select(
         [
             "function_goid_h128",
             "block_idx",
@@ -61,57 +241,39 @@ def cfg_blocks_compute(q__core__goids: InferableTabularInput) -> TabularFrame:
     )
 
 
-def cfg_edges_compute(cfg_blocks: TabularFrame) -> TabularFrame:
-    """Build placeholder CFG edges from CFG blocks.
-
-    Parameters
-    ----------
-    cfg_blocks
-        Relation for computed CFG blocks.
+def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> TabularFrame:
+    """Build CFG edges from parsed AST inputs.
 
     Returns
     -------
     polars.LazyFrame
-        Lazy frame for computed CFG edges.
+        Lazy frame of CFG edge rows.
     """
-    return cfg_blocks.select(
+    if not cfg_dfg_analysis.cfg_edges:
+        return empty_frame_for_table(CFG_EDGES_TABLE_KEY)
+    frame = pl.DataFrame([dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_edges])
+    return frame.lazy().select(
         [
             "function_goid_h128",
-            pl.col("block_id").alias("src_block_id"),
-            pl.col("block_id").alias("dst_block_id"),
-            pl.lit("self").alias("edge_kind"),
+            "src_block_id",
+            "dst_block_id",
+            "edge_kind",
         ]
     )
 
 
-def dfg_edges_compute(cfg_blocks: TabularFrame) -> TabularFrame:
-    """Build placeholder DFG edges from CFG blocks.
-
-    Parameters
-    ----------
-    cfg_blocks
-        Relation for computed CFG blocks.
+def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> TabularFrame:
+    """Build DFG edges from parsed AST inputs.
 
     Returns
     -------
     polars.LazyFrame
-        Lazy frame for computed DFG edges.
+        Lazy frame of DFG edge rows.
     """
-    frame = cfg_blocks.select(
-        [
-            "function_goid_h128",
-            pl.col("block_id").alias("src_block_id"),
-            pl.col("block_id").alias("dst_block_id"),
-        ]
-    )
-    frame = frame.with_columns(
-        pl.lit(None).cast(pl.Utf8).alias("src_var"),
-        pl.lit(None).cast(pl.Utf8).alias("dst_var"),
-        pl.lit("self").alias("edge_kind"),
-        pl.lit(value=False).cast(pl.Boolean).alias("via_phi"),
-        pl.lit(None).cast(pl.Utf8).alias("use_kind"),
-    )
-    return frame.select(
+    if not cfg_dfg_analysis.dfg_edges:
+        return empty_frame_for_table(DFG_EDGES_TABLE_KEY)
+    frame = pl.DataFrame([dataclasses.asdict(row) for row in cfg_dfg_analysis.dfg_edges])
+    return frame.lazy().select(
         [
             "function_goid_h128",
             "src_block_id",
@@ -213,6 +375,7 @@ __all__ = [
     "cfg_blocks_compute",
     "cfg_blocks_empty",
     "cfg_blocks_existing",
+    "cfg_dfg_analysis",
     "cfg_edges_compute",
     "cfg_edges_empty",
     "cfg_edges_existing",

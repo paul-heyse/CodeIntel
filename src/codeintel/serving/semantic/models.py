@@ -174,6 +174,8 @@ class SemanticQueryResponse(BaseModel):
         Batch size used for streaming execution.
     sql_fingerprint
         Stable fingerprint of canonical SQL when compiled SQL is available.
+    ast_fingerprint
+        Stable fingerprint of the canonical SQLGlot AST.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -189,6 +191,7 @@ class SemanticQueryResponse(BaseModel):
     scan_metrics: QueryScanMetrics | None = None
     batch_size: int | None = None
     sql_fingerprint: str | None = None
+    ast_fingerprint: str | None = None
 
 
 class SemanticExplainResponse(BaseModel):
@@ -205,6 +208,8 @@ class SemanticExplainResponse(BaseModel):
     snapshot: ServingSnapshotIdentity
     table_keys: list[str] = Field(default_factory=list)
     column_lineage: dict[str, list[ColumnLineageRef]] = Field(default_factory=dict)
+    sql_fingerprint: str | None = None
+    ast_fingerprint: str | None = None
 
 
 class SemanticCatalogView(BaseModel):

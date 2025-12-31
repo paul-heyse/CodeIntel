@@ -38,10 +38,12 @@ __all__ = [
     "QuerySummaryConfig",
     "canonical_sql_duckdb",
     "canonicalize_expression_duckdb",
+    "canonicalize_select_duckdb",
     "extract_column_lineage_duckdb",
     "extract_table_keys_duckdb",
     "extract_table_refs",
     "fingerprint_canonical_sql",
+    "fingerprint_expression_duckdb",
     "fingerprint_sql_duckdb",
     "fingerprint_sql_duckdb_safe",
     "normalize_sql_for_hash",
@@ -127,7 +129,7 @@ def canonicalize_expression_duckdb(
         Canonicalized AST.
     """
     normalized_schema = _normalize_schema_mapping(schema)
-    normalized = normalize_identifiers.normalize_identifiers(root, dialect=DUCKDB_DIALECT)
+    normalized = normalize_identifiers.normalize_identifiers(root.copy(), dialect=DUCKDB_DIALECT)
     qualified = qualify.qualify(
         normalized,
         dialect=DUCKDB_DIALECT,
@@ -139,6 +141,37 @@ def canonicalize_expression_duckdb(
         return optimize(qualified, dialect=DUCKDB_DIALECT, schema=normalized_schema)
     except (SqlglotError, TypeError, ValueError):
         return qualified
+
+
+def canonicalize_select_duckdb(
+    root: exp.Select,
+    *,
+    schema: SchemaMapping | None = None,
+) -> exp.Select:
+    """Canonicalize a SQLGlot Select expression for DuckDB.
+
+    Parameters
+    ----------
+    root
+        SQLGlot Select expression to canonicalize.
+    schema
+        Optional schema mapping to improve qualification/optimization.
+
+    Returns
+    -------
+    sqlglot.expressions.Select
+        Canonicalized Select expression.
+
+    Raises
+    ------
+    TypeError
+        If the canonicalized expression is not a Select.
+    """
+    canonical = canonicalize_expression_duckdb(root, schema=schema)
+    if not isinstance(canonical, exp.Select):
+        msg = "Expected Select expression after canonicalization"
+        raise TypeError(msg)
+    return canonical
 
 
 def render_sql_duckdb(root: exp.Expression) -> str:
@@ -155,6 +188,29 @@ def render_sql_duckdb(root: exp.Expression) -> str:
         Rendered DuckDB SQL.
     """
     return root.sql(dialect=DUCKDB_DIALECT)
+
+
+def fingerprint_expression_duckdb(
+    root: exp.Expression,
+    *,
+    schema: SchemaMapping | None = None,
+) -> str:
+    """Return a stable SHA-256 fingerprint for a SQLGlot expression.
+
+    Parameters
+    ----------
+    root
+        SQLGlot expression to canonicalize and hash.
+    schema
+        Optional schema mapping to improve qualification/optimization.
+
+    Returns
+    -------
+    str
+        Fingerprint of the canonicalized SQL rendering.
+    """
+    canonical = canonicalize_expression_duckdb(root, schema=schema)
+    return fingerprint_canonical_sql(render_sql_duckdb(canonical))
 
 
 def canonical_sql_duckdb(sql: str, *, schema: SchemaMapping | None = None) -> str:

@@ -10,14 +10,14 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.storage.constants import META_CATALOG_NAME
-from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from codeintel.storage.duckdb_types import DuckDBConnection
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+    from codeintel.storage.duckdb_types import DuckDBRelation
     from codeintel.storage.gateway.protocol import MinimalGateway
 
 
@@ -36,7 +36,7 @@ class ExportAuditRecord:
 class ExportAuditContext:
     """Context bundle for export audit logging."""
 
-    con: DuckDBConnection
+    policy: DuckDBPolicyBackend
     settings: ExportAuditSettings
     ensure_table: Callable[[], None] | None = None
 
@@ -47,20 +47,21 @@ class ExportService:
 
     gateway: MinimalGateway
 
-    def build_export_relation(self, *, sql: str) -> ExportRelation:
+    @staticmethod
+    def build_export_relation(*, relation: DuckDBRelation) -> ExportRelation:
         """Build a DuckDB relation for export.
 
         Parameters
         ----------
-        sql
-            DuckDB SQL to execute for the export relation.
+        relation
+            DuckDB relation to wrap for export.
 
         Returns
         -------
         ExportRelation
             Export relation adapter.
         """
-        return build_export_relation(self.gateway.con, sql=sql)
+        return build_export_relation(relation=relation)
 
     @staticmethod
     def audit_enabled(settings: ExportAuditSettings) -> bool:
@@ -102,7 +103,7 @@ class ExportService:
         write_export_audit(
             record=record,
             context=ExportAuditContext(
-                con=self.gateway.con,
+                policy=self.gateway.policy,
                 settings=settings,
                 ensure_table=lambda: self.gateway.policy.ensure_export_audit_table(
                     catalog=META_CATALOG_NAME
@@ -130,25 +131,21 @@ def audit_enabled(settings: ExportAuditSettings) -> bool:
 
 
 def build_export_relation(
-    con: DuckDBConnection,
     *,
-    sql: str,
+    relation: DuckDBRelation,
 ) -> ExportRelation:
     """Wrap a DuckDB relation as an ExportRelation.
 
     Parameters
     ----------
-    con
-        DuckDB connection for relation creation.
-    sql
-        DuckDB SQL to execute for the export relation.
+    relation
+        DuckDB relation to adapt for export operations.
 
     Returns
     -------
     ExportRelation
         Export relation adapter.
     """
-    relation = con.sql(sql)
     return adapt_duckdb_relation(relation)
 
 
@@ -190,24 +187,32 @@ def write_export_audit(
     if context.settings.table_enabled:
         if context.ensure_table is not None:
             context.ensure_table()
-        table_ref = meta_table_ref("metadata.export_audit")
         created_at = datetime.now(tz=UTC)
-        context.con.execute(
-            f"""
-            INSERT INTO {table_ref}
-                (dataset, macro, rows, duration_s, output_path, sql, plan, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        context.policy.bulk_insert(
+            "metadata.export_audit",
             [
-                record.table_name,
-                record.macro,
-                record.rows,
-                record.duration_s,
-                str(record.output_path),
-                sql,
-                plan,
-                created_at,
+                (
+                    record.table_name,
+                    record.macro,
+                    record.rows,
+                    record.duration_s,
+                    str(record.output_path),
+                    sql,
+                    plan,
+                    created_at,
+                )
             ],
+            columns=(
+                "dataset",
+                "macro",
+                "rows",
+                "duration_s",
+                "output_path",
+                "sql",
+                "plan",
+                "created_at",
+            ),
+            catalog=META_CATALOG_NAME,
         )
 
 

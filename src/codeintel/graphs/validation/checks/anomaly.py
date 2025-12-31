@@ -15,8 +15,8 @@ from codeintel.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     import logging
@@ -99,23 +99,15 @@ def _symbol_community_findings_impl(
         Findings for symbol community anomalies.
     """
     try:
-        relation = gateway.con.sql(
-            render_sql(
-                """
-                SELECT symbol_community_id, COUNT(*) AS sym_count
-                FROM analytics.symbol_graph_metrics_modules
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND symbol_community_id IS NOT NULL
-                GROUP BY symbol_community_id
-                HAVING COUNT(*) > $min_count
-                """,
-                {
-                    "repo": repo,
-                    "commit": commit,
-                    "min_count": SYMBOL_COMMUNITY_MIN,
-                },
-            )
+        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+            ColumnExpression("commit") == ConstantExpression(commit)
+        )
+        relation = (
+            gateway.relation_from_table_key("analytics.symbol_graph_metrics_modules")
+            .filter(predicate)
+            .filter(~ColumnExpression("symbol_community_id").isnull())
+            .aggregate("count(*) as sym_count", "symbol_community_id")
+            .filter(ColumnExpression("sym_count") > ConstantExpression(SYMBOL_COMMUNITY_MIN))
         )
         comm_counts = relation.fetchall()
     except DuckDBError:
@@ -149,17 +141,15 @@ def _subsystem_disagreement_findings_impl(
         Findings for subsystem disagreement anomalies.
     """
     try:
-        relation = gateway.con.sql(
-            render_sql(
-                """
-                SELECT module, subsystem_id, import_community_id
-                FROM analytics.subsystem_agreement
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND agrees = FALSE
-                """,
-                {"repo": repo, "commit": commit},
-            )
+        predicate = (
+            (ColumnExpression("repo") == ConstantExpression(repo))
+            & (ColumnExpression("commit") == ConstantExpression(commit))
+            & (ColumnExpression("agrees") == ConstantExpression(False))
+        )
+        relation = (
+            gateway.relation_from_table_key("analytics.subsystem_agreement")
+            .filter(predicate)
+            .select("module", "subsystem_id", "import_community_id")
         )
         disagreements = relation.fetchall()
     except DuckDBError:

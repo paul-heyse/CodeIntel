@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.helpers.sql_params import render_sql
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
@@ -167,15 +167,13 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
 def _load_docstrings(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[tuple[str, str], dict[str, object]]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT rel_path, qualname, params, returns
-            FROM core.docstrings
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
-        )
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("core.docstrings")
+        .filter(predicate)
+        .select("rel_path", "qualname", "params", "returns")
     )
     rows = _normalize_records(records_from_relation(relation))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
@@ -194,15 +192,13 @@ def _load_docstrings(
 def _load_function_types(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT function_goid_h128, return_type, param_types
-            FROM analytics.function_types
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
-        )
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("analytics.function_types")
+        .filter(predicate)
+        .select("function_goid_h128", "return_type", "param_types")
     )
     rows = _normalize_records(records_from_relation(relation))
     mapping: dict[int, dict[str, object]] = {}

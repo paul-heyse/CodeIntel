@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.build.hamilton.native.views.view_outputs import ViewPlan, view_plan_map
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.views.dependencies import toposort
-from codeintel.storage.views.sqlglot_views import ViewPlanSpec, view_plan_map
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -93,7 +93,7 @@ def seed_subsystem(con: DuckDBPyConnection, *, overrides: dict[str, object] | No
 
 
 def _normalize_view_keys(
-    view_map: Mapping[str, ViewPlanSpec],
+    view_map: Mapping[str, ViewPlan],
     view_keys: Iterable[str] | None,
 ) -> set[str]:
     if view_keys is None:
@@ -112,7 +112,7 @@ def _normalize_view_keys(
             continue
         selected.add(resolved)
         pending.extend(
-            dep for dep in view_map[resolved]["dependencies"] if dep.lower() in lower_map
+            dep for dep in view_map[resolved].dependencies if dep.lower() in lower_map
         )
     if missing:
         msg = f"Unknown view keys requested: {sorted(missing)}"
@@ -121,7 +121,7 @@ def _normalize_view_keys(
 
 
 def _view_dependency_graph(
-    view_map: Mapping[str, ViewPlanSpec],
+    view_map: Mapping[str, ViewPlan],
     *,
     view_keys: set[str],
 ) -> dict[str, frozenset[str]]:
@@ -130,7 +130,7 @@ def _view_dependency_graph(
     for view_key in view_keys:
         ref_set = {
             dep.lower()
-            for dep in view_map[view_key]["dependencies"]
+            for dep in view_map[view_key].dependencies
             if dep.lower() in selected_lower
         }
         deps[view_key.lower()] = frozenset(ref_set - {view_key.lower()})
@@ -163,7 +163,7 @@ def materialize_view_plans(
         view_key = original_by_lower[view_key_lower]
         spec = view_map[view_key]
         schema, table = split_table_key(view_key)
-        con.execute(f"CREATE OR REPLACE VIEW {schema}.{table} AS {spec['sql']}")
+        con.execute(f"CREATE OR REPLACE VIEW {schema}.{table} AS {spec.sql}")
 
 
 def create_bootstrapped_docs_db(db_path: Path) -> None:

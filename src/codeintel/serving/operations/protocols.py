@@ -136,8 +136,10 @@ class ServingKernelProtocol(Protocol):
         """Return compiled export SQL."""
         ...
 
-    def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
-        """Return query hash and optional schema hash for the export request."""
+    def export_fingerprint(
+        self, request: SemanticExportRequest
+    ) -> tuple[str, str | None, str | None, str | None]:
+        """Return query, schema, AST, and SQL fingerprints for the export request."""
         ...
 
     def export_to_parquet(

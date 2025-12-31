@@ -35,25 +35,25 @@
 - [ ] Confirm typing, coverage, tests, config ingestion produce required tables.
 
 ### Phase 2: Graph extraction in Hamilton
-- [ ] Implement call graph, import graph, CFG, DFG, symbol-use tables in DAG.
+- [~] Implement call graph, import graph, CFG, DFG, symbol-use tables in DAG.
 - [ ] Add graph validation outputs and invariants checks.
 
 ### Phase 3: Function analytics core
-- [ ] Port function metrics, types, ast features, effects, contracts.
-- [ ] Implement risk factors and function validation outputs.
+- [~] Port function metrics, types, ast features, effects, contracts.
+- [~] Implement risk factors and function validation outputs.
 
 ### Phase 4: Profiles and higher-level aggregates
-- [ ] Implement function/profile, file_profile, module_profile, hotspots.
-- [ ] Implement history_timeseries using build-native inputs only.
+- [~] Implement function/profile, file_profile, module_profile, hotspots.
+- [~] Implement history_timeseries using build-native inputs only.
 
 ### Phase 5: Dependencies, config, semantic roles, subsystems
-- [ ] Port external dependency detection and config flow graphs.
+- [~] Port external dependency detection and config flow graphs.
 - [ ] Implement semantic role classification outputs.
 - [ ] Implement subsystem mappings and subsystem metrics.
 
 ### Phase 6: Graph metrics and CFG/DFG analytics
 - [ ] Port graph metrics (call/import/symbol) and stats tables.
-- [ ] Port CFG/DFG metrics tables.
+- [x] Port CFG/DFG metrics tables.
 
 ### Phase 7: Test analytics
 - [ ] Implement test coverage edges, test profiles, and test graph metrics.
@@ -62,6 +62,27 @@
 ### Phase 8: Decommission legacy packages
 - [ ] Freeze imports of legacy analytics/graphs in build runtime.
 - [ ] Remove unused legacy orchestration once parity is verified.
+
+## Reconciliation Notes (current code vs plan)
+- Core ingestion tables marked [x] are backed by existing Hamilton ingestion targets
+  (`src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`,
+  `src/codeintel/build/hamilton/native/ingestion/extraction_targets.py`).
+- `core.goids`/`core.goid_crosswalk` are not yet surfaced as native Hamilton
+  table targets (no direct tables in `src/codeintel/build/hamilton/native/ingestion/scip.py`).
+- Graph extraction compute exists for import/call/CFG/DFG tables (see
+  `src/codeintel/build/hamilton/native/graphs/import_graph.py`,
+  `src/codeintel/build/hamilton/native/graphs/call_graph.py`,
+  `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`), but symbol-use is
+  still unimplemented (`graph.symbol_use_edges`).
+- Several analytics tables are scaffold-only: they materialize empty/default
+  frames or minimal columns without ported compute kernels:
+  `analytics.function_metrics`, `analytics.function_types`,
+  `analytics.goid_risk_factors`, `analytics.module_profile`,
+  `analytics.coverage_functions`, `analytics.external_dependency_calls`,
+  `analytics.external_dependencies`.
+- `analytics.history_timeseries` is wired through Hamilton but still calls
+  legacy computation (`codeintel.analytics.history.history_timeseries`) and
+  uses relation materialization rather than dataset-backed save.
 
 ## DAG Node Conventions
 - Dataset table outputs: `<table>__base -> <table>__table -> t__<target>`.
@@ -201,7 +222,7 @@ First 10 tables to implement end-to-end in Hamilton DAG:
 
 ### Core input tables (prerequisites)
 #### core.modules
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `modules` in
 `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`.
 DAG node spec:
@@ -214,7 +235,7 @@ Acceptance criteria:
 - Row count equals scanned module count for the snapshot.
 
 #### core.repo_map
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `modules`.
 DAG node spec:
 - Target: `modules` (existing).
@@ -225,7 +246,7 @@ Acceptance criteria:
 - Deterministic ordering for identical inputs.
 
 #### core.file_state
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `modules`.
 DAG node spec:
 - Target: `modules` (existing).
@@ -236,7 +257,7 @@ Acceptance criteria:
 - `content_hash` non-null for all rows.
 
 #### core.ast_nodes
-Status: [ ]
+Status: [x]
 Source logic: extraction target `ast` in
 `src/codeintel/build/hamilton/native/ingestion/extraction_targets.py`.
 DAG node spec:
@@ -248,7 +269,7 @@ Acceptance criteria:
 - `path` resolves to a module in `core.modules`.
 
 #### core.ast_metrics
-Status: [ ]
+Status: [x]
 Source logic: extraction target `ast`.
 DAG node spec:
 - Target: `ast` (existing).
@@ -259,7 +280,7 @@ Acceptance criteria:
 - `node_count`, `function_count`, `class_count` non-negative.
 
 #### core.cst_nodes
-Status: [ ]
+Status: [x]
 Source logic: extraction target `cst`.
 DAG node spec:
 - Target: `cst` (existing).
@@ -270,7 +291,7 @@ Acceptance criteria:
 - `path` resolves to `core.modules`.
 
 #### core.docstrings
-Status: [ ]
+Status: [x]
 Source logic: extraction target `docstrings`.
 DAG node spec:
 - Target: `docstrings` (existing).
@@ -305,7 +326,7 @@ Acceptance criteria:
 
 ### Graph tables
 #### graph.import_modules
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/graphs/compute/imports.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/import_graph.py`.
 DAG node spec:
@@ -317,7 +338,7 @@ Acceptance criteria:
 - `repo`, `commit`, `module` match `core.modules`.
 
 #### graph.import_graph_edges
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/graphs/compute/imports.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/import_graph.py`.
 DAG node spec:
@@ -329,7 +350,7 @@ Acceptance criteria:
 - No duplicate `(src, dst, kind)` edges for the same snapshot.
 
 #### graph.call_graph_nodes
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/graphs/compute/callgraph/collection.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/call_graph.py`.
 DAG node spec:
@@ -341,7 +362,7 @@ Acceptance criteria:
 - No duplicate `goid_h128` rows.
 
 #### graph.call_graph_edges
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/graphs/compute/callgraph/collection.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/call_graph.py`.
 DAG node spec:
@@ -353,7 +374,7 @@ Acceptance criteria:
 - Edge count deterministic for the same inputs.
 
 #### graph.cfg_blocks
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/graphs/compute/cfg.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`.
 DAG node spec:
@@ -365,7 +386,7 @@ Acceptance criteria:
 - `start_line` and `end_line` are within function span.
 
 #### graph.cfg_edges
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/graphs/compute/cfg.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`.
 DAG node spec:
@@ -377,7 +398,7 @@ Acceptance criteria:
 - No duplicate edges per `(src_block, dst_block, edge_type)`.
 
 #### graph.dfg_edges
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/graphs/compute/dfg.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`.
 DAG node spec:
@@ -402,7 +423,7 @@ Acceptance criteria:
 
 ### Analytics tables (ingestion-derived)
 #### analytics.config_values
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `config_ingest`.
 DAG node spec:
 - Target: `config_ingest` in
@@ -413,7 +434,7 @@ Acceptance criteria:
 - `repo`, `commit` populated for all rows.
 
 #### analytics.coverage_lines
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `coverage_ingest`.
 DAG node spec:
 - Target: `coverage_ingest` in ingestion targets.
@@ -423,7 +444,7 @@ Acceptance criteria:
 - Coverage line numbers within file bounds.
 
 #### analytics.test_catalog
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `tests_ingest`.
 DAG node spec:
 - Target: `tests_ingest` in ingestion targets.
@@ -433,7 +454,7 @@ Acceptance criteria:
 - `repo`, `commit` populated for all rows.
 
 #### analytics.typedness
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `typing`.
 DAG node spec:
 - Target: `typing` in ingestion targets.
@@ -443,7 +464,7 @@ Acceptance criteria:
 - Typedness ratios in range `[0, 1]`.
 
 #### analytics.static_diagnostics
-Status: [ ]
+Status: [x]
 Source logic: ingestion target `typing`.
 DAG node spec:
 - Target: `typing` in ingestion targets.
@@ -454,7 +475,7 @@ Acceptance criteria:
 
 ### Analytics tables (function analytics)
 #### analytics.function_metrics
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/functions/metrics.py`,
 `src/codeintel/analytics/compute/functions/*`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_functions.py`.
@@ -467,7 +488,7 @@ Acceptance criteria:
 - `loc >= 0`, `cyclomatic_complexity >= 0`, `end_line >= start_line`.
 
 #### analytics.function_types
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/compute/functions/typedness.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_types.py`.
 DAG node spec:
@@ -479,7 +500,7 @@ Acceptance criteria:
 - Type coverage and diagnostic counts are consistent.
 
 #### analytics.function_ast_features
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/analytics/ast_features/extract.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_ast_features.py`.
 DAG node spec:
@@ -541,7 +562,7 @@ Acceptance criteria:
 - Stable entity ids are deterministic.
 
 #### analytics.goid_risk_factors
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/subsystems/risk.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_risk.py`.
 DAG node spec:
@@ -581,7 +602,7 @@ Acceptance criteria:
 - Aggregates align to function-level inputs.
 
 #### analytics.module_profile
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/profiles/modules.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_modules.py`.
 DAG node spec:
@@ -607,7 +628,7 @@ Acceptance criteria:
 - Scores fall within expected ranges.
 
 #### analytics.history_timeseries
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/history/history_timeseries.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/history_timeseries.py`.
 DAG node spec:
@@ -621,7 +642,7 @@ Acceptance criteria:
 
 ### Analytics tables (coverage and testing)
 #### analytics.coverage_functions
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/compute/coverage/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_coverage.py`.
 DAG node spec:
@@ -718,7 +739,7 @@ Acceptance criteria:
 
 ### Analytics tables (dependencies and config)
 #### analytics.external_dependency_calls
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/dependencies/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/dependencies.py`.
 DAG node spec:
@@ -729,7 +750,7 @@ Acceptance criteria:
 - Calls map to valid GOIDs and dependency identifiers.
 
 #### analytics.external_dependencies
-Status: [ ]
+Status: [~]
 Source logic: `src/codeintel/analytics/dependencies/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/dependencies.py`.
 DAG node spec:
@@ -936,7 +957,7 @@ Acceptance criteria:
 
 ### Analytics tables (CFG/DFG analytics)
 #### analytics.cfg_function_metrics
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
@@ -947,7 +968,7 @@ Acceptance criteria:
 - Rows align to function GOIDs with CFG graphs.
 
 #### analytics.cfg_block_metrics
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
@@ -958,7 +979,7 @@ Acceptance criteria:
 - Block metrics computed for all CFG blocks.
 
 #### analytics.cfg_function_metrics_ext
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
@@ -969,7 +990,7 @@ Acceptance criteria:
 - Ext metrics align to base CFG function metrics.
 
 #### analytics.dfg_function_metrics
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
@@ -980,7 +1001,7 @@ Acceptance criteria:
 - Rows align to function GOIDs with DFG graphs.
 
 #### analytics.dfg_block_metrics
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
@@ -991,7 +1012,7 @@ Acceptance criteria:
 - Block metrics computed for all DFG blocks.
 
 #### analytics.dfg_function_metrics_ext
-Status: [ ]
+Status: [x]
 Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:

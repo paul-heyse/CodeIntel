@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
-from codeintel.storage.helpers.sql_params import render_sql
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, FunctionExpression
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -312,15 +312,13 @@ def _build_function_role_rows(
 def _load_function_rows(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> list[tuple[int, str, str, int | None]]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT function_goid_h128, rel_path, qualname, loc
-            FROM analytics.function_metrics
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
-        )
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("analytics.function_metrics")
+        .filter(predicate)
+        .select("function_goid_h128", "rel_path", "qualname", "loc")
     )
     rows = relation.fetchall()
     result: list[tuple[int, str, str, int | None]] = []
@@ -335,22 +333,21 @@ def _load_function_rows(
 def _load_effects(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT
-                function_goid_h128,
-                touches_db,
-                uses_io,
-                uses_time,
-                uses_randomness,
-                modifies_globals,
-                modifies_closure,
-                spawns_threads_or_tasks
-            FROM analytics.function_effects
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("analytics.function_effects")
+        .filter(predicate)
+        .select(
+            "function_goid_h128",
+            "touches_db",
+            "uses_io",
+            "uses_time",
+            "uses_randomness",
+            "modifies_globals",
+            "modifies_closure",
+            "spawns_threads_or_tasks",
         )
     )
     rows = relation.fetchall()
@@ -383,19 +380,13 @@ def _load_effects(
 def _load_contracts(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT
-                function_goid_h128,
-                preconditions_json,
-                raises_json,
-                param_nullability_json
-            FROM analytics.function_contracts
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
-        )
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("analytics.function_contracts")
+        .filter(predicate)
+        .select("function_goid_h128", "preconditions_json", "raises_json", "param_nullability_json")
     )
     rows = relation.fetchall()
     mapping: dict[int, dict[str, object]] = {}
@@ -414,15 +405,13 @@ def _load_contracts(
 def _load_graph_metrics(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, int]]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT function_goid_h128, call_fan_in, call_fan_out
-            FROM analytics.graph_metrics_functions
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
-        )
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("analytics.graph_metrics_functions")
+        .filter(predicate)
+        .select("function_goid_h128", "call_fan_in", "call_fan_out")
     )
     rows = relation.fetchall()
     mapping: dict[int, dict[str, int]] = {}
@@ -440,15 +429,17 @@ def _load_graph_metrics(
 def _load_module_meta(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[str, ModuleRecord]:
-    relation = gateway.con.sql(
-        render_sql(
-            """
-            SELECT module, path, tags
-            FROM core.modules
-            WHERE COALESCE(repo, $repo) = $repo AND COALESCE(commit, $commit) = $commit
-            """,
-            {"repo": repo, "commit": commit},
-        )
+    repo_expr = FunctionExpression("coalesce", ColumnExpression("repo"), ConstantExpression(repo))
+    commit_expr = FunctionExpression(
+        "coalesce", ColumnExpression("commit"), ConstantExpression(commit)
+    )
+    predicate = (repo_expr == ConstantExpression(repo)) & (
+        commit_expr == ConstantExpression(commit)
+    )
+    relation = (
+        gateway.relation_from_table_key("core.modules")
+        .filter(predicate)
+        .select("module", "path", "tags")
     )
     rows = relation.fetchall()
     meta: dict[str, ModuleRecord] = {}

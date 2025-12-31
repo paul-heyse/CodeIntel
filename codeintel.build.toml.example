@@ -113,6 +113,14 @@ include_indirect = true
 include_type_imports = true
 
 # ---------------------------------------------------------------------------
+# Hamilton Configuration
+# ---------------------------------------------------------------------------
+
+[hamilton]
+# Graph data source selection: compute | existing | empty
+graph_backend = "compute"
+
+# ---------------------------------------------------------------------------
 # Export Configuration
 # ---------------------------------------------------------------------------
 
@@ -121,4 +129,3 @@ include_type_imports = true
 validate_exports = true
 # Export formats to produce
 formats = ["jsonl", "parquet"]
-

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
@@ -16,19 +16,30 @@ from codeintel.build.hamilton.native.graphs.call_graph import (
 )
 from codeintel.build.hamilton.native.graphs.cfg_dfg import (
     cfg_blocks_compute,
+    cfg_dfg_analysis,
     cfg_edges_compute,
     dfg_edges_compute,
+)
+from codeintel.build.hamilton.native.graphs.goids import (
+    GOID_CROSSWALK_COLUMNS,
+    GOIDS_COLUMNS,
+    goid_crosswalk__base,
+    goids__base,
+    goids_analysis,
+    goids_inputs,
 )
 from codeintel.build.hamilton.native.graphs.import_graph import (
     import_graph_analysis,
     import_graph_edges_compute,
     import_modules_compute,
 )
+from codeintel.build.hamilton.native.graphs.symbol_use import symbol_use_edges_compute
 
-if TYPE_CHECKING:
+try:
     import polars as pl
+except ModuleNotFoundError:
+    pytest.skip("polars is required for graph scaffold tests", allow_module_level=True)
 
-pl = pytest.importorskip("polars")
 pytestmark = pytest.mark.no_runtime_env
 
 
@@ -63,8 +74,8 @@ def _sample_goids_frame() -> pl.DataFrame:
             "language": ["python", "python"],
             "kind": ["function", "function"],
             "qualname": ["app.main", "app.helper"],
-            "start_line": [6, 3],
-            "end_line": [7, 4],
+            "start_line": [7, 3],
+            "end_line": [8, 5],
             "created_at": [
                 datetime(2024, 1, 1, tzinfo=UTC),
                 datetime(2024, 1, 1, tzinfo=UTC),
@@ -85,13 +96,38 @@ def _sample_modules_frame() -> pl.DataFrame:
     )
 
 
+def _sample_ast_nodes_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "path": ["src/app.py", "src/app.py", "src/app.py"],
+            "node_type": ["Module", "FunctionDef", "FunctionDef"],
+            "name": ["app", "helper", "main"],
+            "qualname": ["app", "app.helper", "app.main"],
+            "lineno": [None, 3, 7],
+            "end_lineno": [None, 5, 8],
+        }
+    )
+
+
+def _sample_scip_occurrences_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "symbol": ["local app.main", "local app.main"],
+            "rel_path": ["src/app.py", "src/app.py"],
+            "start_line": [7, 7],
+            "roles": [1, 2],
+        }
+    )
+
+
 def _write_sample_module(repo_root: Path) -> None:
     module_path = repo_root / "src" / "app.py"
     module_path.parent.mkdir(parents=True, exist_ok=True)
     module_path.write_text(
         "import json\n\n"
         "def helper() -> None:\n"
-        "    json.dumps({})\n\n"
+        "    value = json.dumps({})\n"
+        "    print(value)\n\n"
         "def main() -> None:\n"
         "    helper()\n",
         encoding="utf-8",
@@ -173,9 +209,12 @@ def test_import_graph_compute_columns(tmp_path: Path) -> None:
     ]
 
 
-def test_cfg_dfg_compute_columns() -> None:
+def test_cfg_dfg_compute_columns(tmp_path: Path) -> None:
     """Ensure CFG/DFG compute columns match the scaffold."""
-    blocks = cfg_blocks_compute(_sample_goids_frame())
+    _write_sample_module(tmp_path)
+    env = _fake_env(tmp_path)
+    analysis = cfg_dfg_analysis(env, _sample_goids_frame(), _sample_ast_nodes_frame())
+    blocks = cfg_blocks_compute(analysis)
     result_blocks = blocks.collect()
     assert result_blocks.columns == [
         "function_goid_h128",
@@ -191,7 +230,7 @@ def test_cfg_dfg_compute_columns() -> None:
         "out_degree",
     ]
 
-    cfg_edges = cfg_edges_compute(blocks)
+    cfg_edges = cfg_edges_compute(analysis)
     result_cfg_edges = cfg_edges.collect()
     assert result_cfg_edges.columns == [
         "function_goid_h128",
@@ -200,7 +239,7 @@ def test_cfg_dfg_compute_columns() -> None:
         "edge_kind",
     ]
 
-    dfg_edges = dfg_edges_compute(blocks)
+    dfg_edges = dfg_edges_compute(analysis)
     result_dfg_edges = dfg_edges.collect()
     assert result_dfg_edges.columns == [
         "function_goid_h128",
@@ -211,4 +250,35 @@ def test_cfg_dfg_compute_columns() -> None:
         "edge_kind",
         "via_phi",
         "use_kind",
+    ]
+
+
+def test_goids_compute_columns(tmp_path: Path) -> None:
+    """Ensure GOID compute columns match the schema."""
+    env = _fake_env(tmp_path)
+    inputs = goids_inputs(_sample_modules_frame(), _sample_ast_nodes_frame())
+    analysis = goids_analysis(env, inputs)
+    goids = goids__base(analysis).collect()
+    crosswalk = goid_crosswalk__base(analysis).collect()
+    assert goids.columns == list(GOIDS_COLUMNS)
+    assert crosswalk.columns == list(GOID_CROSSWALK_COLUMNS)
+
+
+def test_symbol_use_edges_compute_columns(tmp_path: Path) -> None:
+    """Ensure symbol use edges compute columns match the schema."""
+    _write_sample_module(tmp_path)
+    frame = symbol_use_edges_compute(
+        _sample_scip_occurrences_frame(),
+        _sample_modules_frame(),
+        _sample_goids_frame(),
+    )
+    result = frame.collect()
+    assert result.columns == [
+        "symbol",
+        "def_path",
+        "use_path",
+        "same_file",
+        "same_module",
+        "def_goid_h128",
+        "use_goid_h128",
     ]

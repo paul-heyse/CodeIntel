@@ -11,8 +11,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.graphs.validation.base import GraphCheckBase
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     import logging
@@ -124,37 +124,34 @@ def _warn_missing_function_goids_impl(
         Findings for files with missing function GOIDs.
     """
     try:
-        relation = gateway.con.sql(
-            render_sql(
-                """
-                WITH funcs AS (
-                    SELECT path AS rel_path, COUNT(*) AS function_count
-                    FROM core.ast_nodes
-                    WHERE repo = $repo
-                      AND commit = $commit
-                      AND node_type IN ('FunctionDef', 'AsyncFunctionDef')
-                    GROUP BY path
-                ),
-                goid_counts AS (
-                    SELECT rel_path, COUNT(*) AS goid_count
-                    FROM core.goids
-                    WHERE repo = $repo
-                      AND commit = $commit
-                      AND kind IN ('function', 'method')
-                    GROUP BY rel_path
-                )
-                SELECT
-                    funcs.rel_path,
-                    funcs.function_count,
-                    COALESCE(goid_counts.goid_count, 0) AS goid_count
-                FROM funcs
-                LEFT JOIN goid_counts
-                  ON funcs.rel_path = goid_counts.rel_path
-                WHERE COALESCE(goid_counts.goid_count, 0) < funcs.function_count
-                ORDER BY funcs.rel_path
-                """,
-                {"repo": repo, "commit": commit},
+        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+            ColumnExpression("commit") == ConstantExpression(commit)
+        )
+        node_types = [ConstantExpression("FunctionDef"), ConstantExpression("AsyncFunctionDef")]
+        funcs = (
+            gateway.relation_from_table_key("core.ast_nodes")
+            .filter(predicate)
+            .filter(ColumnExpression("node_type").isin(*node_types))
+            .aggregate("count(*) as function_count", "path")
+            .set_alias("funcs")
+        )
+        kind_literals = [ConstantExpression("function"), ConstantExpression("method")]
+        goid_counts = (
+            gateway.relation_from_table_key("core.goids")
+            .filter(predicate)
+            .filter(ColumnExpression("kind").isin(*kind_literals))
+            .aggregate("count(*) as goid_count", "rel_path")
+            .set_alias("goid_counts")
+        )
+        relation = (
+            funcs.join(goid_counts, "funcs.path = goid_counts.rel_path", how="left")
+            .select(
+                "funcs.path as rel_path",
+                "funcs.function_count",
+                "coalesce(goid_counts.goid_count, 0) as goid_count",
             )
+            .filter("coalesce(goid_counts.goid_count, 0) < funcs.function_count")
+            .order("funcs.path")
         )
         rows = relation.fetchall()
     except DuckDBError:
@@ -200,17 +197,14 @@ def _warn_callsite_span_mismatches_impl(
     """
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
     try:
-        relation = gateway.con.sql(
-            render_sql(
-                """
-                SELECT caller_goid_h128, callsite_path, callsite_line
-                FROM graph.call_graph_edges
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND callsite_line IS NOT NULL
-                """,
-                {"repo": repo, "commit": commit},
-            )
+        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+            ColumnExpression("commit") == ConstantExpression(commit)
+        )
+        relation = (
+            gateway.relation_from_table_key("graph.call_graph_edges")
+            .filter(predicate)
+            .filter(~ColumnExpression("callsite_line").isnull())
+            .select("caller_goid_h128", "callsite_path", "callsite_line")
         )
         rows = relation.fetchall()
     except DuckDBError:
@@ -262,67 +256,37 @@ def _warn_orphan_modules_impl(
     """
     query_failed = False
     try:
-        relation = gateway.con.sql(
-            render_sql(
-                """
-                WITH module_goids AS (
-                    SELECT rel_path, COUNT(*) AS cnt
-                    FROM core.goids
-                    WHERE repo = $repo
-                      AND commit = $commit
-                      AND kind = 'module'
-                    GROUP BY rel_path
-                )
-                SELECT modules.path
-                FROM core.modules AS modules
-                LEFT JOIN module_goids
-                  ON modules.path = module_goids.rel_path
-                WHERE modules.repo = $repo
-                  AND modules.commit = $commit
-                  AND module_goids.cnt IS NULL
-                """,
-                {"repo": repo, "commit": commit},
-            )
+        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+            ColumnExpression("commit") == ConstantExpression(commit)
+        )
+        module_goids = (
+            gateway.relation_from_table_key("core.goids")
+            .filter(predicate)
+            .filter(ColumnExpression("kind") == ConstantExpression("module"))
+            .aggregate("count(*) as cnt", "rel_path")
+            .set_alias("module_goids")
+        )
+        modules = (
+            gateway.relation_from_table_key("core.modules").filter(predicate).set_alias("modules")
+        )
+        relation = (
+            modules.join(module_goids, "modules.path = module_goids.rel_path", how="left")
+            .filter(ColumnExpression("module_goids.cnt").isnull())
+            .select("modules.path")
         )
         rows = [(path,) for (path,) in relation.fetchall()]
 
-        count_rel = gateway.con.sql(
-            render_sql(
-                """
-                SELECT COUNT(*) AS cnt
-                FROM core.modules
-                WHERE repo = $repo AND commit = $commit
-                """,
-                {"repo": repo, "commit": commit},
-            )
-        )
-        count_row = count_rel.fetchone()
+        count_row = modules.aggregate("count(*) as cnt").fetchone()
         module_count = 0 if count_row is None else int(count_row[0])
         if rows:
-            stats_rel = gateway.con.sql(
-                render_sql(
-                    """
-                    WITH module_goids AS (
-                        SELECT rel_path, COUNT(*) AS cnt
-                        FROM core.goids
-                        WHERE repo = $repo
-                          AND commit = $commit
-                          AND kind = 'module'
-                        GROUP BY rel_path
-                    )
-                    SELECT
-                        modules.path,
-                        COALESCE(module_goids.cnt, 0) AS module_goids
-                    FROM core.modules AS modules
-                    LEFT JOIN module_goids
-                      ON modules.path = module_goids.rel_path
-                    WHERE modules.repo = $repo
-                      AND modules.commit = $commit
-                    ORDER BY module_goids, modules.path
-                    LIMIT 5
-                    """,
-                    {"repo": repo, "commit": commit},
+            stats_rel = (
+                modules.join(module_goids, "modules.path = module_goids.rel_path", how="left")
+                .select(
+                    "modules.path",
+                    "coalesce(module_goids.cnt, 0) as module_goids",
                 )
+                .order("module_goids, modules.path")
+                .limit(5)
             )
             sample_detail = ", ".join(
                 f"{path} (module_goids={cnt})" for path, cnt in stats_rel.fetchall()

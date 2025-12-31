@@ -1,10 +1,7 @@
-"""Precompiled view builders and discovery helpers.
+"""View discovery helpers.
 
-View builder functions are defined in ``codeintel.storage.views.sqlglot_views`` as
-precompiled SQL plan wrappers. Deterministic discovery for materialization lives in
-``codeintel.storage.views.discovery``.
-
-This package intentionally keeps its public surface minimal to avoid import cycles
+View discovery now relies on Hamilton tag metadata rather than precompiled SQL
+view registries. The public surface remains minimal to avoid import cycles
 during storage bootstrap.
 """
 

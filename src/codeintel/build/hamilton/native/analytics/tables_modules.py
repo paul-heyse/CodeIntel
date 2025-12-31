@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import polars as pl
 
+from codeintel.analytics.profiles.modules import (
+    build_module_profile_rows,
+    compute_module_profile_inputs,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import module_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -20,7 +25,6 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -43,53 +47,20 @@ MODULE_PROFILE_CONTRACT = TableContractSpec(
 )
 
 
-def module_profile__base(q__core__modules: InferableTabularInput) -> pl.LazyFrame:
-    """Build a minimal module profile frame from core.modules.
-
-    Parameters
-    ----------
-    q__core__modules
-        Relation for ``core.modules``.
+def module_profile__base(
+    env: BuildEnv,
+    _q__core__modules: InferableTabularInput,
+) -> pl.LazyFrame:
+    """Build module profile rows using gateway-backed helpers.
 
     Returns
     -------
     pl.LazyFrame
-        Lazy frame with module profile columns.
+        Lazy frame containing module profile rows.
     """
-    frame = tabular_to_lazyframe(q__core__modules)
-    frame = frame.with_columns(
-        pl.lit(1).cast(pl.Int64).alias("file_count"),
-        pl.lit(0).cast(pl.Int64).alias("total_loc"),
-        pl.lit(0).cast(pl.Int64).alias("function_count"),
-        pl.lit(0).cast(pl.Int64).alias("class_count"),
-        pl.lit(0).cast(pl.Float64).alias("avg_file_complexity"),
-        pl.lit(0).cast(pl.Float64).alias("max_file_complexity"),
-        pl.lit(0).cast(pl.Float64).alias("avg_risk_score"),
-        pl.lit(0).cast(pl.Float64).alias("max_risk_score"),
-        pl.lit(0).cast(pl.Float64).alias("module_coverage_ratio"),
-        pl.lit(None).cast(pl.Datetime).alias("created_at"),
-    )
-    return frame.select(
-        [
-            "repo",
-            "commit",
-            "module",
-            "path",
-            "language",
-            "file_count",
-            "total_loc",
-            "function_count",
-            "class_count",
-            "avg_file_complexity",
-            "max_file_complexity",
-            "avg_risk_score",
-            "max_risk_score",
-            "module_coverage_ratio",
-            "tags",
-            "owners",
-            "created_at",
-        ]
-    )
+    inputs = compute_module_profile_inputs(env.gateway, env.snapshot)
+    rows = list(build_module_profile_rows(inputs))
+    return rows_to_frame(MODULE_PROFILE_TABLE_KEY, rows)
 
 
 @save_dataset(

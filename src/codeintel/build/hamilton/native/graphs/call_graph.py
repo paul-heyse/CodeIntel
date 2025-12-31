@@ -32,6 +32,14 @@ class _FunctionDefInfo:
     start_line: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class _CallGraphEdgeContext:
+    env: BuildEnv
+    goid_by_qualname: dict[str, int]
+    local_name_map: dict[str, dict[str, int]]
+    goid_language: dict[int, str]
+
+
 def _function_arity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     args = node.args
     total = len(args.posonlyargs) + len(args.args) + len(args.kwonlyargs)
@@ -54,10 +62,7 @@ def _collect_function_defs(tree: ast.AST, module_name: str) -> list[_FunctionDef
             scope.pop()
             return
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if module_name:
-                qualname = ".".join([module_name, *scope, node.name])
-            else:
-                qualname = node.name
+            qualname = ".".join([module_name, *scope, node.name]) if module_name else node.name
             results.append(
                 _FunctionDefInfo(
                     qualname=qualname,
@@ -108,26 +113,114 @@ def _call_name(node: ast.AST) -> str | None:
     return None
 
 
+def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
+    module_by_path: dict[str, str] = {}
+    for row in modules_frame.iter_rows(named=True):
+        rel_path = row.get("path")
+        module_name = row.get("module")
+        language = row.get("language")
+        if language not in {None, "python"}:
+            continue
+        if isinstance(rel_path, str) and isinstance(module_name, str):
+            module_by_path[rel_path] = module_name
+    return module_by_path
+
+
+def _call_graph_indices(
+    goids_frame: pl.DataFrame,
+    module_by_path: dict[str, str],
+) -> tuple[dict[str, int], dict[str, dict[str, int]], dict[int, str]]:
+    goid_by_qualname: dict[str, int] = {}
+    local_name_map: dict[str, dict[str, int]] = {}
+    goid_language: dict[int, str] = {}
+    for row in goids_frame.iter_rows(named=True):
+        if row.get("kind") not in {"function", "method"}:
+            continue
+        qualname = row.get("qualname")
+        rel_path = row.get("rel_path")
+        if not isinstance(qualname, str) or not isinstance(rel_path, str):
+            continue
+        module_name = module_by_path.get(rel_path)
+        if not module_name:
+            continue
+        goid = row.get("goid_h128")
+        if not isinstance(goid, int):
+            continue
+        goid_by_qualname[qualname] = goid
+        language = row.get("language")
+        if isinstance(language, str):
+            goid_language[goid] = language
+        local_name = qualname.split(".")[-1]
+        if qualname == f"{module_name}.{local_name}":
+            local_map = local_name_map.setdefault(module_name, {})
+            local_map.setdefault(local_name, goid)
+    return goid_by_qualname, local_name_map, goid_language
+
+
+def _edge_rows_for_module(
+    context: _CallGraphEdgeContext,
+    *,
+    rel_path: str,
+    module_name: str,
+) -> list[dict[str, object]]:
+    module_path = Path(context.env.snapshot.repo_root) / rel_path
+    parsed = parse_python_module(module_path)
+    if parsed is None:
+        return []
+    _, tree = parsed
+    edge_rows: list[dict[str, object]] = []
+    for info in _collect_function_defs(tree, module_name):
+        caller_goid = context.goid_by_qualname.get(info.qualname)
+        if caller_goid is None:
+            continue
+        collector = _CallCollector()
+        collector.visit(info.node)
+        for call in collector.calls:
+            callee_name = _call_name(call.func)
+            if callee_name is None:
+                continue
+            callee_goid = context.local_name_map.get(module_name, {}).get(callee_name)
+            if callee_goid is None:
+                continue
+            callsite_line = getattr(call, "lineno", 0) or 0
+            callsite_col = getattr(call, "col_offset", 0) or 0
+            edge_rows.append(
+                {
+                    "repo": context.env.repo,
+                    "commit": context.env.commit,
+                    "caller_goid_h128": caller_goid,
+                    "callee_goid_h128": callee_goid,
+                    "callsite_path": rel_path,
+                    "callsite_line": int(callsite_line),
+                    "callsite_col": int(callsite_col),
+                    "language": context.goid_language.get(caller_goid, "python"),
+                    "kind": "call",
+                    "resolved_via": "local_name",
+                    "confidence": 0.6,
+                    "evidence_json": json.dumps({"callee_name": callee_name}),
+                }
+            )
+    return edge_rows
+
+
 def call_graph_nodes_compute(
     env: BuildEnv,
     q__core__goids: InferableTabularInput,
     q__core__modules: InferableTabularInput,
 ) -> TabularFrame:
-    """Build call graph nodes from core.goids and parsed ASTs."""
+    """Build call graph nodes from core.goids and parsed ASTs.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame for computed call graph nodes.
+    """
     goids = tabular_to_lazyframe(q__core__goids).collect()
     if goids.is_empty():
         return empty_frame_for_table(CALL_GRAPH_NODES_TABLE_KEY)
 
     modules = tabular_to_lazyframe(q__core__modules).collect()
-    module_by_path: dict[str, str] = {}
-    for row in modules.iter_rows(named=True):
-        rel_path = row.get("path")
-        module_name = row.get("module")
-        language = row.get("language")
-        if language not in (None, "python"):
-            continue
-        if isinstance(rel_path, str) and isinstance(module_name, str):
-            module_by_path[rel_path] = module_name
+    module_by_path = _module_by_path(modules)
 
     function_map: dict[tuple[str, str], _FunctionDefInfo] = {}
     for rel_path, module_name in module_by_path.items():
@@ -149,9 +242,7 @@ def call_graph_nodes_compute(
         for (rel_path, qualname), info in function_map.items()
     ]
     frame = goids.filter(pl.col("kind").is_in(_FUNCTION_KINDS))
-    qualname_public_expr = ~(
-        pl.col("qualname").str.split(".").list.last().str.starts_with("_")
-    )
+    qualname_public_expr = ~(pl.col("qualname").str.split(".").list.last().str.starts_with("_"))
     if function_rows:
         enrich = pl.DataFrame(function_rows)
         frame = frame.join(enrich, on=["rel_path", "qualname"], how="left")
@@ -186,85 +277,39 @@ def call_graph_edges_compute(
     q__core__goids: InferableTabularInput,
     q__core__modules: InferableTabularInput,
 ) -> TabularFrame:
-    """Build a minimal call graph edges frame from local name resolution."""
+    """Build a minimal call graph edges frame from local name resolution.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame for computed call graph edges.
+    """
     goids = tabular_to_lazyframe(q__core__goids).collect()
     if goids.is_empty():
         return empty_frame_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
     modules = tabular_to_lazyframe(q__core__modules).collect()
-    module_by_path: dict[str, str] = {}
-    for row in modules.iter_rows(named=True):
-        rel_path = row.get("path")
-        module_name = row.get("module")
-        language = row.get("language")
-        if language not in (None, "python"):
-            continue
-        if isinstance(rel_path, str) and isinstance(module_name, str):
-            module_by_path[rel_path] = module_name
-
-    goid_by_qualname: dict[str, int] = {}
-    goid_language: dict[int, str] = {}
-    local_name_map: dict[str, dict[str, int]] = {}
-    for row in goids.iter_rows(named=True):
-        if row.get("kind") not in _FUNCTION_KINDS:
-            continue
-        qualname = row.get("qualname")
-        rel_path = row.get("rel_path")
-        if not isinstance(qualname, str) or not isinstance(rel_path, str):
-            continue
-        module_name = module_by_path.get(rel_path)
-        if not module_name:
-            continue
-        goid = row.get("goid_h128")
-        if not isinstance(goid, int):
-            continue
-        goid_by_qualname[qualname] = goid
-        language = row.get("language")
-        if isinstance(language, str):
-            goid_language[goid] = language
-        local_name = qualname.split(".")[-1]
-        if qualname == f"{module_name}.{local_name}":
-            local_map = local_name_map.setdefault(module_name, {})
-            local_map.setdefault(local_name, goid)
+    module_by_path = _module_by_path(modules)
+    goid_by_qualname, local_name_map, goid_language = _call_graph_indices(
+        goids,
+        module_by_path,
+    )
+    edge_context = _CallGraphEdgeContext(
+        env=env,
+        goid_by_qualname=goid_by_qualname,
+        local_name_map=local_name_map,
+        goid_language=goid_language,
+    )
 
     edge_rows: list[dict[str, object]] = []
     for rel_path, module_name in module_by_path.items():
-        module_path = Path(env.snapshot.repo_root) / rel_path
-        parsed = parse_python_module(module_path)
-        if parsed is None:
-            continue
-        _, tree = parsed
-        for info in _collect_function_defs(tree, module_name):
-            caller_goid = goid_by_qualname.get(info.qualname)
-            if caller_goid is None:
-                continue
-            collector = _CallCollector()
-            collector.visit(info.node)
-            for call in collector.calls:
-                callee_name = _call_name(call.func)
-                if callee_name is None:
-                    continue
-                callee_goid = local_name_map.get(module_name, {}).get(callee_name)
-                if callee_goid is None:
-                    continue
-                callsite_line = getattr(call, "lineno", 0) or 0
-                callsite_col = getattr(call, "col_offset", 0) or 0
-                edge_rows.append(
-                    {
-                        "repo": env.repo,
-                        "commit": env.commit,
-                        "caller_goid_h128": caller_goid,
-                        "callee_goid_h128": callee_goid,
-                        "callsite_path": rel_path,
-                        "callsite_line": int(callsite_line),
-                        "callsite_col": int(callsite_col),
-                        "language": goid_language.get(caller_goid, "python"),
-                        "kind": "call",
-                        "resolved_via": "local_name",
-                        "confidence": 0.6,
-                        "evidence_json": json.dumps({"callee_name": callee_name}),
-                    }
-                )
+        edge_rows.extend(
+            _edge_rows_for_module(
+                edge_context,
+                rel_path=rel_path,
+                module_name=module_name,
+            )
+        )
 
     if not edge_rows:
         return empty_frame_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
