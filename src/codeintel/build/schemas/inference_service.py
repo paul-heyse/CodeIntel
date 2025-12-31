@@ -19,6 +19,7 @@ import pyarrow as pa
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
 from codeintel.build.schemas.observations import (
@@ -42,6 +43,7 @@ from codeintel.core.config.settings import (
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
+    table_schema_from_polars_dataframe,
     table_schema_from_polars_lazyframe,
 )
 from codeintel.core.schemas.primitives import TableSchema
@@ -50,6 +52,8 @@ from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+    from hamilton.node import Node
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
@@ -81,6 +85,7 @@ _SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 _INFERABLE_RUNTIME_TYPES: tuple[type[object], ...] = (
     pa.RecordBatchReader,
     pa.Table,
+    pl.DataFrame,
     pl.LazyFrame,
 )
 
@@ -92,6 +97,7 @@ class _ComputeInferenceJob:
     exec_name: str
     table_key: str
     qparams: frozenset[str]
+    dataset_refs: tuple[tuple[str, str], ...]
     requires_env: bool
     requires_catalog: bool
 
@@ -100,6 +106,15 @@ class _ComputeInferenceJob:
 class _InferenceContext:
     driver: h_driver.Driver
     catalog: DagCatalog
+
+
+@dataclass(frozen=True, slots=True)
+class _InferenceRequirementUpdate:
+    requires_env: bool = False
+    requires_catalog: bool = False
+    qparam: str | None = None
+    dataset_ref: tuple[str, str] | None = None
+    skip_children: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +197,8 @@ def _is_tabular_annotation(annotation: object) -> bool:
                 "RecordBatch",
                 "pa.Table",
                 "pyarrow.Table",
+                "pl.DataFrame",
+                "polars.DataFrame",
                 "pl.LazyFrame",
                 "polars.LazyFrame",
             )
@@ -198,10 +215,39 @@ def _is_tabular_annotation(annotation: object) -> bool:
             "RecordBatch",
             "pa.Table",
             "pyarrow.Table",
+            "pl.DataFrame",
+            "polars.DataFrame",
             "pl.LazyFrame",
             "polars.LazyFrame",
         )
     )
+
+
+def _is_dataset_ref_annotation(annotation: object) -> bool:
+    if annotation is DatasetRef:
+        return True
+    if isinstance(annotation, type):
+        try:
+            return issubclass(annotation, DatasetRef)
+        except TypeError:
+            return False
+    origin = get_origin(annotation)
+    if origin in {types.UnionType, typing.Union}:
+        return any(
+            _is_dataset_ref_annotation(arg) for arg in get_args(annotation) if arg is not type(None)
+        )
+    if isinstance(annotation, str):
+        return "DatasetRef" in annotation
+    return "DatasetRef" in str(annotation)
+
+
+def _dataset_param_to_table_key(param_name: str) -> str | None:
+    if not param_name.startswith("d__"):
+        return None
+    payload = param_name.removeprefix("d__")
+    if not payload:
+        return None
+    return payload.replace("__", ".")
 
 
 @contextmanager
@@ -361,7 +407,7 @@ def _resolve_inference_job(
         msg = f"Compute node {compute_name} for {table_key} is not inferable"
         raise ValueError(msg)
 
-    qparams, requires_env, requires_catalog = _inference_requirements(
+    qparams, requires_env, requires_catalog, dataset_refs = _inference_requirements(
         context=context,
         compute_name=compute_name,
     )
@@ -372,6 +418,7 @@ def _resolve_inference_job(
         exec_name=exec_name,
         table_key=table_key,
         qparams=frozenset(qparams),
+        dataset_refs=tuple(sorted(dataset_refs.items())),
         requires_env=requires_env,
         requires_catalog=requires_catalog,
     )
@@ -386,7 +433,7 @@ def _inference_requirements(
     *,
     context: _InferenceContext,
     compute_name: str,
-) -> tuple[set[str], bool, bool]:
+) -> tuple[set[str], bool, bool, dict[str, str]]:
     effective_compute_name = _compute_node_for_inference(context, compute_name=compute_name)
     node = context.driver.graph.nodes.get(effective_compute_name)
     if node is None:
@@ -394,6 +441,7 @@ def _inference_requirements(
         raise ValueError(msg)
 
     qparams: set[str] = set()
+    dataset_refs: dict[str, str] = {}
     requires_env = False
     requires_catalog = False
     visited: set[str] = set()
@@ -404,43 +452,67 @@ def _inference_requirements(
         if dep.name in visited:
             continue
         visited.add(dep.name)
-
-        if dep.name == "env":
+        update = _inspect_inference_dependency(dep, compute_name=compute_name)
+        if update.requires_env:
             requires_env = True
-            continue
-
-        if dep.name == "catalog":
+        if update.requires_catalog:
             requires_catalog = True
+        if update.qparam is not None:
+            qparams.add(update.qparam)
+        if update.dataset_ref is not None:
+            ref_name, table_key = update.dataset_ref
+            dataset_refs[ref_name] = table_key
+        if update.skip_children:
             continue
-
-        if dep.name.startswith("q__"):
-            qparams.add(dep.name)
-            continue
-
-        if dep.name.startswith("t__") and not dep.name.endswith("__compute"):
-            msg = (
-                f"Compute node {compute_name} depends on target node {dep.name}; "
-                "schema inference requires q__-driven compute graphs without target execution."
-            )
-            raise ValueError(msg)
-
-        tags = dep.tags if isinstance(dep.tags, dict) else {}
-        if tags.get("hamilton.data_saver") is True:
-            msg = (
-                f"Compute node {compute_name} depends on data_saver node {dep.name}; "
-                "schema inference requires compute-only graphs."
-            )
-            raise ValueError(msg)
-        if dep.user_defined and not _is_tabular_annotation(dep.type):
-            msg = (
-                f"Compute node {compute_name} depends on non-tabular input {dep.name}; "
-                "schema inference requires tabular compute dependencies."
-            )
-            raise ValueError(msg)
-
         stack.extend(dep.dependencies)
 
-    return qparams, requires_env, requires_catalog
+    return qparams, requires_env, requires_catalog, dataset_refs
+
+
+def _inspect_inference_dependency(
+    dep: Node,
+    *,
+    compute_name: str,
+) -> _InferenceRequirementUpdate:
+    if dep.name == "env":
+        return _InferenceRequirementUpdate(requires_env=True, skip_children=True)
+    if dep.name == "catalog":
+        return _InferenceRequirementUpdate(requires_catalog=True, skip_children=True)
+    if dep.name.startswith("q__"):
+        return _InferenceRequirementUpdate(qparam=dep.name, skip_children=True)
+    if _is_dataset_ref_annotation(dep.type):
+        table_key = _dataset_param_to_table_key(dep.name)
+        if table_key is None:
+            msg = f"DatasetRef dependency missing table key: {dep.name}"
+            raise ValueError(msg)
+        return _InferenceRequirementUpdate(
+            dataset_ref=(dep.name, table_key),
+            skip_children=True,
+        )
+    _validate_inference_dependency(dep, compute_name=compute_name)
+    return _InferenceRequirementUpdate()
+
+
+def _validate_inference_dependency(dep: Node, *, compute_name: str) -> None:
+    if dep.name.startswith("t__") and not dep.name.endswith("__compute"):
+        msg = (
+            f"Compute node {compute_name} depends on target node {dep.name}; "
+            "schema inference requires q__-driven compute graphs without target execution."
+        )
+        raise ValueError(msg)
+    tags = dep.tags if isinstance(dep.tags, dict) else {}
+    if tags.get("hamilton.data_saver") is True:
+        msg = (
+            f"Compute node {compute_name} depends on data_saver node {dep.name}; "
+            "schema inference requires compute-only graphs."
+        )
+        raise ValueError(msg)
+    if dep.user_defined and not _is_tabular_annotation(dep.type):
+        msg = (
+            f"Compute node {compute_name} depends on non-tabular input {dep.name}; "
+            "schema inference requires tabular compute dependencies."
+        )
+        raise ValueError(msg)
 
 
 def _default_build_settings() -> BuildSettings:
@@ -491,13 +563,20 @@ def _infer_table_schema_for_compute(
         )
         overrides: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
         inputs: dict[str, object] = {}
-        if job.requires_env:
-            inputs["env"] = _inference_env(
+        env: BuildEnv | None = None
+        if job.requires_env or job.dataset_refs:
+            env = _inference_env(
                 gateway=gateway,
                 force_targets=frozenset({job.target_name}),
             )
+            inputs["env"] = env
         if job.requires_catalog:
             inputs["catalog"] = context.catalog
+        if job.dataset_refs:
+            if env is None:
+                msg = "DatasetRef inference requires BuildEnv inputs"
+                raise ValueError(msg)
+            overrides.update(_dataset_ref_overrides(job=job, env=env))
 
         out = context.driver.execute([job.exec_name], inputs=inputs, overrides=overrides)
         expr_obj = out[job.exec_name]
@@ -795,6 +874,8 @@ def _infer_job_schema(
         inputs["env"] = env
     if job.requires_catalog:
         inputs["catalog"] = context.catalog
+    if job.dataset_refs:
+        overrides.update(_dataset_ref_overrides(job=job, env=env))
 
     out = context.driver.execute([job.exec_name], inputs=inputs, overrides=overrides)
     expr_obj = out[job.exec_name]
@@ -881,6 +962,22 @@ def infer_table_schemas(
     return inferred
 
 
+def _dataset_ref_overrides(
+    *,
+    job: _ComputeInferenceJob,
+    env: BuildEnv,
+) -> dict[str, DatasetRef]:
+    return {
+        param_name: DatasetRef(
+            table_key=table_key,
+            repo=env.repo,
+            commit=env.commit,
+            source_target=job.target_name,
+        )
+        for param_name, table_key in job.dataset_refs
+    }
+
+
 def _normalize_record_batch_iterable(
     batches: Iterable[object],
 ) -> tuple[pa.Schema, Iterable[pa.RecordBatch]]:
@@ -927,6 +1024,8 @@ def _table_schema_from_tabular(
                 context=observation_context,
             )
             table_schema = bundle.table_schema
+    elif isinstance(obj, pl.DataFrame):
+        table_schema = table_schema_from_polars_dataframe(frame=obj, table_key=table_key)
     elif isinstance(obj, pl.LazyFrame):
         table_schema = table_schema_from_polars_lazyframe(frame=obj, table_key=table_key)
     elif isinstance(obj, Iterable):

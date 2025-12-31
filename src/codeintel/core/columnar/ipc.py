@@ -52,7 +52,15 @@ def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
     serialize_schema = getattr(pa.ipc, "serialize_schema", None)
     if callable(serialize_schema):
         buffer = serialize_schema(schema)
-        return buffer.to_pybytes()
+        to_pybytes = getattr(buffer, "to_pybytes", None)
+        if callable(to_pybytes):
+            result = to_pybytes()
+            if isinstance(result, (bytes, bytearray)):
+                return bytes(result)
+        if isinstance(buffer, (bytes, bytearray)):
+            return bytes(buffer)
+        msg = "Arrow IPC schema serialization returned unsupported buffer type"
+        raise TypeError(msg)
     write_schema = getattr(pa.ipc, "write_schema", None)
     if callable(write_schema):
         sink = pa.BufferOutputStream()

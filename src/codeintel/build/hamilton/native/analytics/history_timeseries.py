@@ -15,7 +15,8 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.ingestion.frame_utils import empty_lazyframe_for_table
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+    MaterializationRecordContext,
+    record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns import (
     RelationTableSaveSpec,
@@ -71,12 +72,17 @@ def t__history_timeseries(
     TargetRunRecord
         Run record for the history_timeseries target.
     """
-    return record_from_duckdb_materialization(
+    context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
         target_name=HISTORY_TIMESERIES_TARGET_NAME,
-        expected_table_key=HISTORY_TIMESERIES_TABLE_KEY,
-        materialization=m__analytics__history_timeseries,
+    )
+    return record_from_materializations(
+        context=context,
+        artifact_materializations=None,
+        table_materializations={
+            HISTORY_TIMESERIES_TABLE_KEY: m__analytics__history_timeseries,
+        },
     )
 
 

@@ -222,7 +222,7 @@ def compose_runtime(
             cache_adapter=cache_adapter,
             cache_store=cache_store,
         )
-        configure_schema_service(runtime=runtime_bundle)
+        configure_schema_service(runtime=runtime_bundle, observation_provider=env.gateway.schemas)
         configure_contract_service(runtime=runtime_bundle)
         runtime_key = _runtime_key(
             env=identity.env,

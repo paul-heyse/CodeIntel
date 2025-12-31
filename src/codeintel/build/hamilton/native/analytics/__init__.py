@@ -1,4 +1,4 @@
-"""Native analytics modules (relation-first)."""
+"""Native analytics modules (inferable tabular outputs)."""
 
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ from hamilton.function_modifiers import parameterize, resolve_from_config, sourc
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.io.duckdb_relation_adapter import load_dataset_relation
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
 from codeintel.build.hamilton.naming import (
     artifact_node,
     dataset_node,
@@ -169,14 +169,22 @@ def _decorate_query_nodes(
 
 @resolve_from_config(decorate_with=_decorate_query_nodes)
 def load_relation(env: BuildEnv, ref: DatasetRef) -> TabularInput:
-    """Load a dataset as a tabular input.
+    """Load a dataset as an inferable tabular input.
 
     Returns
     -------
     TabularInput
         Tabular input for the dataset reference.
     """
-    return load_dataset_relation(gateway=env.gateway, ref=ref)
+    snapshot_id = ref.commit or env.commit
+    if not snapshot_id:
+        msg = f"Missing snapshot_id for {ref.table_key}"
+        raise ValueError(msg)
+    return load_snapshot_lazyframe(
+        env=env,
+        table_key=ref.table_key,
+        snapshot_id=snapshot_id,
+    )
 
 
 def _decorate_artifact_nodes(

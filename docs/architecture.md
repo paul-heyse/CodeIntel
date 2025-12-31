@@ -77,7 +77,6 @@
 * Introspection: `src/codeintel/build/hamilton/introspect.py :: derive_target_dependencies(...)` / `derive_target_outputs_from_savers(...)` / `derive_target_io_surface(...)`
 * Options loading (plan/execution alignment): `src/codeintel/build/hamilton/options_loading.py :: load_target_options(...)`
 * Graph runtime options loader: `src/codeintel/build/hamilton/graph_runtime_options.py :: load_graph_runtime_options(...)`
-* Impl-kind detection: `src/codeintel/build/hamilton/impl_kind.py :: target_impl_kind(...)`
 * Materialization records: `src/codeintel/build/hamilton/native/executor.py :: NativeTargetExecutor`
 * Decision trace: `src/codeintel/build/hamilton/decision_trace.py :: build_decision_trace(...)` / `read_decision_trace(...)`
 * Observability exports: `src/codeintel/build/hamilton/observability.py :: export_dag_json(...)` / `export_dag_mermaid(...)` / `export_dag_dot(...)`

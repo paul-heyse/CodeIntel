@@ -4,7 +4,7 @@ This module provides access to canonical table schemas and schema-generated
 row bindings. For dataset contracts, use the build-owned providers:
 
 - Table schemas: `codeintel.build.schemas.get_schema_provider()`
-- Row bindings: `codeintel.build.schemas.get_row_binding()`
+- Row bindings: `codeintel.core.schemas.SchemaService.get_row_binding()`
 - Dataset contracts: `codeintel.build.schemas.get_contract_for_table_key()`
 """
 
@@ -51,7 +51,7 @@ def get_row_bindings() -> dict[str, GeneratedRowBinding]:
         service = None
     if service is None:
         for schema in TABLE_SCHEMAS.values():
-            bindings[schema.table_key] = row_binding_for_table_schema(schema)
+            bindings[schema.table_key] = row_binding_for_table_schema(table_schema=schema)
         return bindings
     for schema in service.iter_table_schemas():
         binding = service.get_row_binding(schema.table_key)

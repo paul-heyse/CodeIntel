@@ -1,8 +1,8 @@
 """Decorators for tagging view builder functions.
 
-View builders are plain Python functions that construct SQLGlot expressions. To
-avoid manual registries and import-side effects, we tag view builder functions
-using Hamilton's `@tag` modifier and discover them via Hamilton introspection.
+View builders are plain Python callables that return precompiled SQL strings.
+To avoid manual registries and import-side effects, we tag view builder functions
+using Hamilton's ``@tag`` modifier and discover them via Hamilton introspection.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ _TFunc = TypeVar("_TFunc", bound=Callable[..., object])
 
 
 def sql_view(table_key: str) -> Callable[[_TFunc], _TFunc]:
-    """Tag a function as a SQLGlot view builder for a specific table/view.
+    """Tag a function as a view builder for a specific table/view.
 
     Parameters
     ----------

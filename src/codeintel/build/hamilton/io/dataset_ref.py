@@ -1,13 +1,13 @@
 """Type-safe dataset references for Hamilton DAG.
 
-DatasetRef provides a lightweight reference to a DuckDB table that can
+DatasetRef provides a lightweight reference to a dataset table that can
 flow through the Hamilton DAG. The actual data is not materialized until
-explicitly requested via the IO adapters.
+explicitly requested via dataset-backed loaders.
 
 Design Principles
 -----------------
 1. DatasetRef is a NamedTuple for immutability.
-2. References carry metadata but not data - data flows through relation loaders.
+2. References carry metadata but not data - data flows through dataset loaders.
 3. Helper functions bridge target execution results to DatasetRef instances.
 4. repo/commit fields enable snapshot identity for lineage tracking.
 """

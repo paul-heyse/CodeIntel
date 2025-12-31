@@ -63,6 +63,7 @@ class TargetRunRecord:
     error: str | None = None
     datasets: tuple[DatasetRefProtocol, ...] = ()
     artifacts: tuple[ArtifactRefProtocol, ...] = ()
+    drift_summaries: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:

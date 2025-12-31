@@ -18,12 +18,17 @@ from codeintel.core.schemas import (
 from codeintel.core.schemas import (
     get_schema_service as get_core_schema_service,
 )
+from codeintel.core.schemas.resolution import (
+    ResolvedArrowSchemaProvider,
+    ResolvedSchemaProvider,
+)
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
+    from codeintel.core.schemas.resolution import SchemaObservationProvider
     from codeintel.core.schemas.row_models import GeneratedRowBinding
     from codeintel.runtime.runtime_bundle import RuntimeBundle
 
@@ -62,13 +67,19 @@ def _row_binding_for_provider(
     )
 
 
-def configure_schema_service(*, runtime: RuntimeBundle) -> SchemaService:
+def configure_schema_service(
+    *,
+    runtime: RuntimeBundle,
+    observation_provider: SchemaObservationProvider | None = None,
+) -> SchemaService:
     """Configure the canonical SchemaService for a runtime bundle.
 
     Parameters
     ----------
     runtime
         Runtime bundle providing schema index and DAG catalog metadata.
+    observation_provider
+        Optional observation provider for observed-first schema resolution.
 
     Returns
     -------
@@ -79,12 +90,21 @@ def configure_schema_service(*, runtime: RuntimeBundle) -> SchemaService:
         return get_core_schema_service()
 
     schema_provider = _unified_schema_provider(runtime=runtime)
+    resolved_provider = ResolvedSchemaProvider(
+        observation_provider=observation_provider,
+        fallback_provider=schema_provider,
+    )
+    arrow_provider = ResolvedArrowSchemaProvider(
+        observation_provider=observation_provider,
+        fallback_provider=schema_provider,
+    )
 
     def _row_binding_factory(table_schema: TableSchema) -> GeneratedRowBinding:
-        return _row_binding_for_provider(table_schema, schema_provider)
+        return _row_binding_for_provider(table_schema, resolved_provider)
 
     service = SchemaService(
-        table_provider=schema_provider,
+        table_provider=resolved_provider,
+        arrow_provider=arrow_provider,
         row_binding_factory=_row_binding_factory,
     )
     set_schema_service(service)

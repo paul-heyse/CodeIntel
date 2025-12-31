@@ -3,78 +3,94 @@
 from __future__ import annotations
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import empty_relation_for_table
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
+from codeintel.build.tabular.types import TabularFrame
 
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 
 
-def cfg_blocks_existing(env: BuildEnv) -> DuckDBRelation:
-    """Load CFG blocks from the existing table.
+def cfg_blocks_existing(env: BuildEnv) -> TabularFrame:
+    """Load CFG blocks from the dataset snapshot.
 
     Returns
     -------
-    DuckDBRelation
-        Relation for existing CFG blocks.
+    polars.LazyFrame
+        Lazy frame for existing CFG blocks.
     """
-    return env.gateway.relation_from_table_key(CFG_BLOCKS_TABLE_KEY)
+    return load_snapshot_lazyframe(
+        env=env,
+        table_key=CFG_BLOCKS_TABLE_KEY,
+        snapshot_id=env.commit,
+    )
 
 
-def cfg_edges_existing(env: BuildEnv) -> DuckDBRelation:
-    """Load CFG edges from the existing table.
+def cfg_edges_existing(env: BuildEnv) -> TabularFrame:
+    """Load CFG edges from the dataset snapshot.
 
     Returns
     -------
-    DuckDBRelation
-        Relation for existing CFG edges.
+    polars.LazyFrame
+        Lazy frame for existing CFG edges.
     """
-    return env.gateway.relation_from_table_key(CFG_EDGES_TABLE_KEY)
+    return load_snapshot_lazyframe(
+        env=env,
+        table_key=CFG_EDGES_TABLE_KEY,
+        snapshot_id=env.commit,
+    )
 
 
-def dfg_edges_existing(env: BuildEnv) -> DuckDBRelation:
-    """Load DFG edges from the existing table.
+def dfg_edges_existing(env: BuildEnv) -> TabularFrame:
+    """Load DFG edges from the dataset snapshot.
 
     Returns
     -------
-    DuckDBRelation
-        Relation for existing DFG edges.
+    polars.LazyFrame
+        Lazy frame for existing DFG edges.
     """
-    return env.gateway.relation_from_table_key(DFG_EDGES_TABLE_KEY)
+    return load_snapshot_lazyframe(
+        env=env,
+        table_key=DFG_EDGES_TABLE_KEY,
+        snapshot_id=env.commit,
+    )
 
 
-def cfg_blocks_empty(env: BuildEnv) -> DuckDBRelation:
-    """Return an empty relation for CFG blocks.
+def cfg_blocks_empty(env: BuildEnv) -> TabularFrame:
+    """Return an empty frame for CFG blocks.
 
     Returns
     -------
-    DuckDBRelation
-        Empty relation for CFG blocks.
+    polars.LazyFrame
+        Empty LazyFrame for CFG blocks.
     """
-    return empty_relation_for_table(env.gateway.con, CFG_BLOCKS_TABLE_KEY)
+    _ = env
+    return empty_frame_for_table(CFG_BLOCKS_TABLE_KEY)
 
 
-def cfg_edges_empty(env: BuildEnv) -> DuckDBRelation:
-    """Return an empty relation for CFG edges.
+def cfg_edges_empty(env: BuildEnv) -> TabularFrame:
+    """Return an empty frame for CFG edges.
 
     Returns
     -------
-    DuckDBRelation
-        Empty relation for CFG edges.
+    polars.LazyFrame
+        Empty LazyFrame for CFG edges.
     """
-    return empty_relation_for_table(env.gateway.con, CFG_EDGES_TABLE_KEY)
+    _ = env
+    return empty_frame_for_table(CFG_EDGES_TABLE_KEY)
 
 
-def dfg_edges_empty(env: BuildEnv) -> DuckDBRelation:
-    """Return an empty relation for DFG edges.
+def dfg_edges_empty(env: BuildEnv) -> TabularFrame:
+    """Return an empty frame for DFG edges.
 
     Returns
     -------
-    DuckDBRelation
-        Empty relation for DFG edges.
+    polars.LazyFrame
+        Empty LazyFrame for DFG edges.
     """
-    return empty_relation_for_table(env.gateway.con, DFG_EDGES_TABLE_KEY)
+    _ = env
+    return empty_frame_for_table(DFG_EDGES_TABLE_KEY)
 
 
 __all__ = [

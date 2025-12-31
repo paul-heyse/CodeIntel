@@ -1028,6 +1028,7 @@ def _apply_file_artifact_results(
         error=record.error,
         datasets=record.datasets,
         artifacts=tuple(updated_artifacts),
+        drift_summaries=record.drift_summaries,
     )
 
 
@@ -1069,6 +1070,7 @@ def _apply_dataset_manifest_paths(
         error=record.error,
         datasets=tuple(updated_datasets),
         artifacts=record.artifacts,
+        drift_summaries=record.drift_summaries,
     )
 
 

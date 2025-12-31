@@ -1,4 +1,4 @@
-"""Module analytics tables built with relation-first nodes."""
+"""Module analytics tables built with inferable tabular nodes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from codeintel.build.hamilton.column_ops import module_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+    MaterializationRecordContext,
+    record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
@@ -19,10 +20,10 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
-from codeintel.build.tabular.duckdb_relation import relation_to_polars
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
 MODULE_PROFILE_TARGET_NAME = "module_profile"
 MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
@@ -42,7 +43,7 @@ MODULE_PROFILE_CONTRACT = TableContractSpec(
 )
 
 
-def module_profile__base(q__core__modules: TabularInput) -> pl.LazyFrame:
+def module_profile__base(q__core__modules: InferableTabularInput) -> pl.LazyFrame:
     """Build a minimal module profile frame from core.modules.
 
     Parameters
@@ -55,7 +56,7 @@ def module_profile__base(q__core__modules: TabularInput) -> pl.LazyFrame:
     pl.LazyFrame
         Lazy frame with module profile columns.
     """
-    frame = relation_to_polars(q__core__modules)
+    frame = tabular_to_lazyframe(q__core__modules)
     frame = frame.with_columns(
         pl.lit(1).cast(pl.Int64).alias("file_count"),
         pl.lit(0).cast(pl.Int64).alias("total_loc"),
@@ -120,12 +121,17 @@ def t__module_profile(
     TargetRunRecord
         Run record for the module_profile target.
     """
-    return record_from_duckdb_materialization(
+    context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
         target_name=MODULE_PROFILE_TARGET_NAME,
-        expected_table_key=MODULE_PROFILE_TABLE_KEY,
-        materialization=m__analytics__module_profile,
+    )
+    return record_from_materializations(
+        context=context,
+        artifact_materializations=None,
+        table_materializations={
+            MODULE_PROFILE_TABLE_KEY: m__analytics__module_profile,
+        },
     )
 
 

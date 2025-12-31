@@ -13,8 +13,8 @@ from hamilton.data_quality.base import DataValidationLevel, DataValidator, Valid
 from polars.exceptions import PolarsError
 
 from codeintel.build.schemas import get_schema_provider
-from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.resolution import resolve_table_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -400,9 +400,9 @@ def _resolve_table_schema(table_key: str) -> TableSchema | None:
     try:
         provider = get_schema_provider()
     except RuntimeError:
-        return OUTPUT_TABLE_SCHEMAS.get(table_key)
-    schema = provider.get_table_schema(table_key)
-    return schema or OUTPUT_TABLE_SCHEMAS.get(table_key)
+        provider = None
+    resolution = resolve_table_schema(table_key, schema_provider=provider)
+    return resolution.table_schema
 
 
 def _column_names(dataset: object) -> list[str] | None:

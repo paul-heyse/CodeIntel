@@ -1,11 +1,13 @@
-"""Dependency analytics tables built with relation-first nodes."""
+"""Dependency analytics tables built with inferable tabular nodes."""
 
 from __future__ import annotations
+
+import polars as pl
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import empty_relation_for_table
+from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -19,9 +21,8 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.storage.gateway import DuckDBRelation
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, DuckDBRelation)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, pl.LazyFrame)
 
 EXTERNAL_DEPS_TARGET_NAME = "external_deps"
 EXTERNAL_DEPENDENCIES_TABLE_KEY = "analytics.external_dependencies"
@@ -45,15 +46,16 @@ EXTERNAL_DEPS_SAVE_CONTEXT = SaverContext(
     target=EXTERNAL_DEPS_TARGET_NAME,
     table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
 )
-def external_deps__table(env: BuildEnv) -> DuckDBRelation:
-    """Return an empty external dependencies relation.
+def external_deps__table(env: BuildEnv) -> pl.LazyFrame:
+    """Return an empty external dependencies frame.
 
     Returns
     -------
-    DuckDBRelation
-        Empty relation with the external dependencies schema.
+    polars.LazyFrame
+        Empty LazyFrame with the external dependencies schema.
     """
-    return empty_relation_for_table(env.gateway.con, EXTERNAL_DEPENDENCIES_TABLE_KEY)
+    _ = env
+    return empty_frame_for_table(EXTERNAL_DEPENDENCIES_TABLE_KEY)
 
 
 @save_relation_table(
@@ -65,15 +67,16 @@ def external_deps__table(env: BuildEnv) -> DuckDBRelation:
     target=EXTERNAL_DEPS_TARGET_NAME,
     table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
 )
-def external_deps__calls_table(env: BuildEnv) -> DuckDBRelation:
-    """Return an empty external dependency calls relation.
+def external_deps__calls_table(env: BuildEnv) -> pl.LazyFrame:
+    """Return an empty external dependency calls frame.
 
     Returns
     -------
-    DuckDBRelation
-        Empty relation with the external dependency calls schema.
+    polars.LazyFrame
+        Empty LazyFrame with the external dependency calls schema.
     """
-    return empty_relation_for_table(env.gateway.con, EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
+    _ = env
+    return empty_frame_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
 
 
 external_deps__table_materializations = make_table_materializations_collector(

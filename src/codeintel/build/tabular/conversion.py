@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import polars as pl
 import pyarrow as pa
 
-from codeintel.build.tabular.types import TabularRelation
+from codeintel.build.tabular.types import InferableTabularInput, TabularRelation
 
 
 def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
@@ -59,9 +61,46 @@ def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:
     return frame.lazy()
 
 
+def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
+    """Convert an inferable tabular input to a Polars LazyFrame.
+
+    Parameters
+    ----------
+    value
+        Tabular input to convert.
+
+    Returns
+    -------
+    pl.LazyFrame
+        LazyFrame representation of the input.
+
+    Raises
+    ------
+    TypeError
+        If the input type cannot be coerced into a LazyFrame.
+    """
+    if isinstance(value, pl.LazyFrame):
+        return value
+    if isinstance(value, pl.DataFrame):
+        return value.lazy()
+    if isinstance(value, pa.Table):
+        return table_to_lazyframe(value)
+    if isinstance(value, pa.RecordBatchReader):
+        return arrow_reader_to_lazyframe(value)
+    if isinstance(value, Iterable):
+        batches = list(value)
+        if not batches:
+            return pl.DataFrame().lazy()
+        reader = pa.RecordBatchReader.from_batches(batches[0].schema, batches)
+        return arrow_reader_to_lazyframe(reader)
+    msg = f"Unsupported tabular input type: {type(value).__name__}"
+    raise TypeError(msg)
+
+
 __all__ = [
     "arrow_reader_to_lazyframe",
     "relation_to_arrow_reader",
     "relation_to_polars_lazy",
     "table_to_lazyframe",
+    "tabular_to_lazyframe",
 ]

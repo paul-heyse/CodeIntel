@@ -6,17 +6,35 @@ schema hashing, and validation, but must not import `codeintel.build.*`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
-from codeintel.core.schemas.service import get_schema_service
+from codeintel.core.schemas.resolution import ResolvedSchemaProvider
+from codeintel.core.schemas.service import SchemaService, get_schema_service
 from codeintel.storage.contracts.catalog_state import contract_catalog_table_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.core.schemas.primitives import TableSchema
+
+
+@dataclass(frozen=True, slots=True)
+class _SchemaServiceProvider:
+    """SchemaProvider wrapper that delegates to SchemaService."""
+
+    service: SchemaService
+
+    def get_table_schema(self, table_key: str) -> TableSchema | None:
+        return self.service.get_table_schema(table_key)
+
+    def require_table_schema(self, table_key: str) -> TableSchema:
+        return self.service.require_table_schema(table_key)
+
+    def iter_table_schemas(self) -> Iterable[TableSchema]:
+        return self.service.iter_table_schemas()
 
 
 @lru_cache(maxsize=1)
@@ -38,12 +56,13 @@ def get_schema_provider() -> SchemaProvider:
     except RuntimeError:
         service = None
     else:
-        return service.table_provider
+        return _SchemaServiceProvider(service)
     catalog_schemas = contract_catalog_table_schemas()
     if not catalog_schemas:
         msg = "Contract catalog not loaded; schema provider unavailable"
         raise RuntimeError(msg)
-    return MappingSchemaProvider(catalog_schemas)
+    fallback = MappingSchemaProvider(catalog_schemas)
+    return ResolvedSchemaProvider(observation_provider=None, fallback_provider=fallback)
 
 
 def require_table_schema(table_key: str) -> TableSchema:

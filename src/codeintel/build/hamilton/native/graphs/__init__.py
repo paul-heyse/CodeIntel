@@ -1,4 +1,4 @@
-"""Native Hamilton graphs package (relation-first)."""
+"""Native Hamilton graphs package (inferable tabular outputs)."""
 
 from __future__ import annotations
 

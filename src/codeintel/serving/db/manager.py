@@ -34,8 +34,6 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.datasets import DatasetManifestIndex, load_dataset_manifests
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.view_registry import ViewRegistry, view_spec_modules
-from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
@@ -392,23 +390,6 @@ def _resolve_environment_path(
         if candidate.is_file():
             return candidate
     return None
-
-
-def _load_inventory_from_registry(pointer: ServingSnapshotPointer) -> SchemaInventory | None:
-    session = DuckDBSession(StorageConfig.for_readonly(pointer.db_path))
-    con = None
-    inventory: SchemaInventory | None = None
-    try:
-        con = session.open_reader()
-        inventory = SchemaInventory.from_registry(con)
-    except (DuckDBError, OSError, RuntimeError, TypeError, ValueError):
-        return None
-    finally:
-        if con is not None:
-            con.close()
-    if inventory is None or not inventory.schemas:
-        return None
-    return inventory
 
 
 def _load_snapshot_context(

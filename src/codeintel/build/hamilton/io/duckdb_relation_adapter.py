@@ -1,39 +1,33 @@
-"""DuckDB relation IO helpers for Hamilton."""
+"""Legacy DuckDB relation IO helpers for Hamilton (deprecated)."""
 
 from __future__ import annotations
 
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, DuckDBRelation
+from codeintel.storage.duckdb_types import DuckDBRelation
 from codeintel.storage.gateway import StorageGateway
 
 
-def _relation_has_repo_commit_columns(relation: DuckDBRelation) -> bool:
-    columns = getattr(relation, "columns", ())
-    return "repo" in columns and "commit" in columns
-
-
 def load_dataset_relation(*, gateway: StorageGateway, ref: DatasetRef) -> DuckDBRelation:
-    """Load a dataset as a DuckDB relation scoped to repo/commit if available.
+    """Reject relation-based dataset loaders.
 
     Parameters
     ----------
     gateway
-        Storage gateway providing the DuckDB connection.
+        Storage gateway (unused).
     ref
-        Dataset reference with table key and snapshot identity.
+        Dataset reference (unused).
 
-    Returns
-    -------
-    DuckDBRelation
-        Relation for the dataset, optionally filtered by repo/commit.
+    Raises
+    ------
+    RuntimeError
+        Always raised because relation-based loaders are deprecated.
     """
-    relation = gateway.relation_from_table_key(ref.table_key)
-    if ref.repo and ref.commit and _relation_has_repo_commit_columns(relation):
-        relation = relation.filter(
-            (ColumnExpression("repo") == ConstantExpression(ref.repo))
-            & (ColumnExpression("commit") == ConstantExpression(ref.commit))
-        )
-    return relation
+    _ = (gateway, ref)
+    msg = (
+        "load_dataset_relation is deprecated for inference-first pipelines. "
+        "Use dataset-backed loaders instead."
+    )
+    raise RuntimeError(msg)
 
 
 __all__ = ["load_dataset_relation"]

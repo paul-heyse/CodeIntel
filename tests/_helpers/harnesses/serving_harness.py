@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.hamilton.run_records import TargetRunRecord
-    from codeintel.build.serving.manifest import ServingSnapshotManifest
+    from codeintel.core.manifests import ServingSnapshotManifest
 
 
 @dataclass

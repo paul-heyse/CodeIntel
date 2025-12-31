@@ -14,20 +14,16 @@ import pyarrow as pa
 
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
-from codeintel.core.schemas.service import get_schema_service
 from codeintel.serving.semantic.datasets import (
     DatasetManifestEntry,
     DatasetManifestIndex,
     dataset_for_entry,
 )
 from codeintel.storage.datasets.contracts import table_schema_from_manifest
-from codeintel.storage.tracking.schema_catalog import SchemaCatalogProvider
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
-
-    from duckdb import DuckDBPyConnection
 
     from codeintel.core.schemas.primitives import ColumnType
 
@@ -198,29 +194,6 @@ class SchemaInventory:
             if schema is None:
                 continue
             schemas[table_key] = schema
-        return cls(schemas=schemas)
-
-    @classmethod
-    def from_registry(cls, con: DuckDBPyConnection) -> SchemaInventory:
-        """Load inventory from the schema registry tables.
-
-        Parameters
-        ----------
-        con
-            DuckDB connection with metadata catalog attached.
-
-        Returns
-        -------
-        SchemaInventory
-            Inventory constructed from metadata.table_schema_registry.
-        """
-        try:
-            service = get_schema_service()
-        except RuntimeError:
-            provider = SchemaCatalogProvider(con)
-        else:
-            provider = service.table_provider
-        schemas = {schema.table_key: schema for schema in provider.iter_table_schemas()}
         return cls(schemas=schemas)
 
     def get(self, table_key: str) -> TableSchema | None:

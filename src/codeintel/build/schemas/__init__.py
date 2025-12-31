@@ -10,13 +10,6 @@ Examples
 >>> provider = get_schema_provider()
 >>> schema = provider.require_table_schema("analytics.function_metrics")
 
-For row bindings, use `get_row_binding()`:
-
->>> from codeintel.build.schemas import get_row_binding
->>> binding = get_row_binding("analytics.function_metrics")
->>> binding.table_key
-'analytics.function_metrics'
-
 For dataset contracts, use `get_contract_for_table_key()`:
 
 >>> from codeintel.build.schemas import get_contract_for_table_key, is_view
@@ -72,12 +65,6 @@ from codeintel.build.schemas.registry import (
     get_schema_provider,
     iter_table_schemas,
     require_table_schema,
-)
-from codeintel.build.schemas.row_registry import (
-    clear_row_binding_cache,
-    column_names_for_table_key,
-    get_row_binding,
-    iter_row_bindings,
 )
 from codeintel.build.schemas.service import (
     clear_schema_service_cache,
@@ -156,11 +143,9 @@ __all__ = [
     "UnifiedSchemaProvider",
     "clear_contract_cache",
     "clear_json_schema_cache",
-    "clear_row_binding_cache",
     "clear_schema_provider_cache",
     "clear_schema_service_cache",
     "clear_unified_provider_cache",
-    "column_names_for_table_key",
     "column_order_for_table_key",
     "compute_json_schema_digest",
     "compute_manifest_diffs",
@@ -177,13 +162,11 @@ __all__ = [
     "get_enriched_contract_service",
     "get_json_schema",
     "get_json_schema_for_table_schema",
-    "get_row_binding",
     "get_schema_provider",
     "get_schema_service",
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
-    "iter_row_bindings",
     "iter_table_schemas",
     "require_table_schema",
     "unified_schema_provider",

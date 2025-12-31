@@ -14,6 +14,7 @@ import duckdb
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.provider import FallbackSchemaProvider
+from codeintel.core.schemas.resolution import ResolvedArrowSchemaProvider, ResolvedSchemaProvider
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import META_CATALOG_NAME
@@ -27,6 +28,7 @@ from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.inference import InferenceGateway
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.metadata import (
     SchemaValidationRun,
     bootstrap_metadata_datasets,
@@ -35,8 +37,7 @@ from codeintel.storage.metadata import (
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
-from codeintel.storage.schema.arrow_schema import RegistryArrowSchemaProvider
-from codeintel.storage.tracking.schema_catalog import SchemaCatalogProvider
+from codeintel.storage.tracking.schema_catalog import SchemaCatalogProvider, SchemaCatalogTracking
 from codeintel.storage.validation import (
     ContractValidationMode,
     clear_contract_validation_cache,
@@ -103,6 +104,8 @@ def _registry_has_schemas(con: duckdb.DuckDBPyConnection) -> bool:
 def _is_catalog_provider(provider: SchemaProvider) -> bool:
     if isinstance(provider, SchemaCatalogProvider):
         return True
+    if isinstance(provider, ResolvedSchemaProvider):
+        return isinstance(provider.fallback_provider, SchemaCatalogProvider)
     if isinstance(provider, FallbackSchemaProvider):
         return isinstance(provider.primary, SchemaCatalogProvider)
     return False
@@ -127,9 +130,18 @@ def _maybe_set_schema_service_from_catalog(con: duckdb.DuckDBPyConnection) -> No
             provider = catalog_provider
         if service is not None and _is_catalog_provider(service.table_provider):
             return
+        observation_provider = SchemaCatalogTracking(MinimalStorageGateway(con))
+        resolved_provider = ResolvedSchemaProvider(
+            observation_provider=observation_provider,
+            fallback_provider=provider,
+        )
+        resolved_arrow_provider = ResolvedArrowSchemaProvider(
+            observation_provider=observation_provider,
+            fallback_provider=provider,
+        )
         service = SchemaService(
-            table_provider=provider,
-            arrow_provider=RegistryArrowSchemaProvider(con),
+            table_provider=resolved_provider,
+            arrow_provider=resolved_arrow_provider,
         )
         set_schema_service(service)
         clear_schema_provider_cache()

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
 
 import duckdb
 
-from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import apply_all_schemas
+from codeintel.storage.views.dependencies import toposort
+from codeintel.storage.views.sqlglot_views import ViewPlanSpec, view_plan_map
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -89,6 +92,80 @@ def seed_subsystem(con: DuckDBPyConnection, *, overrides: dict[str, object] | No
     )
 
 
+def _normalize_view_keys(
+    view_map: Mapping[str, ViewPlanSpec],
+    view_keys: Iterable[str] | None,
+) -> set[str]:
+    if view_keys is None:
+        return set(view_map)
+    lower_map = {key.lower(): key for key in view_map}
+    pending = list(view_keys)
+    selected: set[str] = set()
+    missing: set[str] = set()
+    while pending:
+        raw = pending.pop()
+        resolved = lower_map.get(raw.lower())
+        if resolved is None:
+            missing.add(raw)
+            continue
+        if resolved in selected:
+            continue
+        selected.add(resolved)
+        pending.extend(
+            dep for dep in view_map[resolved]["dependencies"] if dep.lower() in lower_map
+        )
+    if missing:
+        msg = f"Unknown view keys requested: {sorted(missing)}"
+        raise KeyError(msg)
+    return selected
+
+
+def _view_dependency_graph(
+    view_map: Mapping[str, ViewPlanSpec],
+    *,
+    view_keys: set[str],
+) -> dict[str, frozenset[str]]:
+    selected_lower = {key.lower() for key in view_keys}
+    deps: dict[str, frozenset[str]] = {}
+    for view_key in view_keys:
+        ref_set = {
+            dep.lower()
+            for dep in view_map[view_key]["dependencies"]
+            if dep.lower() in selected_lower
+        }
+        deps[view_key.lower()] = frozenset(ref_set - {view_key.lower()})
+    return deps
+
+
+def materialize_view_plans(
+    con: DuckDBPyConnection,
+    *,
+    view_keys: Iterable[str] | None = None,
+) -> None:
+    """Materialize precompiled view plans into DuckDB (test helper).
+
+    Parameters
+    ----------
+    con
+        DuckDB connection to receive the views.
+    view_keys
+        Optional view keys to materialize; dependencies are added automatically.
+        When None, all view plans are materialized.
+    """
+    view_map = view_plan_map()
+    selected = _normalize_view_keys(view_map, view_keys)
+    if not selected:
+        return
+    deps = _view_dependency_graph(view_map, view_keys=selected)
+    order = toposort([key.lower() for key in selected], deps, raise_on_cycle=True)
+    original_by_lower = {key.lower(): key for key in selected}
+    for view_key_lower in order:
+        view_key = original_by_lower[view_key_lower]
+        spec = view_map[view_key]
+        schema, table = split_table_key(view_key)
+        con.execute(f"CREATE OR REPLACE VIEW {schema}.{table} AS {spec['sql']}")
+
+
 def create_bootstrapped_docs_db(db_path: Path) -> None:
     """Create a file-backed DuckDB with schemas, views, and metadata bootstrapped."""
     con = duckdb.connect(":memory:")
@@ -96,7 +173,7 @@ def create_bootstrapped_docs_db(db_path: Path) -> None:
         con.execute(f"ATTACH DATABASE '{db_path}' AS test_db (STORAGE_VERSION 'v1.4.0')")
         con.execute("USE test_db")
         apply_all_schemas(con)
-        MinimalStorageGateway(con).policy.ensure_all_views(overwrite=True, strict=True)
+        materialize_view_plans(con)
         bootstrap_metadata_datasets(con, include_views=True)
     finally:
         con.close()
@@ -105,5 +182,6 @@ def create_bootstrapped_docs_db(db_path: Path) -> None:
 __all__ = [
     "create_bootstrapped_docs_db",
     "list_indexes",
+    "materialize_view_plans",
     "seed_subsystem",
 ]

@@ -10,8 +10,8 @@ from codeintel.build.schemas import (
     get_schema_provider,
     iter_contracts,
     iter_contracts_by_table_key,
-    iter_row_bindings,
 )
+from codeintel.config.datasets.contracts import get_row_bindings
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
@@ -203,7 +203,7 @@ def test_dataset_contract_column_names() -> None:
 def test_dataset_contract_has_row_binding() -> None:
     """Verify DatasetContract.has_row_binding method."""
     contracts = {c.name: c for c in iter_contracts()}
-    bindings = {b.table_key: b for b in iter_row_bindings()}
+    bindings = get_row_bindings()
 
     for contract in contracts.values():
         if contract.table_key in bindings:

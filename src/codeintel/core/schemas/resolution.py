@@ -68,11 +68,22 @@ class SchemaResolutionResult:
 class ResolvedSchemaProvider:
     """Schema provider wrapper that prefers observations."""
 
-    observation_provider: SchemaObservationProvider
+    observation_provider: SchemaObservationProvider | None
     fallback_provider: SchemaProvider
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
-        """Return the resolved schema for a table key."""
+        """Return the resolved schema for a table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        TableSchema | None
+            Resolved table schema when available.
+        """
         result = resolve_table_schema(
             table_key,
             observation_provider=self.observation_provider,
@@ -81,7 +92,23 @@ class ResolvedSchemaProvider:
         return result.table_schema
 
     def require_table_schema(self, table_key: str) -> TableSchema:
-        """Return the resolved schema for a table key, raising if missing."""
+        """Return the resolved schema for a table key, raising if missing.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        TableSchema
+            Resolved table schema.
+
+        Raises
+        ------
+        KeyError
+            If the table key cannot be resolved.
+        """
         schema = self.get_table_schema(table_key)
         if schema is None:
             msg = f"Unknown table schema: {table_key}"
@@ -89,7 +116,13 @@ class ResolvedSchemaProvider:
         return schema
 
     def iter_table_schemas(self) -> Iterable[TableSchema]:
-        """Iterate resolved schemas in fallback provider order."""
+        """Iterate resolved schemas in fallback provider order.
+
+        Yields
+        ------
+        TableSchema
+            Resolved table schemas.
+        """
         for schema in self.fallback_provider.iter_table_schemas():
             resolved = resolve_table_schema(
                 schema.table_key,
@@ -100,7 +133,18 @@ class ResolvedSchemaProvider:
                 yield resolved.table_schema
 
     def derivation(self, table_key: str) -> SchemaDerivation | None:
-        """Return derivation metadata for resolved schemas."""
+        """Return derivation metadata for resolved schemas.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        SchemaDerivation | None
+            Derivation metadata when available.
+        """
         result = resolve_table_schema(
             table_key,
             observation_provider=self.observation_provider,
@@ -116,6 +160,33 @@ class ResolvedSchemaProvider:
         if isinstance(self.fallback_provider, SchemaDerivationProvider):
             return self.fallback_provider.derivation(table_key)
         return None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedArrowSchemaProvider:
+    """Arrow schema provider wrapper that prefers observations."""
+
+    observation_provider: SchemaObservationProvider | None
+    fallback_provider: SchemaProvider
+
+    def get_arrow_schema(self, table_key: str) -> pa.Schema | None:
+        """Return the resolved Arrow schema for a table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        pa.Schema | None
+            Resolved Arrow schema when available.
+        """
+        return resolve_arrow_schema(
+            table_key,
+            observation_provider=self.observation_provider,
+            schema_provider=self.fallback_provider,
+        )
 
 
 def resolve_table_schema(
@@ -225,7 +296,7 @@ def _load_observation(
         return None
     try:
         return observation_provider.load_latest_schema_observation(table_key=table_key)
-    except (RuntimeError, TypeError, ValueError):
+    except (OSError, RuntimeError, TypeError, ValueError):
         return None
 
 
@@ -277,6 +348,7 @@ def _source_from_kind(kind: str) -> SchemaResolutionSource:
 
 
 __all__ = [
+    "ResolvedArrowSchemaProvider",
     "ResolvedSchemaProvider",
     "SchemaDerivationProvider",
     "SchemaObservationProvider",

@@ -10,6 +10,7 @@ import pytest
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
 from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
 from codeintel.analytics.graphs.symbol_graph_metrics import build_symbol_graph_metrics_module_rows
+from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -208,7 +209,7 @@ def test_symbol_and_config_metrics_populate_and_views_create(
             "analytics.config_projection_module_edges",
             config_rows.module_edge_rows,
         )
-    test_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
+    materialize_view_plans(test_ctx.con)
 
     sym_rows = test_ctx.con.execute(
         "SELECT module, symbol_community_id FROM analytics.symbol_graph_metrics_modules"
@@ -253,7 +254,7 @@ def test_subsystem_agreement_exposed_in_views(
             commit=test_ctx.commit,
         )
         test_ctx.gateway.policy.bulk_insert("analytics.subsystem_agreement", agreement_rows)
-    test_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
+    materialize_view_plans(test_ctx.con)
 
     agree_rows = test_ctx.con.execute(
         "SELECT module, agrees FROM docs.v_subsystem_agreement"

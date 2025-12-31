@@ -240,12 +240,8 @@ class DatasetSeedHarness:
         return sample_reader(reader, max_rows=self.scan_settings.sample_rows)
 
 
-MiniSeedHarness = DatasetSeedHarness
-
-
 __all__ = [
     "DatasetSeedHarness",
-    "MiniSeedHarness",
     "SeedDatasetConfig",
     "SeedScanMode",
     "SeedScanSettings",

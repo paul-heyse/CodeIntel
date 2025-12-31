@@ -1,6 +1,8 @@
-"""Graph table targets built with relation-first nodes."""
+"""Graph table targets built with inferable tabular nodes."""
 
 from __future__ import annotations
+
+import polars as pl
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -31,9 +33,8 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.storage.gateway import DuckDBRelation
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, DuckDBRelation)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, pl.LazyFrame)
 
 CALL_GRAPH_TARGET_NAME = "call_graph"
 IMPORT_GRAPH_TARGET_NAME = "import_graph"
@@ -56,13 +57,13 @@ DFG_SAVE_CONTEXT = SaverContext(domain="graphs", target=DFG_TARGET_NAME)
     spec=RelationTableSaveSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_NODES_TABLE_KEY)
-def call_graph__nodes_table(call_graph_nodes: DuckDBRelation) -> DuckDBRelation:
+def call_graph__nodes_table(call_graph_nodes: pl.LazyFrame) -> pl.LazyFrame:
     """Persist call graph nodes.
 
     Returns
     -------
-    DuckDBRelation
-        Relation to materialize for call graph nodes.
+    polars.LazyFrame
+        Lazy frame to materialize for call graph nodes.
     """
     return call_graph_nodes
 
@@ -72,13 +73,13 @@ def call_graph__nodes_table(call_graph_nodes: DuckDBRelation) -> DuckDBRelation:
     spec=RelationTableSaveSpec(table_key=CALL_GRAPH_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_EDGES_TABLE_KEY)
-def call_graph__edges_table(call_graph_edges: DuckDBRelation) -> DuckDBRelation:
+def call_graph__edges_table(call_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
     """Persist call graph edges.
 
     Returns
     -------
-    DuckDBRelation
-        Relation to materialize for call graph edges.
+    polars.LazyFrame
+        Lazy frame to materialize for call graph edges.
     """
     return call_graph_edges
 
@@ -88,13 +89,13 @@ def call_graph__edges_table(call_graph_edges: DuckDBRelation) -> DuckDBRelation:
     spec=RelationTableSaveSpec(table_key=IMPORT_MODULES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, table_key=IMPORT_MODULES_TABLE_KEY)
-def import_graph__modules_table(import_modules: DuckDBRelation) -> DuckDBRelation:
+def import_graph__modules_table(import_modules: pl.LazyFrame) -> pl.LazyFrame:
     """Persist import modules.
 
     Returns
     -------
-    DuckDBRelation
-        Relation to materialize for import modules.
+    polars.LazyFrame
+        Lazy frame to materialize for import modules.
     """
     return import_modules
 
@@ -108,13 +109,13 @@ def import_graph__modules_table(import_modules: DuckDBRelation) -> DuckDBRelatio
     target=IMPORT_GRAPH_TARGET_NAME,
     table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
 )
-def import_graph__edges_table(import_graph_edges: DuckDBRelation) -> DuckDBRelation:
+def import_graph__edges_table(import_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
     """Persist import graph edges.
 
     Returns
     -------
-    DuckDBRelation
-        Relation to materialize for import graph edges.
+    polars.LazyFrame
+        Lazy frame to materialize for import graph edges.
     """
     return import_graph_edges
 
@@ -124,13 +125,13 @@ def import_graph__edges_table(import_graph_edges: DuckDBRelation) -> DuckDBRelat
     spec=RelationTableSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_BLOCKS_TABLE_KEY)
-def cfg__blocks_table(cfg_blocks: DuckDBRelation) -> DuckDBRelation:
+def cfg__blocks_table(cfg_blocks: pl.LazyFrame) -> pl.LazyFrame:
     """Persist CFG blocks.
 
     Returns
     -------
-    DuckDBRelation
-        Relation to materialize for CFG blocks.
+    polars.LazyFrame
+        Lazy frame to materialize for CFG blocks.
     """
     return cfg_blocks
 
@@ -140,13 +141,13 @@ def cfg__blocks_table(cfg_blocks: DuckDBRelation) -> DuckDBRelation:
     spec=RelationTableSaveSpec(table_key=CFG_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_EDGES_TABLE_KEY)
-def cfg__edges_table(cfg_edges: DuckDBRelation) -> DuckDBRelation:
+def cfg__edges_table(cfg_edges: pl.LazyFrame) -> pl.LazyFrame:
     """Persist CFG edges.
 
     Returns
     -------
-    DuckDBRelation
-        Relation to materialize for CFG edges.
+    polars.LazyFrame
+        Lazy frame to materialize for CFG edges.
     """
     return cfg_edges
 
@@ -156,13 +157,13 @@ def cfg__edges_table(cfg_edges: DuckDBRelation) -> DuckDBRelation:
     spec=RelationTableSaveSpec(table_key=DFG_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=DFG_TARGET_NAME, table_key=DFG_EDGES_TABLE_KEY)
-def dfg__edges_table(dfg_edges: DuckDBRelation) -> DuckDBRelation:
+def dfg__edges_table(dfg_edges: pl.LazyFrame) -> pl.LazyFrame:
     """Persist DFG edges.
 
     Returns
     -------
-    DuckDBRelation
-        Relation to materialize for DFG edges.
+    polars.LazyFrame
+        Lazy frame to materialize for DFG edges.
     """
     return dfg_edges
 

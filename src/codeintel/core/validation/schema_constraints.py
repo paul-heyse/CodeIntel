@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
 from codeintel.core.schemas.primitives import TableSchema
@@ -35,19 +36,27 @@ def schema_errors(
     resolved_extras = extras_column or _extras_column_name(actual_schema)
     expected_names = [column.name for column in table_schema.columns]
     actual_names = [name for name in actual_schema.names if name != resolved_extras]
+    allow_extra = extras_policy_from_schema(actual_schema) != "reject"
+    expected_set = set(expected_names)
 
     errors: list[str] = []
     missing = [name for name in expected_names if name not in actual_names]
-    extra = [name for name in actual_names if name not in expected_names]
+    extra = [name for name in actual_names if name not in expected_set]
     if missing:
         errors.append(f"Missing columns: {', '.join(missing)}")
-    if extra:
+    if extra and not allow_extra:
         errors.append(f"Unexpected columns: {', '.join(extra)}")
-    if not missing and not extra and expected_names != actual_names:
-        errors.append(
-            "Column order mismatch: expected "
-            f"{', '.join(expected_names)} but got {', '.join(actual_names)}"
+    if not missing:
+        ordered_actual = (
+            [name for name in actual_names if name in expected_set]
+            if allow_extra
+            else actual_names
         )
+        if expected_names != ordered_actual:
+            errors.append(
+                "Column order mismatch: expected "
+                f"{', '.join(expected_names)} but got {', '.join(ordered_actual)}"
+            )
 
     by_name = {column.name: column for column in table_schema.columns}
     for name in expected_names:

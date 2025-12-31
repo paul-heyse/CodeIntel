@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
 
@@ -30,7 +31,7 @@ def empty_reader_from_schema(schema: pa.Schema) -> pa.RecordBatchReader:
 def scan_dataset_reader(
     dataset_dir: Path,
     *,
-    columns: Sequence[str],
+    columns: Sequence[str] | None = None,
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
     fragment_readahead: int | None = None,
 ) -> pa.RecordBatchReader | None:
@@ -41,7 +42,7 @@ def scan_dataset_reader(
     dataset_dir
         Directory containing dataset files.
     columns
-        Column projection for the scan.
+        Optional column projection for the scan. When omitted, scan all columns.
     batch_size
         Batch size for Arrow scanner.
     fragment_readahead
@@ -54,16 +55,43 @@ def scan_dataset_reader(
     """
     if not dataset_dir.is_dir():
         return None
-    scan_kwargs: dict[str, object] = {
-        "columns": list(columns),
-        "batch_size": batch_size,
-    }
+    scan_kwargs: dict[str, object] = {"batch_size": batch_size}
+    if columns is not None:
+        scan_kwargs["columns"] = list(columns)
     if fragment_readahead is not None:
         scan_kwargs["fragment_readahead"] = fragment_readahead
     try:
         dataset = ds.dataset(str(dataset_dir), format="parquet")
         scanner = dataset.scanner(**scan_kwargs)
         return scanner.to_reader()
+    except (OSError, ValueError, pa.ArrowInvalid):
+        return None
+
+
+def scan_dataset_lazyframe(
+    dataset_dir: Path,
+    *,
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+) -> pl.LazyFrame | None:
+    """Return a Polars LazyFrame for a dataset directory.
+
+    Parameters
+    ----------
+    dataset_dir
+        Directory containing dataset files.
+    batch_size
+        Batch size for Arrow-backed scanning.
+
+    Returns
+    -------
+    polars.LazyFrame | None
+        Lazy frame when the dataset is available, otherwise None.
+    """
+    if not dataset_dir.is_dir():
+        return None
+    try:
+        dataset = ds.dataset(str(dataset_dir), format="parquet")
+        return pl.scan_pyarrow_dataset(dataset, batch_size=batch_size)
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
 
@@ -104,4 +132,9 @@ def sample_reader(
     return pa.RecordBatchReader.from_batches(reader.schema, _iter_batches())
 
 
-__all__ = ["empty_reader_from_schema", "sample_reader", "scan_dataset_reader"]
+__all__ = [
+    "empty_reader_from_schema",
+    "sample_reader",
+    "scan_dataset_lazyframe",
+    "scan_dataset_reader",
+]

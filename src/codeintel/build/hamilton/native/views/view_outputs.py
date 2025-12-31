@@ -1,18 +1,17 @@
-"""Hamilton-native view materialization using Polars + SQLGlot."""
+"""Hamilton-native view materialization using Polars + precompiled SQL plans."""
 
 from __future__ import annotations
 
 import inspect
 import json
+import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
 import polars as pl
-import pyarrow.dataset as ds
-from sqlglot import exp
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -31,16 +30,25 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
+from codeintel.build.schemas import get_schema_provider
+from codeintel.core.columnar.dataset_scanner import scan_dataset_lazyframe
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, SCHEMAS
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.metadata.sync import (
+    sync_derived_lineage_columns,
+    sync_derived_lineage_edges,
+)
+from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
 
 VIEWS_TARGET_NAME = "views"
 VIEWS_DOMAIN = "views"
 
-_VIEW_AST_PATH = (
-    Path(__file__).resolve().parents[4] / "storage" / "views" / "view_ast_map.json"
+_VIEW_PLAN_PATH = (
+    Path(__file__).resolve().parents[4] / "storage" / "views" / "view_plan_map.json"
 )
 
 _MANUAL_VIEW_KEYS: frozenset[str] = frozenset(
@@ -52,12 +60,39 @@ _MANUAL_VIEW_KEYS: frozenset[str] = frozenset(
 
 _TABLE_ALIAS_RE = re.compile(r"[^a-zA-Z0-9_]")
 
+LOG = logging.getLogger(__name__)
 
-class ViewAstSpec(TypedDict):
-    """Serialized view definition used for SQLGlot reconstruction."""
+_DENY_EXTERNAL_VIEW_FUNCS: frozenset[str] = frozenset(
+    {
+        "read_avro",
+        "read_csv",
+        "read_csv_auto",
+        "read_delta",
+        "read_excel",
+        "read_json",
+        "read_json_auto",
+        "read_ndjson",
+        "read_orc",
+        "read_parquet",
+        "read_sqlite",
+        "iceberg_scan",
+        "delta_scan",
+        "parquet_scan",
+        "sqlite_scan",
+    }
+)
+_VIEW_SQL_POLICY = SqlIngressPolicy(
+    allowed_schemas=frozenset(SCHEMAS),
+    deny_functions=_DENY_EXTERNAL_VIEW_FUNCS,
+)
+
+
+class ViewPlanSpec(TypedDict):
+    """Serialized view plan specification."""
 
     node_name: str
-    ast: list[object]
+    sql: str
+    dependencies: list[str]
     tags: dict[str, str]
 
 
@@ -79,47 +114,40 @@ class _ViewInputs:
     relationships: pl.LazyFrame
 
 
-def _load_view_map() -> dict[str, ViewAstSpec]:
-    raw = json.loads(_VIEW_AST_PATH.read_text(encoding="utf-8"))
+def _load_view_map() -> dict[str, ViewPlanSpec]:
+    raw = json.loads(_VIEW_PLAN_PATH.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        msg = "view_ast_map.json must contain a mapping"
+        msg = "view_plan_map.json must contain a mapping"
         raise TypeError(msg)
-    view_map: dict[str, ViewAstSpec] = {}
+    view_map: dict[str, ViewPlanSpec] = {}
     for key, value in raw.items():
         if not isinstance(key, str) or not isinstance(value, dict):
             continue
         node_name = value.get("node_name")
-        ast = value.get("ast")
+        sql = value.get("sql")
+        dependencies = value.get("dependencies")
         tags = value.get("tags")
         if (
             not isinstance(node_name, str)
-            or not isinstance(ast, list)
+            or not isinstance(sql, str)
+            or not isinstance(dependencies, list)
             or not isinstance(tags, dict)
         ):
             continue
         tag_map = {str(tag_key): str(tag_value) for tag_key, tag_value in tags.items()}
-        view_map[key] = {"node_name": node_name, "ast": ast, "tags": tag_map}
+        view_map[key] = {
+            "node_name": node_name,
+            "sql": sql,
+            "dependencies": [str(dep) for dep in dependencies],
+            "tags": tag_map,
+        }
     return view_map
 
 
-def _table_key_from_table(table: exp.Table) -> str:
-    db = table.db
-    if db:
-        return f"{db}.{table.name}"
-    return table.name
-
-
-def _view_dependencies(ast: list[object], *, view_key: str) -> tuple[str, ...]:
-    expression = exp.Expression.load(ast)
-    deps = {_table_key_from_table(table) for table in expression.find_all(exp.Table)}
-    deps.discard(view_key)
-    return tuple(sorted(deps))
-
-
-def _all_dependencies(view_map: Mapping[str, ViewAstSpec]) -> tuple[str, ...]:
+def _all_dependencies(view_map: Mapping[str, ViewPlanSpec]) -> tuple[str, ...]:
     deps: set[str] = set()
-    for view_key, spec in view_map.items():
-        deps.update(_view_dependencies(spec["ast"], view_key=view_key))
+    for spec in view_map.values():
+        deps.update(spec["dependencies"])
     return tuple(sorted(deps))
 
 
@@ -137,22 +165,26 @@ def _table_alias(table_key: str) -> str:
     return cleaned
 
 
-def _rewrite_sql(ast: list[object], alias_map: Mapping[str, str]) -> str:
-    expression = exp.Expression.load(ast)
-    for table in expression.find_all(exp.Table):
-        table_key = _table_key_from_table(table)
-        alias = alias_map.get(table_key)
-        if alias is None:
-            continue
-        table.set("this", exp.to_identifier(alias))
-        table.set("db", None)
-        table.set("catalog", None)
-    return expression.sql(dialect="duckdb")
+def _validate_view_sql(*, table_key: str, sql: str) -> None:
+    try:
+        assert_select_perimeter(sql, policy=_VIEW_SQL_POLICY)
+    except UnsafeSqlError as exc:
+        msg = f"Unsafe SQL perimeter for view {table_key}: {exc}"
+        raise ValueError(msg) from exc
 
 
 def _extra_tags(tags: Mapping[str, str]) -> Mapping[TagKey, TagValue]:
     filtered = {key: value for key, value in tags.items() if key != ht.TAG_TABLE_KEY}
     return cast("Mapping[TagKey, TagValue]", filtered)
+
+
+def _normalize_view_tags(tags: Mapping[str, str]) -> dict[str, str]:
+    normalized = dict(tags)
+    if tags.get(ht.TAG_OUTPUT_KIND) == ht.OUTPUT_KIND_SEMANTIC_VIEW:
+        normalized.setdefault(ht.TAG_LAYER, "semantic")
+        normalized.setdefault(ht.TAG_VERSION, "1")
+        normalized.setdefault(ht.TAG_KIND, "view")
+    return normalized
 
 
 def _apply_semantic_attr(fn: Callable[..., object], tags: Mapping[str, str]) -> None:
@@ -214,8 +246,11 @@ def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pl.
         if not snapshot_dir.exists():
             msg = f"Missing dataset snapshot directory: {snapshot_dir}"
             raise FileNotFoundError(msg)
-        dataset = ds.dataset(str(snapshot_dir), format="parquet", partitioning="hive")
-        return pl.scan_pyarrow_dataset(dataset, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        frame = scan_dataset_lazyframe(snapshot_dir, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        if frame is None:
+            msg = f"Missing dataset snapshot directory: {snapshot_dir}"
+            raise FileNotFoundError(msg)
+        return frame
 
     loader = set_signature(loader, _loader_signature(dataset_param))
     loader.__name__ = node_name
@@ -288,8 +323,8 @@ def _build_sql_view_node(
                 msg = f"Missing dependency {param_name} for {plan.table_key}"
                 raise ValueError(msg)
             tables[alias_map[table_key]] = _ensure_lazyframe(value, param_name=param_name)
-        ctx = pl.SQLContext(**tables)
-        return ctx.execute(plan.sql)
+        ctx = pl.SQLContext(frames=tables)
+        return ctx.execute(plan.sql, eager=False)
 
     view_fn = set_signature(view_fn, _view_signature(tuple(param_by_table.values())))
     view_fn.__name__ = plan.node_name
@@ -426,9 +461,7 @@ def _build_data_models_view(
             param_by_table=param_by_table,
         )
         base = inputs.data_models.with_columns(
-            pl.coalesce([pl.col("base_classes_json"), pl.lit("[]")]).alias(
-                "base_classes_json"
-            )
+            pl.coalesce([pl.col("base_classes_json"), pl.lit("[]")]).alias("base_classes_json")
         )
         fields = _data_model_fields(inputs.fields, normalized=normalized)
         relationships = _data_model_relationships(inputs.relationships, normalized=normalized)
@@ -489,37 +522,33 @@ def _build_data_models_view(
     return _decorate_view_node(view_fn, plan=plan)
 
 
-_VIEW_AST_MAP = _load_view_map()
-_VIEW_KEYS = frozenset(_VIEW_AST_MAP)
+_VIEW_PLAN_MAP = _load_view_map()
+_VIEW_KEYS = frozenset(_VIEW_PLAN_MAP)
 
-_ALIAS_BY_TABLE_KEY = {key: _table_alias(key) for key in _all_dependencies(_VIEW_AST_MAP)}
+_ALIAS_BY_TABLE_KEY = {key: _table_alias(key) for key in _all_dependencies(_VIEW_PLAN_MAP)}
 
 _DEPENDENCIES_BY_VIEW = {
-    view_key: _view_dependencies(spec["ast"], view_key=view_key)
-    for view_key, spec in _VIEW_AST_MAP.items()
+    view_key: tuple(spec["dependencies"]) for view_key, spec in _VIEW_PLAN_MAP.items()
 }
 
 _BASE_TABLE_KEYS = tuple(
     sorted(
-        {
-            dep
-            for deps in _DEPENDENCIES_BY_VIEW.values()
-            for dep in deps
-            if dep not in _VIEW_KEYS
-        }
+        {dep for deps in _DEPENDENCIES_BY_VIEW.values() for dep in deps if dep not in _VIEW_KEYS}
     )
 )
 
 
 _VIEW_PLANS: dict[str, ViewPlan] = {}
-for view_key, spec in _VIEW_AST_MAP.items():
-    sql = _rewrite_sql(spec["ast"], _ALIAS_BY_TABLE_KEY)
+for view_key, spec in _VIEW_PLAN_MAP.items():
+    sql = spec["sql"]
+    _validate_view_sql(table_key=view_key, sql=sql)
+    tags = _normalize_view_tags(spec["tags"])
     _VIEW_PLANS[view_key] = ViewPlan(
         table_key=view_key,
-        node_name=_view_node_name(view_key),
+        node_name=spec["node_name"],
         sql=sql,
         dependencies=_DEPENDENCIES_BY_VIEW[view_key],
-        tags=spec["tags"],
+        tags=tags,
     )
 
 
@@ -536,7 +565,7 @@ for view_key, plan in _VIEW_PLANS.items():
     if view_key in _MANUAL_VIEW_KEYS:
         continue
     param_by_table = {
-        dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _view_node_name(dep)
+        dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
         for dep in plan.dependencies
     }
     view_fn = _build_sql_view_node(
@@ -551,7 +580,7 @@ for view_key, plan in _VIEW_PLANS.items():
 for view_key in _MANUAL_VIEW_KEYS:
     plan = _VIEW_PLANS[view_key]
     param_by_table = {
-        dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _view_node_name(dep)
+        dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
         for dep in plan.dependencies
     }
     view_fn = _build_data_models_view(
@@ -564,6 +593,122 @@ for view_key in _MANUAL_VIEW_KEYS:
 
 
 VIEW_TABLE_KEYS = tuple(sorted(_VIEW_PLANS))
+
+def _view_output_nodes(catalog: DagCatalog) -> dict[str, str]:
+    outputs: dict[str, str] = {}
+    for node in catalog.nodes.values():
+        tags = node.tags
+        if tags.get(ht.TAG_TARGET) != VIEWS_TARGET_NAME:
+            continue
+        if tags.get(ht.TAG_NODE_TYPE) != ht.NODE_TYPE_DATASET:
+            continue
+        table_key = tags.get(ht.TAG_TABLE_KEY)
+        if isinstance(table_key, str) and table_key:
+            outputs.setdefault(table_key, node.name)
+    return outputs
+
+
+def _resolve_table_columns(*, table_key: str, env: BuildEnv) -> tuple[str, ...] | None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        provider = None
+    resolution = resolve_table_schema(
+        table_key,
+        observation_provider=env.gateway.schemas,
+        schema_provider=provider,
+    )
+    table_schema = resolution.table_schema
+    if table_schema is None:
+        return None
+    return tuple(column.name.lower() for column in table_schema.columns if column.name)
+
+
+def _direct_table_dependencies(
+    *,
+    catalog: DagCatalog,
+    node_name: str,
+) -> tuple[str, ...]:
+    node = catalog.nodes.get(node_name)
+    if node is None:
+        return ()
+    deps: set[str] = set()
+    for dep_name in node.deps:
+        dep_node = catalog.nodes.get(dep_name)
+        if dep_node is None:
+            continue
+        table_key = dep_node.tags.get(ht.TAG_TABLE_KEY)
+        if isinstance(table_key, str) and table_key:
+            deps.add(table_key)
+    return tuple(sorted(deps))
+
+
+def _column_lineage_from_schemas(
+    *,
+    env: BuildEnv,
+    downstream_table: str,
+    upstream_tables: Iterable[str],
+) -> dict[str, frozenset[str]]:
+    downstream_columns = _resolve_table_columns(table_key=downstream_table, env=env)
+    if not downstream_columns:
+        return {}
+    upstream_columns: dict[str, tuple[str, ...]] = {}
+    for table_key in upstream_tables:
+        resolved = _resolve_table_columns(table_key=table_key, env=env)
+        if resolved:
+            upstream_columns[table_key] = resolved
+    column_lineage: dict[str, frozenset[str]] = {}
+    for column in downstream_columns:
+        refs: set[str] = set()
+        for upstream_key, columns in upstream_columns.items():
+            if column in columns:
+                refs.add(f"{upstream_key.lower()}.{column}")
+        if refs:
+            column_lineage[column] = frozenset(sorted(refs))
+    return column_lineage
+
+
+def _view_lineage_payload(
+    env: BuildEnv,
+    catalog: DagCatalog,
+) -> tuple[dict[str, frozenset[str]], dict[str, dict[str, frozenset[str]]]]:
+    lineage: dict[str, frozenset[str]] = {}
+    column_lineage: dict[str, dict[str, frozenset[str]]] = {}
+    view_nodes = _view_output_nodes(catalog)
+    for view_key, node_name in view_nodes.items():
+        view_key_lower = view_key.lower()
+        deps = _direct_table_dependencies(catalog=catalog, node_name=node_name)
+        deps_lower = tuple(dep.lower() for dep in deps if dep.lower() != view_key_lower)
+        lineage[view_key_lower] = frozenset(deps_lower)
+        column_map = _column_lineage_from_schemas(
+            env=env,
+            downstream_table=view_key,
+            upstream_tables=deps,
+        )
+        if column_map:
+            column_lineage[view_key_lower] = column_map
+    return lineage, column_lineage
+
+
+def _sync_view_lineage(env: BuildEnv, catalog: DagCatalog) -> None:
+    repo = env.repo
+    commit = env.commit
+    if not repo or not commit:
+        return
+    lineage, column_lineage = _view_lineage_payload(env, catalog)
+    try:
+        sync_derived_lineage_edges(env.gateway.con, repo=repo, commit=commit, lineage=lineage)
+    except DuckDBError:
+        LOG.exception("Failed to sync derived lineage edges repo=%s commit=%s", repo, commit)
+    try:
+        sync_derived_lineage_columns(
+            env.gateway.con,
+            repo=repo,
+            commit=commit,
+            lineage=column_lineage,
+        )
+    except DuckDBError:
+        LOG.exception("Failed to sync derived lineage columns repo=%s commit=%s", repo, commit)
 
 views__table_materializations = make_table_materializations_collector(
     domain=VIEWS_DOMAIN,
@@ -579,7 +724,23 @@ def t__views(
     catalog: DagCatalog,
     views__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
-    """Finalize view materialization run record."""
+    """Finalize view materialization run record.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway access.
+    catalog
+        DAG catalog for resolving view outputs.
+    views__table_materializations
+        Materialization results for view table outputs.
+
+    Returns
+    -------
+    TargetRunRecord
+        View materialization run record.
+    """
+    _sync_view_lineage(env, catalog)
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,

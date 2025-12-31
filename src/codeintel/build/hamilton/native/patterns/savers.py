@@ -11,11 +11,7 @@ from hamilton.function_modifiers import check_output_custom, resolve_from_config
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.data_quality import build_table_schema_validators
-from codeintel.build.hamilton.materializers import (
-    ArrowDatasetSaver,
-    DuckDBRelationSaver,
-    FileArtifactSaver,
-)
+from codeintel.build.hamilton.materializers import ArrowDatasetSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -62,7 +58,7 @@ class DatasetSaveSpec:
 
 @dataclass(frozen=True, slots=True)
 class RelationTableSaveSpec:
-    """Specification for saving a DuckDB relation table."""
+    """Specification for saving a table output."""
 
     table_key: str
     validation_profile: str | None = "lenient"
@@ -273,7 +269,7 @@ def save_relation_table(
     context: SaverContext,
     spec: RelationTableSaveSpec,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Return a decorator that tags and materializes relation table outputs.
+    """Return a decorator that tags and materializes table outputs.
 
     Parameters
     ----------
@@ -288,7 +284,7 @@ def save_relation_table(
         Decorator that tags and materializes the relation table output.
     """
     decorator = SaveToObjectMetadataDecorator(
-        [DuckDBRelationSaver],
+        [ArrowDatasetSaver],
         output_name_=spec.output_name or materialize_node(spec.table_key),
         env=_dep(source("env")),
         catalog=_dep(source("catalog")),

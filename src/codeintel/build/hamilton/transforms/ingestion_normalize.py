@@ -10,6 +10,7 @@ from polars.exceptions import PolarsError
 from codeintel.build.hamilton.native.ingestion.frame_utils import dedupe_frame_for_table
 from codeintel.build.hamilton.transforms.tabular_steps import sort_columns
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 
 
 def normalize_ingest_frame(
@@ -17,7 +18,7 @@ def normalize_ingest_frame(
     *,
     table_key: str,
     add_missing: bool = True,
-    keep_extras: bool = True,
+    keep_extras: bool | None = None,
 ) -> pl.LazyFrame | None:
     """Normalize ingestion frames for schema alignment and deduping.
 
@@ -30,7 +31,8 @@ def normalize_ingest_frame(
     add_missing
         Whether to add missing schema columns as nulls.
     keep_extras
-        Whether to keep extra columns not in the schema.
+        Whether to keep extra columns not in the schema. When None, respect
+        the extras policy encoded in the Arrow schema metadata.
 
     Returns
     -------
@@ -47,14 +49,19 @@ def normalize_ingest_frame(
         if schema is None:
             return normalized
         ordered_columns = schema.column_names()
+        resolved_keep_extras = True if keep_extras is None else keep_extras
     else:
         ordered_columns = [str(name) for name in arrow_schema.names]
+        if keep_extras is None:
+            resolved_keep_extras = extras_policy_from_schema(arrow_schema) == "retain"
+        else:
+            resolved_keep_extras = keep_extras
     if add_missing:
         normalized = _add_missing_columns(normalized, ordered_columns)
     return _reorder_columns(
         normalized,
         ordered_columns,
-        keep_extras=keep_extras,
+        keep_extras=resolved_keep_extras,
     )
 
 

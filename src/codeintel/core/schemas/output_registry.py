@@ -2164,13 +2164,43 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
     )
 
 
+NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
+    {
+        "analytics.static_diagnostics",
+        "analytics.typedness",
+        "ci.plan_entries",
+        "core.ast_metrics",
+        "core.ast_nodes",
+        "core.cst_nodes",
+        "core.docstrings",
+        "core.file_state",
+        "core.modules",
+        "core.repo_map",
+        "core.schema_inference_errors",
+        "core.scip_diagnostics",
+        "core.scip_external_symbols",
+        "core.scip_module_state",
+        "core.scip_occurrences",
+        "core.scip_symbol_information",
+        "core.scip_symbol_relationships",
+        "core.scip_symbols",
+    }
+)
+
+
 def _build_output_table_schemas() -> dict[str, TableSchema]:
     table_map: dict[str, TableSchema] = {}
     for table in _all_output_tables():
+        if table.table_key not in NON_INFERABLE_OUTPUT_KEYS:
+            continue
         if table.table_key in table_map:
             msg = f"Duplicate output TableSchema: {table.table_key}"
             raise ValueError(msg)
         table_map[table.table_key] = table
+    missing = NON_INFERABLE_OUTPUT_KEYS.difference(table_map)
+    if missing:
+        msg = f"Missing non-inferable TableSchemas: {sorted(missing)}"
+        raise ValueError(msg)
     return table_map
 
 
@@ -2209,6 +2239,7 @@ __all__ = [
     "HOTSPOTS_OVERRIDE_TABLES",
     "IMPORT_GRAPH_OVERRIDE_TABLES",
     "MODULES_OVERRIDE_TABLES",
+    "NON_INFERABLE_OUTPUT_KEYS",
     "OUTPUT_TABLE_SCHEMAS",
     "PROFILES_OVERRIDE_TABLES",
     "RISK_FACTORS_OVERRIDE_TABLES",

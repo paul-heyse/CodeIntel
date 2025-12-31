@@ -164,7 +164,6 @@ Tasks:
 - Simplify `src/codeintel/build/hamilton/materialization_helpers.py`.
 
 Tests:
-- `tests/build/hamilton/test_pr21_analytics_native_impl_kind.py`
 - `tests/build/hamilton/test_pr21_analytics_native_driver.py`
 Status:
 - Completed: graph modules now emit `ExecutionResult` directly.

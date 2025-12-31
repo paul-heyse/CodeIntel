@@ -262,6 +262,12 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
                 nullable=False,
                 description="JSON object mapping table keys to row counts",
             ),
+            Column(
+                "drift_summaries",
+                "JSON",
+                nullable=False,
+                description="JSON object mapping table keys to drift summaries",
+            ),
             Column("error", "VARCHAR", description="Error message if failed"),
             Column(
                 "dep_hashes",

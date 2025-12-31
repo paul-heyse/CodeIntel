@@ -102,10 +102,10 @@ def pipe_clean_df(
     )
 
     def _factory(
-        df_backend: str,
-        clean_mode: str,
-        null_policy: str,
-        max_loc_clip: int,
+        df_backend: str = "polars_lazy",
+        clean_mode: str = "lenient",
+        null_policy: str = "preserve",
+        max_loc_clip: int = 10_000,
     ) -> NodeTransformLifecycle:
         return _pipe_cleaning(
             df_backend,
@@ -162,11 +162,12 @@ def with_features(
     """
 
     def _factory(
-        df_backend: str, feature_sets: dict[str, tuple[str, ...]]
+        df_backend: str = "polars_lazy",
+        feature_sets: dict[str, tuple[str, ...]] | None = None,
     ) -> NodeTransformLifecycle:
         return _decorate_features(
             df_backend=df_backend,
-            feature_sets=feature_sets,
+            feature_sets=feature_sets or {},
             table_key=table_key,
             columns_to_pass=tuple(columns_to_pass),
             ops_module=ops_module,

@@ -32,9 +32,9 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.tabular.types import InferableTabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput, Path)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput, Path)
 
 EXPORT_JSONL_TARGET_NAME = "export_jsonl"
 EXPORT_PARQUET_TARGET_NAME = "export_parquet"
@@ -98,8 +98,8 @@ def _touch_dependencies(*_deps: object) -> None:
 def t__export_jsonl__compute(
     env: BuildEnv,
     catalog: DagCatalog,
-    q__core__modules: TabularInput,
-    q__analytics__function_metrics: TabularInput,
+    q__core__modules: InferableTabularInput,
+    q__analytics__function_metrics: InferableTabularInput,
 ) -> ArtifactWritePlan | None:
     """Compute export manifest and gather data for JSONL export.
 
@@ -173,7 +173,7 @@ def t__export_jsonl(
 def t__export_parquet__compute(
     env: BuildEnv,
     catalog: DagCatalog,
-    q__analytics__function_metrics: TabularInput,
+    q__analytics__function_metrics: InferableTabularInput,
 ) -> ArtifactWritePlan | None:
     """Compute export manifest and gather data for Parquet export.
 

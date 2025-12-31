@@ -80,4 +80,17 @@ def __dir__() -> list[str]:
     return sorted(set(globals()) | set(_EXPORTS))
 
 
-__all__ = tuple(_EXPORTS)
+__all__ = (
+    "ColumnarRowBuffer",
+    "ColumnarRows",
+    "ColumnarStream",
+    "ColumnarStreamAdapter",
+    "LazyFrameStream",
+    "RecordBatchReaderStream",
+    "align_reader_to_contract",
+    "coerce_arrow_reader",
+    "coerce_arrow_table",
+    "columnar_buffer_for_table_key",
+    "columnar_row_count",
+    "extras_policy_from_schema",
+)

@@ -1,4 +1,4 @@
-"""Risk analytics tables built with relation-first nodes."""
+"""Risk analytics tables built with inferable tabular nodes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from codeintel.build.hamilton.column_ops import risk_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+    MaterializationRecordContext,
+    record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
@@ -19,10 +20,10 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
-from codeintel.build.tabular.duckdb_relation import relation_to_polars
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
 RISK_FACTORS_TARGET_NAME = "risk_factors"
 RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
@@ -45,7 +46,7 @@ RISK_LEVEL_HIGH_THRESHOLD = 5
 RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
 
-def risk_factors__base(q__analytics__function_metrics: TabularInput) -> pl.LazyFrame:
+def risk_factors__base(q__analytics__function_metrics: InferableTabularInput) -> pl.LazyFrame:
     """Build a minimal risk factors frame from function metrics.
 
     Parameters
@@ -58,7 +59,7 @@ def risk_factors__base(q__analytics__function_metrics: TabularInput) -> pl.LazyF
     pl.LazyFrame
         Lazy frame with risk factor columns.
     """
-    frame = relation_to_polars(q__analytics__function_metrics)
+    frame = tabular_to_lazyframe(q__analytics__function_metrics)
     risk_score = pl.col("cyclomatic_complexity").fill_null(0).cast(pl.Int64)
     risk_level = (
         pl.when(risk_score >= RISK_LEVEL_HIGH_THRESHOLD)
@@ -119,12 +120,17 @@ def t__risk_factors(
     TargetRunRecord
         Run record for the risk_factors target.
     """
-    return record_from_duckdb_materialization(
+    context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
         target_name=RISK_FACTORS_TARGET_NAME,
-        expected_table_key=RISK_FACTORS_TABLE_KEY,
-        materialization=m__analytics__goid_risk_factors,
+    )
+    return record_from_materializations(
+        context=context,
+        artifact_materializations=None,
+        table_materializations={
+            RISK_FACTORS_TABLE_KEY: m__analytics__goid_risk_factors,
+        },
     )
 
 

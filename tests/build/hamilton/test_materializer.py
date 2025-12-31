@@ -12,11 +12,25 @@ from typing import TYPE_CHECKING, cast
 
 import polars as pl
 
-from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
 from codeintel.build.hamilton.materializers import ArrowDatasetSaver, DuckDBRelationSaver
+from codeintel.build.hamilton.run_records import (
+    NativeRunInfo,
+    RunRecordInputs,
+    create_run_record,
+)
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.core.columnar.ipc import schema_to_ipc_payload
 from codeintel.core.hashing import stable_hash
+from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.time import utc_now
 from codeintel.storage.datasets.manifests import read_dataset_manifest
+from codeintel.storage.tracking.schema_catalog_models import (
+    DerivedSettingsPayload,
+    SchemaObservationRecord,
+)
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
@@ -25,6 +39,9 @@ from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.schemas.primitives import Column
 
 
@@ -62,6 +79,33 @@ def _make_graph() -> DagCatalog:
         ),
         table_keys_by_target={"modules": ("core.modules",)},
     )
+
+
+def _record_schema_observation(
+    *,
+    env: BuildEnv,
+    table_key: str,
+    derived_settings: DerivedSettingsPayload,
+    drift_summary: Mapping[str, object] | None = None,
+) -> None:
+    schema = get_schema_service().require_table_schema(table_key)
+    schema_json = schema.to_json_obj()
+    schema_digest = fingerprint(schema_json)
+    schema_hash_value = schema_hash(schema)
+    arrow_schema = arrow_schema_from_table_schema(table_schema=schema)
+    observation = SchemaObservationRecord(
+        table_key=table_key,
+        schema_digest=schema_digest,
+        schema_hash=schema_hash_value,
+        arrow_schema_ipc_b64=schema_to_ipc_payload(arrow_schema),
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        target_name="modules",
+        derived_settings=derived_settings,
+        drift_summary=drift_summary,
+        observed_at=utc_now(),
+    )
+    env.gateway.schemas.record_schema_observations_batch([observation])
 
 
 def _module_row_for_schema(
@@ -237,3 +281,119 @@ def test_arrow_dataset_saver_writes_manifest(
     expect_equal(manifest.table_key, expected="core.modules")
     expect_equal(manifest.snapshot_id, expected=snapshot.commit)
     expect_equal(manifest.row_count, expected=1)
+
+
+def test_arrow_dataset_saver_emits_inferred_settings(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """ArrowDatasetSaver should persist inferred settings in dataset manifests."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    snapshot = env.snapshot
+    graph = _make_graph()
+    table_key = "core.modules"
+    derived_settings: DerivedSettingsPayload = {
+        "extras_policy": "retain",
+        "dictionary_encode_columns": ["module", "path"],
+        "dictionary_max_cardinality": 42,
+        "unify_dictionaries": True,
+        "row_group_size": 12345,
+        "data_page_size": 65536,
+    }
+    _record_schema_observation(
+        env=env,
+        table_key=table_key,
+        derived_settings=derived_settings,
+    )
+    saver = ArrowDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key=table_key,
+    )
+    frame = pl.DataFrame(
+        {
+            "module": ["m1"],
+            "path": ["pkg/mod.py"],
+            "repo": [snapshot.repo],
+            "commit": [snapshot.commit],
+        }
+    )
+
+    meta = saver.save_data(frame)
+
+    manifest_path = meta.get("dataset_manifest_path")
+    expect_true(
+        isinstance(manifest_path, str),
+        message="Expected manifest path to be set",
+    )
+    manifest = read_dataset_manifest(Path(cast("str", manifest_path)))
+    extras = manifest.extras
+    expect_true(
+        isinstance(extras, dict),
+        message="Expected manifest extras to be present",
+    )
+    extras_map = cast("dict[str, object]", extras)
+    inferred_settings = cast("dict[str, object]", extras_map.get("inferred_settings"))
+    write_settings = cast("dict[str, object]", extras_map.get("write_settings"))
+    expect_equal(inferred_settings, expected=derived_settings, label="inferred_settings")
+    expect_equal(
+        write_settings.get("row_group_size"),
+        expected=12345,
+        label="row_group_size",
+    )
+    expect_equal(
+        write_settings.get("data_page_size"),
+        expected=65536,
+        label="data_page_size",
+    )
+    expect_equal(
+        write_settings.get("dictionary_encode_columns"),
+        expected=["module", "path"],
+        label="dictionary_encode_columns",
+    )
+    expect_equal(
+        write_settings.get("dictionary_max_cardinality"),
+        expected=42,
+        label="dictionary_max_cardinality",
+    )
+
+
+def test_create_run_record_includes_drift_summaries(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """create_run_record should capture drift summaries from observations."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    graph = _make_graph()
+    table_key = "core.modules"
+    drift_summary: dict[str, object] = {"extra_columns": 1, "missing_columns": ["owners"]}
+    minimal_settings: DerivedSettingsPayload = {"extras_policy": "retain"}
+    _record_schema_observation(
+        env=env,
+        table_key=table_key,
+        derived_settings=minimal_settings,
+        drift_summary=drift_summary,
+    )
+    target = graph.get_target("modules")
+    expect_true(target is not None, message="Expected modules target to exist")
+    target_descriptor = cast("TargetDescriptor", target)
+    run_info = NativeRunInfo(
+        input_hash="input_hash",
+        options_hash="options_hash",
+        duration_ms=12.0,
+        row_counts={table_key: 1},
+    )
+
+    record = create_run_record(
+        target_descriptor,
+        "succeeded",
+        "input_hash",
+        inputs=RunRecordInputs(env=env, run=run_info, catalog=graph),
+    )
+
+    expect_equal(
+        record.drift_summaries.get(table_key),
+        expected=drift_summary,
+        label="drift_summary",
+    )

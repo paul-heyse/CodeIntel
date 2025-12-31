@@ -3,7 +3,7 @@
 This package provides:
 - DatasetRef: Type-safe dataset references in the Hamilton DAG
 - ArtifactRef: Type-safe artifact references for non-tabular outputs
-- Relation-first IO helpers for DuckDB-backed datasets
+- Legacy DuckDB relation helpers (deprecated)
 """
 
 from __future__ import annotations

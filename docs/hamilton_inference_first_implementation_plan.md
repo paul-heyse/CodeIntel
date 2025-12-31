@@ -202,7 +202,7 @@ Goals:
 - Seed inference from observed datasets rather than declared schemas.
 
 Tasks:
-- Replace MiniSeedHarness with a dataset scanner that returns empty or sampled
+- Replace DatasetSeedHarness with a dataset scanner that returns empty or sampled
   RecordBatchReaders based on observed schema.
 - Support q__ inputs via pyarrow.dataset scanners with projection-only reads.
 - Allow optional "no-scan" mode to remain streaming-only without data reads.

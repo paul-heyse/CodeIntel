@@ -65,7 +65,7 @@ def pipe_ingest_rows(
     """
     required_tuple = tuple(str(name) for name in required_cols)
 
-    def _factory(clean_mode: str) -> NodeTransformLifecycle:
+    def _factory(clean_mode: str = "lenient") -> NodeTransformLifecycle:
         return _pipe_ingest_rows(
             clean_mode,
             required_cols=required_tuple,

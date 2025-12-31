@@ -20,6 +20,8 @@ from codeintel.build.schemas import get_schema_provider
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.core.schemas.resolution import resolve_table_schema
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -260,9 +262,9 @@ def _resolve_table_schema(table_key: str) -> TableSchema | None:
     try:
         provider = get_schema_provider()
     except RuntimeError:
-        return OUTPUT_TABLE_SCHEMAS.get(table_key)
-    schema = provider.get_table_schema(table_key)
-    return schema or OUTPUT_TABLE_SCHEMAS.get(table_key)
+        provider = MappingSchemaProvider(OUTPUT_TABLE_SCHEMAS)
+    result = resolve_table_schema(table_key, schema_provider=provider)
+    return result.table_schema
 
 
 def tag_helper(

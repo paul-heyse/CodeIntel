@@ -41,7 +41,7 @@ from tests._helpers.schemas import ensure_production_schemas, ensure_storage_con
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.build.serving.manifest import ServingSnapshotManifest
+    from codeintel.core.manifests import ServingSnapshotManifest
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from hamilton.function_modifiers import inject, resolve_from_config, source
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.tabular.types import TabularFrame
 
 
 def _pick_relation(
@@ -84,85 +84,85 @@ def _pick_dfg_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
 
 
 @resolve_from_config(decorate_with=_pick_call_graph_nodes)
-def call_graph_nodes(nodes: DuckDBRelation) -> DuckDBRelation:
-    """Return the selected call graph nodes relation.
+def call_graph_nodes(nodes: TabularFrame) -> TabularFrame:
+    """Return the selected call graph nodes frame.
 
     Returns
     -------
-    DuckDBRelation
-        Selected call graph nodes relation.
+    polars.LazyFrame
+        Selected call graph nodes frame.
     """
     return nodes
 
 
 @resolve_from_config(decorate_with=_pick_call_graph_edges)
-def call_graph_edges(edges: DuckDBRelation) -> DuckDBRelation:
-    """Return the selected call graph edges relation.
+def call_graph_edges(edges: TabularFrame) -> TabularFrame:
+    """Return the selected call graph edges frame.
 
     Returns
     -------
-    DuckDBRelation
-        Selected call graph edges relation.
+    polars.LazyFrame
+        Selected call graph edges frame.
     """
     return edges
 
 
 @resolve_from_config(decorate_with=_pick_import_modules)
-def import_modules(modules: DuckDBRelation) -> DuckDBRelation:
-    """Return the selected import modules relation.
+def import_modules(modules: TabularFrame) -> TabularFrame:
+    """Return the selected import modules frame.
 
     Returns
     -------
-    DuckDBRelation
-        Selected import modules relation.
+    polars.LazyFrame
+        Selected import modules frame.
     """
     return modules
 
 
 @resolve_from_config(decorate_with=_pick_import_edges)
-def import_graph_edges(edges: DuckDBRelation) -> DuckDBRelation:
-    """Return the selected import graph edges relation.
+def import_graph_edges(edges: TabularFrame) -> TabularFrame:
+    """Return the selected import graph edges frame.
 
     Returns
     -------
-    DuckDBRelation
-        Selected import graph edges relation.
+    polars.LazyFrame
+        Selected import graph edges frame.
     """
     return edges
 
 
 @resolve_from_config(decorate_with=_pick_cfg_blocks)
-def cfg_blocks(blocks: DuckDBRelation) -> DuckDBRelation:
-    """Return the selected CFG blocks relation.
+def cfg_blocks(blocks: TabularFrame) -> TabularFrame:
+    """Return the selected CFG blocks frame.
 
     Returns
     -------
-    DuckDBRelation
-        Selected CFG blocks relation.
+    polars.LazyFrame
+        Selected CFG blocks frame.
     """
     return blocks
 
 
 @resolve_from_config(decorate_with=_pick_cfg_edges)
-def cfg_edges(edges: DuckDBRelation) -> DuckDBRelation:
-    """Return the selected CFG edges relation.
+def cfg_edges(edges: TabularFrame) -> TabularFrame:
+    """Return the selected CFG edges frame.
 
     Returns
     -------
-    DuckDBRelation
-        Selected CFG edges relation.
+    polars.LazyFrame
+        Selected CFG edges frame.
     """
     return edges
 
 
 @resolve_from_config(decorate_with=_pick_dfg_edges)
-def dfg_edges(edges: DuckDBRelation) -> DuckDBRelation:
-    """Return the selected DFG edges relation.
+def dfg_edges(edges: TabularFrame) -> TabularFrame:
+    """Return the selected DFG edges frame.
 
     Returns
     -------
-    DuckDBRelation
-        Selected DFG edges relation.
+    polars.LazyFrame
+        Selected DFG edges frame.
     """
     return edges
 

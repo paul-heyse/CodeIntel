@@ -22,10 +22,12 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
 from codeintel.build.hashing import compute_target_options_hash
 from codeintel.core.build_manifest import OutputManifest
+from codeintel.core.errors.storage import StorageError
 from codeintel.core.hamilton.records import TargetRunRecord
+from codeintel.storage.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
@@ -43,6 +45,31 @@ def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
     """
     params = env.config.parameters_for(target_name)
     return compute_target_options_hash(params)
+
+
+def _load_drift_summaries(
+    env: BuildEnv,
+    datasets: Sequence[DatasetRef],
+) -> dict[str, Mapping[str, object]]:
+    if not datasets:
+        return {}
+    summaries: dict[str, Mapping[str, object]] = {}
+    for dataset in datasets:
+        try:
+            observation = env.gateway.schemas.load_latest_schema_observation(
+                table_key=dataset.table_key,
+            )
+        except (DuckDBError, StorageError, RuntimeError, TypeError, ValueError) as exc:
+            log.warning(
+                "build.hamilton.run_record.drift_summary_failed table_key=%s error=%s",
+                dataset.table_key,
+                exc,
+            )
+            continue
+        if observation is None or not observation.drift_summary:
+            continue
+        summaries[dataset.table_key] = dict(observation.drift_summary)
+    return summaries
 
 
 @dataclass(frozen=True)
@@ -277,6 +304,8 @@ def create_run_record(
             )
         datasets = tuple(updated_datasets)
 
+    drift_summaries = _load_drift_summaries(env, datasets)
+
     return TargetRunRecord(
         target=target.name,
         impl_kind=impl_kind,
@@ -288,6 +317,7 @@ def create_run_record(
         error=None,
         datasets=datasets,
         artifacts=artifacts,
+        drift_summaries=drift_summaries,
     )
 
 

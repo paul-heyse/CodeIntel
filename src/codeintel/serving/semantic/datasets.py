@@ -13,7 +13,15 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
+from codeintel.storage.datasets.contracts import (
+    DatasetTuningMetadata,
+    WriteSettingsPayload,
+    inferred_settings_from_manifest,
+    tuning_metadata_from_manifest,
+    write_settings_from_manifest,
+)
 from codeintel.storage.datasets.manifests import read_dataset_manifest
+from codeintel.storage.tracking.schema_catalog_models import DerivedSettingsPayload
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -46,6 +54,39 @@ class DatasetManifestEntry:
             Directory containing the dataset files.
         """
         return self.manifest_path.parent
+
+    @property
+    def inferred_settings(self) -> DerivedSettingsPayload | None:
+        """Return inferred tuning settings from the manifest.
+
+        Returns
+        -------
+        DerivedSettingsPayload | None
+            Inferred settings payload, or None when absent.
+        """
+        return inferred_settings_from_manifest(self.manifest)
+
+    @property
+    def write_settings(self) -> WriteSettingsPayload | None:
+        """Return persisted write settings from the manifest.
+
+        Returns
+        -------
+        WriteSettingsPayload | None
+            Write settings payload, or None when absent.
+        """
+        return write_settings_from_manifest(self.manifest)
+
+    @property
+    def tuning_metadata(self) -> DatasetTuningMetadata | None:
+        """Return tuning metadata parsed from the manifest.
+
+        Returns
+        -------
+        DatasetTuningMetadata | None
+            Parsed tuning metadata, or None when no settings are present.
+        """
+        return tuning_metadata_from_manifest(self.manifest)
 
 
 @dataclass(frozen=True, slots=True)

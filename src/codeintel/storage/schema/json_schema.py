@@ -10,7 +10,8 @@ from typing import get_args, get_origin
 
 import jsonschema
 
-from codeintel.core.schemas.service import get_schema_service
+from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
+from codeintel.core.schemas.resolution import SchemaObservationProvider, resolve_table_schema
 from codeintel.storage.contracts.provider import iter_contracts
 
 if typing.TYPE_CHECKING:
@@ -176,6 +177,7 @@ def export_json_schema_for_contract(
     *,
     schema_id: str,
     title: str,
+    observation_provider: SchemaObservationProvider | None = None,
 ) -> dict[str, object] | None:
     """Generate JSON Schema for an export contract, preferring schema registry output.
 
@@ -187,6 +189,8 @@ def export_json_schema_for_contract(
         Schema $id identifier to attach.
     title
         Schema title to attach.
+    observation_provider
+        Optional provider for observed schema precedence.
 
     Returns
     -------
@@ -195,12 +199,13 @@ def export_json_schema_for_contract(
     """
     if contract.schema is None:
         return None
-    service = get_schema_service()
-    resolved = service.get_json_schema(contract.table_key)
-    if resolved is None:
+    resolution = resolve_table_schema(
+        contract.table_key,
+        observation_provider=observation_provider,
+    )
+    if resolution.table_schema is None:
         return None
-    json_schema = dict(resolved)
-    json_schema["$id"] = schema_id
+    json_schema = json_schema_from_table_schema(resolution.table_schema, schema_id=schema_id)
     json_schema["title"] = title
     return json_schema
 
@@ -210,6 +215,7 @@ def generate_export_schemas(
     *,
     output_dir: Path,
     include_datasets: set[str] | None = None,
+    observation_provider: SchemaObservationProvider | None = None,
 ) -> list[Path]:
     """Generate export JSON Schemas for datasets with row bindings.
 
@@ -222,6 +228,8 @@ def generate_export_schemas(
         Directory to write schema files into (created if missing).
     include_datasets
         Optional subset of dataset names to emit; defaults to all contracts with row bindings.
+    observation_provider
+        Optional provider for observed schema precedence.
 
     Returns
     -------
@@ -245,6 +253,7 @@ def generate_export_schemas(
             contract,
             schema_id=schema_id,
             title=f"{name} export",
+            observation_provider=observation_provider,
         )
         if schema is None:
             continue

@@ -10,7 +10,7 @@ import polars as pl
 import pyarrow as pa
 
 from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, table_to_lazyframe
-from codeintel.build.tabular.types import TabularInput, TabularRelation
+from codeintel.build.tabular.types import TabularInputWithRelation, TabularRelation
 from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
 
 _NAME_SANITIZER = re.compile(r"[^0-9A-Za-z_]+")
@@ -23,7 +23,7 @@ def _sanitize_name(prefix: str) -> str:
 
 def register_ephemeral(
     conn: DuckDBConnection,
-    obj: TabularInput,
+    obj: TabularInputWithRelation,
     *,
     prefix: str = "tmp",
 ) -> str:
@@ -51,7 +51,7 @@ def register_ephemeral(
 
 def coerce_to_relation(
     conn: DuckDBConnection,
-    obj: TabularInput,
+    obj: TabularInputWithRelation,
     *,
     name_hint: str | None = None,
 ) -> TabularRelation:
@@ -109,7 +109,7 @@ def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
     return relation.fetch_arrow_reader()
 
 
-def relation_to_polars(relation: TabularInput) -> pl.LazyFrame:
+def relation_to_polars(relation: TabularInputWithRelation) -> pl.LazyFrame:
     """Convert a tabular input to a Polars LazyFrame.
 
     Parameters
@@ -121,6 +121,11 @@ def relation_to_polars(relation: TabularInput) -> pl.LazyFrame:
     -------
     pl.LazyFrame
         Polars LazyFrame representing the relation.
+
+    Raises
+    ------
+    TypeError
+        If the relation cannot be coerced into a LazyFrame.
     """
     if isinstance(relation, pl.LazyFrame):
         return relation
@@ -129,8 +134,11 @@ def relation_to_polars(relation: TabularInput) -> pl.LazyFrame:
     if isinstance(relation, pa.RecordBatchReader):
         reader = cast("pa.RecordBatchReader", relation)
         return arrow_reader_to_lazyframe(reader)
-    reader = relation.fetch_arrow_reader()
-    return arrow_reader_to_lazyframe(reader)
+    if isinstance(relation, DuckDBRelation):
+        reader = relation.fetch_arrow_reader()
+        return arrow_reader_to_lazyframe(reader)
+    msg = f"Unsupported tabular input type: {type(relation).__name__}"
+    raise TypeError(msg)
 
 
 __all__ = [

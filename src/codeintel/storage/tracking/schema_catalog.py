@@ -16,6 +16,7 @@ from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
@@ -226,7 +227,20 @@ def load_table_schema_from_connection(
     *,
     table_key: str,
 ) -> TableSchema | None:
-    """Load a TableSchema from schema catalog tables."""
+    """Load a TableSchema from schema catalog tables.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection with metadata catalog attached.
+    table_key
+        Fully qualified table key.
+
+    Returns
+    -------
+    TableSchema | None
+        Loaded TableSchema when present; otherwise None.
+    """
     observed = _load_latest_observed_schema_from_connection(con, table_key=table_key)
     if observed is not None:
         return observed
@@ -265,7 +279,18 @@ def load_table_schema_from_connection(
 def iter_table_schemas_from_connection(
     con: DuckDBPyConnection,
 ) -> Iterable[TableSchema]:
-    """Iterate all registered TableSchema values from metadata tables."""
+    """Iterate all registered TableSchema values from metadata tables.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection with metadata catalog attached.
+
+    Yields
+    ------
+    TableSchema
+        Registered TableSchema values ordered by table key.
+    """
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
     observed_rows = _load_latest_observed_schema_rows(con)
@@ -317,11 +342,38 @@ class SchemaCatalogProvider:
     con: DuckDBPyConnection
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
-        """Return the latest registered TableSchema for the table key."""
+        """Return the latest registered TableSchema for the table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        TableSchema | None
+            Latest registered TableSchema when present; otherwise None.
+        """
         return load_table_schema_from_connection(self.con, table_key=table_key)
 
     def require_table_schema(self, table_key: str) -> TableSchema:
-        """Return schema for table_key, raising when unknown."""
+        """Return schema for table_key, raising when unknown.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        TableSchema
+            Latest registered TableSchema for the table key.
+
+        Raises
+        ------
+        KeyError
+            If no schema is registered for the table key.
+        """
         schema = self.get_table_schema(table_key)
         if schema is None:
             msg = f"Unknown table schema: {table_key}"
@@ -329,8 +381,14 @@ class SchemaCatalogProvider:
         return schema
 
     def iter_table_schemas(self) -> Iterable[TableSchema]:
-        """Iterate all registered table schemas."""
-        return iter_table_schemas_from_connection(self.con)
+        """Iterate all registered table schemas.
+
+        Yields
+        ------
+        TableSchema
+            Registered TableSchema values ordered by table key.
+        """
+        yield from iter_table_schemas_from_connection(self.con)
 
 
 class SchemaCatalogTracking:
@@ -673,29 +731,32 @@ class SchemaCatalogTracking:
             Latest observation record when present; otherwise None.
         """
         observations_ref = meta_table_ref("metadata.schema_observations")
-        row = self._con.execute(
-            f"""
-            SELECT
-              observation_id,
-              table_key,
-              repo,
-              commit,
-              target_name,
-              schema_digest,
-              schema_hash,
-              arrow_schema_ipc_b64,
-              column_stats,
-              dataset_stats,
-              derived_settings,
-              drift_summary,
-              observed_at
-            FROM {observations_ref}
-            WHERE table_key = ?
-            ORDER BY observed_at DESC
-            LIMIT 1
-            """,
-            [table_key],
-        ).fetchone()
+        try:
+            row = self._con.execute(
+                f"""
+                SELECT
+                  observation_id,
+                  table_key,
+                  repo,
+                  commit,
+                  target_name,
+                  schema_digest,
+                  schema_hash,
+                  arrow_schema_ipc_b64,
+                  column_stats,
+                  dataset_stats,
+                  derived_settings,
+                  drift_summary,
+                  observed_at
+                FROM {observations_ref}
+                WHERE table_key = ?
+                ORDER BY observed_at DESC
+                LIMIT 1
+                """,
+                [table_key],
+            ).fetchone()
+        except DuckDBError:
+            return None
         if row is None:
             return None
         return SchemaObservationRecord(

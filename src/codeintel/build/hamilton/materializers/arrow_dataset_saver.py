@@ -8,10 +8,10 @@ import shutil
 import threading
 import types
 import typing
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import TYPE_CHECKING, Literal, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Literal, TypeAliasType, cast, get_args, get_origin
 
 import polars as pl
 import pyarrow as pa
@@ -35,10 +35,12 @@ from codeintel.build.schemas.observation_pipeline import (
 )
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
+    SchemaObservationInputs,
     instrument_reader_for_observation,
     merge_table_schema_hints,
     observe_batches,
 )
+from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar import (
     LazyFrameStream,
     align_reader_to_contract,
@@ -85,7 +87,7 @@ if TYPE_CHECKING:
 else:
     type ArrowDatasetInput = object
 
-type TabularData = ArrowDatasetInput | pl.LazyFrame
+type TabularData = InferableTabularInput
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -99,6 +101,8 @@ _RECOVERABLE_EXCEPTIONS = (
 
 _TABULAR_TYPES: tuple[type, ...] = (
     pa.RecordBatchReader,
+    pa.Table,
+    pl.DataFrame,
     pl.LazyFrame,
 )
 
@@ -247,12 +251,18 @@ class ArrowDatasetSaver(DataSaver):
         bool
             True when the saver applies to the provided type.
         """
-        origin = get_origin(type_)
+        resolved = _resolve_type_alias(type_)
+        origin = get_origin(resolved)
         if origin in {types.UnionType, typing.Union}:
-            args = set(get_args(type_))
-            if args.issubset(set(_TABULAR_TYPES) | {type(None)}):
+            args = set(get_args(resolved))
+            non_null = {arg for arg in args if arg is not type(None)}
+            if non_null and all(_is_tabular_annotation(arg) for arg in non_null):
                 return True
-        return super().applies_to(type_)
+        if _is_record_batch_iterable_type(resolved):
+            return True
+        if isinstance(resolved, type):
+            return super().applies_to(resolved)
+        return False
 
     def save_data(self, data: object) -> dict[str, object]:
         """Save the provided data and return metadata describing the write.
@@ -333,9 +343,10 @@ def _materialize_dataset(
     ctx: _MaterializeContext,
     data: TabularData,
 ) -> tuple[ArrowDatasetManifest, Path]:
-    plan = _build_materialization_plan(ctx=ctx, data=data)
+    normalized = _normalize_tabular_data(data)
+    plan = _build_materialization_plan(ctx=ctx, data=normalized)
 
-    if isinstance(data, pl.LazyFrame):
+    if isinstance(normalized, pl.LazyFrame):
         write_ctx = _DatasetWriteContext(
             dataset_root=plan.dataset_root,
             table_key=ctx.table_key,
@@ -346,7 +357,7 @@ def _materialize_dataset(
         )
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
-            data=data,
+            data=normalized,
             contract_schema=plan.contract_schema,
             observation=plan.observation,
         )
@@ -363,7 +374,7 @@ def _materialize_dataset(
         )
         return manifest, manifest_path
 
-    arrow_input = _coerce_arrow_input(data)
+    arrow_input = _coerce_arrow_input(normalized)
     observed_reader = instrument_reader_for_observation(
         _align_reader_to_contract(arrow_input, contract_schema=plan.contract_schema),
         accumulator=plan.observation,
@@ -387,6 +398,30 @@ def _materialize_dataset(
         manifest=manifest,
     )
     return manifest, manifest_path
+
+
+def _normalize_tabular_data(data: TabularData) -> TabularData:
+    if isinstance(data, pl.LazyFrame):
+        return data
+    if isinstance(data, pl.DataFrame):
+        return data.lazy()
+    if isinstance(data, pa.RecordBatchReader):
+        return data
+    if isinstance(data, pa.Table):
+        table = cast("pa.Table", data)
+        batches = table.to_batches()
+        return pa.RecordBatchReader.from_batches(table.schema, batches)
+    if isinstance(data, Iterable):
+        batches = list(data)
+        if not batches:
+            msg = "Record batch iterable is empty; schema cannot be inferred"
+            raise ValueError(msg)
+        if not all(isinstance(batch, pa.RecordBatch) for batch in batches):
+            msg = "Record batch iterable contains non-RecordBatch values"
+            raise TypeError(msg)
+        return pa.RecordBatchReader.from_batches(batches[0].schema, batches)
+    msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
+    raise TypeError(msg)
 
 
 def _build_materialization_plan(
@@ -1161,6 +1196,38 @@ def _snapshot_id(env: BuildEnv) -> str:
     raise ValueError(msg)
 
 
+def _resolve_type_alias(type_: object) -> object:
+    if isinstance(type_, TypeAliasType):
+        return _resolve_type_alias(type_.__value__)
+    return type_
+
+
+def _is_record_batch_iterable_type(type_: object) -> bool:
+    resolved = _resolve_type_alias(type_)
+    origin = get_origin(resolved)
+    if origin is None:
+        return False
+    if not isinstance(origin, type):
+        return False
+    if not issubclass(origin, Iterable):
+        return False
+    args = get_args(resolved)
+    return len(args) == 1 and args[0] is pa.RecordBatch
+
+
+def _is_tabular_annotation(type_: object) -> bool:
+    resolved = _resolve_type_alias(type_)
+    if isinstance(resolved, type) and resolved in _TABULAR_TYPES:
+        return True
+    if _is_record_batch_iterable_type(resolved):
+        return True
+    origin = get_origin(resolved)
+    if origin in {types.UnionType, typing.Union}:
+        args = [arg for arg in get_args(resolved) if arg is not type(None)]
+        return bool(args) and all(_is_tabular_annotation(arg) for arg in args)
+    return False
+
+
 def _coerce_arrow_input(data: TabularData) -> ArrowDatasetInput:
     if isinstance(data, pa.RecordBatchReader):
         return cast("RecordBatchReader", data)
@@ -1234,10 +1301,26 @@ def _schema_output_tag_sets(
 
 
 def _arrow_schema_for_data(*, data: TabularData) -> pa.Schema:
+    if isinstance(data, pl.DataFrame):
+        return data.lazy().collect_schema().to_arrow()
     if isinstance(data, pl.LazyFrame):
         return data.collect_schema().to_arrow()
+    if isinstance(data, pa.Table):
+        table = cast("pa.Table", data)
+        return table.schema
     if isinstance(data, pa.RecordBatchReader):
-        return data.schema
+        reader = cast("pa.RecordBatchReader", data)
+        return reader.schema
+    if isinstance(data, Iterable):
+        batches = list(data)
+        if not batches:
+            msg = "Record batch iterable is empty; schema cannot be inferred"
+            raise ValueError(msg)
+        if not all(isinstance(batch, pa.RecordBatch) for batch in batches):
+            msg = "Record batch iterable contains non-RecordBatch values"
+            raise TypeError(msg)
+        first_batch = cast("pa.RecordBatch", batches[0])
+        return first_batch.schema
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
     raise TypeError(msg)
 
@@ -1364,14 +1447,17 @@ def _persist_observation_if_ready(
     arrow_schema: pa.Schema,
     manifest: ArrowDatasetManifest | None,
 ) -> None:
-    inputs = build_observation_inputs(
-        gateway=ctx.env.gateway,
-        table_key=ctx.table_key,
+    base_inputs = SchemaObservationInputs(
         repo=ctx.env.repo,
         commit=ctx.env.commit,
         target_name=ctx.target_name,
         dataset_stats=manifest.stats if manifest is not None else None,
         manifest_row_count=manifest.row_count if manifest is not None else None,
+    )
+    inputs = build_observation_inputs(
+        gateway=ctx.env.gateway,
+        table_key=ctx.table_key,
+        base=base_inputs,
     )
     persist_observation(
         gateway=ctx.env.gateway,

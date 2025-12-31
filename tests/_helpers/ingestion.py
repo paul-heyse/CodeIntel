@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.helpers import paths_to_modules
 from codeintel.build.providers import create_default_providers
-from codeintel.build.schemas import column_names_for_table_key
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.targets import TargetDescriptor
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -418,7 +418,8 @@ def materialize_rows_for_snapshot(
 ) -> None:
     """Materialize rows into a snapshot-scoped table."""
     warehouse = Warehouse(gateway)
-    columns = column_names_for_table_key(table_key)
+    schema = get_schema_service().get_table_schema(table_key)
+    columns = tuple(schema.column_names()) if schema is not None else ()
     materialize_table_from_rows(
         warehouse,
         table_key,

@@ -29,7 +29,7 @@ from codeintel.build.schemas.observation_pipeline import (
     build_observation_setup,
     persist_observation,
 )
-from codeintel.build.schemas.observations import observe_batches
+from codeintel.build.schemas.observations import SchemaObservationInputs, observe_batches
 from codeintel.build.tabular.duckdb_relation import register_ephemeral
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
@@ -330,12 +330,15 @@ def _persist_schema_observation(
     try:
         reader = relation.fetch_arrow_reader()
         observe_batches(reader, accumulator=accumulator)
-        inputs = build_observation_inputs(
-            gateway=env.gateway,
-            table_key=table_key,
+        base_inputs = SchemaObservationInputs(
             repo=env.repo,
             commit=env.commit,
             target_name=target_name,
+        )
+        inputs = build_observation_inputs(
+            gateway=env.gateway,
+            table_key=table_key,
+            base=base_inputs,
         )
         persist_observation(
             gateway=env.gateway,

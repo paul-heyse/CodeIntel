@@ -37,14 +37,14 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.errors import CodeIntelError
 from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.native.patterns.specs import ArtifactOutputSpec, TableOutputSpec
 
-TabularByTable = Mapping[str, TabularInput]
+TabularByTable = Mapping[str, InferableTabularInput]
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -418,7 +418,7 @@ def _attach_table_rows_node(
     table_spec: TableOutputSpec,
     ingest_node: str,
 ) -> None:
-    def rows_fn(**kwargs: object) -> TabularInput | None:
+    def rows_fn(**kwargs: object) -> InferableTabularInput | None:
         ingest_result = kwargs.get(ingest_node)
         if not isinstance(ingest_result, IngestStep):
             msg = f"Expected IngestStep for {ingest_node}, got {type(ingest_result)}"
@@ -443,7 +443,7 @@ def _attach_table_rows_node(
                 annotation=IngestStep[TabularByTable],
             )
         ],
-        return_annotation=TabularInput | None,
+        return_annotation=InferableTabularInput | None,
     )
     rows_fn = set_signature(rows_fn, signature)
     node_name = (

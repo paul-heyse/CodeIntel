@@ -78,7 +78,13 @@ def validate_table(
     schema_observation: SchemaObservationRecord | None = None,
     mode: ValidationMode = "strict",
 ) -> pa.Table:
-    """Validate an Arrow table against the registered TableSchema."""
+    """Validate an Arrow table against the registered TableSchema.
+
+    Returns
+    -------
+    pyarrow.Table
+        Validated table, possibly unchanged.
+    """
     schema = table_schema or _lookup_table_schema(table_key)
     if schema is None or mode == "skip":
         return table
@@ -100,22 +106,27 @@ def validate_record_batch_reader(
     schema_observation: SchemaObservationRecord | None = None,
     mode: ValidationMode = "strict",
 ) -> pa.RecordBatchReader:
-    """Validate a RecordBatchReader stream against the registered TableSchema."""
+    """Validate a RecordBatchReader stream against the registered TableSchema.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Validated reader, possibly unchanged.
+    """
     resolved_schema = table_schema or _lookup_table_schema(table_key)
     if resolved_schema is None or mode == "skip":
         return reader
 
-    errors = schema_errors(resolved_schema, reader.schema)
+    schema = resolved_schema
+    errors = schema_errors(schema, reader.schema)
     _handle_errors(table_key, errors, mode)
 
     def _iter_batches() -> Iterator[pa.RecordBatch]:
         for batch_index, batch in enumerate(reader):
             batch_errors: list[str] = []
             batch_errors.extend(arrow_batch_errors(batch))
-            batch_errors.extend(nullability_errors_for_batch(resolved_schema, batch))
-            batch_errors.extend(
-                observation_errors_for_batch(resolved_schema, batch, schema_observation)
-            )
+            batch_errors.extend(nullability_errors_for_batch(schema, batch))
+            batch_errors.extend(observation_errors_for_batch(schema, batch, schema_observation))
             if batch_errors:
                 batch_errors = [f"batch {batch_index}: {error}" for error in batch_errors]
                 _handle_errors(table_key, batch_errors, mode)

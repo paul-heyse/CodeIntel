@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.native.patterns.loaders import load_query, load_table
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.hamilton.native.patterns.loaders import load_table
+from codeintel.build.tabular.types import InferableTabularInput
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,12 +23,12 @@ class DataAccessSpec:
     node_name: str | None = None
 
 
-def load_table_spec(spec: DataAccessSpec) -> Callable[..., TabularInput]:
+def load_table_spec(spec: DataAccessSpec) -> Callable[..., InferableTabularInput]:
     """Build a loader node from a table access spec.
 
     Returns
     -------
-    Callable[..., TabularInput]
+    Callable[..., InferableTabularInput]
         Loader function that returns a tabular input.
 
     Raises
@@ -47,37 +47,27 @@ def load_table_spec(spec: DataAccessSpec) -> Callable[..., TabularInput]:
     )
 
 
-def load_query_spec(spec: DataAccessSpec) -> Callable[..., TabularInput]:
+def load_query_spec(spec: DataAccessSpec) -> Callable[..., InferableTabularInput]:
     """Build a loader node from a query access spec.
-
-    Returns
-    -------
-    Callable[..., TabularInput]
-        Loader function that returns a tabular input.
 
     Raises
     ------
     ValueError
-        If the spec does not include a SQL query.
+        Always raised because SQL-based loaders are deprecated.
     """
-    if not spec.sql:
-        msg = "load_query_spec requires DataAccessSpec.sql to be set"
+    if spec.sql:
+        msg = "load_query_spec is deprecated; use dataset-backed loaders instead"
         raise ValueError(msg)
-    return load_query(
-        domain=spec.domain,
-        target=spec.target,
-        table_key=spec.table_key,
-        sql=spec.sql,
-        node_name=spec.node_name,
-    )
+    msg = "load_query_spec requires DataAccessSpec.sql to be set"
+    raise ValueError(msg)
 
 
-def load_access(spec: DataAccessSpec) -> Callable[..., TabularInput]:
+def load_access(spec: DataAccessSpec) -> Callable[..., InferableTabularInput]:
     """Build a loader node from a table/query access spec.
 
     Returns
     -------
-    Callable[..., TabularInput]
+    Callable[..., InferableTabularInput]
         Loader function that returns a tabular input.
     """
     if spec.sql:

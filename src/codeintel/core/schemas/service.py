@@ -284,6 +284,13 @@ class SchemaService:
         if table_key in self._json_cache:
             return self._json_cache[table_key]
         schema_id = f"urn:codeintel:schema:{table_key}"
+        schema = self.get_table_schema(table_key)
+        if schema is not None:
+            factory = self.json_schema_factory or _default_json_schema_factory
+            json_schema = factory(schema, schema_id)
+            self._json_cache[table_key] = json_schema
+            return json_schema
+
         dataset_schema = self.get_dataset_schema(table_key)
         if dataset_schema is not None and dataset_schema.json_schema is not None:
             json_schema = dict(dataset_schema.json_schema)
@@ -291,14 +298,8 @@ class SchemaService:
             self._json_cache[table_key] = json_schema
             return json_schema
 
-        schema = self.get_table_schema(table_key)
-        if schema is None:
-            self._json_cache[table_key] = None
-            return None
-        factory = self.json_schema_factory or _default_json_schema_factory
-        json_schema = factory(schema, schema_id)
-        self._json_cache[table_key] = json_schema
-        return json_schema
+        self._json_cache[table_key] = None
+        return None
 
     def compute_json_schema_digest(self, table_key: str) -> str | None:
         """Compute a stable digest for a generated JSON schema.

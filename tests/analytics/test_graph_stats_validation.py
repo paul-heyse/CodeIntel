@@ -11,6 +11,7 @@ from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
 from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
+from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -183,7 +184,7 @@ def test_subsystem_agreement_summary_aggregates(graph_ctx: TestContext) -> None:
             commit=graph_ctx.commit,
         )
         graph_ctx.gateway.policy.bulk_insert("analytics.subsystem_agreement", agreement_rows)
-    graph_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
+    materialize_view_plans(graph_ctx.con)
 
     disagree_row = graph_ctx.con.execute(
         """

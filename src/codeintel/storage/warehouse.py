@@ -327,7 +327,7 @@ class Warehouse:
         strict: bool = False,
         tag_query: TagQuery | None = None,
     ) -> None:
-        """Ensure all registered views are materialized."""
+        """Reject SQLGlot view materialization."""
         self.gateway.policy.ensure_all_views(
             overwrite=overwrite,
             strict=strict,

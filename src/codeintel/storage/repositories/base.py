@@ -34,7 +34,6 @@ from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
     ConstantExpression,
-    DuckDBCatalogException,
     Expression,
 )
 from codeintel.storage.query_results import records_from_arrow_reader
@@ -97,16 +96,8 @@ class BaseRepository:
         -------
         DuckDBRelation
             Relation scoped to the repository snapshot when applicable.
-
-        Raises
-        ------
-        DuckDBCatalogException
-            If the requested table/view does not exist and cannot be created.
         """
-        try:
-            relation = self.gateway.relation_from_table_key(table_key)
-        except DuckDBCatalogException:
-            raise
+        relation = self.gateway.relation_from_table_key(table_key)
         columns = set(relation.columns)
         if "repo" in columns and "commit" in columns:
             predicate = (ColumnExpression("repo") == ConstantExpression(self.repo)) & (

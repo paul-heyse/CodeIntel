@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from contextlib import suppress
@@ -13,7 +14,7 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.core.columnar.ipc import schema_to_ipc_payload
+from codeintel.core.columnar.ipc import schema_from_ipc_payload, schema_to_ipc_payload
 from codeintel.core.columnar.schema_metadata import (
     decode_metadata,
     encode_metadata,
@@ -72,6 +73,7 @@ class SchemaObservationInputs:
     target_name: str | None = None
     extras_policy: ExtrasPolicy | None = None
     drift_history: Sequence[Mapping[str, object] | None] | None = None
+    previous_observation: SchemaObservationRecord | None = None
     dataset_stats: ParquetStatsPayload | None = None
     manifest_row_count: int | None = None
 
@@ -91,6 +93,18 @@ class SchemaHints:
 
     description: str | None = None
     columns: Mapping[str, ColumnHint] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class _SchemaFinalizeContext:
+    table_schema: TableSchema
+    annotated_schema: pa.Schema
+    schema_json: dict[str, object]
+    schema_digest: str
+    schema_hash_value: str
+    extras_policy: ExtrasPolicy
+    drift_summary: Mapping[str, object] | None
+    derived_settings: DerivedSettingsPayload | None
 
 
 @dataclass(slots=True)
@@ -164,49 +178,17 @@ class SchemaObservationAccumulator:
             Bundle containing observation, registry, and schema version records.
         """
         resolved_inputs = inputs or SchemaObservationInputs()
-        inferred = table_schema_from_arrow_schema(
+        schema_context = _finalize_schema_context(
+            accumulator=self,
             arrow_schema=arrow_schema,
-            table_key=self.table_key,
-        )
-        merged = _merge_table_schema_hints(
-            inferred,
-            self.declared_schema,
-            schema_hints=self.schema_hints,
-            observed_nullability=_observed_nullability(self.column_stats),
-        )
-        schema_json = merged.to_json_obj()
-        schema_digest = fingerprint(schema_json)
-        schema_hash_value = compute_schema_hash(merged)
-        drift_summary = _drift_summary(merged, self.declared_schema)
-        resolved_extras_policy = resolved_inputs.extras_policy or _extras_policy_from_drift(
-            drift_summary,
-            drift_history=resolved_inputs.drift_history,
-        )
-        derived_settings = _derived_settings_from_stats(
-            table_schema=merged,
-            column_stats=self.column_stats,
-            row_count=self.row_count,
-            total_bytes=self.total_bytes,
-            extras_policy=resolved_extras_policy,
-        )
-        annotation = _SchemaAnnotationContext(
-            schema_hash_value=schema_hash_value,
-            schema_digest=schema_digest,
-            extras_policy=resolved_extras_policy,
-            extras_column=DEFAULT_EXTRAS_COLUMN,
-        )
-        annotated_schema = _annotate_arrow_schema(
-            arrow_schema,
-            table_schema=merged,
-            annotation=annotation,
-            pii_by_column=_pii_by_column(self.schema_hints),
+            inputs=resolved_inputs,
         )
         observed_at = utc_now()
         observation = SchemaObservationRecord(
             table_key=self.table_key,
-            schema_digest=schema_digest,
-            schema_hash=schema_hash_value,
-            arrow_schema_ipc_b64=schema_to_ipc_payload(annotated_schema),
+            schema_digest=schema_context.schema_digest,
+            schema_hash=schema_context.schema_hash_value,
+            arrow_schema_ipc_b64=schema_to_ipc_payload(schema_context.annotated_schema),
             repo=resolved_inputs.repo,
             commit=resolved_inputs.commit,
             target_name=resolved_inputs.target_name,
@@ -218,25 +200,25 @@ class SchemaObservationAccumulator:
                 manifest_stats=resolved_inputs.dataset_stats,
                 manifest_row_count=resolved_inputs.manifest_row_count,
             ),
-            derived_settings=derived_settings,
-            drift_summary=drift_summary,
+            derived_settings=schema_context.derived_settings,
+            drift_summary=schema_context.drift_summary,
             observed_at=observed_at,
         )
         schema_version = SchemaVersionRecord(
-            schema_digest=schema_digest,
-            schema_hash=schema_hash_value,
-            schema_json=schema_json,
+            schema_digest=schema_context.schema_digest,
+            schema_hash=schema_context.schema_hash_value,
+            schema_json=schema_context.schema_json,
             renderer_cache=_renderer_cache_from_arrow_schema(
-                annotated_schema,
-                extras_policy=resolved_extras_policy,
+                schema_context.annotated_schema,
+                extras_policy=schema_context.extras_policy,
                 extras_column=DEFAULT_EXTRAS_COLUMN,
             ),
             created_at=observed_at,
         )
         registry_record = TableSchemaRegistryRecord(
             table_key=self.table_key,
-            schema_digest=schema_digest,
-            schema_hash=schema_hash_value,
+            schema_digest=schema_context.schema_digest,
+            schema_hash=schema_context.schema_hash_value,
             derivation_kind="inferred_relation",
             derivation_source=resolved_inputs.target_name or "observed_output",
             inference_status="inferred",
@@ -245,8 +227,8 @@ class SchemaObservationAccumulator:
             updated_at=observed_at,
         )
         return SchemaObservationBundle(
-            table_schema=merged,
-            arrow_schema=annotated_schema,
+            table_schema=schema_context.table_schema,
+            arrow_schema=schema_context.annotated_schema,
             observation=observation,
             schema_version=schema_version,
             registry_record=registry_record,
@@ -701,6 +683,72 @@ def _observed_nullability(
     return observed
 
 
+def _finalize_schema_context(
+    *,
+    accumulator: SchemaObservationAccumulator,
+    arrow_schema: pa.Schema,
+    inputs: SchemaObservationInputs,
+) -> _SchemaFinalizeContext:
+    table_key = accumulator.table_key
+    inferred = table_schema_from_arrow_schema(
+        arrow_schema=arrow_schema,
+        table_key=table_key,
+    )
+    merged = _merge_table_schema_hints(
+        inferred,
+        accumulator.declared_schema,
+        schema_hints=accumulator.schema_hints,
+        observed_nullability=_observed_nullability(accumulator.column_stats),
+    )
+    schema_json = merged.to_json_obj()
+    schema_digest = fingerprint(schema_json)
+    schema_hash_value = compute_schema_hash(merged)
+    previous_schema = _table_schema_from_observation_record(
+        table_key=table_key,
+        observation=inputs.previous_observation,
+    )
+    baseline_schema = previous_schema or accumulator.declared_schema
+    baseline_kind = "previous_observation" if previous_schema is not None else "declared"
+    drift_summary = _drift_summary(
+        merged,
+        baseline_schema,
+        baseline_kind=baseline_kind,
+    )
+    resolved_extras_policy = inputs.extras_policy or _extras_policy_from_drift(
+        drift_summary,
+        drift_history=inputs.drift_history,
+    )
+    derived_settings = _derived_settings_from_stats(
+        table_schema=merged,
+        column_stats=accumulator.column_stats,
+        row_count=accumulator.row_count,
+        total_bytes=accumulator.total_bytes,
+        extras_policy=resolved_extras_policy,
+    )
+    annotation = _SchemaAnnotationContext(
+        schema_hash_value=schema_hash_value,
+        schema_digest=schema_digest,
+        extras_policy=resolved_extras_policy,
+        extras_column=DEFAULT_EXTRAS_COLUMN,
+    )
+    annotated_schema = _annotate_arrow_schema(
+        arrow_schema,
+        table_schema=merged,
+        annotation=annotation,
+        pii_by_column=_pii_by_column(accumulator.schema_hints),
+    )
+    return _SchemaFinalizeContext(
+        table_schema=merged,
+        annotated_schema=annotated_schema,
+        schema_json=schema_json,
+        schema_digest=schema_digest,
+        schema_hash_value=schema_hash_value,
+        extras_policy=resolved_extras_policy,
+        drift_summary=drift_summary,
+        derived_settings=derived_settings,
+    )
+
+
 _DEFAULT_DICT_MAX_CARDINALITY = 256
 _DEFAULT_DICT_RATIO = 0.1
 _TARGET_ROW_GROUP_BYTES = 64 * 1024 * 1024
@@ -799,14 +847,32 @@ def _dataset_stats_payload(
     return payload
 
 
+def _table_schema_from_observation_record(
+    *,
+    table_key: str,
+    observation: SchemaObservationRecord | None,
+) -> TableSchema | None:
+    if observation is None:
+        return None
+    arrow_schema = schema_from_ipc_payload(observation.arrow_schema_ipc_b64)
+    if arrow_schema is None:
+        return None
+    return table_schema_from_arrow_schema(
+        arrow_schema=arrow_schema,
+        table_key=table_key,
+    )
+
+
 def _drift_summary(
     inferred: TableSchema,
-    declared: TableSchema | None,
+    baseline: TableSchema | None,
+    *,
+    baseline_kind: str = "declared",
 ) -> dict[str, object] | None:
-    if declared is None:
+    if baseline is None:
         return None
     inferred_columns = {column.name: column.type for column in inferred.columns}
-    declared_columns = {column.name: column.type for column in declared.columns}
+    declared_columns = {column.name: column.type for column in baseline.columns}
     missing = sorted(name for name in declared_columns if name not in inferred_columns)
     extra = sorted(name for name in inferred_columns if name not in declared_columns)
     type_changes: list[dict[str, str]] = []
@@ -827,6 +893,7 @@ def _drift_summary(
         "missing_columns": missing,
         "extra_columns": extra,
         "type_changes": type_changes,
+        "baseline_kind": baseline_kind,
     }
 
 
@@ -1054,7 +1121,7 @@ def _compute_scalar(name: str, values: pa.Array | pa.ChunkedArray) -> object | N
         return None
     try:
         result = func(values)
-    except (TypeError, pa.ArrowInvalid):
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return None
     return _scalar_value(result)
 
@@ -1074,7 +1141,7 @@ def _count_distinct(values: pa.Array | pa.ChunkedArray) -> int | None:
         return None
     try:
         result = func(values)
-    except (TypeError, pa.ArrowInvalid):
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return None
     scalar = _scalar_value(result)
     if scalar is None or isinstance(scalar, bool):
@@ -1095,7 +1162,7 @@ def _length_stats(values: pa.Array | pa.ChunkedArray) -> tuple[int, int]:
         filled = _fill_null(lengths, 0)
         length_sum = _sum_scalar(filled)
         length_count = _count_scalar(lengths)
-    except (TypeError, pa.ArrowInvalid):
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return 0, 0
     return length_sum, length_count
 

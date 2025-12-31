@@ -1,10 +1,11 @@
-"""SQLGlot view builders and discovery helpers.
+"""Precompiled view builders and discovery helpers.
 
-View builder functions are defined in `codeintel.storage.views.sqlglot_views`.
-Deterministic discovery for materialization lives in `codeintel.storage.views.discovery`.
+View builder functions are defined in ``codeintel.storage.views.sqlglot_views`` as
+precompiled SQL plan wrappers. Deterministic discovery for materialization lives in
+``codeintel.storage.views.discovery``.
 
-This package intentionally keeps its public surface minimal to avoid import
-cycles during storage bootstrap.
+This package intentionally keeps its public surface minimal to avoid import cycles
+during storage bootstrap.
 """
 
 from __future__ import annotations

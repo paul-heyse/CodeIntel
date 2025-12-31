@@ -65,11 +65,7 @@ from codeintel.storage.schema.sqlglot_ddl import (
 )
 from codeintel.storage.schema_roundtrip import create_table_ast
 from codeintel.storage.upsert import UpsertSpec
-from codeintel.storage.views.inventory import view_builder_modules
-from codeintel.storage.views.materialization import (
-    ViewMaterializationOptions,
-    materialize_registered_views,
-)
+from codeintel.storage.views.materialization import ViewMaterializationOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -1161,16 +1157,23 @@ class DuckDBPolicyBackend:
         strict: bool = False,
         tag_query: TagQuery | None = None,
     ) -> None:
-        """Materialize all registered views."""
-        materialize_registered_views(
-            self.gateway,
-            modules=view_builder_modules(),
-            options=ViewMaterializationOptions(
-                overwrite=overwrite,
-                strict=strict,
-                tag_query=tag_query,
-            ),
+        """Reject SQLGlot view materialization.
+
+        Raises
+        ------
+        RuntimeError
+            Always raised because SQLGlot view materialization is retired.
+        """
+        _ = ViewMaterializationOptions(
+            overwrite=overwrite,
+            strict=strict,
+            tag_query=tag_query,
         )
+        msg = (
+            f"{type(self).__name__}.ensure_all_views is retired. "
+            "Use Hamilton-native view outputs and dataset-backed snapshots instead."
+        )
+        raise RuntimeError(msg)
 
     def ensure_schemas_preserve(
         self,

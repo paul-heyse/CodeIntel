@@ -532,6 +532,10 @@ class BuildTracking:
 
         for rec in records:
             row_counts_json = dict(rec.row_counts) if rec.row_counts else {}
+            drift_summaries_json = {
+                table_key: dict(summary)
+                for table_key, summary in rec.drift_summaries.items()
+            }
             rows.append(
                 (
                     run_id,
@@ -544,6 +548,7 @@ class BuildTracking:
                     rec.options_hash,
                     rec.duration_ms,
                     row_counts_json,
+                    drift_summaries_json,
                     rec.error,
                     recorded_at,
                 )
@@ -563,6 +568,7 @@ class BuildTracking:
                 "options_hash",
                 "duration_ms",
                 "row_counts",
+                "drift_summaries",
                 "error",
                 "recorded_at",
             ),
@@ -586,7 +592,7 @@ class BuildTracking:
         results = self._con.execute(
             f"""
             SELECT target, {select_impl} AS impl_kind, status, input_hash, options_hash,
-                   duration_ms, row_counts, error, recorded_at
+                   duration_ms, row_counts, drift_summaries, error, recorded_at
             FROM build.run_targets
             WHERE run_id = ?
             ORDER BY target
@@ -603,8 +609,9 @@ class BuildTracking:
                 "options_hash": row[4],
                 "duration_ms": row[5],
                 "row_counts": decode_json_dict(row[6]) if row[6] else {},
-                "error": row[7],
-                "recorded_at": row[8],
+                "drift_summaries": decode_json_dict(row[7]) if row[7] else {},
+                "error": row[8],
+                "recorded_at": row[9],
             }
             for row in results
         ]

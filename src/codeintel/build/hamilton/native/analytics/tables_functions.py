@@ -1,4 +1,4 @@
-"""Function analytics tables built with relation-first nodes."""
+"""Function analytics tables built with inferable tabular nodes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from codeintel.build.hamilton.column_ops import function_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+    MaterializationRecordContext,
+    record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
@@ -19,10 +20,10 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
-from codeintel.build.tabular.duckdb_relation import relation_to_polars
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
 FUNCTION_METRICS_TARGET_NAME = "function_metrics"
 FUNCTION_METRICS_TABLE_KEY = "analytics.function_metrics"
@@ -42,7 +43,7 @@ FUNCTION_METRICS_CONTRACT = TableContractSpec(
 )
 
 
-def function_metrics__base(q__core__goids: TabularInput) -> pl.LazyFrame:
+def function_metrics__base(q__core__goids: InferableTabularInput) -> pl.LazyFrame:
     """Build a minimal function metrics frame from core.goids.
 
     Parameters
@@ -55,7 +56,7 @@ def function_metrics__base(q__core__goids: TabularInput) -> pl.LazyFrame:
     pl.LazyFrame
         Lazy frame with function metrics columns.
     """
-    frame = relation_to_polars(q__core__goids)
+    frame = tabular_to_lazyframe(q__core__goids)
     end_line = pl.coalesce([pl.col("end_line"), pl.col("start_line")])
     frame = frame.rename({"goid_h128": "function_goid_h128"})
     frame = frame.with_columns(
@@ -111,12 +112,17 @@ def t__function_metrics(
     TargetRunRecord
         Run record for the function_metrics target.
     """
-    return record_from_duckdb_materialization(
+    context = MaterializationRecordContext(
         env=env,
         catalog=catalog,
         target_name=FUNCTION_METRICS_TARGET_NAME,
-        expected_table_key=FUNCTION_METRICS_TABLE_KEY,
-        materialization=m__analytics__function_metrics,
+    )
+    return record_from_materializations(
+        context=context,
+        artifact_materializations=None,
+        table_materializations={
+            FUNCTION_METRICS_TABLE_KEY: m__analytics__function_metrics,
+        },
     )
 
 

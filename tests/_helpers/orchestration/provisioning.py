@@ -51,6 +51,7 @@ from tests._helpers.configs import (
     provisioning_gateway_options,
 )
 from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes import utcnow
 from tests._helpers.fixtures.repos import (
@@ -1005,7 +1006,7 @@ def docs_views_ready_gateway(
     ensure_schema_service()
     seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit, repo_root=repo_root)
     _seed_minimal_subsystems(ctx.gateway, repo=repo, commit=commit)
-    ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
+    materialize_view_plans(ctx.gateway.con)
     return ctx
 
 
