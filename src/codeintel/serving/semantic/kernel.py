@@ -230,12 +230,15 @@ def _build_ipc_metadata(input_data: _IpcMetadataInput) -> dict[str, object]:
 
 def _contract_schema_for_table(
     *,
-    dataset_manifests: DatasetManifestIndex,
+    warehouse: Warehouse | None,
+    pointer: ServingSnapshotPointer,
     table_key: str,
 ) -> pa.Schema | None:
     return contract_schema_for_table_key(
-        dataset_manifests=dataset_manifests,
+        con=warehouse.gateway.con if warehouse is not None else None,
         table_key=table_key,
+        repo=pointer.repo,
+        commit=pointer.commit,
     )
 
 
@@ -788,7 +791,8 @@ class SemanticQueryKernel:
                 compiled_plan = engine.compile(plan.serving_query, ctx=engine_ctx)
                 try:
                     contract_schema = _contract_schema_for_table(
-                        dataset_manifests=plan.snapshot_context.dataset_manifests,
+                        warehouse=warehouse,
+                        pointer=live_pointer,
                         table_key=plan.resolved.view.table_key,
                     )
                     if contract_schema is None:
@@ -881,7 +885,8 @@ class SemanticQueryKernel:
                 table_key=resolved.view.table_key,
             )
             contract_schema = _contract_schema_for_table(
-                dataset_manifests=snapshot_context.dataset_manifests,
+                warehouse=warehouse,
+                pointer=pointer,
                 table_key=resolved.view.table_key,
             )
             if contract_schema is None:

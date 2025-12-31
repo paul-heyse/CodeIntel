@@ -13,10 +13,13 @@ def _pick_relation(
     graph_backend: str | None,
     empty_node: str,
     existing_node: str,
+    compute_node: str,
     param_name: str,
 ) -> NodeTransformLifecycle:
     if graph_backend == "existing":
         return inject(**{param_name: source(existing_node)})
+    if graph_backend == "compute":
+        return inject(**{param_name: source(compute_node)})
     return inject(**{param_name: source(empty_node)})
 
 
@@ -25,6 +28,7 @@ def _pick_call_graph_nodes(graph_backend: str | None = None) -> NodeTransformLif
         graph_backend=graph_backend,
         empty_node="call_graph_nodes_empty",
         existing_node="call_graph_nodes_existing",
+        compute_node="call_graph_nodes_compute",
         param_name="nodes",
     )
 
@@ -34,6 +38,7 @@ def _pick_call_graph_edges(graph_backend: str | None = None) -> NodeTransformLif
         graph_backend=graph_backend,
         empty_node="call_graph_edges_empty",
         existing_node="call_graph_edges_existing",
+        compute_node="call_graph_edges_compute",
         param_name="edges",
     )
 
@@ -43,6 +48,7 @@ def _pick_import_modules(graph_backend: str | None = None) -> NodeTransformLifec
         graph_backend=graph_backend,
         empty_node="import_modules_empty",
         existing_node="import_modules_existing",
+        compute_node="import_modules_compute",
         param_name="modules",
     )
 
@@ -52,6 +58,7 @@ def _pick_import_edges(graph_backend: str | None = None) -> NodeTransformLifecyc
         graph_backend=graph_backend,
         empty_node="import_graph_edges_empty",
         existing_node="import_graph_edges_existing",
+        compute_node="import_graph_edges_compute",
         param_name="edges",
     )
 
@@ -61,6 +68,7 @@ def _pick_cfg_blocks(graph_backend: str | None = None) -> NodeTransformLifecycle
         graph_backend=graph_backend,
         empty_node="cfg_blocks_empty",
         existing_node="cfg_blocks_existing",
+        compute_node="cfg_blocks_compute",
         param_name="blocks",
     )
 
@@ -70,6 +78,7 @@ def _pick_cfg_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
         graph_backend=graph_backend,
         empty_node="cfg_edges_empty",
         existing_node="cfg_edges_existing",
+        compute_node="cfg_edges_compute",
         param_name="edges",
     )
 
@@ -79,6 +88,7 @@ def _pick_dfg_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
         graph_backend=graph_backend,
         empty_node="dfg_edges_empty",
         existing_node="dfg_edges_existing",
+        compute_node="dfg_edges_compute",
         param_name="edges",
     )
 

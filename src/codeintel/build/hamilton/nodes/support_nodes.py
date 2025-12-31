@@ -175,6 +175,11 @@ def load_relation(env: BuildEnv, ref: DatasetRef) -> TabularInput:
     -------
     TabularInput
         Tabular input for the dataset reference.
+
+    Raises
+    ------
+    ValueError
+        If the snapshot_id cannot be resolved for the dataset reference.
     """
     snapshot_id = ref.commit or env.commit
     if not snapshot_id:

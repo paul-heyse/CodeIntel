@@ -56,9 +56,12 @@ def _contract_schema_for_table(
     *,
     table_key: str,
 ) -> pa.Schema | None:
+    con = ctx.warehouse.gateway.con if ctx.warehouse is not None else None
     return contract_schema_for_table_key(
-        dataset_manifests=ctx.dataset_manifests,
+        con=con,
         table_key=table_key,
+        repo=ctx.pointer.repo,
+        commit=ctx.pointer.commit,
     )
 
 

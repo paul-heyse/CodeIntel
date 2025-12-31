@@ -54,19 +54,16 @@ def auto_preference(query: ServingQuery, *, ctx: EngineContext) -> tuple[str, ..
     tuple[str, ...]
         Engine names ordered by preference.
     """
-    spec = query.spec
-    try:
-        view = ctx.registry.by_id(spec.view_id)
-    except KeyError:
-        view = None
-
-    if view is not None and view.kind == "view" and ctx.view_registry.get(spec.table_key) is None:
-        return ("duckdb", "polars")
-
     if not ast_supports_polars(query.ast):
-        return ("duckdb", "polars")
-
-    return ("polars", "duckdb")
+        return ("duckdb",)
+    table_key = query.spec.table_key
+    has_polars_source = (
+        ctx.view_registry.get(table_key) is not None
+        or ctx.dataset_manifests.get(table_key) is not None
+    )
+    if not has_polars_source:
+        return ("duckdb",)
+    return ("duckdb", "polars")
 
 
 __all__ = ["ast_supports_polars", "auto_preference"]

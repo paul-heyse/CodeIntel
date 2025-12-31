@@ -25,10 +25,10 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns import (
-    RelationTableSaveSpec,
+    DatasetSaveSpec,
     SaverContext,
     make_table_materializations_collector,
-    save_relation_table,
+    save_dataset,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -52,9 +52,9 @@ CFG_SAVE_CONTEXT = SaverContext(domain="graphs", target=CFG_TARGET_NAME)
 DFG_SAVE_CONTEXT = SaverContext(domain="graphs", target=DFG_TARGET_NAME)
 
 
-@save_relation_table(
+@save_dataset(
     context=CALL_GRAPH_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY),
+    spec=DatasetSaveSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_NODES_TABLE_KEY)
 def call_graph__nodes_table(call_graph_nodes: pl.LazyFrame) -> pl.LazyFrame:
@@ -68,9 +68,12 @@ def call_graph__nodes_table(call_graph_nodes: pl.LazyFrame) -> pl.LazyFrame:
     return call_graph_nodes
 
 
-@save_relation_table(
+@save_dataset(
     context=CALL_GRAPH_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=CALL_GRAPH_EDGES_TABLE_KEY),
+    spec=DatasetSaveSpec(
+        table_key=CALL_GRAPH_EDGES_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
 )
 @tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_EDGES_TABLE_KEY)
 def call_graph__edges_table(call_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
@@ -84,9 +87,12 @@ def call_graph__edges_table(call_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
     return call_graph_edges
 
 
-@save_relation_table(
+@save_dataset(
     context=IMPORT_GRAPH_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=IMPORT_MODULES_TABLE_KEY),
+    spec=DatasetSaveSpec(
+        table_key=IMPORT_MODULES_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
 )
 @tag_dataset(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, table_key=IMPORT_MODULES_TABLE_KEY)
 def import_graph__modules_table(import_modules: pl.LazyFrame) -> pl.LazyFrame:
@@ -100,9 +106,12 @@ def import_graph__modules_table(import_modules: pl.LazyFrame) -> pl.LazyFrame:
     return import_modules
 
 
-@save_relation_table(
+@save_dataset(
     context=IMPORT_GRAPH_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=IMPORT_GRAPH_EDGES_TABLE_KEY),
+    spec=DatasetSaveSpec(
+        table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
 )
 @tag_dataset(
     domain="graphs",
@@ -120,9 +129,9 @@ def import_graph__edges_table(import_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
     return import_graph_edges
 
 
-@save_relation_table(
+@save_dataset(
     context=CFG_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY),
+    spec=DatasetSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_BLOCKS_TABLE_KEY)
 def cfg__blocks_table(cfg_blocks: pl.LazyFrame) -> pl.LazyFrame:
@@ -136,9 +145,9 @@ def cfg__blocks_table(cfg_blocks: pl.LazyFrame) -> pl.LazyFrame:
     return cfg_blocks
 
 
-@save_relation_table(
+@save_dataset(
     context=CFG_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=CFG_EDGES_TABLE_KEY),
+    spec=DatasetSaveSpec(table_key=CFG_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_EDGES_TABLE_KEY)
 def cfg__edges_table(cfg_edges: pl.LazyFrame) -> pl.LazyFrame:
@@ -152,9 +161,9 @@ def cfg__edges_table(cfg_edges: pl.LazyFrame) -> pl.LazyFrame:
     return cfg_edges
 
 
-@save_relation_table(
+@save_dataset(
     context=DFG_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=DFG_EDGES_TABLE_KEY),
+    spec=DatasetSaveSpec(table_key=DFG_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=DFG_TARGET_NAME, table_key=DFG_EDGES_TABLE_KEY)
 def dfg__edges_table(dfg_edges: pl.LazyFrame) -> pl.LazyFrame:

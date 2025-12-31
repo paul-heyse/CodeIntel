@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.native.analytics.function_ast_features import (
+    function_ast_features__base,
+    function_ast_features__table,
+    t__function_ast_features,
+)
+from codeintel.build.hamilton.native.analytics.function_types import (
+    function_types__base,
+    function_types__table,
+    t__function_types,
+)
 from codeintel.build.hamilton.native.analytics.tables_coverage import (
     coverage_functions__table,
     t__coverage_functions,
@@ -33,15 +43,21 @@ __all__ = [
     "external_deps__calls_table",
     "external_deps__table",
     "external_deps__table_materializations",
+    "function_ast_features__base",
+    "function_ast_features__table",
     "function_metrics__base",
     "function_metrics__table",
+    "function_types__base",
+    "function_types__table",
     "module_profile__base",
     "module_profile__table",
     "risk_factors__base",
     "risk_factors__table",
     "t__coverage_functions",
     "t__external_deps",
+    "t__function_ast_features",
     "t__function_metrics",
+    "t__function_types",
     "t__module_profile",
     "t__risk_factors",
 ]
