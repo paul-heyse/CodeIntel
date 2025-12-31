@@ -47,9 +47,7 @@ from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, ass
 VIEWS_TARGET_NAME = "views"
 VIEWS_DOMAIN = "views"
 
-_VIEW_PLAN_PATH = (
-    Path(__file__).resolve().parents[4] / "storage" / "views" / "view_plan_map.json"
-)
+_VIEW_PLAN_PATH = Path(__file__).resolve().parents[4] / "storage" / "views" / "view_plan_map.json"
 
 _MANUAL_VIEW_KEYS: frozenset[str] = frozenset(
     {
@@ -594,6 +592,7 @@ for view_key in _MANUAL_VIEW_KEYS:
 
 VIEW_TABLE_KEYS = tuple(sorted(_VIEW_PLANS))
 
+
 def _view_output_nodes(catalog: DagCatalog) -> dict[str, str]:
     outputs: dict[str, str] = {}
     for node in catalog.nodes.values():
@@ -709,6 +708,7 @@ def _sync_view_lineage(env: BuildEnv, catalog: DagCatalog) -> None:
         )
     except DuckDBError:
         LOG.exception("Failed to sync derived lineage columns repo=%s commit=%s", repo, commit)
+
 
 views__table_materializations = make_table_materializations_collector(
     domain=VIEWS_DOMAIN,

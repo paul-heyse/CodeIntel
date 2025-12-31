@@ -533,8 +533,7 @@ class BuildTracking:
         for rec in records:
             row_counts_json = dict(rec.row_counts) if rec.row_counts else {}
             drift_summaries_json = {
-                table_key: dict(summary)
-                for table_key, summary in rec.drift_summaries.items()
+                table_key: dict(summary) for table_key, summary in rec.drift_summaries.items()
             }
             rows.append(
                 (

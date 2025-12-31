@@ -1,3 +1,685 @@
+Yes — if you treat LibCST / SCIP / tree-sitter / `ast` as more than “dataset generators”, they unlock a whole second layer of **static “program facts” and “semantic indexes”** that are *not* just graph edges. The big design shift is: **materialize canonical indexes + summaries first**, then let CFG/DFG/lineage be *views* over those facts.
+
+Below is a concrete catalog of additional *syntax + symbol–based* static analyses you can add (with emphasis on **high-certainty** outputs), and exactly what the advanced capabilities of each library buy you.
+
+---
+
+## 1) Canonical cross-reference and symbol facts (beyond edges)
+
+### What you can add
+
+**A. Definition/reference/import/read/write classification at token-span resolution**
+
+* For every identifier occurrence: is it a **definition**, **import**, **read**, **write**?
+* This yields extremely high-certainty “causal” facts like:
+
+  * “This function *must* write to global `X`.”
+  * “This module *must* import `foo.bar` under alias `baz`.”
+  * “This statement *must* read `df` and *must* write `df2`.”
+
+### What unlocks it
+
+* **SCIP** exposes an `Occurrence` with a `symbol` string, a `symbol_roles` bitmask, and a source `range`; the bitmask explicitly includes **Definition**, **Import**, **Write**, **Read**, etc. (so you can derive def/ref/read/write without heuristics).
+* **LibCST** exposes `ExpressionContextProvider` returning Load/Store/Del-style context (similar intent as `ast.expr_context`, but available in CST workflows).
+
+**Design note:** this becomes a *non-graph* “fact table” like `occurrence_fact(symbol_id, role_mask, span_id, file_id, container_id)` that everything else joins against.
+
+---
+
+## 2) Repo-wide name binding + qualified naming (turn “names” into stable identities)
+
+### What you can add
+
+**B. Qualified-name and fully-qualified-name attribution for every expression**
+
+* You can attach:
+
+  * “This `Name` node resolves to qualified name(s) …”
+  * “This module is actually `package.subpackage.module`”
+* This is foundational for high-certainty causal claims because it turns “`foo`” into **which `foo`**.
+
+### What unlocks it
+
+* **LibCST** explicitly provides `QualifiedNameProvider` (semantic qualified names) and `FullyQualifiedNameProvider` (repo-aware, including relative-import handling and module FQN stored on `Module`).
+* **LibCST** also calls out index suites that include “definitions”, “references”, “imports”, “call-sites”, and “types” as first-class “index suite” outputs (exactly the kind of non-graph analysis you’re asking about).
+
+**Why this matters for “high certainty”:** you can mark any relationship as MUST only when the qualified identity is unambiguous, and otherwise downgrade to MAY.
+
+---
+
+## 3) Symbol relationship analysis (OOP semantics without “graph metrics”)
+
+### What you can add
+
+**C. Override / implementation / inheritance relationship facts**
+
+* Examples of causal questions you can answer more confidently:
+
+  * “Method `C.m` *overrides* `Base.m`.”
+  * “This class *extends* that class.”
+  * “This method is part of an interface/ABC implementation chain.”
+
+### What unlocks it
+
+* **SCIP’s** `SymbolInformation` is explicitly described as carrying documentation and **relationships** such as “class extends another” or “method overrides parent method.”
+
+This is *not* a “complexity metric” — it’s semantic structure you can use to improve dispatch reasoning, slicing, and provenance.
+
+---
+
+## 4) Incremental / change-driven static analysis (not just for performance)
+
+### What you can add
+
+**D. “Change impact” analysis and incremental re-indexing**
+
+* Given two versions of a file, compute:
+
+  * what structural regions changed,
+  * which indexes must be recomputed,
+  * which prior facts remain valid.
+
+### What unlocks it
+
+* **tree-sitter** provides `changed_ranges` as an “ancestor-path diff” notion: outside those byte ranges, the ancestor chain is identical; you can safely cache facts outside changed regions and only rerun relevant query packs within lifted containers.
+
+This enables “state of the art” workflows like: *edit → minimal invalidation → recompute only affected facts → recompute only affected higher-level analyses.*
+
+---
+
+## 5) Query-driven, rule-based extraction as a first-class analysis product
+
+### What you can add
+
+**E. Deterministic pattern extraction with rule metadata**
+
+* Rather than hard-coding AST walks for every library/framework pattern, you can define “rules” as tree-sitter queries and emit:
+
+  * `pattern_match_fact(rule_id, capture_set, span_id, attributes…)`
+* This is ideal for:
+
+  * framework hooks (FastAPI routes, Hamilton nodes, etc.),
+  * known data APIs (pandas/Polars/DuckDB calls),
+  * banned constructs (`eval`, dynamic import patterns),
+  * “this call is a join” / “this call is a SQL execution site”.
+
+### What unlocks it
+
+* tree-sitter query execution encourages match-by-match extraction (`matches`) when you need relational coherence between captures (definition node + name + body), and query packs can be windowed and bounded for safety.
+* tree-sitter supports **pattern settings** (via `#set!`) that you can retrieve programmatically using `Query.pattern_settings(pattern_index)`, which is perfect for attaching structured metadata to a match (“this capture is SQL”, “language=sql”, etc.).
+
+This is an *analysis unlock*: your “static analysis rules” become **data** (query packs) instead of only code.
+
+---
+
+## 6) Embedded-language parsing (SQL/regex/templates) with correct source coordinates
+
+### What you can add
+
+**F. High-certainty extraction + parsing of embedded DSLs**
+Examples:
+
+* SQL strings passed to `duckdb.sql(...)`, `con.execute(...)`, `.read_sql(...)`
+* Regex literals
+* HTML/Jinja templates embedded in Python strings
+* GraphQL strings, etc.
+
+Instead of treating these as opaque strings, you can:
+
+1. locate them deterministically,
+2. parse them with the right grammar, and
+3. preserve host-file coordinates for every embedded token.
+
+### What unlocks it
+
+* tree-sitter’s recommended approach is parsing embedded languages over the host bytes using `included_ranges`, producing an embedded tree whose node ranges still line up with the full host document (key for evidence + joins).
+* This is designed to work with injection query packs that provide `injection.language`, `injection.combined`, and `injection.include-children` semantics (so your extraction is robust and not “string slicing hacks”).
+
+**This is one of the biggest “beyond edges” unlocks** for your join/lineage goals: it turns “stringly-typed SQL” into a real parse tree with evidence-grade spans.
+
+---
+
+## 7) Canonicalization, semantic diffing, and stable evidence (AST-native, not metrics)
+
+### What you can add
+
+**G. Structural equivalence + canonical rendering**
+
+* Use cases:
+
+  * semantic diff that ignores whitespace/formatting,
+  * detect refactors vs real logic changes,
+  * stable fingerprinting of expressions/blocks,
+  * normalization before downstream analyses.
+
+### What unlocks it
+
+* Python `ast.unparse()` is explicitly documented as producing code that yields an **equivalent AST if parsed back** (not identical source), i.e., it’s a canonicalization tool, not a pretty-printer guarantee.
+* Python 3.14+ adds `ast.compare(a, b, compare_attributes=...)` for first-class structural equality (ignoring offsets by default, or requiring them if needed).
+
+**H. “Evidence extraction” with precise spans**
+
+* Extract the exact source substring corresponding to a node (for auditability / explainability).
+* This is crucial if you’re aiming for high-certainty “causal” claims: you can always attach the literal code evidence.
+
+What unlocks it:
+
+* `ast.get_source_segment` returns the exact substring only when full span info is present (`lineno`, `end_lineno`, `col_offset`, `end_col_offset`).
+* LibCST gives you `PositionProvider` and `ByteSpanPositionProvider` for span attribution in CST space.
+
+---
+
+## 8) Constant and contract extraction (turn syntax into “configuration facts”)
+
+### What you can add
+
+**I. Literal-only constant evaluation for schemas, column lists, join keys, etc.**
+
+* Extract “declared” values from code with high certainty *when they are literals/containers* (lists of column names, dict schemas, configuration flags, etc.).
+
+### What unlocks it
+
+* `ast.literal_eval` evaluates only literal/container structures (not arbitrary expressions), and the guide explicitly recommends using it on a subtree you already control (parse once, evaluate that node).
+
+(And the same guide correctly warns it’s **not safe on untrusted input**; for your offline indexing pipeline, you still treat it as bounded-but-not-zero-risk.)
+
+This is *hugely relevant* to your join/lineage work because many real-world pipelines express join keys and column projections as literal lists/dicts.
+
+---
+
+## 9) Scaling these analyses without turning the system into a tangle
+
+### What you can add
+
+**J. A formal “index suite” architecture**
+Instead of “we compute a bunch of edges”, the design becomes:
+
+* `parse_manifest` / `syntax_errors`
+* `definitions_index`
+* `references_index`
+* `imports_index`
+* `call_sites_index`
+* `type_index` (optional)
+* `embedded_dsl_index` (tree-sitter injections)
+* `constants_index` (ast.literal_eval)
+* `doc_index` (docstrings + signature docs)
+* `relationship_index` (overrides/extends)
+
+LibCST basically hands you this mental model: it explicitly enumerates those index suites as first-class outputs.
+
+**K. Repo-scale caching and parallelism**
+
+* If you start doing repo-wide qualified naming + indexing, you want deterministic caching semantics.
+* LibCST’s `FullRepoManager` patterns include precomputing a `resolve_cache` before forking multiprocessing workers (so each worker doesn’t redo resolution work).
+
+---
+
+## What’s “state of the art” here (for *high-certainty* relationships)?
+
+A best-in-class design in 2025 for “high certainty causal relationships” in a dynamic language like Python usually looks like:
+
+1. **Materialize authoritative, minimal, stable facts** (occurrences with roles, qualified names, spans, import aliases, doc/signature payloads, override relationships).
+
+   * SCIP gives roles + symbol identity.
+   * LibCST gives qualified naming + CST-level contexts/spans.
+
+2. **Treat anything uncertain as explicitly MAY with provenance**, never silently “upgrade” it to MUST.
+
+   * Example: call target resolution is MUST only if symbol resolution is unambiguous; otherwise it’s MAY with candidates.
+
+3. **Use tree-sitter query packs + injections** as the “rule layer” for scalable, multi-language extraction (including embedded DSLs), and use incremental parsing to avoid recomputing the world on every change.
+
+4. **Use AST canonicalization/diff** to stabilize results across formatting churn and to detect real semantic changes early (great for test harnesses and regression prevention).
+
+---
+
+## A practical “next 5 tables” recommendation (beyond edges)
+
+If you want a concrete, minimal set of **non-edge** artifacts to add that will immediately expand what you can do:
+
+1. `occurrence_fact` (from SCIP): `(symbol_id, role_mask, file_id, span_id, container_id)`
+2. `qualified_name_fact` (from LibCST): `(span_id, qualified_name[], fully_qualified_name[], resolution_source)`
+3. `pattern_match_fact` (from tree-sitter queries): `(rule_id, capture_map, span_id, rule_settings)`
+4. `embedded_dsl_fact` (from tree-sitter injections + included_ranges): `(host_span_id, language, embedded_span_id, embedded_tree_hash)`
+5. `constant_fact` (from Python AST): `(span_id, const_kind, value_json, is_literal_only=true)`
+
+Once you have these, many “advanced analyses” become *predictable joins* and group-bys rather than bespoke traversals.
+
+---
+
+If you want, I can take your current Phase5 outputs (as you have them) and propose a **delta plan** specifically for these *non-edge* index tables: which ones you already implicitly compute, which ones you’re missing, and the cleanest producers (SCIP vs LibCST vs tree-sitter vs `ast`) for each.
+
+
+Below is a **Phase5 “non-edge index tables” delta plan**: what you already have as first-class tables, what you’re **already computing implicitly** (but hiding inside JSON blobs / edge tables / intermediate logic), what you’re **missing**, and the **cleanest producer** for each (SCIP vs LibCST vs tree-sitter vs ast).
+
+I’m intentionally treating “index tables” as: **stable, query-friendly fact tables** that let you compute *many* advanced analyses as straightforward joins—rather than re-running bespoke visitors or decoding JSON repeatedly.
+
+---
+
+## Legend
+
+* **HAVE** = already materialized as a Phase5 output table
+* **IMPLICIT** = Phase5 already computes the info, but it’s embedded inside JSON fields, edge tables, or transient compute state (so it’s hard to join/reuse/debug)
+* **MISSING** = not currently computed/persisted in Phase5
+* **Primary producer** = the “best source of truth” among:
+
+  * **SCIP** (scip-python): semantic symbols/occurrences/roles/relationships
+  * **LibCST**: exact syntax + stable spans + pattern extraction via metadata/matchers
+  * **tree-sitter**: cross-language syntax + query packs (locals/injections) for scalable pattern extraction
+  * **python `ast`**: structural Python semantics + fallback parsing
+
+---
+
+## A. Your current Phase5 non-edge index tables (KEEP)
+
+These are already solid “golden index” building blocks—keep them, and use them as join anchors.
+
+### Repo / file / module identity
+
+* **`core.modules` (HAVE)**
+  Producer: *filesystem discovery* (not one of the 4 libs)
+  Use: which files exist, language, module path, etc.
+
+* **`core.file_state` (HAVE)**
+  Producer: *filesystem*
+  Use: content hash, mtime, size (incremental re-index gating)
+
+* **`core.repo_map` (HAVE)**
+  Producer: *filesystem / module mapping*
+  Use: repo/module inventory snapshot
+
+### Syntax & doc extraction
+
+* **`core.ast_nodes` + `core.ast_metrics` (HAVE)**
+  Producer: **python `ast`**
+  Use: module/class/function defs, decorator ranges, basic structure/metrics
+
+* **`core.cst_nodes` (HAVE)**
+  Producer: **LibCST**
+  Use: your “wide net” capture of many syntactic nodes with spans/snippets/parents/qnames
+
+* **`core.docstrings` (HAVE)**
+  Producer: (looks like Griffe-based extraction)
+  Use: rich doc metadata (params/returns/raises/examples)
+
+### Semantic symbol index
+
+* **`core.scip_symbols`, `core.scip_occurrences`, `core.scip_symbol_information`, `core.scip_symbol_relationships`, `core.scip_diagnostics`, `core.scip_external_symbols`, `core.scip_module_state` (HAVE)**
+  Producer: **SCIP / scip-python**
+  Use: symbol graph + occurrences (+ roles bitmask) + semantic relationships
+
+### Stable entity IDs
+
+* **`core.goids` + `core.goid_crosswalk` (HAVE)**
+  Producer: (your GOID builder; joins across AST/SCIP/CST identities)
+  Use: the *best* “definition identity” table you have—absolutely keep.
+
+---
+
+## B. Index tables you already compute implicitly (MATERIALIZE)
+
+This is the biggest immediate ROI: you already did the hard work, but the results are trapped in JSON and edge tables.
+
+### B1) Callsite facts and resolution attempts
+
+**What’s implicit today**
+
+* `graph.call_graph_edges` contains **callsite location** + `evidence_json` (callee name, attr chain, strategy/confidence, maybe SCIP candidates).
+
+**Delta**
+
+* ✅ **Add `core.call_sites` (IMPLICIT → MATERIALIZE)**
+  **Primary producer:** **LibCST** (fallback: `ast`)
+  Why LibCST: it’s built for accurate positions and can do “index extraction” passes efficiently using `MetadataWrapper` + `PositionProvider`.
+  Suggested columns:
+
+  * `repo, commit, rel_path`
+  * `callsite_id` (stable hash of file+range+callee form)
+  * `enclosing_function_goid_h128` (nullable)
+  * `start_line, start_col, end_line, end_col`
+  * `callee_expr_kind` (Name/Attribute/Subscript/Call/etc)
+  * `callee_base_name`, `attr_chain_json`
+  * `arg_count`, `kwarg_names_json`
+  * `raw_text_preview` (optional)
+
+* ✅ **Add `core.call_resolution_attempts` (IMPLICIT → MATERIALIZE)**
+  **Primary producer:** **LibCST + SCIP**
+  One callsite can have multiple attempts (local table, import aliases, instance-method heuristic, SCIP-based, etc.). Persist them as rows:
+
+  * `callsite_id`
+  * `attempt_rank`
+  * `resolved_goid_h128` (nullable)
+  * `resolved_scip_symbol` (nullable)
+  * `resolved_via` (strategy)
+  * `confidence`
+  * `evidence_json` (tiny, strategy-specific)
+
+* Then treat **`graph.call_graph_edges`** as a *derived view*:
+
+  * `call_sites` filtered to “best resolution where resolved_goid_h128 not null”.
+
+**Why this is “best in class”**
+
+* You can debug/iterate resolution logic without rewriting the call graph table.
+* Other analyses (external dependency calls, config flow, ORM usage, etc.) can reuse `core.call_sites` directly.
+
+> LibCST matchers make these collection passes clean and maintainable (pattern-based extraction of `Call()` inside `FunctionDef()`, etc.).
+
+---
+
+### B2) CFG statement stream normalization
+
+**What’s implicit today**
+
+* `graph.cfg_blocks.stmts_json` is the statement sequence per basic block.
+
+**Delta**
+
+* ✅ **Add `graph.cfg_statements` (IMPLICIT → MATERIALIZE)**
+  **Primary producer:** **python `ast`** (because your CFG builder is AST-driven)
+  Purpose: make “what statements are in this block?” a real join, not JSON parsing.
+  Suggested columns:
+
+  * `function_goid_h128, block_id, stmt_idx`
+  * `stmt_kind` (Assign/Call/If/Return/Raise/…)
+  * `start_line, start_col, end_line, end_col`
+  * `text_preview` (optional)
+  * `ast_node_key` (optional stable pointer)
+
+This table becomes the bridge between CFG/DFG and “syntax facts” tables like calls/assignments/raises.
+
+---
+
+### B3) Config flow call chains
+
+**What’s implicit today**
+
+* `analytics.config_data_flow.call_chain_json` is a serialized chain (and you likely compute additional internal representation while building the flow).
+
+**Delta**
+
+* ✅ **Add `analytics.call_chains` (IMPLICIT → MATERIALIZE)**
+  **Primary producer:** **SCIP + your call resolution** (but stored from the config flow pass)
+  Suggested columns:
+
+  * `call_chain_id` (already exists)
+  * `chain_len`
+  * `goid_chain_json` (or normalize further into a child table)
+  * `root_entrypoint_goid` (if you have it)
+
+* ✅ **Add `analytics.call_chain_steps` (optional but ideal)**
+
+  * `call_chain_id, step_idx`
+  * `caller_goid_h128, callee_goid_h128`
+  * `callsite_id` (join to `core.call_sites`)
+
+---
+
+### B4) Normalize “evidence JSON” across analytics outputs
+
+You have multiple tables that embed “evidence” as JSON (not just call graph):
+
+* `analytics.external_dependency_calls.evidence_json`
+* `analytics.function_effects.effects_json`
+* `analytics.config_data_flow.evidence_json`
+* (and others)
+
+**Delta**
+
+* ✅ **Add `analytics.evidence_items` (IMPLICIT → MATERIALIZE)**
+  **Primary producer:** depends on source:
+
+  * call evidence: **LibCST + SCIP**
+  * effect evidence: **LibCST/ast (+ SCIP for resolved symbols)**
+    Suggested columns:
+  * `evidence_id`
+  * `owner_table`, `owner_pk_json` (or typed columns per owner)
+  * `rel_path`, `start_line`, `start_col`, `end_line`, `end_col`
+  * `evidence_kind` (call/import/attribute/string_literal/etc)
+  * `payload_json` (small)
+
+This turns evidence into something you can **join, slice, and dedupe** across analyses.
+
+---
+
+## C. High-leverage index tables you are missing (ADD)
+
+These are the “next tier” that dramatically increases the number of **high-certainty causal** analyses you can do *without inventing new edge types*.
+
+### C1) Import statements + import bindings
+
+Even if you have an import graph edge table, you still want the *raw import facts*.
+
+* ✅ **Add `core.import_statements` (MISSING)**
+  **Primary producer:** **LibCST**
+  Why: exact syntax, aliasing, relative import level, star imports, multi-import statements.
+
+* ✅ **Add `core.import_bindings` (MISSING)**
+  **Primary producer:** **LibCST** (join with SCIP if you want symbol IDs)
+  Each imported name produces bindings:
+
+  * `bound_name` (local)
+  * `imported_module`
+  * `imported_qualname` / `imported_symbol` (if resolvable)
+  * `asname`
+  * span + `enclosing_scope_goid` (or module)
+
+This table is a *massive* stabilizer for call resolution, reference resolution, and data lineage through imported helpers.
+
+---
+
+### C2) Name occurrences (token-level identifiers with spans)
+
+You already have SCIP occurrences (which are semantic), and CST nodes (which are structural). You’re missing the “name token stream” with exact syntax spans.
+
+* ✅ **Add `core.name_occurrences` (MISSING)**
+  **Primary producer:** **LibCST**
+  Use: join with SCIP occurrences by span to map syntax-level names to semantic symbols.
+
+LibCST is particularly good here because metadata is node-identity keyed and designed for building indexers; it explicitly supports pull (`resolve`) and push (`METADATA_DEPENDENCIES`) access patterns for metadata like positions.
+
+---
+
+### C3) Assignments and binding sites
+
+For *causal* analyses (dataflow), you want explicit binding facts.
+
+* ✅ **Add `core.assignments` (MISSING)**
+  **Primary producer:** **LibCST** (fallback: `ast`)
+  Suggested columns:
+
+  * `assignment_id`
+  * `enclosing_function_goid_h128` (nullable for module level)
+  * `lhs_kind` (Name/Attribute/Subscript/Tuple/List/…)
+  * `lhs_names_json` (for destructuring)
+  * `rhs_kind`
+  * span fields
+  * `is_augassign`, `is_annotated_assign`
+
+* ✅ **Add `core.binding_events` (MISSING)**
+  **Primary producer:** **LibCST**
+  Normalize “this name is bound here” events:
+
+  * defs from assignment targets, function params, `for` targets, `with ... as`, `except ... as`, imports, class/function defs, etc.
+
+This table is the backbone for:
+
+* precise **def-site** indexing
+* local dataflow without needing a full DFG in every scenario
+
+---
+
+### C4) Attribute & subscript access facts
+
+These enable high-certainty statements like:
+
+* “function F reads config object X”
+
+* “function F writes `obj.field`”
+
+* “function F uses `df['col']` (column lineage)”
+
+* ✅ **Add `core.attribute_accesses` (MISSING)**
+  **Primary producer:** **LibCST**
+  Columns:
+
+  * `access_id`
+  * `base_expr_kind`
+  * `base_name` (if simple)
+  * `attr_name`
+  * `is_write_context` (if you track context)
+  * span + enclosing GOID
+
+* ✅ **Add `core.subscript_accesses` (MISSING)**
+  **Primary producer:** **LibCST** (AST can help classify literal keys)
+  Columns:
+
+  * `base_expr`
+  * `index_expr_kind`
+  * `index_literal_value` (nullable)
+  * span + enclosing GOID
+
+---
+
+### C5) Literal strings (for SQL, config keys, resource IDs)
+
+You will keep finding “semantic facts embedded in strings”.
+
+* ✅ **Add `core.string_literals` (MISSING)**
+  **Primary producer:** **LibCST** (because you want raw string form and span)
+  Optional enrichment by `ast`: attempt safe evaluation for constant folding.
+
+Once you have this, you can layer:
+
+* SQL extraction
+* regex extraction
+* file path usage
+* environment variable key usage
+* feature flag key usage
+
+---
+
+## D. Where tree-sitter becomes uniquely valuable (ADD, cross-language + embedded languages)
+
+If you stay Python-only, LibCST + SCIP already cover most of what you want. Tree-sitter becomes *uniquely* valuable in two situations:
+
+### D1) Cross-language “good enough” scope/def/ref scaffolding
+
+Tree-sitter’s **locals query pack** has fixed capture semantics (`@local.scope`, `@local.definition`, `@local.reference`, `@ignore`) designed to support consistent scope/def/ref tracking.
+
+* ✅ **Add `core.ts_scopes`, `core.ts_definitions`, `core.ts_references` (MISSING)**
+  **Primary producer:** **tree-sitter**
+  Use: for languages where you *don’t* have SCIP (or don’t trust the index), you still get:
+
+  * a scope stack
+  * definition table per scope
+  * resolved reference stream via nearest enclosing def-by-text (best-effort)
+
+This is not a replacement for SCIP, but it’s a **practical, scalable fallback** to widen language coverage.
+
+### D2) Embedded language extraction (SQL-in-Python, regex-in-strings, etc.)
+
+Tree-sitter’s **injections query pack** explicitly models “this node’s contents should be re-parsed as another language” via `@injection.content` and `@injection.language` (plus properties like `injection.language`, `injection.combined`, etc.).
+
+* ✅ **Add `core.embedded_segments` (MISSING)**
+  **Primary producer:** **tree-sitter**
+  Columns:
+
+  * `host_rel_path`, `host_span`
+  * `embedded_language`
+  * `embedded_text` (or hash + storage pointer)
+  * `segment_id`
+
+This is the cleanest path to “blank page, best-in-class” analysis of:
+
+* SQL lineage from Python strings
+* templated SQL in f-strings
+* DSLs embedded in config blocks
+
+---
+
+## E. SCIP splits you should materialize as first-class index tables
+
+SCIP occurrences already have:
+
+* `symbol`
+* `symbol_roles` bitmask (definition/reference/import/write/read/etc.)
+* `range` in document
+
+Right now you store occurrences as a single table. For causal analyses, it’s worth materializing role-filtered tables/views.
+
+* ✅ **Add `core.symbol_def_occurrences` (IMPLICIT → MATERIALIZE)**
+  Producer: **SCIP**
+  Definition occurrences are explicitly encoded in `symbol_roles` (Definition bit).
+
+* ✅ **Add `core.symbol_ref_occurrences` (IMPLICIT → MATERIALIZE)**
+  Producer: **SCIP**
+
+* ✅ **Add `core.symbol_read_occurrences`, `core.symbol_write_occurrences`, `core.symbol_import_occurrences` (IMPLICIT → MATERIALIZE)**
+  Producer: **SCIP**
+  These role splits are extremely helpful to increase certainty (read vs write is “causal”, not “metric”).
+
+These can be materialized as:
+
+* either physical tables, or
+* views in DuckDB (often enough), depending on performance needs.
+
+---
+
+## F. “Cleanest producer” cheat sheet (rules of thumb)
+
+### Use **SCIP** when you need:
+
+* definitions vs references vs reads/writes/imports (roles bitmask)
+* symbol identity stable across the repo
+* cross-file semantic linking (relationships)
+
+### Use **LibCST** when you need:
+
+* exact source spans / stable text association
+* syntactic detail (imports, decorators, calls, args, keywords)
+* fast “index extraction” via metadata (`resolve`, `METADATA_DEPENDENCIES`)
+* maintainable pattern extractors (matchers) for specific constructs
+
+### Use **tree-sitter** when you need:
+
+* cross-language parsing + uniform query-based extraction
+* locals/injections query packs (scope/def/ref scaffolding; embedded languages)
+
+### Use **python `ast`** when you need:
+
+* cheap structural parsing
+* fallback when CST parse fails
+* semantics-oriented transforms (control-flow-friendly structure)
+
+---
+
+## Summary: the delta plan in one prioritized list
+
+### P0 (do these first)
+
+1. `core.call_sites` + `core.call_resolution_attempts` (materialize what call graph already computes)
+2. `graph.cfg_statements` (normalize `stmts_json`)
+3. `core.import_statements` + `core.import_bindings`
+4. `core.name_occurrences`
+5. `core.assignments` + `core.binding_events`
+6. `core.attribute_accesses` + `core.subscript_accesses`
+
+### P1 (unlock embedded lineage + richer causal facts)
+
+7. `core.string_literals`
+8. SCIP role-split tables/views: defs/refs/reads/writes/imports
+9. `analytics.evidence_items` (normalize evidence JSON across analytics tables)
+
+### P2 (cross-language expansion)
+
+10. tree-sitter locals tables: `core.ts_scopes/definitions/references`
+11. tree-sitter injections → `core.embedded_segments`
+
+---
+
+If you want, I can take this one step further and write the **exact schemas (columns + keys + recommended indexes)** for the P0/P1 tables in a Phase5-consistent style (including how each should join to `core.goid_crosswalk`, `core.scip_occurrences`, and your existing function/module identity tables), plus a “minimum viable extraction pass” outline for each producer (LibCST visitor + metadata deps, SCIP role filter, tree-sitter query pack runner).
+
 
 Below is a **Phase5-consistent, concrete** set of **P0 (foundational)** and **P1 (enriching)** *non-edge index tables* that (a) make your analyses far less brittle, (b) let you leverage **LibCST metadata**, **SCIP resolution**, and **tree-sitter query packs** cleanly, and (c) join predictably to:
 

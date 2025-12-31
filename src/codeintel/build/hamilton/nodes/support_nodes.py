@@ -11,7 +11,6 @@ from hamilton.function_modifiers import parameterize, resolve_from_config, sourc
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
 from codeintel.build.hamilton.naming import (
     artifact_node,
     dataset_node,
@@ -19,6 +18,7 @@ from codeintel.build.hamilton.naming import (
     query_node,
     target_node,
 )
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
 from codeintel.build.tabular.types import TabularInput

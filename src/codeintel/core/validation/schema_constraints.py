@@ -48,9 +48,7 @@ def schema_errors(
         errors.append(f"Unexpected columns: {', '.join(extra)}")
     if not missing:
         ordered_actual = (
-            [name for name in actual_names if name in expected_set]
-            if allow_extra
-            else actual_names
+            [name for name in actual_names if name in expected_set] if allow_extra else actual_names
         )
         if expected_names != ordered_actual:
             errors.append(

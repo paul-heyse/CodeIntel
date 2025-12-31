@@ -15,11 +15,7 @@ if TYPE_CHECKING:
     type TabularRelation = DuckDBRelation
     type TabularFrame = pl.LazyFrame
     type InferableTabularInput = (
-        pa.RecordBatchReader
-        | pa.Table
-        | pl.DataFrame
-        | TabularFrame
-        | RecordBatchIterable
+        pa.RecordBatchReader | pa.Table | pl.DataFrame | TabularFrame | RecordBatchIterable
     )
     type TabularInput = InferableTabularInput
     type TabularInputWithRelation = TabularInput | TabularRelation
@@ -28,11 +24,7 @@ else:
     TabularRelation = DuckDBRelation
     TabularFrame = pl.LazyFrame
     InferableTabularInput = (
-        pa.RecordBatchReader
-        | pa.Table
-        | pl.DataFrame
-        | TabularFrame
-        | RecordBatchIterable
+        pa.RecordBatchReader | pa.Table | pl.DataFrame | TabularFrame | RecordBatchIterable
     )
     TabularInput = InferableTabularInput
     TabularInputWithRelation = TabularInput | TabularRelation
