@@ -492,6 +492,22 @@ def _arrow_type_for_column_type(column_type: ColumnType) -> pa.DataType:
     return _ARROW_TYPE_MAP.get(base, pa.string())
 
 
+def arrow_type_for_column_type(column_type: ColumnType) -> pa.DataType:
+    """Return the PyArrow type for a normalized ColumnType.
+
+    Parameters
+    ----------
+    column_type
+        Column type string to convert.
+
+    Returns
+    -------
+    pyarrow.DataType
+        Arrow type corresponding to the column type.
+    """
+    return _arrow_type_for_column_type(column_type)
+
+
 def _key_roles(table_schema: TableSchema) -> dict[str, str]:
     roles: dict[str, str] = dict.fromkeys(table_schema.primary_key, "primary_key")
     for index in table_schema.indexes:
@@ -651,4 +667,5 @@ __all__ = [
     "ExtrasPolicy",
     "arrow_contract_for_table_schema",
     "arrow_schema_from_table_schema",
+    "arrow_type_for_column_type",
 ]

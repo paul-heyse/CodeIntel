@@ -4,6 +4,8 @@
 - Migrate analytics and graphs compute into Hamilton-native DAG modules.
 - Make all analytics and graph outputs dataset-backed (Parquet/Arrow) with
   inference-first schema metadata.
+- Ensure `src/codeintel/build` emits a metadata-rich Parquet dataset that is the
+  only source for storage/serving (DuckDB/SQLGlot).
 - Provide table-by-table acceptance criteria and DAG node specs with tracking.
 - Retire legacy orchestration in `src/codeintel/analytics` and `src/codeintel/graphs`
   after parity is verified.
@@ -15,8 +17,39 @@
 
 ## Constraints
 - Batch-first (no streaming execution paths).
-- Parquet dataset is the system of record; DuckDB reads from the dataset.
+- Parquet dataset is the system of record; all Hamilton outputs write Parquet,
+  and DuckDB/SQLGlot read only from that dataset.
 - No SQLGlot view materialization; use Hamilton-native outputs.
+- Current-state analytics only; decommission history/timeseries outputs.
+
+## Inference-First Schema Policy (Parquet Boundary)
+- All Hamilton outputs are inference-first; no explicit schema enforcement at
+  DAG boundaries.
+- Storage/serving consume explicit schemas derived from Parquet metadata, not
+  from Python contracts.
+- Output registry entries are treated as legacy compatibility only; they will be
+  removed for analytics/graph tables once the Parquet metadata contract is
+  complete.
+
+### Parquet Metadata Contract (required)
+All Parquet datasets produced by `src/codeintel/build` must include dataset-level
+metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
+- `codeintel.table_key`: fully qualified table key.
+- `codeintel.domain`: `core`, `graph`, `analytics`, `docs`, etc.
+- `codeintel.target`: Hamilton target name.
+- `codeintel.schema_hash`: stable hash of column names + logical types.
+- `codeintel.columns_json`: JSON mapping `{name: logical_type}`.
+- `codeintel.nullability_json`: JSON mapping `{name: nullable}`.
+- `codeintel.primary_keys_json`: JSON list of primary key columns (if known).
+- `codeintel.partition_columns_json`: JSON list of partition columns.
+- `codeintel.build_id`: unique build run identifier.
+- `codeintel.repo`: repo name.
+- `codeintel.commit`: commit SHA.
+- `codeintel.snapshot_id`: snapshot identifier (if distinct from commit).
+- `codeintel.generated_at`: ISO-8601 UTC timestamp.
+- `codeintel.hamilton.node`: node name that materialized the dataset.
+- `codeintel.hamilton.graph_version`: DAG graph version hash (or build spec id).
+- `codeintel.inputs_json`: JSON list of `{table_key, schema_hash}` lineage.
 
 ## Tracking Legend
 - [ ] not started
@@ -26,13 +59,19 @@
 
 ## Phase Plan (tracking)
 ### Phase 0: Inventory and contracts
-- [~] Finalize the table inventory below against schema service and registry.
-- [~] For each table, confirm schema contract location and add missing contracts.
-- [ ] Decide which outputs are inferable vs explicitly declared in schema registry.
+- [x] Finalize the table inventory below against schema service and registry.
+- [~] For each table, confirm metadata coverage and remove explicit registry
+  entries once Parquet metadata is authoritative
+  (pending: `analytics.dependency_targets` decision).
+- [x] Adopt inference-only schema policy; treat output registry as compatibility.
+- [ ] Implement the Parquet metadata contract in build materializers.
+- [ ] Update DuckDB/SQLGlot ingestion to derive schemas from Parquet metadata only.
 
 ### Phase 1: Core ingestion prerequisites
-- [~] Validate core inputs (AST/CST/docstrings/modules/GOIDs) are complete.
-- [~] Confirm typing, coverage, tests, config ingestion produce required tables.
+- [~] Validate core inputs (AST/CST/docstrings/modules/GOIDs) are complete
+  (pending an end-to-end validation run).
+- [~] Confirm typing, coverage, tests, config ingestion produce required tables
+  (pending an end-to-end validation run).
 
 ### Phase 2: Graph extraction in Hamilton
 - [x] Implement call graph, import graph, CFG, DFG, symbol-use tables in DAG.
@@ -42,9 +81,11 @@
 - [x] Port function metrics, types, ast features, effects, contracts.
 - [x] Implement risk factors and function validation outputs.
 
-### Phase 4: Profiles and higher-level aggregates
+### Phase 4: Profiles and higher-level aggregates (snapshot-only)
 - [x] Implement function/profile, file_profile, module_profile, hotspots.
-- [~] Implement history_timeseries using build-native inputs only.
+- [ ] Remove history-based dependencies from profiles/hotspots
+  (deprecate `analytics.function_history`).
+- [ ] Decommission history_timeseries analytics (see decommission scope).
 
 ### Phase 5: Dependencies, config, semantic roles, subsystems
 - [x] Port external dependency detection and config flow graphs.
@@ -59,7 +100,9 @@
 - [x] Implement test coverage edges, test profiles, and test graph metrics.
 - [x] Implement behavioral coverage and entrypoint test linking.
 
-### Phase 8: Decommission legacy packages
+### Phase 8: Decommission legacy packages + history analytics
+- [ ] Remove history_timeseries + function_history targets, schemas, CLI, docs.
+- [ ] Remove docs.v_* history views and view map entries.
 - [ ] Freeze imports of legacy analytics/graphs in build runtime.
 - [ ] Remove unused legacy orchestration once parity is verified.
 
@@ -73,8 +116,13 @@
   (`src/codeintel/build/hamilton/native/graphs/symbol_use.py`).
 - Analytics tables are now backed by compute kernels across functions, profiles,
   dependencies, graph metrics, testing, semantic roles, data models, and subsystems.
-- `analytics.history_timeseries` is dataset-backed via Hamilton materialization,
-  but still uses the history aggregation helper in `codeintel.analytics.history.history_timeseries`.
+- Inference-first policy is adopted; Parquet metadata is the authoritative schema
+  source for storage/serving.
+- History outputs (`analytics.function_history`, `analytics.history_timeseries`)
+  are slated for decommission to keep analytics snapshot-only.
+- Remaining scope: implement Parquet metadata contract + DuckDB ingestion,
+  decide whether to add or de-scope `analytics.dependency_targets`, and complete
+  Phase 8 decommission steps.
 
 ## DAG Node Conventions
 - Dataset table outputs: `<table>__base -> <table>__table -> t__<target>`.
@@ -88,8 +136,9 @@
 ### Contract sources (confirmed)
 - Explicit output schemas live in `src/codeintel/core/schemas/output_registry.py`
   and are surfaced via `codeintel.build.schemas.get_schema_provider()`.
-- These outputs are treated as non-inferable: the DAG must emit data matching
-  these contracts, and validation uses the same schema metadata.
+- For analytics/graph tables, these are transitional compatibility references;
+  the authoritative schema will come from Parquet metadata once the contract is
+  implemented in build materializers.
 
 ### Explicit table schemas already declared (analytics + graph)
 ```
@@ -169,6 +218,9 @@ graph.symbol_use_edges
 - Keep `analytics.hello_example` out of scope (dev example only).
 - Align graph table acceptance criteria to actual schema columns
   (e.g., `graph.call_graph_nodes` has no `repo/commit`).
+- Planned removals from registry once decommissioned:
+  `analytics.history_timeseries`, `analytics.function_history`,
+  `docs.v_function_history_timeseries`, `docs.v_module_history_timeseries`.
 
 ## Materializer Choices (locked)
 - Use `save_dataset` for all analytics/graph outputs (ArrowDatasetSaver).
@@ -178,6 +230,21 @@ graph.symbol_use_edges
   includes both columns; otherwise partitioning is empty.
 - Validation profile: default `lenient`; upgrade to `strict` for each table
   once unit + integration tests are green.
+- Materializers must emit dataset-level Parquet metadata per the contract above;
+  output registry schemas are no longer a boundary requirement.
+
+## Parquet Boundary Implementation Checklist
+- [ ] Extend `save_dataset` / ArrowDatasetSaver to emit the required metadata
+  into Parquet key/value metadata and a dataset-level `_metadata` or sidecar
+  manifest.
+- [ ] Standardize the dataset directory layout so each table key has a single
+  Parquet root and consistent partitioning.
+- [ ] Update DuckDB ingestion to read schema + metadata from Parquet only
+  (no fallback to output_registry).
+- [ ] Update SQLGlot view building to consume only DuckDB sources derived from
+  Parquet datasets.
+- [ ] Add tests that assert metadata presence and DuckDB schema derivation for a
+  representative analytics + graph table.
 
 ## Initial Implementation Slice (v1)
 First 10 tables to implement end-to-end in Hamilton DAG:
@@ -195,20 +262,17 @@ First 10 tables to implement end-to-end in Hamilton DAG:
 | analytics.function_types | `src/codeintel/build/hamilton/native/analytics/function_types.py` | `analytics.typedness`, `core.goids` | `save_dataset` |
 | analytics.function_ast_features | `src/codeintel/build/hamilton/native/analytics/function_ast_features.py` | `core.ast_nodes`, `core.goids` | `save_dataset` |
 
-### Phase 1 detailed outputs (DAG modules + tests)
-- DAG modules to create or extend:
-  - Graph compute nodes: extend existing graph modules to compute (not just load)
-    `graph.import_*`, `graph.call_graph_*`, `graph.cfg_*`, `graph.dfg_edges`.
-  - Analytics nodes: implement `function_metrics`, `function_types`,
-    `function_ast_features` with compute kernels ported from
-    `src/codeintel/analytics/compute/functions/*` and
-    `src/codeintel/analytics/ast_features/*`.
-- Tests to add (use existing helpers in `tests/_helpers`):
-  - Unit tests for compute kernels under `tests/build/hamilton/native/graphs/`
-    and `tests/build/hamilton/native/analytics/`.
-  - Schema/contract validation tests using the output registry schemas.
-  - Integration test that runs a minimal Hamilton plan for the v1 slice and
-    asserts row counts + referential integrity.
+Status: [x] Implemented in the DAG modules and tests noted below.
+
+### Phase 1 implementation notes (completed)
+- Graph compute nodes live in `src/codeintel/build/hamilton/native/graphs/*` with
+  dataset materializers in `src/codeintel/build/hamilton/native/graphs/graph_targets.py`.
+- Analytics v1 slice nodes live in
+  `src/codeintel/build/hamilton/native/analytics/tables_functions.py`,
+  `src/codeintel/build/hamilton/native/analytics/function_types.py`, and
+  `src/codeintel/build/hamilton/native/analytics/function_ast_features.py`.
+- Tests added: `tests/build/hamilton/native/graphs/test_v1_scaffold.py`,
+  `tests/build/hamilton/native/analytics/test_v1_scaffold.py`.
 
 ## Table-by-table Acceptance Criteria and DAG Node Specs
 
@@ -541,16 +605,18 @@ Acceptance criteria:
 - Issues are stable across identical inputs.
 
 #### analytics.function_history
-Status: [x]
+Status: [~] (decommission planned)
 Source logic: `src/codeintel/analytics/functions/function_history.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_history.py`.
 DAG node spec:
 - Nodes: `function_history__base -> function_history__table`.
 - Inputs: `core.goids`, git history, `analytics.function_metrics`.
 - Output: `analytics.function_history` dataset.
-Acceptance criteria:
-- History spans align to file history for the repo.
-- Stable entity ids are deterministic.
+Decommission criteria:
+- Remove target + table key from DAG inventory and build specs.
+- Remove output registry entry + generated row model.
+- Update downstream tables (`analytics.function_profile`, `analytics.hotspots`)
+  to use snapshot-only inputs.
 
 #### analytics.goid_risk_factors
 Status: [x]
@@ -611,24 +677,24 @@ Source logic: `src/codeintel/analytics/hotspots.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/profiles.py`.
 DAG node spec:
 - Nodes: `hotspots__base -> hotspots__table`.
-- Inputs: `analytics.function_metrics`, `analytics.function_history`,
-  `analytics.goid_risk_factors`.
+- Inputs: `analytics.function_metrics`, `analytics.goid_risk_factors`.
 - Output: `analytics.hotspots` dataset.
 Acceptance criteria:
 - Ranked outputs are deterministic per snapshot.
 - Scores fall within expected ranges.
 
 #### analytics.history_timeseries
-Status: [~]
+Status: [~] (decommission planned)
 Source logic: `src/codeintel/analytics/history/history_timeseries.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/history_timeseries.py`.
 DAG node spec:
 - Nodes: `history_timeseries__base -> history_timeseries__table -> t__history_timeseries`.
 - Inputs: `env.history_options`, `env.history_db_resolver`.
 - Output: `analytics.history_timeseries` dataset.
-Acceptance criteria:
-- Row counts match requested commit window.
-- Stable ids consistent across repeated runs.
+Decommission criteria:
+- Remove target + table key from DAG inventory and build specs.
+- Remove output registry entry + generated row model.
+- Remove CLI commands and tests for history timeseries.
 
 ### Analytics tables (coverage and testing)
 #### analytics.coverage_functions
@@ -755,14 +821,15 @@ Acceptance criteria:
 #### analytics.dependency_targets
 Status: [!]
 Source logic: `src/codeintel/analytics/dependencies/core.py`.
-Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`.
+Planned DAG module: `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`.
 DAG node spec:
 - Nodes: `dependency_targets__base -> dependency_targets__table`.
 - Inputs: `analytics.external_dependencies`, `analytics.config_values`.
 - Output: `analytics.dependency_targets` dataset.
 Acceptance criteria:
 - Target classification matches dependency categories.
-Notes: `analytics.dependency_targets` is not currently declared in the schema registry.
+Notes: `analytics.dependency_targets` is not declared in the schema registry and is
+not yet implemented in the DAG; decide to add the contract + node or de-scope it.
 
 #### analytics.config_data_flow
 Status: [x]
@@ -1135,8 +1202,80 @@ DAG node spec:
 Acceptance criteria:
 - Usage rows reference valid model fields and functions.
 
-## Decommission Checklist
-- [ ] Remove direct references to `codeintel.analytics` and `codeintel.graphs`
-  from build runtime.
-- [ ] Remove legacy orchestration modules once all acceptance criteria pass.
-- [ ] Keep pure compute kernels only if they are still consumed by build DAG.
+## History + Timeseries Decommission (current-state only)
+### Removal checklist
+- [ ] Remove history targets (`analytics.history_timeseries`,
+  `analytics.function_history`) from DAG inventory and build specs.
+- [ ] Remove output registry + row models for history tables.
+- [ ] Remove CLI commands/options/results for history.timeseries.
+- [ ] Remove docs views that depend on history tables.
+- [ ] Update snapshot-only analytics to drop history inputs
+  (`analytics.hotspots`, `analytics.function_profile`).
+- [ ] Remove tests and helpers that insert or validate history/timeseries rows.
+
+### File scope (delete or update)
+Timeseries-specific:
+- [ ] `src/codeintel/analytics/history/history_timeseries.py` (delete).
+- [ ] `src/codeintel/build/hamilton/native/analytics/history_timeseries.py` (delete).
+- [ ] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
+- [ ] `src/codeintel/build/hamilton/env.py` (remove HistoryTimeseriesOptions).
+- [ ] `src/codeintel/build/run_context.py` (remove HistoryTimeseriesOptions).
+- [ ] `src/codeintel/build/config.py` (remove history_timeseries config).
+- [ ] `src/codeintel/cli/commands/history.py` (remove history.timeseries).
+- [ ] `src/codeintel/cli/handlers/history.py` (remove handler logic).
+- [ ] `src/codeintel/cli/options/registry.py` (remove timeseries flags).
+- [ ] `src/codeintel/cli/core/result_types.py` (remove HistoryTimeseriesResult).
+- [ ] `src/codeintel/cli/handlers/__init__.py` (drop export).
+- [ ] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
+- [ ] `src/codeintel/core/schemas/output_registry.py` (remove history_timeseries).
+- [ ] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
+- [ ] `src/codeintel/core/schemas/table_registry.py` (remove table key).
+- [ ] `src/codeintel/storage/views/view_ast_map.json`
+  (remove docs.v_*_history_timeseries).
+- [ ] `tests/cli/test_history_timeseries_cli.py` (remove).
+- [ ] `tests/cli/test_history_validation.py` (remove timeseries checks).
+- [ ] `tests/cli/test_cli_error_parity_apps.py` (update).
+- [ ] `tests/cli/test_help_rendering.py` (update history help).
+- [ ] `tests/build/hamilton/test_pr55_final_sweep.py` (remove history_timeseries).
+- [ ] `tests/build/hamilton/snapshots/*` (regenerate after removal).
+- [ ] `docs/architecture.md` (remove history env reference).
+- [ ] `docs/hamilton_inference_first_implementation_plan.md`
+  (remove docs.v_* history).
+- [ ] `docs/polars_arrow_rearchitecture_plan.md` (remove history timeseries plan).
+
+History (multi-commit) analytics removal:
+- [ ] `src/codeintel/analytics/functions/function_history.py` (delete).
+- [ ] `src/codeintel/build/hamilton/native/analytics/function_history.py` (delete).
+- [ ] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
+- [ ] `src/codeintel/analytics/profiles/functions.py` (remove history joins).
+- [ ] `src/codeintel/build/hamilton/native/analytics/profiles.py` (drop inputs).
+- [ ] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
+- [ ] `src/codeintel/core/schemas/output_registry.py` (remove function_history).
+- [ ] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
+- [ ] `src/codeintel/core/schemas/table_registry.py` (remove table key).
+- [ ] `src/codeintel/storage/views/view_ast_map.json`
+  (remove docs.v_function_history).
+- [ ] `tests/_helpers/orchestration/history.py` (remove function_history helpers).
+- [ ] `tests/analytics/test_profiles_and_functions.py` (remove joins).
+- [ ] `tests/architecture/test_analytics_imports.py` (update allowed exports).
+- [ ] `docs/hamilton_best_in_class_inventory.md` (remove function_history table).
+
+## Legacy Analytics/Graphs Decommission
+### Prereqs
+- [ ] Port any remaining compute kernels referenced by build into
+  `src/codeintel/build/hamilton/native/*` (or a new shared compute package).
+
+### Removal checklist
+- [ ] Remove direct imports of `codeintel.analytics` and `codeintel.graphs`
+  from build runtime once ports land.
+- [ ] Remove legacy orchestration modules and DuckDB helpers.
+- [ ] Update tests that enforce legacy orchestration or export lists.
+- [ ] Update docs to stop referencing legacy packages as sources of truth.
+
+### File scope (delete after ports complete)
+- [ ] `src/codeintel/analytics/` (ast_features, functions, profiles, graphs,
+  cfg_dfg, testing, entrypoints, dependencies, semantic_roles, data_models,
+  subsystems, parsing, utilities, writer_guard).
+- [ ] `src/codeintel/graphs/` (compute, validation, helpers).
+- [ ] `tests/build/hamilton/test_pr52_no_legacy_orchestrators.py` (update).
+- [ ] `tests/analytics/test_public_exports.py` (update public API expectations).

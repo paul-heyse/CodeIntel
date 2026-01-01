@@ -14,25 +14,26 @@ from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
-from codeintel.core.schemas.primitives import column_type_base, normalize_column_type
+from codeintel.core.schemas.primitives import column_type_base
 from codeintel.serving.semantic.datasets import (
     DatasetScannerOptions,
     dataset_filter_expression,
     dataset_for_entry,
     dataset_scanner_for_entry,
+    dataset_schema_for_entry,
 )
 from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
-from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
+from codeintel.serving.semantic.filter_ops import FilterOpError, validate_filter_value
 from codeintel.serving.semantic.models import FilterValue
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
     ConstantExpression,
-    DuckDBCatalogException,
     DuckDBConnection,
     DuckDBRelation,
     Expression,
     FunctionExpression,
+    duckdb_type_for_column_type,
 )
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 
@@ -104,6 +105,7 @@ def build_relation_plan(
     """
     filter_expression = dataset_filter_expression(
         filters=spec.filters,
+        allowed_columns=spec.allowed_columns,
         column_types=context.column_types,
     )
     projection_columns = None
@@ -202,19 +204,16 @@ def _resolve_relation(
     projection_columns: Sequence[str] | None = None,
 ) -> DuckDBRelation:
     entry = context.dataset_manifests.get(table_key)
-    if entry is not None:
-        return _scan_dataset(
-            con=con,
-            entry=entry,
-            context=context,
-            filter_expression=filter_expression,
-            projection_columns=projection_columns,
-        )
-    try:
-        return con.table(table_key)
-    except DuckDBCatalogException as exc:
-        msg = f"Unknown DuckDB table/view: {table_key}"
-        raise DuckDBRelationQueryBuilderError(msg) from exc
+    if entry is None:
+        msg = f"Unknown dataset entry: {table_key}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return _scan_dataset(
+        con=con,
+        entry=entry,
+        context=context,
+        filter_expression=filter_expression,
+        projection_columns=projection_columns,
+    )
 
 
 def _ast_has_joins(ast: exp.Select) -> bool:
@@ -380,6 +379,7 @@ def _scan_dataset(
     filter_expression: ds.Expression | None,
     projection_columns: Sequence[str] | None,
 ) -> DuckDBRelation:
+    schema = dataset_schema_for_entry(entry) or context.contract_schema
     scan_paths = _parquet_scan_paths(entry)
     hive_partitioning = bool(entry.manifest.partition_columns)
     try:
@@ -398,19 +398,19 @@ def _scan_dataset(
         fragment_readahead=context.scan_options.fragment_readahead,
         filter_expression=filter_expression,
         metrics_enabled=context.scan_options.metrics_enabled,
-        schema=context.contract_schema,
+        schema=schema,
         columns=projection_columns,
     )
     scanner = dataset_scanner_for_entry(
         entry,
         options=options,
     )
-    if context.contract_schema is not None:
+    if schema is not None:
         reader = scanner.to_reader()
         aligned = align_reader_to_contract(
             reader,
-            context.contract_schema,
-            extras_policy=extras_policy_from_schema(context.contract_schema),
+            schema,
+            extras_policy=extras_policy_from_schema(schema),
         )
         try:
             return scan_arrow(con, source=aligned)
@@ -571,49 +571,469 @@ def _duckdb_expr_from_projection(
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None,
 ) -> Expression:
-    result: Expression | None = None
+    result = _duckdb_projection_basic(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if result is not None:
+        return result
+    result = _duckdb_projection_structured(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if result is not None:
+        return result
+    result = _duckdb_projection_function(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if result is not None:
+        return result
+    result = _duckdb_projection_literal(expr)
+    if result is not None:
+        return result
+    msg = f"Unsupported select expression: {type(expr).__name__}"
+    raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _duckdb_projection_basic(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    if isinstance(expr, exp.Star):
+        _require_allowed_column(column="*", allowed_columns=allowed_columns, ctx="select")
+        return ColumnExpression("*")
+    if isinstance(expr, exp.Column):
+        column = _column_name(expr)
+        _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
+        return ColumnExpression(column)
+    if isinstance(expr, exp.Alias):
+        return _duckdb_alias_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    return None
+
+
+def _duckdb_projection_structured(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
     predicate_context = _PredicateContext(
         allowed_columns=allowed_columns,
         column_types=column_types,
         ctx="select",
     )
-    if isinstance(expr, exp.Star):
-        _require_allowed_column(column="*", allowed_columns=allowed_columns, ctx="select")
-        result = ColumnExpression("*")
-    elif isinstance(expr, exp.Column):
-        column = _column_name(expr)
-        _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
-        result = ColumnExpression(column)
-    else:
-        unary = _string_unary_projection(
+    result = _string_unary_projection(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if result is None and isinstance(expr, exp.Coalesce):
+        result = _duckdb_coalesce_expr(
+            expr.expressions,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif result is None and isinstance(expr, exp.Cast):
+        result = _duckdb_cast_expr(
             expr,
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
-        if unary is not None:
-            result = unary
-        elif isinstance(expr, exp.Coalesce):
-            result = _duckdb_coalesce_expr(
-                expr.expressions,
-                allowed_columns=allowed_columns,
-                column_types=column_types,
-            )
-        else:
-            predicate_expr = _string_predicate_projection(expr, context=predicate_context)
-            if predicate_expr is not None:
-                result = predicate_expr
-            elif isinstance(expr, exp.Anonymous):
-                result = _duckdb_function_expr(
-                    expr,
-                    allowed_columns=allowed_columns,
-                    column_types=column_types,
-                )
-            elif isinstance(expr, (exp.Boolean, exp.Literal)):
-                result = ConstantExpression(_literal_value(expr))
+    elif result is None and isinstance(expr, exp.Case):
+        result = _duckdb_case_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif result is None and isinstance(expr, exp.Bracket):
+        result = _duckdb_bracket_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif result is None and isinstance(expr, (exp.JSONExtract, exp.JSONExtractScalar)):
+        result = _duckdb_json_extract_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
     if result is None:
-        msg = f"Unsupported select expression: {type(expr).__name__}"
-        raise DuckDBRelationQueryBuilderError(msg)
+        result = _string_predicate_projection(expr, context=predicate_context)
     return result
+
+
+def _duckdb_projection_function(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    if isinstance(expr, exp.Anonymous):
+        return _duckdb_function_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Func):
+        return _duckdb_named_function_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    return None
+
+
+def _duckdb_projection_literal(expr: exp.Expression) -> Expression | None:
+    if isinstance(expr, (exp.Boolean, exp.Literal)):
+        return ConstantExpression(_literal_value(expr))
+    if isinstance(expr, exp.Var):
+        return _duckdb_var_expr(expr)
+    return None
+
+
+def _duckdb_alias_expr(
+    expr: exp.Alias,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    inner = expr.this
+    if inner is None:
+        msg = "Alias requires an expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    alias = expr.alias
+    value = _duckdb_expr_from_projection(
+        inner,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if isinstance(alias, str) and alias:
+        return value.alias(alias)
+    return value
+
+
+def _duckdb_cast_expr(
+    expr: exp.Cast,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    inner = expr.this
+    if inner is None:
+        msg = "CAST requires an expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    target = expr.args.get("to")
+    if not isinstance(target, exp.DataType):
+        msg = "CAST requires a target data type"
+        raise DuckDBRelationQueryBuilderError(msg)
+    duckdb_type = duckdb_type_for_column_type(target.sql(dialect="duckdb"))
+    if duckdb_type is None:
+        msg = f"Unsupported CAST target type: {target}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    value = _duckdb_expr_from_projection(
+        inner,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return value.cast(duckdb_type)
+
+
+def _duckdb_case_expr(
+    expr: exp.Case,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    ifs = expr.args.get("ifs") or []
+    if not ifs:
+        msg = "CASE requires at least one WHEN clause"
+        raise DuckDBRelationQueryBuilderError(msg)
+    case_operand = expr.args.get("this")
+
+    first = ifs[0]
+    if not isinstance(first, exp.If):
+        msg = "CASE WHEN clause is invalid"
+        raise DuckDBRelationQueryBuilderError(msg)
+    first_condition = _case_condition_expr(
+        case_operand,
+        first,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    first_value = _case_value_expr(
+        first,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    case_expr = duckdb.CaseExpression(first_condition, first_value)
+    for clause in ifs[1:]:
+        if not isinstance(clause, exp.If):
+            msg = "CASE WHEN clause is invalid"
+            raise DuckDBRelationQueryBuilderError(msg)
+        condition = _case_condition_expr(
+            case_operand,
+            clause,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        value = _case_value_expr(
+            clause,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        case_expr = case_expr.when(condition, value)
+    default_expr = expr.args.get("default")
+    if default_expr is not None:
+        default_value = _duckdb_expr_from_projection(
+            default_expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        case_expr = case_expr.otherwise(default_value)
+    return case_expr
+
+
+def _case_condition_expr(
+    case_operand: exp.Expression | None,
+    clause: exp.If,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    condition_expr = clause.this
+    if condition_expr is None:
+        msg = "CASE WHEN requires a condition"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if case_operand is None:
+        return _build_predicate_expr_ast(
+            condition_expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    left = _duckdb_expr_from_projection(
+        case_operand,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    right = _duckdb_expr_from_projection(
+        condition_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return left == right
+
+
+def _case_value_expr(
+    clause: exp.If,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    value_expr = clause.args.get("true")
+    if value_expr is None:
+        msg = "CASE WHEN requires a THEN value"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return _duckdb_expr_from_projection(
+        value_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+def _duckdb_bracket_expr(
+    expr: exp.Bracket,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    base_expr = _require_bracket_base(expr)
+    index_value = _bracket_index_value(expr)
+    base = _duckdb_expr_from_projection(
+        base_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    column_type = _column_type_for_base(base_expr, column_types=column_types)
+    return _bracket_expression_for_type(
+        base=base,
+        index_value=index_value,
+        column_type=column_type,
+    )
+
+
+def _require_bracket_base(expr: exp.Bracket) -> exp.Expression:
+    base_expr = expr.this
+    if base_expr is None:
+        msg = "Bracket access requires an expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return base_expr
+
+
+def _bracket_index_value(expr: exp.Bracket) -> int | str:
+    if len(expr.expressions) != 1:
+        msg = "Bracket access requires a single index expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    index_expr = expr.expressions[0]
+    index_value = _literal_value(index_expr)
+    if not isinstance(index_value, (int, str)):
+        msg = "Bracket index must be a string or integer literal"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return index_value
+
+
+def _column_type_for_base(
+    base_expr: exp.Expression,
+    *,
+    column_types: Mapping[str, ColumnType] | None,
+) -> ColumnType | None:
+    if isinstance(base_expr, exp.Column) and column_types is not None:
+        column = _column_name(base_expr)
+        return column_types.get(column)
+    return None
+
+
+def _bracket_expression_for_type(
+    *,
+    base: Expression,
+    index_value: int | str,
+    column_type: ColumnType | None,
+) -> Expression:
+    base_type = column_type_base(column_type) if column_type is not None else None
+    if base_type == "LIST":
+        return _list_bracket_expr(base=base, index_value=index_value)
+    if base_type == "MAP":
+        return _map_bracket_expr(base=base, index_value=index_value)
+    if base_type == "STRUCT":
+        return _struct_bracket_expr(base=base, index_value=index_value)
+    if base_type == "JSON" or base_type is None:
+        path = _json_path_from_bracket(index_value)
+        return FunctionExpression("json_extract", base, ConstantExpression(path))
+    msg = f"Unsupported bracket access for column type {column_type}"
+    raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _list_bracket_expr(*, base: Expression, index_value: int | str) -> Expression:
+    if not isinstance(index_value, int):
+        msg = "LIST access requires an integer index"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return FunctionExpression("list_extract", base, ConstantExpression(index_value))
+
+
+def _map_bracket_expr(*, base: Expression, index_value: int | str) -> Expression:
+    if not isinstance(index_value, str):
+        msg = "MAP access requires a string key"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return FunctionExpression("map_extract", base, ConstantExpression(index_value))
+
+
+def _struct_bracket_expr(*, base: Expression, index_value: int | str) -> Expression:
+    if not isinstance(index_value, str):
+        msg = "STRUCT access requires a string key"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return FunctionExpression("struct_extract", base, ConstantExpression(index_value))
+
+
+def _duckdb_json_extract_expr(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if not isinstance(expr, (exp.JSONExtract, exp.JSONExtractScalar)):
+        msg = "JSON extraction requires a JSONExtract expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    base_expr = expr.this
+    path_expr = expr.expression
+    if base_expr is None or path_expr is None:
+        msg = "JSON extraction requires a base expression and path"
+        raise DuckDBRelationQueryBuilderError(msg)
+    base = _duckdb_expr_from_projection(
+        base_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    path_value = _json_path_literal(path_expr)
+    func_name = "json_extract_string" if isinstance(expr, exp.JSONExtractScalar) else "json_extract"
+    return FunctionExpression(func_name, base, ConstantExpression(path_value))
+
+
+_JSON_PATH_QUOTE_MIN_LEN = 2
+
+
+def _json_path_literal(expr: exp.Expression) -> str:
+    if isinstance(expr, exp.JSONPath):
+        rendered = expr.sql(dialect="duckdb")
+        if (
+            rendered.startswith("'")
+            and rendered.endswith("'")
+            and len(rendered) >= _JSON_PATH_QUOTE_MIN_LEN
+        ):
+            return rendered[1:-1]
+        return rendered
+    if isinstance(expr, exp.Literal) and expr.is_string:
+        return str(expr.this)
+    msg = f"Unsupported JSON path expression: {type(expr).__name__}"
+    raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _json_path_from_bracket(value: int | str) -> str:
+    if isinstance(value, int):
+        return f"$[{value}]"
+    return f"$.{value}"
+
+
+def _duckdb_named_function_expr(
+    expr: exp.Func,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    func_name = expr.sql_name().lower()
+    if func_name == "extract":
+        func_name = "date_part"
+    if func_name not in _NAMED_FUNCTIONS:
+        msg = f"Unsupported function: {func_name or '<unknown>'}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    args = [
+        _duckdb_expr_from_projection(
+            arg,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        for arg in _ordered_func_args(expr)
+    ]
+    return FunctionExpression(func_name, *args)
+
+
+def _ordered_func_args(expr: exp.Expression) -> list[exp.Expression]:
+    args: list[exp.Expression] = []
+    for key in expr.arg_types:
+        value = expr.args.get(key)
+        if value is None:
+            continue
+        if isinstance(value, list):
+            args.extend(value)
+        else:
+            args.append(value)
+    return args
+
+
+def _duckdb_var_expr(expr: exp.Var) -> Expression:
+    name = expr.this
+    if not isinstance(name, str) or not name:
+        msg = "Var expression requires a string value"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return ConstantExpression(name.lower())
 
 
 def _duckdb_function_expr(
@@ -641,8 +1061,35 @@ def _duckdb_function_expr(
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
+    if func_name in _GENERIC_FUNCTIONS:
+        return _duckdb_generic_function(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
     msg = f"Unsupported function: {func_name or '<unknown>'}"
     raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _duckdb_generic_function(
+    expr: exp.Anonymous,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if not expr.expressions:
+        msg = "Generic functions require at least one argument"
+        raise DuckDBRelationQueryBuilderError(msg)
+    args = [
+        _duckdb_expr_from_projection(
+            arg,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        for arg in expr.expressions
+    ]
+    func_name = (expr.name or "").lower()
+    return FunctionExpression(func_name, *args)
 
 
 def _duckdb_string_function(
@@ -717,11 +1164,11 @@ def _duckdb_string_predicate_expr(
     )
     column_type = context.column_types.get(column) if context.column_types is not None else None
     op = _STRING_FUNC_MAP[func_name]
-    _validate_operator(op=op, column_type=column_type)
     value = _literal_value(value_expr)
-    if not isinstance(value, str):
-        msg = f"{func_name} requires a string literal"
-        raise DuckDBRelationQueryBuilderError(msg)
+    try:
+        validate_filter_value(op=op, value=value, column_type=column_type)
+    except FilterOpError as exc:
+        raise DuckDBRelationQueryBuilderError(str(exc)) from exc
     return FunctionExpression(func_name, ColumnExpression(column), ConstantExpression(value))
 
 
@@ -1036,7 +1483,6 @@ def _build_comparison_expr_ast(
         raise DuckDBRelationQueryBuilderError(msg)
     _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="filter")
     column_type = column_types.get(column) if column_types is not None else None
-    _validate_operator(op=op, column_type=column_type)
     return _build_comparison_predicate(
         col_expr=ColumnExpression(column),
         op=op,
@@ -1057,7 +1503,6 @@ def _build_in_expr_ast(
     column = _column_name(expr.this)
     _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="filter")
     column_type = column_types.get(column) if column_types is not None else None
-    _validate_operator(op="in", column_type=column_type)
     values = [_literal_value(item) for item in expr.expressions]
     return _build_in_predicate(
         col_expr=ColumnExpression(column),
@@ -1091,36 +1536,13 @@ def _build_string_expr_ast(
     column = _column_name(column_expr)
     _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="filter")
     column_type = column_types.get(column) if column_types is not None else None
-    _validate_operator(op=op, column_type=column_type)
     value = _literal_value(value_expr)
-    if not isinstance(value, str):
-        msg = f"{op} operator requires string value"
-        raise DuckDBRelationQueryBuilderError(msg)
     return _build_string_predicate(
         col_expr=ColumnExpression(column),
         op=op,
         value=value,
         column_type=column_type,
     )
-
-
-def _validate_operator(*, op: str, column_type: ColumnType | None) -> None:
-    allowed_ops = allowed_ops_for_column_type(column_type)
-    if op not in allowed_ops:
-        msg = (
-            f"Operator {op} is not supported for column type {column_type or _UNKNOWN_COLUMN_TYPE}"
-        )
-        raise DuckDBRelationQueryBuilderError(msg)
-    base = column_type_base(column_type) if column_type is not None else None
-    if op in _ORDERING_OPS and base == "VARCHAR":
-        msg = f"Operator {op} is not supported for string columns"
-        raise DuckDBRelationQueryBuilderError(msg)
-    if op == "in" and base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
-        msg = "IN operator is not supported for JSON columns"
-        raise DuckDBRelationQueryBuilderError(msg)
-    if op in _STRING_OPS and base is not None and base != "VARCHAR":
-        msg = f"{op} operator is only supported for VARCHAR columns"
-        raise DuckDBRelationQueryBuilderError(msg)
 
 
 def _is_literal(expr: exp.Expression | None) -> bool:
@@ -1200,9 +1622,6 @@ def _column_name(column: exp.Column) -> str:
     return name
 
 
-_UNKNOWN_COLUMN_TYPE = "UNKNOWN"
-_ORDERING_OPS = frozenset({"lt", "lte", "gt", "gte"})
-_STRING_OPS = frozenset({"contains", "startswith"})
 _STRING_FUNC_ARG_COUNT = 2
 _STRING_FUNC_MAP = {
     "contains": "contains",
@@ -1210,33 +1629,29 @@ _STRING_FUNC_MAP = {
 }
 _STRING_PREDICATE_FUNCS = frozenset(_STRING_FUNC_MAP.keys())
 _STRING_UNARY_FUNCS = frozenset({"lower", "upper"})
-_DECIMAL_38_0 = "DECIMAL(38,0)"
+_GENERIC_FUNCTIONS = frozenset(
+    {
+        "date_add",
+        "date_diff",
+        "date_part",
+        "date_sub",
+        "date_trunc",
+        "json_extract",
+        "json_extract_scalar",
+        "list_extract",
+        "list_value",
+        "map_extract",
+        "map_keys",
+        "map_values",
+        "struct_pack",
+        "struct_extract",
+    }
+)
+_NAMED_FUNCTIONS = _GENERIC_FUNCTIONS
 
 
 def _duckdb_type_for_column(column_type: ColumnType | None) -> DuckDBPyType | None:
-    if column_type is None:
-        return None
-    normalized = normalize_column_type(str(column_type))
-    base = column_type_base(normalized)
-    if normalized.upper().replace(" ", "") == _DECIMAL_38_0:
-        return duckdb.sqltype(_DECIMAL_38_0)
-    if base == "DECIMAL":
-        if normalized.upper().startswith("DECIMAL("):
-            return duckdb.sqltype(normalized)
-        return duckdb.sqltype("DECIMAL")
-    if base in {"STRUCT", "MAP", "LIST", "UNION"}:
-        return duckdb.sqltype(normalized)
-    type_map: dict[str, DuckDBPyType] = {
-        "BOOLEAN": duckdb.sqltype("BOOLEAN"),
-        "INTEGER": duckdb.sqltype("INTEGER"),
-        "BIGINT": duckdb.sqltype("BIGINT"),
-        "DOUBLE": duckdb.sqltype("DOUBLE"),
-        "VARCHAR": duckdb.sqltype("VARCHAR"),
-        "TIMESTAMP": duckdb.sqltype("TIMESTAMP"),
-        "TIMESTAMPTZ": duckdb.sqltype("TIMESTAMPTZ"),
-        "JSON": duckdb.sqltype("JSON"),
-    }
-    return type_map.get(base)
+    return duckdb_type_for_column_type(column_type)
 
 
 def _typed_constant(value: FilterValue, *, column_type: ColumnType | None) -> Expression:
@@ -1262,14 +1677,14 @@ def _build_comparison_predicate(
     value: FilterValue,
     column_type: ColumnType | None,
 ) -> Expression:
-    if isinstance(value, list):
+    try:
+        validated = validate_filter_value(op=op, value=value, column_type=column_type)
+    except FilterOpError as exc:
+        raise DuckDBRelationQueryBuilderError(str(exc)) from exc
+    if isinstance(validated, list):
         msg = f"{op} operator does not support list value"
         raise DuckDBRelationQueryBuilderError(msg)
-    base = column_type_base(column_type) if column_type is not None else None
-    if op in _ORDERING_OPS and base == "VARCHAR":
-        msg = f"Operator {op} is not supported for string columns"
-        raise DuckDBRelationQueryBuilderError(msg)
-    literal = _typed_constant(value, column_type=column_type)
+    literal = _typed_constant(validated, column_type=column_type)
     if op == "eq":
         return col_expr == literal
     if op == "ne":
@@ -1292,16 +1707,16 @@ def _build_in_predicate(
     value: FilterValue,
     column_type: ColumnType | None,
 ) -> Expression:
-    if not isinstance(value, list):
+    try:
+        validated = validate_filter_value(op="in", value=value, column_type=column_type)
+    except FilterOpError as exc:
+        raise DuckDBRelationQueryBuilderError(str(exc)) from exc
+    if not isinstance(validated, list):
         msg = "IN operator requires list value"
         raise DuckDBRelationQueryBuilderError(msg)
-    base = column_type_base(column_type) if column_type is not None else None
-    if base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
-        msg = "IN operator is not supported for JSON columns"
-        raise DuckDBRelationQueryBuilderError(msg)
-    if not value:
+    if not validated:
         return ConstantExpression(0) == ConstantExpression(1)
-    constants = [_typed_constant(item, column_type=column_type) for item in value]
+    constants = [_typed_constant(item, column_type=column_type) for item in validated]
     return col_expr.isin(*constants)
 
 
@@ -1312,14 +1727,14 @@ def _build_string_predicate(
     value: FilterValue,
     column_type: ColumnType | None,
 ) -> Expression:
-    if not isinstance(value, str):
+    try:
+        validated = validate_filter_value(op=op, value=value, column_type=column_type)
+    except FilterOpError as exc:
+        raise DuckDBRelationQueryBuilderError(str(exc)) from exc
+    if not isinstance(validated, str):
         msg = f"{op} operator requires string value"
         raise DuckDBRelationQueryBuilderError(msg)
-    base = column_type_base(column_type) if column_type is not None else None
-    if base is not None and base != "VARCHAR":
-        msg = f"{op} operator is only supported for VARCHAR columns"
-        raise DuckDBRelationQueryBuilderError(msg)
-    literal = _typed_constant(value, column_type=column_type)
+    literal = _typed_constant(validated, column_type=column_type)
     func_name = "contains" if op == "contains" else "starts_with"
     return FunctionExpression(func_name, col_expr, literal)
 

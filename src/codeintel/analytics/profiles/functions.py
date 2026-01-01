@@ -15,7 +15,6 @@ from codeintel.analytics.profiles.types import (
     FunctionContractView,
     FunctionDocView,
     FunctionEffectsView,
-    FunctionHistoryView,
     FunctionProfileInputs,
     FunctionRiskView,
     FunctionRoleView,
@@ -58,10 +57,6 @@ def _coerce_goid(record: Mapping[str, object]) -> int | None:
     return optional_int(record.get("function_goid_h128"))
 
 
-def _coerce_datetime(value: object) -> datetime | None:
-    return value if isinstance(value, datetime) else None
-
-
 @dataclass(frozen=True)
 class FunctionProfileViews:
     """Container for per-function views used to assemble profiles."""
@@ -74,7 +69,6 @@ class FunctionProfileViews:
     contracts_by_func: Mapping[int, FunctionContractView]
     roles_by_func: Mapping[int, FunctionRoleView]
     docs_by_func: Mapping[int, FunctionDocView]
-    history_by_func: Mapping[int, FunctionHistoryView]
 
 
 @dataclass(frozen=True)
@@ -813,62 +807,6 @@ def join_function_docs(inputs: FunctionProfileInputs) -> Mapping[int, FunctionDo
     return result
 
 
-def join_function_history(inputs: FunctionProfileInputs) -> Mapping[int, FunctionHistoryView]:
-    """
-    Collect function history records.
-
-    Returns
-    -------
-    Mapping[int, FunctionHistoryView]
-        Mapping keyed by function GOID.
-    """
-    try:
-        history = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.function_history"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        selected = history.select(
-            "function_goid_h128",
-            "created_in_commit",
-            "created_at",
-            "last_modified_commit",
-            "last_modified_at",
-            "age_days",
-            "commit_count",
-            "author_count",
-            "lines_added",
-            "lines_deleted",
-            "churn_score",
-            "stability_bucket",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load history: %s", exc)
-        return {}
-    result: dict[int, FunctionHistoryView] = {}
-    for record in records:
-        goid_value = _coerce_goid(record)
-        if goid_value is None:
-            continue
-        goid = goid_value
-        result[goid] = FunctionHistoryView(
-            function_goid_h128=goid,
-            created_in_commit=optional_str(record["created_in_commit"]),
-            created_at_history=_coerce_datetime(record["created_at"]),
-            last_modified_commit=optional_str(record["last_modified_commit"]),
-            last_modified_at=_coerce_datetime(record["last_modified_at"]),
-            age_days=optional_int(record["age_days"]),
-            commit_count=int_or_default(record["commit_count"]),
-            author_count=int_or_default(record["author_count"]),
-            lines_added=int_or_default(record["lines_added"]),
-            lines_deleted=int_or_default(record["lines_deleted"]),
-            churn_score=optional_float(record["churn_score"]),
-            stability_bucket=optional_str(record["stability_bucket"]),
-        )
-    return result
-
-
 def build_function_profile_rows(
     inputs: FunctionProfileInputs,
     views: FunctionProfileViews,
@@ -889,7 +827,6 @@ def build_function_profile_rows(
         contract = views.contracts_by_func.get(goid)
         role = views.roles_by_func.get(goid)
         doc = views.docs_by_func.get(goid)
-        history = views.history_by_func.get(goid)
 
         coverage_ratio = coverage.coverage_ratio if coverage is not None else None
         risk_component_coverage = (
@@ -960,17 +897,17 @@ def build_function_profile_rows(
                 coverage.dominant_test_status if coverage is not None else None
             ),
             "slow_test_threshold_ms": inputs.slow_test_threshold_ms,
-            "created_in_commit": history.created_in_commit if history is not None else None,
-            "created_at_history": history.created_at_history if history is not None else None,
-            "last_modified_commit": (history.last_modified_commit if history is not None else None),
-            "last_modified_at": history.last_modified_at if history is not None else None,
-            "age_days": history.age_days if history is not None else None,
-            "commit_count": history.commit_count if history is not None else 0,
-            "author_count": history.author_count if history is not None else 0,
-            "lines_added": history.lines_added if history is not None else 0,
-            "lines_deleted": history.lines_deleted if history is not None else 0,
-            "churn_score": history.churn_score if history is not None else 0.0,
-            "stability_bucket": history.stability_bucket if history is not None else "unknown",
+            "created_in_commit": None,
+            "created_at_history": None,
+            "last_modified_commit": None,
+            "last_modified_at": None,
+            "age_days": None,
+            "commit_count": 0,
+            "author_count": 0,
+            "lines_added": 0,
+            "lines_deleted": 0,
+            "churn_score": 0.0,
+            "stability_bucket": "unknown",
             "call_fan_in": graph.call_fan_in if graph is not None else 0,
             "call_fan_out": graph.call_fan_out if graph is not None else 0,
             "call_edge_in_count": graph.call_edge_in_count if graph is not None else 0,

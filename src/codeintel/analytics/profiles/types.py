@@ -165,20 +165,3 @@ class FunctionDocView:
     doc_params: object
     doc_returns: object
 
-
-@dataclass(frozen=True)
-class FunctionHistoryView:
-    """History and churn metrics."""
-
-    function_goid_h128: int
-    created_in_commit: str | None
-    created_at_history: datetime | None
-    last_modified_commit: str | None
-    last_modified_at: datetime | None
-    age_days: int | None
-    commit_count: int
-    author_count: int
-    lines_added: int
-    lines_deleted: int
-    churn_score: float | None
-    stability_bucket: str | None

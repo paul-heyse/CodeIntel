@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.columnar.schema import unify_schema_for_batches
-from codeintel.serving.semantic.duckdb_contracts import contract_schema_for_table_key
+from codeintel.serving.semantic.datasets import dataset_schema_for_entry
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
     RelationBuildContext,
@@ -56,13 +56,10 @@ def _contract_schema_for_table(
     *,
     table_key: str,
 ) -> pa.Schema | None:
-    con = ctx.warehouse.gateway.con if ctx.warehouse is not None else None
-    return contract_schema_for_table_key(
-        con=con,
-        table_key=table_key,
-        repo=ctx.pointer.repo,
-        commit=ctx.pointer.commit,
-    )
+    entry = ctx.dataset_manifests.get(table_key)
+    if entry is None:
+        return None
+    return dataset_schema_for_entry(entry)
 
 
 class QueryBuilderError(ValueError):

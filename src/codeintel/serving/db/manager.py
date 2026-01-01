@@ -34,7 +34,6 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.datasets import DatasetManifestIndex, load_dataset_manifests
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
@@ -427,7 +426,6 @@ def _merge_missing_schemas(
 
 def _load_schema_inventory(
     *,
-    pointer: ServingSnapshotPointer,
     registry: SemanticRegistry,
     dataset_manifests: DatasetManifestIndex,
 ) -> tuple[SchemaInventory, str]:
@@ -436,46 +434,12 @@ def _load_schema_inventory(
         dataset_manifests=dataset_manifests,
     )
     if not table_keys:
-        inventory = SchemaInventory.load(pointer.schema_manifest_path)
-        return inventory, "schema_manifest"
+        return SchemaInventory(schemas={}), "dataset_manifests"
 
-    schemas: dict[str, TableSchema] = {}
-    sources: list[str] = []
-
-    try:
-        duckdb_inventory = _load_inventory_from_duckdb(
-            db_path=pointer.db_path,
-            table_keys=table_keys,
-        )
-    except (DuckDBError, OSError, RuntimeError, ValueError):
-        duckdb_inventory = SchemaInventory(schemas={})
-    if duckdb_inventory.schemas:
-        schemas.update(duckdb_inventory.schemas)
-        sources.append("duckdb")
-
-    missing = set(table_keys) - set(schemas)
-    if missing:
-        manifest_inventory = SchemaInventory.from_dataset_manifests(dataset_manifests)
-        if manifest_inventory.schemas and _merge_missing_schemas(
-            target=schemas,
-            source=manifest_inventory.schemas,
-            missing=missing,
-        ):
-            sources.append("manifest")
-        missing = set(table_keys) - set(schemas)
-
-    if missing:
-        registry_inventory = SchemaInventory.load(pointer.schema_manifest_path)
-        if registry_inventory.schemas and _merge_missing_schemas(
-            target=schemas,
-            source=registry_inventory.schemas,
-            missing=missing,
-        ):
-            sources.append("schema_manifest")
-
-    if not sources:
-        return SchemaInventory(schemas={}), "empty"
-    return SchemaInventory(schemas=schemas), "+".join(sources)
+    inventory = SchemaInventory.from_dataset_manifests(dataset_manifests)
+    if not inventory.schemas:
+        return SchemaInventory(schemas={}), "dataset_manifests"
+    return inventory, "dataset_manifests"
 
 
 def _load_snapshot_context(
@@ -491,7 +455,6 @@ def _load_snapshot_context(
     snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
     dataset_manifests = load_dataset_manifests(snapshot_manifest)
     inventory, inventory_source = _load_schema_inventory(
-        pointer=pointer,
         registry=registry,
         dataset_manifests=dataset_manifests,
     )

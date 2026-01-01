@@ -17,7 +17,6 @@ from codeintel.core.columnar.schema_alignment import (
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
-from codeintel.storage.datasets.contracts import arrow_schema_from_manifest
 from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
@@ -319,7 +318,10 @@ def _create_dataset_view(
     if current_schema != request.schema:
         _set_schema(con, request.schema)
     try:
-        contract_schema = _contract_schema_for_manifest(request.manifest)
+        contract_schema = _contract_schema_for_manifest(
+            manifest=request.manifest,
+            manifest_path=request.manifest_path,
+        )
         relation = _dataset_read_parquet_relation(
             con=con,
             manifest=request.manifest,
@@ -374,11 +376,18 @@ def _dataset_read_parquet_relation(
             return con.from_arrow(dataset)
 
 
-def _contract_schema_for_manifest(manifest: ArrowDatasetManifest) -> pa.Schema | None:
+def _contract_schema_for_manifest(
+    *,
+    manifest: ArrowDatasetManifest,
+    manifest_path: Path,
+) -> pa.Schema | None:
+    dataset_dir = manifest_path.parent.resolve()
+    partitioning: str | None = "hive" if manifest.partition_columns else None
     try:
-        return arrow_schema_from_manifest(manifest)
-    except (TypeError, ValueError):
+        dataset = ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning)
+    except (OSError, pa.ArrowInvalid, ValueError):
         return None
+    return dataset.schema
 
 
 def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> ds.Scanner:

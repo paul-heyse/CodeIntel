@@ -17,7 +17,6 @@ from codeintel.analytics.profiles.functions import (
     join_function_coverage,
     join_function_docs,
     join_function_effects,
-    join_function_history,
     join_function_risk,
     join_function_roles,
     load_function_base_info,
@@ -108,7 +107,6 @@ def function_profile_inputs(
     _q__analytics__function_contracts: InferableTabularInput,
     _q__analytics__semantic_roles_functions: InferableTabularInput,
     _q__core__docstrings: InferableTabularInput,
-    _q__analytics__function_history: InferableTabularInput,
     _q__analytics__typedness: InferableTabularInput,
     _q__analytics__static_diagnostics: InferableTabularInput,
 ) -> FunctionProfileInputs:
@@ -133,7 +131,6 @@ def function_profile__base(function_profile_inputs: FunctionProfileInputs) -> pl
         contracts_by_func=join_function_contracts(inputs),
         roles_by_func=join_function_roles(inputs),
         docs_by_func=join_function_docs(inputs),
-        history_by_func=join_function_history(inputs),
     )
     rows = list(build_function_profile_rows(inputs, views=views))
     return rows_to_frame(FUNCTION_PROFILE_TABLE_KEY, rows)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
+from codeintel.serving.semantic.filter_compiler import (
+    FilterCompilerError,
+    arrow_filter_expression,
+    compile_filter_predicates,
+)
 from codeintel.storage.datasets.contracts import (
     DatasetTuningMetadata,
     WriteSettingsPayload,
@@ -21,6 +25,7 @@ from codeintel.storage.datasets.contracts import (
     write_settings_from_manifest,
 )
 from codeintel.storage.datasets.manifests import read_dataset_manifest
+from codeintel.storage.datasets.parquet_metadata import metadata_from_schema
 from codeintel.storage.tracking.schema_catalog_models import DerivedSettingsPayload
 
 if TYPE_CHECKING:
@@ -28,13 +33,9 @@ if TYPE_CHECKING:
 
     from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.serving.semantic.models import FilterSpec, FilterValue
+    from codeintel.serving.semantic.models import FilterSpec
 
 LOG = logging.getLogger(__name__)
-
-
-_COMPARISON_OPS = frozenset({"eq", "ne", "lt", "lte", "gt", "gte"})
-_STRING_OPS = frozenset({"contains", "startswith"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,9 +144,39 @@ def dataset_for_entry(entry: DatasetManifestEntry) -> ds.Dataset:
     return ds.dataset(str(entry.dataset_dir), format="parquet", partitioning=partitioning)
 
 
+def dataset_schema_for_entry(entry: DatasetManifestEntry) -> pa.Schema | None:
+    """Return the Arrow schema for a dataset entry.
+
+    Returns
+    -------
+    pyarrow.Schema | None
+        Arrow schema for the dataset entry, or None if it cannot be read.
+    """
+    try:
+        dataset = dataset_for_entry(entry)
+    except (OSError, pa.ArrowInvalid, ValueError):
+        return None
+    return dataset.schema
+
+
+def dataset_metadata_for_entry(entry: DatasetManifestEntry) -> dict[str, object]:
+    """Return decoded schema metadata for a dataset entry.
+
+    Returns
+    -------
+    dict[str, object]
+        Metadata dictionary decoded from the dataset schema.
+    """
+    schema = dataset_schema_for_entry(entry)
+    if schema is None:
+        return {}
+    return metadata_from_schema(schema)
+
+
 def dataset_filter_expression(
     *,
     filters: list[FilterSpec],
+    allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None = None,
 ) -> ds.Expression | None:
     """Build a dataset filter expression for pushdown.
@@ -154,6 +185,8 @@ def dataset_filter_expression(
     ----------
     filters
         Filter specs to translate into dataset expressions.
+    allowed_columns
+        Allowed columns for filtering.
     column_types
         Optional column type mapping for operator validation.
 
@@ -164,12 +197,16 @@ def dataset_filter_expression(
     """
     if not filters:
         return None
-    expressions: list[ds.Expression] = []
-    for filt in filters:
-        expr = _filter_expression(filt, column_types=column_types)
-        if expr is not None:
-            expressions.append(expr)
-    return _combine_expressions(expressions)
+    try:
+        predicates = compile_filter_predicates(
+            filters,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    except FilterCompilerError as exc:
+        LOG.debug("Dataset filter compilation failed: %s", exc)
+        return None
+    return arrow_filter_expression(predicates)
 
 
 def dataset_scanner_for_entry(
@@ -294,72 +331,6 @@ def load_dataset_manifests(
             manifest_path=manifest_path,
         )
     return DatasetManifestIndex(by_table_key=by_table)
-
-
-def _combine_expressions(expressions: list[ds.Expression]) -> ds.Expression | None:
-    if not expressions:
-        return None
-    combined = expressions[0]
-    for expr in expressions[1:]:
-        combined &= expr
-    return combined
-
-
-def _filter_expression(
-    filt: FilterSpec,
-    *,
-    column_types: Mapping[str, ColumnType] | None,
-) -> ds.Expression | None:
-    column_type = column_types.get(filt.column) if column_types is not None else None
-    allowed_ops = allowed_ops_for_column_type(column_type)
-    if filt.op not in allowed_ops:
-        return None
-    field = ds.field(filt.column)
-    if filt.op in _COMPARISON_OPS:
-        return _comparison_expression(field, op=filt.op, value=filt.value)
-    if filt.op == "in":
-        return _in_expression(field, value=filt.value)
-    if filt.op in _STRING_OPS:
-        return _string_expression(field, op=filt.op, value=filt.value)
-    return None
-
-
-def _comparison_expression(
-    field: ds.Expression,
-    *,
-    op: str,
-    value: FilterValue,
-) -> ds.Expression | None:
-    if isinstance(value, list):
-        return None
-    builder = _DATASET_COMPARISON_BUILDERS.get(op)
-    if builder is None:
-        return None
-    return builder(field, value)
-
-
-def _in_expression(field: ds.Expression, *, value: FilterValue) -> ds.Expression | None:
-    values = value if isinstance(value, list) else [value]
-    if not values:
-        return None
-    isin = getattr(field, "isin", None)
-    if callable(isin):
-        return isin(values)
-    return None
-
-
-def _string_expression(
-    field: ds.Expression,
-    *,
-    op: str,
-    value: FilterValue,
-) -> ds.Expression | None:
-    if isinstance(value, list) or not isinstance(value, str):
-        return None
-    method = _string_method(field, op=op)
-    if method is None:
-        return None
-    return method(value)
 
 
 def _log_scan_metrics(
@@ -507,33 +478,6 @@ def _fragments_for_filter(
         return tuple(fragments)
     except (TypeError, ValueError, pa.ArrowInvalid):
         return None
-
-
-def _string_method(
-    field: ds.Expression,
-    *,
-    op: str,
-) -> Callable[[str], ds.Expression] | None:
-    if op == "contains":
-        contains = getattr(field, "contains", None)
-        return contains if callable(contains) else None
-    if op == "startswith":
-        starts_with = getattr(field, "starts_with", None)
-        if callable(starts_with):
-            return starts_with
-        startswith = getattr(field, "startswith", None)
-        return startswith if callable(startswith) else None
-    return None
-
-
-_DATASET_COMPARISON_BUILDERS: dict[str, Callable[[ds.Expression, FilterValue], ds.Expression]] = {
-    "eq": lambda field, value: field == value,
-    "ne": lambda field, value: field != value,
-    "lt": lambda field, value: field < value,
-    "lte": lambda field, value: field <= value,
-    "gt": lambda field, value: field > value,
-    "gte": lambda field, value: field >= value,
-}
 
 
 __all__ = [

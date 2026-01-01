@@ -37,7 +37,6 @@ from codeintel.cli.commands.docs import docs_app
 from codeintel.cli.commands.graphs import graphs_app
 from codeintel.cli.commands.health import health_app
 from codeintel.cli.commands.help_commands import help_commands_app
-from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.jobs import jobs_app
 from codeintel.cli.commands.meta import meta_app
 from codeintel.cli.commands.plugins import plugins_app
@@ -63,7 +62,6 @@ __all__ = [
     "health_app",
     "help_commands_app",
     "help_utils",
-    "history_app",
     "jobs_app",
     "main",
     "make_root_app",

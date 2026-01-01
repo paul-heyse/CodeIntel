@@ -11,10 +11,6 @@ Example config file (codeintel.build.toml):
 [analytics.hotspots]
 max_commits = 2000
 
-[analytics.function_history]
-max_history_days = 365
-min_lines_threshold = 1
-
 [analytics.profiles]
 include_ownership = true
 max_parallel_workers = 4
@@ -451,15 +447,6 @@ def load_build_config(project_root: Path) -> BuildConfig:
 DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {
     "hotspots": {
         "max_commits": 2000,
-    },
-    "function_history": {
-        "max_history_days": 365,
-        "min_lines_threshold": 1,
-        "default_branch": "HEAD",
-    },
-    "history_timeseries": {
-        "days_back": 90,
-        "bucket_days": 7,
     },
     "profiles": {
         "include_ownership": True,

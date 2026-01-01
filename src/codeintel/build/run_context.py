@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -20,7 +19,6 @@ from codeintel.storage.validation import ContractValidationMode
 if TYPE_CHECKING:
     from collections.abc import Mapping as MappingABC
 
-    from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
     from codeintel.build.assets.fingerprinting import FingerprintPolicy
     from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.build.providers import Providers
@@ -40,8 +38,6 @@ class BuildRunContextOverrides:
     validation_mode: ContractValidationMode | None = None
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None
-    history_options: HistoryTimeseriesOptions | None = None
-    history_db_resolver: Callable[[str], StorageGateway] | None = None
 
 
 @dataclass(frozen=True)
@@ -62,8 +58,6 @@ class BuildRunContext:
     validation_mode: ContractValidationMode | None = None
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None
-    history_options: HistoryTimeseriesOptions | None = None
-    history_db_resolver: Callable[[str], StorageGateway] | None = None
     execution_context: ExecutionContext | None = None
 
     @staticmethod
@@ -131,8 +125,6 @@ class BuildRunContext:
             manifest_index=self.manifest_index,
             validate_outputs=self.validate_outputs,
             validation_mode=validation_mode,
-            history_options=self.history_options,
-            history_db_resolver=self.history_db_resolver,
             fingerprint_policy=fingerprint_policy,
             execution_context=self.execution_context,
             registry=registry_service,
@@ -219,8 +211,6 @@ class BuildRunContext:
             validation_mode=resolved.validation_mode,
             manifest_index=resolved.manifest_index,
             fingerprint_policy=resolved.fingerprint_policy,
-            history_options=resolved.history_options,
-            history_db_resolver=resolved.history_db_resolver,
             execution_context=execution_context,
         )
 

@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING
 from codeintel.serving.semantic.duckdb_relation_builder import validate_query_ast
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
-from codeintel.storage.sqlglot_tools import canonicalize_select_duckdb
+from codeintel.storage.sqlglot_tools import (
+    canonicalize_select_duckdb,
+    ensure_ast_capability,
+)
 
 if TYPE_CHECKING:
     from sqlglot import exp
@@ -20,6 +23,28 @@ class ServingQuery:
 
     spec: SemanticQuerySpec
     ast: exp.Select
+
+
+_ALLOWED_ANONYMOUS_FUNCTIONS = frozenset(
+    {
+        "contains",
+        "starts_with",
+        "date_add",
+        "date_diff",
+        "date_part",
+        "date_sub",
+        "date_trunc",
+        "json_extract",
+        "json_extract_scalar",
+        "list_extract",
+        "list_value",
+        "map_extract",
+        "map_keys",
+        "map_values",
+        "struct_pack",
+        "struct_extract",
+    }
+)
 
 
 def normalize_serving_ast(ast: exp.Select) -> exp.Select:
@@ -52,6 +77,10 @@ def build_serving_query(*, spec: SemanticQuerySpec) -> ServingQuery:
         column_types=spec.column_types,
     )
     canonical = normalize_serving_ast(ast)
+    ensure_ast_capability(
+        canonical,
+        allowed_anonymous_functions=_ALLOWED_ANONYMOUS_FUNCTIONS,
+    )
     validate_query_ast(
         ast=canonical,
         allowed_columns=spec.allowed_columns,

@@ -72,10 +72,6 @@ from codeintel.cli.handlers.health import (
     health_check_handler,
     is_health_check_passing,
 )
-from codeintel.cli.handlers.history import (
-    HistoryTimeseriesResult,
-    history_timeseries_handler,
-)
 from codeintel.cli.handlers.jobs import (
     JobCancelResult,
     JobOutputResult,
@@ -128,7 +124,6 @@ __all__ = [
     "GraphTargetInfo",
     "GraphTargetsResult",
     "HealthCheckResult",
-    "HistoryTimeseriesResult",
     "JobCancelResult",
     "JobOutputResult",
     "JobStatusResult",
@@ -157,7 +152,6 @@ __all__ = [
     "graph_targets_list_handler",
     "graph_targets_plan_handler",
     "health_check_handler",
-    "history_timeseries_handler",
     "import_database_handler",
     "is_health_check_passing",
     "jobs_cancel_handler",

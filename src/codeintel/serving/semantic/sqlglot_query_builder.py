@@ -6,9 +6,12 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
-from codeintel.core.schemas.primitives import column_type_base
-from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
-from codeintel.serving.semantic.models import FilterSpec, FilterValue
+from codeintel.core.schemas.type_mappings import normalize_engine_column_type
+from codeintel.serving.semantic.filter_compiler import (
+    FilterCompilerError,
+    compile_filter_predicates,
+    sqlglot_filter_expression,
+)
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.helpers.table_key import split_table_key
 
@@ -16,7 +19,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.serving.semantic.models import FilterScalar
 
 
 class SqlglotQueryBuilderError(ValueError):
@@ -44,6 +46,11 @@ def build_sqlglot_query(
     -------
     sqlglot.expressions.Select
         SQLGlot Select expression representing the query.
+
+    Raises
+    ------
+    SqlglotQueryBuilderError
+        If pagination is invalid, columns are unknown, or filters cannot be compiled.
     """
     _validate_pagination(limit=spec.limit, offset=spec.offset)
 
@@ -56,16 +63,21 @@ def build_sqlglot_query(
         db=exp.to_identifier(schema_name),
     )
 
-    select_exprs = [_column_expr(col) for col in spec.columns]
+    select_exprs = [_projection_expr(col, column_types=column_types) for col in spec.columns]
     expr = exp.select(*select_exprs).from_(table_expr)
 
-    predicates = _build_predicates(
-        filters=spec.filters,
-        allowed_columns=allowed_columns,
-        column_types=column_types,
-    )
-    if predicates is not None:
-        expr = expr.where(predicates)
+    if spec.filters:
+        try:
+            predicates = compile_filter_predicates(
+                spec.filters,
+                allowed_columns=allowed_columns,
+                column_types=column_types,
+            )
+            predicate_expr = sqlglot_filter_expression(predicates)
+        except FilterCompilerError as exc:
+            raise SqlglotQueryBuilderError(str(exc)) from exc
+        if predicate_expr is not None:
+            expr = expr.where(predicate_expr)
 
     if spec.order_by:
         expr = expr.order_by(
@@ -99,145 +111,26 @@ def _column_expr(column: str) -> exp.Column:
     return exp.Column(this=exp.to_identifier(column))
 
 
-def _build_predicates(
+def _projection_expr(
+    column: str,
     *,
-    filters: list[FilterSpec],
-    allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None,
-) -> exp.Expression | None:
-    if not filters:
-        return None
-    predicates: list[exp.Expression] = []
-    for filt in filters:
-        _require_allowed_column(
-            column=filt.column,
-            allowed_columns=allowed_columns,
-            ctx="filter",
-        )
-        predicates.append(_build_predicate(filt=filt, column_types=column_types))
-    return _combine_predicates(predicates)
-
-
-def _build_predicate(
-    *, filt: FilterSpec, column_types: Mapping[str, ColumnType] | None
 ) -> exp.Expression:
-    column_type = column_types.get(filt.column) if column_types is not None else None
-    allowed_ops = allowed_ops_for_column_type(column_type)
-    if filt.op not in allowed_ops:
-        msg = (
-            "Operator "
-            f"{filt.op} is not supported for column type {column_type or _UNKNOWN_COLUMN_TYPE}"
-        )
-        raise SqlglotQueryBuilderError(msg)
-
-    col_expr = _column_expr(filt.column)
-    op = filt.op
-    value = filt.value
-
-    if op in _COMPARISON_OPS:
-        return _build_comparison_predicate(
-            col_expr=col_expr,
-            op=op,
-            value=value,
-            column_type=column_type,
-        )
-    if op == "in":
-        return _build_in_predicate(col_expr=col_expr, value=value, column_type=column_type)
-    if op in _STRING_OPS:
-        return _build_string_predicate(
-            col_expr=col_expr,
-            op=op,
-            value=value,
-            column_type=column_type,
-        )
-
-    msg = f"Unsupported operator: {op}"
-    raise SqlglotQueryBuilderError(msg)
-
-
-_UNKNOWN_COLUMN_TYPE = "UNKNOWN"
-_COMPARISON_OPS = frozenset({"eq", "ne", "lt", "lte", "gt", "gte"})
-_ORDERING_OPS = frozenset({"lt", "lte", "gt", "gte"})
-_STRING_OPS = frozenset({"contains", "startswith"})
-
-
-def _build_comparison_predicate(
-    *,
-    col_expr: exp.Column,
-    op: str,
-    value: FilterValue,
-    column_type: ColumnType | None,
-) -> exp.Expression:
-    if isinstance(value, list):
-        msg = f"{op} operator does not support list value"
-        raise SqlglotQueryBuilderError(msg)
-    base = column_type_base(column_type) if column_type is not None else None
-    if op in _ORDERING_OPS and base == "VARCHAR":
-        msg = f"Operator {op} is not supported for string columns"
-        raise SqlglotQueryBuilderError(msg)
-    literal = _literal_expr(value)
-    if op == "eq":
-        return exp.EQ(this=col_expr, expression=literal)
-    if op == "ne":
-        return exp.NEQ(this=col_expr, expression=literal)
-    if op == "lt":
-        return exp.LT(this=col_expr, expression=literal)
-    if op == "lte":
-        return exp.LTE(this=col_expr, expression=literal)
-    if op == "gt":
-        return exp.GT(this=col_expr, expression=literal)
-    if op == "gte":
-        return exp.GTE(this=col_expr, expression=literal)
-    msg = f"Unsupported comparison operator: {op}"
-    raise SqlglotQueryBuilderError(msg)
-
-
-def _build_in_predicate(
-    *,
-    col_expr: exp.Column,
-    value: FilterValue,
-    column_type: ColumnType | None,
-) -> exp.Expression:
-    if not isinstance(value, list):
-        msg = "IN operator requires list value"
-        raise SqlglotQueryBuilderError(msg)
-    base = column_type_base(column_type) if column_type is not None else None
-    if base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
-        msg = "IN operator is not supported for JSON columns"
-        raise SqlglotQueryBuilderError(msg)
-    if not value:
-        return exp.false()
-    constants = [_literal_expr(item) for item in value]
-    return exp.In(this=col_expr, expressions=constants)
-
-
-def _build_string_predicate(
-    *,
-    col_expr: exp.Column,
-    op: str,
-    value: FilterValue,
-    column_type: ColumnType | None,
-) -> exp.Expression:
-    if not isinstance(value, str):
-        msg = f"{op} operator requires string value"
-        raise SqlglotQueryBuilderError(msg)
-    base = column_type_base(column_type) if column_type is not None else None
-    if base is not None and base != "VARCHAR":
-        msg = f"{op} operator is only supported for VARCHAR columns"
-        raise SqlglotQueryBuilderError(msg)
-    func_name = "contains" if op == "contains" else "starts_with"
-    return exp.Anonymous(this=func_name, expressions=[col_expr, exp.Literal.string(value)])
-
-
-def _literal_expr(value: FilterScalar) -> exp.Expression:
-    if isinstance(value, bool):
-        return exp.true() if value else exp.false()
-    if isinstance(value, (int, float)):
-        return exp.Literal.number(value)
-    if isinstance(value, str):
-        return exp.Literal.string(value)
-    msg = f"Unsupported literal type: {type(value).__name__}"
-    raise SqlglotQueryBuilderError(msg)
+    col_expr = _column_expr(column)
+    if column_types is None:
+        return col_expr
+    column_type = column_types.get(column)
+    if column_type is None:
+        return col_expr
+    normalized = normalize_engine_column_type(column_type)
+    if normalized is None:
+        return col_expr
+    try:
+        data_type = exp.DataType.build(normalized, dialect="duckdb")
+    except (TypeError, ValueError):
+        return col_expr
+    cast_expr = exp.Cast(this=col_expr, to=data_type)
+    return exp.alias_(cast_expr, column)
 
 
 def _order_by_exprs(
@@ -252,15 +145,6 @@ def _order_by_exprs(
         _require_allowed_column(column=col_name, allowed_columns=allowed_columns, ctx="order_by")
         order_exprs.append(exp.Ordered(this=_column_expr(col_name), desc=descending))
     return order_exprs
-
-
-def _combine_predicates(predicates: Sequence[exp.Expression]) -> exp.Expression | None:
-    if not predicates:
-        return None
-    combined = predicates[0]
-    for predicate in predicates[1:]:
-        combined = exp.and_(combined, predicate)
-    return combined
 
 
 __all__ = ["SqlglotQueryBuilderError", "build_sqlglot_query"]

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 from sqlglot import diff as semantic_diff
 from sqlglot import exp, parse, parse_one
-from sqlglot.errors import ParseError, SqlglotError
+from sqlglot.errors import ErrorLevel, ParseError, SqlglotError, UnsupportedError
 from sqlglot.lineage import lineage as build_lineage
 from sqlglot.optimizer import build_scope, normalize_identifiers, optimize, qualify
 from sqlglot.optimizer.scope import traverse_scope
@@ -34,11 +34,16 @@ if TYPE_CHECKING:
     from sqlglot.lineage import Node
 
 __all__ = [
+    "AstCapabilityError",
+    "AstCapabilityIssue",
+    "AstCapabilityReport",
     "ParseError",
     "QuerySummaryConfig",
     "canonical_sql_duckdb",
     "canonicalize_expression_duckdb",
     "canonicalize_select_duckdb",
+    "capability_envelope_report",
+    "ensure_ast_capability",
     "extract_column_lineage_duckdb",
     "extract_table_keys_duckdb",
     "extract_table_refs",
@@ -72,6 +77,39 @@ _SQL_UUID_RE = re.compile(
 _SQL_NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
 _WS_RE = re.compile(r"\s+")
 
+_CAPABILITY_DISALLOWED_NODES: tuple[type[exp.Expression], ...] = (
+    exp.Alter,
+    exp.Analyze,
+    exp.Attach,
+    exp.Command,
+    exp.Copy,
+    exp.Create,
+    exp.Delete,
+    exp.Detach,
+    exp.Drop,
+    exp.Grant,
+    exp.Insert,
+    exp.Merge,
+    exp.Pragma,
+    exp.Refresh,
+    exp.Revoke,
+    exp.Rollback,
+    exp.Commit,
+    exp.Set,
+    exp.Transaction,
+    exp.Update,
+    exp.Use,
+    exp.Group,
+    exp.Having,
+    exp.Distinct,
+    exp.Lateral,
+    exp.Subquery,
+    exp.Union,
+    exp.Intersect,
+    exp.Except,
+    exp.Window,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class QuerySummaryConfig:
@@ -91,6 +129,161 @@ class QuerySummaryConfig:
 class _SummaryTokens:
     tokens: tuple[str, ...]
     capped: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AstCapabilityIssue:
+    """Single capability envelope issue detected in an AST."""
+
+    kind: str
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class AstCapabilityReport:
+    """Capability envelope report for a SQLGlot AST."""
+
+    supported: bool
+    issues: tuple[AstCapabilityIssue, ...]
+    features: tuple[str, ...]
+
+
+class AstCapabilityError(ValueError):
+    """Raised when an AST violates the capability envelope."""
+
+    def __init__(self, issues: Iterable[AstCapabilityIssue]) -> None:
+        issues_tuple = tuple(issues)
+        summary = ", ".join(issue.detail for issue in issues_tuple)
+        super().__init__(f"Unsupported SQL AST features: {summary}")
+        self.issues = issues_tuple
+
+
+def _capability_issue_for_sql(root: exp.Expression) -> AstCapabilityIssue | None:
+    try:
+        _ = root.sql(
+            dialect=DUCKDB_DIALECT,
+            unsupported_level=ErrorLevel.RAISE,
+            max_unsupported=0,
+        )
+    except UnsupportedError as exc:
+        return AstCapabilityIssue(
+            kind="unsupported_sqlglot",
+            detail=str(exc),
+        )
+    return None
+
+
+def _scan_capability_node(
+    node: exp.Expression,
+    *,
+    allowed_anonymous_functions: frozenset[str] | None,
+) -> tuple[list[AstCapabilityIssue], list[str]]:
+    if isinstance(node, _CAPABILITY_DISALLOWED_NODES):
+        return [AstCapabilityIssue(kind="unsupported_node", detail=type(node).__name__)], []
+    issues: list[AstCapabilityIssue] = []
+    features: list[str] = []
+    if isinstance(node, exp.AggFunc):
+        issues.append(
+            AstCapabilityIssue(
+                kind="aggregate_function",
+                detail=node.sql_name().lower(),
+            )
+        )
+    if isinstance(node, exp.Anonymous):
+        name = (node.name or "").lower()
+        if name:
+            features.append(f"func:{name}")
+        if allowed_anonymous_functions is not None and name not in allowed_anonymous_functions:
+            issues.append(
+                AstCapabilityIssue(
+                    kind="unsupported_function",
+                    detail=name or "<anonymous>",
+                )
+            )
+    if isinstance(node, exp.Join):
+        join_kind = (node.args.get("kind") or "inner").lower()
+        features.append(f"join:{join_kind}")
+    if isinstance(node, exp.Cast):
+        features.append("cast")
+    if isinstance(node, exp.Coalesce):
+        features.append("coalesce")
+    if isinstance(node, exp.Case):
+        features.append("case")
+    return issues, features
+
+
+def capability_envelope_report(
+    root: exp.Expression,
+    *,
+    allowed_anonymous_functions: frozenset[str] | None = None,
+) -> AstCapabilityReport:
+    """Return a capability envelope report for a SQLGlot AST.
+
+    Parameters
+    ----------
+    root
+        SQLGlot expression to inspect.
+    allowed_anonymous_functions
+        Optional allowlist of anonymous function names (lowercased).
+
+    Returns
+    -------
+    AstCapabilityReport
+        Capability envelope report with issues and feature summary.
+    """
+    issues: list[AstCapabilityIssue] = []
+    features: set[str] = set()
+
+    for node in root.walk():
+        node_issues, node_features = _scan_capability_node(
+            node,
+            allowed_anonymous_functions=allowed_anonymous_functions,
+        )
+        issues.extend(node_issues)
+        features.update(node_features)
+
+    sql_issue = _capability_issue_for_sql(root)
+    if sql_issue is not None:
+        issues.append(sql_issue)
+
+    return AstCapabilityReport(
+        supported=not issues,
+        issues=tuple(issues),
+        features=tuple(sorted(features)),
+    )
+
+
+def ensure_ast_capability(
+    root: exp.Expression,
+    *,
+    allowed_anonymous_functions: frozenset[str] | None = None,
+) -> AstCapabilityReport:
+    """Validate a SQLGlot AST against the capability envelope.
+
+    Parameters
+    ----------
+    root
+        SQLGlot expression to validate.
+    allowed_anonymous_functions
+        Optional allowlist of anonymous function names.
+
+    Returns
+    -------
+    AstCapabilityReport
+        Capability envelope report when validation passes.
+
+    Raises
+    ------
+    AstCapabilityError
+        When the AST contains unsupported features.
+    """
+    report = capability_envelope_report(
+        root,
+        allowed_anonymous_functions=allowed_anonymous_functions,
+    )
+    if not report.supported:
+        raise AstCapabilityError(report.issues)
+    return report
 
 
 def parse_one_duckdb(sql: str) -> exp.Expression:

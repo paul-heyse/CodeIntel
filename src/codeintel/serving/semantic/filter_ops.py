@@ -16,6 +16,13 @@ if TYPE_CHECKING:
 
 
 _ALL_OPS: tuple[Op, ...] = ("eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith")
+_ORDERING_OPS = frozenset({"lt", "lte", "gt", "gte"})
+_STRING_OPS = frozenset({"contains", "startswith"})
+_COMPLEX_TYPES = frozenset({"JSON", "STRUCT", "MAP", "LIST", "UNION"})
+
+
+class FilterOpError(ValueError):
+    """Raised when filter operations are invalid for the column type."""
 
 
 def allowed_ops_for_column_type(column_type: ColumnType | str | None) -> tuple[Op, ...]:
@@ -44,6 +51,66 @@ def allowed_ops_for_column_type(column_type: ColumnType | str | None) -> tuple[O
             allowed_ops = ("eq", "ne", "lt", "lte", "gt", "gte", "in")
 
     return allowed_ops
+
+
+def validate_filter_value(
+    *,
+    op: Op,
+    value: object,
+    column_type: ColumnType | str | None,
+) -> object:
+    """Validate a filter operator/value pair for a column type.
+
+    Parameters
+    ----------
+    op
+        Filter operator.
+    value
+        Filter value to validate.
+    column_type
+        Column type used to enforce operator constraints.
+
+    Returns
+    -------
+    object
+        The validated filter value.
+
+    Raises
+    ------
+    FilterOpError
+        If the operator/value pair is invalid for the column type.
+    """
+    base = column_type_base(column_type) if column_type is not None else None
+    allowed_ops = allowed_ops_for_column_type(column_type)
+    if op not in allowed_ops:
+        msg = f"Operator {op} is not supported for column type {column_type}"
+        raise FilterOpError(msg)
+
+    if op in _STRING_OPS:
+        if not isinstance(value, str):
+            msg = f"{op} operator requires a string value"
+            raise FilterOpError(msg)
+        if base is not None and base != "VARCHAR":
+            msg = f"{op} operator is only supported for VARCHAR columns"
+            raise FilterOpError(msg)
+        return value
+
+    if op == "in":
+        if not isinstance(value, list):
+            msg = "IN operator requires a list value"
+            raise FilterOpError(msg)
+        if base in _COMPLEX_TYPES:
+            msg = "IN operator is not supported for complex columns"
+            raise FilterOpError(msg)
+        return value
+
+    if isinstance(value, list):
+        msg = f"{op} operator does not support list value"
+        raise FilterOpError(msg)
+    if op in _ORDERING_OPS and base == "VARCHAR":
+        msg = f"Operator {op} is not supported for string columns"
+        raise FilterOpError(msg)
+    return value
 
 
 def parse_filter_value(column_type: ColumnType | str | None, *, op: Op, raw: str) -> object:
@@ -98,4 +165,9 @@ def _parse_scalar_value(column_type: ColumnType | str, raw: str) -> object:
     return parsed
 
 
-__all__ = ["allowed_ops_for_column_type", "parse_filter_value"]
+__all__ = [
+    "FilterOpError",
+    "allowed_ops_for_column_type",
+    "parse_filter_value",
+    "validate_filter_value",
+]

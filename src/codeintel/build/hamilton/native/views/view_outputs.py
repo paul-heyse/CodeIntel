@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import inspect
-import json
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
-from typing import TypedDict, cast
+from typing import cast
 
 import polars as pl
 from sqlglot import exp
@@ -44,11 +42,10 @@ from codeintel.storage.metadata.sync import (
 )
 from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
 from codeintel.storage.sqlglot_tools import render_sql_duckdb
+from codeintel.storage.views.view_registry import load_view_registry
 
 VIEWS_TARGET_NAME = "views"
 VIEWS_DOMAIN = "views"
-
-_VIEW_AST_PATH = Path(__file__).resolve().parents[4] / "storage" / "views" / "view_ast_map.json"
 
 LOG = logging.getLogger(__name__)
 
@@ -77,14 +74,6 @@ _VIEW_SQL_POLICY = SqlIngressPolicy(
 )
 
 
-class ViewAstSpec(TypedDict):
-    """Serialized view AST specification."""
-
-    node_name: str
-    ast: list[dict[str, object]]
-    tags: dict[str, str]
-
-
 @dataclass(frozen=True, slots=True)
 class ViewPlan:
     """Execution plan for a single view."""
@@ -95,33 +84,6 @@ class ViewPlan:
     sql: str
     dependencies: tuple[str, ...]
     tags: dict[str, str]
-
-
-def _load_view_map() -> dict[str, ViewAstSpec]:
-    raw = json.loads(_VIEW_AST_PATH.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        msg = "view_ast_map.json must contain a mapping"
-        raise TypeError(msg)
-    view_map: dict[str, ViewAstSpec] = {}
-    for key, value in raw.items():
-        if not isinstance(key, str) or not isinstance(value, dict):
-            continue
-        node_name = value.get("node_name")
-        ast = value.get("ast")
-        tags = value.get("tags")
-        if (
-            not isinstance(node_name, str)
-            or not isinstance(ast, list)
-            or not isinstance(tags, dict)
-        ):
-            continue
-        tag_map = {str(tag_key): str(tag_value) for tag_key, tag_value in tags.items()}
-        view_map[key] = {
-            "node_name": node_name,
-            "ast": ast,
-            "tags": tag_map,
-        }
-    return view_map
 
 
 def _table_key_from_table(table: exp.Table) -> str:
@@ -337,7 +299,7 @@ def _build_ast_view_node(
     return _decorate_view_node(view_fn, plan=plan)
 
 
-_VIEW_AST_MAP = _load_view_map()
+_VIEW_AST_MAP = load_view_registry()
 _VIEW_KEYS = frozenset(_VIEW_AST_MAP)
 
 _DEPENDENCIES_BY_VIEW = {

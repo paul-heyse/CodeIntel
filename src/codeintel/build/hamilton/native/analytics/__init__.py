@@ -69,11 +69,6 @@ from codeintel.build.hamilton.native.analytics.function_effects import (
     function_effects__table,
     t__function_effects,
 )
-from codeintel.build.hamilton.native.analytics.function_history import (
-    function_history__base,
-    function_history__table,
-    t__function_history,
-)
 from codeintel.build.hamilton.native.analytics.function_types import (
     function_types__base,
     function_types__table,
@@ -111,11 +106,6 @@ from codeintel.build.hamilton.native.analytics.graph_validation import (
     graph_validation__base,
     graph_validation__table,
     t__graph_validation,
-)
-from codeintel.build.hamilton.native.analytics.history_timeseries import (
-    history_timeseries__base,
-    history_timeseries__table,
-    t__history_timeseries,
 )
 from codeintel.build.hamilton.native.analytics.profiles import (
     file_profile__base,
@@ -267,8 +257,6 @@ __all__ = [
     "function_contracts__table",
     "function_effects__base",
     "function_effects__table",
-    "function_history__base",
-    "function_history__table",
     "function_metrics__base",
     "function_metrics__table",
     "function_profile__base",
@@ -291,8 +279,6 @@ __all__ = [
     "graph_stats__table",
     "graph_validation__base",
     "graph_validation__table",
-    "history_timeseries__base",
-    "history_timeseries__table",
     "hotspots__base",
     "hotspots__table",
     "module_profile__base",
@@ -337,7 +323,6 @@ __all__ = [
     "t__function_ast_features",
     "t__function_contracts",
     "t__function_effects",
-    "t__function_history",
     "t__function_metrics",
     "t__function_profile",
     "t__function_types",
@@ -346,7 +331,6 @@ __all__ = [
     "t__graph_metrics_ext",
     "t__graph_stats",
     "t__graph_validation",
-    "t__history_timeseries",
     "t__hotspots",
     "t__module_profile",
     "t__risk_factors",

@@ -10,6 +10,7 @@ import types
 import typing
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, TypeAliasType, cast, get_args, get_origin
 
@@ -71,7 +72,11 @@ from codeintel.storage.datasets.arrow_store import (
     build_dataset_manifest,
     write_dataset,
 )
-from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
+from codeintel.storage.datasets.manifests import (
+    dataset_manifest_path,
+    read_dataset_manifest,
+    write_dataset_manifest,
+)
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
 
 if TYPE_CHECKING:
@@ -469,11 +474,19 @@ def _build_materialization_plan(
         write_settings=write_settings,
         provenance=provenance,
     )
+    parquet_metadata = _parquet_metadata_payload(
+        ctx=ctx,
+        table_schema=table_schema,
+        schema_hash_value=schema_hash_value,
+        schema_digest_value=schema_digest_value,
+        partition_columns=resolved_partitions,
+    )
     options = _build_write_options(
         partition_columns=resolved_partitions,
         schema_hash_value=schema_hash_value,
         extras=extras,
         write_settings=write_settings,
+        parquet_metadata=parquet_metadata,
     )
     return _MaterializationPlan(
         arrow_schema=arrow_schema,
@@ -491,11 +504,13 @@ def _build_write_options(
     schema_hash_value: str,
     extras: dict[str, object],
     write_settings: dict[str, object],
+    parquet_metadata: Mapping[str, object] | None,
 ) -> ArrowDatasetWriteOptions:
     return ArrowDatasetWriteOptions(
         partition_columns=partition_columns,
         schema_hash=schema_hash_value,
         manifest_extras=extras,
+        schema_metadata=parquet_metadata,
         max_rows_per_file=_int_setting(write_settings, "max_rows_per_file"),
         row_group_size=_int_setting(write_settings, "row_group_size"),
         data_page_size=_int_setting(write_settings, "data_page_size"),
@@ -552,6 +567,13 @@ def _write_lazyframe_dataset(
             query_opt_flags=query_opt_flags,
         )
     partition_by = list(ctx.options.partition_columns) if ctx.options.partition_columns else None
+    if ctx.options.schema_metadata:
+        return _write_partitioned_dataset(
+            ctx=ctx,
+            data=data,
+            observation=observation,
+            query_opt_flags=query_opt_flags,
+        )
     if partition_by or not ctx.arrow_settings.enable_sink_parquet:
         return _write_partitioned_dataset(
             ctx=ctx,
@@ -1124,6 +1146,78 @@ def _manifest_extras(
     if settings_payload:
         extras["write_settings"] = settings_payload
     return extras
+
+
+def _parquet_metadata_payload(
+    *,
+    ctx: _MaterializeContext,
+    table_schema: TableSchema,
+    schema_hash_value: str,
+    schema_digest_value: str,
+    partition_columns: tuple[str, ...],
+) -> dict[str, object]:
+    columns_json = {col.name: col.type for col in table_schema.columns}
+    nullability_json = {col.name: col.nullable for col in table_schema.columns}
+    output = ctx.catalog.table_outputs.get(ctx.table_key)
+    target = ctx.catalog.get_target(ctx.target_name)
+    run_context = ctx.env.run_context
+    build_id = run_context.run_id if run_context is not None else ctx.env.commit
+    return {
+        "codeintel.table_key": table_schema.table_key,
+        "codeintel.domain": table_schema.schema,
+        "codeintel.target": ctx.target_name,
+        "codeintel.schema_hash": schema_hash_value,
+        "codeintel.schema_digest": schema_digest_value,
+        "codeintel.columns_json": columns_json,
+        "codeintel.nullability_json": nullability_json,
+        "codeintel.primary_keys_json": list(table_schema.primary_key),
+        "codeintel.partition_columns_json": list(partition_columns),
+        "codeintel.build_id": build_id,
+        "codeintel.repo": ctx.env.repo,
+        "codeintel.commit": ctx.env.commit,
+        "codeintel.snapshot_id": _snapshot_id(ctx.env),
+        "codeintel.generated_at": datetime.now(UTC).isoformat(),
+        "codeintel.hamilton.node": output.saver_node if output is not None else ctx.target_name,
+        "codeintel.hamilton.graph_version": target.spec_version if target is not None else None,
+        "codeintel.inputs_json": _input_lineage(ctx=ctx),
+    }
+
+
+def _input_lineage(*, ctx: _MaterializeContext) -> list[dict[str, object]]:
+    surface = ctx.catalog.io_surfaces.get(ctx.target_name)
+    if surface is None or not surface.reads:
+        return []
+    dataset_root = ctx.env.paths.dataset_root_dir
+    snapshot_id = _snapshot_id(ctx.env)
+    entries: list[dict[str, object]] = []
+    for read in surface.reads:
+        schema_hash = None
+        if dataset_root is not None:
+            schema_hash = _schema_hash_for_input(
+                dataset_root=dataset_root,
+                table_key=read.table_key,
+                snapshot_id=snapshot_id,
+            )
+        entries.append({"table_key": read.table_key, "schema_hash": schema_hash})
+    return entries
+
+
+def _schema_hash_for_input(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+) -> str | None:
+    try:
+        manifest_path = dataset_manifest_path(
+            dataset_root=dataset_root,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+        manifest = read_dataset_manifest(manifest_path)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    return manifest.schema_hash
 
 
 def _contract_schema_for_table(

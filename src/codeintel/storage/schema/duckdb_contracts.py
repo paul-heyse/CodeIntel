@@ -12,6 +12,7 @@ from codeintel.core.columnar.schema_metadata import (
     merge_metadata,
 )
 from codeintel.core.schemas.arrow_gen import ArrowSchemaMetadata, arrow_schema_from_table_schema
+from codeintel.core.schemas.type_mappings import normalize_table_schema_types
 from codeintel.storage.duckdb_types import (
     DuckDBCatalogException,
     DuckDBConnection,
@@ -47,7 +48,10 @@ def table_schema_for_table_key(
     """
     if con is None:
         return None
-    return load_table_schema_from_connection(con, table_key=table_key)
+    schema = load_table_schema_from_connection(con, table_key=table_key)
+    if schema is None:
+        return None
+    return normalize_table_schema_types(schema)
 
 
 def contract_schema_for_table_key(
@@ -93,6 +97,7 @@ def _metadata_schema_for_table(
     table_schema = load_table_schema_from_connection(con, table_key=table_key)
     if table_schema is None:
         return None
+    table_schema = normalize_table_schema_types(table_schema)
     column_lineage = None
     if repo and commit:
         column_lineage = load_derived_lineage_columns(

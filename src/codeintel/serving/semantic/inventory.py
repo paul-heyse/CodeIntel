@@ -14,9 +14,10 @@ from codeintel.core.schemas.primitives import Column, Index, TableSchema, normal
 from codeintel.serving.semantic.datasets import (
     DatasetManifestEntry,
     DatasetManifestIndex,
+    dataset_for_entry,
 )
 from codeintel.serving.semantic.duckdb_contracts import table_schema_for_table_key
-from codeintel.storage.datasets.contracts import table_schema_from_manifest
+from codeintel.storage.datasets.parquet_metadata import table_schema_from_dataset
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -288,8 +289,9 @@ class SchemaInventory:
 
 def _schema_from_manifest_entry(entry: DatasetManifestEntry) -> TableSchema | None:
     try:
-        return table_schema_from_manifest(entry.manifest)
-    except (TypeError, ValueError):
+        dataset = dataset_for_entry(entry)
+        return table_schema_from_dataset(dataset)
+    except (TypeError, ValueError, OSError):
         return None
 
 

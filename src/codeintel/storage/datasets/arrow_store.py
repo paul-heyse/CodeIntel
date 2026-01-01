@@ -17,6 +17,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.schema_metadata import merge_metadata
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
@@ -100,6 +101,7 @@ class ArrowDatasetWriteOptions:
     persist_manifest: bool = True
     schema_hash: str | None = None
     manifest_extras: Mapping[str, object] | None = None
+    schema_metadata: Mapping[str, object] | None = None
     max_rows_per_file: int | None = None
     row_group_size: int | None = None
     data_page_size: int | None = None
@@ -162,6 +164,7 @@ def write_dataset(
     start = perf_counter()
     resolved = options or ArrowDatasetWriteOptions()
     prepared = _apply_dictionary_options(data, resolved)
+    prepared = _apply_schema_metadata(prepared, resolved.schema_metadata)
     snapshot_dir = dataset_snapshot_dir(
         dataset_root,
         table_key=table_key,
@@ -488,6 +491,24 @@ def _apply_dictionary_options(
         LOG.debug("Dictionary encode skipped for stream input")
     if options.unify_dictionaries:
         LOG.debug("Dictionary unify skipped for stream input")
+    return data
+
+
+def _apply_schema_metadata(
+    data: ArrowDatasetInput,
+    metadata: Mapping[str, object] | None,
+) -> ArrowDatasetInput:
+    if not metadata:
+        return data
+    if isinstance(data, pa.Table):
+        merged = merge_metadata(data.schema.metadata, metadata, overwrite=True)
+        return data.replace_schema_metadata(merged)
+    if isinstance(data, pa.RecordBatchReader):
+        merged = merge_metadata(data.schema.metadata, metadata, overwrite=True)
+        if merged == data.schema.metadata:
+            return data
+        schema = data.schema.with_metadata(merged)
+        return pa.RecordBatchReader.from_batches(schema, data)
     return data
 
 

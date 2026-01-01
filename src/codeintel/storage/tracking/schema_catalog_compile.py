@@ -17,6 +17,7 @@ from codeintel.core.schemas.arrow_gen import (
     arrow_contract_for_table_schema,
 )
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
+from codeintel.core.schemas.type_mappings import normalize_table_schema_types
 from codeintel.core.time import utc_now
 from codeintel.storage.tracking.schema_catalog_models import (
     SchemaCatalogRequest,
@@ -54,7 +55,8 @@ class _RegistryDefaults:
 
 
 def _sorted_by_table_key(schemas: tuple[TableSchema, ...]) -> tuple[TableSchema, ...]:
-    return tuple(sorted(schemas, key=lambda schema: schema.table_key))
+    normalized = [normalize_table_schema_types(schema) for schema in schemas]
+    return tuple(sorted(normalized, key=lambda schema: schema.table_key))
 
 
 def _normalize_inputs(catalog_inputs: Mapping[str, object] | None) -> dict[str, object] | None:
