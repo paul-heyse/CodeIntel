@@ -1,7 +1,8 @@
 """Graph runtime context helpers and normalization.
 
 This module provides core utilities for graph metric computations, including
-context specification and normalization.
+context specification and normalization. Graph contexts are anchored to
+Parquet-backed snapshots (repo/commit) to ensure graph inputs are dataset-derived.
 """
 
 from __future__ import annotations
@@ -43,7 +44,11 @@ class GraphMetricsOptions:
 
 @dataclass(frozen=True)
 class GraphContext:
-    """Describe runtime parameters for graph computations."""
+    """Describe runtime parameters for graph computations.
+
+    Graph contexts are anchored to repo/commit partitions so graph inputs
+    resolve to Parquet-backed datasets.
+    """
 
     repo: str
     commit: str
@@ -122,6 +127,7 @@ def build_graph_context(
     GraphContext
         Graph context with caps and seeds applied.
     """
+    _validate_snapshot_identity(snapshot.repo, snapshot.commit)
     opts = options or GraphMetricsOptions()
     resolved_caps = caps or GraphContextCaps()
     betweenness_sample = opts.max_betweenness_sample or DEFAULT_BETWEENNESS_SAMPLE
@@ -160,9 +166,19 @@ def resolve_graph_context(spec: GraphContextSpec) -> GraphContext:
     GraphContext
         Context aligned to the provided repo, commit, and backend preferences.
     """
+    _validate_snapshot_identity(spec.repo, spec.commit)
     base_now = spec.now or datetime.now(tz=UTC)
     resolved = _base_context(spec, base_now)
     return _normalize_context(spec, resolved, base_now)
+
+
+def _validate_snapshot_identity(repo: str, commit: str) -> None:
+    if not isinstance(repo, str) or not repo.strip():
+        msg = "Graph context repo is required for Parquet-backed graph inputs"
+        raise ValueError(msg)
+    if not isinstance(commit, str) or not commit.strip():
+        msg = "Graph context commit is required for Parquet-backed graph inputs"
+        raise ValueError(msg)
 
 
 def _base_context(spec: GraphContextSpec, base_now: datetime) -> GraphContext:

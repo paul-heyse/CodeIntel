@@ -17,7 +17,6 @@ from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
-from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
@@ -52,7 +51,7 @@ if TYPE_CHECKING:
 
     from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.storage.gateway.protocol import MinimalGateway
+    from codeintel.storage.gateway.protocol import ConfigurableGateway
 
     class SchemaIndex(Protocol):
         """Protocol for schema index consumers without build-layer imports."""
@@ -494,22 +493,19 @@ class SchemaCatalogProvider:
 class SchemaCatalogTracking:
     """Persist and read schema catalogs from metadata tables."""
 
-    def __init__(self, gateway: MinimalGateway) -> None:
+    def __init__(self, gateway: ConfigurableGateway) -> None:
         """Initialize schema catalog tracking accessor.
 
         Parameters
         ----------
         gateway
-            Minimal gateway providing connection and policy access.
+            Gateway providing connection, policy, and configuration access.
         """
         self._gateway = gateway
         self._con = gateway.con
         self._backend = gateway.policy
-        try:
-            config = gateway.config
-        except (AttributeError, NotImplementedError):
-            config = None
-        self._read_only = bool(config.read_only) if isinstance(config, StorageConfig) else False
+        config = gateway.config
+        self._read_only = bool(config.read_only) if config is not None else False
 
     def record_schema_versions_batch(self, records: Sequence[SchemaVersionRecord]) -> int:
         """Insert schema versions with content-addressed deduplication.

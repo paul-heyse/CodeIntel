@@ -6,12 +6,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from codeintel.core.filters import FilterScalar, FilterValue, Op
 from codeintel.serving.export.formats import ExportFormat, default_export_format
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
-
-Op = Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
-type FilterScalar = bool | int | float | str
-type FilterValue = FilterScalar | list[FilterScalar]
 
 
 class SemanticViewDefaults(BaseModel):

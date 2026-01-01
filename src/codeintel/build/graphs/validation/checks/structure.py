@@ -23,12 +23,15 @@ from codeintel.build.graphs.validation.findings import (
     hub_threshold,
 )
 from codeintel.core.data_models.ids import as_int
+from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     import logging
 
     from codeintel.build.graphs.validation.context import GraphValidationContext
     from codeintel.core.validation import ValidationSeverity
+    from codeintel.storage.gateway import StorageGateway
 
 
 # =============================================================================
@@ -61,6 +64,8 @@ class CallGraphStructureCheck(GraphCheckBase):
             Findings for call graph anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("graph.call_graph_edges", "graph.call_graph_nodes")):
+            return []
         call_graph = ctx.call_graph
         if call_graph is None and ctx.engine is not None:
             call_graph = ctx.engine.call_graph()
@@ -94,6 +99,8 @@ class ImportGraphStructureCheck(GraphCheckBase):
             Findings for import graph anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("graph.import_graph_edges", "graph.import_modules")):
+            return []
         import_graph = ctx.import_graph
         if import_graph is None and ctx.engine is not None:
             import_graph = ctx.engine.import_graph()
@@ -124,6 +131,8 @@ class ImportCycleCheck(GraphCheckBase):
             Findings for import cycle anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("graph.import_graph_edges", "graph.import_modules")):
+            return []
         import_graph = ctx.import_graph
         if import_graph is None and ctx.engine is not None:
             import_graph = ctx.engine.import_graph()
@@ -155,6 +164,8 @@ class ImportHubCheck(GraphCheckBase):
             Findings for import hub anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("graph.import_graph_edges", "graph.import_modules")):
+            return []
         import_graph = ctx.import_graph
         if import_graph is None and ctx.engine is not None:
             import_graph = ctx.engine.import_graph()
@@ -185,6 +196,8 @@ class ImportUpwardCheck(GraphCheckBase):
             Findings for upward import anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("graph.import_graph_edges", "graph.import_modules")):
+            return []
         import_graph = ctx.import_graph
         if import_graph is None and ctx.engine is not None:
             import_graph = ctx.engine.import_graph()
@@ -215,6 +228,8 @@ class ImportBridgeCheck(GraphCheckBase):
             Findings for import bridge anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("graph.import_graph_edges", "graph.import_modules")):
+            return []
         import_graph = ctx.import_graph
         if import_graph is None and ctx.engine is not None:
             import_graph = ctx.engine.import_graph()
@@ -245,6 +260,8 @@ class SymbolGraphCheck(GraphCheckBase):
             Findings for symbol graph anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("graph.symbol_use_edges", "core.modules")):
+            return []
         symbol_graph = ctx.symbol_graph
         if symbol_graph is None and ctx.engine is not None:
             symbol_graph = ctx.engine.symbol_module_graph()
@@ -275,6 +292,8 @@ class ConfigKeyCheck(GraphCheckBase):
             Findings for config key usage anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
+        if not _ensure_parquet_tables(ctx, ("analytics.config_values", "core.modules")):
+            return []
         if ctx.engine is None:
             return []
 
@@ -647,6 +666,47 @@ def _config_key_findings_impl(
             "context": {"keys": high_keys[: SAMPLE_LIMIT * 4]},
         }
     ]
+
+
+def _ensure_parquet_tables(
+    ctx: GraphValidationContext,
+    table_keys: tuple[str, ...],
+) -> bool:
+    if ctx.gateway is None:
+        return True
+    for table_key in table_keys:
+        if not _require_parquet_table(ctx.gateway, table_key, ctx.logger):
+            return False
+    return True
+
+
+def _require_parquet_table(
+    gateway: StorageGateway,
+    table_key: str,
+    log: logging.Logger,
+) -> bool:
+    schema, table = split_table_key(table_key)
+    try:
+        row = gateway.execute(
+            """
+            SELECT table_type
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [schema, table],
+        ).fetchone()
+    except DuckDBError as exc:
+        log.warning("Validation table lookup failed for %s: %s", table_key, exc)
+        return False
+    if row is None:
+        log.warning("Validation table missing: %s", table_key)
+        return False
+    table_type = str(row[0] or "").upper()
+    if table_type not in {"BASE TABLE", "TABLE"}:
+        log.warning("Validation expects Parquet base table for %s, found %s", table_key, table_type)
+        return False
+    return True
 
 
 # =============================================================================

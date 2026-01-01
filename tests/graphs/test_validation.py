@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.build.graphs.validation import (
     GraphValidationOptions,
+    GraphValidationRunRequest,
     run_graph_validations_with_runner,
 )
 from codeintel.build.graphs.validation.checks.structure import (
@@ -64,11 +65,11 @@ def test_run_graph_validations_emits_warnings(
     ModulesAssertions(gateway, snapshot).inventory_consistent()
 
     with caplog.at_level("WARNING"):
-        report = run_graph_validations_with_runner(
-            gateway,
+        request = GraphValidationRunRequest(
             snapshot=snapshot,
             runtime=runtime_with_graphs(gateway, snapshot)[0],
         )
+        report = run_graph_validations_with_runner(gateway, request=request)
 
     messages = " ".join(record.message for record in caplog.records)
     expected = ["outside caller spans", "module(s) have no GOIDs"]
@@ -86,12 +87,12 @@ def test_run_graph_validations_snapshot_mismatch_raises(
     other_snapshot = make_snapshot(repo="other/repo", commit="cafebabe")
     mismatched_runtime = runtime_with_graphs(gateway, other_snapshot)[0]
 
+    request = GraphValidationRunRequest(
+        snapshot=snapshot,
+        runtime=mismatched_runtime,
+    )
     with pytest.raises(ValueError, match="GraphRuntime snapshot mismatch"):
-        run_graph_validations_with_runner(
-            gateway,
-            snapshot=snapshot,
-            runtime=mismatched_runtime,
-        )
+        run_graph_validations_with_runner(gateway, request=request)
 
 
 def test_run_graph_validations_hard_fail_on_error(
@@ -109,19 +110,19 @@ def test_run_graph_validations_hard_fail_on_error(
     ModulesAssertions(gateway, snapshot).inventory_consistent()
     runtime = runtime_with_graphs(gateway, snapshot)[0]
 
+    request = GraphValidationRunRequest(
+        snapshot=snapshot,
+        runtime=runtime,
+        options=GraphValidationOptions(
+            severity_overrides={
+                "missing_function_goids": "error",
+                "callsite_span_mismatch": "error",
+            },
+            hard_fail=True,
+        ),
+    )
     with pytest.raises(RuntimeError, match="error-level findings"):
-        run_graph_validations_with_runner(
-            gateway,
-            snapshot=snapshot,
-            runtime=runtime,
-            options=GraphValidationOptions(
-                severity_overrides={
-                    "missing_function_goids": "error",
-                    "callsite_span_mismatch": "error",
-                },
-                hard_fail=True,
-            ),
-        )
+        run_graph_validations_with_runner(gateway, request=request)
 
 
 def test_run_graph_validations_caps_findings(
@@ -139,12 +140,12 @@ def test_run_graph_validations_caps_findings(
     ModulesAssertions(gateway, snapshot).inventory_consistent()
     runtime = runtime_with_graphs(gateway, snapshot)[0]
 
-    run_graph_validations_with_runner(
-        gateway,
+    request = GraphValidationRunRequest(
         snapshot=snapshot,
         runtime=runtime,
         options=GraphValidationOptions(max_findings_per_rule=1),
     )
+    run_graph_validations_with_runner(gateway, request=request)
     rows = gateway.con.execute(
         "SELECT graph_name, COUNT(*) FROM analytics.graph_validation GROUP BY graph_name"
     ).fetchall()

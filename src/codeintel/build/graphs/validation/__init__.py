@@ -17,12 +17,14 @@ Example
 from codeintel.build.graphs.validation import (
     GraphValidationContext,
     GraphValidationOptions,
+    GraphValidationRunRequest,
     create_validation_runner,
     run_graph_validations_with_runner,
 )
 
 
-report = run_graph_validations_with_runner(gateway, snapshot=snapshot, runtime=runtime)
+request = GraphValidationRunRequest(snapshot=snapshot, runtime=runtime)
+report = run_graph_validations_with_runner(gateway, request=request)
 print(f"Found {report.error_count} errors")
 ```
 """
@@ -66,6 +68,7 @@ from codeintel.build.graphs.validation.findings import (
 )
 from codeintel.build.graphs.validation.runner import (
     ALL_GRAPH_CHECKS,
+    GraphValidationRunRequest,
     create_validation_runner,
     log_db_snapshot,
     resolve_validation_runtime,
@@ -95,6 +98,7 @@ __all__ = [
     "GraphCheckBase",
     "GraphValidationContext",
     "GraphValidationOptions",
+    "GraphValidationRunRequest",
     "ImportBridgeCheck",
     "ImportCycleCheck",
     "ImportGraphStructureCheck",

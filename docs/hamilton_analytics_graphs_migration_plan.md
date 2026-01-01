@@ -127,12 +127,17 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
   have been decommissioned to keep analytics snapshot-only.
 - Parquet metadata contract is wired through ArrowDatasetSaver and dataset writes;
   serving/duckdb ingestion reads schema from Parquet metadata.
+- Graph engine views now enforce Parquet base tables, and graph cache invalidation
+  is keyed by Parquet metadata (repo/commit/build_id/schema_hash).
+- Graph validation runner now gates checks on post-materialization Parquet tables.
+- `graph_backend` routing is centralized (runtime options → engine factory → backend enablement).
 - Test snapshots now emit Parquet metadata, and metadata round-trip coverage is
   exercised in dataset tests.
 - coverage_functions now runs as a Polars pipeline (no DuckDB relation helper);
   legacy coverage compute + duckdb_helpers removed.
 - Remaining scope: run end-to-end validation and resolve quality gates for graph
-  metrics + config/subsystem migrations.
+  metrics + config/subsystem migrations; finalize runtime/engine/validation docs,
+  and align validation persistence with the Parquet boundary where needed.
 - Graph metrics orchestration now accepts DAG-provided graphs/rows
   (no gateway/runtime resolution); Hamilton graph_metric_inputs builds
   call/import/symbol graphs and filters.
@@ -1350,20 +1355,20 @@ graph construction and validation are not a clean fit for Hamilton DAG nodes.
 Migration focuses on boundary alignment (Parquet-backed inputs, no view registry).
 
 #### `src/codeintel/build/graphs/runtime/__init__.py`
-- [ ] Ensure exports reflect the supported runtime surface.
+- [x] Ensure exports reflect the supported runtime surface.
 - [ ] Update docstrings to emphasize Parquet-backed graph sources.
 
 #### `src/codeintel/build/graphs/runtime/context.py`
 - [ ] Require graph inputs from Parquet-derived tables only.
-- [ ] Keep context helpers pure and NetworkX-friendly.
+- [x] Keep context helpers pure and NetworkX-friendly (already true).
 
 #### `src/codeintel/build/graphs/runtime/runtime.py`
-- [ ] Build graphs from Parquet-backed DuckDB scans only.
-- [ ] Centralize `graph_backend` selection into runtime options.
-- [ ] Keep caching and NetworkX graph construction here (hybrid by design).
+- [x] Build graphs from Parquet-backed DuckDB scans only.
+- [x] Centralize `graph_backend` selection into runtime options.
+- [x] Keep caching and NetworkX graph construction here (hybrid by design).
 
 #### `src/codeintel/build/graphs/engine/backend.py`
-- [ ] Align backend selection with `graph_backend` config.
+- [x] Align backend selection with `graph_backend` config.
 - [ ] Document supported backends and hybrid nature.
 
 #### `src/codeintel/build/graphs/engine/protocol.py`
@@ -1371,45 +1376,47 @@ Migration focuses on boundary alignment (Parquet-backed inputs, no view registry
 - [ ] Avoid leaking view registry assumptions in the interface.
 
 #### `src/codeintel/build/graphs/engine/cache.py`
-- [ ] Ensure cache invalidation keys track Parquet metadata (repo/commit/build_id).
-- [ ] Avoid view registry keys or SQLGlot view identifiers.
+- [x] Ensure cache invalidation keys track Parquet metadata (repo/commit/build_id/schema_hash).
+- [x] Avoid view registry keys or SQLGlot view identifiers.
 
 #### `src/codeintel/build/graphs/engine/__init__.py`
 - [ ] Keep exports minimal; document hybrid service role.
 - [ ] Remove any references to removed resource providers.
 
 #### `src/codeintel/build/graphs/engine/factory.py`
-- [ ] Use build config to pick backend and wire Parquet-backed loaders.
-- [ ] Keep the engine factory separate from Hamilton orchestration.
+- [x] Use build config to pick backend and wire Parquet-backed loaders.
+- [x] Keep the engine factory separate from Hamilton orchestration.
 
 #### `src/codeintel/build/graphs/engine/views.py`
-- [ ] Ensure all SQL reads target Parquet-backed tables only.
-- [ ] Keep NetworkX conversion logic centralized here.
-- [ ] Avoid reliance on legacy view registry artifacts.
+- [x] Ensure all SQL reads target Parquet-backed tables only.
+- [x] Keep NetworkX conversion logic centralized here.
+- [x] Avoid reliance on legacy view registry artifacts.
 
 #### `src/codeintel/build/graphs/engine/nx_engine.py`
-- [ ] Keep NetworkX engine as the canonical implementation.
-- [ ] Confirm loaders pull from Parquet-backed tables.
-- [ ] No full DAG migration expected (explicitly hybrid).
+- [x] Keep NetworkX engine as the canonical implementation.
+- [x] Confirm loaders pull from Parquet-backed tables.
+- [x] No full DAG migration expected (explicitly hybrid).
+- [x] Cache invalidation uses Parquet metadata from dataset snapshots.
 
 #### `src/codeintel/build/graphs/validation/findings.py`
 - [ ] Ensure persistence targets Parquet-backed tables only.
-- [ ] Keep output schema mapping explicit for validation rows.
+- [x] Keep output schema mapping explicit for validation rows.
 
 #### `src/codeintel/build/graphs/validation/runner.py`
-- [ ] Run validations after DAG materialization, not during view builds.
-- [ ] Resolve runtime via Parquet-backed engine only.
+- [x] Run validations after DAG materialization, not during view builds.
+- [x] Resolve runtime via Parquet-backed engine only.
 
 #### `src/codeintel/build/graphs/validation/checks/database.py`
-- [ ] Update checks to rely on Parquet-backed tables and metadata.
-- [ ] No view registry assumptions.
+- [~] Update checks to rely on Parquet-backed tables and metadata
+  (base-table gating now handled in the runner).
+- [x] No view registry assumptions.
 
 #### `src/codeintel/build/graphs/validation/checks/anomaly.py`
-- [ ] Keep NetworkX-based anomaly checks; accept runtime graphs as inputs.
+- [x] Keep NetworkX-based anomaly checks; accept runtime graphs as inputs.
 - [ ] Document required graph variants for DAG wiring.
 
 #### `src/codeintel/build/graphs/validation/checks/structure.py`
-- [ ] Keep structural checks in NetworkX; accept runtime graphs.
+- [x] Keep structural checks in NetworkX; accept runtime graphs.
 - [ ] Ensure checks read from Parquet-backed sources only.
 
 #### `src/codeintel/build/graphs/validation/checks/__init__.py`
@@ -1418,12 +1425,13 @@ Migration focuses on boundary alignment (Parquet-backed inputs, no view registry
 
 #### `src/codeintel/build/graphs/validation/__init__.py`
 - [ ] Update exports and docstrings for Parquet-backed validation.
-- [ ] No DAG migration expected for the validation runner itself.
+- [x] No DAG migration expected for the validation runner itself.
 
 #### `src/codeintel/build/graphs/validation/context.py`
-- [ ] Ensure context is constructed from Parquet-backed runtime only.
-- [ ] Keep NetworkX graph references explicit.
+- [~] Ensure context is constructed from Parquet-backed runtime only
+  (runner now enforces Parquet-backed runtime and context doc updated).
+- [x] Keep NetworkX graph references explicit.
 
 #### `src/codeintel/build/graphs/validation/base.py`
-- [ ] Keep protocol definitions stable for hybrid validation.
+- [x] Keep protocol definitions stable for hybrid validation.
 - [ ] Confirm contracts reflect Parquet-backed graph sources.

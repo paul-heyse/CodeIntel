@@ -27,6 +27,7 @@ class GraphValidationContext:
 
     This context provides all the data needed by validation checks,
     enabling them to implement the CheckProtocol from core/validation.
+    Validation expects Parquet-backed base tables after materialization.
 
     Attributes
     ----------

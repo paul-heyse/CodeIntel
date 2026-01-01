@@ -133,6 +133,30 @@ FastAPI/FastMCP transport behavior
   fragments): redundant once registration is consolidated. Replacement: shared
   scan/registration entrypoint.
 
+## Codebase alignment updates (current)
+
+- Shared scan options already live in `src/codeintel/storage/datasets/scanning.py` and
+  are consumed by `src/codeintel/serving/semantic/datasets.py` (DatasetScanOptions,
+  build_scanner). Dataset factory usage and centralized registration remain pending.
+- A unified filter compiler already exists in
+  `src/codeintel/serving/semantic/filter_compiler.py` (SQLGlot/DuckDB/Arrow/Polars).
+  Storage still uses `src/codeintel/storage/queries/expressions.py` and
+  `src/codeintel/storage/queries/safe.py`, so Phase 2 should move the compiler to a
+  shared module and replace those helpers.
+- SQLGlot canonicalization and capability envelopes already live in
+  `src/codeintel/storage/sqlglot_tools.py` (normalize, capability checks, lineage).
+  Serving query construction still needs to rely on these centralized helpers.
+- Arrow-to-row conversion is centralized in `src/codeintel/storage/query_results.py` and
+  already used by `src/codeintel/serving/semantic/kernel.py` for `records_from_arrow_batch`.
+  Additional conversion and export encoding paths are still duplicated.
+- Polars execution controls (streaming, sink_batches, collect_all, profile, explain,
+  query_opt_flags) are implemented in
+  `src/codeintel/serving/semantic/engines/polars_engine.py` and configured via
+  `codeintel.core.config.settings`. Remaining work is tightening planner enforcement
+  and documentation.
+- Streaming guardrails already block eager materialization (`fetchall`, `relation.arrow`,
+  `relation.pl`, `to_table`, `read_all`, `to_pandas`) in `tools/guardrails.py`.
+
 ---
 
 ### Phase 1: Unified dataset scanning + metadata consolidation
@@ -294,14 +318,13 @@ FastAPI/FastMCP transport behavior
 
 ## Suggested Sequencing
 
-1. Phase 0 (inventory + shared primitives)  
+1. Phase 2 (filter compiler unification)  
 2. Phase 1 (dataset scanning + metadata consolidation)  
-3. Phase 2 (filter compiler unification)  
-4. Phase 3 (AST canonicalization + pushdown)  
+3. Phase 3 (AST canonicalization + pushdown)  
+4. Phase 6 (conversion + export consolidation)  
 5. Phase 4 (streaming hardening)  
 6. Phase 5 (Polars controls)  
-7. Phase 6 (conversion + export consolidation)  
-8. Phase 7 (FastAPI/FastMCP advanced controls)
+7. Phase 7 (FastAPI/FastMCP advanced controls)
 
 ## Completion Criteria
 

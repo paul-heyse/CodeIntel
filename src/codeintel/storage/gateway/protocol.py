@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
 __all__ = [
+    "ConfigurableGateway",
     "DuckDBBinderException",
     "DuckDBCatalogException",
     "DuckDBConnection",
@@ -117,7 +118,16 @@ class MinimalGateway(Protocol):
         ...
 
 
-class StorageGateway(MinimalGateway, Protocol):
+class ConfigurableGateway(MinimalGateway, Protocol):
+    """Expose access to optional storage configuration."""
+
+    @property
+    def config(self) -> StorageConfig | None:
+        """Return storage configuration when available."""
+        ...
+
+
+class StorageGateway(ConfigurableGateway, Protocol):
     """Expose DuckDB access along with dataset registry metadata."""
 
     analytics: AnalyticsTables

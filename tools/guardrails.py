@@ -269,6 +269,13 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
+        name="streaming_relation_pl",
+        pattern=re.compile(r"\.pl\("),
+        message="Avoid relation.pl(); use fetch_record_batch or scan_batches instead.",
+        include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+        allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
+    ),
+    Guardrail(
         name="streaming_fetchall",
         pattern=re.compile(r"\.fetchall\("),
         message="Avoid fetchall(); use fetch_record_batch and stream batches instead.",
@@ -426,12 +433,8 @@ def schema_observations_available(schemas: _SchemaObservationSource) -> bool:
         summary = schemas.drift_summary_report()
     except (DuckDBError, RuntimeError, TypeError, ValueError):
         return False
-    total_tables = summary.get("total_tables", 0)
-    try:
-        int(total_tables)
-    except (TypeError, ValueError):
-        return False
-    return True
+    total_tables = _coerce_int(summary.get("total_tables"))
+    return total_tables is not None
 
 
 def _has_observation_or_contract(
@@ -443,6 +446,20 @@ def _has_observation_or_contract(
     if observation is not None and observation.arrow_schema_ipc_b64.strip():
         return True
     return schemas.has_contract_arrow_schema(table_key=table_key)
+
+
+def _coerce_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped and (stripped.isdigit() or (stripped[0] == "-" and stripped[1:].isdigit())):
+            return int(stripped)
+    return None
 
 
 def _schema_observation_issues(

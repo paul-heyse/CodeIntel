@@ -8,12 +8,20 @@ module) and avoids view-registry fallbacks.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import pyarrow as pa
+import pyarrow.dataset as ds
+
 from codeintel.build.graphs.engine import views
-from codeintel.build.graphs.engine.cache import GraphCache
+from codeintel.build.graphs.engine.cache import GraphCache, GraphCacheMetadata
 from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.core.hashing.fingerprint import stable_hash
+from codeintel.storage.datasets.parquet_metadata import metadata_from_schema
+from codeintel.storage.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -21,6 +29,17 @@ if TYPE_CHECKING:
     from codeintel.build.graphs.engine.backend import BackendEnablement
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
+
+log = logging.getLogger(__name__)
+
+_GRAPH_CACHE_TABLES: dict[GraphKind, tuple[str, ...]] = {
+    GraphKind.CALL_GRAPH: ("graph.call_graph_edges", "graph.call_graph_nodes"),
+    GraphKind.IMPORT_GRAPH: ("graph.import_graph_edges", "graph.import_modules"),
+    GraphKind.SYMBOL_MODULE_GRAPH: ("graph.symbol_use_edges", "core.modules"),
+    GraphKind.SYMBOL_FUNCTION_GRAPH: ("graph.symbol_use_edges",),
+    GraphKind.CONFIG_MODULE_BIPARTITE: ("core.modules", "analytics.config_values"),
+    GraphKind.TEST_FUNCTION_BIPARTITE: ("analytics.test_coverage_edges",),
+}
 
 
 @dataclass
@@ -66,6 +85,7 @@ class NxGraphEngine:
         nx.DiGraph
             Cached or freshly materialized call graph.
         """
+        metadata = self._graph_cache_metadata(GraphKind.CALL_GRAPH)
         graph = self._cache.get(
             GraphKind.CALL_GRAPH,
             lambda: views.load_call_graph(
@@ -74,6 +94,7 @@ class NxGraphEngine:
                 self.commit,
                 use_gpu=self.effective_use_gpu,
             ),
+            metadata=metadata,
         )
         return cast("nx.DiGraph", graph)
 
@@ -97,6 +118,7 @@ class NxGraphEngine:
         nx.DiGraph
             Cached or freshly materialized import graph.
         """
+        metadata = self._graph_cache_metadata(GraphKind.IMPORT_GRAPH)
         graph = self._cache.get(
             GraphKind.IMPORT_GRAPH,
             lambda: views.load_import_graph(
@@ -105,6 +127,7 @@ class NxGraphEngine:
                 self.commit,
                 use_gpu=self.effective_use_gpu,
             ),
+            metadata=metadata,
         )
         return cast("nx.DiGraph", graph)
 
@@ -128,6 +151,7 @@ class NxGraphEngine:
         nx.Graph
             Cached or freshly materialized symbol-module graph.
         """
+        metadata = self._graph_cache_metadata(GraphKind.SYMBOL_MODULE_GRAPH)
         return self._cache.get(
             GraphKind.SYMBOL_MODULE_GRAPH,
             lambda: views.load_symbol_module_graph(
@@ -136,6 +160,7 @@ class NxGraphEngine:
                 self.commit,
                 use_gpu=self.effective_use_gpu,
             ),
+            metadata=metadata,
         )
 
     def load_symbol_module_graph(self) -> nx.Graph:
@@ -158,12 +183,14 @@ class NxGraphEngine:
         nx.Graph
             Cached or freshly materialized symbol-function graph.
         """
+        metadata = self._graph_cache_metadata(GraphKind.SYMBOL_FUNCTION_GRAPH)
         return self._cache.get(
             GraphKind.SYMBOL_FUNCTION_GRAPH,
             lambda: views.load_symbol_function_graph(
                 self.gateway,
                 use_gpu=self.effective_use_gpu,
             ),
+            metadata=metadata,
         )
 
     def load_symbol_function_graph(self) -> nx.Graph:
@@ -186,6 +213,7 @@ class NxGraphEngine:
         nx.Graph
             Cached or freshly materialized config bipartite graph.
         """
+        metadata = self._graph_cache_metadata(GraphKind.CONFIG_MODULE_BIPARTITE)
         return self._cache.get(
             GraphKind.CONFIG_MODULE_BIPARTITE,
             lambda: views.load_config_module_bipartite(
@@ -194,6 +222,7 @@ class NxGraphEngine:
                 self.commit,
                 use_gpu=self.effective_use_gpu,
             ),
+            metadata=metadata,
         )
 
     def load_config_module_bipartite(self) -> nx.Graph:
@@ -216,6 +245,7 @@ class NxGraphEngine:
         nx.Graph
             Cached or freshly materialized test/function bipartite graph.
         """
+        metadata = self._graph_cache_metadata(GraphKind.TEST_FUNCTION_BIPARTITE)
         return self._cache.get(
             GraphKind.TEST_FUNCTION_BIPARTITE,
             lambda: views.load_test_function_bipartite(
@@ -224,6 +254,7 @@ class NxGraphEngine:
                 self.commit,
                 use_gpu=self.effective_use_gpu,
             ),
+            metadata=metadata,
         )
 
     def load_test_function_bipartite(self) -> nx.Graph:
@@ -235,6 +266,156 @@ class NxGraphEngine:
             Test-function bipartite graph.
         """
         return self.test_function_bipartite()
+
+    def _graph_cache_metadata(self, kind: GraphKind) -> GraphCacheMetadata:
+        table_keys = _GRAPH_CACHE_TABLES.get(kind, ())
+        metadata_by_table = self._parquet_metadata_entries(table_keys)
+        build_id = self._collapse_metadata_value(metadata_by_table, "codeintel.build_id")
+        schema_hash = self._schema_hash_from_metadata(metadata_by_table)
+        repo_meta = self._resolve_metadata_value(metadata_by_table, "codeintel.repo", self.repo)
+        commit_meta = self._resolve_metadata_value(
+            metadata_by_table,
+            "codeintel.commit",
+            self.commit,
+        )
+        return GraphCacheMetadata(
+            repo=repo_meta,
+            commit=commit_meta,
+            build_id=build_id,
+            schema_hash=schema_hash,
+        )
+
+    def _parquet_metadata_entries(
+        self,
+        table_keys: tuple[str, ...],
+    ) -> dict[str, dict[str, object]]:
+        dataset_root = self._dataset_root_dir()
+        if dataset_root is None or not table_keys:
+            return {}
+        snapshot_id = self.commit
+        entries: dict[str, dict[str, object]] = {}
+        for table_key in table_keys:
+            metadata = self._parquet_metadata_for_table(dataset_root, table_key, snapshot_id)
+            if metadata:
+                entries[table_key] = metadata
+        return entries
+
+    def _dataset_root_dir(self) -> Path | None:
+        dataset_root = self.gateway.datasets.dataset_root_dir
+        if dataset_root is not None:
+            return dataset_root
+        candidate = self.snapshot.repo_root / "Document Output" / "datasets"
+        if candidate.is_dir():
+            return candidate
+        return None
+
+    @staticmethod
+    def _parquet_metadata_for_table(
+        dataset_root: Path,
+        table_key: str,
+        snapshot_id: str,
+    ) -> dict[str, object] | None:
+        try:
+            snapshot_dir = dataset_snapshot_dir(
+                dataset_root,
+                table_key=table_key,
+                snapshot_id=snapshot_id,
+            )
+        except SnapshotIdError as exc:
+            log.warning("Invalid snapshot id for Parquet metadata: %s", exc)
+            return None
+        if not snapshot_dir.exists():
+            log.debug("Parquet snapshot missing for %s at %s", table_key, snapshot_dir)
+            return None
+        try:
+            dataset = ds.dataset(str(snapshot_dir), format="parquet", partitioning="hive")
+        except (OSError, ValueError, pa.ArrowInvalid) as exc:
+            log.debug("Failed to read Parquet metadata for %s: %s", table_key, exc)
+            return None
+        metadata = metadata_from_schema(dataset.schema)
+        if not metadata:
+            log.debug("Parquet metadata empty for %s", table_key)
+        return metadata
+
+    def _collapse_metadata_value(
+        self,
+        metadata_by_table: dict[str, dict[str, object]],
+        key: str,
+    ) -> str | None:
+        values = self._metadata_values(metadata_by_table, key)
+        if not values:
+            return None
+        if len(values) == 1:
+            return next(iter(values))
+        log.warning("Parquet metadata %s differs across tables: %s", key, sorted(values))
+        return stable_hash(sorted(values))
+
+    def _resolve_metadata_value(
+        self,
+        metadata_by_table: dict[str, dict[str, object]],
+        key: str,
+        fallback: str,
+    ) -> str:
+        values = self._metadata_values(metadata_by_table, key)
+        if not values:
+            return fallback
+        if len(values) == 1:
+            value = next(iter(values))
+            if value != fallback:
+                log.warning(
+                    "Parquet metadata %s mismatch for %s@%s: %s",
+                    key,
+                    self.repo,
+                    self.commit,
+                    value,
+                )
+            return fallback
+        log.warning(
+            "Parquet metadata %s differs across tables for %s@%s: %s",
+            key,
+            self.repo,
+            self.commit,
+            sorted(values),
+        )
+        return fallback
+
+    @staticmethod
+    def _metadata_values(
+        metadata_by_table: dict[str, dict[str, object]],
+        key: str,
+    ) -> set[str]:
+        values: set[str] = set()
+        for metadata in metadata_by_table.values():
+            raw = metadata.get(key)
+            if raw is None:
+                continue
+            if isinstance(raw, str):
+                if raw:
+                    values.add(raw)
+            else:
+                values.add(str(raw))
+        return values
+
+    @staticmethod
+    def _schema_hash_from_metadata(
+        metadata_by_table: dict[str, dict[str, object]],
+    ) -> str | None:
+        schema_by_table: dict[str, str] = {}
+        for table_key, metadata in metadata_by_table.items():
+            raw = metadata.get("codeintel.schema_hash")
+            if isinstance(raw, str) and raw:
+                schema_by_table[table_key] = raw
+            elif raw is not None:
+                schema_by_table[table_key] = str(raw)
+        if not schema_by_table:
+            return None
+        if len(schema_by_table) == 1:
+            return next(iter(schema_by_table.values()))
+        payload = [
+            {"table_key": key, "schema_hash": schema_by_table[key]}
+            for key in sorted(schema_by_table)
+        ]
+        return stable_hash(payload)
 
     def clear_cache(self) -> None:
         """Clear all cached graphs.

@@ -8,14 +8,20 @@ import polars as pl
 
 from codeintel.core.schemas.generated_rows import columns_for_table_key
 
+ColumnsSpec = Mapping[str, Sequence[object]] | Sequence[str] | None
+
 
 def _resolved_columns(
     *,
     table_key: str,
-    columns: Sequence[str] | None,
+    columns: ColumnsSpec,
 ) -> list[str]:
+    if isinstance(columns, Mapping):
+        if columns:
+            return [str(name) for name in columns]
+        columns = None
     if columns is not None:
-        return list(columns)
+        return [str(name) for name in columns]
     inferred = columns_for_table_key(table_key)
     if inferred is None:
         return []
@@ -30,7 +36,7 @@ def _empty_frame(columns: Sequence[str]) -> pl.LazyFrame:
     return pl.DataFrame(schema=schema).lazy()
 
 
-def empty_frame_for_table(table_key: str, *, columns: Sequence[str] | None = None) -> pl.LazyFrame:
+def empty_frame_for_table(table_key: str, *, columns: ColumnsSpec = None) -> pl.LazyFrame:
     """Return an empty LazyFrame with ordered columns.
 
     Parameters
@@ -38,7 +44,7 @@ def empty_frame_for_table(table_key: str, *, columns: Sequence[str] | None = Non
     table_key
         Fully qualified table key (schema.table).
     columns
-        Optional explicit column order when no row models exist.
+        Optional explicit column order or columnar mapping.
 
     Returns
     -------
@@ -53,7 +59,7 @@ def rows_to_frame(
     table_key: str,
     rows: Sequence[Mapping[str, object]] | Sequence[Sequence[object]],
     *,
-    columns: Sequence[str] | None = None,
+    columns: ColumnsSpec = None,
 ) -> pl.LazyFrame:
     """Convert row sequences into a LazyFrame with schema-ordered columns.
 
@@ -64,7 +70,7 @@ def rows_to_frame(
     rows
         Row mappings or row tuples in the expected column order.
     columns
-        Optional explicit column order for tuple rows.
+        Optional explicit column order or columnar mapping.
 
     Returns
     -------

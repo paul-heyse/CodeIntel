@@ -30,6 +30,7 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.columnar.dataset_scanner import scan_dataset_lazyframe
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
@@ -51,6 +52,7 @@ from codeintel.storage.views.inventory import view_builder_modules
 
 if TYPE_CHECKING:
     from codeintel.storage.views.discovery import DiscoveredViewBuilder
+
 VIEWS_TARGET_NAME = "views"
 VIEWS_DOMAIN = "views"
 
@@ -312,6 +314,18 @@ def _ensure_lazyframe(value: object, *, param_name: str) -> pl.LazyFrame:
     raise TypeError(msg)
 
 
+def _require_dependency(
+    value: object | None,
+    *,
+    param_name: str,
+    table_key: str,
+) -> object:
+    if value is None:
+        msg = f"Missing dependency {param_name} for {table_key}"
+        raise ValueError(msg)
+    return value
+
+
 def _decorate_view_node(
     fn: Callable[..., pl.LazyFrame],
     *,
@@ -344,15 +358,17 @@ def _build_ast_view_node(
         registered: list[str] = []
         try:
             for table_key, param_name in param_by_table.items():
-                value = kwargs.get(param_name)
-                if value is None:
-                    msg = f"Missing dependency {param_name} for {plan.table_key}"
-                    raise ValueError(msg)
+                value = _require_dependency(
+                    kwargs.get(param_name),
+                    param_name=param_name,
+                    table_key=plan.table_key,
+                )
                 frame = _ensure_lazyframe(value, param_name=param_name)
                 con.register(table_key, frame)
                 registered.append(table_key)
             relation = con.sql(plan.sql)
-            return relation.pl(lazy=True)
+            reader = relation.fetch_arrow_reader()
+            return arrow_reader_to_lazyframe(reader)
         finally:
             for table_key in registered:
                 con.unregister(table_key)

@@ -115,6 +115,11 @@ Completed
   (`src/codeintel/serving/semantic/engines/polars_engine.py`,
   `src/codeintel/serving/semantic/engines/duckdb_engine.py`,
   `src/codeintel/storage/duckdb_explain.py`).
+- Streaming fetchall migration complete: all `fetchall()` calls removed, new
+  streaming helpers/coercion utilities added, and guardrails now flag
+  `relation.pl()` to keep query execution streaming-first
+  (`src/codeintel/storage/query_results.py`, `tools/guardrails.py`,
+  `tests/storage/test_query_results.py`).
 
 Outstanding quality gates
 - Full `tools.quality_report` run is currently blocked by an invalid `__all__`

@@ -20,6 +20,16 @@ from codeintel.core.schemas.arrow_gen import (
     arrow_contract_for_table_schema,
 )
 
+ColumnsSpec = Mapping[str, Sequence[object]] | Sequence[str] | None
+
+
+def _normalize_columns(columns: ColumnsSpec) -> Mapping[str, Sequence[object]]:
+    if columns is None:
+        return {}
+    if isinstance(columns, Mapping):
+        return columns
+    return {str(name): [] for name in columns}
+
 
 def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
     """Return an empty LazyFrame using the table schema.
@@ -40,7 +50,7 @@ def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
 
 def lazyframe_for_table_columns(
     table_key: str,
-    columns: Mapping[str, Sequence[object]],
+    columns: ColumnsSpec,
     *,
     extras_policy: ExtrasPolicy | None = None,
 ) -> pl.LazyFrame:
@@ -51,7 +61,8 @@ def lazyframe_for_table_columns(
     table_key
         Fully qualified table key (schema.table).
     columns
-        Columnar mapping of column names to sequences of values.
+        Columnar mapping of column names to sequences of values, or a list of
+        column names for empty frames.
     extras_policy
         Policy for handling extra columns when aligning to the contract schema.
         When None, resolve from Arrow schema metadata.
@@ -62,9 +73,10 @@ def lazyframe_for_table_columns(
         LazyFrame with columns aligned to the schema order.
 
     """
-    if not columns:
+    normalized = _normalize_columns(columns)
+    if not normalized:
         return empty_lazyframe_for_table(table_key)
-    row_count = columnar_row_count(columns)
+    row_count = columnar_row_count(normalized)
     if row_count == 0:
         return empty_lazyframe_for_table(table_key)
     schema_service = get_schema_service()
@@ -78,7 +90,7 @@ def lazyframe_for_table_columns(
             table_schema=table_schema,
             metadata=metadata,
         )
-    reader = _reader_from_columns(columns)
+    reader = _reader_from_columns(normalized)
     resolved_policy = (
         extras_policy if extras_policy is not None else extras_policy_from_schema(contract_schema)
     )
@@ -92,7 +104,7 @@ def lazyframe_for_table_columns(
 
 def lazyframe_for_ingest_columns(
     table_key: str,
-    columns: Mapping[str, Sequence[object]],
+    columns: ColumnsSpec,
 ) -> pl.LazyFrame:
     """Build a LazyFrame for ingest sources, retaining extra fields.
 
@@ -101,7 +113,8 @@ def lazyframe_for_ingest_columns(
     table_key
         Fully qualified table key (schema.table).
     columns
-        Columnar mapping of column names to sequences of values.
+        Columnar mapping of column names to sequences of values, or a list of
+        column names for empty frames.
 
     Returns
     -------

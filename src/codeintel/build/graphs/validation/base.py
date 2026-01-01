@@ -9,6 +9,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.validation.runner import CheckProtocol
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -16,7 +18,7 @@ if TYPE_CHECKING:
     from codeintel.core.validation import ValidationSeverity
 
 
-class GraphCheckBase:
+class GraphCheckBase(CheckProtocol["GraphValidationContext"]):
     """Base class for graph validation checks implementing CheckProtocol.
 
     Subclasses must define class variables for check metadata and

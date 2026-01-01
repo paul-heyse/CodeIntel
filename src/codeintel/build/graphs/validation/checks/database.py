@@ -14,6 +14,7 @@ from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import (
     coerce_int,
     coerce_str,
@@ -130,6 +131,10 @@ def _warn_missing_function_goids_impl(
         Findings for files with missing function GOIDs.
     """
     try:
+        if not _require_parquet_table(gateway, "core.ast_nodes", log):
+            return []
+        if not _require_parquet_table(gateway, "core.goids", log):
+            return []
         predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
             ColumnExpression("commit") == ConstantExpression(commit)
         )
@@ -211,6 +216,8 @@ def _warn_callsite_span_mismatches_impl(
     """
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
     try:
+        if not _require_parquet_table(gateway, "graph.call_graph_edges", log):
+            return []
         predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
             ColumnExpression("commit") == ConstantExpression(commit)
         )
@@ -281,6 +288,10 @@ def _warn_orphan_modules_impl(
     """
     query_failed = False
     try:
+        if not _require_parquet_table(gateway, "core.goids", log):
+            return []
+        if not _require_parquet_table(gateway, "core.modules", log):
+            return []
         predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
             ColumnExpression("commit") == ConstantExpression(commit)
         )
@@ -353,6 +364,35 @@ def _warn_orphan_modules_impl(
         }
         for (path,) in rows
     ]
+
+
+def _require_parquet_table(
+    gateway: StorageGateway,
+    table_key: str,
+    log: logging.Logger,
+) -> bool:
+    schema, table = split_table_key(table_key)
+    try:
+        row = gateway.execute(
+            """
+            SELECT table_type
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [schema, table],
+        ).fetchone()
+    except DuckDBError as exc:
+        log.warning("Validation table lookup failed for %s: %s", table_key, exc)
+        return False
+    if row is None:
+        log.warning("Validation table missing: %s", table_key)
+        return False
+    table_type = str(row[0] or "").upper()
+    if table_type not in {"BASE TABLE", "TABLE"}:
+        log.warning("Validation expects Parquet base table for %s, found %s", table_key, table_type)
+        return False
+    return True
 
 
 # =============================================================================

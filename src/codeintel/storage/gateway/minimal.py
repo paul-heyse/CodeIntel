@@ -108,6 +108,7 @@ class MinimalStorageGateway:
         self,
         connection: DuckDBPyConnection,
         *,
+        config: StorageConfig | None = None,
         schema_provider: SchemaProvider | None = None,
     ) -> None:
         """Initialize minimal gateway with a DuckDB connection.
@@ -116,12 +117,15 @@ class MinimalStorageGateway:
         ----------
         connection
             Raw DuckDB connection to wrap.
+        config
+            Optional storage configuration payload.
         schema_provider
             Optional schema provider for DDL and column-order enforcement.
         """
         self._con = connection
         self._duckdb: DuckDBContext | None = None
         self._policy: DuckDBPolicyBackend | None = None
+        self._config = config
         self._schema_provider = schema_provider
         self.exports = ExportService(self)
 
@@ -142,6 +146,11 @@ class MinimalStorageGateway:
         if self._duckdb is None:
             self._duckdb = DuckDBContext.from_connection(self._con)
         return self._duckdb
+
+    @property
+    def config(self) -> StorageConfig | None:
+        """Return storage configuration when available."""
+        return self._config
 
     @property
     def policy(self) -> DuckDBPolicyBackend:
@@ -189,11 +198,6 @@ class MinimalStorageGateway:
     def build(self) -> BuildTracking:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("build"))
-
-    @property
-    def config(self) -> StorageConfig:
-        """Raise NotImplementedError - use full gateway for accessor access."""
-        raise NotImplementedError(_unsupported_accessor_msg("config"))
 
     @property
     def core(self) -> CoreTables:

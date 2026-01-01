@@ -8,14 +8,21 @@ The helper functions are re-exported from core to maintain a consistent API.
 
 from __future__ import annotations
 
+import json
+import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+
 from codeintel.build.graphs.runtime import GraphRuntime
-from codeintel.config.primitives import SnapshotRef
+from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
+from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.hashing import schema_digest, schema_hash
+from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.validation import (
-    GRAPH_VALIDATION_COLS,
     BaseValidationOptions,
     GraphValidationReporter,
     ValidationSeverity,
@@ -23,8 +30,8 @@ from codeintel.core.validation import (
     cap_findings,
     has_error_findings,
 )
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.warehouse import MaterializeOptions, Warehouse
+from codeintel.core.validation.reporters import GRAPH_VALIDATION_TABLE_KEY
+from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 
 if TYPE_CHECKING:
     from codeintel.build.graphs.runtime import GraphRuntimeOptions
@@ -37,6 +44,8 @@ CONFIG_KEY_MIN_THRESHOLD = 2
 HUB_MIN_DEGREE_FLOOR = 10
 HUB_DEGREE_RATIO = 0.1
 CALL_SCC_MIN = 5
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -103,12 +112,12 @@ def hub_threshold(node_count: int) -> int:
 def persist_findings(
     gateway: StorageGateway, findings: list[dict[str, object]], repo: str, commit: str
 ) -> None:
-    """Persist validation findings to the analytics schema.
+    """Persist validation findings to the analytics Parquet dataset.
 
     Parameters
     ----------
     gateway
-        Storage gateway for database access.
+        Storage gateway for dataset root discovery.
     findings
         List of findings to persist.
     repo
@@ -118,7 +127,6 @@ def persist_findings(
     """
     if not findings:
         return
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
     reporter = GraphValidationReporter(repo=repo, commit=commit)
     for finding in findings:
         graph_name = str(finding.get("check_name") or "graph_validation")
@@ -141,17 +149,139 @@ def persist_findings(
             detail=detail,
             extras=extras,
         )
-    if reporter.rows:
-        warehouse = Warehouse(gateway)
-        try:
-            warehouse.materialize_mappings(
-                "analytics.graph_validation",
-                reporter.rows,
-                columns=list(GRAPH_VALIDATION_COLS),
-                options=MaterializeOptions(snapshot=snapshot, mode="replace"),
-            )
-        except DuckDBError:
-            return
+    if not reporter.rows:
+        return
+    _persist_findings_parquet(gateway, reporter.rows, repo=repo, commit=commit)
+
+
+def _persist_findings_parquet(
+    gateway: StorageGateway,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    repo: str,
+    commit: str,
+) -> bool:
+    dataset_root = gateway.datasets.dataset_root_dir
+    if dataset_root is None:
+        log.info("Graph validation persistence skipped; dataset_root_dir is not configured.")
+        return False
+    snapshot_id = commit.strip()
+    if not snapshot_id:
+        log.warning("Graph validation persistence skipped; snapshot_id missing.")
+        return False
+    normalized_rows = _normalize_rows(rows)
+    table = _rows_to_arrow_table(GRAPH_VALIDATION_TABLE_KEY, normalized_rows)
+    table_schema = table_schema_from_arrow_schema(
+        arrow_schema=table.schema,
+        table_key=GRAPH_VALIDATION_TABLE_KEY,
+    )
+    schema_hash_value = schema_hash(table_schema)
+    schema_digest_value = schema_digest(table_schema)
+    partition_columns = _partition_columns_for_schema(table_schema)
+    schema_metadata = _graph_validation_metadata(
+        GraphValidationMetadataInput(
+            table_schema=table_schema,
+            schema_hash_value=schema_hash_value,
+            schema_digest_value=schema_digest_value,
+            partition_columns=partition_columns,
+            repo=repo,
+            commit=commit,
+        )
+    )
+    options = ArrowDatasetWriteOptions(
+        partition_columns=partition_columns,
+        existing_data_behavior="delete_matching",
+        persist_manifest=True,
+        schema_hash=schema_hash_value,
+        manifest_extras={"table_schema": table_schema.to_json_obj()},
+        schema_metadata=schema_metadata,
+    )
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key=GRAPH_VALIDATION_TABLE_KEY,
+        snapshot_id=snapshot_id,
+        data=table,
+        options=options,
+    )
+    return True
+
+
+def _normalize_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
+    for row in rows:
+        metadata = row.get("metadata")
+        if metadata is None:
+            normalized.append(dict(row))
+            continue
+        updated = dict(row)
+        updated["metadata"] = _normalize_metadata(metadata)
+        normalized.append(updated)
+    return normalized
+
+
+def _normalize_metadata(value: object) -> object:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    except TypeError:
+        return str(value)
+
+
+def _rows_to_arrow_table(table_key: str, rows: Sequence[Mapping[str, object]]) -> pa.Table:
+    columns = columns_for_table_key(table_key)
+    if columns is None:
+        return pa.Table.from_pylist(list(rows))
+    ordered_rows: list[dict[str, object]] = []
+    for row in rows:
+        ordered = {name: row.get(name) for name in columns}
+        ordered_rows.append(ordered)
+    return pa.Table.from_pylist(ordered_rows)
+
+
+def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:
+    column_names = table_schema.column_names()
+    if "repo" in column_names and "commit" in column_names:
+        return ("repo", "commit")
+    return ()
+
+
+@dataclass(frozen=True)
+class GraphValidationMetadataInput:
+    table_schema: TableSchema
+    schema_hash_value: str
+    schema_digest_value: str
+    partition_columns: tuple[str, ...]
+    repo: str
+    commit: str
+
+
+def _graph_validation_metadata(
+    inputs: GraphValidationMetadataInput,
+) -> dict[str, object]:
+    columns_json = {col.name: col.type for col in inputs.table_schema.columns}
+    nullability_json = {col.name: col.nullable for col in inputs.table_schema.columns}
+    return {
+        "codeintel.table_key": inputs.table_schema.table_key,
+        "codeintel.domain": inputs.table_schema.schema,
+        "codeintel.target": "graph_validation",
+        "codeintel.schema_hash": inputs.schema_hash_value,
+        "codeintel.schema_digest": inputs.schema_digest_value,
+        "codeintel.columns_json": columns_json,
+        "codeintel.nullability_json": nullability_json,
+        "codeintel.primary_keys_json": list(inputs.table_schema.primary_key),
+        "codeintel.partition_columns_json": list(inputs.partition_columns),
+        "codeintel.build_id": inputs.commit,
+        "codeintel.repo": inputs.repo,
+        "codeintel.commit": inputs.commit,
+        "codeintel.snapshot_id": inputs.commit,
+        "codeintel.generated_at": datetime.now(tz=UTC).isoformat(),
+        "codeintel.hamilton.node": "graph_validation_runner",
+        "codeintel.hamilton.graph_version": "manual",
+        "codeintel.inputs_json": [],
+    }
 
 
 __all__ = [

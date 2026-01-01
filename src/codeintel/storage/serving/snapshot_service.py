@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-import pyarrow.dataset as ds
 from sqlglot import exp
 
 from codeintel.core.columnar.schema_alignment import (
@@ -18,7 +17,9 @@ from codeintel.core.columnar.schema_alignment import (
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
+from codeintel.storage.datasets.manifest_index import dataset_for_manifest
 from codeintel.storage.datasets.manifests import read_dataset_manifest
+from codeintel.storage.datasets.scanning import DatasetScanOptions, build_scanner
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
@@ -338,20 +339,13 @@ def _dataset_read_parquet_relation(
     manifest_path: Path,
     contract_schema: pa.Schema | None,
 ) -> DuckDBRelation:
-    dataset_dir = manifest_path.parent.resolve()
-    partitioning: str | None = "hive" if manifest.partition_columns else None
-    if manifest.files:
-        paths = [str(dataset_dir / path) for path in manifest.files]
-        dataset = ds.dataset(paths, format="parquet", partitioning=partitioning)
-    else:
-        dataset = ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning)
-    scan_kwargs: dict[str, object] = {
-        "batch_size": DEFAULT_ARROW_BATCH_SIZE,
-        "fragment_readahead": DEFAULT_FRAGMENT_READAHEAD,
-    }
-    if contract_schema is not None:
-        scan_kwargs["schema"] = contract_schema
-    scanner = _scanner_with_schema(dataset, scan_kwargs)
+    dataset = dataset_for_manifest(manifest=manifest, manifest_path=manifest_path)
+    scan_options = DatasetScanOptions(
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        fragment_readahead=DEFAULT_FRAGMENT_READAHEAD,
+        schema=contract_schema,
+    )
+    scanner = build_scanner(dataset, options=scan_options)
     if contract_schema is not None:
         reader = scanner.to_reader()
         aligned = align_reader_to_contract(
@@ -371,14 +365,6 @@ def _dataset_read_parquet_relation(
             return con.from_arrow(reader)
         except (TypeError, ValueError):
             return con.from_arrow(dataset)
-
-
-def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> ds.Scanner:
-    try:
-        return dataset.scanner(**scan_kwargs)
-    except TypeError:
-        scan_kwargs.pop("schema", None)
-        return dataset.scanner(**scan_kwargs)
 
 
 def _current_schema(con: DuckDBConnection) -> str:

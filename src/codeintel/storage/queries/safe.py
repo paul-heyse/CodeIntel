@@ -25,11 +25,8 @@ from duckdb import ColumnExpression, ConstantExpression, FunctionExpression
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError
 
-from codeintel.core.errors.storage import (
-    ColumnNotFoundError,
-    QueryError,
-    TableNotFoundError,
-)
+from codeintel.core.errors.storage import ColumnNotFoundError, QueryError, TableNotFoundError
+from codeintel.core.filters import FilterSpecInput
 from codeintel.storage.duckdb_types import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -40,6 +37,11 @@ from codeintel.storage.duckdb_types import (
     DuckDBProgrammingError,
 )
 from codeintel.storage.helpers.table_key import is_valid_table_key
+from codeintel.storage.queries.filter_compiler import (
+    FilterCompilerError,
+    compile_filter_predicates,
+    duckdb_filter_expression,
+)
 from codeintel.storage.query_results import coerce_int, coerce_optional_float
 from codeintel.storage.sqlglot_tools import (
     SELECT_ONLY_DISALLOWED_NODES,
@@ -53,7 +55,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
+    from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation, Expression
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -72,6 +74,7 @@ DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 log = logging.getLogger(__name__)
+_SNAPSHOT_FILTER_COLUMNS = frozenset({"commit", "repo"})
 
 
 def _ensure_valid_table_key(table_key: str) -> bool:
@@ -305,10 +308,8 @@ def table_has_rows_for_snapshot(
     try:
         relation = con.table(table_key)
         if has_repo_col and has_commit_col:
-            relation = relation.filter(
-                (ColumnExpression("repo") == ConstantExpression(repo))
-                & (ColumnExpression("commit") == ConstantExpression(commit))
-            )
+            predicate = _snapshot_filter_expression(repo=repo, commit=commit)
+            relation = relation.filter(predicate)
         return relation.limit(1).fetchone() is not None
     except (DuckDBError, RuntimeError, ValueError, OSError) as exc:
         log.debug("table_has_rows_for_snapshot: error checking %s: %s", table_key, exc)
@@ -340,10 +341,8 @@ def count_rows_for_snapshot(
     int
         Number of rows matching the repo/commit filter.
     """
-    relation = con.table(table_key).filter(
-        (ColumnExpression("repo") == ConstantExpression(repo))
-        & (ColumnExpression("commit") == ConstantExpression(commit))
-    )
+    predicate = _snapshot_filter_expression(repo=repo, commit=commit)
+    relation = con.table(table_key).filter(predicate)
     result = relation.count("*").fetchone()
     if result is None:
         return 0
@@ -481,9 +480,7 @@ def safe_count_with_scope(
         return None
     columns = set(relation.columns)
     if "repo" in columns and "commit" in columns:
-        predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
-            ColumnExpression("commit") == ConstantExpression(snapshot.commit)
-        )
+        predicate = _snapshot_filter_expression(repo=snapshot.repo, commit=snapshot.commit)
         relation = relation.filter(predicate)
     try:
         result = relation.count("*").fetchone()
@@ -868,6 +865,22 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
             exc,
         )
     return orphan_count
+
+
+def _snapshot_filter_expression(*, repo: str, commit: str) -> Expression:
+    filters = (
+        FilterSpecInput(column="repo", op="eq", value=repo),
+        FilterSpecInput(column="commit", op="eq", value=commit),
+    )
+    predicates = compile_filter_predicates(
+        filters,
+        allowed_columns=_SNAPSHOT_FILTER_COLUMNS,
+    )
+    expression = duckdb_filter_expression(predicates)
+    if expression is None:
+        msg = "Snapshot filter compilation returned empty predicate"
+        raise FilterCompilerError(msg)
+    return expression
 
 
 __all__ = [

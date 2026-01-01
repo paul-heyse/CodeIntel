@@ -5,7 +5,10 @@ from __future__ import annotations
 import polars as pl
 
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
-from codeintel.build.graphs.validation.runner import run_graph_validations_with_runner
+from codeintel.build.graphs.validation.runner import (
+    GraphValidationRunRequest,
+    run_graph_validations_with_runner,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -87,11 +90,12 @@ def graph_validation__base(
         Lazy frame containing graph validation rows.
     """
     runtime = GraphRuntimeOptions(snapshot=env.snapshot)
-    report = run_graph_validations_with_runner(
-        env.gateway,
+    request = GraphValidationRunRequest(
         snapshot=env.snapshot,
         runtime=runtime,
+        dataset_root_dir=env.paths.dataset_root_dir,
     )
+    report = run_graph_validations_with_runner(env.gateway, request=request)
     if not report.findings:
         return empty_frame_for_table(GRAPH_VALIDATION_TABLE_KEY)
     reporter = GraphValidationReporter(repo=env.repo, commit=env.commit)

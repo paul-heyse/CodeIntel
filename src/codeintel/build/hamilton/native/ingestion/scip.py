@@ -107,6 +107,8 @@ from codeintel.observability.teardown import (
     emit_scip_teardown_telemetry,
     emit_shutdown_error_event,
 )
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import records_from_arrow_reader
 from codeintel.storage.tracking.build_tracking import ScipRunRecord
 
 if TYPE_CHECKING:
@@ -321,14 +323,11 @@ def _resolve_change_set(scan: ModuleToolOutput) -> tuple[ChangeSet, bool]:
 
 
 def _load_module_state_rows(env: BuildEnv) -> list[dict[str, object]]:
-    relation = env.gateway.execute(
+    reader = env.gateway.execute(
         "SELECT * FROM core.scip_module_state WHERE repo = ? AND commit = ?",
         [env.snapshot.repo, env.snapshot.commit],
-    )
-    frame = relation.pl()
-    if frame.is_empty():
-        return []
-    return cast("list[dict[str, object]]", frame.to_dicts())
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return records_from_arrow_reader(reader)
 
 
 def _manifest_records_match(

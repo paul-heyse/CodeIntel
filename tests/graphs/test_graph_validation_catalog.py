@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.build.graphs.validation import run_graph_validations_with_runner
+from codeintel.build.graphs.validation import (
+    GraphValidationRunRequest,
+    run_graph_validations_with_runner,
+)
 from tests._helpers.assertions import ModulesAssertions, expect_rows_equal
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.fakes.graph_runtime import runtime_with_graphs
@@ -35,12 +38,12 @@ def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestE
         ),
     )
     ModulesAssertions(gateway, snapshot).modules_equal({})
-    run_graph_validations_with_runner(
-        gateway,
+    request = GraphValidationRunRequest(
         snapshot=snapshot,
-        catalog_provider=provider,
         runtime=runtime_with_graphs(gateway, snapshot)[0],
+        catalog_provider=provider,
     )
+    run_graph_validations_with_runner(gateway, request=request)
     rows = con.execute(
         """
         SELECT rel_path

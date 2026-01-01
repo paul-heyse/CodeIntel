@@ -32,11 +32,16 @@ from codeintel.core.columnar import (
     coerce_arrow_table,
     extras_policy_from_schema,
 )
+from codeintel.core.filters import FilterSpecInput
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.duckdb_explain import normalize_explain_output
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.queries.expressions import snapshot_filter
+from codeintel.storage.queries.filter_compiler import (
+    FilterCompilerError,
+    compile_filter_predicates,
+    duckdb_filter_expression,
+)
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.schema.duckdb_contracts import (
     contract_schema_for_table_key,
@@ -55,7 +60,12 @@ if TYPE_CHECKING:
     from codeintel.storage.duckdb_types import DuckDBConnection
     from codeintel.storage.gateway import StorageGateway
 
-from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError, DuckDBRelation
+from codeintel.storage.duckdb_types import (
+    DuckDBCatalogException,
+    DuckDBError,
+    DuckDBRelation,
+    Expression,
+)
 
 WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
@@ -65,6 +75,7 @@ type TabularInput = DuckDBRelation | pa.Table | pa.RecordBatchReader | ColumnarS
 _PROFILE_DIR_ENV = "CODEINTEL_WAREHOUSE_PROFILING_DIR"
 
 log = logging.getLogger(__name__)
+_SNAPSHOT_FILTER_COLUMNS = frozenset({"commit", "repo"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,7 +183,8 @@ class Warehouse:
             return relation
         if not _relation_has_repo_commit_columns(relation):
             return relation
-        return relation.filter(snapshot_filter(repo=snapshot.repo, commit=snapshot.commit))
+        predicate = _snapshot_filter_expression(repo=snapshot.repo, commit=snapshot.commit)
+        return relation.filter(predicate)
 
     def exists(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> bool:
         """Return True if the table/view exists.
@@ -213,7 +225,8 @@ class Warehouse:
         """
         relation = self.gateway.relation_from_table_key(table_key)
         if snapshot is not None and _relation_has_repo_commit_columns(relation):
-            relation = relation.filter(snapshot_filter(repo=snapshot.repo, commit=snapshot.commit))
+            predicate = _snapshot_filter_expression(repo=snapshot.repo, commit=snapshot.commit)
+            relation = relation.filter(predicate)
         row = relation.count("*").fetchone()
         return int(row[0]) if row is not None else 0
 
@@ -471,10 +484,27 @@ class Warehouse:
 
 def _relation_has_snapshot_rows(relation: DuckDBRelation, *, repo: str, commit: str) -> bool:
     try:
-        filtered = relation.filter(snapshot_filter(repo=repo, commit=commit))
+        predicate = _snapshot_filter_expression(repo=repo, commit=commit)
+        filtered = relation.filter(predicate)
         return filtered.limit(1).fetchone() is not None
     except DuckDBError:
         return False
+
+
+def _snapshot_filter_expression(*, repo: str, commit: str) -> Expression:
+    filters = (
+        FilterSpecInput(column="repo", op="eq", value=repo),
+        FilterSpecInput(column="commit", op="eq", value=commit),
+    )
+    predicates = compile_filter_predicates(
+        filters,
+        allowed_columns=_SNAPSHOT_FILTER_COLUMNS,
+    )
+    expression = duckdb_filter_expression(predicates)
+    if expression is None:
+        msg = "Snapshot filter compilation returned empty predicate"
+        raise FilterCompilerError(msg)
+    return expression
 
 
 def _relation_has_repo_commit_columns(relation: DuckDBRelation) -> bool:

@@ -2089,6 +2089,8 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
 
 NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
     {
+        "analytics.static_diagnostics",
+        "analytics.typedness",
         "ci.plan_entries",
         "core.ast_metrics",
         "core.ast_nodes",

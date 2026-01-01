@@ -154,6 +154,8 @@ class GraphCache:
         ----------
         kind : GraphKind
             Type of graph to check.
+        metadata : GraphCacheMetadata | None
+            Optional metadata to compare against the cached entry.
 
         Returns
         -------
