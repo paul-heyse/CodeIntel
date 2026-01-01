@@ -22,8 +22,7 @@ from codeintel.build.assets.fingerprinting import (
 )
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.runtime.variants import VariantConfig
-from codeintel.storage.validation import ContractValidationMode
-from codeintel.storage.warehouse import Warehouse
+from codeintel.core.validation.mode import ContractValidationMode
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -38,7 +37,6 @@ if TYPE_CHECKING:
     from codeintel.core.execution import ExecutionContext, RunContext
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.registry import RegistryService
-    from codeintel.storage import StorageFacade
 
 
 @dataclass(frozen=True)
@@ -53,8 +51,6 @@ class BuildEnv:
     ----------
     gateway
         Storage gateway for database access and build tracking.
-    storage
-        Storage facade for non-storage access patterns.
     snapshot
         Repository snapshot reference (repo, commit, root path).
     paths
@@ -114,7 +110,6 @@ class BuildEnv:
     providers: Providers
     config: BuildConfig
     settings: BuildSettings
-    storage: StorageFacade | None = None
     execution_settings: HamiltonExecutionSettings = field(default_factory=HamiltonExecutionSettings)
     variants: VariantConfig = field(default_factory=VariantConfig)
     profile: str | None = None
@@ -171,20 +166,6 @@ class BuildEnv:
         if self.execution_context is None:
             return None
         return self.execution_context.run
-
-    @property
-    def warehouse(self) -> Warehouse:
-        """Return a storage Warehouse façade for the current gateway.
-
-        Returns
-        -------
-        Warehouse
-            Warehouse wrapper around the build gateway.
-        """
-        if self.storage is not None:
-            return self.storage.warehouse
-        return Warehouse(self.gateway)
-
 
 __all__ = [
     "BuildEnv",

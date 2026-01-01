@@ -304,7 +304,7 @@ def compute_config_graph_metrics_result(
     """Compute config graph metrics rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
+    rows ready for materialization via SaveToDecorator/ArrowDatasetSaver.
 
     Parameters
     ----------

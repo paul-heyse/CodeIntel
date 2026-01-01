@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeGuard, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Literal, NoReturn, Protocol, TypeGuard, cast, get_args, get_origin
 
 import hamilton.driver as h_driver
 import polars as pl
@@ -40,7 +40,7 @@ from codeintel.core.config.settings import (
     ExportAuditSettings,
     HamiltonExecutionSettings,
 )
-from codeintel.core.gateway import open_inference_gateway
+from codeintel.core.duckdb_types import DuckDBConnection, DuckDBRelation
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
@@ -66,6 +66,7 @@ if TYPE_CHECKING:
 __all__ = [
     "HamiltonSchemaProvider",
     "InferabilityRecord",
+    "SchemaInferenceInputs",
     "SchemaInferenceService",
     "SchemaObservationAccumulator",
     "SchemaObservationBundle",
@@ -90,6 +91,138 @@ _INFERABLE_RUNTIME_TYPES: tuple[type[object], ...] = (
 )
 
 
+class InferenceGatewayFactory(Protocol):
+    """Protocol for creating inference gateways without storage coupling."""
+
+    def __call__(self, *, schema_provider: SchemaProvider) -> BuildGateway: ...
+
+
+class InferenceGatewayError(RuntimeError):
+    """Base error for inference gateway stubs."""
+
+
+class InferenceGatewayAttributeError(InferenceGatewayError):
+    """Raised when accessing missing gateway attributes."""
+
+    def __init__(self, name: str) -> None:
+        msg = f"Inference gateway does not provide attribute {name}."
+        super().__init__(msg)
+
+
+class InferenceGatewayConnectionError(InferenceGatewayError):
+    """Raised when a DuckDB connection is requested from the inference gateway."""
+
+    def __init__(self) -> None:
+        super().__init__("Inference gateway does not expose a DuckDB connection.")
+
+
+class InferenceGatewayExecuteError(InferenceGatewayError):
+    """Raised when SQL execution is requested from the inference gateway."""
+
+    def __init__(self) -> None:
+        super().__init__("Inference gateway does not execute SQL.")
+
+
+class InferenceGatewayRegisterError(InferenceGatewayError):
+    """Raised when registration is requested from the inference gateway."""
+
+    def __init__(self) -> None:
+        super().__init__("Inference gateway does not support registration.")
+
+
+class InferenceGatewayUnregisterError(InferenceGatewayError):
+    """Raised when unregistration is requested from the inference gateway."""
+
+    def __init__(self) -> None:
+        super().__init__("Inference gateway does not support unregistration.")
+
+
+class InferenceGatewayRelationError(InferenceGatewayError):
+    """Raised when table relation resolution is requested from the inference gateway."""
+
+    def __init__(self) -> None:
+        super().__init__("Inference gateway does not resolve relations.")
+
+
+class _NullAccess:
+    def __getattr__(self, name: str) -> NoReturn:
+        raise InferenceGatewayAttributeError(name)
+
+
+@dataclass(frozen=True, slots=True)
+class _NullGatewayConfig:
+    read_only: bool = True
+    db_path: Path = Path(":memory:")
+
+
+@dataclass(frozen=True, slots=True)
+class _NullDatasetRegistry:
+    by_name: dict[str, object] = field(default_factory=dict)
+    jsonl_datasets: dict[str, str] = field(default_factory=dict)
+    parquet_datasets: dict[str, str] = field(default_factory=dict)
+    dataset_root_dir: Path | None = None
+
+    def with_dataset_root(self, dataset_root_dir: Path | None) -> _NullDatasetRegistry:
+        return _NullDatasetRegistry(
+            by_name=self.by_name,
+            jsonl_datasets=self.jsonl_datasets,
+            parquet_datasets=self.parquet_datasets,
+            dataset_root_dir=dataset_root_dir,
+        )
+
+
+class _NullSchemaObservationProvider:
+    @staticmethod
+    def load_latest_schema_observation(*, table_key: str) -> object | None:
+        _ = table_key
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class _NullGateway:
+    config: _NullGatewayConfig = field(default_factory=_NullGatewayConfig)
+    datasets: _NullDatasetRegistry = field(default_factory=_NullDatasetRegistry)
+    schemas: _NullSchemaObservationProvider = field(default_factory=_NullSchemaObservationProvider)
+    assets: _NullAccess = field(default_factory=_NullAccess)
+    build: _NullAccess = field(default_factory=_NullAccess)
+    exports: _NullAccess = field(default_factory=_NullAccess)
+    policy: _NullAccess = field(default_factory=_NullAccess)
+    runs: _NullAccess = field(default_factory=_NullAccess)
+
+    @staticmethod
+    def close() -> None:
+        return None
+
+    @property
+    def con(self) -> DuckDBConnection:
+        raise InferenceGatewayConnectionError
+
+    @staticmethod
+    def execute(
+        sql: str,
+        params: Sequence[object] | Mapping[str, object] | None = None,
+    ) -> DuckDBConnection:
+        _ = sql
+        _ = params
+        raise InferenceGatewayExecuteError
+
+    @staticmethod
+    def register(name: str, obj: object) -> None:
+        _ = name
+        _ = obj
+        raise InferenceGatewayRegisterError
+
+    @staticmethod
+    def unregister(name: str) -> None:
+        _ = name
+        raise InferenceGatewayUnregisterError
+
+    @staticmethod
+    def relation_from_table_key(table_key: str) -> DuckDBRelation:
+        _ = table_key
+        raise InferenceGatewayRelationError
+
+
 @dataclass(frozen=True)
 class _ComputeInferenceJob:
     target_name: str
@@ -106,6 +239,25 @@ class _ComputeInferenceJob:
 class _InferenceContext:
     driver: h_driver.Driver
     catalog: DagCatalog
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaInferenceInputs:
+    """Input bundle for schema inference helpers."""
+
+    driver: h_driver.Driver
+    catalog: DagCatalog
+    declared_provider: SchemaProvider
+    seed_dataset: SeedDatasetConfig | None = None
+    gateway_factory: InferenceGatewayFactory | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _InferenceComputeInputs:
+    context: _InferenceContext
+    job: _ComputeInferenceJob
+    observation_context: SchemaObservationContext | None
+    schema_inputs: SchemaInferenceInputs
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,12 +406,18 @@ def _dataset_param_to_table_key(param_name: str) -> str | None:
 def _schema_inference_gateway(
     *,
     schema_provider: SchemaProvider,
+    gateway_factory: InferenceGatewayFactory | None,
 ) -> Iterator[BuildGateway]:
-    gateway = open_inference_gateway(schema_provider=schema_provider)
+    if gateway_factory is None:
+        gateway = cast("BuildGateway", _NullGateway())
+    else:
+        gateway = gateway_factory(schema_provider=schema_provider)
     try:
         yield gateway
     finally:
-        gateway.close()
+        close = getattr(gateway, "close", None)
+        if callable(close):
+            close()
 
 
 def _seed_harness(
@@ -298,6 +456,23 @@ def _output_data_node(
     saver_node = context.driver.graph.nodes.get(output.saver_node)
     if saver_node is None:
         return None
+    tagged_deps: list[str] = []
+    dataset_tagged_deps: list[str] = []
+    for dep in saver_node.dependencies:
+        tags = getattr(dep, "tags", None)
+        if not isinstance(tags, dict):
+            continue
+        if tags.get(hamilton_tags.TAG_TABLE_KEY) != table_key:
+            continue
+        tagged_deps.append(dep.name)
+        if tags.get(hamilton_tags.TAG_NODE_TYPE) == hamilton_tags.NODE_TYPE_DATASET:
+            dataset_tagged_deps.append(dep.name)
+
+    if len(dataset_tagged_deps) == 1:
+        return dataset_tagged_deps[0]
+    if len(tagged_deps) == 1:
+        return tagged_deps[0]
+
     tabular_deps = [dep.name for dep in saver_node.dependencies if _is_tabular_annotation(dep.type)]
     if len(tabular_deps) != 1:
         return None
@@ -508,6 +683,8 @@ def _validate_inference_dependency(dep: Node, *, compute_name: str) -> None:
         )
         raise ValueError(msg)
     if dep.user_defined and not _is_tabular_annotation(dep.type):
+        if dep.dependencies:
+            return
         msg = (
             f"Compute node {compute_name} depends on non-tabular input {dep.name}; "
             "schema inference requires tabular compute dependencies."
@@ -547,71 +724,63 @@ def _inference_env(*, gateway: BuildGateway, force_targets: frozenset[str]) -> B
     return context.build_env(load_catalogs=False, load_schema_service=False)
 
 
-def _infer_table_schema_for_compute(
-    *,
-    context: _InferenceContext,
-    declared_provider: SchemaProvider,
-    job: _ComputeInferenceJob,
-    observation_context: SchemaObservationContext | None,
-    seed_dataset: SeedDatasetConfig | None,
-) -> TableSchema:
-    with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
+def _infer_table_schema_for_compute(inputs: _InferenceComputeInputs) -> TableSchema:
+    schema_inputs = inputs.schema_inputs
+    with _schema_inference_gateway(
+        schema_provider=schema_inputs.declared_provider,
+        gateway_factory=schema_inputs.gateway_factory,
+    ) as gateway:
         harness = _seed_harness(
-            declared_provider=declared_provider,
+            declared_provider=schema_inputs.declared_provider,
             observation_provider=gateway.schemas,
-            seed_dataset=seed_dataset,
+            seed_dataset=schema_inputs.seed_dataset,
         )
-        overrides: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
-        inputs: dict[str, object] = {}
+        overrides: dict[str, object] = dict(harness.build_inputs(set(inputs.job.qparams)))
+        exec_inputs: dict[str, object] = {}
         env: BuildEnv | None = None
-        if job.requires_env or job.dataset_refs:
+        if inputs.job.requires_env or inputs.job.dataset_refs:
             env = _inference_env(
                 gateway=gateway,
-                force_targets=frozenset({job.target_name}),
+                force_targets=frozenset({inputs.job.target_name}),
             )
-            inputs["env"] = env
-        if job.requires_catalog:
-            inputs["catalog"] = context.catalog
-        if job.dataset_refs:
+            exec_inputs["env"] = env
+        if inputs.job.requires_catalog:
+            exec_inputs["catalog"] = inputs.context.catalog
+        if inputs.job.dataset_refs:
             if env is None:
                 msg = "DatasetRef inference requires BuildEnv inputs"
                 raise ValueError(msg)
-            overrides.update(_dataset_ref_overrides(job=job, env=env))
+            overrides.update(_dataset_ref_overrides(job=inputs.job, env=env))
 
-        out = context.driver.execute([job.exec_name], inputs=inputs, overrides=overrides)
-        expr_obj = out[job.exec_name]
+        out = inputs.context.driver.execute(
+            [inputs.job.exec_name],
+            inputs=exec_inputs,
+            overrides=overrides,
+        )
+        expr_obj = out[inputs.job.exec_name]
         if expr_obj is None:
-            msg = f"{job.exec_name} returned None; expected tabular output"
+            msg = f"{inputs.job.exec_name} returned None; expected tabular output"
             raise TypeError(msg)
         return _table_schema_from_tabular(
             cast("InferableTabularInput", expr_obj),
-            table_key=job.table_key,
-            observation_context=observation_context,
+            table_key=inputs.job.table_key,
+            observation_context=inputs.observation_context,
         )
 
 
 def infer_schema_for_table_key(
-    *,
-    driver: h_driver.Driver,
-    catalog: DagCatalog,
     table_key: str,
-    declared_provider: SchemaProvider,
-    seed_dataset: SeedDatasetConfig | None = None,
+    *,
+    schema_inputs: SchemaInferenceInputs,
 ) -> TableSchema:
     """Infer schema for a single output table produced by a native compute node.
 
     Parameters
     ----------
-    driver
-        Hamilton driver used to execute compute nodes.
-    catalog
-        DAG catalog defining outputs for each build target.
     table_key
         Output table key to infer (schema.table).
-    declared_provider
-        Provider used to seed upstream input tables.
-    seed_dataset
-        Optional dataset-backed seed configuration for q__ inputs.
+    schema_inputs
+        Shared inference inputs (driver, catalog, provider, optional seed dataset).
 
     Returns
     -------
@@ -627,22 +796,26 @@ def infer_schema_for_table_key(
     ValueError
         If the table_key is not inferable from any native compute node.
     """
-    context = _InferenceContext(driver=driver, catalog=catalog)
+    context = _InferenceContext(
+        driver=schema_inputs.driver,
+        catalog=schema_inputs.catalog,
+    )
 
     try:
         job = _resolve_inference_job(context=context, table_key=table_key)
         observation_context = _schema_observation_context(
-            catalog=catalog,
+            catalog=schema_inputs.catalog,
             table_key=table_key,
-            declared_provider=declared_provider,
+            declared_provider=schema_inputs.declared_provider,
             target_name=job.target_name,
         )
         inferred = _infer_table_schema_for_compute(
-            context=context,
-            declared_provider=declared_provider,
-            job=job,
-            observation_context=observation_context,
-            seed_dataset=seed_dataset,
+            _InferenceComputeInputs(
+                context=context,
+                job=job,
+                observation_context=observation_context,
+                schema_inputs=schema_inputs,
+            )
         )
         declared_schema = observation_context.declared_schema
         schema_hints = observation_context.schema_hints
@@ -893,10 +1066,7 @@ def _infer_job_schema(
 def infer_table_schemas(
     table_keys: Iterable[str],
     *,
-    driver: h_driver.Driver,
-    catalog: DagCatalog,
-    declared_provider: SchemaProvider,
-    seed_dataset: SeedDatasetConfig | None = None,
+    schema_inputs: SchemaInferenceInputs,
 ) -> dict[str, TableSchema]:
     """Infer schemas for multiple output tables in a single session.
 
@@ -904,14 +1074,8 @@ def infer_table_schemas(
     ----------
     table_keys
         Output table keys to infer (schema.table).
-    driver
-        Hamilton driver used to execute compute nodes.
-    catalog
-        DAG catalog defining outputs for each build target.
-    declared_provider
-        Provider used to seed upstream input tables.
-    seed_dataset
-        Optional dataset-backed seed configuration for q__ inputs.
+    schema_inputs
+        Shared inference inputs (driver, catalog, provider, optional seed dataset).
 
     Returns
     -------
@@ -922,15 +1086,21 @@ def infer_table_schemas(
     if not unique_keys:
         return {}
 
-    context = _InferenceContext(driver=driver, catalog=catalog)
+    context = _InferenceContext(
+        driver=schema_inputs.driver,
+        catalog=schema_inputs.catalog,
+    )
     jobs = _build_inference_jobs(context=context, table_keys=unique_keys)
     union_qparams = _union_qparams(jobs)
 
-    with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
+    with _schema_inference_gateway(
+        schema_provider=schema_inputs.declared_provider,
+        gateway_factory=schema_inputs.gateway_factory,
+    ) as gateway:
         harness = _seed_harness(
-            declared_provider=declared_provider,
+            declared_provider=schema_inputs.declared_provider,
             observation_provider=gateway.schemas,
-            seed_dataset=seed_dataset,
+            seed_dataset=schema_inputs.seed_dataset,
         )
         base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
         env = _inference_env(
@@ -941,9 +1111,9 @@ def infer_table_schemas(
         inferred: dict[str, TableSchema] = {}
         for job in jobs:
             observation_context = _schema_observation_context(
-                catalog=catalog,
+                catalog=schema_inputs.catalog,
                 table_key=job.table_key,
-                declared_provider=declared_provider,
+                declared_provider=schema_inputs.declared_provider,
                 target_name=job.target_name,
             )
             inferred_schema = _infer_job_schema(
@@ -1152,6 +1322,7 @@ class SchemaInferenceService:
     driver: h_driver.Driver
     catalog: DagCatalog
     seed_dataset: SeedDatasetConfig | None = None
+    gateway_factory: InferenceGatewayFactory | None = None
 
     def infer_table_schema(
         self, table_key: str, *, declared_provider: SchemaProvider
@@ -1171,11 +1342,14 @@ class SchemaInferenceService:
             Inferred table schema.
         """
         return infer_schema_for_table_key(
-            driver=self.driver,
-            catalog=self.catalog,
             table_key=table_key,
-            declared_provider=declared_provider,
-            seed_dataset=self.seed_dataset,
+            schema_inputs=SchemaInferenceInputs(
+                driver=self.driver,
+                catalog=self.catalog,
+                declared_provider=declared_provider,
+                seed_dataset=self.seed_dataset,
+                gateway_factory=self.gateway_factory,
+            ),
         )
 
     def infer_table_schemas(
@@ -1200,10 +1374,13 @@ class SchemaInferenceService:
         """
         return infer_table_schemas(
             table_keys,
-            driver=self.driver,
-            catalog=self.catalog,
-            declared_provider=declared_provider,
-            seed_dataset=self.seed_dataset,
+            schema_inputs=SchemaInferenceInputs(
+                driver=self.driver,
+                catalog=self.catalog,
+                declared_provider=declared_provider,
+                seed_dataset=self.seed_dataset,
+                gateway_factory=self.gateway_factory,
+            ),
         )
 
     def inferable_table_keys(self) -> frozenset[str]:
@@ -1222,6 +1399,7 @@ def get_schema_inference_service(
     driver: h_driver.Driver,
     catalog: DagCatalog,
     seed_dataset: SeedDatasetConfig | None = None,
+    gateway_factory: InferenceGatewayFactory | None = None,
 ) -> SchemaInferenceService:
     """Return a runtime-bound SchemaInferenceService.
 
@@ -1233,6 +1411,8 @@ def get_schema_inference_service(
         DAG catalog defining outputs for each build target.
     seed_dataset
         Optional dataset-backed seed configuration for q__ inputs.
+    gateway_factory
+        Optional factory for building an inference gateway with schema access.
 
     Returns
     -------
@@ -1243,4 +1423,5 @@ def get_schema_inference_service(
         driver=driver,
         catalog=catalog,
         seed_dataset=seed_dataset,
+        gateway_factory=gateway_factory,
     )

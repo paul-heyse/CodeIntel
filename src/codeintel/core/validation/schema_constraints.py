@@ -17,7 +17,7 @@ from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.validation.arrow_type_compat import is_compatible_arrow_type
 
 if TYPE_CHECKING:
-    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 
 def schema_errors(

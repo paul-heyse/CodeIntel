@@ -13,8 +13,7 @@ from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.variants import variant_config_from_build_config
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
-from codeintel.storage import StorageFacade
-from codeintel.storage.validation import ContractValidationMode
+from codeintel.core.validation.mode import ContractValidationMode
 
 if TYPE_CHECKING:
     from collections.abc import Mapping as MappingABC
@@ -108,11 +107,9 @@ class BuildRunContext:
         _ = load_catalogs
         registry_service = None
         _ = load_schema_service
-        storage_facade = StorageFacade.from_gateway(self.gateway)
         validation_mode = self.validation_mode or ContractValidationMode.LENIENT
         return BuildEnv(
             gateway=self.gateway,
-            storage=storage_facade,
             snapshot=self.snapshot,
             paths=self.paths,
             providers=self.providers,

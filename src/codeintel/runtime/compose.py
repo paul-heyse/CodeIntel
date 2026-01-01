@@ -52,6 +52,7 @@ from codeintel.runtime.plugins.spec import TargetPack
 from codeintel.runtime.runtime_bundle import RuntimeBundle, RuntimeKey
 from codeintel.serving.semantic_compile import compile_semantic_registry_from_tag_query
 from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -781,6 +782,7 @@ def _build_schema_index(
         driver=driver,
         catalog=catalog,
         seed_dataset=_seed_dataset_config(env),
+        gateway_factory=open_inference_gateway,
     )
     declared_provider = source_declared_schema_provider(
         exclude_table_keys=catalog.table_outputs,

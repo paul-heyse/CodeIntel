@@ -50,51 +50,53 @@ class _RowInputs:
     now: datetime
 
 
+@dataclass(frozen=True)
+class FunctionContractInputs:
+    """Inputs required to build function contracts."""
+
+    function_ast_map: dict[int, FunctionAst] | None = None
+    catalog: FunctionCatalogProvider | None = None
+    docstrings_frame: pl.DataFrame | None = None
+    function_types_frame: pl.DataFrame | None = None
+    max_conditions_per_func: int = 64
+
+
 def build_function_contracts_rows(
     snapshot: SnapshotRef,
-    *,
-    function_ast_map: dict[int, FunctionAst] | None = None,
-    catalog: FunctionCatalogProvider | None = None,
-    docstrings_frame: pl.DataFrame | None = None,
-    function_types_frame: pl.DataFrame | None = None,
-    max_conditions_per_func: int = 64,
+    inputs: FunctionContractInputs,
 ) -> list[dict[str, object]]:
     """
     Build contract rows for `analytics.function_contracts` without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
+    rows ready for materialization via SaveToDecorator/ArrowDatasetSaver.
 
     Parameters
     ----------
     snapshot
         Repository and commit identifiers.
-    function_ast_map
-        Mapping of GOID to parsed function AST (from AstProvider).
-    catalog
-        Function catalog provider (from CatalogProvider).
-    docstrings_frame
-        Docstring rows for the snapshot.
-    function_types_frame
-        Function type rows for the snapshot.
-    max_conditions_per_func
-        Maximum number of preconditions/postconditions/raises per function.
+    inputs
+        Bundled inputs for contract inference.
 
     Returns
     -------
     list[dict[str, object]]
         Contract rows ready for persistence.
     """
-    ast_by_goid = function_ast_map or {}
+    ast_by_goid = inputs.function_ast_map or {}
 
-    if catalog is not None:
-        all_goids = {span.goid for span in catalog.catalog().function_spans}
+    if inputs.catalog is not None:
+        all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
     else:
         all_goids = set()
 
-    doc_map = _doc_map_from_frame(docstrings_frame, repo=snapshot.repo, commit=snapshot.commit)
+    doc_map = _doc_map_from_frame(
+        inputs.docstrings_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     type_map = _type_map_from_frame(
-        function_types_frame,
+        inputs.function_types_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
@@ -103,7 +105,7 @@ def build_function_contracts_rows(
         _RowInputs(
             repo=snapshot.repo,
             commit=snapshot.commit,
-            max_conditions_per_func=max_conditions_per_func,
+            max_conditions_per_func=inputs.max_conditions_per_func,
             goids=all_goids,
             ast_by_goid=ast_by_goid,
             doc_map=doc_map,

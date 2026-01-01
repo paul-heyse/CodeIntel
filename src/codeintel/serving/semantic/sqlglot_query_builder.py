@@ -15,6 +15,7 @@ from codeintel.storage.queries.filter_compiler import (
     sqlglot_filter_expression,
 )
 from codeintel.storage.sqlglot_tools import (
+    AstCapabilityConfig,
     canonicalize_select_duckdb,
     ensure_ast_capability,
     schema_mapping_for_table_key,
@@ -106,9 +107,11 @@ def build_sqlglot_query(
     canonical = canonicalize_select_duckdb(expr, schema=schema_mapping)
     ensure_ast_capability(
         canonical,
-        allowed_anonymous_functions=allowed_anonymous_functions,
-        allow_aggregates=allow_aggregates,
-        log_context=log_context,
+        AstCapabilityConfig(
+            allowed_anonymous_functions=allowed_anonymous_functions,
+            allow_aggregates=allow_aggregates,
+            log_context=log_context,
+        ),
     )
     return canonical
 

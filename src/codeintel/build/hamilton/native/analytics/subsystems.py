@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.build.analytics.subsystems.materialize import SubsystemRows, build_subsystem_rows
+from codeintel.build.analytics.subsystems.materialize import (
+    SubsystemBuildInputs,
+    SubsystemRows,
+    build_subsystem_rows,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -23,6 +27,7 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -99,7 +104,19 @@ def subsystem_rows(
     SubsystemRows
         Subsystem summary and membership rows.
     """
-    return build_subsystem_rows(env.gateway, env.snapshot)
+    return build_subsystem_rows(
+        env.snapshot,
+        SubsystemBuildInputs(
+            modules_frame=tabular_to_lazyframe(_q__core__modules).collect(),
+            import_graph_edges_frame=tabular_to_lazyframe(_q__graph__import_graph_edges).collect(),
+            symbol_use_edges_frame=tabular_to_lazyframe(_q__graph__symbol_use_edges).collect(),
+            config_values_frame=tabular_to_lazyframe(_q__analytics__config_values).collect(),
+            risk_factors_frame=tabular_to_lazyframe(_q__analytics__goid_risk_factors).collect(),
+            function_metrics_frame=tabular_to_lazyframe(
+                _q__analytics__function_metrics
+            ).collect(),
+        ),
+    )
 
 
 def subsystems__base(subsystem_rows: SubsystemRows) -> pl.LazyFrame:

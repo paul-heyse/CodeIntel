@@ -26,7 +26,7 @@ from codeintel.core.validation.schema_constraints import (
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 
 if TYPE_CHECKING:
-    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 ValidationMode = Literal["strict", "warn", "skip"]
 

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from codeintel.build.analytics.profiles.types import FileProfileInputs
+from codeintel.build.analytics.profiles.types import FileProfileFrames, FileProfileInputs
 from codeintel.build.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
@@ -56,18 +56,69 @@ def _extract_annotation_ratio(value: object) -> float | None:
     return None
 
 
+def _ensure_columns(frame: pl.DataFrame, columns: list[str]) -> pl.DataFrame:
+    for col in columns:
+        if col not in frame.columns:
+            frame = frame.with_columns(pl.lit(None).alias(col))
+    return frame
+
+
+def _normalize_ast_metrics(frame: pl.DataFrame) -> pl.DataFrame:
+    if "complexity" in frame.columns:
+        frame = frame.rename({"complexity": "ast_complexity"})
+    return _ensure_columns(
+        frame,
+        [
+            "node_count",
+            "function_count",
+            "class_count",
+            "avg_depth",
+            "max_depth",
+            "ast_complexity",
+        ],
+    )
+
+
+def _normalize_hotspots(frame: pl.DataFrame) -> pl.DataFrame:
+    if "score" in frame.columns:
+        frame = frame.rename({"score": "hotspot_score"})
+    return _ensure_columns(
+        frame,
+        ["commit_count", "author_count", "lines_added", "lines_deleted", "hotspot_score"],
+    )
+
+
+def _normalize_typedness(frame: pl.DataFrame, *, repo: str, commit: str) -> pl.DataFrame:
+    frame = _scope_frame(frame, repo, commit)
+    frame = _ensure_columns(frame, ["repo", "commit", "path"])
+    return _ensure_columns(
+        frame,
+        ["annotation_ratio", "untyped_defs", "overlay_needed", "type_error_count"],
+    )
+
+
+def _normalize_static_diagnostics(frame: pl.DataFrame, *, repo: str, commit: str) -> pl.DataFrame:
+    frame = _scope_frame(frame, repo, commit)
+    frame = _ensure_columns(frame, ["repo", "commit", "rel_path"])
+    if "total_errors" in frame.columns:
+        frame = frame.rename(
+            {"total_errors": "static_error_count", "has_errors": "has_static_errors"}
+        )
+    return _ensure_columns(frame, ["static_error_count", "has_static_errors"])
+
+
+def _normalize_modules(frame: pl.DataFrame, *, repo: str, commit: str) -> pl.DataFrame:
+    frame = _scope_frame(frame, repo, commit)
+    frame = _ensure_columns(frame, ["repo", "commit", "path"])
+    return _ensure_columns(frame, ["module", "language", "tags", "owners"])
+
+
 _PROFILE_GROUP_BY = ["repo", "commit", "rel_path"]
 
 
 def compute_file_profile_inputs(
     snapshot: SnapshotRef,
-    *,
-    function_profile: pl.DataFrame,
-    ast_metrics: pl.DataFrame,
-    hotspots: pl.DataFrame,
-    typedness: pl.DataFrame,
-    static_diagnostics: pl.DataFrame,
-    modules: pl.DataFrame,
+    frames: FileProfileFrames,
 ) -> FileProfileInputs:
     """
     Construct snapshot inputs for file profile generation.
@@ -76,18 +127,8 @@ def compute_file_profile_inputs(
     ----------
     snapshot
         Repository and commit identifiers.
-    function_profile
-        Frame for ``analytics.function_profile``.
-    ast_metrics
-        Frame for ``core.ast_metrics``.
-    hotspots
-        Frame for ``analytics.hotspots``.
-    typedness
-        Frame for ``analytics.typedness``.
-    static_diagnostics
-        Frame for ``analytics.static_diagnostics``.
-    modules
-        Frame for ``core.modules``.
+    frames
+        Frame bundle for file profile inputs.
 
     Returns
     -------
@@ -98,12 +139,12 @@ def compute_file_profile_inputs(
         repo=snapshot.repo,
         commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
-        function_profile=function_profile,
-        ast_metrics=ast_metrics,
-        hotspots=hotspots,
-        typedness=typedness,
-        static_diagnostics=static_diagnostics,
-        modules=modules,
+        function_profile=frames.function_profile,
+        ast_metrics=frames.ast_metrics,
+        hotspots=frames.hotspots,
+        typedness=frames.typedness,
+        static_diagnostics=frames.static_diagnostics,
+        modules=frames.modules,
     )
 
 
@@ -161,52 +202,15 @@ def build_file_profile_rows(
         .alias("file_coverage_ratio")
     )
 
-    ast_metrics = inputs.ast_metrics
-    if "complexity" in ast_metrics.columns:
-        ast_metrics = ast_metrics.rename({"complexity": "ast_complexity"})
-    for col in [
-        "node_count",
-        "function_count",
-        "class_count",
-        "avg_depth",
-        "max_depth",
-        "ast_complexity",
-    ]:
-        if col not in ast_metrics.columns:
-            ast_metrics = ast_metrics.with_columns(pl.lit(None).alias(col))
-
-    hotspots = inputs.hotspots
-    if "score" in hotspots.columns:
-        hotspots = hotspots.rename({"score": "hotspot_score"})
-    for col in ["commit_count", "author_count", "lines_added", "lines_deleted", "hotspot_score"]:
-        if col not in hotspots.columns:
-            hotspots = hotspots.with_columns(pl.lit(None).alias(col))
-
-    typedness = _scope_frame(inputs.typedness, inputs.repo, inputs.commit)
-    for col in ["repo", "commit", "path"]:
-        if col not in typedness.columns:
-            typedness = typedness.with_columns(pl.lit(None).alias(col))
-    for col in ["annotation_ratio", "untyped_defs", "overlay_needed", "type_error_count"]:
-        if col not in typedness.columns:
-            typedness = typedness.with_columns(pl.lit(None).alias(col))
-    static_diag = _scope_frame(inputs.static_diagnostics, inputs.repo, inputs.commit)
-    for col in ["repo", "commit", "rel_path"]:
-        if col not in static_diag.columns:
-            static_diag = static_diag.with_columns(pl.lit(None).alias(col))
-    if "total_errors" in static_diag.columns:
-        static_diag = static_diag.rename(
-            {"total_errors": "static_error_count", "has_errors": "has_static_errors"}
-        )
-    for col in ["static_error_count", "has_static_errors"]:
-        if col not in static_diag.columns:
-            static_diag = static_diag.with_columns(pl.lit(None).alias(col))
-    modules = _scope_frame(inputs.modules, inputs.repo, inputs.commit)
-    for col in ["repo", "commit", "path"]:
-        if col not in modules.columns:
-            modules = modules.with_columns(pl.lit(None).alias(col))
-    for col in ["module", "language", "tags", "owners"]:
-        if col not in modules.columns:
-            modules = modules.with_columns(pl.lit(None).alias(col))
+    ast_metrics = _normalize_ast_metrics(inputs.ast_metrics)
+    hotspots = _normalize_hotspots(inputs.hotspots)
+    typedness = _normalize_typedness(inputs.typedness, repo=inputs.repo, commit=inputs.commit)
+    static_diag = _normalize_static_diagnostics(
+        inputs.static_diagnostics,
+        repo=inputs.repo,
+        commit=inputs.commit,
+    )
+    modules = _normalize_modules(inputs.modules, repo=inputs.repo, commit=inputs.commit)
 
     base = agg.join(ast_metrics, on="rel_path", how="left")
     base = base.join(hotspots, on="rel_path", how="left")

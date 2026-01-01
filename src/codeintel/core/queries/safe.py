@@ -45,6 +45,7 @@ from codeintel.core.queries.filter_compiler import (
 from codeintel.core.query_results import coerce_int, coerce_optional_float
 from codeintel.core.sqlglot_tools import (
     SELECT_ONLY_DISALLOWED_NODES,
+    AstCapabilityConfig,
     AstCapabilityError,
     ensure_ast_capability,
     extract_table_refs,
@@ -274,10 +275,12 @@ def assert_single_select_statement(sql: str, *, enforce_safe_sql: bool = True) -
     try:
         ensure_ast_capability(
             root,
-            disallowed_nodes=SELECT_ONLY_DISALLOWED_NODES,
-            allow_aggregates=True,
-            enforce_safe_sql=enforce_safe_sql,
-            log_context="storage_sql_ingress",
+            AstCapabilityConfig(
+                disallowed_nodes=SELECT_ONLY_DISALLOWED_NODES,
+                allow_aggregates=True,
+                enforce_safe_sql=enforce_safe_sql,
+                log_context="storage_sql_ingress",
+            ),
         )
     except AstCapabilityError as exc:
         reason = "disallowed_operation"

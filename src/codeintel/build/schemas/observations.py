@@ -32,8 +32,7 @@ from codeintel.core.schemas.arrow_gen import (
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
-from codeintel.core.time import utc_now
-from codeintel.storage.tracking.schema_catalog_models import (
+from codeintel.core.schemas.schema_catalog_models import (
     ColumnStatsEntry,
     ColumnStatsPayload,
     DatasetStatsPayload,
@@ -43,6 +42,7 @@ from codeintel.storage.tracking.schema_catalog_models import (
     SchemaVersionRecord,
     TableSchemaRegistryRecord,
 )
+from codeintel.core.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence

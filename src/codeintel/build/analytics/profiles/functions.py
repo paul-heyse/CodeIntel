@@ -17,6 +17,7 @@ from codeintel.build.analytics.profiles.types import (
     FunctionContractView,
     FunctionDocView,
     FunctionEffectsView,
+    FunctionProfileFrames,
     FunctionProfileInputs,
     FunctionRiskView,
     FunctionRoleView,
@@ -52,6 +53,47 @@ def _scope_frame(frame: pl.DataFrame, repo: str, commit: str) -> pl.DataFrame:
     if "repo" in frame.columns and "commit" in frame.columns:
         return frame.filter((pl.col("repo") == repo) & (pl.col("commit") == commit))
     return frame
+
+
+def _types_by_goid(types: pl.DataFrame) -> dict[int, dict[str, object]]:
+    types_by_goid: dict[int, dict[str, object]] = {}
+    for row in types.iter_rows(named=True):
+        goid = optional_int(row.get("function_goid_h128"))
+        if goid is None:
+            continue
+        types_by_goid[goid] = row
+    return types_by_goid
+
+
+def _module_by_path(modules: pl.DataFrame) -> dict[str, str]:
+    module_by_path: dict[str, str] = {}
+    for row in modules.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_by_path[path] = module
+    return module_by_path
+
+
+def _typedness_by_path(typedness: pl.DataFrame) -> dict[str, float | None]:
+    typedness_by_path: dict[str, float | None] = {}
+    for row in typedness.iter_rows(named=True):
+        path = row.get("path")
+        if isinstance(path, str):
+            typedness_by_path[path] = _extract_annotation_ratio(row.get("annotation_ratio"))
+    return typedness_by_path
+
+
+def _diagnostics_by_path(diagnostics: pl.DataFrame) -> dict[str, tuple[int, bool]]:
+    diagnostics_by_path: dict[str, tuple[int, bool]] = {}
+    for row in diagnostics.iter_rows(named=True):
+        path = row.get("rel_path")
+        if isinstance(path, str):
+            diagnostics_by_path[path] = (
+                int_or_default(row.get("total_errors")),
+                bool(row.get("has_errors")),
+            )
+    return diagnostics_by_path
 
 
 def _extract_annotation_ratio(value: object) -> float | None:
@@ -91,24 +133,8 @@ class FunctionProfileViews:
 
 def compute_function_profile_inputs(
     snapshot: SnapshotRef,
+    frames: FunctionProfileFrames,
     *,
-    function_metrics: pl.DataFrame,
-    function_types: pl.DataFrame,
-    modules: pl.DataFrame,
-    typedness: pl.DataFrame,
-    diagnostics: pl.DataFrame,
-    goid_risk_factors: pl.DataFrame,
-    coverage_functions: pl.DataFrame,
-    graph_metrics_functions: pl.DataFrame,
-    function_effects: pl.DataFrame,
-    function_contracts: pl.DataFrame,
-    semantic_roles_functions: pl.DataFrame,
-    docstrings: pl.DataFrame,
-    hotspots: pl.DataFrame,
-    call_graph_edges: pl.DataFrame,
-    call_graph_nodes: pl.DataFrame,
-    test_coverage_edges: pl.DataFrame,
-    test_catalog: pl.DataFrame,
     slow_test_threshold_ms: float = SLOW_TEST_THRESHOLD_MS,
 ) -> FunctionProfileInputs:
     """
@@ -121,40 +147,8 @@ def compute_function_profile_inputs(
     ----------
     snapshot
         Repository and commit identifiers.
-    function_metrics
-        Frame for ``analytics.function_metrics``.
-    function_types
-        Frame for ``analytics.function_types``.
-    modules
-        Frame for ``core.modules``.
-    typedness
-        Frame for ``analytics.typedness``.
-    diagnostics
-        Frame for ``analytics.static_diagnostics``.
-    goid_risk_factors
-        Frame for ``analytics.goid_risk_factors``.
-    coverage_functions
-        Frame for ``analytics.coverage_functions``.
-    graph_metrics_functions
-        Frame for ``analytics.graph_metrics_functions``.
-    function_effects
-        Frame for ``analytics.function_effects``.
-    function_contracts
-        Frame for ``analytics.function_contracts``.
-    semantic_roles_functions
-        Frame for ``analytics.semantic_roles_functions``.
-    docstrings
-        Frame for ``core.docstrings``.
-    hotspots
-        Frame for ``analytics.hotspots``.
-    call_graph_edges
-        Frame for ``graph.call_graph_edges``.
-    call_graph_nodes
-        Frame for ``graph.call_graph_nodes``.
-    test_coverage_edges
-        Frame for ``analytics.test_coverage_edges``.
-    test_catalog
-        Frame for ``analytics.test_catalog``.
+    frames
+        Frame bundle for function profile inputs.
     slow_test_threshold_ms
         Threshold for slow tests in milliseconds.
 
@@ -168,23 +162,23 @@ def compute_function_profile_inputs(
         commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
         slow_test_threshold_ms=slow_test_threshold_ms,
-        function_metrics=function_metrics,
-        function_types=function_types,
-        modules=modules,
-        typedness=typedness,
-        diagnostics=diagnostics,
-        goid_risk_factors=goid_risk_factors,
-        coverage_functions=coverage_functions,
-        graph_metrics_functions=graph_metrics_functions,
-        function_effects=function_effects,
-        function_contracts=function_contracts,
-        semantic_roles_functions=semantic_roles_functions,
-        docstrings=docstrings,
-        hotspots=hotspots,
-        call_graph_edges=call_graph_edges,
-        call_graph_nodes=call_graph_nodes,
-        test_coverage_edges=test_coverage_edges,
-        test_catalog=test_catalog,
+        function_metrics=frames.function_metrics,
+        function_types=frames.function_types,
+        modules=frames.modules,
+        typedness=frames.typedness,
+        diagnostics=frames.diagnostics,
+        goid_risk_factors=frames.goid_risk_factors,
+        coverage_functions=frames.coverage_functions,
+        graph_metrics_functions=frames.graph_metrics_functions,
+        function_effects=frames.function_effects,
+        function_contracts=frames.function_contracts,
+        semantic_roles_functions=frames.semantic_roles_functions,
+        docstrings=frames.docstrings,
+        hotspots=frames.hotspots,
+        call_graph_edges=frames.call_graph_edges,
+        call_graph_nodes=frames.call_graph_nodes,
+        test_coverage_edges=frames.test_coverage_edges,
+        test_catalog=frames.test_catalog,
     )
 
 
@@ -213,39 +207,14 @@ def load_function_base_info(
     if metrics.is_empty():
         return {}
 
-    types = _scope_frame(inputs.function_types, inputs.repo, inputs.commit)
-    modules = _scope_frame(inputs.modules, inputs.repo, inputs.commit)
-    typedness = _scope_frame(inputs.typedness, inputs.repo, inputs.commit)
-    diagnostics = _scope_frame(inputs.diagnostics, inputs.repo, inputs.commit)
-
-    types_by_goid: dict[int, dict[str, object]] = {}
-    for row in types.iter_rows(named=True):
-        goid = optional_int(row.get("function_goid_h128"))
-        if goid is None:
-            continue
-        types_by_goid[goid] = row
-
-    module_by_path: dict[str, str] = {}
-    for row in modules.iter_rows(named=True):
-        path = row.get("path")
-        module = row.get("module")
-        if isinstance(path, str) and isinstance(module, str):
-            module_by_path[path] = module
-
-    typedness_by_path: dict[str, float | None] = {}
-    for row in typedness.iter_rows(named=True):
-        path = row.get("path")
-        if isinstance(path, str):
-            typedness_by_path[path] = _extract_annotation_ratio(row.get("annotation_ratio"))
-
-    diagnostics_by_path: dict[str, tuple[int, bool]] = {}
-    for row in diagnostics.iter_rows(named=True):
-        path = row.get("rel_path")
-        if isinstance(path, str):
-            diagnostics_by_path[path] = (
-                int_or_default(row.get("total_errors")),
-                bool(row.get("has_errors")),
-            )
+    types_by_goid = _types_by_goid(_scope_frame(inputs.function_types, inputs.repo, inputs.commit))
+    module_by_path = _module_by_path(_scope_frame(inputs.modules, inputs.repo, inputs.commit))
+    typedness_by_path = _typedness_by_path(
+        _scope_frame(inputs.typedness, inputs.repo, inputs.commit)
+    )
+    diagnostics_by_path = _diagnostics_by_path(
+        _scope_frame(inputs.diagnostics, inputs.repo, inputs.commit)
+    )
 
     result: dict[int, FunctionBaseInfo] = {}
     for record in metrics.iter_rows(named=True):
@@ -355,35 +324,36 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
     return result
 
 
-def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, CoverageSummary]:
-    """
-    Aggregate coverage and test metrics per function.
+@dataclass(frozen=True)
+class _CoverageTestSets:
+    tests_touching: dict[int, set[str]]
+    failing_tests: dict[int, set[str]]
+    slow_tests: dict[int, set[str]]
+    flaky_tests: dict[int, set[str]]
+    status_sets: dict[int, dict[str, set[str]]]
 
-    Returns
-    -------
-    Mapping[int, CoverageSummary]
-        Mapping keyed by function GOID.
-    """
-    coverage = _scope_frame(inputs.coverage_functions, inputs.repo, inputs.commit)
-    if coverage.is_empty():
-        return {}
 
-    edges = _scope_frame(inputs.test_coverage_edges, inputs.repo, inputs.commit)
-    catalog = _scope_frame(inputs.test_catalog, inputs.repo, inputs.commit)
-
+def _catalog_by_test(catalog: pl.DataFrame) -> dict[str, dict[str, object]]:
     catalog_by_test: dict[str, dict[str, object]] = {}
     for row in catalog.iter_rows(named=True):
         test_id = row.get("test_id")
         if isinstance(test_id, str):
             catalog_by_test[test_id] = row
+    return catalog_by_test
 
+
+def _coverage_sets_from_edges(
+    edges: pl.DataFrame,
+    catalog_by_test: dict[str, dict[str, object]],
+    *,
+    slow_threshold: float,
+) -> _CoverageTestSets:
     tests_touching: dict[int, set[str]] = {}
     failing_tests: dict[int, set[str]] = {}
     slow_tests: dict[int, set[str]] = {}
     flaky_tests: dict[int, set[str]] = {}
     status_sets: dict[int, dict[str, set[str]]] = {}
 
-    slow_threshold = float(inputs.slow_test_threshold_ms)
     for row in edges.iter_rows(named=True):
         goid = optional_int(row.get("function_goid_h128"))
         test_id = row.get("test_id")
@@ -403,6 +373,18 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
         if bool(test_meta.get("flaky")):
             flaky_tests.setdefault(goid, set()).add(test_id)
 
+    return _CoverageTestSets(
+        tests_touching=tests_touching,
+        failing_tests=failing_tests,
+        slow_tests=slow_tests,
+        flaky_tests=flaky_tests,
+        status_sets=status_sets,
+    )
+
+
+def _dominant_status_by_goid(
+    status_sets: dict[int, dict[str, set[str]]],
+) -> dict[int, str | None]:
     dominant_status: dict[int, str | None] = {}
     for goid, status_map in status_sets.items():
         if not status_map:
@@ -413,6 +395,32 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
             [status for status, vals in status_map.items() if len(vals) == max_count]
         )
         dominant_status[goid] = candidates[0] if candidates else None
+    return dominant_status
+
+
+def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, CoverageSummary]:
+    """
+    Aggregate coverage and test metrics per function.
+
+    Returns
+    -------
+    Mapping[int, CoverageSummary]
+        Mapping keyed by function GOID.
+    """
+    coverage = _scope_frame(inputs.coverage_functions, inputs.repo, inputs.commit)
+    if coverage.is_empty():
+        return {}
+
+    edges = _scope_frame(inputs.test_coverage_edges, inputs.repo, inputs.commit)
+    catalog = _scope_frame(inputs.test_catalog, inputs.repo, inputs.commit)
+    slow_threshold = float(inputs.slow_test_threshold_ms)
+    catalog_by_test = _catalog_by_test(catalog)
+    coverage_sets = _coverage_sets_from_edges(
+        edges,
+        catalog_by_test,
+        slow_threshold=slow_threshold,
+    )
+    dominant_status = _dominant_status_by_goid(coverage_sets.status_sets)
 
     result: dict[int, CoverageSummary] = {}
     for record in coverage.iter_rows(named=True):
@@ -420,10 +428,10 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
         if goid_value is None:
             continue
         goid = goid_value
-        tests = tests_touching.get(goid, set())
-        failing = failing_tests.get(goid, set())
-        slow = slow_tests.get(goid, set())
-        flaky = flaky_tests.get(goid, set())
+        tests = coverage_sets.tests_touching.get(goid, set())
+        failing = coverage_sets.failing_tests.get(goid, set())
+        slow = coverage_sets.slow_tests.get(goid, set())
+        flaky = coverage_sets.flaky_tests.get(goid, set())
         dominant = dominant_status.get(goid)
         result[goid] = CoverageSummary(
             function_goid_h128=goid,

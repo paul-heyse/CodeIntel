@@ -185,72 +185,76 @@ class SemanticRolesResult:
     module_rows: list[tuple[object, ...]]
 
 
+@dataclass(frozen=True)
+class SemanticRoleInputs:
+    """Inputs required to compute semantic roles."""
+
+    module_by_path: dict[str, str]
+    ast_map: dict[int, FunctionAst]
+    features_map: dict[int, FunctionAstFeatures]
+    function_metrics_frame: pl.DataFrame | None = None
+    function_effects_frame: pl.DataFrame | None = None
+    function_contracts_frame: pl.DataFrame | None = None
+    graph_metrics_frame: pl.DataFrame | None = None
+    modules_frame: pl.DataFrame | None = None
+
+
 def build_semantic_roles_rows(
     snapshot: SnapshotRef,
-    *,
-    module_by_path: dict[str, str],
-    ast_map: dict[int, FunctionAst],
-    features_map: dict[int, FunctionAstFeatures],
-    function_metrics_frame: pl.DataFrame | None = None,
-    function_effects_frame: pl.DataFrame | None = None,
-    function_contracts_frame: pl.DataFrame | None = None,
-    graph_metrics_frame: pl.DataFrame | None = None,
-    modules_frame: pl.DataFrame | None = None,
+    inputs: SemanticRoleInputs,
 ) -> SemanticRolesResult:
     """
     Build semantic role rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
+    rows ready for materialization via SaveToDecorator/ArrowDatasetSaver.
 
     Parameters
     ----------
     snapshot
         Repository and commit identifiers.
-    module_by_path
-        Mapping of file path to module name.
-    ast_map
-        Mapping of function GOID to parsed AST data.
-    features_map
-        Mapping of function GOID to feature vector.
-    function_metrics_frame
-        Function metrics rows for the snapshot.
-    function_effects_frame
-        Function effects rows for the snapshot.
-    function_contracts_frame
-        Function contracts rows for the snapshot.
-    graph_metrics_frame
-        Graph metrics rows for the snapshot.
-    modules_frame
-        Module rows for the snapshot.
+    inputs
+        Bundled inputs for semantic role computation.
 
     Returns
     -------
     SemanticRolesResult
         Container with function and module rows.
     """
-    module_meta = _module_meta_from_frame(modules_frame, repo=snapshot.repo, commit=snapshot.commit)
+    module_meta = _module_meta_from_frame(
+        inputs.modules_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     function_rows = _function_rows_from_frame(
-        function_metrics_frame, repo=snapshot.repo, commit=snapshot.commit
+        inputs.function_metrics_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
     effects = _effects_from_frame(
-        function_effects_frame, repo=snapshot.repo, commit=snapshot.commit
+        inputs.function_effects_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
     contracts = _contracts_from_frame(
-        function_contracts_frame, repo=snapshot.repo, commit=snapshot.commit
+        inputs.function_contracts_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
     graph_metrics = _graph_metrics_from_frame(
-        graph_metrics_frame, repo=snapshot.repo, commit=snapshot.commit
+        inputs.graph_metrics_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
 
     artifacts = RoleArtifacts(
-        module_by_path=module_by_path,
+        module_by_path=inputs.module_by_path,
         module_meta=module_meta,
-        ast_map=ast_map,
+        ast_map=inputs.ast_map,
         effects=effects,
         contracts=contracts,
         graph_metrics=graph_metrics,
-        features=features_map,
+        features=inputs.features_map,
     )
 
     now = datetime.now(tz=UTC)

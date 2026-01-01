@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 
 import polars as pl
 
-from codeintel.build.analytics.testing.behavioral.tags import build_behavior_rows
+from codeintel.build.analytics.testing.behavioral.tags import (
+    BehavioralRowInputs,
+    build_behavior_rows,
+)
 from codeintel.build.analytics.testing.compute import (
     TEST_GRAPH_METRICS_FUNCTIONS_COLS,
     TEST_GRAPH_METRICS_TESTS_COLS,
@@ -14,7 +18,10 @@ from codeintel.build.analytics.testing.compute import (
     compute_test_graph_metrics_pure,
 )
 from codeintel.build.analytics.testing.coverage.edges import build_test_coverage_edges_rows
-from codeintel.build.analytics.testing.profiles.builder import build_test_profile_result
+from codeintel.build.analytics.testing.profiles.builder import (
+    TestProfileFrameInputs,
+    build_test_profile_result,
+)
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -369,16 +376,81 @@ def t__test_graph_metrics(
     )
 
 
-def _profile__base(
-    env: BuildEnv,
+@dataclass(frozen=True)
+class TestProfileCoreFrames:
+    test_catalog_frame: pl.DataFrame
+    test_coverage_edges_frame: pl.DataFrame
+    goids_frame: pl.DataFrame
+    modules_frame: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class TestProfileSubsystemFrames:
+    subsystem_modules_frame: pl.DataFrame
+    subsystems_frame: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class TestProfileGraphFrames:
+    test_graph_metrics_frame: pl.DataFrame
+
+
+def test_profile_core_frames(
     q__analytics__test_catalog: InferableTabularInput,
     q__analytics__test_coverage_edges: InferableTabularInput,
-    q__analytics__test_graph_metrics_tests: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+) -> TestProfileCoreFrames:
+    return TestProfileCoreFrames(
+        test_catalog_frame=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
+        test_coverage_edges_frame=tabular_to_lazyframe(
+            q__analytics__test_coverage_edges
+        ).collect(),
+        goids_frame=tabular_to_lazyframe(q__core__goids).collect(),
+        modules_frame=tabular_to_lazyframe(q__core__modules).collect(),
+    )
+
+
+def test_profile_subsystem_frames(
     _q__analytics__subsystem_coverage_cache: InferableTabularInput,
     q__analytics__subsystem_modules: InferableTabularInput,
     q__analytics__subsystems: InferableTabularInput,
-    q__core__goids: InferableTabularInput,
-    q__core__modules: InferableTabularInput,
+) -> TestProfileSubsystemFrames:
+    return TestProfileSubsystemFrames(
+        subsystem_modules_frame=tabular_to_lazyframe(q__analytics__subsystem_modules).collect(),
+        subsystems_frame=tabular_to_lazyframe(q__analytics__subsystems).collect(),
+    )
+
+
+def test_profile_graph_frames(
+    q__analytics__test_graph_metrics_tests: InferableTabularInput,
+) -> TestProfileGraphFrames:
+    return TestProfileGraphFrames(
+        test_graph_metrics_frame=tabular_to_lazyframe(
+            q__analytics__test_graph_metrics_tests
+        ).collect(),
+    )
+
+
+def test_profile_inputs(
+    test_profile_core_frames: TestProfileCoreFrames,
+    test_profile_subsystem_frames: TestProfileSubsystemFrames,
+    test_profile_graph_frames: TestProfileGraphFrames,
+) -> TestProfileFrameInputs:
+    return TestProfileFrameInputs(
+        test_catalog_frame=test_profile_core_frames.test_catalog_frame,
+        test_coverage_edges_frame=test_profile_core_frames.test_coverage_edges_frame,
+        goids_frame=test_profile_core_frames.goids_frame,
+        modules_frame=test_profile_core_frames.modules_frame,
+        subsystem_modules_frame=test_profile_subsystem_frames.subsystem_modules_frame,
+        subsystems_frame=test_profile_subsystem_frames.subsystems_frame,
+        test_graph_metrics_frame=test_profile_graph_frames.test_graph_metrics_frame,
+    )
+
+
+def _profile__base(
+    env: BuildEnv,
+    test_profile_inputs: TestProfileFrameInputs,
 ) -> pl.LazyFrame:
     """Build test profile rows.
 
@@ -387,24 +459,9 @@ def _profile__base(
     pl.LazyFrame
         Lazy frame containing test profile rows.
     """
-    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
-    coverage_edges_frame = tabular_to_lazyframe(q__analytics__test_coverage_edges).collect()
-    test_graph_metrics_frame = tabular_to_lazyframe(
-        q__analytics__test_graph_metrics_tests
-    ).collect()
-    subsystem_modules_frame = tabular_to_lazyframe(q__analytics__subsystem_modules).collect()
-    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems).collect()
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
     result = build_test_profile_result(
         env.snapshot,
-        test_catalog_frame=test_catalog_frame,
-        goids_frame=goids_frame,
-        modules_frame=modules_frame,
-        test_coverage_edges_frame=coverage_edges_frame,
-        subsystem_modules_frame=subsystem_modules_frame,
-        subsystems_frame=subsystems_frame,
-        test_graph_metrics_frame=test_graph_metrics_frame,
+        test_profile_inputs,
     )
     if result.rows is None:
         return empty_frame_for_table(TEST_PROFILE_TABLE_KEY)
@@ -484,10 +541,12 @@ def behavioral_coverage__base(
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
     rows = build_behavior_rows(
         env.snapshot,
-        test_catalog_frame=test_catalog_frame,
-        goids_frame=goids_frame,
-        modules_frame=modules_frame,
-        test_profile_frame=test_profile_frame,
+        BehavioralRowInputs(
+            test_catalog_frame=test_catalog_frame,
+            goids_frame=goids_frame,
+            modules_frame=modules_frame,
+            test_profile_frame=test_profile_frame,
+        ),
     )
     return rows_to_frame(BEHAVIORAL_COVERAGE_TABLE_KEY, rows)
 

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from codeintel.core.schemas.provider import SchemaProvider
-    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 
 def qparam_to_table_key(qparam: str) -> str:

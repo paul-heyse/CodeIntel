@@ -28,12 +28,12 @@ from codeintel.core.datasets.scanning import (
 from codeintel.core.datasets.scanning import (
     dataset_for_manifest as build_dataset_for_manifest,
 )
+from codeintel.core.schemas.schema_catalog_models import DerivedSettingsPayload
 from codeintel.storage.queries.filter_compiler import (
     FilterCompilerError,
     arrow_filter_expression,
     compile_filter_predicates,
 )
-from codeintel.storage.tracking.schema_catalog_models import DerivedSettingsPayload
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

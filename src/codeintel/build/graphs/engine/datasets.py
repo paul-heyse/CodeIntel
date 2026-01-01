@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,19 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
 LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SnapshotScanRequest:
+    """Scan request for dataset snapshots."""
+
+    dataset_root: Path
+    table_key: str
+    snapshot_id: str
+    columns: tuple[str, ...] | None = None
+    repo: str | None = None
+    commit: str | None = None
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
 
 
 def resolve_dataset_root(
@@ -83,48 +97,33 @@ def dataset_snapshot_exists(
 
 
 def scan_snapshot_reader(
-    *,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    columns: tuple[str, ...] | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+    request: SnapshotScanRequest,
 ) -> pa.RecordBatchReader | None:
     """Return a RecordBatchReader for a dataset snapshot or None when missing.
 
     Parameters
     ----------
-    dataset_root
-        Root directory for datasets.
-    table_key
-        Dataset table key.
-    snapshot_id
-        Snapshot identifier for the dataset.
-    columns
-        Optional column selection for the scan.
-    repo
-        Optional repository filter.
-    commit
-        Optional commit filter.
-    batch_size
-        Batch size for scanning.
+    request
+        Snapshot scan request describing the dataset and filters.
 
     Returns
     -------
     pyarrow.RecordBatchReader | None
         Reader for the dataset snapshot or None when missing.
     """
-    dataset = _scan_dataset(dataset_root, table_key, snapshot_id)
+    dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
     if dataset is None:
         return None
-    filter_expression = _snapshot_filter_expression(dataset, repo=repo, commit=commit)
-    resolved_columns = _resolve_columns(dataset, columns)
-    if resolved_columns is None and columns is not None:
+    filter_expression = _snapshot_filter_expression(
+        dataset,
+        repo=request.repo,
+        commit=request.commit,
+    )
+    resolved_columns = _resolve_columns(dataset, request.columns)
+    if resolved_columns is None and request.columns is not None:
         return None
     options = DatasetScanOptions(
-        batch_size=batch_size,
+        batch_size=request.batch_size,
         filter_expression=filter_expression,
         columns=resolved_columns,
         unify_schemas=True,
@@ -134,46 +133,32 @@ def scan_snapshot_reader(
 
 
 def scan_snapshot_lazyframe(
-    *,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    columns: tuple[str, ...] | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+    request: SnapshotScanRequest,
 ) -> pl.LazyFrame | None:
     """Return a LazyFrame for a dataset snapshot or None when missing.
 
     Parameters
     ----------
-    dataset_root
-        Root directory for datasets.
-    table_key
-        Dataset table key.
-    snapshot_id
-        Snapshot identifier for the dataset.
-    columns
-        Optional column selection for the scan.
-    repo
-        Optional repository filter.
-    commit
-        Optional commit filter.
-    batch_size
-        Batch size for scanning.
+    request
+        Snapshot scan request describing the dataset and filters.
 
     Returns
     -------
     polars.LazyFrame | None
         LazyFrame for the dataset snapshot or None when missing.
     """
-    dataset = _scan_dataset(dataset_root, table_key, snapshot_id)
+    dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
     if dataset is None:
         return None
-    frame = pl.scan_pyarrow_dataset(dataset, batch_size=batch_size)
-    frame = _filter_frame(frame, dataset.schema, repo=repo, commit=commit)
-    if columns is not None:
-        resolved_columns = _resolve_columns(dataset, columns)
+    frame = pl.scan_pyarrow_dataset(dataset, batch_size=request.batch_size)
+    frame = _filter_frame(
+        frame,
+        dataset.schema,
+        repo=request.repo,
+        commit=request.commit,
+    )
+    if request.columns is not None:
+        resolved_columns = _resolve_columns(dataset, request.columns)
         if resolved_columns is None:
             return None
         frame = frame.select(list(resolved_columns))
@@ -245,6 +230,7 @@ def _filter_frame(
 
 
 __all__ = [
+    "SnapshotScanRequest",
     "dataset_snapshot_exists",
     "resolve_dataset_root",
     "scan_snapshot_lazyframe",

@@ -73,6 +73,32 @@ ENTRYPOINT_TESTS_CONTRACT = TableContractSpec(
 )
 
 
+@dataclass(frozen=True)
+class EntrypointModuleFrames:
+    """Frame inputs for entrypoint module context."""
+
+    modules_frame: pl.DataFrame
+    goids_frame: pl.DataFrame
+    features_frame: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class EntrypointTestFrames:
+    """Frame inputs for entrypoint test context."""
+
+    coverage_frame: pl.DataFrame
+    test_catalog_frame: pl.DataFrame
+    coverage_edges_frame: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class EntrypointSubsystemFrames:
+    """Frame inputs for entrypoint subsystem context."""
+
+    subsystems_frame: pl.DataFrame
+    subsystem_modules_frame: pl.DataFrame
+
+
 def _parse_json_list(value: object) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
@@ -135,17 +161,66 @@ def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeat
     return features_map
 
 
-def entrypoints_result(
-    env: BuildEnv,
+def entrypoint_module_frames(
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
+) -> EntrypointModuleFrames:
+    """Collect module-related frames for entrypoint detection.
+
+    Returns
+    -------
+    EntrypointModuleFrames
+        Frame bundle with modules, goids, and AST features.
+    """
+    return EntrypointModuleFrames(
+        modules_frame=tabular_to_lazyframe(q__core__modules).collect(),
+        goids_frame=tabular_to_lazyframe(q__core__goids).collect(),
+        features_frame=tabular_to_lazyframe(q__analytics__function_ast_features).collect(),
+    )
+
+
+def entrypoint_test_frames(
     q__analytics__coverage_functions: InferableTabularInput,
     q__analytics__test_catalog: InferableTabularInput,
-    _q__analytics__test_profile: InferableTabularInput,
     q__analytics__test_coverage_edges: InferableTabularInput,
+) -> EntrypointTestFrames:
+    """Collect test-related frames for entrypoint detection.
+
+    Returns
+    -------
+    EntrypointTestFrames
+        Frame bundle with coverage, test catalog, and coverage edges.
+    """
+    return EntrypointTestFrames(
+        coverage_frame=tabular_to_lazyframe(q__analytics__coverage_functions).collect(),
+        test_catalog_frame=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
+        coverage_edges_frame=tabular_to_lazyframe(q__analytics__test_coverage_edges).collect(),
+    )
+
+
+def entrypoint_subsystem_frames(
     q__analytics__subsystems: InferableTabularInput,
     q__analytics__subsystem_modules: InferableTabularInput,
+) -> EntrypointSubsystemFrames:
+    """Collect subsystem-related frames for entrypoint detection.
+
+    Returns
+    -------
+    EntrypointSubsystemFrames
+        Frame bundle with subsystem metadata and module mapping.
+    """
+    return EntrypointSubsystemFrames(
+        subsystems_frame=tabular_to_lazyframe(q__analytics__subsystems).collect(),
+        subsystem_modules_frame=tabular_to_lazyframe(q__analytics__subsystem_modules).collect(),
+    )
+
+
+def entrypoints_result(
+    env: BuildEnv,
+    entrypoint_module_frames: EntrypointModuleFrames,
+    entrypoint_test_frames: EntrypointTestFrames,
+    entrypoint_subsystem_frames: EntrypointSubsystemFrames,
 ) -> EntrypointsResult:
     """Compute entrypoint rows using module and AST feature inputs.
 
@@ -154,32 +229,30 @@ def entrypoints_result(
     EntrypointsResult
         Entrypoints result containing entrypoint and test rows.
     """
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    features_frame = tabular_to_lazyframe(q__analytics__function_ast_features).collect()
-    coverage_frame = tabular_to_lazyframe(q__analytics__coverage_functions).collect()
-    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
-    coverage_edges_frame = tabular_to_lazyframe(q__analytics__test_coverage_edges).collect()
-    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems).collect()
-    subsystem_modules_frame = tabular_to_lazyframe(q__analytics__subsystem_modules).collect()
-    module_map = _module_map(modules_frame)
+    module_map = _module_map(entrypoint_module_frames.modules_frame)
     if not module_map:
         return EntrypointsResult(entrypoint_rows=(), test_rows=())
-    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
+    catalog = catalog_provider_from_frames(
+        goids_frame=entrypoint_module_frames.goids_frame,
+        modules_frame=entrypoint_module_frames.modules_frame,
+    )
     inputs = EntrypointBuildInputs(
         catalog_provider=catalog,
         module_map=module_map,
-        features_map=_features_by_goid(features_frame),
+        features_map=_features_by_goid(entrypoint_module_frames.features_frame),
+    )
+    context_inputs = EntrypointContextInputs(
+        modules_frame=entrypoint_module_frames.modules_frame,
+        coverage_functions_frame=entrypoint_test_frames.coverage_frame,
+        test_coverage_edges_frame=entrypoint_test_frames.coverage_edges_frame,
+        test_catalog_frame=entrypoint_test_frames.test_catalog_frame,
+        subsystem_modules_frame=entrypoint_subsystem_frames.subsystem_modules_frame,
+        subsystems_frame=entrypoint_subsystem_frames.subsystems_frame,
     )
     return compute_entrypoints_pure(
         env.snapshot,
         inputs,
-        modules_frame=modules_frame,
-        coverage_functions_frame=coverage_frame,
-        test_coverage_edges_frame=coverage_edges_frame,
-        test_catalog_frame=test_catalog_frame,
-        subsystem_modules_frame=subsystem_modules_frame,
-        subsystems_frame=subsystems_frame,
+        context_inputs,
     )
 
 

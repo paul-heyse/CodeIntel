@@ -125,54 +125,66 @@ class TestProfileBuildResult:
     rows: list[ProfileRowModel] | None
 
 
+@dataclass(frozen=True)
+class TestProfileFrameInputs:
+    """Frame inputs required to build test profiles."""
+
+    test_catalog_frame: pl.DataFrame | None = None
+    goids_frame: pl.DataFrame | None = None
+    modules_frame: pl.DataFrame | None = None
+    test_coverage_edges_frame: pl.DataFrame | None = None
+    subsystem_modules_frame: pl.DataFrame | None = None
+    subsystems_frame: pl.DataFrame | None = None
+    test_graph_metrics_frame: pl.DataFrame | None = None
+    options: TestProfileOptions | None = None
+
+
+@dataclass(frozen=True)
+class FunctionCoverageFrames:
+    """Frame bundle for test → function coverage."""
+
+    test_coverage_edges_frame: pl.DataFrame | None = None
+    goids_frame: pl.DataFrame | None = None
+    modules_frame: pl.DataFrame | None = None
+
+
+@dataclass(frozen=True)
+class SubsystemCoverageFrames:
+    """Frame bundle for test → subsystem coverage."""
+
+    test_coverage_edges_frame: pl.DataFrame | None = None
+    goids_frame: pl.DataFrame | None = None
+    modules_frame: pl.DataFrame | None = None
+    subsystem_modules_frame: pl.DataFrame | None = None
+    subsystems_frame: pl.DataFrame | None = None
+
+
 def build_test_profile_result(
     snapshot: SnapshotRef,
-    *,
-    test_catalog_frame: pl.DataFrame | None = None,
-    goids_frame: pl.DataFrame | None = None,
-    modules_frame: pl.DataFrame | None = None,
-    test_coverage_edges_frame: pl.DataFrame | None = None,
-    subsystem_modules_frame: pl.DataFrame | None = None,
-    subsystems_frame: pl.DataFrame | None = None,
-    test_graph_metrics_frame: pl.DataFrame | None = None,
-    options: TestProfileOptions | None = None,
+    inputs: TestProfileFrameInputs,
 ) -> TestProfileBuildResult:
     """Compute test profile rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
+    rows ready for materialization via SaveToDecorator/ArrowDatasetSaver.
 
     Parameters
     ----------
     snapshot
         Snapshot reference with repo, commit, and repo_root.
-    test_catalog_frame
-        Test catalog rows for the snapshot.
-    goids_frame
-        GOID rows for the snapshot.
-    modules_frame
-        Module rows for the snapshot.
-    test_coverage_edges_frame
-        Coverage edges for tests/functions.
-    subsystem_modules_frame
-        Subsystem-module mappings for the snapshot.
-    subsystems_frame
-        Subsystem metadata for the snapshot.
-    test_graph_metrics_frame
-        Test graph metrics rows for the snapshot.
-    options
-        Optional test profile configuration options.
+    inputs
+        Bundled inputs for test profile computation.
 
     Returns
     -------
     TestProfileBuildResult
         Container with profile row models.
     """
-    opts = options or TestProfileOptions()
+    opts = inputs.options or TestProfileOptions()
     tests: list[TestRecord] = _load_test_records_from_frames(
-        test_catalog_frame,
-        goids_frame,
-        modules_frame,
+        inputs.test_catalog_frame,
+        inputs.goids_frame,
+        inputs.modules_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
@@ -181,30 +193,34 @@ def build_test_profile_result(
         return TestProfileBuildResult(rows=None)
 
     functions_covered = _load_functions_covered_from_frames(
-        test_coverage_edges_frame,
-        goids_frame,
-        modules_frame,
+        FunctionCoverageFrames(
+            test_coverage_edges_frame=inputs.test_coverage_edges_frame,
+            goids_frame=inputs.goids_frame,
+            modules_frame=inputs.modules_frame,
+        ),
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
     subsystems_covered = _load_subsystems_covered_from_frames(
-        test_coverage_edges_frame,
-        goids_frame,
-        modules_frame,
-        subsystem_modules_frame,
-        subsystems_frame,
+        SubsystemCoverageFrames(
+            test_coverage_edges_frame=inputs.test_coverage_edges_frame,
+            goids_frame=inputs.goids_frame,
+            modules_frame=inputs.modules_frame,
+            subsystem_modules_frame=inputs.subsystem_modules_frame,
+            subsystems_frame=inputs.subsystems_frame,
+        ),
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
     tg_metrics = _load_test_graph_metrics_from_frame(
-        test_graph_metrics_frame,
+        inputs.test_graph_metrics_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
     io_spec_raw = opts.io_spec if isinstance(opts.io_spec, dict) else None
     patterns = _patterns_from_io_spec(io_spec_raw)
     ast_info = _build_test_ast_index(snapshot.repo_root, tests, patterns)
-    inputs = TestProfileInputs(
+    profile_inputs = TestProfileInputs(
         functions_covered=functions_covered,
         subsystems_covered=subsystems_covered,
         tg_metrics=tg_metrics,
@@ -212,7 +228,7 @@ def build_test_profile_result(
     )
     ctx = build_test_profile_context(
         snapshot=snapshot,
-        inputs=inputs,
+        inputs=profile_inputs,
         options=opts,
     )
     rows = build_test_profile_rows(tests, ctx)
@@ -478,19 +494,57 @@ def load_test_records_public(
     )
 
 
-def _load_functions_covered_from_frames(
-    test_coverage_edges_frame: pl.DataFrame | None,
-    goids_frame: pl.DataFrame | None,
+def _module_by_path_from_frame(
     modules_frame: pl.DataFrame | None,
     *,
     repo: str,
     commit: str,
-) -> dict[str, FunctionCoverageEntry]:
+) -> dict[str, str]:
+    module_by_path: dict[str, str] = {}
+    if modules_frame is None or modules_frame.is_empty():
+        return module_by_path
+    modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
+    for row in modules_filtered.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and module is not None:
+            module_by_path[path] = str(module)
+    return module_by_path
+
+
+def _goid_meta_from_frame(
+    goids_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[int, dict[str, object]]:
+    goid_meta: dict[int, dict[str, object]] = {}
+    if goids_frame is None or goids_frame.is_empty():
+        return goid_meta
+    goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
+    for row in goids_filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("goid_h128"))
+        if goid is None:
+            continue
+        goid_meta[goid] = {
+            "urn": row.get("urn"),
+            "qualname": row.get("qualname"),
+            "rel_path": row.get("rel_path"),
+        }
+    return goid_meta
+
+
+def _edge_counts_from_coverage_frame(
+    test_coverage_edges_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> tuple[dict[tuple[str, int], dict[str, int]], dict[str, int]]:
     if test_coverage_edges_frame is None or test_coverage_edges_frame.is_empty():
-        return {}
+        return {}, {}
     edges = _filter_frame_by_snapshot(test_coverage_edges_frame, repo=repo, commit=commit)
     if edges.is_empty():
-        return {}
+        return {}, {}
     per_edge: dict[tuple[str, int], dict[str, int]] = {}
     totals: dict[str, int] = {}
     for row in edges.iter_rows(named=True):
@@ -507,26 +561,15 @@ def _load_functions_covered_from_frames(
         current["executable"] += executable
         per_edge[key] = current
         totals[test_id] = totals.get(test_id, 0) + covered
-    goid_meta: dict[int, dict[str, object]] = {}
-    if goids_frame is not None and not goids_frame.is_empty():
-        goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
-        for row in goids_filtered.iter_rows(named=True):
-            goid = normalize_decimal_id(row.get("goid_h128"))
-            if goid is None:
-                continue
-            goid_meta[goid] = {
-                "urn": row.get("urn"),
-                "qualname": row.get("qualname"),
-                "rel_path": row.get("rel_path"),
-            }
-    module_by_path: dict[str, str] = {}
-    if modules_frame is not None and not modules_frame.is_empty():
-        modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
-        for row in modules_filtered.iter_rows(named=True):
-            path = row.get("path")
-            module = row.get("module")
-            if isinstance(path, str) and module is not None:
-                module_by_path[path] = str(module)
+    return per_edge, totals
+
+
+def _function_coverage_entries(
+    per_edge: dict[tuple[str, int], dict[str, int]],
+    totals: dict[str, int],
+    goid_meta: dict[int, dict[str, object]],
+    module_by_path: dict[str, str],
+) -> dict[str, FunctionCoverageEntry]:
     result: dict[str, FunctionCoverageEntry] = {}
     for (test_id, func_goid), counts in per_edge.items():
         total = totals.get(test_id, 0)
@@ -566,68 +609,85 @@ def _load_functions_covered_from_frames(
     return result
 
 
-def _load_subsystems_covered_from_frames(
-    test_coverage_edges_frame: pl.DataFrame | None,
+def _goid_to_module_map(
     goids_frame: pl.DataFrame | None,
-    modules_frame: pl.DataFrame | None,
-    subsystem_modules_frame: pl.DataFrame | None,
-    subsystems_frame: pl.DataFrame | None,
+    module_by_path: dict[str, str],
     *,
     repo: str,
     commit: str,
-) -> dict[str, SubsystemCoverageEntry]:
-    if (
-        test_coverage_edges_frame is None
-        or test_coverage_edges_frame.is_empty()
-        or subsystem_modules_frame is None
-        or subsystem_modules_frame.is_empty()
-    ):
-        return {}
-    edges = _filter_frame_by_snapshot(test_coverage_edges_frame, repo=repo, commit=commit)
-    if edges.is_empty():
-        return {}
-    module_by_path: dict[str, str] = {}
-    if modules_frame is not None and not modules_frame.is_empty():
-        modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
-        for row in modules_filtered.iter_rows(named=True):
-            path = row.get("path")
-            module = row.get("module")
-            if isinstance(path, str) and module is not None:
-                module_by_path[path] = str(module)
+) -> dict[int, str]:
     goid_to_module: dict[int, str] = {}
-    if goids_frame is not None and not goids_frame.is_empty():
-        goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
-        for row in goids_filtered.iter_rows(named=True):
-            goid = normalize_decimal_id(row.get("goid_h128"))
-            if goid is None:
-                continue
-            rel_path = row.get("rel_path")
-            if isinstance(rel_path, str):
-                module = module_by_path.get(rel_path) or path_to_module(rel_path)
-                goid_to_module[goid] = module
-    subsystem_by_module: dict[str, str] = {}
+    if goids_frame is None or goids_frame.is_empty():
+        return goid_to_module
+    goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
+    for row in goids_filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("goid_h128"))
+        if goid is None:
+            continue
+        rel_path = row.get("rel_path")
+        if isinstance(rel_path, str):
+            module = module_by_path.get(rel_path) or path_to_module(rel_path)
+            goid_to_module[goid] = module
+    return goid_to_module
+
+
+def _subsystem_by_module_from_frame(
+    subsystem_modules_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, str]:
+    if subsystem_modules_frame is None or subsystem_modules_frame.is_empty():
+        return {}
     subsys_filtered = _filter_frame_by_snapshot(
         subsystem_modules_frame,
         repo=repo,
         commit=commit,
     )
+    subsystem_by_module: dict[str, str] = {}
     for row in subsys_filtered.iter_rows(named=True):
         module = row.get("module")
         subsystem_id = row.get("subsystem_id")
         if module is None or subsystem_id is None:
             continue
         subsystem_by_module[str(module)] = str(subsystem_id)
+    return subsystem_by_module
+
+
+def _subsystem_meta_from_frame(
+    subsystems_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, dict[str, object]]:
     subsys_meta: dict[str, dict[str, object]] = {}
-    if subsystems_frame is not None and not subsystems_frame.is_empty():
-        subs_filtered = _filter_frame_by_snapshot(subsystems_frame, repo=repo, commit=commit)
-        for row in subs_filtered.iter_rows(named=True):
-            subsystem_id = row.get("subsystem_id")
-            if subsystem_id is None:
-                continue
-            subsys_meta[str(subsystem_id)] = {
-                "name": row.get("name"),
-                "max_risk_score": row.get("max_risk_score"),
-            }
+    if subsystems_frame is None or subsystems_frame.is_empty():
+        return subsys_meta
+    subs_filtered = _filter_frame_by_snapshot(subsystems_frame, repo=repo, commit=commit)
+    for row in subs_filtered.iter_rows(named=True):
+        subsystem_id = row.get("subsystem_id")
+        if subsystem_id is None:
+            continue
+        subsys_meta[str(subsystem_id)] = {
+            "name": row.get("name"),
+            "max_risk_score": row.get("max_risk_score"),
+        }
+    return subsys_meta
+
+
+def _subsystem_edge_totals(
+    test_coverage_edges_frame: pl.DataFrame | None,
+    goid_to_module: dict[int, str],
+    subsystem_by_module: dict[str, str],
+    *,
+    repo: str,
+    commit: str,
+) -> tuple[dict[tuple[str, str], int], dict[str, int]]:
+    if test_coverage_edges_frame is None or test_coverage_edges_frame.is_empty():
+        return {}, {}
+    edges = _filter_frame_by_snapshot(test_coverage_edges_frame, repo=repo, commit=commit)
+    if edges.is_empty():
+        return {}, {}
     totals: dict[str, int] = {}
     per_edge: dict[tuple[str, str], int] = {}
     for row in edges.iter_rows(named=True):
@@ -646,6 +706,14 @@ def _load_subsystems_covered_from_frames(
         key = (test_id, subsystem_id)
         per_edge[key] = per_edge.get(key, 0) + covered
         totals[test_id] = totals.get(test_id, 0) + covered
+    return per_edge, totals
+
+
+def _subsystem_coverage_entries(
+    per_edge: dict[tuple[str, str], int],
+    totals: dict[str, int],
+    subsys_meta: dict[str, dict[str, object]],
+) -> dict[str, SubsystemCoverageEntry]:
     result: dict[str, SubsystemCoverageEntry] = {}
     for (test_id, subsystem_id), covered in per_edge.items():
         total = totals.get(test_id, 0)
@@ -677,6 +745,52 @@ def _load_subsystems_covered_from_frames(
             max_risk_score=max(entry.max_risk_score or 0.0, max_risk_score or 0.0),
         )
     return result
+
+
+def _load_functions_covered_from_frames(
+    frames: FunctionCoverageFrames,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, FunctionCoverageEntry]:
+    per_edge, totals = _edge_counts_from_coverage_frame(
+        frames.test_coverage_edges_frame,
+        repo=repo,
+        commit=commit,
+    )
+    if not per_edge:
+        return {}
+    goid_meta = _goid_meta_from_frame(frames.goids_frame, repo=repo, commit=commit)
+    module_by_path = _module_by_path_from_frame(frames.modules_frame, repo=repo, commit=commit)
+    return _function_coverage_entries(per_edge, totals, goid_meta, module_by_path)
+
+
+def _load_subsystems_covered_from_frames(
+    frames: SubsystemCoverageFrames,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, SubsystemCoverageEntry]:
+    module_by_path = _module_by_path_from_frame(frames.modules_frame, repo=repo, commit=commit)
+    goid_to_module = _goid_to_module_map(frames.goids_frame, module_by_path, repo=repo, commit=commit)
+    subsystem_by_module = _subsystem_by_module_from_frame(
+        frames.subsystem_modules_frame,
+        repo=repo,
+        commit=commit,
+    )
+    if not goid_to_module or not subsystem_by_module:
+        return {}
+    subsys_meta = _subsystem_meta_from_frame(frames.subsystems_frame, repo=repo, commit=commit)
+    per_edge, totals = _subsystem_edge_totals(
+        frames.test_coverage_edges_frame,
+        goid_to_module,
+        subsystem_by_module,
+        repo=repo,
+        commit=commit,
+    )
+    if not per_edge:
+        return {}
+    return _subsystem_coverage_entries(per_edge, totals, subsys_meta)
 
 
 def _load_test_graph_metrics_from_frame(

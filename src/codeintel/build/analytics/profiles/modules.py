@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from codeintel.build.analytics.profiles.types import ModuleProfileInputs
+from codeintel.build.analytics.profiles.types import ModuleProfileFrames, ModuleProfileInputs
 from codeintel.build.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
@@ -40,12 +40,7 @@ def _scope_frame(frame: pl.DataFrame, repo: str, commit: str) -> pl.DataFrame:
 
 def compute_module_profile_inputs(
     snapshot: SnapshotRef,
-    *,
-    modules: pl.DataFrame,
-    function_profile: pl.DataFrame,
-    file_profile: pl.DataFrame,
-    import_graph_edges: pl.DataFrame,
-    semantic_roles_modules: pl.DataFrame,
+    frames: ModuleProfileFrames,
 ) -> ModuleProfileInputs:
     """
     Construct snapshot inputs for module profile generation.
@@ -54,16 +49,8 @@ def compute_module_profile_inputs(
     ----------
     snapshot
         Repository and commit identifiers.
-    modules
-        Frame for ``core.modules``.
-    function_profile
-        Frame for ``analytics.function_profile``.
-    file_profile
-        Frame for ``analytics.file_profile``.
-    import_graph_edges
-        Frame for ``graph.import_graph_edges``.
-    semantic_roles_modules
-        Frame for ``analytics.semantic_roles_modules``.
+    frames
+        Frame bundle for module profile inputs.
 
     Returns
     -------
@@ -74,11 +61,11 @@ def compute_module_profile_inputs(
         repo=snapshot.repo,
         commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
-        modules=modules,
-        function_profile=function_profile,
-        file_profile=file_profile,
-        import_graph_edges=import_graph_edges,
-        semantic_roles_modules=semantic_roles_modules,
+        modules=frames.modules,
+        function_profile=frames.function_profile,
+        file_profile=frames.file_profile,
+        import_graph_edges=frames.import_graph_edges,
+        semantic_roles_modules=frames.semantic_roles_modules,
     )
 
 

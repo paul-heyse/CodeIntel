@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "SELECT_ONLY_DISALLOWED_NODES",
+    "AstCapabilityConfig",
     "AstCapabilityError",
     "AstCapabilityIssue",
     "AstCapabilityReport",
@@ -259,6 +260,17 @@ class AstCapabilityError(ValueError):
         self.issues = issues_tuple
 
 
+@dataclass(frozen=True, slots=True)
+class AstCapabilityConfig:
+    """Configuration for AST capability validation."""
+
+    allowed_anonymous_functions: frozenset[str] | None = None
+    disallowed_nodes: tuple[type[exp.Expression], ...] | None = None
+    allow_aggregates: bool = False
+    enforce_safe_sql: bool = True
+    log_context: str | None = None
+
+
 def _capability_issue_for_sql(root: exp.Expression) -> AstCapabilityIssue | None:
     try:
         _ = root.sql(
@@ -450,12 +462,7 @@ def log_ast_capability_report(
 
 def ensure_ast_capability(
     root: exp.Expression,
-    *,
-    allowed_anonymous_functions: frozenset[str] | None = None,
-    disallowed_nodes: tuple[type[exp.Expression], ...] | None = None,
-    allow_aggregates: bool = False,
-    enforce_safe_sql: bool = True,
-    log_context: str | None = None,
+    config: AstCapabilityConfig | None = None,
 ) -> AstCapabilityReport:
     """Validate a SQLGlot AST against the capability envelope.
 
@@ -463,16 +470,8 @@ def ensure_ast_capability(
     ----------
     root
         SQLGlot expression to validate.
-    allowed_anonymous_functions
-        Optional allowlist of anonymous function names.
-    disallowed_nodes
-        Optional tuple of disallowed SQLGlot node types.
-    allow_aggregates
-        Whether aggregate functions are permitted.
-    enforce_safe_sql
-        Whether to enforce the DuckDBSafe SQL capability envelope.
-    log_context
-        Optional context string for capability logs.
+    config
+        Optional capability validation configuration.
 
     Returns
     -------
@@ -484,14 +483,15 @@ def ensure_ast_capability(
     AstCapabilityError
         When the AST contains unsupported features.
     """
+    settings = config or AstCapabilityConfig()
     report = capability_envelope_report(
         root,
-        allowed_anonymous_functions=allowed_anonymous_functions,
-        disallowed_nodes=disallowed_nodes,
-        allow_aggregates=allow_aggregates,
-        enforce_safe_sql=enforce_safe_sql,
+        allowed_anonymous_functions=settings.allowed_anonymous_functions,
+        disallowed_nodes=settings.disallowed_nodes,
+        allow_aggregates=settings.allow_aggregates,
+        enforce_safe_sql=settings.enforce_safe_sql,
     )
-    log_ast_capability_report(report, context=log_context)
+    log_ast_capability_report(report, context=settings.log_context)
     if not report.supported:
         raise AstCapabilityError(report.issues)
     return report

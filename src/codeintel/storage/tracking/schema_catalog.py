@@ -14,6 +14,20 @@ from codeintel.core.columnar.ipc import schema_from_ipc_payload
 from codeintel.core.execution.ids import new_uuid_str
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
+from codeintel.core.schemas.schema_catalog_models import (
+    ColumnStatsEntry,
+    ColumnStatsPayload,
+    DatasetStatsPayload,
+    DerivedSettingsPayload,
+    OverrideRegistryRefreshResult,
+    SchemaCatalogRequest,
+    SchemaManifestRunRecord,
+    SchemaObservationRecord,
+    SchemaVersionRecord,
+    TableSchemaOverrideRegistryRecord,
+    TableSchemaOverrideVersionRecord,
+    TableSchemaRegistryRecord,
+)
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
@@ -30,20 +44,6 @@ from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_r
 from codeintel.storage.tracking.schema_catalog_compile import (
     arrow_contract_renderer_cache,
     compile_schema_catalog_batches,
-)
-from codeintel.storage.tracking.schema_catalog_models import (
-    ColumnStatsEntry,
-    ColumnStatsPayload,
-    DatasetStatsPayload,
-    DerivedSettingsPayload,
-    OverrideRegistryRefreshResult,
-    SchemaCatalogRequest,
-    SchemaManifestRunRecord,
-    SchemaObservationRecord,
-    SchemaVersionRecord,
-    TableSchemaOverrideRegistryRecord,
-    TableSchemaOverrideVersionRecord,
-    TableSchemaRegistryRecord,
 )
 from codeintel.storage.upsert import UpsertSpec
 from codeintel.storage.views.diff import diff_sql_structural

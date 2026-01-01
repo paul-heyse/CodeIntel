@@ -8,6 +8,7 @@ from codeintel.build.analytics.profiles.modules import (
     build_module_profile_rows,
     compute_module_profile_inputs,
 )
+from codeintel.build.analytics.profiles.types import ModuleProfileFrames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import module_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -48,13 +49,25 @@ MODULE_PROFILE_CONTRACT = TableContractSpec(
 )
 
 
-def module_profile__base(
-    env: BuildEnv,
+def module_profile_frames(
     q__core__modules: InferableTabularInput,
     q__analytics__function_profile: InferableTabularInput,
     q__analytics__file_profile: InferableTabularInput,
     q__graph__import_graph_edges: InferableTabularInput,
     q__analytics__semantic_roles_modules: InferableTabularInput,
+) -> ModuleProfileFrames:
+    return ModuleProfileFrames(
+        modules=tabular_to_lazyframe(q__core__modules).collect(),
+        function_profile=tabular_to_lazyframe(q__analytics__function_profile).collect(),
+        file_profile=tabular_to_lazyframe(q__analytics__file_profile).collect(),
+        import_graph_edges=tabular_to_lazyframe(q__graph__import_graph_edges).collect(),
+        semantic_roles_modules=tabular_to_lazyframe(q__analytics__semantic_roles_modules).collect(),
+    )
+
+
+def module_profile__base(
+    env: BuildEnv,
+    module_profile_frames: ModuleProfileFrames,
 ) -> pl.LazyFrame:
     """Build module profile rows using tabular inputs.
 
@@ -63,14 +76,7 @@ def module_profile__base(
     pl.LazyFrame
         Lazy frame containing module profile rows.
     """
-    inputs = compute_module_profile_inputs(
-        env.snapshot,
-        modules=tabular_to_lazyframe(q__core__modules).collect(),
-        function_profile=tabular_to_lazyframe(q__analytics__function_profile).collect(),
-        file_profile=tabular_to_lazyframe(q__analytics__file_profile).collect(),
-        import_graph_edges=tabular_to_lazyframe(q__graph__import_graph_edges).collect(),
-        semantic_roles_modules=tabular_to_lazyframe(q__analytics__semantic_roles_modules).collect(),
-    )
+    inputs = compute_module_profile_inputs(env.snapshot, module_profile_frames)
     rows = list(build_module_profile_rows(inputs))
     return rows_to_frame(MODULE_PROFILE_TABLE_KEY, rows)
 

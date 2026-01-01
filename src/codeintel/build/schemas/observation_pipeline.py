@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from codeintel.build.schemas.observations import SchemaHints
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 LOG = logging.getLogger(__name__)
 

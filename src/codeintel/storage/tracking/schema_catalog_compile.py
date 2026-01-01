@@ -17,14 +17,14 @@ from codeintel.core.schemas.arrow_gen import (
     arrow_contract_for_table_schema,
 )
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
-from codeintel.core.schemas.type_mappings import normalize_table_schema_types
-from codeintel.core.time import utc_now
-from codeintel.storage.tracking.schema_catalog_models import (
+from codeintel.core.schemas.schema_catalog_models import (
     SchemaCatalogRequest,
     SchemaManifestRunRecord,
     SchemaVersionRecord,
     TableSchemaRegistryRecord,
 )
+from codeintel.core.schemas.type_mappings import normalize_table_schema_types
+from codeintel.core.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -74,59 +74,69 @@ class GraphRuntimeOptions:
         GraphRuntimeOptions
             Parsed options with defaults applied.
         """
-        graphs_raw = params.get("graphs")
-        graphs = cls._parse_graph_kind(graphs_raw) if graphs_raw is not None else GraphKind.ALL
-
-        eager_raw = params.get("eager")
-        eager = cls._parse_bool(eager_raw, key="eager") if eager_raw is not None else False
-
-        validate_raw = params.get("validate")
-        validate = (
-            cls._parse_bool(validate_raw, key="validate") if validate_raw is not None else False
-        )
-
-        cache_key_raw = params.get("cache_key")
-        cache_key = (
-            cls._parse_str(cache_key_raw, key="cache_key") if cache_key_raw is not None else None
-        )
-
-        graph_cache_dir_raw = params.get("graph_cache_dir")
-        graph_cache_dir = (
-            cls._parse_graph_cache_dir(graph_cache_dir_raw)
-            if graph_cache_dir_raw is not None
-            else None
-        )
-        dataset_root_dir_raw = params.get("dataset_root_dir")
-        dataset_root_dir = (
-            cls._parse_path(dataset_root_dir_raw, key="dataset_root_dir")
-            if dataset_root_dir_raw is not None
-            else None
-        )
-
-        backend_raw = params.get("graph_backend")
-        if backend_raw is None:
-            backend_raw = params.get("backend")
-        backend = cls._parse_graph_backend(backend_raw) if backend_raw is not None else None
-
-        features_raw = params.get("features")
-        features = (
-            cls._parse_graph_features(features_raw)
-            if features_raw is not None
-            else GraphFeatureFlags()
-        )
-
         return cls(
             snapshot=None,
-            backend=backend,
-            graphs=graphs,
-            eager=eager,
-            validate=validate,
-            cache_key=cache_key,
+            backend=cls._parse_backend_param(params),
+            graphs=cls._parse_graph_kind_param(params),
+            eager=cls._parse_bool_param(params, key="eager", default=False),
+            validate=cls._parse_bool_param(params, key="validate", default=False),
+            cache_key=cls._parse_str_param(params, key="cache_key"),
             engine=None,
-            graph_cache_dir=graph_cache_dir,
-            dataset_root_dir=dataset_root_dir,
-            features=features,
+            graph_cache_dir=cls._parse_graph_cache_dir_param(params),
+            dataset_root_dir=cls._parse_path_param(params, key="dataset_root_dir"),
+            features=cls._parse_graph_features_param(params),
         )
+
+    @classmethod
+    def _parse_bool_param(cls, params: Mapping[str, object], *, key: str, default: bool) -> bool:
+        value = params.get(key)
+        if value is None:
+            return default
+        return cls._parse_bool(value, key=key)
+
+    @classmethod
+    def _parse_str_param(cls, params: Mapping[str, object], *, key: str) -> str | None:
+        value = params.get(key)
+        if value is None:
+            return None
+        return cls._parse_str(value, key=key)
+
+    @classmethod
+    def _parse_path_param(cls, params: Mapping[str, object], *, key: str) -> Path | None:
+        value = params.get(key)
+        if value is None:
+            return None
+        return cls._parse_path(value, key=key)
+
+    @classmethod
+    def _parse_graph_cache_dir_param(cls, params: Mapping[str, object]) -> Path | None:
+        value = params.get("graph_cache_dir")
+        if value is None:
+            return None
+        return cls._parse_graph_cache_dir(value)
+
+    @classmethod
+    def _parse_graph_kind_param(cls, params: Mapping[str, object]) -> GraphKind:
+        value = params.get("graphs")
+        if value is None:
+            return GraphKind.ALL
+        return cls._parse_graph_kind(value)
+
+    @classmethod
+    def _parse_backend_param(cls, params: Mapping[str, object]) -> GraphBackendConfig | None:
+        value = params.get("graph_backend")
+        if value is None:
+            value = params.get("backend")
+        if value is None:
+            return None
+        return cls._parse_graph_backend(value)
+
+    @classmethod
+    def _parse_graph_features_param(cls, params: Mapping[str, object]) -> GraphFeatureFlags:
+        value = params.get("features")
+        if value is None:
+            return GraphFeatureFlags()
+        return cls._parse_graph_features(value)
 
     @staticmethod
     def _parse_bool(value: object, *, key: str) -> bool:

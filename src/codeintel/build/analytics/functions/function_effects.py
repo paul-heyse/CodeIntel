@@ -198,7 +198,7 @@ def build_function_effects_rows(
     Build function effects rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
+    rows ready for materialization via SaveToDecorator/ArrowDatasetSaver.
 
     Parameters
     ----------
@@ -430,21 +430,23 @@ def _edge_weight_value(value: object) -> int:
     return 0
 
 
-def _call_graph_from_frames(
+def _filter_edges_frame(
     edges_frame: pl.DataFrame | None,
-    nodes_frame: pl.DataFrame | None,
     *,
     repo: str,
     commit: str,
-) -> nx.DiGraph:
-    graph = nx.DiGraph()
+) -> pl.DataFrame | None:
     if edges_frame is None or edges_frame.is_empty():
-        return graph
+        return None
     frame = edges_frame
     if "repo" in frame.columns:
         frame = frame.filter(pl.col("repo") == repo)
     if "commit" in frame.columns:
         frame = frame.filter(pl.col("commit") == commit)
+    return frame
+
+
+def _add_call_edges(graph: nx.DiGraph, frame: pl.DataFrame) -> None:
     for row in frame.iter_rows(named=True):
         caller = normalize_decimal_id(row.get("caller_goid_h128"))
         callee = normalize_decimal_id(row.get("callee_goid_h128"))
@@ -455,8 +457,11 @@ def _call_graph_from_frames(
             attrs["weight"] = _edge_weight_value(attrs.get("weight")) + 1
         else:
             graph.add_edge(caller, callee, weight=1)
+
+
+def _add_call_nodes(graph: nx.DiGraph, nodes_frame: pl.DataFrame | None) -> None:
     if nodes_frame is None or nodes_frame.is_empty():
-        return graph
+        return
     for row in nodes_frame.iter_rows(named=True):
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
@@ -468,6 +473,21 @@ def _call_graph_from_frames(
         if kind is not None:
             attrs["kind"] = str(kind)
         graph.add_node(goid, **attrs)
+
+
+def _call_graph_from_frames(
+    edges_frame: pl.DataFrame | None,
+    nodes_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    frame = _filter_edges_frame(edges_frame, repo=repo, commit=commit)
+    if frame is None:
+        return graph
+    _add_call_edges(graph, frame)
+    _add_call_nodes(graph, nodes_frame)
     return graph
 
 

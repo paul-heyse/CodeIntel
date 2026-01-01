@@ -16,6 +16,7 @@ from codeintel.build.analytics.testing.profiles.types import (
     BehavioralContext,
     BehavioralCoverageOptions,
     BehavioralLLMRequest,
+    BehavioralLLMRunner,
     TestAstInfo,
     TestRecord,
 )
@@ -34,9 +35,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.build.analytics.ast_features.patterns import AstFeaturePatterns
-    from codeintel.build.analytics.testing.profiles.types import (
-        BehavioralLLMRunner,
-    )
     from codeintel.config.primitives import SnapshotRef
 
 
@@ -73,6 +71,19 @@ class BehaviorRowHooks:
         Callable[[pl.DataFrame | None, SnapshotRef], Mapping[str, dict[str, object]]] | None
     ) = None
     row_builder: Callable[[TestRecord, BehavioralContext], tuple[object, ...]] | None = None
+
+
+@dataclass(frozen=True)
+class BehavioralRowInputs:
+    """Inputs required to build behavioral coverage rows."""
+
+    test_catalog_frame: pl.DataFrame | None = None
+    goids_frame: pl.DataFrame | None = None
+    modules_frame: pl.DataFrame | None = None
+    test_profile_frame: pl.DataFrame | None = None
+    options: BehavioralCoverageOptions | None = None
+    llm_runner: BehavioralLLMRunner | None = None
+    hooks: BehaviorRowHooks | None = None
 
 
 def _default_load_test_records(
@@ -164,14 +175,7 @@ def _default_load_test_records(
 
 def build_behavior_rows(
     snapshot: SnapshotRef,
-    *,
-    test_catalog_frame: pl.DataFrame | None = None,
-    goids_frame: pl.DataFrame | None = None,
-    modules_frame: pl.DataFrame | None = None,
-    test_profile_frame: pl.DataFrame | None = None,
-    options: BehavioralCoverageOptions | None = None,
-    llm_runner: BehavioralLLMRunner | None = None,
-    hooks: BehaviorRowHooks | None = None,
+    inputs: BehavioralRowInputs,
 ) -> list[tuple[object, ...]]:
     """Build behavioral coverage rows for insertion.
 
@@ -179,42 +183,36 @@ def build_behavior_rows(
     ----------
     snapshot
         Snapshot reference.
-    test_catalog_frame
-        Test catalog rows for the snapshot.
-    goids_frame
-        GOID rows for the snapshot.
-    modules_frame
-        Module metadata for the snapshot.
-    test_profile_frame
-        Test profile rows for the snapshot.
-    options
-        Optional behavioral coverage configuration.
-    llm_runner
-        Optional LLM runner for tag classification.
-    hooks
-        Optional test hooks for dependency injection.
+    inputs
+        Bundled inputs for behavioral coverage classification.
 
     Returns
     -------
     list[tuple[object, ...]]
         Rows aligned with ``analytics.behavioral_coverage`` column order.
     """
-    opts = options or BehavioralCoverageOptions()
-    load_tests_fn = hooks.load_tests if hooks is not None else None
+    opts = inputs.options or BehavioralCoverageOptions()
+    load_tests_fn = inputs.hooks.load_tests if inputs.hooks is not None else None
     if load_tests_fn is None:
         load_tests_fn = _default_load_test_records
-    tests = load_tests_fn(test_catalog_frame, goids_frame, modules_frame, snapshot)
+    tests = load_tests_fn(
+        inputs.test_catalog_frame,
+        inputs.goids_frame,
+        inputs.modules_frame,
+        snapshot,
+    )
     if not tests:
         return []
 
-    ast_builder = hooks.build_ast if hooks is not None else None
+    ast_builder = inputs.hooks.build_ast if inputs.hooks is not None else None
     if ast_builder is None:
         ast_builder = build_test_ast_index
     ast_info = ast_builder(snapshot.repo_root, tests, DEFAULT_PATTERNS)
-    profile_loader = hooks.load_profile_ctx if hooks is not None else None
+    profile_loader = inputs.hooks.load_profile_ctx if inputs.hooks is not None else None
     if profile_loader is None:
         profile_loader = load_behavioral_context
-    profile_ctx = profile_loader(test_profile_frame, snapshot)
+    profile_ctx = profile_loader(inputs.test_profile_frame, snapshot)
+    llm_runner = inputs.llm_runner or BehavioralLLMRunner()
     behavior_ctx = BehavioralContext(
         snapshot=snapshot,
         options=opts,
@@ -223,7 +221,7 @@ def build_behavior_rows(
         now=datetime.now(tz=UTC),
         llm_runner=llm_runner,
     )
-    row_fn = hooks.row_builder if hooks is not None else None
+    row_fn = inputs.hooks.row_builder if inputs.hooks is not None else None
     if row_fn is None:
         row_fn = _build_behavior_row
     return [row_fn(test, behavior_ctx) for test in tests]

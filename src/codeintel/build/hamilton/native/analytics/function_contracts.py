@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.build.analytics.functions.function_contracts import build_function_contracts_rows
+from codeintel.build.analytics.functions.function_contracts import (
+    FunctionContractInputs,
+    build_function_contracts_rows,
+)
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
@@ -74,10 +77,12 @@ def function_contracts__base(
     ast_map, _missing = load_function_asts(request)
     rows = build_function_contracts_rows(
         env.snapshot,
-        function_ast_map=ast_map,
-        catalog=catalog,
-        docstrings_frame=docstrings_frame,
-        function_types_frame=function_types_frame,
+        FunctionContractInputs(
+            function_ast_map=ast_map,
+            catalog=catalog,
+            docstrings_frame=docstrings_frame,
+            function_types_frame=function_types_frame,
+        ),
     )
     return rows_to_frame(FUNCTION_CONTRACTS_TABLE_KEY, rows)
 

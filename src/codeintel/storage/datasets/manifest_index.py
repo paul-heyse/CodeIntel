@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.schemas.schema_catalog_models import DerivedSettingsPayload
 from codeintel.storage.datasets.contracts import (
     DatasetTuningMetadata,
     WriteSettingsPayload,
@@ -33,7 +34,6 @@ from codeintel.storage.queries.filter_compiler import (
     arrow_filter_expression,
     compile_filter_predicates,
 )
-from codeintel.storage.tracking.schema_catalog_models import DerivedSettingsPayload
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

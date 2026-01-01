@@ -115,6 +115,7 @@ if TYPE_CHECKING:
     from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
+    from codeintel.cli.services.params import ParamService
     from codeintel.core.build_manifest import BuildRunRecord
     from codeintel.core.hamilton.records import ArtifactRefProtocol
     from codeintel.observability.cli import RunContext
@@ -1006,6 +1007,33 @@ def _resolve_validation_mode(raw: str | None) -> ContractValidationMode:
         raise ValidationError(msg) from exc
 
 
+def _optional_list_param(params: ParamService, key: str) -> list[str] | None:
+    values = params.get_list(key)
+    return values if values else None
+
+
+def _optional_tuple_param(params: ParamService, key: str) -> tuple[str, ...] | None:
+    values = params.get_tuple(key)
+    return values if values else None
+
+
+def _allow_workspace_modules(params: ParamService) -> bool | None:
+    if params.get_bool("no_workspace_targets"):
+        return False
+    return None
+
+
+def _resolve_parallel_settings(params: ParamService) -> tuple[str, int | None]:
+    max_workers_raw = params.get_int("max_workers", 0)
+    max_workers = max_workers_raw or None
+    parallel_backend_raw = params.get_str("parallel_backend")
+    parallel_backend = resolve_parallel_backend(
+        parallel_backend=parallel_backend_raw,
+        max_workers=max_workers,
+    )
+    return parallel_backend, max_workers
+
+
 def _plugin_overrides_from_params(params: _BuildRunParams) -> dict[str, object]:
     overrides: dict[str, object] = {}
     if params.plugins_enabled is not None:
@@ -1030,43 +1058,18 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     _BuildRunParams
         Extracted parameters.
     """
-    targets_list = ctx.params.get_list("targets")
-    targets: list[str] | None = targets_list if targets_list else None
-    tag_list = ctx.params.get_list("tags")
-    tag_filters: list[str] | None = tag_list if tag_list else None
-
-    force_list = ctx.params.get_list("force")
-    force: list[str] | None = force_list if force_list else None
-
-    parallel_backend_raw = ctx.params.get_str("parallel_backend")
-    max_workers_raw = ctx.params.get_int("max_workers", 0)
-    max_workers = max_workers_raw or None
-    parallel_backend = resolve_parallel_backend(
-        parallel_backend=parallel_backend_raw,
-        max_workers=max_workers,
-    )
-    enabled_plugins_raw = ctx.params.get_list("enable_plugin")
-    enabled_plugins = tuple(enabled_plugins_raw) if enabled_plugins_raw else None
-    disabled_plugins_raw = ctx.params.get_list("disable_plugin")
-    disabled_plugins = tuple(disabled_plugins_raw) if disabled_plugins_raw else None
-    allow_workspace_modules = None
-    if ctx.params.get_bool("no_workspace_targets"):
-        allow_workspace_modules = False
-
-    all_targets = ctx.params.get_bool("all_targets")
-    dry_run = ctx.params.get_bool("dry_run")
-    publish_serving_snapshot = ctx.params.get_bool("publish_serving_snapshot")
+    parallel_backend, max_workers = _resolve_parallel_settings(ctx.params)
 
     return _BuildRunParams(
-        targets=targets,
-        tag_filters=tag_filters,
+        targets=_optional_list_param(ctx.params, "targets"),
+        tag_filters=_optional_list_param(ctx.params, "tags"),
         show_tags=ctx.params.get_bool("show_tags"),
         module=ctx.params.get_str("module"),
-        all_targets=all_targets,
-        dry_run=dry_run,
-        force=force,
+        all_targets=ctx.params.get_bool("all_targets"),
+        dry_run=ctx.params.get_bool("dry_run"),
+        force=_optional_list_param(ctx.params, "force"),
         validate_outputs=ctx.params.get_bool("validate_outputs"),
-        publish_serving_snapshot=publish_serving_snapshot,
+        publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
         parallel_backend=parallel_backend,
         max_workers=max_workers,
         enable_cache=ctx.params.get_bool("enable_cache"),
@@ -1074,9 +1077,9 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         clear_cache=ctx.params.get_bool("clear_cache"),
         cache_report=ctx.params.get_bool("cache_report"),
         validation_mode=_resolve_validation_mode(ctx.params.get_str("validation_mode")),
-        plugins_enabled=enabled_plugins,
-        plugins_disabled=disabled_plugins,
-        allow_workspace_modules=allow_workspace_modules,
+        plugins_enabled=_optional_tuple_param(ctx.params, "enable_plugin"),
+        plugins_disabled=_optional_tuple_param(ctx.params, "disable_plugin"),
+        allow_workspace_modules=_allow_workspace_modules(ctx.params),
     )
 
 

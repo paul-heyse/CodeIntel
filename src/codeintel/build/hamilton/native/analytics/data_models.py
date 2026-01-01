@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import polars as pl
 
 from codeintel.build.analytics.compute.data_models.usage import (
@@ -100,6 +102,60 @@ DATA_MODEL_USAGE_CONTRACT = TableContractSpec(
     clip_column=None,
     input_name="data_model_usage__base",
 )
+
+
+@dataclass(frozen=True)
+class DataModelUsageCoreFrames:
+    modules_frame: pl.DataFrame
+    goids_frame: pl.DataFrame
+    data_models_frame: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class DataModelUsageSubsystemFrames:
+    subsystem_modules_frame: pl.DataFrame
+    subsystems_frame: pl.DataFrame
+    function_types_frame: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class DataModelUsageFrames:
+    core: DataModelUsageCoreFrames
+    subsystems: DataModelUsageSubsystemFrames
+
+
+def data_model_usage_core_frames(
+    q__core__modules: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__analytics__data_models: InferableTabularInput,
+) -> DataModelUsageCoreFrames:
+    return DataModelUsageCoreFrames(
+        modules_frame=tabular_to_lazyframe(q__core__modules).collect(),
+        goids_frame=tabular_to_lazyframe(q__core__goids).collect(),
+        data_models_frame=tabular_to_lazyframe(q__analytics__data_models).collect(),
+    )
+
+
+def data_model_usage_subsystem_frames(
+    q__analytics__subsystem_modules: InferableTabularInput,
+    q__analytics__subsystems: InferableTabularInput,
+    q__analytics__function_types: InferableTabularInput,
+) -> DataModelUsageSubsystemFrames:
+    return DataModelUsageSubsystemFrames(
+        subsystem_modules_frame=tabular_to_lazyframe(q__analytics__subsystem_modules).collect(),
+        subsystems_frame=tabular_to_lazyframe(q__analytics__subsystems).collect(),
+        function_types_frame=tabular_to_lazyframe(q__analytics__function_types).collect(),
+    )
+
+
+def data_model_usage_frames(
+    data_model_usage_core_frames: DataModelUsageCoreFrames,
+    data_model_usage_subsystem_frames: DataModelUsageSubsystemFrames,
+) -> DataModelUsageFrames:
+    return DataModelUsageFrames(
+        core=data_model_usage_core_frames,
+        subsystems=data_model_usage_subsystem_frames,
+    )
 
 
 def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
@@ -277,12 +333,7 @@ def t__data_models(
 
 def data_model_usage__base(
     env: BuildEnv,
-    q__core__modules: InferableTabularInput,
-    q__core__goids: InferableTabularInput,
-    q__analytics__data_models: InferableTabularInput,
-    q__analytics__subsystem_modules: InferableTabularInput,
-    q__analytics__subsystems: InferableTabularInput,
-    q__analytics__function_types: InferableTabularInput,
+    data_model_usage_frames: DataModelUsageFrames,
 ) -> pl.LazyFrame:
     """Build data model usage rows.
 
@@ -291,12 +342,12 @@ def data_model_usage__base(
     pl.LazyFrame
         Lazy frame containing data model usage rows.
     """
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    data_models_frame = tabular_to_lazyframe(q__analytics__data_models).collect()
-    subsystem_modules_frame = tabular_to_lazyframe(q__analytics__subsystem_modules).collect()
-    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems).collect()
-    function_types_frame = tabular_to_lazyframe(q__analytics__function_types).collect()
+    modules_frame = data_model_usage_frames.core.modules_frame
+    goids_frame = data_model_usage_frames.core.goids_frame
+    data_models_frame = data_model_usage_frames.core.data_models_frame
+    subsystem_modules_frame = data_model_usage_frames.subsystems.subsystem_modules_frame
+    subsystems_frame = data_model_usage_frames.subsystems.subsystems_frame
+    function_types_frame = data_model_usage_frames.subsystems.function_types_frame
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_frame_for_table(DATA_MODEL_USAGE_TABLE_KEY)

@@ -18,8 +18,8 @@ from codeintel.core.schemas.arrow_gen import (
 )
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.schema_catalog_models import DerivedSettingsPayload
 from codeintel.core.schemas.serde import table_schema_from_json_obj
-from codeintel.storage.tracking.schema_catalog_models import DerivedSettingsPayload
 
 
 class WriteSettingsPayload(TypedDict, total=False):

@@ -41,10 +41,15 @@ def arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> pl.LazyFrame:
     pl.LazyFrame
         LazyFrame constructed from the Arrow reader.
     """
-    frame = pl.from_arrow(reader)
-    if isinstance(frame, pl.Series):
-        return frame.to_frame().lazy()
-    return frame.lazy()
+    try:
+        table = reader.read_all()
+    except (ValueError, pa.ArrowInvalid) as exc:
+        schema = getattr(reader, "schema", None)
+        if schema is None:
+            raise
+        table = pa.Table.from_batches([], schema=schema)
+        _ = exc
+    return table_to_lazyframe(table)
 
 
 def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:

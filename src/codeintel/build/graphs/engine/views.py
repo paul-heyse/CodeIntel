@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -17,6 +18,7 @@ import networkx as nx
 import polars as pl
 
 from codeintel.build.graphs.engine.datasets import (
+    SnapshotScanRequest,
     scan_snapshot_lazyframe,
     scan_snapshot_reader,
 )
@@ -41,6 +43,32 @@ def _filter_optional_scope(frame: pl.LazyFrame, *, repo: str, commit: str) -> pl
     if "commit" in available:
         frame = frame.filter(pl.col("commit").is_null() | (pl.col("commit") == commit))
     return frame
+
+
+def _add_call_edges(graph: nx.DiGraph, reader: object) -> None:
+    for caller_raw, callee_raw in iter_tuples_from_arrow_reader(reader):
+        caller = normalize_decimal(caller_raw)
+        callee = normalize_decimal(callee_raw)
+        if caller is None or callee is None:
+            continue
+        if graph.has_edge(caller, callee):
+            attrs = graph[caller][callee]
+            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
+        else:
+            graph.add_edge(caller, callee, weight=1)
+
+
+def _add_call_nodes(graph: nx.DiGraph, reader: object) -> None:
+    for node_raw, kind in iter_tuples_from_arrow_reader(reader):
+        node = normalize_decimal(node_raw)
+        if node is None:
+            continue
+        if node in graph:
+            continue
+        attrs: dict[str, object] = {}
+        if kind is not None:
+            attrs["kind"] = str(kind)
+        graph.add_node(node, **attrs)
 
 
 def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
@@ -173,47 +201,33 @@ def load_call_graph(
     if dataset_root is None:
         return nx.DiGraph()
     reader = scan_snapshot_reader(
-        dataset_root=dataset_root,
-        table_key="graph.call_graph_edges",
-        snapshot_id=commit,
-        columns=("caller_goid_h128", "callee_goid_h128"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="graph.call_graph_edges",
+            snapshot_id=commit,
+            columns=("caller_goid_h128", "callee_goid_h128"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if reader is None:
         return nx.DiGraph()
 
     graph = nx.DiGraph()
-    for caller_raw, callee_raw in iter_tuples_from_arrow_reader(reader):
-        caller = normalize_decimal(caller_raw)
-        callee = normalize_decimal(callee_raw)
-        if caller is None or callee is None:
-            continue
-        if graph.has_edge(caller, callee):
-            attrs = graph[caller][callee]
-            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
-        else:
-            graph.add_edge(caller, callee, weight=1)
+    _add_call_edges(graph, reader)
 
     node_reader = scan_snapshot_reader(
-        dataset_root=dataset_root,
-        table_key="graph.call_graph_nodes",
-        snapshot_id=commit,
-        columns=("goid_h128", "kind"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="graph.call_graph_nodes",
+            snapshot_id=commit,
+            columns=("goid_h128", "kind"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if node_reader is not None:
-        for node_raw, kind in iter_tuples_from_arrow_reader(node_reader):
-            node = normalize_decimal(node_raw)
-            if node is None:
-                continue
-            if node in graph:
-                continue
-            attrs: dict[str, object] = {}
-            if kind is not None:
-                attrs["kind"] = str(kind)
-            graph.add_node(node, **attrs)
+        _add_call_nodes(graph, node_reader)
 
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
@@ -250,12 +264,14 @@ def load_import_graph(
     if dataset_root is None:
         return nx.DiGraph()
     edge_reader = scan_snapshot_reader(
-        dataset_root=dataset_root,
-        table_key="graph.import_graph_edges",
-        snapshot_id=commit,
-        columns=("src_module", "dst_module", "module_layer"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="graph.import_graph_edges",
+            snapshot_id=commit,
+            columns=("src_module", "dst_module", "module_layer"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if edge_reader is None:
         return nx.DiGraph()
@@ -275,12 +291,14 @@ def load_import_graph(
         graph.add_edge(source, target, weight=weight + 1)
 
     module_reader = scan_snapshot_reader(
-        dataset_root=dataset_root,
-        table_key="graph.import_modules",
-        snapshot_id=commit,
-        columns=("module", "scc_id", "component_size", "layer"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="graph.import_modules",
+            snapshot_id=commit,
+            columns=("module", "scc_id", "component_size", "layer"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if module_reader is not None:
         for module_row in iter_tuples_from_arrow_reader(module_reader):
@@ -326,12 +344,14 @@ def load_test_function_bipartite(
     if dataset_root is None:
         return nx.Graph()
     reader = scan_snapshot_reader(
-        dataset_root=dataset_root,
-        table_key="analytics.test_coverage_edges",
-        snapshot_id=commit,
-        columns=("test_id", "function_goid_h128", "coverage_ratio"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="analytics.test_coverage_edges",
+            snapshot_id=commit,
+            columns=("test_id", "function_goid_h128", "coverage_ratio"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if reader is None:
         return nx.Graph()
@@ -379,6 +399,67 @@ def parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> l
     return modules
 
 
+@dataclass
+class ConfigGraphStats:
+    total_rows: int = 0
+    empty_refs: int = 0
+    parsed_modules: int = 0
+    kept_modules: int = 0
+    dropped_modules: int = 0
+
+
+def _allowed_modules_from_frame(
+    modules_frame: pl.LazyFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> set[str]:
+    scoped = _filter_optional_scope(modules_frame, repo=repo, commit=commit)
+    module_rows = scoped.select("module").collect()
+    return {str(mod) for mod in module_rows.get_column("module").to_list()}
+
+
+def _populate_config_graph(
+    graph: nx.Graph,
+    config_frame: pl.LazyFrame,
+    allowed_modules: set[str],
+) -> ConfigGraphStats:
+    stats = ConfigGraphStats()
+    for row in config_frame.collect().iter_rows(named=True):
+        stats.total_rows += 1
+        key = row.get("key")
+        ref_modules = row.get("reference_modules")
+        if key is None or ref_modules is None:
+            stats.empty_refs += 1
+            continue
+        key_node = ("c", str(key))
+        if not graph.has_node(key_node):
+            graph.add_node(key_node, bipartite=0)
+
+        raw_modules = parse_reference_modules(ref_modules, set())
+        stats.parsed_modules += len(raw_modules)
+        filtered_modules = (
+            [module for module in raw_modules if module in allowed_modules]
+            if allowed_modules
+            else raw_modules
+        )
+        if allowed_modules and raw_modules and not filtered_modules:
+            filtered_modules = raw_modules
+        stats.kept_modules += len(filtered_modules)
+        stats.dropped_modules += len(raw_modules) - len(filtered_modules)
+
+        for module_name in filtered_modules:
+            module_node = ("m", module_name)
+            if not graph.has_node(module_node):
+                graph.add_node(module_node, bipartite=1)
+            if graph.has_edge(key_node, module_node):
+                attrs = graph[key_node][module_node]
+                attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
+            else:
+                graph.add_edge(key_node, module_node, weight=1)
+    return stats
+
+
 def load_config_module_bipartite(
     dataset_root: Path | None,
     repo: str,
@@ -412,77 +493,41 @@ def load_config_module_bipartite(
     if dataset_root is None:
         return nx.Graph()
     modules_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root,
-        table_key="core.modules",
-        snapshot_id=commit,
-        columns=("module", "repo", "commit"),
-        repo=None,
-        commit=None,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="core.modules",
+            snapshot_id=commit,
+            columns=("module", "repo", "commit"),
+        )
     )
     if modules_frame is None:
         return nx.Graph()
-    modules_frame = _filter_optional_scope(modules_frame, repo=repo, commit=commit)
-    module_rows = modules_frame.select("module").collect()
-    allowed_modules = {str(mod) for mod in module_rows.get_column("module").to_list()}
+    allowed_modules = _allowed_modules_from_frame(modules_frame, repo=repo, commit=commit)
 
     config_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root,
-        table_key="analytics.config_values",
-        snapshot_id=commit,
-        columns=("key", "reference_modules", "repo", "commit"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="analytics.config_values",
+            snapshot_id=commit,
+            columns=("key", "reference_modules", "repo", "commit"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if config_frame is None:
         return nx.Graph()
 
     graph = nx.Graph()
-    total_rows = 0
-    empty_refs = 0
-    parsed_modules = 0
-    kept_modules = 0
-    dropped_modules = 0
-    for row in config_frame.collect().iter_rows(named=True):
-        total_rows += 1
-        key = row.get("key")
-        ref_modules = row.get("reference_modules")
-        if key is None or ref_modules is None:
-            empty_refs += 1
-            continue
-        key_node = ("c", str(key))
-        if not graph.has_node(key_node):
-            graph.add_node(key_node, bipartite=0)
-
-        raw_modules = parse_reference_modules(ref_modules, set())
-        parsed_modules += len(raw_modules)
-        filtered_modules = (
-            [module for module in raw_modules if module in allowed_modules]
-            if allowed_modules
-            else raw_modules
-        )
-        if allowed_modules and raw_modules and not filtered_modules:
-            filtered_modules = raw_modules
-        kept_modules += len(filtered_modules)
-        dropped_modules += len(raw_modules) - len(filtered_modules)
-
-        for module_name in filtered_modules:
-            module_node = ("m", module_name)
-            if not graph.has_node(module_node):
-                graph.add_node(module_node, bipartite=1)
-            if graph.has_edge(key_node, module_node):
-                attrs = graph[key_node][module_node]
-                attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
-            else:
-                graph.add_edge(key_node, module_node, weight=1)
+    stats = _populate_config_graph(graph, config_frame, allowed_modules)
     log.info(
         "Config bipartite built: rows=%d empty_refs=%d allowed_modules=%d "
         "parsed_modules=%d kept_modules=%d dropped_modules=%d graph_nodes=%d edges=%d",
-        total_rows,
-        empty_refs,
+        stats.total_rows,
+        stats.empty_refs,
         len(allowed_modules),
-        parsed_modules,
-        kept_modules,
-        dropped_modules,
+        stats.parsed_modules,
+        stats.kept_modules,
+        stats.dropped_modules,
         graph.number_of_nodes(),
         graph.number_of_edges(),
     )
@@ -521,22 +566,22 @@ def load_symbol_module_graph(
     if dataset_root is None:
         return nx.Graph()
     edges_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root,
-        table_key="graph.symbol_use_edges",
-        snapshot_id=commit,
-        columns=("def_path", "use_path"),
-        repo=None,
-        commit=None,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="graph.symbol_use_edges",
+            snapshot_id=commit,
+            columns=("def_path", "use_path"),
+        )
     )
     if edges_frame is None:
         return nx.Graph()
     modules_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root,
-        table_key="core.modules",
-        snapshot_id=commit,
-        columns=("path", "module", "repo", "commit"),
-        repo=None,
-        commit=None,
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="core.modules",
+            snapshot_id=commit,
+            columns=("path", "module", "repo", "commit"),
+        )
     )
     if modules_frame is None:
         return nx.Graph()
@@ -596,10 +641,12 @@ def load_symbol_function_graph(
     if dataset_root is None:
         return nx.Graph()
     reader = scan_snapshot_reader(
-        dataset_root=dataset_root,
-        table_key="graph.symbol_use_edges",
-        snapshot_id=commit,
-        columns=("def_goid_h128", "use_goid_h128"),
+        SnapshotScanRequest(
+            dataset_root=dataset_root,
+            table_key="graph.symbol_use_edges",
+            snapshot_id=commit,
+            columns=("def_goid_h128", "use_goid_h128"),
+        )
     )
     if reader is None:
         return nx.Graph()

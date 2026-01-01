@@ -6,6 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import ModuleType
 
+from codeintel.build.hamilton.naming import sanitize_pipeline_component
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.decorators import pipe_clean_df, with_features
 
@@ -41,10 +42,12 @@ def table_contract(
             target=spec.target,
             table_key=spec.table_key,
         )(fn)
+        clean_namespace = f"prep__{sanitize_pipeline_component(spec.table_key)}"
         fn = pipe_clean_df(
             required_cols=spec.required_cols,
             clip_column=spec.clip_column,
             input_name=spec.input_name,
+            namespace=clean_namespace,
         )(fn)
         if spec.ops_module is not None:
             fn = with_features(

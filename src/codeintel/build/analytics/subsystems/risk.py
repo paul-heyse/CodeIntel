@@ -69,80 +69,27 @@ def aggregate_risk(
     dict[str, SubsystemRisk]
         Risk summaries keyed by subsystem label.
     """
-    risk_by_label: dict[str, SubsystemRisk] = {}
-    stats: dict[str, RiskTally] = defaultdict(RiskTally)
-    if (
-        risk_factors_frame is None
-        or risk_factors_frame.is_empty()
-        or function_metrics_frame is None
-        or function_metrics_frame.is_empty()
-        or modules_frame is None
-        or modules_frame.is_empty()
-    ):
+    if not _has_required_frames(risk_factors_frame, function_metrics_frame, modules_frame):
         return {}
-    module_by_path: dict[str, str] = {}
-    modules_filtered = _filter_frame_by_snapshot(
+    module_by_path = _module_by_path_from_frame(
         modules_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
-    for row in modules_filtered.iter_rows(named=True):
-        path = row.get("path")
-        module = row.get("module")
-        if isinstance(path, str) and module is not None:
-            module_by_path[path] = str(module)
-    function_module: dict[int, str] = {}
-    metrics_filtered = _filter_frame_by_snapshot(
+    function_module = _function_module_map(
         function_metrics_frame,
+        module_by_path,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
-    for row in metrics_filtered.iter_rows(named=True):
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
-        rel_path = row.get("rel_path")
-        if goid is None or not isinstance(rel_path, str):
-            continue
-        module_name = module_by_path.get(rel_path)
-        if module_name is not None:
-            function_module[goid] = module_name
-    risk_filtered = _filter_frame_by_snapshot(
+    stats = _risk_stats_from_frames(
         risk_factors_frame,
+        function_module,
+        labels,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
-    for row in risk_filtered.iter_rows(named=True):
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
-        if goid is None:
-            continue
-        module_name = function_module.get(goid)
-        if module_name is None:
-            continue
-        label = labels.get(module_name)
-        if label is None:
-            continue
-        score = coerce_optional_float(row.get("risk_score"), ctx="risk_score") or 0.0
-        entry = stats[label]
-        level = coerce_optional_str(row.get("risk_level"), ctx="risk_level")
-        entry.add(score, is_high=level == "high")
-
-    for label, entry in stats.items():
-        count = entry.count
-        total = entry.total
-        max_score = entry.max_score
-        high = entry.high
-        risk_level = "low"
-        if high > 0:
-            risk_level = "high"
-        elif count > 0 and (total / count) >= MEDIUM_RISK_THRESHOLD:
-            risk_level = "medium"
-        risk_by_label[label] = SubsystemRisk(
-            function_count=count,
-            total_risk=total,
-            max_risk=max_score,
-            high_risk=high,
-            level=risk_level,
-        )
-    return risk_by_label
+    return _risk_by_label(stats)
 
 
 def _filter_frame_by_snapshot(
@@ -157,3 +104,94 @@ def _filter_frame_by_snapshot(
     if "commit" in filtered.columns:
         filtered = filtered.filter(pl.col("commit") == commit)
     return filtered
+
+
+def _has_required_frames(*frames: pl.DataFrame | None) -> bool:
+    return all(frame is not None and not frame.is_empty() for frame in frames)
+
+
+def _module_by_path_from_frame(
+    modules_frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, str]:
+    module_by_path: dict[str, str] = {}
+    modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
+    for row in modules_filtered.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and module is not None:
+            module_by_path[path] = str(module)
+    return module_by_path
+
+
+def _function_module_map(
+    function_metrics_frame: pl.DataFrame,
+    module_by_path: dict[str, str],
+    *,
+    repo: str,
+    commit: str,
+) -> dict[int, str]:
+    function_module: dict[int, str] = {}
+    metrics_filtered = _filter_frame_by_snapshot(
+        function_metrics_frame,
+        repo=repo,
+        commit=commit,
+    )
+    for row in metrics_filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
+        rel_path = row.get("rel_path")
+        if goid is None or not isinstance(rel_path, str):
+            continue
+        module_name = module_by_path.get(rel_path)
+        if module_name is not None:
+            function_module[goid] = module_name
+    return function_module
+
+
+def _risk_stats_from_frames(
+    risk_factors_frame: pl.DataFrame,
+    function_module: dict[int, str],
+    labels: dict[str, str],
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, RiskTally]:
+    stats: dict[str, RiskTally] = defaultdict(RiskTally)
+    risk_filtered = _filter_frame_by_snapshot(risk_factors_frame, repo=repo, commit=commit)
+    for row in risk_filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
+        if goid is None:
+            continue
+        module_name = function_module.get(goid)
+        if module_name is None:
+            continue
+        label = labels.get(module_name)
+        if label is None:
+            continue
+        score = coerce_optional_float(row.get("risk_score"), ctx="risk_score") or 0.0
+        level = coerce_optional_str(row.get("risk_level"), ctx="risk_level")
+        stats[label].add(score, is_high=level == "high")
+    return stats
+
+
+def _risk_level(entry: RiskTally) -> str:
+    if entry.high > 0:
+        return "high"
+    if entry.count > 0 and (entry.total / entry.count) >= MEDIUM_RISK_THRESHOLD:
+        return "medium"
+    return "low"
+
+
+def _risk_by_label(stats: dict[str, RiskTally]) -> dict[str, SubsystemRisk]:
+    risk_by_label: dict[str, SubsystemRisk] = {}
+    for label, entry in stats.items():
+        risk_by_label[label] = SubsystemRisk(
+            function_count=entry.count,
+            total_risk=entry.total,
+            max_risk=entry.max_score,
+            high_risk=entry.high,
+            level=_risk_level(entry),
+        )
+    return risk_by_label

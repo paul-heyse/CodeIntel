@@ -24,6 +24,7 @@ import polars as pl
 
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.graphs.engine.datasets import (
+    SnapshotScanRequest,
     dataset_snapshot_exists,
     resolve_dataset_root,
     scan_snapshot_lazyframe,
@@ -281,30 +282,34 @@ def _catalog_provider_from_dataset(
     if dataset_root_dir is None:
         return None
     goids_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="core.goids",
-        snapshot_id=snapshot.commit,
-        columns=(
-            "goid_h128",
-            "urn",
-            "rel_path",
-            "kind",
-            "qualname",
-            "start_line",
-            "end_line",
-            "repo",
-            "commit",
-        ),
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.goids",
+            snapshot_id=snapshot.commit,
+            columns=(
+                "goid_h128",
+                "urn",
+                "rel_path",
+                "kind",
+                "qualname",
+                "start_line",
+                "end_line",
+                "repo",
+                "commit",
+            ),
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
     )
     modules_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="core.modules",
-        snapshot_id=snapshot.commit,
-        columns=("path", "module", "repo", "commit"),
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.modules",
+            snapshot_id=snapshot.commit,
+            columns=("path", "module", "repo", "commit"),
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
     )
     if goids_frame is None or modules_frame is None:
         return None
@@ -371,12 +376,14 @@ def log_db_snapshot(
         if dataset_root_dir is None:
             return -1
         frame = scan_snapshot_lazyframe(
-            dataset_root=dataset_root_dir,
-            table_key=table_key,
-            snapshot_id=commit,
-            columns=None,
-            repo=repo,
-            commit=commit,
+            SnapshotScanRequest(
+                dataset_root=dataset_root_dir,
+                table_key=table_key,
+                snapshot_id=commit,
+                columns=None,
+                repo=repo,
+                commit=commit,
+            )
         )
         if frame is None:
             return -1

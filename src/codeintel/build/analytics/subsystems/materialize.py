@@ -12,6 +12,7 @@ import networkx as nx
 import polars as pl
 
 from codeintel.build.analytics.subsystems.affinity import (
+    AffinityFrames,
     build_weighted_graph,
     clusters_from_labels,
     graph_to_adjacency,
@@ -89,16 +90,22 @@ class SubsystemRows:
     membership_rows: list[tuple[Any, ...]]
 
 
+@dataclass(frozen=True)
+class SubsystemBuildInputs:
+    """Input frames required for subsystem inference."""
+
+    modules_frame: pl.DataFrame | None = None
+    import_graph_edges_frame: pl.DataFrame | None = None
+    symbol_use_edges_frame: pl.DataFrame | None = None
+    config_values_frame: pl.DataFrame | None = None
+    risk_factors_frame: pl.DataFrame | None = None
+    function_metrics_frame: pl.DataFrame | None = None
+    options: SubsystemOptions | None = None
+
+
 def build_subsystem_rows(
     snapshot: SnapshotRef,
-    *,
-    modules_frame: pl.DataFrame | None = None,
-    import_graph_edges_frame: pl.DataFrame | None = None,
-    symbol_use_edges_frame: pl.DataFrame | None = None,
-    config_values_frame: pl.DataFrame | None = None,
-    risk_factors_frame: pl.DataFrame | None = None,
-    function_metrics_frame: pl.DataFrame | None = None,
-    options: SubsystemOptions | None = None,
+    inputs: SubsystemBuildInputs,
 ) -> SubsystemRows:
     """
     Build analytics.subsystems and analytics.subsystem_modules rows for a repo/commit.
@@ -107,30 +114,18 @@ def build_subsystem_rows(
     ----------
     snapshot :
         Repository and commit identifiers.
-    modules_frame :
-        Module metadata for the snapshot.
-    import_graph_edges_frame :
-        Import graph edges for the snapshot.
-    symbol_use_edges_frame :
-        Symbol use edges for the snapshot.
-    config_values_frame :
-        Config values for the snapshot.
-    risk_factors_frame :
-        GOID risk factors for the snapshot.
-    function_metrics_frame :
-        Function metrics for the snapshot.
-    options :
-        Subsystem inference options.
+    inputs :
+        Bundled input frames and options for subsystem inference.
 
     Returns
     -------
     SubsystemRows
         Container holding subsystem and membership rows.
     """
-    opts = options or SubsystemOptions()
+    opts = inputs.options or SubsystemOptions()
 
     modules, tags_by_module = load_modules_from_frame(
-        modules_frame,
+        inputs.modules_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
@@ -141,10 +136,12 @@ def build_subsystem_rows(
     affinity_graph = build_weighted_graph(
         snapshot,
         modules,
-        import_graph_edges_frame=import_graph_edges_frame,
-        symbol_use_edges_frame=symbol_use_edges_frame,
-        config_values_frame=config_values_frame,
-        modules_frame=modules_frame,
+        AffinityFrames(
+            import_graph_edges_frame=inputs.import_graph_edges_frame,
+            symbol_use_edges_frame=inputs.symbol_use_edges_frame,
+            config_values_frame=inputs.config_values_frame,
+            modules_frame=inputs.modules_frame,
+        ),
         weights=opts.weights,
     )
     adjacency = graph_to_adjacency(affinity_graph)
@@ -157,16 +154,16 @@ def build_subsystem_rows(
         labels=labels,
         tags_by_module=tags_by_module,
         import_graph=_import_graph_from_frame(
-            import_graph_edges_frame,
+            inputs.import_graph_edges_frame,
             repo=snapshot.repo,
             commit=snapshot.commit,
         ),
         risk_stats=aggregate_risk(
             snapshot,
             labels,
-            risk_factors_frame=risk_factors_frame,
-            function_metrics_frame=function_metrics_frame,
-            modules_frame=modules_frame,
+            risk_factors_frame=inputs.risk_factors_frame,
+            function_metrics_frame=inputs.function_metrics_frame,
+            modules_frame=inputs.modules_frame,
         ),
         now=datetime.now(UTC),
     )

@@ -61,6 +61,7 @@ from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.manifests import DatasetSuiteManifest
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.schemas.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 from codeintel.core.table_key import split_table_key
 from codeintel.observability.cache_log_ingest import (
     CacheLogIngestConfigError,
@@ -75,7 +76,6 @@ from codeintel.runtime.inputs import ExecutionInputs, execution_input_mapping
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
-from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

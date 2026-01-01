@@ -39,6 +39,29 @@ class FunctionProfileInputs:
 
 
 @dataclass(frozen=True)
+class FunctionProfileFrames:
+    """Frame bundle required to build function profile inputs."""
+
+    function_metrics: pl.DataFrame
+    function_types: pl.DataFrame
+    modules: pl.DataFrame
+    typedness: pl.DataFrame
+    diagnostics: pl.DataFrame
+    goid_risk_factors: pl.DataFrame
+    coverage_functions: pl.DataFrame
+    graph_metrics_functions: pl.DataFrame
+    function_effects: pl.DataFrame
+    function_contracts: pl.DataFrame
+    semantic_roles_functions: pl.DataFrame
+    docstrings: pl.DataFrame
+    hotspots: pl.DataFrame
+    call_graph_edges: pl.DataFrame
+    call_graph_nodes: pl.DataFrame
+    test_coverage_edges: pl.DataFrame
+    test_catalog: pl.DataFrame
+
+
+@dataclass(frozen=True)
 class FileProfileInputs:
     """Snapshot handle for file profile computations."""
 
@@ -54,12 +77,35 @@ class FileProfileInputs:
 
 
 @dataclass(frozen=True)
+class FileProfileFrames:
+    """Frame bundle required to build file profile inputs."""
+
+    function_profile: pl.DataFrame
+    ast_metrics: pl.DataFrame
+    hotspots: pl.DataFrame
+    typedness: pl.DataFrame
+    static_diagnostics: pl.DataFrame
+    modules: pl.DataFrame
+
+
+@dataclass(frozen=True)
 class ModuleProfileInputs:
     """Snapshot handle for module profile computations."""
 
     repo: str
     commit: str
     created_at: datetime
+    modules: pl.DataFrame
+    function_profile: pl.DataFrame
+    file_profile: pl.DataFrame
+    import_graph_edges: pl.DataFrame
+    semantic_roles_modules: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class ModuleProfileFrames:
+    """Frame bundle required to build module profile inputs."""
+
     modules: pl.DataFrame
     function_profile: pl.DataFrame
     file_profile: pl.DataFrame

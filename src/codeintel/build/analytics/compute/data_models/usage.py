@@ -545,15 +545,11 @@ def build_data_model_usage_rows(
     True
     """
     max_examples_per_usage = 3
-    module_map = inputs.module_map
-    ast_by_goid = inputs.ast_by_goid
-    models_frame = inputs.models_frame
-    subsystem_modules_frame = inputs.subsystem_modules_frame
-    subsystems_frame = inputs.subsystems_frame
-    function_types_frame = inputs.function_types_frame
-    missing_goids = inputs.missing_goids
-
-    models = _load_models_from_frame(models_frame, repo=snapshot.repo, commit=snapshot.commit)
+    models = _load_models_from_frame(
+        inputs.models_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     if not models:
         log.info(
             "No data models found for %s@%s; skipping usage analysis",
@@ -564,13 +560,13 @@ def build_data_model_usage_rows(
 
     model_index = _build_model_index(models)
     subsystem_map = _subsystem_by_module_from_frames(
-        subsystem_modules_frame,
-        subsystems_frame,
+        inputs.subsystem_modules_frame,
+        inputs.subsystems_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
 
-    missing = missing_goids or set()
+    missing = inputs.missing_goids or set()
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during model usage analysis",
@@ -578,9 +574,9 @@ def build_data_model_usage_rows(
         )
 
     param_types: dict[int, dict[str, str]] = {}
-    if function_types_frame is not None and not function_types_frame.is_empty():
+    if inputs.function_types_frame is not None and not inputs.function_types_frame.is_empty():
         filtered = _filter_frame_by_snapshot(
-            function_types_frame,
+            inputs.function_types_frame,
             repo=snapshot.repo,
             commit=snapshot.commit,
         )
@@ -592,8 +588,8 @@ def build_data_model_usage_rows(
             parsed_input = raw_param_types if isinstance(raw_param_types, (str, dict)) else None
             param_types[goid_int] = _parse_param_types(parsed_input)
     artifacts = ModelUsageArtifacts(
-        ast_by_goid=ast_by_goid,
-        module_map=module_map,
+        ast_by_goid=inputs.ast_by_goid,
+        module_map=inputs.module_map,
         param_types=param_types,
         model_index=model_index,
         subsystem_map=subsystem_map,

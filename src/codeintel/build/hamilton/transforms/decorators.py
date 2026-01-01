@@ -48,6 +48,7 @@ def _pipe_cleaning(
     null_policy: str,
     max_loc_clip: int,
     policy: _CleaningPolicy,
+    namespace: str,
 ) -> NodeTransformLifecycle:
     if clean_mode == "off":
         return _NoOpTransform()
@@ -59,7 +60,7 @@ def _pipe_cleaning(
     clip = clip_numeric
     steps = [
         step(drop, required_cols=value(policy.required_cols)).when(clean_mode="strict"),
-        step(normalize, policy=value(null_policy)).named("nulls", namespace="prep"),
+        step(normalize, policy=value(null_policy)).named("nulls", namespace=namespace),
     ]
     if policy.clip_column is not None:
         steps.append(
@@ -67,9 +68,9 @@ def _pipe_cleaning(
                 clip,
                 col=value(policy.clip_column),
                 max_value=value(max_loc_clip),
-            ).named("loc_clip", namespace="prep")
+            ).named("loc_clip", namespace=namespace)
         )
-    return pipe_input(*steps, on_input=policy.input_name, namespace="prep")
+    return pipe_input(*steps, on_input=policy.input_name, namespace=namespace)
 
 
 def pipe_clean_df(
@@ -77,6 +78,7 @@ def pipe_clean_df(
     required_cols: Sequence[str] = ("loc", "cyclo"),
     clip_column: str | None = "loc",
     input_name: str = "df",
+    namespace: str = "prep",
 ) -> NodeTransformLifecycle:
     """Return a config-driven pipe_input decorator for cleaning steps.
 
@@ -113,6 +115,7 @@ def pipe_clean_df(
             null_policy,
             max_loc_clip,
             policy,
+            namespace,
         )
 
     return resolve_from_config(decorate_with=_factory)

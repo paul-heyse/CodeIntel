@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 
 @runtime_checkable

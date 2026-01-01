@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import polars as pl
 
-from codeintel.build.graphs.engine.datasets import scan_snapshot_lazyframe
+from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_lazyframe
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     SAMPLE_LIMIT,
@@ -112,12 +112,14 @@ def _symbol_community_findings_impl(
     if dataset_root_dir is None:
         return []
     frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="analytics.symbol_graph_metrics_modules",
-        snapshot_id=commit,
-        columns=("symbol_community_id", "repo", "commit"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="analytics.symbol_graph_metrics_modules",
+            snapshot_id=commit,
+            columns=("symbol_community_id", "repo", "commit"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if frame is None:
         return []
@@ -169,12 +171,14 @@ def _subsystem_disagreement_findings_impl(
     if dataset_root_dir is None:
         return []
     frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="analytics.subsystem_agreement",
-        snapshot_id=commit,
-        columns=("module", "subsystem_id", "import_community_id", "agrees", "repo", "commit"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="analytics.subsystem_agreement",
+            snapshot_id=commit,
+            columns=("module", "subsystem_id", "import_community_id", "agrees", "repo", "commit"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if frame is None:
         return []

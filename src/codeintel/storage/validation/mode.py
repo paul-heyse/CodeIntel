@@ -1,15 +1,7 @@
-"""Validation mode definitions for storage contract checks."""
+"""Backward-compatible re-exports for contract validation modes."""
 
 from __future__ import annotations
 
-from enum import StrEnum
+from codeintel.core.validation.mode import ContractValidationMode
 
 __all__ = ["ContractValidationMode"]
-
-
-class ContractValidationMode(StrEnum):
-    """Controls dataset contract validation behavior."""
-
-    OFF = "off"
-    LENIENT = "lenient"
-    STRICT = "strict"

@@ -31,6 +31,26 @@ class AffinityWeights:
     config_weight: float = DEFAULT_CONFIG_WEIGHT
 
 
+@dataclass(frozen=True)
+class AffinityFrames:
+    """Frames used to compute subsystem affinity."""
+
+    import_graph_edges_frame: pl.DataFrame | None = None
+    symbol_use_edges_frame: pl.DataFrame | None = None
+    config_values_frame: pl.DataFrame | None = None
+    modules_frame: pl.DataFrame | None = None
+
+
+@dataclass(frozen=True)
+class AffinityContext:
+    """Shared context for affinity graph construction."""
+
+    modules: set[str]
+    repo: str
+    commit: str
+    weights: AffinityWeights
+
+
 def load_modules_from_frame(
     modules_frame: pl.DataFrame | None,
     *,
@@ -85,14 +105,91 @@ def parse_tags(raw: object) -> list[str]:
     return [str(raw)]
 
 
+def _add_import_edges(
+    graph: nx.Graph,
+    ctx: AffinityContext,
+    frame: pl.DataFrame | None,
+) -> None:
+    if frame is None or frame.is_empty():
+        return
+    edges_filtered = _filter_frame_by_snapshot(frame, repo=ctx.repo, commit=ctx.commit)
+    for row in edges_filtered.iter_rows(named=True):
+        src = row.get("src_module")
+        dst = row.get("dst_module")
+        if src is None or dst is None:
+            continue
+        src_mod = str(src)
+        dst_mod = str(dst)
+        if src_mod in ctx.modules and dst_mod in ctx.modules:
+            add_graph_weight(graph, src_mod, dst_mod, ctx.weights.import_weight)
+
+
+def _add_symbol_edges(
+    graph: nx.Graph,
+    ctx: AffinityContext,
+    symbol_use_edges_frame: pl.DataFrame | None,
+    modules_frame: pl.DataFrame | None,
+) -> None:
+    if symbol_use_edges_frame is None or symbol_use_edges_frame.is_empty():
+        return
+    module_by_path: dict[str, str] = {}
+    if modules_frame is not None and not modules_frame.is_empty():
+        modules_filtered = _filter_frame_by_snapshot(
+            modules_frame,
+            repo=ctx.repo,
+            commit=ctx.commit,
+        )
+        for row in modules_filtered.iter_rows(named=True):
+            path = row.get("path")
+            module = row.get("module")
+            if isinstance(path, str) and module is not None:
+                module_by_path[path] = str(module)
+    symbol_filtered = _filter_frame_by_snapshot(
+        symbol_use_edges_frame,
+        repo=ctx.repo,
+        commit=ctx.commit,
+    )
+    for row in symbol_filtered.iter_rows(named=True):
+        use_path = row.get("use_path")
+        def_path = row.get("def_path")
+        if not isinstance(use_path, str) or not isinstance(def_path, str):
+            continue
+        src_mod = module_by_path.get(use_path)
+        dst_mod = module_by_path.get(def_path)
+        if src_mod is None or dst_mod is None:
+            continue
+        if src_mod in ctx.modules and dst_mod in ctx.modules:
+            add_graph_weight(graph, src_mod, dst_mod, ctx.weights.symbol_weight)
+
+
+def _add_config_edges(
+    graph: nx.Graph,
+    ctx: AffinityContext,
+    config_values_frame: pl.DataFrame | None,
+) -> None:
+    if config_values_frame is None or config_values_frame.is_empty():
+        return
+    config_filtered = _filter_frame_by_snapshot(
+        config_values_frame,
+        repo=ctx.repo,
+        commit=ctx.commit,
+    )
+    for row in config_filtered.iter_rows(named=True):
+        modules_list = parse_tags(row.get("reference_modules"))
+        filtered = [module for module in modules_list if module in ctx.modules]
+        if len(filtered) < MIN_SHARED_MODULES:
+            continue
+        edge_weight = ctx.weights.config_weight / max(len(filtered) - 1, 1)
+        for idx, left in enumerate(filtered):
+            for right in filtered[idx + 1 :]:
+                add_graph_weight(graph, left, right, edge_weight)
+
+
 def build_weighted_adjacency(
     snapshot: SnapshotRef,
     modules: set[str],
+    frames: AffinityFrames,
     *,
-    import_graph_edges_frame: pl.DataFrame | None = None,
-    symbol_use_edges_frame: pl.DataFrame | None = None,
-    config_values_frame: pl.DataFrame | None = None,
-    modules_frame: pl.DataFrame | None = None,
     weights: AffinityWeights | None = None,
 ) -> dict[str, dict[str, float]]:
     """
@@ -106,10 +203,7 @@ def build_weighted_adjacency(
     graph = build_weighted_graph(
         snapshot,
         modules,
-        import_graph_edges_frame=import_graph_edges_frame,
-        symbol_use_edges_frame=symbol_use_edges_frame,
-        config_values_frame=config_values_frame,
-        modules_frame=modules_frame,
+        frames,
         weights=weights,
     )
     return graph_to_adjacency(graph)
@@ -118,11 +212,8 @@ def build_weighted_adjacency(
 def build_weighted_graph(
     snapshot: SnapshotRef,
     modules: set[str],
+    frames: AffinityFrames,
     *,
-    import_graph_edges_frame: pl.DataFrame | None = None,
-    symbol_use_edges_frame: pl.DataFrame | None = None,
-    config_values_frame: pl.DataFrame | None = None,
-    modules_frame: pl.DataFrame | None = None,
     weights: AffinityWeights | None = None,
 ) -> nx.Graph:
     """
@@ -134,69 +225,30 @@ def build_weighted_graph(
         Weighted graph of module affinity.
     """
     w = weights or AffinityWeights()
+    ctx = AffinityContext(
+        modules=modules,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        weights=w,
+    )
     graph = nx.Graph()
     graph.add_nodes_from(modules)
-    if import_graph_edges_frame is not None and not import_graph_edges_frame.is_empty():
-        edges_filtered = _filter_frame_by_snapshot(
-            import_graph_edges_frame,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        for row in edges_filtered.iter_rows(named=True):
-            src = row.get("src_module")
-            dst = row.get("dst_module")
-            if src is None or dst is None:
-                continue
-            src_mod = str(src)
-            dst_mod = str(dst)
-            if src_mod in modules and dst_mod in modules:
-                add_graph_weight(graph, src_mod, dst_mod, w.import_weight)
-
-    if symbol_use_edges_frame is not None and not symbol_use_edges_frame.is_empty():
-        module_by_path: dict[str, str] = {}
-        if modules_frame is not None and not modules_frame.is_empty():
-            modules_filtered = _filter_frame_by_snapshot(
-                modules_frame,
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-            )
-            for row in modules_filtered.iter_rows(named=True):
-                path = row.get("path")
-                module = row.get("module")
-                if isinstance(path, str) and module is not None:
-                    module_by_path[path] = str(module)
-        symbol_filtered = _filter_frame_by_snapshot(
-            symbol_use_edges_frame,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        for row in symbol_filtered.iter_rows(named=True):
-            use_path = row.get("use_path")
-            def_path = row.get("def_path")
-            if not isinstance(use_path, str) or not isinstance(def_path, str):
-                continue
-            src_mod = module_by_path.get(use_path)
-            dst_mod = module_by_path.get(def_path)
-            if src_mod is None or dst_mod is None:
-                continue
-            if src_mod in modules and dst_mod in modules:
-                add_graph_weight(graph, src_mod, dst_mod, w.symbol_weight)
-
-    if config_values_frame is not None and not config_values_frame.is_empty():
-        config_filtered = _filter_frame_by_snapshot(
-            config_values_frame,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        for row in config_filtered.iter_rows(named=True):
-            modules_list = parse_tags(row.get("reference_modules"))
-            filtered = [m for m in modules_list if m in modules]
-            if len(filtered) < MIN_SHARED_MODULES:
-                continue
-            weight = w.config_weight / max(len(filtered) - 1, 1)
-            for idx, left in enumerate(filtered):
-                for right in filtered[idx + 1 :]:
-                    add_graph_weight(graph, left, right, weight)
+    _add_import_edges(
+        graph,
+        ctx,
+        frames.import_graph_edges_frame,
+    )
+    _add_symbol_edges(
+        graph,
+        ctx,
+        frames.symbol_use_edges_frame,
+        frames.modules_frame,
+    )
+    _add_config_edges(
+        graph,
+        ctx,
+        frames.config_values_frame,
+    )
 
     return graph
 
