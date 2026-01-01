@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, get_type_hints
 
 from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
 
 from codeintel.serving.mcp.models import SemanticExplainToolRequest
 from codeintel.serving.mcp.runtime import QueryLimiter
@@ -24,6 +25,8 @@ from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQ
 
 if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
+
+_CURRENT_CONTEXT = CurrentContext()
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +75,7 @@ def register_explain_tool(
     async def semantic_explain(
         request: SemanticExplainToolRequest,
         *,
-        ctx: Context,
+        ctx: Context = _CURRENT_CONTEXT,
     ) -> SemanticExplainResponse:
         validated = validate_semantic_query_request(request)
         return await handler.handle(validated, ctx=ctx)

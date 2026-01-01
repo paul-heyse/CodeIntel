@@ -47,6 +47,20 @@ def apply_metadata_views(con: DuckDBPyConnection, *, catalog: str | None) -> Non
     _apply_latest_good_view(con, catalog=catalog)
 
 
+def _create_or_replace_view(
+    con: DuckDBPyConnection,
+    *,
+    view_name: str,
+    select_expr: exp.Expression,
+) -> None:
+    relation = con.sql(render_sql_duckdb(select_expr))
+    create_view = getattr(relation, "create_view", None)
+    if not callable(create_view):
+        msg = "DuckDB relation does not support create_view"
+        raise TypeError(msg)
+    create_view(view_name, replace=True)
+
+
 def _apply_validation_summary_view(con: DuckDBPyConnection, *, catalog: str | None) -> None:
     summary_view = fully_qualified_table_ref(
         "metadata.v_schema_validation_summary",
@@ -90,13 +104,7 @@ def _apply_validation_summary_view(con: DuckDBPyConnection, *, catalog: str | No
         .from_(summary_ranked)
         .where(exp.EQ(this=exp.column("row_num"), expression=exp.Literal.number(1)))
     )
-    summary_create = exp.Create(
-        this=table_expr_from_ref(summary_view),
-        kind="VIEW",
-        replace=True,
-        expression=summary_outer,
-    )
-    con.execute(render_sql_duckdb(summary_create))
+    _create_or_replace_view(con, view_name=summary_view, select_expr=summary_outer)
 
 
 def _apply_validation_failures_view(con: DuckDBPyConnection, *, catalog: str | None) -> None:
@@ -148,13 +156,7 @@ def _apply_validation_failures_view(con: DuckDBPyConnection, *, catalog: str | N
         .from_(failures_ranked)
         .where(exp.EQ(this=exp.column("row_num"), expression=exp.Literal.number(1)))
     )
-    failures_create = exp.Create(
-        this=table_expr_from_ref(failures_view),
-        kind="VIEW",
-        replace=True,
-        expression=failures_outer,
-    )
-    con.execute(render_sql_duckdb(failures_create))
+    _create_or_replace_view(con, view_name=failures_view, select_expr=failures_outer)
 
 
 def _apply_latest_good_view(con: DuckDBPyConnection, *, catalog: str | None) -> None:
@@ -224,10 +226,4 @@ def _apply_latest_good_view(con: DuckDBPyConnection, *, catalog: str | None) -> 
         .from_(latest_ranked)
         .where(exp.EQ(this=exp.column("row_num"), expression=exp.Literal.number(1)))
     )
-    latest_create = exp.Create(
-        this=table_expr_from_ref(latest_good_view),
-        kind="VIEW",
-        replace=True,
-        expression=latest_outer,
-    )
-    con.execute(render_sql_duckdb(latest_create))
+    _create_or_replace_view(con, view_name=latest_good_view, select_expr=latest_outer)

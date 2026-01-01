@@ -16,6 +16,12 @@ from codeintel.build.hamilton.native.ingestion.extraction_targets import (
     t__docstrings,
     t__docstrings__ingest,
     t__docstrings__run,
+    t__syntax_index,
+    t__syntax_index__ingest,
+    t__syntax_index__run,
+)
+from codeintel.build.hamilton.native.ingestion.file_line_index import (
+    t__file_line_index,
 )
 from codeintel.build.hamilton.native.ingestion.ingest_targets import (
     ConfigScanResult,
@@ -82,6 +88,7 @@ __all__: list[str] = [
     "t__docstrings",
     "t__docstrings__ingest",
     "t__docstrings__run",
+    "t__file_line_index",
     "t__modules",
     "t__modules__ingest",
     "t__modules__run",
@@ -90,6 +97,9 @@ __all__: list[str] = [
     "t__scip__run",
     "t__scip_proto",
     "t__scip_proto__run",
+    "t__syntax_index",
+    "t__syntax_index__ingest",
+    "t__syntax_index__run",
     "t__tests_ingest",
     "t__tests_ingest__ingest",
     "t__tests_ingest__run",

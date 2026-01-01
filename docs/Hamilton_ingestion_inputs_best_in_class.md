@@ -413,7 +413,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         self.path = path
         self.raw = raw
         self.calls = []
-        self.name_uses = []
+        self.refs = []
         self.imports = []
         # etc.
 
@@ -710,7 +710,68 @@ This aligns with your best‑in‑class notes:
 
 ---
 
-## 6) Acceptance criteria (so engineers know “done”)
+## 6) Implementation checklists (file-by-file)
+
+### Phase 0 — P0 suite manifest + seeded loaders
+
+- [x] `src/codeintel/core/manifests.py`: add `DatasetSuiteManifest` (version/kind, dataset_manifest_paths) and JSON helpers.
+- [x] `src/codeintel/cli/commands/build.py`: add a `build bootstrap-index-suite` command entry.
+- [x] `src/codeintel/cli/handlers/build.py`: implement handler to run the P0 target list and write the suite manifest.
+- [x] `src/codeintel/build/config.py`: add config fields for `seed_suite_manifest_path` and/or `ci_seeded_datasets`.
+- [x] `src/codeintel/build/hamilton/nodes/support_nodes.py`: add seeded `DatasetRef` node generation (prefer seeded refs).
+- [x] `src/codeintel/build/hamilton/nodes/support_spec.py`: wire `ci_seeded_datasets` + node include flags into config.
+- [x] `src/codeintel/build/hamilton/native/patterns/loaders.py`: accept seeded `DatasetRef` inputs.
+
+### Phase 1 — Schema registry + parse manifest + syntax facts (LibCST)
+
+- [x] `src/codeintel/core/schemas/output_registry.py`: add `core.parse_manifest` and `core.syntax_*` table schemas.
+- [x] `src/codeintel/core/schemas/generated_rows/*`: regenerate row models for new tables.
+- [x] `src/codeintel/ingestion/compute/cst_extract.py`: switch to bytes-first parsing and emit parse manifest rows.
+- [x] `src/codeintel/ingestion/infrastructure/cst_utils.py`: add byte spans and normalize to 0-based line/col.
+- [x] `src/codeintel/build/hamilton/native/ingestion/extraction_targets.py`: evolve `cst` target or add `syntax_index` target to materialize `core.syntax_*` + `core.parse_manifest`.
+- [x] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target(s).
+
+### Phase 2 — Coordinate normalization + GOID alignment
+
+- [ ] `src/codeintel/ingestion/compute/ast_extract.py`: normalize AST line base to 0-based for GOID joins.
+- [ ] `src/codeintel/build/hamilton/native/graphs/goids.py`: adjust GOID and crosswalk rows to the 0-based contract.
+- [ ] `src/codeintel/core/schemas/output_registry.py`: add `core.file_line_index` schema (if adopted).
+- [ ] `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`: add a target to materialize `core.file_line_index`.
+
+### Phase 3 — SCIP ingestion upgrades (encoding + streaming)
+
+- [x] `src/codeintel/ingestion/scip/protobuf_parser.py`: add streaming decode (metadata first) and capture encoding fields.
+- [x] `src/codeintel/ingestion/ports/tools.py`: extend `ScipDocument` / `ScipOccurrence` with encoding metadata.
+- [x] `src/codeintel/ingestion/scip/models.py`: add metadata fields needed for schema alignment.
+- [x] `src/codeintel/ingestion/scip/rows.py`: emit `position_encoding`, `text_document_encoding`, and nullable byte spans.
+- [x] `src/codeintel/ingestion/engine/scip.py`: thread new metadata into `ScipDocument`/`ScipOccurrence`.
+- [x] `src/codeintel/build/hamilton/native/ingestion/scip.py`: plumb new columns into materialized tables.
+
+### Phase 4 — `scip_resolution` xref targets
+
+- [ ] `src/codeintel/core/schemas/output_registry.py`: add `core.scip_symbol_goid_xref` + `core.scip_occurrence_span_xref`.
+- [ ] `src/codeintel/core/schemas/generated_rows/*`: regenerate row models.
+- [ ] `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`: new target building xref tables (Polars joins).
+- [ ] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target.
+
+### Phase 5 — Tree-sitter ingestion targets
+
+- [ ] `src/codeintel/ingestion/tree_sitter/registry.py`: language registry + ABI checks.
+- [ ] `src/codeintel/ingestion/tree_sitter/runner.py`: parse bytes, run query packs, capture errors.
+- [ ] `src/codeintel/ingestion/tree_sitter/packs/*`: query pack definitions by language.
+- [ ] `src/codeintel/core/schemas/output_registry.py`: add `core.ts_captures` + `core.ts_parse_errors`.
+- [ ] `src/codeintel/build/hamilton/native/ingestion/tree_sitter.py`: new target to materialize tree-sitter tables.
+- [ ] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target.
+
+### Phase 6 — Arrow streaming + dataset scanning defaults
+
+- [ ] `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`: accept `RecordBatchReader` and stream writes.
+- [ ] `src/codeintel/storage/datasets/arrow_store.py`: prefer dataset scanner + projection pushdown.
+- [ ] `src/codeintel/build/hamilton/native/patterns/loaders.py`: default to scanner-based loads for enrichment.
+
+---
+
+## 7) Acceptance criteria (so engineers know “done”)
 
 ### Index suite correctness
 
@@ -1163,7 +1224,7 @@ This is the artifact written by `bootstrap/index_suite`. It is intentionally tin
 {
   "suite_manifest_version": 1,
   "suite_kind": "p0_index_suite",
-  "created_at_utc": "2026-01-01T00:00:00Z",
+  "created_at": "2026-01-01T00:00:00Z",
   "repo": "my-org/my-repo",
   "commit": "8c0c8f1c9b2d3a4e5f...",
   "targets_ran": [
@@ -1767,13 +1828,16 @@ Optional extensions (future, if added):
 
 ## Standard “snapshot identity” columns (required everywhere)
 
-All `core.scip_*` datasets MUST include these columns (names fixed):
+All `core.scip_*` datasets MUST include these identity columns. In the current
+codebase, these are `repo` + `commit` + `created_at` (timestamp). The contract
+names below can be treated as aliases until a schema migration consolidates
+them under a single naming scheme:
 
-* `repo_id: string`
+* `repo_id: string` (alias: `repo`)
   Canonical repo identity (your system-wide ID)
-* `snapshot_id: string`
+* `snapshot_id: string` (alias: `commit`)
   Immutable revision identity (commit SHA / content-addressed snapshot)
-* `ingest_id: string`
+* `ingest_id: string` (alias: `created_at` or a run id)
   Unique run id (uuid/ulid). Allows multiple ingests per snapshot without collisions.
 
 These are part of every dataset PK (directly or indirectly) so multi-snapshot storage is always safe.
@@ -1900,6 +1964,9 @@ Below: **required columns**, Arrow types (suggested), **PK**, and key semantic n
 
 ## 1) `core.scip_metadata`
 
+Optional extension (not implemented in current ingestion). Use this table if you
+want a dedicated place for run-level metadata beyond `core.scip_module_state`.
+
 **Grain:** 1 row per `(repo_id, snapshot_id, ingest_id)`
 
 **PK:** `repo_id, snapshot_id, ingest_id`
@@ -1934,6 +2001,9 @@ Optional columns (nullable):
 
 ## 2) `core.scip_documents`
 
+Optional extension (not implemented in current ingestion). Use this table if you
+want a dedicated document registry separate from `core.scip_occurrences`.
+
 **Grain:** 1 row per document
 
 **PK:** `repo_id, snapshot_id, doc_path`
@@ -1965,24 +2035,30 @@ Recommended (optional):
 
 ## 3) `core.scip_symbol_information`
 
-**Purpose:** exact capture of `Document.symbols[]` membership (which includes symbols “defined” in the document, including via `Relationship.is_definition`). 
+**Purpose:** best-available symbol metadata from `Document.symbols[]` (deduped by
+symbol, not by document).
 
-**Grain:** 1 row per (document, symbol entry)
+**Grain:** 1 row per symbol info entry (unique symbol)
 
-**PK:** `repo_id, snapshot_id, doc_path, doc_symbol_idx`
+**PK:** `repo_id, snapshot_id, symbol`
 
 Required columns:
 
 * `repo_id: string`
 * `snapshot_id: string`
 * `ingest_id: string`
-* `doc_path: string`
-* `doc_symbol_idx: int32` (0-based index in `Document.symbols[]`)
 * `symbol: string`
+
+Optional (nullable, but recommended when present in proto):
+
+* `documentation: list<large_string>`
+* `kind: int16`
+* `display_name: string`
+* `signature_documentation: list<large_string>`
+* `enclosing_symbol: string`
 
 Recommended:
 
-* `doc_id: fixed_size_binary(16)`
 * `symbol_id: fixed_size_binary(16)`
 
 **Schema metadata:**
@@ -2057,35 +2133,30 @@ Recommended:
 
 ## 5) `core.scip_symbols`
 
-**Grain:** 1 row per `SymbolInformation`
+**Grain:** 1 row per symbol definition entry (deduped by path + symbol)
 
-**PK:** `repo_id, snapshot_id, symbol`
+**PK:** `repo_id, snapshot_id, doc_path, symbol`
 
 Required columns:
 
 * `repo_id: string`
 * `snapshot_id: string`
 * `ingest_id: string`
+* `doc_path: string`
 * `symbol: string`
-* `is_external: bool` (true if sourced from `Index.external_symbols[]`) 
-
-Optional (nullable, but recommended when present in proto):
-
-* `kind: int16` (symbol kind enum; store numeric, do not assume closed set)
-* `display_name: string`
-* `documentation: list<large_string>`
-* `signature_documentation: list<large_string>`
+* `documentation: large_string` (nullable)
 
 Recommended:
 
 * `symbol_id: fixed_size_binary(16)`
-* `origin_doc_path: string` (nullable; if symbol info came from a document symbol table)
 
-**Why we carry symbol info:** SymbolInformation is the carrier for documentation and relationships like inheritance/overrides/implementations. 
+**Why we carry this table:** it provides a fast symbol lookup keyed by file path; richer
+metadata lives in `core.scip_symbol_information` and external refs in
+`core.scip_external_symbols`.
 
 **Schema metadata:**
 
-* `codeintel.pk = b"repo_id,snapshot_id,symbol"`
+* `codeintel.pk = b"repo_id,snapshot_id,doc_path,symbol"`
 
 ---
 
@@ -2093,7 +2164,7 @@ Recommended:
 
 **Grain:** 1 row per relationship entry on a symbol
 
-**PK:** `repo_id, snapshot_id, symbol, relationship_idx`
+**PK:** `repo_id, snapshot_id, symbol, related_symbol, relationship_kind`
 
 Required columns:
 
@@ -2101,23 +2172,19 @@ Required columns:
 * `snapshot_id: string`
 * `ingest_id: string`
 * `symbol: string` (source symbol)
-* `relationship_idx: int16` (0-based)
-* `target_symbol: string`
-* `is_reference: bool`
-* `is_implementation: bool`
-* `is_type_definition: bool`
-* `is_definition: bool`
+* `related_symbol: string`
+* `relationship_kind: string` (`"reference"|"implementation"|"type_definition"|"definition"`)
 
-Relationship semantics are explicitly these boolean flags on a `(symbol -> target)` tuple (not a single “kind enum”), and consumers should not assume coupling between implementation and reference. 
+Relationship semantics are represented as a single `relationship_kind` string.
 
 Recommended:
 
 * `symbol_id: fixed_size_binary(16)`
-* `target_symbol_id: fixed_size_binary(16)`
+* `related_symbol_id: fixed_size_binary(16)`
 
 **Schema metadata:**
 
-* `codeintel.pk = b"repo_id,snapshot_id,symbol,relationship_idx"`
+* `codeintel.pk = b"repo_id,snapshot_id,symbol,related_symbol,relationship_kind"`
 
 ---
 
@@ -2149,6 +2216,43 @@ Diagnostic field expectations and optionality are described in the SCIP guide; `
 **Schema metadata:**
 
 * `codeintel.pk = b"repo_id,snapshot_id,doc_path,occurrence_idx,diagnostic_idx"`
+
+---
+
+## 8) `core.scip_external_symbols`
+
+**Grain:** 1 row per external symbol reference
+
+**PK:** `repo_id, snapshot_id, symbol`
+
+Required columns:
+
+* `repo_id: string`
+* `snapshot_id: string`
+* `ingest_id: string`
+* `symbol: string`
+* `package_manager: string` (nullable)
+* `package_name: string` (nullable)
+* `package_version: string` (nullable)
+
+---
+
+## 9) `core.scip_module_state`
+
+**Grain:** 1 row per module state entry (incremental indexing)
+
+**PK:** `repo_id, snapshot_id, doc_path`
+
+Required columns:
+
+* `repo_id: string`
+* `snapshot_id: string`
+* `doc_path: string`
+* `content_hash: string`
+* `options_hash: string` (nullable)
+* `tool_version: string` (nullable)
+* `shard_path: string`
+* `updated_at: timestamp`
 
 ---
 
@@ -2266,13 +2370,13 @@ SCIP_OCCURRENCES_SCHEMA = pa.schema(
 ```json
 {
   "tables": {
-    "core.scip_metadata": {"dataset_manifest_path": "build/arrow/core/scip_metadata/_manifest.json"},
-    "core.scip_documents": {"dataset_manifest_path": "build/arrow/core/scip_documents/_manifest.json"},
     "core.scip_symbol_information": {"dataset_manifest_path": "build/arrow/core/scip_symbol_information/_manifest.json"},
     "core.scip_occurrences": {"dataset_manifest_path": "build/arrow/core/scip_occurrences/_manifest.json"},
     "core.scip_symbols": {"dataset_manifest_path": "build/arrow/core/scip_symbols/_manifest.json"},
     "core.scip_symbol_relationships": {"dataset_manifest_path": "build/arrow/core/scip_symbol_relationships/_manifest.json"},
-    "core.scip_diagnostics": {"dataset_manifest_path": "build/arrow/core/scip_diagnostics/_manifest.json"}
+    "core.scip_diagnostics": {"dataset_manifest_path": "build/arrow/core/scip_diagnostics/_manifest.json"},
+    "core.scip_external_symbols": {"dataset_manifest_path": "build/arrow/core/scip_external_symbols/_manifest.json"},
+    "core.scip_module_state": {"dataset_manifest_path": "build/arrow/core/scip_module_state/_manifest.json"}
   }
 }
 ```
@@ -2283,7 +2387,7 @@ SCIP_OCCURRENCES_SCHEMA = pa.schema(
 
 A contract conformance test for SCIP ingestion should verify:
 
-1. All 7 dataset keys exist.
+1. All required dataset keys exist.
 2. Each table schema metadata contains:
 
    * `codeintel.contract`, `codeintel.dataset_key`, `codeintel.pk`

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
 
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp.models import DEFAULT_RESOURCE_TEMPLATES, ServingMetaResponse
@@ -23,6 +24,8 @@ from codeintel.serving.operations.ops import ServingOperations
 
 if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
+
+_CURRENT_CONTEXT = CurrentContext()
 
 
 async def _catalog_view_count(ops: ServingOperations, limiter: QueryLimiter) -> int:
@@ -46,7 +49,7 @@ def register_meta_tool(
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_META, TAG_READ},
     )
-    async def serving_meta(*, ctx: Context) -> ServingMetaResponse:
+    async def serving_meta(*, ctx: Context = _CURRENT_CONTEXT) -> ServingMetaResponse:
         start = time.perf_counter()
         await ctx.info("Retrieving serving metadata")
 

@@ -518,6 +518,32 @@ class BuildStatusResult:
         }
 
 
+@result_type
+@dataclass(frozen=True)
+class BuildBootstrapSuiteResult:
+    """Result from build bootstrap index suite command.
+
+    Parameters
+    ----------
+    suite_manifest_path
+        Path to the suite manifest written to disk.
+    targets
+        Target names executed for the suite.
+    dataset_manifest_paths
+        Mapping of table key to dataset manifest path.
+    missing_targets
+        Requested P0 targets missing from the catalog.
+    missing_manifests
+        Table keys missing dataset manifests after execution.
+    """
+
+    suite_manifest_path: str
+    targets: list[str]
+    dataset_manifest_paths: dict[str, str]
+    missing_targets: list[str] = field(default_factory=list)
+    missing_manifests: list[str] = field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class BuildRunResult:
     """Result from build run command.
@@ -1818,6 +1844,7 @@ class TargetOriginListResult:
 __all__ = [
     "ActionResult",
     "BuildAssetsResult",
+    "BuildBootstrapSuiteResult",
     "BuildExecutionResult",
     "BuildExplainResult",
     "BuildHistoryResult",

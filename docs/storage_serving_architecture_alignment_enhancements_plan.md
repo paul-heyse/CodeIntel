@@ -135,27 +135,36 @@ FastAPI/FastMCP transport behavior
 
 ## Codebase alignment updates (current)
 
-- Shared scan options already live in `src/codeintel/storage/datasets/scanning.py` and
-  are consumed by `src/codeintel/serving/semantic/datasets.py` (DatasetScanOptions,
-  build_scanner). Dataset factory usage and centralized registration remain pending.
-- A unified filter compiler already exists in
-  `src/codeintel/serving/semantic/filter_compiler.py` (SQLGlot/DuckDB/Arrow/Polars).
-  Storage still uses `src/codeintel/storage/queries/expressions.py` and
-  `src/codeintel/storage/queries/safe.py`, so Phase 2 should move the compiler to a
-  shared module and replace those helpers.
+- Shared scan options already live in `src/codeintel/storage/datasets/scanning.py`, and
+  dataset manifest handling is now centralized in
+  `src/codeintel/storage/datasets/manifest_index.py` (serving re-exports from
+  `src/codeintel/serving/semantic/datasets.py`). Snapshot preparation now uses the
+  shared scanner + metadata-aware dataset factory (`_metadata`/`_common_metadata`
+  via `pyarrow.dataset.parquet_dataset`) in
+  `src/codeintel/storage/serving/snapshot_service.py`.
+- A unified filter compiler now lives in `src/codeintel/storage/queries/filter_compiler.py`
+  with shared operator semantics in `src/codeintel/core/filters.py`. Serving
+  `filter_compiler.py` and `filter_ops.py` re-export the shared APIs, and storage
+  snapshot filters in `src/codeintel/storage/queries/safe.py` and
+  `src/codeintel/storage/warehouse.py` now compile through the shared pipeline.
 - SQLGlot canonicalization and capability envelopes already live in
   `src/codeintel/storage/sqlglot_tools.py` (normalize, capability checks, lineage).
-  Serving query construction still needs to rely on these centralized helpers.
-- Arrow-to-row conversion is centralized in `src/codeintel/storage/query_results.py` and
-  already used by `src/codeintel/serving/semantic/kernel.py` for `records_from_arrow_batch`.
-  Additional conversion and export encoding paths are still duplicated.
+  Serving query construction now relies on these centralized helpers via
+  `src/codeintel/serving/semantic/sqlglot_query_builder.py`.
+- Arrow-to-row conversion and export serialization are centralized in
+  `src/codeintel/storage/query_results.py`, `src/codeintel/serving/semantic/kernel.py`,
+  and `src/codeintel/serving/export/ndjson.py`, with cancellation-aware batch iteration.
 - Polars execution controls (streaming, sink_batches, collect_all, profile, explain,
   query_opt_flags) are implemented in
   `src/codeintel/serving/semantic/engines/polars_engine.py` and configured via
-  `codeintel.core.config.settings`. Remaining work is tightening planner enforcement
-  and documentation.
+  `codeintel.core.config.settings`. DuckDB relation plans now honor
+  `settings.result_engine="polars"` to keep Polars downstream and deterministic.
 - Streaming guardrails already block eager materialization (`fetchall`, `relation.arrow`,
   `relation.pl`, `to_table`, `read_all`, `to_pandas`) in `tools/guardrails.py`.
+- Legacy `src/codeintel/storage/queries/expressions.py` has been decommissioned
+  and tests updated.
+- MCP tools now use dependency-injected context and optional task config for
+  long-running operations.
 
 ---
 
@@ -182,6 +191,13 @@ FastAPI/FastMCP transport behavior
   surface.
 - Schema unification and partitioning are deterministic across both paths.
 
+**Status**
+- Completed: shared manifest index + metadata-aware dataset factory wiring.
+- Completed: snapshot preparation now uses shared manifest scanner helpers
+  (`src/codeintel/storage/serving/snapshot_service.py`).
+- Completed: consolidated partitioning/schema-unification helpers and row-group pruning
+  in `src/codeintel/storage/datasets/scanning.py`.
+
 ---
 
 ### Phase 2: Unified filter compiler and operator model
@@ -192,16 +208,22 @@ FastAPI/FastMCP transport behavior
 
 **Tasks**
 - Move filter compiler into a shared package (or re-export as shared):
-  - Candidate location: `src/codeintel/storage/queries/filters.py`
+  - Implemented in `src/codeintel/storage/queries/filter_compiler.py`
 - Replace storage-only filter helpers with shared compiler output:
-  - `src/codeintel/storage/queries/expressions.py`
-  - `src/codeintel/storage/queries/safe.py`
+  - Completed for snapshot filters in `src/codeintel/storage/queries/safe.py`
+    and `src/codeintel/storage/warehouse.py`
+  - Completed: decommission `src/codeintel/storage/queries/expressions.py`
+    and update related tests
 - Ensure operator constraints align with column types from:
-  - `codeintel.core.schemas.primitives`
+  - `codeintel.core.schemas.primitives` (now via `src/codeintel/core/filters.py`)
 
 **Acceptance**
 - One canonical filter predicate pipeline used by both storage and serving.
 - Invalid operator/type combinations fail at compile time.
+
+**Status**
+- Completed: shared filter compiler + shared operator semantics.
+- Completed: legacy expression helpers removed and tests updated.
 
 ---
 
@@ -225,6 +247,9 @@ FastAPI/FastMCP transport behavior
 - All queries produce a normalized AST before execution.
 - Projection columns and filter pushdown are derived from AST, not ad hoc logic.
 
+**Status**
+- Completed: canonicalization and capability enforcement live in the query builder.
+
 ---
 
 ### Phase 4: Streaming hardening (HTTP + MCP)
@@ -247,6 +272,9 @@ FastAPI/FastMCP transport behavior
 - Export streaming uses Arrow batch readers; no full-table materialization.
 - Metadata and cancellations are supported for HTTP and MCP exports.
 
+**Status**
+- Completed: cancellation-aware NDJSON fallback and shared batch iteration.
+
 ---
 
 ### Phase 5: Polars execution control as a downstream tool
@@ -265,6 +293,10 @@ FastAPI/FastMCP transport behavior
 - Polars execution is deterministic and does not bypass DuckDB.
 - Streaming and optimization choices are explicitly configured.
 
+**Status**
+- Completed: DuckDB relation plans honor `result_engine="polars"` and delegate
+  streaming to `PolarsPlanAdapter` when enabled.
+
 ---
 
 ### Phase 6: Arrow conversion and export serialization consolidation
@@ -282,6 +314,9 @@ FastAPI/FastMCP transport behavior
 **Acceptance**
 - Row conversion and export serialization are consistent across adapters.
 
+**Status**
+- Completed: shared Arrow-to-row helpers + NDJSON encoding.
+
 ---
 
 ### Phase 7: FastAPI + FastMCP advanced capabilities
@@ -296,6 +331,11 @@ FastAPI/FastMCP transport behavior
 
 **Acceptance**
 - FastAPI and FastMCP behavior is consistent, cancellable, and typed.
+
+**Status**
+- Completed: MCP tools use dependency-injected context and task config where supported.
+- Completed: explicit background task orchestration for long-running HTTP streaming
+  exports and queries.
 
 ## Cross-Cutting Enhancements
 
@@ -316,15 +356,9 @@ FastAPI/FastMCP transport behavior
   **Mitigation**: Add explicit cancel hooks and thread-safe guards in export
   dispatch.
 
-## Suggested Sequencing
+## Suggested Sequencing (remaining)
 
-1. Phase 2 (filter compiler unification)  
-2. Phase 1 (dataset scanning + metadata consolidation)  
-3. Phase 3 (AST canonicalization + pushdown)  
-4. Phase 6 (conversion + export consolidation)  
-5. Phase 4 (streaming hardening)  
-6. Phase 5 (Polars controls)  
-7. Phase 7 (FastAPI/FastMCP advanced controls)
+- None. All phases are complete.
 
 ## Completion Criteria
 

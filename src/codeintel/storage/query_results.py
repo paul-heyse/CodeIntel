@@ -8,7 +8,6 @@ on unchecked casts.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Iterator, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
@@ -21,6 +20,7 @@ from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import DuckDBRelation
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Iterator, Sequence
     from typing import SupportsFloat, SupportsInt
 
 __all__ = [
@@ -384,10 +384,16 @@ def records_from_arrow_table(
     return _normalize_records(records)
 
 
+def _raise_if_cancelled(cancel_check: Callable[[], None] | None) -> None:
+    if cancel_check is not None:
+        cancel_check()
+
+
 def iter_records_from_arrow_reader(
     reader: pa.RecordBatchReader,
     *,
     columns: Sequence[str] | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> Iterator[dict[str, object]]:
     """Yield row dictionaries from a RecordBatchReader with normalized values.
 
@@ -397,6 +403,8 @@ def iter_records_from_arrow_reader(
         Arrow record batch reader to normalize.
     columns
         Optional column subset/order to apply before conversion.
+    cancel_check
+        Optional cancellation hook invoked between batches.
 
     Yields
     ------
@@ -405,6 +413,7 @@ def iter_records_from_arrow_reader(
     """
     batches: Iterable[pa.RecordBatch] = reader
     for batch in batches:
+        _raise_if_cancelled(cancel_check)
         yield from records_from_arrow_batch(batch, columns=columns)
 
 
@@ -412,6 +421,7 @@ def iter_records_from_relation(
     relation: DuckDBRelation,
     *,
     columns: Sequence[str] | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> Iterator[dict[str, object]]:
     """Yield row dictionaries from a DuckDB relation.
 
@@ -421,6 +431,8 @@ def iter_records_from_relation(
         DuckDB relation to stream.
     columns
         Optional column subset/order to apply before conversion.
+    cancel_check
+        Optional cancellation hook invoked between batches.
 
     Yields
     ------
@@ -428,13 +440,18 @@ def iter_records_from_relation(
         Normalized row dictionaries with missing values set to None.
     """
     reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    yield from iter_records_from_arrow_reader(reader, columns=columns)
+    yield from iter_records_from_arrow_reader(
+        reader,
+        columns=columns,
+        cancel_check=cancel_check,
+    )
 
 
 def iter_tuples_from_arrow_reader(
     reader: pa.RecordBatchReader,
     *,
     columns: Sequence[str] | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> Iterator[tuple[object, ...]]:
     """Yield tuple rows from a RecordBatchReader.
 
@@ -444,6 +461,8 @@ def iter_tuples_from_arrow_reader(
         Arrow record batch reader to normalize.
     columns
         Optional column subset/order to apply before conversion.
+    cancel_check
+        Optional cancellation hook invoked between batches.
 
     Yields
     ------
@@ -457,6 +476,7 @@ def iter_tuples_from_arrow_reader(
     """
     batches: Iterable[pa.RecordBatch] = reader
     for batch in batches:
+        _raise_if_cancelled(cancel_check)
         if batch.num_rows == 0:
             continue
         column_names = list(batch.schema.names) if columns is None else list(columns)
@@ -473,6 +493,7 @@ def iter_tuples_from_relation(
     relation: DuckDBRelation,
     *,
     columns: Sequence[str] | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> Iterator[tuple[object, ...]]:
     """Yield tuple rows from a DuckDB relation.
 
@@ -482,6 +503,8 @@ def iter_tuples_from_relation(
         DuckDB relation to stream.
     columns
         Optional column subset/order to apply before conversion.
+    cancel_check
+        Optional cancellation hook invoked between batches.
 
     Yields
     ------
@@ -489,13 +512,18 @@ def iter_tuples_from_relation(
         Row tuples in column order.
     """
     reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    yield from iter_tuples_from_arrow_reader(reader, columns=columns)
+    yield from iter_tuples_from_arrow_reader(
+        reader,
+        columns=columns,
+        cancel_check=cancel_check,
+    )
 
 
 def records_from_arrow_reader(
     reader: pa.RecordBatchReader,
     *,
     columns: Sequence[str] | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> list[dict[str, object]]:
     """Convert an Arrow RecordBatchReader to row dictionaries with normalized values.
 
@@ -505,22 +533,32 @@ def records_from_arrow_reader(
         Arrow record batch reader to normalize.
     columns
         Optional column subset/order to apply before conversion.
+    cancel_check
+        Optional cancellation hook invoked between batches.
 
     Returns
     -------
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    return list(iter_records_from_arrow_reader(reader, columns=columns))
+    return list(
+        iter_records_from_arrow_reader(reader, columns=columns, cancel_check=cancel_check)
+    )
 
 
-def records_from_relation(relation: DuckDBRelation) -> list[dict[str, object]]:
+def records_from_relation(
+    relation: DuckDBRelation,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+) -> list[dict[str, object]]:
     """Convert a DuckDB relation to row dictionaries with normalized values.
 
     Parameters
     ----------
     relation
         DuckDB relation to materialize into row dictionaries.
+    cancel_check
+        Optional cancellation hook invoked between batches.
 
     Returns
     -------
@@ -528,7 +566,7 @@ def records_from_relation(relation: DuckDBRelation) -> list[dict[str, object]]:
         List of row dictionaries with missing values set to None.
     """
     reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    return records_from_arrow_reader(reader)
+    return records_from_arrow_reader(reader, cancel_check=cancel_check)
 
 
 def _normalize_records(records: list[dict[str, object]]) -> list[dict[str, object]]:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
+import sqlglot.expressions as exp
 
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
@@ -37,6 +38,7 @@ from codeintel.storage.metadata import (
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogProvider, SchemaCatalogTracking
 from codeintel.storage.validation import (
     ContractValidationMode,
@@ -80,22 +82,31 @@ class MemoryGatewayOptions:
 
 def _registry_has_schemas(con: duckdb.DuckDBPyConnection) -> bool:
     registry_ref = meta_table_ref("metadata.table_schema_registry")
-    filter_clause = (
-        "AND ("
-        "registry.inference_status IN ('inferred', 'override') "
-        "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
-        ")"
+    registry_table = exp.alias_(table_expr_from_ref(registry_ref), "registry", table=True)
+    registry_filter = exp.or_(
+        exp.In(
+            this=exp.column("inference_status", table="registry"),
+            expressions=[
+                exp.Literal.string("inferred"),
+                exp.Literal.string("override"),
+            ],
+        ),
+        exp.In(
+            this=exp.column("derivation_kind", table="registry"),
+            expressions=[
+                exp.Literal.string("inferred_relation"),
+                exp.Literal.string("view_inferred"),
+            ],
+        ),
+    )
+    query = (
+        exp.select(exp.Literal.number(1))
+        .from_(registry_table)
+        .where(registry_filter)
+        .limit(1)
     )
     try:
-        row = con.execute(
-            f"""
-            SELECT 1
-            FROM {registry_ref} AS registry
-            WHERE 1 = 1
-            {filter_clause}
-            LIMIT 1
-            """
-        ).fetchone()
+        row = con.execute(render_sql_duckdb(query)).fetchone()
     except (duckdb.Error, RuntimeError, TypeError, ValueError):
         return False
     return row is not None

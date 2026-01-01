@@ -14,6 +14,7 @@ from codeintel.serving.semantic.filter_compiler import (
 )
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.sqlglot_tools import canonicalize_select_duckdb, ensure_ast_capability
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -28,8 +29,9 @@ class SqlglotQueryBuilderError(ValueError):
 def build_sqlglot_query(
     *,
     spec: SemanticQuerySpec,
-    allowed_columns: frozenset[str],
-    column_types: Mapping[str, ColumnType] | None = None,
+    allowed_anonymous_functions: frozenset[str] | None = None,
+    allow_aggregates: bool = False,
+    log_context: str = "serving_query_ast",
 ) -> exp.Select:
     """Build a SQLGlot expression for a semantic query spec.
 
@@ -37,10 +39,12 @@ def build_sqlglot_query(
     ----------
     spec
         Semantic query spec to translate into SQLGlot expressions.
-    allowed_columns
-        Columns permitted for selection, filtering, and ordering.
-    column_types
-        Optional column type mapping for operator validation.
+    allowed_anonymous_functions
+        Anonymous functions permitted in the query AST (None for default enforcement).
+    allow_aggregates
+        Whether aggregate functions are permitted in the AST.
+    log_context
+        Context label for AST capability warnings and logs.
 
     Returns
     -------
@@ -52,6 +56,8 @@ def build_sqlglot_query(
     SqlglotQueryBuilderError
         If pagination is invalid, columns are unknown, or filters cannot be compiled.
     """
+    allowed_columns = spec.allowed_columns
+    column_types = spec.column_types
     _validate_pagination(limit=spec.limit, offset=spec.offset)
 
     for col in spec.columns:
@@ -89,7 +95,14 @@ def build_sqlglot_query(
         if spec.offset:
             expr = expr.offset(spec.offset)
 
-    return expr
+    canonical = canonicalize_select_duckdb(expr)
+    ensure_ast_capability(
+        canonical,
+        allowed_anonymous_functions=allowed_anonymous_functions,
+        allow_aggregates=allow_aggregates,
+        log_context=log_context,
+    )
+    return canonical
 
 
 def _validate_pagination(*, limit: int, offset: int) -> None:

@@ -8,10 +8,7 @@ from typing import TYPE_CHECKING
 from codeintel.serving.semantic.duckdb_relation_builder import validate_query_ast
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
-from codeintel.storage.sqlglot_tools import (
-    canonicalize_select_duckdb,
-    ensure_ast_capability,
-)
+from codeintel.storage.sqlglot_tools import canonicalize_select_duckdb
 
 if TYPE_CHECKING:
     from sqlglot import exp
@@ -73,16 +70,11 @@ def build_serving_query(*, spec: SemanticQuerySpec) -> ServingQuery:
     """
     ast = build_sqlglot_query(
         spec=spec,
-        allowed_columns=spec.allowed_columns,
-        column_types=spec.column_types,
-    )
-    canonical = normalize_serving_ast(ast)
-    ensure_ast_capability(
-        canonical,
         allowed_anonymous_functions=_ALLOWED_ANONYMOUS_FUNCTIONS,
         allow_aggregates=False,
         log_context="serving_query_ast",
     )
+    canonical = normalize_serving_ast(ast)
     validate_query_ast(
         ast=canonical,
         allowed_columns=spec.allowed_columns,

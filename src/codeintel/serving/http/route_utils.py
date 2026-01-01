@@ -66,6 +66,7 @@ async def run_in_threadpool_with_metrics[T](
     context: ThreadpoolMetricsContext[T],
     fn: Callable[..., T],
     *args: object,
+    emit_metrics: bool = True,
     **kwargs: object,
 ) -> T:
     """Run a blocking operation in a threadpool and schedule query metrics.
@@ -78,6 +79,8 @@ async def run_in_threadpool_with_metrics[T](
         Blocking callable to execute in a threadpool.
     *args
         Positional arguments forwarded to `fn`.
+    emit_metrics
+        Whether to schedule metrics logging for the operation.
     **kwargs
         Keyword arguments forwarded to `fn`.
 
@@ -131,6 +134,7 @@ async def run_in_threadpool_with_metrics[T](
     finally:
         duration_ms = (time.perf_counter() - start) * 1000
         exc_type, _, _ = sys.exc_info()
+    if emit_metrics:
         if exc_type is None and not isinstance(result, _UnsetResult):
             schedule_query_metrics(
                 context.background,

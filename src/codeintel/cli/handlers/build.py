@@ -11,7 +11,9 @@ import shutil
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from enum import Enum
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -49,6 +51,7 @@ from codeintel.build.state import BuildState, StateValidationOptions, StateValid
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     BuildAssetsResult,
+    BuildBootstrapSuiteResult,
     BuildDiffResult,
     BuildExplainResult,
     BuildHistoryResult,
@@ -79,6 +82,7 @@ from codeintel.cli.handlers.runtime_helpers import (
 from codeintel.cli.handlers.tag_filters import filter_targets_by_tags, parse_tag_filters
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.core.manifests import DatasetSuiteManifest
 from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.runtime import flush_observability
@@ -94,6 +98,7 @@ from codeintel.observability.teardown import (
 )
 from codeintel.runtime.compose import compose_runtime
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 from codeintel.storage.validation import ContractValidationMode
@@ -162,6 +167,16 @@ class TargetScope(Enum):
 _VALID_MODULES: tuple[str, ...] = ("ingestion", "graphs", "analytics", "export", "views")
 _CACHE_LOG_KEY_TUPLE_LEN: int = 2
 _PILOT_TARGET_TOKEN = "@pilot"
+_P0_INDEX_SUITE_TARGETS: tuple[str, ...] = (
+    "modules",
+    "ast",
+    "cst",
+    "scip_proto",
+    "scip",
+    "goids",
+    "scip_resolution",
+    "tree_sitter_index",
+)
 
 
 def _load_pilot_targets() -> list[str]:
@@ -352,6 +367,59 @@ def _resolve_domain_for_goals(goals: Sequence[str], catalog: DagCatalog) -> str 
         if len(non_export) == 1:
             return next(iter(non_export))
     return None
+
+
+def _resolve_bootstrap_targets(catalog: DagCatalog) -> tuple[list[str], list[str]]:
+    available: list[str] = []
+    missing: list[str] = []
+    for target in _P0_INDEX_SUITE_TARGETS:
+        if target in catalog.targets:
+            available.append(target)
+        else:
+            missing.append(target)
+    return available, missing
+
+
+def _collect_suite_manifest_paths(
+    catalog: DagCatalog,
+    *,
+    dataset_root: Path,
+    snapshot_id: str,
+    targets: Sequence[str],
+) -> tuple[dict[str, str], list[str]]:
+    manifest_paths: dict[str, str] = {}
+    missing: set[str] = set()
+    for target in targets:
+        outputs = catalog.table_outputs_by_target.get(target, ())
+        for output in outputs:
+            table_key = output.key
+            if table_key in manifest_paths:
+                continue
+            manifest_path = dataset_manifest_path(
+                dataset_root=dataset_root,
+                table_key=table_key,
+                snapshot_id=snapshot_id,
+            )
+            if manifest_path.is_file():
+                manifest_paths[table_key] = str(manifest_path.resolve())
+            else:
+                missing.add(table_key)
+    return manifest_paths, sorted(missing)
+
+
+def _package_version(name: str) -> str:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _tool_versions() -> dict[str, str]:
+    return {
+        "duckdb": _package_version("duckdb"),
+        "pyarrow": _package_version("pyarrow"),
+        "sqlglot": _package_version("sqlglot"),
+    }
 
 
 def _group_targets_by_status(
@@ -1054,6 +1122,166 @@ def _validate_build_run_params(
         error = fail_invalid_target_selection("--workers/--max-workers must be a positive integer.")
 
     return error
+
+
+@dataclass(frozen=True, slots=True)
+class _BootstrapSuiteContext:
+    runtime: ResolvedRuntime
+    output_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _BootstrapSuitePlan:
+    context: _BootstrapSuiteContext
+    runtime_bundle: RuntimeBundle
+    env: BuildEnv
+    goals: tuple[str, ...]
+    missing_targets: tuple[str, ...]
+    execution_args: BuildExecutionArgs
+
+
+def _bootstrap_suite_context(ctx: CommandContext) -> _BootstrapSuiteContext:
+    runtime = ctx.runtime
+    output_file = ctx.params.get_str("output_file")
+    output_path = (
+        Path(output_file)
+        if output_file
+        else runtime.paths.build_dir / "bootstrap" / "index_suite.json"
+    )
+    return _BootstrapSuiteContext(runtime=runtime, output_path=output_path)
+
+
+def _bootstrap_suite_plan(
+    context: _BootstrapSuiteContext,
+    *,
+    gateway: StorageGateway,
+) -> CliResult[BuildBootstrapSuiteResult] | _BootstrapSuitePlan:
+    runtime_bundle, env = compose_cli_runtime_bundle_with_env(
+        runtime=context.runtime,
+        gateway=gateway,
+    )
+    goals, missing_targets = _resolve_bootstrap_targets(runtime_bundle.catalog)
+    if not goals:
+        return fail_invalid_targets("No P0 index suite targets are available in the catalog.")
+    domain = _resolve_domain_for_goals(goals, runtime_bundle.catalog)
+    execution_args = BuildExecutionArgs(
+        goals=goals,
+        domain=domain,
+        force=None,
+        run_mode=RunMode.EXECUTE,
+        validate_outputs=False,
+        publish_serving_snapshot=False,
+        parallel_backend="sequential",
+        max_workers=None,
+        enable_cache=True,
+        cache_dir=None,
+        clear_cache=False,
+        cache_report=False,
+        validation_mode=ContractValidationMode.LENIENT,
+        plugins_enabled=None,
+        plugins_disabled=None,
+        allow_workspace_modules=None,
+    )
+    return _BootstrapSuitePlan(
+        context=context,
+        runtime_bundle=runtime_bundle,
+        env=env,
+        goals=tuple(goals),
+        missing_targets=tuple(missing_targets),
+        execution_args=execution_args,
+    )
+
+
+def _execute_bootstrap_suite(
+    plan: _BootstrapSuitePlan,
+    *,
+    gateway: StorageGateway,
+) -> CliResult[BuildBootstrapSuiteResult] | _BuildExecutionOutcome:
+    try:
+        outcome = _execute_build_outcome(
+            plan.context.runtime,
+            plan.execution_args,
+            gateway=gateway,
+        )
+    except Exception as exc:
+        LOG.exception("build.bootstrap_index_suite.error")
+        return fail_execution_failed("build", str(exc))
+    if outcome is None:
+        return fail_execution_failed("build", "Bootstrap index suite did not execute targets.")
+    if outcome.result.failed_targets:
+        failed = ", ".join(outcome.result.failed_targets)
+        return fail_execution_failed(
+            "build",
+            f"Bootstrap index suite failed for targets: {failed}",
+        )
+    return outcome
+
+
+def _bootstrap_suite_manifest_paths(
+    plan: _BootstrapSuitePlan,
+) -> CliResult[BuildBootstrapSuiteResult] | dict[str, str]:
+    manifest_paths, missing_manifests = _collect_suite_manifest_paths(
+        catalog=plan.runtime_bundle.catalog,
+        dataset_root=plan.env.paths.dataset_root_dir,
+        snapshot_id=plan.context.runtime.snapshot.commit,
+        targets=plan.goals,
+    )
+    if missing_manifests:
+        message = "Missing dataset manifests for P0 suite: "
+        return fail_execution_failed("build", f"{message}{', '.join(missing_manifests)}")
+    return manifest_paths
+
+
+def _bootstrap_suite_result(
+    plan: _BootstrapSuitePlan,
+    manifest_paths: dict[str, str],
+) -> BuildBootstrapSuiteResult:
+    suite_manifest = DatasetSuiteManifest(
+        suite_manifest_version=1,
+        suite_kind="p0_index_suite",
+        repo=plan.context.runtime.snapshot.repo,
+        commit=plan.context.runtime.snapshot.commit,
+        created_at=datetime.now(UTC).isoformat(),
+        dataset_manifest_paths=manifest_paths,
+        tool_versions=_tool_versions(),
+    )
+    suite_manifest.write_json(plan.context.output_path)
+    return BuildBootstrapSuiteResult(
+        suite_manifest_path=str(plan.context.output_path),
+        targets=list(plan.goals),
+        dataset_manifest_paths=manifest_paths,
+        missing_targets=list(plan.missing_targets),
+    )
+
+
+def build_bootstrap_index_suite_handler(
+    ctx: CommandContext,
+) -> CliResult[BuildBootstrapSuiteResult]:
+    """Bootstrap the P0 index suite and write a suite manifest.
+
+    Returns
+    -------
+    CliResult[BuildBootstrapSuiteResult]
+        Bootstrap suite result or an error result.
+    """
+    try:
+        context = _bootstrap_suite_context(ctx)
+    except ResolutionError as exc:
+        return fail_project_error("build", str(exc))
+
+    with runtime_gateway(context.runtime, read_only=False) as gateway:
+        plan = _bootstrap_suite_plan(context, gateway=gateway)
+        if isinstance(plan, CliResult):
+            return plan
+        outcome = _execute_bootstrap_suite(plan, gateway=gateway)
+        if isinstance(outcome, CliResult):
+            return outcome
+        manifest_paths = _bootstrap_suite_manifest_paths(plan)
+        if isinstance(manifest_paths, CliResult):
+            return manifest_paths
+        result = _bootstrap_suite_result(plan, manifest_paths)
+
+    return CliResult.ok(result)
 
 
 def build_run_handler(
@@ -2725,6 +2953,7 @@ __all__ = [
     "RunMode",
     "TargetScope",
     "build_assets_handler",
+    "build_bootstrap_index_suite_handler",
     "build_decision_trace_handler",
     "build_diff_handler",
     "build_explain_handler",

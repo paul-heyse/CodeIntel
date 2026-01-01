@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING
 
 from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
 
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
@@ -21,6 +22,8 @@ from codeintel.serving.semantic.models import SemanticViewDescriptionResponse
 
 if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
+
+_CURRENT_CONTEXT = CurrentContext()
 
 
 def register_describe_tool(
@@ -38,7 +41,11 @@ def register_describe_tool(
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEMANTIC, TAG_READ},
     )
-    async def semantic_describe(view_id: str, *, ctx: Context) -> SemanticViewDescriptionResponse:
+    async def semantic_describe(
+        view_id: str,
+        *,
+        ctx: Context = _CURRENT_CONTEXT,
+    ) -> SemanticViewDescriptionResponse:
         start = time.perf_counter()
         await ctx.info(f"Describing view: {view_id}")
         await maybe_report_progress(ctx, settings=settings, progress=10, total=100)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,7 +24,7 @@ from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
 from codeintel.build.tabular.types import TabularInput
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from hamilton.function_modifiers.base import NodeTransformLifecycle
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
@@ -72,8 +72,36 @@ def _normalize_tags(tags: Mapping[TagKey, TagValue]) -> dict[str, str]:
     return normalized
 
 
+def _normalize_seeded_datasets(
+    ci_seeded_datasets: Sequence[Mapping[str, str]] | None,
+) -> dict[str, dict[str, str]]:
+    seeded: dict[str, dict[str, str]] = {}
+    for spec in ci_seeded_datasets or ():
+        if not isinstance(spec, Mapping):
+            msg = "Seeded dataset specs must be mappings"
+            raise TypeError(msg)
+        table_key = spec.get("table_key")
+        repo = spec.get("repo")
+        commit = spec.get("commit")
+        if not isinstance(table_key, str) or not table_key:
+            msg = "Seeded dataset spec table_key must be a non-empty string"
+            raise ValueError(msg)
+        if not isinstance(repo, str) or not repo:
+            msg = f"Seeded dataset spec missing repo for {table_key}"
+            raise ValueError(msg)
+        if not isinstance(commit, str) or not commit:
+            msg = f"Seeded dataset spec missing commit for {table_key}"
+            raise ValueError(msg)
+        if table_key in seeded:
+            msg = f"Duplicate seeded dataset spec for {table_key}"
+            raise ValueError(msg)
+        seeded[table_key] = {"repo": repo, "commit": commit}
+    return seeded
+
+
 def _decorate_dataset_nodes(
     ci_support_datasets: Sequence[Mapping[str, str]] | None = None,
+    ci_seeded_datasets: Sequence[Mapping[str, str]] | None = None,
     *,
     ci_support_include_dataset_nodes: bool = True,
 ) -> NodeTransformLifecycle:
@@ -82,6 +110,13 @@ def _decorate_dataset_nodes(
     if not ci_support_datasets:
         return _ParameterizeWithTags(tags_by_output={})
 
+    seeded_by_table = _normalize_seeded_datasets(ci_seeded_datasets)
+    supported_keys = {spec["table_key"] for spec in ci_support_datasets}
+    unsupported = set(seeded_by_table).difference(supported_keys)
+    if unsupported:
+        details = ", ".join(sorted(unsupported))
+        msg = f"Seeded datasets not in support outputs: {details}"
+        raise ValueError(msg)
     mapping: dict[str, dict[str, ParametrizedDependency]] = {}
     tags_by_output: dict[str, dict[str, str]] = {}
     for spec in ci_support_datasets:
@@ -89,11 +124,20 @@ def _decorate_dataset_nodes(
         producer_target = spec["producer_target"]
         domain = spec["domain"]
         node_name = dataset_node(table_key)
-        mapping[node_name] = {
-            "record": source(target_node(producer_target)),
-            "table_key": value(table_key),
-            "producer_target": value(producer_target),
-        }
+        seed_spec = seeded_by_table.get(table_key)
+        if seed_spec is None:
+            mapping[node_name] = {
+                "record": source(target_node(producer_target)),
+                "table_key": value(table_key),
+                "producer_target": value(producer_target),
+            }
+        else:
+            mapping[node_name] = {
+                "table_key": value(table_key),
+                "producer_target": value(producer_target),
+                "repo": value(seed_spec["repo"]),
+                "commit": value(seed_spec["commit"]),
+            }
         tags_by_output[node_name] = _normalize_tags(
             TagSpec.for_dataset(
                 domain=domain,
@@ -107,9 +151,11 @@ def _decorate_dataset_nodes(
 
 @resolve_from_config(decorate_with=_decorate_dataset_nodes)
 def dataset_ref(
-    record: TargetRunRecord,
     table_key: str,
     producer_target: str,
+    record: TargetRunRecord | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
 ) -> DatasetRef:
     """Return DatasetRef for a target output.
 
@@ -123,17 +169,28 @@ def dataset_ref(
     ValueError
         If the dataset reference is missing for the producer target.
     """
-    ds = record.get_dataset(table_key)
-    if ds is None:
-        msg = f"Missing DatasetRef for {table_key} from {producer_target}"
+    if record is not None:
+        ds = record.get_dataset(table_key)
+        if ds is None:
+            msg = f"Missing DatasetRef for {table_key} from {producer_target}"
+            raise ValueError(msg)
+        if isinstance(ds, DatasetRef):
+            return ds
+        return DatasetRef(
+            table_key=ds.table_key,
+            repo=ds.repo,
+            commit=ds.commit,
+            row_count=ds.row_count,
+            source_target=producer_target,
+        )
+
+    if not repo or not commit:
+        msg = f"Seeded DatasetRef missing repo/commit for {table_key}"
         raise ValueError(msg)
-    if isinstance(ds, DatasetRef):
-        return ds
     return DatasetRef(
-        table_key=ds.table_key,
-        repo=ds.repo,
-        commit=ds.commit,
-        row_count=ds.row_count,
+        table_key=table_key,
+        repo=repo,
+        commit=commit,
         source_target=producer_target,
     )
 

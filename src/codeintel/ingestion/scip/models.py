@@ -35,6 +35,8 @@ class ScipDiagnostic:
     start_col: int
     end_line: int
     end_col: int
+    position_encoding: int | None
+    text_document_encoding: str | None
     severity: str
     code: str | None
     message: str

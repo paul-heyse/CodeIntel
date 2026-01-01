@@ -423,6 +423,18 @@ BUILD_IMPACT_FORMAT = OptionSpec(
 
 
 # ---------------------------------------------------------------------------
+# Build bootstrap options
+# ---------------------------------------------------------------------------
+
+BUILD_BOOTSTRAP_OUTPUT = OptionSpec(
+    arg_name="output_file",
+    names=("--output", "-o"),
+    help="Output suite manifest path (default: build/bootstrap/index_suite.json).",
+    env_name="output",
+)
+
+
+# ---------------------------------------------------------------------------
 # Build decision trace options
 # ---------------------------------------------------------------------------
 
@@ -1039,6 +1051,7 @@ __all__ = [
     "BUILD_ASSETS_FORMAT",
     "BUILD_ASSETS_TARGET",
     "BUILD_ASSETS_TYPE",
+    "BUILD_BOOTSTRAP_OUTPUT",
     "BUILD_DECISION_TRACE_OUTPUT",
     "BUILD_DECISION_TRACE_PATH",
     "BUILD_DIFF_ASSET",

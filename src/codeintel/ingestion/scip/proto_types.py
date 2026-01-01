@@ -194,6 +194,7 @@ class DocumentProto(Protocol):
     relative_path: str
     symbols: SymbolListProto
     occurrences: OccurrenceListProto
+    position_encoding: int
 
 
 class DocumentListProto(Protocol):
@@ -247,7 +248,13 @@ class IndexProto(Protocol):
 
     documents: DocumentListProto
     external_symbols: ExternalSymbolListProto
-    metadata: object
+    metadata: MetadataProto
+
+
+class MetadataProto(Protocol):
+    """Protocol for SCIP metadata messages."""
+
+    text_document_encoding: int
 
 
 class IndexFactory(Protocol):
@@ -258,15 +265,43 @@ class IndexFactory(Protocol):
         ...
 
 
+class DocumentFactory(Protocol):
+    """Protocol for a callable that creates DocumentProto instances."""
+
+    def __call__(self) -> DocumentProto:
+        """Instantiate a new DocumentProto."""
+        ...
+
+
+class MetadataFactory(Protocol):
+    """Protocol for a callable that creates MetadataProto instances."""
+
+    def __call__(self) -> MetadataProto:
+        """Instantiate a new MetadataProto."""
+        ...
+
+
+class SymbolInfoFactory(Protocol):
+    """Protocol for a callable that creates SymbolInfoProto instances."""
+
+    def __call__(self) -> SymbolInfoProto:
+        """Instantiate a new SymbolInfoProto."""
+        ...
+
+
 class ScipProtoModule(Protocol):
     """Protocol for generated scip_pb2 modules."""
 
     Index: IndexFactory
+    Metadata: MetadataFactory
+    Document: DocumentFactory
+    SymbolInformation: SymbolInfoFactory
     Severity: object
 
 
 __all__ = [
     "DiagnosticListProto",
+    "DocumentFactory",
     "DocumentListProto",
     "DocumentProto",
     "ExternalSymbolListProto",
@@ -274,6 +309,8 @@ __all__ = [
     "IndexFactory",
     "IndexProto",
     "IntListProto",
+    "MetadataFactory",
+    "MetadataProto",
     "OccurrenceDiagnosticProto",
     "OccurrenceListProto",
     "OccurrenceProto",
@@ -282,6 +319,7 @@ __all__ = [
     "ScipProtoModule",
     "SignatureDocumentationProto",
     "StringListProto",
+    "SymbolInfoFactory",
     "SymbolInfoProto",
     "SymbolListProto",
 ]

@@ -2433,8 +2433,8 @@ def _duckdb_type_for_column(column_type: ColumnType | None) -> DuckDBPyType | No
     if column_type is None:
         return None
     mapping = complex_type_mapping(column_type)
-    if mapping is not None:
-        return duckdb_type_for_column_type(mapping.duckdb_type)
+    if mapping is not None and mapping.duckdb_type is not None:
+        return mapping.duckdb_type
     return duckdb_type_for_column_type(column_type)
 
 

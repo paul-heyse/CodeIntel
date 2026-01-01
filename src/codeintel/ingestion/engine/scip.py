@@ -70,6 +70,10 @@ def _parse_scip_index(
                     occ.range_end_col,
                 ),
                 symbol_roles=occ.symbol_roles,
+                position_encoding=occ.position_encoding,
+                text_document_encoding=occ.text_document_encoding,
+                start_byte=occ.start_byte,
+                end_byte=occ.end_byte,
             )
             for occ in doc.occurrences
         )
@@ -78,6 +82,8 @@ def _parse_scip_index(
                 relative_path=doc.relative_path,
                 symbols=doc.symbols,
                 occurrences=occurrences,
+                position_encoding=doc.position_encoding,
+                text_document_encoding=doc.text_document_encoding,
             )
         )
     return ScipIndexResult.from_documents(tuple(documents), index_scip_path=scip_path)

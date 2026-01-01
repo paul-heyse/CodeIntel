@@ -111,6 +111,16 @@ def build_occurrence_rows(
                 continue
             key = (doc.relative_path, occ.symbol, occ.range_start_line, occ.range_start_col)
             if key not in seen:
+                position_encoding = (
+                    occ.position_encoding
+                    if occ.position_encoding is not None
+                    else doc.position_encoding
+                )
+                text_document_encoding = (
+                    occ.text_document_encoding
+                    if occ.text_document_encoding is not None
+                    else doc.text_document_encoding
+                )
                 seen[key] = {
                     "repo": context.repo,
                     "commit": context.commit,
@@ -121,6 +131,10 @@ def build_occurrence_rows(
                     "end_line": occ.range_end_line,
                     "end_col": occ.range_end_col,
                     "roles": occ.symbol_roles,
+                    "position_encoding": position_encoding,
+                    "text_document_encoding": text_document_encoding,
+                    "start_byte": occ.start_byte,
+                    "end_byte": occ.end_byte,
                     "created_at": context.created_at,
                 }
 
@@ -267,6 +281,8 @@ def build_diagnostic_rows(
             "start_col": diag.start_col,
             "end_line": diag.end_line,
             "end_col": diag.end_col,
+            "position_encoding": diag.position_encoding,
+            "text_document_encoding": diag.text_document_encoding,
             "severity": diag.severity,
             "code": diag.code,
             "message": diag.message,

@@ -16,20 +16,38 @@ class CstCaptureConfig:
     snippet_limit: int = 200
 
 
-class LineIndexedSource:
-    """Precompute line offsets for efficient span slicing."""
+@dataclass(frozen=True)
+class NormalizedSpan:
+    """Normalized span with 0-based line/column and optional byte offsets."""
 
-    def __init__(self, source: str) -> None:
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+
+
+class LineIndexedSource:
+    """Precompute line/byte offsets for efficient span slicing."""
+
+    def __init__(self, source: str, source_bytes: bytes | None = None) -> None:
         self.source = source
+        self.source_bytes = source_bytes if source_bytes is not None else source.encode("utf-8")
         self.line_offsets: list[int] = []
+        self.byte_offsets: list[int] = []
+        self.lines = source.splitlines(keepends=True)
         offset = 0
-        for line in source.splitlines(keepends=True):
+        byte_offset = 0
+        for line in self.lines:
             self.line_offsets.append(offset)
+            self.byte_offsets.append(byte_offset)
             offset += len(line)
+            byte_offset += len(line.encode("utf-8"))
 
     def slice(self, start_line: int, start_col: int, end_line: int, end_col: int) -> str:
         """
-        Return substring for a span; empty string on bounds errors.
+        Return substring for a 0-based span; empty string on bounds errors.
 
         Returns
         -------
@@ -37,11 +55,87 @@ class LineIndexedSource:
             Extracted substring or empty string when indices are invalid.
         """
         try:
-            start_idx = self.line_offsets[start_line - 1] + start_col
-            end_idx = self.line_offsets[end_line - 1] + end_col
+            start_idx = self.line_offsets[start_line] + start_col
+            end_idx = self.line_offsets[end_line] + end_col
             return self.source[start_idx:end_idx]
         except (IndexError, ValueError):
             return ""
+
+    def line_snippet(self, line: int) -> str | None:
+        """Return a single 0-based line without trailing newline characters.
+
+        Returns
+        -------
+        str | None
+            Line text or None when out of bounds.
+        """
+        if line < 0:
+            return None
+        try:
+            return self.lines[line].rstrip("\r\n")
+        except IndexError:
+            return None
+
+    def span_from_range(self, pos: metadata.CodeRange) -> NormalizedSpan:
+        """Return normalized span data for a metadata range.
+
+        Returns
+        -------
+        NormalizedSpan
+            Normalized 0-based span with byte offsets.
+        """
+        start_line = max(pos.start.line - 1, 0)
+        end_line = max(pos.end.line - 1, 0)
+        start_col = pos.start.column
+        end_col = pos.end.column
+        start_byte, end_byte = self.byte_span(start_line, start_col, end_line, end_col)
+        return NormalizedSpan(
+            start_line=start_line,
+            start_col=start_col,
+            end_line=end_line,
+            end_col=end_col,
+            start_byte=start_byte,
+            end_byte=end_byte,
+        )
+
+    def byte_span(
+        self,
+        start_line: int,
+        start_col: int,
+        end_line: int,
+        end_col: int,
+    ) -> tuple[int | None, int | None]:
+        """Return byte offsets for the provided 0-based span.
+
+        Returns
+        -------
+        tuple[int | None, int | None]
+            Start and end byte offsets, or None for invalid positions.
+        """
+        return (
+            self.byte_offset(start_line, start_col),
+            self.byte_offset(end_line, end_col),
+        )
+
+    def byte_offset(self, line: int, col: int) -> int | None:
+        """Return UTF-8 byte offset for a 0-based line/column.
+
+        Returns
+        -------
+        int | None
+            Byte offset or None when out of bounds.
+        """
+        if line < 0 or col < 0:
+            return None
+        try:
+            line_text = self.lines[line]
+            base = self.byte_offsets[line]
+        except IndexError:
+            return None
+        if col > len(line_text):
+            return None
+        prefix = line_text[:col]
+        return base + len(prefix.encode("utf-8"))
 
 
 class CstCaptureVisitor(cst.CSTVisitor):
@@ -55,10 +149,11 @@ class CstCaptureVisitor(cst.CSTVisitor):
         module_name: str,
         source: str,
         config: CstCaptureConfig,
+        source_bytes: bytes | None = None,
     ) -> None:
         self.rel_path = rel_path
         self.module_name = module_name
-        self.source_index = LineIndexedSource(source)
+        self.source_index = LineIndexedSource(source, source_bytes)
         self.config = config
 
         self.rows: list[
@@ -113,12 +208,17 @@ class CstCaptureVisitor(cst.CSTVisitor):
 
         start = pos.start
         end = pos.end
-        span = {"start": [start.line, start.column], "end": [end.line, end.column]}
-        snippet = self.source_index.slice(start.line, start.column, end.line, end.column)
+        start_line = max(start.line - 1, 0)
+        end_line = max(end.line - 1, 0)
+        span = {"start": [start_line, start.column], "end": [end_line, end.column]}
+        snippet = self.source_index.slice(start_line, start.column, end_line, end.column)
 
         parents = tuple(self._parent_kinds[:-1])
         qnames = (self._current_qualname(),)
-        node_id = f"{self.rel_path}:{kind}:{start.line}:{start.column}:{end.line}:{end.column}"
+        node_id = (
+            f"{self.rel_path}:{kind}:"
+            f"{start_line}:{start.column}:{end_line}:{end.column}"
+        )
 
         if node_id in self._seen_ids:
             return

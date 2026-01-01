@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
+from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
@@ -41,6 +42,7 @@ def ndjson_response(
     *,
     filename: str | None = None,
     headers: Mapping[str, str] | None = None,
+    background: BackgroundTask | None = None,
 ) -> StreamingResponse:
     """Create a JSONL streaming response.
 
@@ -52,6 +54,8 @@ def ndjson_response(
         Optional filename for Content-Disposition header.
     headers
         Optional extra response headers.
+    background
+        Optional background task run after the response completes.
 
     Returns
     -------
@@ -67,6 +71,7 @@ def ndjson_response(
         ndjson_stream(rows),
         media_type=mime_type_for_export_format("jsonl"),
         headers=response_headers,
+        background=background,
     )
 
 
@@ -107,6 +112,7 @@ class ArrowIpcResponseOptions:
     batch_metadata: Mapping[str, object] | None = None
     options: pa.ipc.IpcWriteOptions | None = None
     cancel_check: Callable[[], None] | None = None
+    background: BackgroundTask | None = None
 
 
 def arrow_ipc_response(
@@ -135,9 +141,10 @@ def arrow_ipc_response(
             headers=resolved.headers,
         )
         return StreamingResponse(
-            iter_ndjson_bytes_from_reader(source),
+            iter_ndjson_bytes_from_reader(source, cancel_check=resolved.cancel_check),
             media_type=mime_type_for_export_format("jsonl"),
             headers=response_headers,
+            background=resolved.background,
         )
     response_headers = _response_headers(
         filename=resolved.filename,
@@ -157,6 +164,7 @@ def arrow_ipc_response(
         payload,
         media_type=ARROW_IPC_STREAM_MIME,
         headers=response_headers,
+        background=resolved.background,
     )
 
 

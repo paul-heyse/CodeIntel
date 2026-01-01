@@ -34,12 +34,10 @@ import logging
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, TypeVar, overload
+from pathlib import Path
+from typing import Any, TypeVar, overload
 
 from codeintel.build.parameters import TargetParameters
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _T = TypeVar("_T")
 
@@ -202,6 +200,75 @@ class BuildConfig:
                 return default
 
         return current
+
+    def seed_suite_manifest_path(self) -> Path | None:
+        """Return the seed suite manifest path if configured.
+
+        Returns
+        -------
+        Path | None
+            Parsed manifest path or None when unset.
+
+        Raises
+        ------
+        TypeError
+            If the configured value is not a string path.
+        """
+        raw = self.get("hamilton.seed_suite_manifest_path")
+        if raw is None:
+            raw = self.get("seed_suite_manifest_path")
+        if raw is None:
+            return None
+        if isinstance(raw, Path):
+            return raw.expanduser()
+        if isinstance(raw, str) and raw:
+            return Path(raw).expanduser()
+        msg = "hamilton.seed_suite_manifest_path must be a string path"
+        raise TypeError(msg)
+
+    def seeded_datasets(self) -> tuple[dict[str, str], ...]:
+        """Return explicitly configured seeded datasets.
+
+        Returns
+        -------
+        tuple[dict[str, str], ...]
+            Seeded dataset specs with table_key/repo/commit fields.
+
+        Raises
+        ------
+        TypeError
+            If the configuration is not a list of mappings.
+        """
+        raw = self.get("hamilton.ci_seeded_datasets")
+        if raw is None:
+            raw = self.get("ci_seeded_datasets")
+        if raw is None:
+            return ()
+        if not isinstance(raw, list):
+            msg = "hamilton.ci_seeded_datasets must be a list of mappings"
+            raise TypeError(msg)
+        parsed: list[dict[str, str]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                msg = "hamilton.ci_seeded_datasets entries must be mappings"
+                raise TypeError(msg)
+            table_key = _require_str_field(
+                entry,
+                "table_key",
+                ctx="hamilton.ci_seeded_datasets",
+            )
+            repo = _require_str_field(
+                entry,
+                "repo",
+                ctx="hamilton.ci_seeded_datasets",
+            )
+            commit = _require_str_field(
+                entry,
+                "commit",
+                ctx="hamilton.ci_seeded_datasets",
+            )
+            parsed.append({"table_key": table_key, "repo": repo, "commit": commit})
+        return tuple(parsed)
 
     def raw_data(self) -> dict[str, Any]:
         """Return a shallow copy of raw TOML data.
@@ -503,3 +570,11 @@ def get_default_parameters(target_name: str) -> TargetParameters:
     """
     defaults = DEFAULT_PARAMETERS.get(target_name, {})
     return TargetParameters(defaults)
+
+
+def _require_str_field(data: Mapping[str, object], key: str, *, ctx: str) -> str:
+    raw = data.get(key)
+    if isinstance(raw, str) and raw:
+        return raw
+    msg = f"{ctx} missing {key}"
+    raise TypeError(msg)

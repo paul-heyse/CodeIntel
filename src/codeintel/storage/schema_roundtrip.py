@@ -9,10 +9,9 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-import sqlglot
 import sqlglot.expressions as exp
-from sqlglot.errors import ParseError
 
+from codeintel.core.schemas.type_mappings import duckdb_pytype_from_column_type
 from codeintel.storage.constants import DUCKDB_DIALECT
 
 if TYPE_CHECKING:
@@ -28,22 +27,42 @@ def _validate_identifier(identifier: str, *, kind: str) -> str:
     return identifier
 
 
-def _column_defs_sql(table: TableSchema) -> str:
-    parts: list[str] = []
+def _column_defs(table: TableSchema) -> list[exp.Expression]:
+    expressions: list[exp.Expression] = []
     for column in table.columns:
         _validate_identifier(column.name, kind="column")
-        column_sql = f"{column.name} {column.type}"
+        duckdb_type = duckdb_pytype_from_column_type(column.type)
+        type_sql = str(duckdb_type) if duckdb_type is not None else column.type
+        try:
+            data_type = exp.DataType.build(type_sql, dialect=DUCKDB_DIALECT)
+        except (TypeError, ValueError) as exc:
+            msg = f"Unsupported column type for DDL: {column.type!r}"
+            raise ValueError(msg) from exc
+        constraints: list[exp.ColumnConstraint] = []
         if not column.nullable:
-            column_sql += " NOT NULL"
-        parts.append(column_sql)
+            constraints.append(exp.ColumnConstraint(kind=exp.NotNullColumnConstraint()))
+        expressions.append(
+            exp.ColumnDef(
+                this=exp.to_identifier(column.name),
+                kind=data_type,
+                constraints=constraints,
+            )
+        )
 
     if table.primary_key:
         for key in table.primary_key:
             _validate_identifier(key, kind="primary key column")
-        pk_sql = f"PRIMARY KEY ({', '.join(table.primary_key)})"
-        parts.append(pk_sql)
+        pk_exprs = [
+            exp.Ordered(this=exp.column(key), nulls_first=False) for key in table.primary_key
+        ]
+        expressions.append(
+            exp.PrimaryKey(
+                expressions=pk_exprs,
+                include=exp.IndexParameters(),
+            )
+        )
 
-    return ", ".join(parts)
+    return expressions
 
 
 def create_table_ast(
@@ -68,32 +87,25 @@ def create_table_ast(
     sqlglot.expressions.Create
         SQLGlot AST for table creation.
 
-    Raises
-    ------
-    ValueError
-        If the generated DDL cannot be parsed or is invalid.
-    TypeError
-        If the generated DDL is not a CREATE statement.
     """
     _validate_identifier(table.schema, kind="schema")
     _validate_identifier(table.name, kind="table")
-    qualifier = f"{table.schema}.{table.name}"
+    table_expr = exp.Table(
+        this=exp.to_identifier(table.name),
+        db=exp.to_identifier(table.schema),
+        catalog=exp.to_identifier(catalog) if catalog is not None else None,
+    )
     if catalog is not None:
         _validate_identifier(catalog, kind="catalog")
-        qualifier = f"{catalog}.{qualifier}"
 
-    ddl_prefix = "CREATE TABLE IF NOT EXISTS" if if_not_exists else "CREATE TABLE"
-    column_defs = _column_defs_sql(table)
-    sql = f"{ddl_prefix} {qualifier} ({column_defs})"
-    try:
-        parsed = sqlglot.parse_one(sql, read=DUCKDB_DIALECT)
-    except ParseError as exc:
-        msg = "Failed to parse generated table DDL"
-        raise ValueError(msg) from exc
-    if not isinstance(parsed, exp.Create):
-        msg = "Generated DDL did not produce a CREATE statement"
-        raise TypeError(msg)
-    return parsed
+    return exp.Create(
+        this=exp.Schema(
+            this=table_expr,
+            expressions=_column_defs(table),
+        ),
+        kind="TABLE",
+        exists=if_not_exists,
+    )
 
 
 __all__ = ["create_table_ast"]

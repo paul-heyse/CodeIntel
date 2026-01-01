@@ -76,6 +76,8 @@ Completed
 - `src/codeintel/serving/semantic/polars_query_builder.py` removed.
 - Serving AST capability checks are enforced during query build
   (`src/codeintel/serving/semantic/query_ast.py`).
+- Serving query builder now owns AST canonicalization + capability enforcement
+  (`src/codeintel/serving/semantic/sqlglot_query_builder.py`).
 - DuckDB relation builder expanded to cover non-equi join predicates,
   qualified column references, and date/time/interval expressions
   (`src/codeintel/serving/semantic/duckdb_relation_builder.py`).
@@ -120,17 +122,23 @@ Completed
   `relation.pl()` to keep query execution streaming-first
   (`src/codeintel/storage/query_results.py`, `tools/guardrails.py`,
   `tests/storage/test_query_results.py`).
+- Arrow-to-row conversion and streaming exports now share cancellation-aware
+  helpers for batch readers and NDJSON fallback paths
+  (`src/codeintel/storage/query_results.py`,
+  `src/codeintel/serving/semantic/kernel.py`,
+  `src/codeintel/serving/export/ndjson.py`,
+  `src/codeintel/serving/http/streaming.py`).
+- Legacy filter expressions helper removed
+  (`src/codeintel/storage/queries/expressions.py`,
+  `tests/storage/test_expression_builder.py`).
 
-Outstanding quality gates
-- Full `tools.quality_report` run is currently blocked by an invalid `__all__`
-  in `src/codeintel/core/schemas/generated_rows/__init__.py` and must be rerun
-  after the generated rows module is fixed/regenerated.
+Quality gates
+- Latest `tools.quality_report` run is passing (guardrails warn about missing
+  observations, which is expected in this environment).
 
 Remaining from original plan
 - Functional scope: none. All items in the original scope have been implemented.
-- Quality gates: fix the invalid `__all__` in
-  `src/codeintel/core/schemas/generated_rows/__init__.py` and rerun the full
-  quality report and targeted tests.
+- Quality gates: continue running `tools.quality_report` as part of validation.
 
 Phase status snapshot
 - Phase 0: complete

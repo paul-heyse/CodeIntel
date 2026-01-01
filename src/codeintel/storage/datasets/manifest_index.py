@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.dataset as ds
-import pyarrow.parquet as pq
 
 from codeintel.storage.datasets.contracts import (
     DatasetTuningMetadata,
@@ -22,7 +21,13 @@ from codeintel.storage.datasets.contracts import (
 )
 from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.datasets.parquet_metadata import metadata_from_schema
-from codeintel.storage.datasets.scanning import DatasetScanOptions, build_scanner
+from codeintel.storage.datasets.scanning import (
+    DatasetScanOptions,
+    build_scanner,
+)
+from codeintel.storage.datasets.scanning import (
+    dataset_for_manifest as build_dataset_for_manifest,
+)
 from codeintel.storage.queries.filter_compiler import (
     FilterCompilerError,
     arrow_filter_expression,
@@ -38,9 +43,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType
 
 LOG = logging.getLogger(__name__)
-
-_METADATA_FILENAME = "_metadata"
-_COMMON_METADATA_FILENAME = "_common_metadata"
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,20 +135,7 @@ def dataset_for_manifest(*, manifest: ArrowDatasetManifest, manifest_path: Path)
     pyarrow.dataset.Dataset
         Dataset handle for the manifest.
     """
-    dataset_dir = manifest_path.parent.resolve()
-    partitioning: str | None = "hive" if manifest.partition_columns else None
-    metadata_path = _dataset_metadata_path(dataset_dir)
-    if metadata_path is not None:
-        return ds.parquet_dataset(
-            str(metadata_path),
-            partitioning=partitioning,
-            partition_base_dir=str(dataset_dir),
-        )
-    schema = _schema_from_common_metadata(dataset_dir)
-    if manifest.files:
-        paths = [str(dataset_dir / path) for path in manifest.files]
-        return ds.dataset(paths, format="parquet", partitioning=partitioning, schema=schema)
-    return ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning, schema=schema)
+    return build_dataset_for_manifest(manifest=manifest, manifest_path=manifest_path)
 
 
 def dataset_for_entry(entry: DatasetManifestEntry) -> ds.Dataset:
@@ -440,22 +429,6 @@ def _coerce_int_from_intlike(value: object) -> int | None:
     if isinstance(converted, int):
         return converted
     return None
-
-
-def _dataset_metadata_path(dataset_dir: Path) -> Path | None:
-    metadata_path = dataset_dir / _METADATA_FILENAME
-    return metadata_path if metadata_path.is_file() else None
-
-
-def _schema_from_common_metadata(dataset_dir: Path) -> pa.Schema | None:
-    common_metadata_path = dataset_dir / _COMMON_METADATA_FILENAME
-    if not common_metadata_path.is_file():
-        return None
-    try:
-        parquet_file = pq.ParquetFile(common_metadata_path)
-    except (OSError, ValueError, pa.ArrowInvalid):
-        return None
-    return parquet_file.schema_arrow
 
 
 __all__ = [

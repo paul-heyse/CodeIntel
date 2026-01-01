@@ -338,14 +338,26 @@ def _convert_scip_documents(documents: Sequence[object]) -> list[ScipDocument]:
                 for sym in (getattr(doc, "symbols", None) or [])
             ],
             occurrences=[
-                _convert_scip_occurrence(occ) for occ in (getattr(doc, "occurrences", None) or [])
+                _convert_scip_occurrence(
+                    occ,
+                    position_encoding=getattr(doc, "position_encoding", None),
+                    text_document_encoding=getattr(doc, "text_document_encoding", None),
+                )
+                for occ in (getattr(doc, "occurrences", None) or [])
             ],
+            position_encoding=getattr(doc, "position_encoding", None),
+            text_document_encoding=getattr(doc, "text_document_encoding", None),
         )
         for doc in documents
     ]
 
 
-def _convert_scip_occurrence(occ: object) -> ScipOccurrence:
+def _convert_scip_occurrence(
+    occ: object,
+    *,
+    position_encoding: int | None,
+    text_document_encoding: str | None,
+) -> ScipOccurrence:
     """Convert a single SCIP occurrence to port type.
 
     Parameters
@@ -372,6 +384,9 @@ def _convert_scip_occurrence(occ: object) -> ScipOccurrence:
             raw_range[_RANGE_END_COL] if len(raw_range) >= _MIN_RANGE_LEN_END_COL else start_col
         )
 
+    occ_position_encoding = getattr(occ, "position_encoding", None)
+    occ_text_encoding = getattr(occ, "text_document_encoding", None)
+
     return ScipOccurrence(
         symbol=getattr(occ, "symbol", ""),
         range_start_line=start_line,
@@ -379,4 +394,12 @@ def _convert_scip_occurrence(occ: object) -> ScipOccurrence:
         range_end_line=end_line,
         range_end_col=end_col,
         symbol_roles=getattr(occ, "symbol_roles", 0) or 0,
+        position_encoding=(
+            occ_position_encoding if occ_position_encoding is not None else position_encoding
+        ),
+        text_document_encoding=(
+            occ_text_encoding if occ_text_encoding is not None else text_document_encoding
+        ),
+        start_byte=getattr(occ, "start_byte", None),
+        end_byte=getattr(occ, "end_byte", None),
     )

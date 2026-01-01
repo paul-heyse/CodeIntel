@@ -17,9 +17,13 @@ from codeintel.core.columnar.schema_alignment import (
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
-from codeintel.storage.datasets.manifest_index import dataset_for_manifest
+from codeintel.storage.datasets.manifest_index import (
+    DatasetManifestEntry,
+    DatasetScannerOptions,
+    dataset_for_entry,
+    dataset_scanner_for_entry,
+)
 from codeintel.storage.datasets.manifests import read_dataset_manifest
-from codeintel.storage.datasets.scanning import DatasetScanOptions, build_scanner
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
@@ -339,13 +343,13 @@ def _dataset_read_parquet_relation(
     manifest_path: Path,
     contract_schema: pa.Schema | None,
 ) -> DuckDBRelation:
-    dataset = dataset_for_manifest(manifest=manifest, manifest_path=manifest_path)
-    scan_options = DatasetScanOptions(
+    entry = DatasetManifestEntry(manifest=manifest, manifest_path=manifest_path)
+    scan_options = DatasetScannerOptions(
         batch_size=DEFAULT_ARROW_BATCH_SIZE,
         fragment_readahead=DEFAULT_FRAGMENT_READAHEAD,
         schema=contract_schema,
     )
-    scanner = build_scanner(dataset, options=scan_options)
+    scanner = dataset_scanner_for_entry(entry, options=scan_options)
     if contract_schema is not None:
         reader = scanner.to_reader()
         aligned = align_reader_to_contract(
@@ -364,6 +368,7 @@ def _dataset_read_parquet_relation(
         try:
             return con.from_arrow(reader)
         except (TypeError, ValueError):
+            dataset = dataset_for_entry(entry)
             return con.from_arrow(dataset)
 
 

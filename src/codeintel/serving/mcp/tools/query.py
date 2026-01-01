@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, get_type_hints
 
 from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
+from fastmcp.server.tasks import TaskConfig
 
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp.models import (
@@ -35,6 +37,8 @@ if TYPE_CHECKING:
     from codeintel.serving.export.formats import ExportFormat
     from codeintel.serving.mcp.resource_store import ResourceStore
     from codeintel.serving.settings import ServingSettings
+
+_CURRENT_CONTEXT = CurrentContext()
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,16 +234,18 @@ def register_query_tool(
     async def semantic_query(
         request: SemanticQueryToolRequest,
         *,
-        ctx: Context,
+        ctx: Context = _CURRENT_CONTEXT,
     ) -> SemanticQueryToolResponse:
         return await handler.handle(request, ctx=ctx)
 
     semantic_query.__annotations__ = get_type_hints(semantic_query, include_extras=True)
+    task_config = TaskConfig(mode="optional")
     mcp.tool(
         name="semantic_query",
         description="Query a semantic view with structured filters",
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEMANTIC, TAG_READ},
+        task=task_config,
     )(semantic_query)
 
 

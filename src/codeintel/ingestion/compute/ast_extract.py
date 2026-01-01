@@ -237,6 +237,12 @@ class AstVisitor(ast.NodeVisitor):
             return type(node).__name__
 
     @staticmethod
+    def _normalize_line(value: int | None) -> int | None:
+        if not isinstance(value, int):
+            return None
+        return max(value - 1, 0)
+
+    @staticmethod
     def _decorator_span(
         decorators: Sequence[ast.AST],
     ) -> tuple[int | None, int | None]:
@@ -254,10 +260,12 @@ class AstVisitor(ast.NodeVisitor):
         for dec in decorators:
             dec_start = getattr(dec, "lineno", None)
             dec_end = getattr(dec, "end_lineno", None) or dec_start
-            if dec_start is not None:
-                start = dec_start if start is None else min(start, dec_start)
-            if dec_end is not None:
-                end = dec_end if end is None else max(end, dec_end)
+            normalized_start = AstVisitor._normalize_line(dec_start)
+            normalized_end = AstVisitor._normalize_line(dec_end)
+            if normalized_start is not None:
+                start = normalized_start if start is None else min(start, normalized_start)
+            if normalized_end is not None:
+                end = normalized_end if end is None else max(end, normalized_end)
         return start, end
 
     def _record_ast_row(
@@ -266,8 +274,8 @@ class AstVisitor(ast.NodeVisitor):
         info: AstRowInfo,
     ) -> None:
         """Record an AST row for storage."""
-        lineno = getattr(node, "lineno", None)
-        end_lineno = getattr(node, "end_lineno", None)
+        lineno = self._normalize_line(getattr(node, "lineno", None))
+        end_lineno = self._normalize_line(getattr(node, "end_lineno", None))
         col = getattr(node, "col_offset", None)
         end_col = getattr(node, "end_col_offset", None)
         h = hashlib.blake2b(

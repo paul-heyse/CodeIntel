@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,10 @@ from codeintel.serving.semantic.duckdb_relation_builder import (
     RelationScanOptions,
     build_relation_plan,
 )
+from codeintel.serving.semantic.engines.polars_engine import (
+    PolarsPlanAdapter,
+    PolarsQueryBuilderError,
+)
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.serving.semantic.query_ast import ServingQuery
@@ -26,7 +31,12 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
+    from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
+
+LOG = logging.getLogger(__name__)
+
+_RESULT_ENGINE_POLARS = "polars"
 
 
 def cleanup_temp_tables_if_needed(*, con: DuckDBPyConnection, temp_tables: Sequence[str]) -> None:
@@ -63,6 +73,38 @@ def _contract_schema_for_table(
     return dataset_schema_for_entry(entry)
 
 
+def _polars_reader(
+    *,
+    relation: DuckDBPyRelation,
+    settings: ServingSettings,
+    batch_size: int,
+) -> pa.RecordBatchReader:
+    adapter = PolarsPlanAdapter(settings=settings)
+    plan = adapter.build(relation=relation)
+    try:
+        return plan.to_reader(batch_size=batch_size)
+    except PolarsQueryBuilderError as exc:
+        LOG.warning("Polars result engine failed; falling back to DuckDB: %s", exc)
+        return _fetch_arrow_reader(relation, batch_size=batch_size)
+
+
+def _polars_table(
+    *,
+    relation: DuckDBPyRelation,
+    settings: ServingSettings,
+) -> pa.Table:
+    adapter = PolarsPlanAdapter(settings=settings)
+    plan = adapter.build(relation=relation)
+    try:
+        reader = plan.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    except PolarsQueryBuilderError as exc:
+        LOG.warning("Polars result engine failed; falling back to DuckDB: %s", exc)
+        reader = _fetch_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    batches = list(reader)
+    schema = unify_schema_for_batches(batches, base_schema=reader.schema)
+    return pa.Table.from_batches(batches, schema=schema)
+
+
 class QueryBuilderError(ValueError):
     """Raised when query construction fails."""
 
@@ -73,6 +115,7 @@ class DuckDBRelationPlan:
 
     relation: DuckDBPyRelation
     warehouse: Warehouse
+    settings: ServingSettings
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
         """Execute the plan and return a RecordBatchReader.
@@ -82,6 +125,12 @@ class DuckDBRelationPlan:
         pyarrow.RecordBatchReader
             Reader over the plan output.
         """
+        if self.settings.result_engine.lower() == _RESULT_ENGINE_POLARS:
+            return _polars_reader(
+                relation=self.relation,
+                settings=self.settings,
+                batch_size=batch_size,
+            )
         return _fetch_arrow_reader(self.relation, batch_size=batch_size)
 
     def to_table(self) -> pa.Table:
@@ -93,6 +142,8 @@ class DuckDBRelationPlan:
             Materialized Arrow table.
         """
         warn_eager_materialization(engine="duckdb", context="duckdb_relation_plan")
+        if self.settings.result_engine.lower() == _RESULT_ENGINE_POLARS:
+            return _polars_table(relation=self.relation, settings=self.settings)
         reader = _fetch_arrow_reader(self.relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
         batches = list(reader)
         schema = unify_schema_for_batches(batches, base_schema=reader.schema)
@@ -183,7 +234,11 @@ class DuckDBQueryEngine:
                     contract_schema=contract_schema,
                 ),
             )
-            return DuckDBRelationPlan(relation=relation, warehouse=ctx.warehouse)
+            return DuckDBRelationPlan(
+                relation=relation,
+                warehouse=ctx.warehouse,
+                settings=ctx.settings,
+            )
         except DuckDBRelationQueryBuilderError as exc:
             msg = f"DuckDB relation plan failed: {exc}"
             raise QueryBuilderError(msg) from exc

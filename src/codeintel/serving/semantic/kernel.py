@@ -65,7 +65,10 @@ from codeintel.serving.semantic.sqlglot_query_builder import SqlglotQueryBuilder
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
 from codeintel.storage.metadata import load_derived_lineage_columns
-from codeintel.storage.query_results import records_from_arrow_batch
+from codeintel.storage.query_results import (
+    iter_records_from_arrow_reader,
+    records_from_arrow_reader,
+)
 from codeintel.storage.sqlglot_tools import (
     extract_column_lineage_duckdb,
     extract_table_keys_duckdb,
@@ -470,11 +473,7 @@ class SemanticQueryKernel:
         *,
         cancel_check: CancelCheck | None,
     ) -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for batch in reader:
-            _raise_if_cancelled(cancel_check)
-            rows.extend(records_from_arrow_batch(batch))
-        return rows
+        return records_from_arrow_reader(reader, cancel_check=cancel_check)
 
     @staticmethod
     def _log_ast_diff(
@@ -1246,9 +1245,11 @@ class SemanticQueryKernel:
             try:
                 _raise_if_cancelled(cancel_check)
                 reader = plan.to_reader(batch_size=self.settings.export_batch_size)
-                for batch in reader:
-                    _raise_if_cancelled(cancel_check)
-                    yield from records_from_arrow_batch(batch, columns=inputs.columns)
+                yield from iter_records_from_arrow_reader(
+                    reader,
+                    columns=inputs.columns,
+                    cancel_check=cancel_check,
+                )
             finally:
                 plan.cleanup()
 

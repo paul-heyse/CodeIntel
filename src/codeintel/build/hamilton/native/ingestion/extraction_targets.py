@@ -4,6 +4,7 @@ This module replaces the per-target files for:
 - ``ast``: stdlib AST extraction
 - ``cst``: LibCST extraction
 - ``docstrings``: docstring extraction/parsing
+- ``syntax_index``: LibCST parse manifest + syntax fact tables
 
 The targets share a common pattern:
 1) Load module paths from the current snapshot
@@ -59,6 +60,7 @@ _HAMILTON_TYPE_HINTS = (
 AST_TARGET_NAME = "ast"
 CST_TARGET_NAME = "cst"
 DOCSTRINGS_TARGET_NAME = "docstrings"
+SYNTAX_INDEX_TARGET_NAME = "syntax_index"
 
 AST_NODES_TABLE_KEY = "core.ast_nodes"
 AST_METRICS_TABLE_KEY = "core.ast_metrics"
@@ -69,6 +71,23 @@ CST_TABLE_KEYS = (CST_NODES_TABLE_KEY,)
 
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
 DOCSTRINGS_TABLE_KEYS = (DOCSTRINGS_TABLE_KEY,)
+
+PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
+SYNTAX_SPANS_TABLE_KEY = "core.syntax_spans"
+SYNTAX_SCOPES_TABLE_KEY = "core.syntax_scopes"
+SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
+SYNTAX_REFS_TABLE_KEY = "core.syntax_refs"
+SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
+SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
+SYNTAX_INDEX_TABLE_KEYS = (
+    PARSE_MANIFEST_TABLE_KEY,
+    SYNTAX_SPANS_TABLE_KEY,
+    SYNTAX_SCOPES_TABLE_KEY,
+    SYNTAX_DEFS_TABLE_KEY,
+    SYNTAX_REFS_TABLE_KEY,
+    SYNTAX_CALLS_TABLE_KEY,
+    SYNTAX_IMPORTS_TABLE_KEY,
+)
 
 
 @dataclass(frozen=True)
@@ -103,6 +122,40 @@ class CstToolOutput(ToolStepOutput):
         default_factory=lambda: empty_lazyframe_for_table(CST_NODES_TABLE_KEY)
     )
     row_count: int = 0
+
+
+@dataclass(frozen=True)
+class SyntaxIndexToolOutput(ToolStepOutput):
+    """Tool step output for syntax index extraction."""
+
+    parse_manifest_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(PARSE_MANIFEST_TABLE_KEY)
+    )
+    syntax_spans_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_SPANS_TABLE_KEY)
+    )
+    syntax_scopes_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    )
+    syntax_defs_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_DEFS_TABLE_KEY)
+    )
+    syntax_refs_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_REFS_TABLE_KEY)
+    )
+    syntax_calls_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_CALLS_TABLE_KEY)
+    )
+    syntax_imports_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    )
+    parse_manifest_row_count: int = 0
+    syntax_spans_row_count: int = 0
+    syntax_scopes_row_count: int = 0
+    syntax_defs_row_count: int = 0
+    syntax_refs_row_count: int = 0
+    syntax_calls_row_count: int = 0
+    syntax_imports_row_count: int = 0
 
 
 def _module_inventory_precheck(
@@ -206,6 +259,59 @@ def _coerce_cst_output(
         result=merged,
         rows=empty_lazyframe_for_table(CST_NODES_TABLE_KEY),
         row_count=0,
+    )
+
+
+def _coerce_syntax_index_output(
+    output: ToolStepOutput,
+    warnings: tuple[str, ...],
+) -> SyntaxIndexToolOutput:
+    if isinstance(output, SyntaxIndexToolOutput):
+        if warnings:
+            return SyntaxIndexToolOutput(
+                result=_merge_result_warnings(
+                    output.result,
+                    warnings,
+                    error_message="Syntax index extraction failed",
+                ),
+                parse_manifest_rows=output.parse_manifest_rows,
+                syntax_spans_rows=output.syntax_spans_rows,
+                syntax_scopes_rows=output.syntax_scopes_rows,
+                syntax_defs_rows=output.syntax_defs_rows,
+                syntax_refs_rows=output.syntax_refs_rows,
+                syntax_calls_rows=output.syntax_calls_rows,
+                syntax_imports_rows=output.syntax_imports_rows,
+                parse_manifest_row_count=output.parse_manifest_row_count,
+                syntax_spans_row_count=output.syntax_spans_row_count,
+                syntax_scopes_row_count=output.syntax_scopes_row_count,
+                syntax_defs_row_count=output.syntax_defs_row_count,
+                syntax_refs_row_count=output.syntax_refs_row_count,
+                syntax_calls_row_count=output.syntax_calls_row_count,
+                syntax_imports_row_count=output.syntax_imports_row_count,
+            )
+        return output
+
+    merged = _merge_result_warnings(
+        output.result,
+        warnings,
+        error_message="Syntax index extraction failed",
+    )
+    return SyntaxIndexToolOutput(
+        result=merged,
+        parse_manifest_rows=empty_lazyframe_for_table(PARSE_MANIFEST_TABLE_KEY),
+        syntax_spans_rows=empty_lazyframe_for_table(SYNTAX_SPANS_TABLE_KEY),
+        syntax_scopes_rows=empty_lazyframe_for_table(SYNTAX_SCOPES_TABLE_KEY),
+        syntax_defs_rows=empty_lazyframe_for_table(SYNTAX_DEFS_TABLE_KEY),
+        syntax_refs_rows=empty_lazyframe_for_table(SYNTAX_REFS_TABLE_KEY),
+        syntax_calls_rows=empty_lazyframe_for_table(SYNTAX_CALLS_TABLE_KEY),
+        syntax_imports_rows=empty_lazyframe_for_table(SYNTAX_IMPORTS_TABLE_KEY),
+        parse_manifest_row_count=0,
+        syntax_spans_row_count=0,
+        syntax_scopes_row_count=0,
+        syntax_defs_row_count=0,
+        syntax_refs_row_count=0,
+        syntax_calls_row_count=0,
+        syntax_imports_row_count=0,
     )
 
 
@@ -409,6 +515,141 @@ def t__cst__ingest(
     )
 
 
+def t__syntax_index__run(
+    env: BuildEnv,
+    catalog: DagCatalog,
+    t__modules: TargetRunRecord,
+    module_records: tuple[ModuleRecord, ...],
+) -> SyntaxIndexToolOutput:
+    """Execute syntax index extraction on repository modules.
+
+    Returns
+    -------
+    SyntaxIndexToolOutput
+        Tool output with row payloads and execution status.
+    """
+    failure, warnings = _module_inventory_precheck(t__modules, module_records)
+    if failure is not None:
+        return SyntaxIndexToolOutput(result=failure)
+
+    context = ToolRunContext(
+        env=env,
+        catalog=catalog,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+
+    def _execute() -> SyntaxIndexToolOutput:
+        get_schema_service()
+        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
+        step = CstExtractStep(discovery=discovery)
+        extract_result = step.execute(
+            module_records,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+        )
+        parse_manifest_frame = lazyframe_for_ingest_columns(
+            PARSE_MANIFEST_TABLE_KEY,
+            extract_result.parse_manifest_rows,
+        )
+        syntax_spans_frame = lazyframe_for_ingest_columns(
+            SYNTAX_SPANS_TABLE_KEY,
+            extract_result.syntax_spans_rows,
+        )
+        syntax_scopes_frame = lazyframe_for_ingest_columns(
+            SYNTAX_SCOPES_TABLE_KEY,
+            extract_result.syntax_scopes_rows,
+        )
+        syntax_defs_frame = lazyframe_for_ingest_columns(
+            SYNTAX_DEFS_TABLE_KEY,
+            extract_result.syntax_defs_rows,
+        )
+        syntax_refs_frame = lazyframe_for_ingest_columns(
+            SYNTAX_REFS_TABLE_KEY,
+            extract_result.syntax_refs_rows,
+        )
+        syntax_calls_frame = lazyframe_for_ingest_columns(
+            SYNTAX_CALLS_TABLE_KEY,
+            extract_result.syntax_calls_rows,
+        )
+        syntax_imports_frame = lazyframe_for_ingest_columns(
+            SYNTAX_IMPORTS_TABLE_KEY,
+            extract_result.syntax_imports_rows,
+        )
+        return SyntaxIndexToolOutput(
+            result=extract_result.result,
+            parse_manifest_rows=parse_manifest_frame,
+            syntax_spans_rows=syntax_spans_frame,
+            syntax_scopes_rows=syntax_scopes_frame,
+            syntax_defs_rows=syntax_defs_frame,
+            syntax_refs_rows=syntax_refs_frame,
+            syntax_calls_rows=syntax_calls_frame,
+            syntax_imports_rows=syntax_imports_frame,
+            parse_manifest_row_count=extract_result.parse_manifest_row_count,
+            syntax_spans_row_count=extract_result.syntax_spans_row_count,
+            syntax_scopes_row_count=extract_result.syntax_scopes_row_count,
+            syntax_defs_row_count=extract_result.syntax_defs_row_count,
+            syntax_refs_row_count=extract_result.syntax_refs_row_count,
+            syntax_calls_row_count=extract_result.syntax_calls_row_count,
+            syntax_imports_row_count=extract_result.syntax_imports_row_count,
+        )
+
+    output = run_tool_step(context=context, run=_execute)
+    coerced = _coerce_syntax_index_output(output, warnings)
+    for warning in coerced.result.warnings:
+        log.warning("Syntax index extraction warning: %s", warning)
+    return coerced
+
+
+def t__syntax_index__ingest(
+    t__syntax_index__run: SyntaxIndexToolOutput,
+) -> IngestStep[TabularByTable]:
+    """Package syntax index rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[TabularByTable]
+        Ingest result with table frames.
+    """
+    result = t__syntax_index__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "Syntax index skipped",
+                warnings=result.warnings,
+            )
+        )
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "Syntax index extraction failed",
+                warnings=result.warnings,
+            )
+        )
+
+    payload = {
+        PARSE_MANIFEST_TABLE_KEY: t__syntax_index__run.parse_manifest_rows,
+        SYNTAX_SPANS_TABLE_KEY: t__syntax_index__run.syntax_spans_rows,
+        SYNTAX_SCOPES_TABLE_KEY: t__syntax_index__run.syntax_scopes_rows,
+        SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_rows,
+        SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_rows,
+        SYNTAX_CALLS_TABLE_KEY: t__syntax_index__run.syntax_calls_rows,
+        SYNTAX_IMPORTS_TABLE_KEY: t__syntax_index__run.syntax_imports_rows,
+    }
+    table_counts = {
+        PARSE_MANIFEST_TABLE_KEY: t__syntax_index__run.parse_manifest_row_count,
+        SYNTAX_SPANS_TABLE_KEY: t__syntax_index__run.syntax_spans_row_count,
+        SYNTAX_SCOPES_TABLE_KEY: t__syntax_index__run.syntax_scopes_row_count,
+        SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_row_count,
+        SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_row_count,
+        SYNTAX_CALLS_TABLE_KEY: t__syntax_index__run.syntax_calls_row_count,
+        SYNTAX_IMPORTS_TABLE_KEY: t__syntax_index__run.syntax_imports_row_count,
+    }
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
+
+
 def t__docstrings__run(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -508,6 +749,41 @@ _CST_TARGET_SPEC = ToolTargetSpec(
     spec=_INTENSIVE_SPEC,
     tables=(TableOutputSpec(table_key=CST_NODES_TABLE_KEY, node_name="cst__node_rows"),),
 )
+_SYNTAX_INDEX_TARGET_SPEC = ToolTargetSpec(
+    domain="ingestion",
+    target_name=SYNTAX_INDEX_TARGET_NAME,
+    spec=_INTENSIVE_SPEC,
+    tables=(
+        TableOutputSpec(
+            table_key=PARSE_MANIFEST_TABLE_KEY,
+            node_name="syntax_index__parse_manifest_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_SPANS_TABLE_KEY,
+            node_name="syntax_index__span_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_SCOPES_TABLE_KEY,
+            node_name="syntax_index__scope_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_DEFS_TABLE_KEY,
+            node_name="syntax_index__def_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_REFS_TABLE_KEY,
+            node_name="syntax_index__ref_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_CALLS_TABLE_KEY,
+            node_name="syntax_index__call_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_IMPORTS_TABLE_KEY,
+            node_name="syntax_index__import_rows",
+        ),
+    ),
+)
 _DOCSTRINGS_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
     target_name=DOCSTRINGS_TARGET_NAME,
@@ -531,6 +807,12 @@ attach_tool_target_template(
 )
 attach_tool_target_template(
     _MODULE,
+    spec=_SYNTAX_INDEX_TARGET_SPEC,
+    run_fn=t__syntax_index__run,
+    ingest_fn=t__syntax_index__ingest,
+)
+attach_tool_target_template(
+    _MODULE,
     spec=_DOCSTRINGS_TARGET_SPEC,
     run_fn=t__docstrings__run,
     ingest_fn=t__docstrings__ingest,
@@ -538,6 +820,7 @@ attach_tool_target_template(
 
 t__ast = _MODULE.t__ast
 t__cst = _MODULE.t__cst
+t__syntax_index = _MODULE.t__syntax_index
 t__docstrings = _MODULE.t__docstrings
 
 
@@ -551,4 +834,7 @@ __all__ = [
     "t__docstrings",
     "t__docstrings__ingest",
     "t__docstrings__run",
+    "t__syntax_index",
+    "t__syntax_index__ingest",
+    "t__syntax_index__run",
 ]

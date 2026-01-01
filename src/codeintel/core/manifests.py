@@ -171,6 +171,68 @@ class ArrowDatasetManifest(ManifestBase):
 
 
 @dataclass(frozen=True)
+class DatasetSuiteManifest(ManifestBase):
+    """Manifest describing a suite of dataset snapshots."""
+
+    suite_manifest_version: int
+    suite_kind: str
+    repo: str
+    commit: str
+    created_at: str
+    dataset_manifest_paths: Mapping[str, str]
+    tool_versions: Mapping[str, str] | None = None
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable suite manifest payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable manifest payload.
+        """
+        payload: dict[str, object] = {
+            "suite_manifest_version": self.suite_manifest_version,
+            "suite_kind": self.suite_kind,
+            "repo": self.repo,
+            "commit": self.commit,
+            "created_at": self.created_at,
+            "dataset_manifest_paths": dict(self.dataset_manifest_paths),
+        }
+        if self.tool_versions:
+            payload["tool_versions"] = dict(self.tool_versions)
+        return payload
+
+    @classmethod
+    def from_path(cls, path: Path) -> DatasetSuiteManifest:
+        """Load a suite manifest from JSON.
+
+        Parameters
+        ----------
+        path
+            Path to the suite manifest JSON file.
+
+        Returns
+        -------
+        DatasetSuiteManifest
+            Loaded suite manifest.
+        """
+        data = read_manifest_json(path)
+        dataset_manifest_paths = _parse_suite_manifest_paths(
+            data.get("dataset_manifest_paths")
+        )
+        tool_versions = _coerce_str_mapping(data.get("tool_versions"))
+        return cls(
+            suite_manifest_version=_require_int(data, "suite_manifest_version"),
+            suite_kind=_require_str(data, "suite_kind"),
+            repo=_require_str(data, "repo"),
+            commit=_require_str(data, "commit"),
+            created_at=_require_str(data, "created_at"),
+            dataset_manifest_paths=dataset_manifest_paths,
+            tool_versions=tool_versions,
+        )
+
+
+@dataclass(frozen=True)
 class SnapshotDatasetEntry(ManifestBase):
     """Summary pointer to a dataset manifest within a serving snapshot."""
 
@@ -383,6 +445,22 @@ def _parse_snapshot_dataset_entry(
     )
 
 
+def _parse_suite_manifest_paths(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        msg = "Suite manifest dataset_manifest_paths must be a mapping"
+        raise TypeError(msg)
+    result: dict[str, str] = {}
+    for key, raw in value.items():
+        if raw is None:
+            continue
+        table_key = str(key)
+        if not isinstance(raw, str) or not raw:
+            msg = f"Suite manifest path missing for {table_key}"
+            raise TypeError(msg)
+        result[table_key] = raw
+    return result
+
+
 def _parse_optional_str_list(value: object, *, ctx: str) -> tuple[str, ...]:
     if value is None:
         return ()
@@ -422,6 +500,36 @@ def _coerce_mapping(value: object | None) -> dict[str, object] | None:
     if isinstance(value, dict):
         return {str(key): val for key, val in value.items()}
     msg = "Snapshot dataset stats must be an object"
+    raise TypeError(msg)
+
+
+def _coerce_str_mapping(value: object | None) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {str(key): str(val) for key, val in value.items()}
+    msg = "Suite manifest tool_versions must be an object"
+    raise TypeError(msg)
+
+
+def _require_int(payload: dict[str, object], key: str) -> int:
+    raw = payload.get(key)
+    if isinstance(raw, bool):
+        msg = f"Suite manifest {key} must be an integer"
+        raise TypeError(msg)
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip())
+    msg = f"Suite manifest {key} must be an integer"
+    raise TypeError(msg)
+
+
+def _require_str(payload: dict[str, object], key: str) -> str:
+    raw = payload.get(key)
+    if isinstance(raw, str) and raw:
+        return raw
+    msg = f"Suite manifest {key} must be a non-empty string"
     raise TypeError(msg)
 
 
@@ -661,6 +769,7 @@ class SchemaManifest(ManifestBase):
 __all__ = [
     "ArrowDatasetManifest",
     "ArtifactProvenance",
+    "DatasetSuiteManifest",
     "ExportArtifact",
     "ExportArtifactKind",
     "ExportManifestData",

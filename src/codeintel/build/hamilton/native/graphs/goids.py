@@ -148,7 +148,7 @@ def _resolve_start_line(node_type: str, start_line: object) -> int | None:
     if isinstance(start_line, int):
         return start_line
     if node_type == "Module":
-        return 1
+        return 0
     return None
 
 

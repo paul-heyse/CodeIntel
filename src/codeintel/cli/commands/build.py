@@ -29,6 +29,7 @@ from codeintel.cli.core.command import Command
 from codeintel.cli.errors.results import fail_invalid_value, fail_not_found
 from codeintel.cli.handlers.build import (
     build_assets_handler,
+    build_bootstrap_index_suite_handler,
     build_decision_trace_handler,
     build_diff_handler,
     build_explain_handler,
@@ -48,6 +49,7 @@ from codeintel.cli.options.registry import (
     BUILD_ASSETS_FORMAT,
     BUILD_ASSETS_TARGET,
     BUILD_ASSETS_TYPE,
+    BUILD_BOOTSTRAP_OUTPUT,
     BUILD_DECISION_TRACE_OUTPUT,
     BUILD_DECISION_TRACE_PATH,
     BUILD_DIFF_ASSET,
@@ -137,6 +139,7 @@ _VALIDATE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 _TRACE_CONFIG = CommandConfig(require_runtime=True, require_gateway=False)
 
 BUILD_RUN_PATH: CommandPath = ("build", "run")
+BUILD_BOOTSTRAP_INDEX_SUITE_PATH: CommandPath = ("build", "bootstrap-index-suite")
 BUILD_STATUS_PATH: CommandPath = ("build", "status")
 BUILD_HISTORY_PATH: CommandPath = ("build", "history")
 BUILD_VALIDATE_PATH: CommandPath = ("build", "validate")
@@ -153,6 +156,9 @@ BUILD_DECISION_TRACE_CMD_PATH: CommandPath = ("build", "decision-trace")
 BUILD_TARGETS_PATH: CommandPath = ("build", "targets")
 
 _BUILD_RUN_FLAGS_FIELD = shared_flags_field(BUILD_RUN_PATH)
+_BUILD_BOOTSTRAP_INDEX_SUITE_FLAGS_FIELD = shared_flags_field(
+    BUILD_BOOTSTRAP_INDEX_SUITE_PATH
+)
 _BUILD_STATUS_FLAGS_FIELD = shared_flags_field(BUILD_STATUS_PATH)
 _BUILD_HISTORY_FLAGS_FIELD = shared_flags_field(BUILD_HISTORY_PATH)
 _BUILD_VALIDATE_FLAGS_FIELD = shared_flags_field(BUILD_VALIDATE_PATH)
@@ -281,6 +287,26 @@ class BuildRunCommand:
         option_param(BUILD_RUN_PROGRESS, command_path=BUILD_RUN_PATH),
     ] = False
     flags: SharedFlagsProtocol = _BUILD_RUN_FLAGS_FIELD
+
+
+@cli_command(
+    "build.bootstrap_index_suite",
+    handler=build_bootstrap_index_suite_handler,
+    config=_BUILD_CONFIG,
+)
+@build_app.command(name="bootstrap-index-suite")
+@dataclass
+class BuildBootstrapIndexSuiteCommand:
+    """Bootstrap the P0 index suite and write a suite manifest."""
+
+    output_file: Annotated[
+        str | None,
+        option_param(
+            BUILD_BOOTSTRAP_OUTPUT,
+            command_path=BUILD_BOOTSTRAP_INDEX_SUITE_PATH,
+        ),
+    ] = None
+    flags: SharedFlagsProtocol = _BUILD_BOOTSTRAP_INDEX_SUITE_FLAGS_FIELD
 
 
 @cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG)

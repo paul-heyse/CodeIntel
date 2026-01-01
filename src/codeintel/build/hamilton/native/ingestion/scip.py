@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from numbers import Integral
@@ -63,6 +64,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolRunOptions,
 )
 from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
+from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence
 from codeintel.ingestion.scip import (
     SCIP_DIAGNOSTICS_TABLE_KEY,
     SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
@@ -133,11 +135,20 @@ SCIP_TABLE_KEYS = (
     SCIP_MODULE_STATE_TABLE_KEY,
 )
 FILE_STATE_TABLE_KEY = "core.file_state"
+FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
 
 SCIP_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=SCIP_TARGET_NAME,
 )
+
+_POSITION_ENCODING_UTF8 = 1
+_POSITION_ENCODING_UTF16 = 2
+_POSITION_ENCODING_UTF32 = 3
+
+_BOM_UTF8 = b"\xef\xbb\xbf"
+_BOM_UTF16_LE = b"\xff\xfe"
+_BOM_UTF16_BE = b"\xfe\xff"
 
 
 @dataclass(frozen=True)
@@ -312,6 +323,301 @@ def _scip_output_path(env: BuildEnv, options: ScipIngestOptions) -> Path:
 
 def _scip_index_output(run: ScipRunResult) -> Path | None:
     return run.path_for(SCIP_ARTIFACT_INDEX)
+
+
+@dataclass(frozen=True)
+class _FileLineIndex:
+    encoding: str | None
+    lines: dict[int, tuple[int, int]]
+
+
+@dataclass(frozen=True)
+class _EncodingContext:
+    decode_encoding: str
+    encode_encoding: str
+    bom: bytes
+
+
+def _chunked(values: Iterable[str], size: int) -> Iterable[list[str]]:
+    batch: list[str] = []
+    for value in values:
+        batch.append(value)
+        if len(batch) >= size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+def _load_file_line_index(
+    env: BuildEnv,
+    rel_paths: Iterable[str],
+) -> dict[str, _FileLineIndex]:
+    rel_path_list = sorted({path for path in rel_paths if path})
+    if not rel_path_list:
+        return {}
+
+    results: dict[str, _FileLineIndex] = {}
+    try:
+        for chunk in _chunked(rel_path_list, 500):
+            placeholders = ", ".join(["?"] * len(chunk))
+            query = (
+                "SELECT rel_path, line, start_byte, end_byte, encoding "
+                f"FROM {FILE_LINE_INDEX_TABLE_KEY} "
+                "WHERE repo = ? AND commit = ? "
+                f"AND rel_path IN ({placeholders})"
+            )
+            params: list[object] = [env.snapshot.repo, env.snapshot.commit, *chunk]
+            reader = env.gateway.execute(query, params).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+            for row in records_from_arrow_reader(reader):
+                rel_path = row.get("rel_path")
+                if not isinstance(rel_path, str):
+                    continue
+                line = _coerce_int(row.get("line"))
+                start_byte = _coerce_int(row.get("start_byte"))
+                end_byte = _coerce_int(row.get("end_byte"))
+                if line is None or start_byte is None or end_byte is None:
+                    continue
+                encoding = row.get("encoding")
+                file_index = results.get(rel_path)
+                if file_index is None:
+                    file_index = _FileLineIndex(
+                        encoding=encoding if isinstance(encoding, str) else None,
+                        lines={},
+                    )
+                    results[rel_path] = file_index
+                file_index.lines[line] = (start_byte, end_byte)
+    except (CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError, RuntimeError):
+        log.warning("File line index unavailable; skipping SCIP byte span normalization")
+        return {}
+    return results
+
+
+def _resolve_encoding_context(
+    file_bytes: bytes,
+    *,
+    encoding_hint: str | None,
+    text_document_encoding: str | None,
+) -> _EncodingContext:
+    encoding = (encoding_hint or text_document_encoding or "utf-8").lower()
+    if encoding in {"utf-8", "utf8", "utf-8-sig", "utf8-sig"}:
+        bom = _BOM_UTF8 if file_bytes.startswith(_BOM_UTF8) else b""
+        return _EncodingContext(decode_encoding="utf-8", encode_encoding="utf-8", bom=bom)
+    if encoding in {"utf-16", "utf16", "utf-16-le", "utf16le", "utf-16-be", "utf16be"}:
+        if file_bytes.startswith(_BOM_UTF16_LE):
+            return _EncodingContext(
+                decode_encoding="utf-16-le",
+                encode_encoding="utf-16-le",
+                bom=_BOM_UTF16_LE,
+            )
+        if file_bytes.startswith(_BOM_UTF16_BE):
+            return _EncodingContext(
+                decode_encoding="utf-16-be",
+                encode_encoding="utf-16-be",
+                bom=_BOM_UTF16_BE,
+            )
+        if "be" in encoding:
+            return _EncodingContext(
+                decode_encoding="utf-16-be",
+                encode_encoding="utf-16-be",
+                bom=b"",
+            )
+        return _EncodingContext(
+            decode_encoding="utf-16-le",
+            encode_encoding="utf-16-le",
+            bom=b"",
+        )
+    return _EncodingContext(decode_encoding=encoding, encode_encoding=encoding, bom=b"")
+
+
+def _prefix_for_position(
+    text: str,
+    col: int,
+    position_encoding: int,
+) -> str | None:
+    if col < 0:
+        return None
+    if position_encoding == _POSITION_ENCODING_UTF8:
+        encoded = text.encode("utf-8")
+        if col > len(encoded):
+            return None
+        return encoded[:col].decode("utf-8", errors="ignore")
+    if position_encoding == _POSITION_ENCODING_UTF16:
+        encoded = text.encode("utf-16-le")
+        byte_len = col * 2
+        if byte_len > len(encoded):
+            return None
+        return encoded[:byte_len].decode("utf-16-le", errors="ignore")
+    if position_encoding == _POSITION_ENCODING_UTF32:
+        if col > len(text):
+            return None
+        return text[:col]
+    return None
+
+
+def _byte_offset_for_position(
+    *,
+    line_bytes: bytes,
+    line_start: int,
+    col: int,
+    position_encoding: int,
+    context: _EncodingContext,
+) -> int | None:
+    trimmed = line_bytes
+    offset_adjust = 0
+    if line_start == 0 and context.bom and trimmed.startswith(context.bom):
+        trimmed = trimmed[len(context.bom) :]
+        offset_adjust = len(context.bom)
+    if position_encoding == _POSITION_ENCODING_UTF8:
+        if col < 0 or col > len(trimmed):
+            return None
+        return line_start + offset_adjust + col
+    try:
+        text = trimmed.decode(context.decode_encoding, errors="replace")
+    except (LookupError, UnicodeDecodeError):
+        return None
+    prefix = _prefix_for_position(text, col, position_encoding)
+    if prefix is None:
+        return None
+    try:
+        prefix_bytes = prefix.encode(context.encode_encoding)
+    except (LookupError, UnicodeEncodeError):
+        return None
+    return line_start + offset_adjust + len(prefix_bytes)
+
+
+def _byte_span_for_occurrence(
+    *,
+    occ: ScipOccurrence,
+    position_encoding: int | None,
+    file_index: _FileLineIndex,
+    file_bytes: bytes,
+    context: _EncodingContext,
+) -> tuple[int, int] | None:
+    if position_encoding is None:
+        return None
+    start_line = occ.range_start_line
+    end_line = occ.range_end_line
+    start_info = file_index.lines.get(start_line)
+    end_info = file_index.lines.get(end_line)
+    if start_info is None or end_info is None:
+        return None
+    start_line_start, start_line_end = start_info
+    end_line_start, end_line_end = end_info
+    start_line_bytes = file_bytes[start_line_start:start_line_end]
+    end_line_bytes = file_bytes[end_line_start:end_line_end]
+    start_byte = _byte_offset_for_position(
+        line_bytes=start_line_bytes,
+        line_start=start_line_start,
+        col=occ.range_start_col,
+        position_encoding=position_encoding,
+        context=context,
+    )
+    if start_byte is None:
+        return None
+    end_byte = _byte_offset_for_position(
+        line_bytes=end_line_bytes,
+        line_start=end_line_start,
+        col=occ.range_end_col,
+        position_encoding=position_encoding,
+        context=context,
+    )
+    if end_byte is None:
+        return None
+    if end_byte < start_byte:
+        return None
+    return start_byte, end_byte
+
+
+def _apply_file_line_index(
+    env: BuildEnv,
+    parsed: ScipParsedIndex,
+) -> ScipParsedIndex:
+    rel_paths = {doc.relative_path for doc in parsed.documents}
+    if not rel_paths:
+        return parsed
+    line_indexes = _load_file_line_index(env, rel_paths)
+    if not line_indexes:
+        return parsed
+
+    repo_root = Path(env.snapshot.repo_root)
+    updated_docs: list[ScipDocument] = []
+    changed = False
+    for doc in parsed.documents:
+        file_index = line_indexes.get(doc.relative_path)
+        if file_index is None or not doc.occurrences:
+            updated_docs.append(doc)
+            continue
+        if all(
+            occ.start_byte is not None and occ.end_byte is not None for occ in doc.occurrences
+        ):
+            updated_docs.append(doc)
+            continue
+        file_path = repo_root / Path(doc.relative_path)
+        try:
+            file_bytes = file_path.read_bytes()
+        except OSError as exc:
+            log.warning("Failed to read file for SCIP byte spans: %s", exc)
+            updated_docs.append(doc)
+            continue
+        context = _resolve_encoding_context(
+            file_bytes,
+            encoding_hint=file_index.encoding,
+            text_document_encoding=doc.text_document_encoding,
+        )
+        updated_occurrences: list[ScipOccurrence] = []
+        doc_changed = False
+        for occ in doc.occurrences:
+            if occ.start_byte is not None and occ.end_byte is not None:
+                updated_occurrences.append(occ)
+                continue
+            span = _byte_span_for_occurrence(
+                occ=occ,
+                position_encoding=occ.position_encoding or doc.position_encoding,
+                file_index=file_index,
+                file_bytes=file_bytes,
+                context=context,
+            )
+            if span is None:
+                updated_occurrences.append(occ)
+                continue
+            updated_occurrences.append(
+                ScipOccurrence(
+                    symbol=occ.symbol,
+                    range_start_line=occ.range_start_line,
+                    range_start_col=occ.range_start_col,
+                    range_end_line=occ.range_end_line,
+                    range_end_col=occ.range_end_col,
+                    symbol_roles=occ.symbol_roles,
+                    position_encoding=occ.position_encoding,
+                    text_document_encoding=occ.text_document_encoding,
+                    start_byte=span[0],
+                    end_byte=span[1],
+                )
+            )
+            doc_changed = True
+        if doc_changed:
+            changed = True
+            updated_docs.append(
+                ScipDocument(
+                    relative_path=doc.relative_path,
+                    symbols=doc.symbols,
+                    occurrences=tuple(updated_occurrences),
+                    position_encoding=doc.position_encoding,
+                    text_document_encoding=doc.text_document_encoding,
+                )
+            )
+        else:
+            updated_docs.append(doc)
+    if not changed:
+        return parsed
+    return ScipParsedIndex(
+        documents=tuple(updated_docs),
+        symbol_infos=parsed.symbol_infos,
+        relationships=parsed.relationships,
+        diagnostics=parsed.diagnostics,
+        external_symbols=parsed.external_symbols,
+    )
 
 
 def _resolve_change_set(scan: ModuleToolOutput) -> tuple[ChangeSet, bool]:
@@ -780,6 +1086,7 @@ def _build_scip_ingest_result(
     proto_module_path = cast("Path", inputs.proto_module_path)
     try:
         parsed: ScipParsedIndex = parse_index(output_scip, proto_module_path)
+        parsed = _apply_file_line_index(env, parsed)
         payload = _build_scip_row_payload(env, parsed, inputs.options)
     except (OSError, AttributeError, KeyError, RuntimeError, TypeError, ValueError):
         log.exception("SCIP ingestion failed")

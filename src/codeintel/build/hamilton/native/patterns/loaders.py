@@ -102,6 +102,10 @@ def load_table(
     -------
     Callable[..., InferableTabularInput]
         Hamilton node that loads the dataset as a tabular input.
+
+    Notes
+    -----
+    DatasetRef.commit overrides env.commit for seeded snapshot loads.
     """
     resolved_node_name = node_name or _default_loader_name(target=target, table_key=table_key)
     dataset_param = dataset_node(table_key)

@@ -493,11 +493,23 @@ class ScipOccurrence:
         Line/column range as a tuple (start_line, start_col, end_line, end_col).
     symbol_roles
         Bitmask of symbol roles for this occurrence.
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
+    start_byte
+        Start byte offset, when computed.
+    end_byte
+        End byte offset, when computed.
     """
 
     symbol: str
     range_: tuple[int, int, int, int]
     symbol_roles: int = 0
+    position_encoding: int | None = None
+    text_document_encoding: str | None = None
+    start_byte: int | None = None
+    end_byte: int | None = None
 
     @property
     def is_definition(self) -> bool:
@@ -519,6 +531,10 @@ class ScipOccurrence:
             range_end_line=self.range_[2],
             range_end_col=self.range_[3],
             symbol_roles=self.symbol_roles,
+            position_encoding=self.position_encoding,
+            text_document_encoding=self.text_document_encoding,
+            start_byte=self.start_byte,
+            end_byte=self.end_byte,
         )
 
 
@@ -534,11 +550,17 @@ class ScipDocument:
         Symbols defined in this document.
     occurrences
         Sequence of symbol occurrences in this document.
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
     """
 
     relative_path: str
     symbols: Sequence[port_types.ScipSymbol] = ()
     occurrences: Sequence[ScipOccurrence] = ()
+    position_encoding: int | None = None
+    text_document_encoding: str | None = None
 
     def to_port_document(self) -> port_types.ScipDocument:
         """Convert to port interface type.
@@ -552,6 +574,8 @@ class ScipDocument:
             relative_path=self.relative_path,
             symbols=list(self.symbols),
             occurrences=[occ.to_port_occurrence() for occ in self.occurrences],
+            position_encoding=self.position_encoding,
+            text_document_encoding=self.text_document_encoding,
         )
 
 

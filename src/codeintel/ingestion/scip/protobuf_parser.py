@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import BinaryIO, cast
 
 from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence, ScipSymbol
 from codeintel.ingestion.scip.models import (
@@ -39,6 +40,17 @@ class ScipParsedIndex:
 _RANGE_LEN_SAME_LINE = 3
 _RANGE_LEN_FULL = 4
 _PACKAGE_TOKEN_COUNT = 4
+_WIRE_TYPE_VARINT = 0
+_WIRE_TYPE_64BIT = 1
+_WIRE_TYPE_LENGTH = 2
+_WIRE_TYPE_32BIT = 5
+
+
+@dataclass(frozen=True)
+class _IndexFieldNumbers:
+    metadata: int
+    documents: int
+    external_symbols: int
 
 
 def load_proto_module(proto_module_path: Path) -> ScipProtoModule:
@@ -77,42 +89,85 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
     """
     module = load_proto_module(proto_module_path)
     index = module.Index()
-    _parse_from_string(index, index_path.read_bytes())
+    field_numbers = _index_field_numbers(index)
 
-    documents = tuple(_parse_document(doc) for doc in index.documents)
+    text_document_encoding: str | None = None
+    documents: list[ScipDocument] = []
     symbol_infos: list[ScipSymbolInfo] = []
     relationships: list[ScipSymbolRelationship] = []
     diagnostics: list[ScipDiagnostic] = []
+    external_symbols: list[ScipExternalSymbol] = []
 
-    for doc in index.documents:
-        rel_path = doc.relative_path
-        for sym_info in doc.symbols:
-            symbol_infos.append(_parse_symbol_info(sym_info))
-            relationships.extend(_parse_relationships(sym_info))
-        diagnostics.extend(_parse_document_diagnostics(module, doc, rel_path))
-
-    external_symbols = tuple(_parse_external_symbol(sym) for sym in index.external_symbols)
+    for field_no, payload in _iter_index_payloads(index_path, field_numbers):
+        if field_no == field_numbers.metadata:
+            metadata = module.Metadata()
+            _parse_from_string(metadata, payload)
+            text_document_encoding = _normalize_text_document_encoding(
+                getattr(metadata, "text_document_encoding", 0)
+            )
+            continue
+        if field_no == field_numbers.documents:
+            doc = module.Document()
+            _parse_from_string(doc, payload)
+            position_encoding = _normalize_position_encoding(
+                getattr(doc, "position_encoding", 0)
+            )
+            documents.append(
+                _parse_document(
+                    doc,
+                    position_encoding=position_encoding,
+                    text_document_encoding=text_document_encoding,
+                )
+            )
+            for sym_info in doc.symbols:
+                symbol_infos.append(_parse_symbol_info(sym_info))
+                relationships.extend(_parse_relationships(sym_info))
+            diagnostics.extend(
+                _parse_document_diagnostics(
+                    module,
+                    doc,
+                    doc.relative_path,
+                    position_encoding=position_encoding,
+                    text_document_encoding=text_document_encoding,
+                )
+            )
+            continue
+        if field_no == field_numbers.external_symbols:
+            sym = module.SymbolInformation()
+            _parse_from_string(sym, payload)
+            external_symbols.append(_parse_external_symbol(sym))
 
     return ScipParsedIndex(
-        documents=documents,
+        documents=tuple(documents),
         symbol_infos=tuple(symbol_infos),
         relationships=tuple(relationships),
         diagnostics=tuple(diagnostics),
-        external_symbols=external_symbols,
+        external_symbols=tuple(external_symbols),
     )
 
 
-def _parse_document(doc: DocumentProto) -> ScipDocument:
+def _parse_document(
+    doc: DocumentProto,
+    *,
+    position_encoding: int | None,
+    text_document_encoding: str | None,
+) -> ScipDocument:
     symbols = tuple(_parse_symbol(sym) for sym in doc.symbols)
     occurrences_list: list[ScipOccurrence] = []
     for occ in doc.occurrences:
-        parsed = _parse_occurrence(occ)
+        parsed = _parse_occurrence(
+            occ,
+            position_encoding=position_encoding,
+            text_document_encoding=text_document_encoding,
+        )
         if parsed is not None:
             occurrences_list.append(parsed)
     return ScipDocument(
         relative_path=doc.relative_path,
         symbols=symbols,
         occurrences=tuple(occurrences_list),
+        position_encoding=position_encoding,
+        text_document_encoding=text_document_encoding,
     )
 
 
@@ -121,7 +176,12 @@ def _parse_symbol(sym: SymbolInfoProto) -> ScipSymbol:
     return ScipSymbol(symbol=sym.symbol, documentation=documentation)
 
 
-def _parse_occurrence(occ: OccurrenceProto) -> ScipOccurrence | None:
+def _parse_occurrence(
+    occ: OccurrenceProto,
+    *,
+    position_encoding: int | None,
+    text_document_encoding: str | None,
+) -> ScipOccurrence | None:
     range_tuple = _parse_range(occ.range)
     if range_tuple is None:
         return None
@@ -132,6 +192,10 @@ def _parse_occurrence(occ: OccurrenceProto) -> ScipOccurrence | None:
         range_end_line=range_tuple[2],
         range_end_col=range_tuple[3],
         symbol_roles=occ.symbol_roles,
+        position_encoding=position_encoding,
+        text_document_encoding=text_document_encoding,
+        start_byte=None,
+        end_byte=None,
     )
 
 
@@ -207,6 +271,9 @@ def _parse_document_diagnostics(
     module: ScipProtoModule,
     doc: DocumentProto,
     rel_path: str,
+    *,
+    position_encoding: int | None,
+    text_document_encoding: str | None,
 ) -> list[ScipDiagnostic]:
     diagnostics: list[ScipDiagnostic] = []
     for occ in doc.occurrences:
@@ -222,6 +289,8 @@ def _parse_document_diagnostics(
                     start_col=range_tuple[1],
                     end_line=range_tuple[2],
                     end_col=range_tuple[3],
+                    position_encoding=position_encoding,
+                    text_document_encoding=text_document_encoding,
                     severity=severity,
                     code=diag.code or None,
                     message=diag.message,
@@ -252,12 +321,118 @@ def _parse_external_symbol(sym: ExternalSymbolProto) -> ScipExternalSymbol:
     )
 
 
-def _parse_from_string(index: IndexProto, payload: bytes) -> None:
-    parse_fn = getattr(index, "ParseFromString", None)
+def _parse_from_string(message: object, payload: bytes) -> None:
+    parse_fn = getattr(message, "ParseFromString", None)
     if not callable(parse_fn):
         message = "SCIP protobuf ParseFromString is unavailable"
         raise TypeError(message)
     parse_fn(payload)
+
+
+def _read_varint(handle: BinaryIO) -> int:
+    shift = 0
+    out = 0
+    while True:
+        raw = handle.read(1)
+        if not raw:
+            raise EOFError
+        byte = raw[0]
+        out |= (byte & 0x7F) << shift
+        if not (byte & 0x80):
+            return out
+        shift += 7
+        if shift >= 64:
+            message = "SCIP protobuf varint is too long"
+            raise ValueError(message)
+
+
+def _read_exact(handle: BinaryIO, size: int) -> bytes:
+    payload = handle.read(size)
+    if len(payload) != size:
+        raise EOFError
+    return payload
+
+
+def _skip_field(handle: BinaryIO, wire_type: int) -> None:
+    if wire_type == _WIRE_TYPE_VARINT:
+        _read_varint(handle)
+        return
+    if wire_type == _WIRE_TYPE_64BIT:
+        _read_exact(handle, 8)
+        return
+    if wire_type == _WIRE_TYPE_LENGTH:
+        length = _read_varint(handle)
+        _read_exact(handle, length)
+        return
+    if wire_type == _WIRE_TYPE_32BIT:
+        _read_exact(handle, 4)
+        return
+    message = f"Unsupported wire_type={wire_type}"
+    raise ValueError(message)
+
+
+def _index_field_numbers(index: IndexProto) -> _IndexFieldNumbers:
+    descriptor = getattr(index, "DESCRIPTOR", None)
+    fields_by_name = getattr(descriptor, "fields_by_name", None)
+    if not isinstance(fields_by_name, Mapping):
+        message = "SCIP protobuf Index descriptor fields are unavailable"
+        raise TypeError(message)
+    return _IndexFieldNumbers(
+        metadata=_field_number(fields_by_name, "metadata"),
+        documents=_field_number(fields_by_name, "documents"),
+        external_symbols=_field_number(fields_by_name, "external_symbols"),
+    )
+
+
+def _field_number(fields_by_name: Mapping[str, object], name: str) -> int:
+    field = fields_by_name.get(name)
+    number = getattr(field, "number", None)
+    if not isinstance(number, int):
+        message = f"SCIP protobuf field number missing for {name!r}"
+        raise TypeError(message)
+    return number
+
+
+def _iter_index_payloads(
+    index_path: Path,
+    field_numbers: _IndexFieldNumbers,
+) -> Iterator[tuple[int, bytes]]:
+    fields = {field_numbers.metadata, field_numbers.documents, field_numbers.external_symbols}
+    with index_path.open("rb") as handle:
+        while True:
+            try:
+                tag = _read_varint(handle)
+            except EOFError:
+                return
+            field_no = tag >> 3
+            wire_type = tag & 0x7
+            if wire_type != _WIRE_TYPE_LENGTH:
+                _skip_field(handle, wire_type)
+                continue
+            length = _read_varint(handle)
+            payload = _read_exact(handle, length)
+            if field_no in fields:
+                yield field_no, payload
+
+
+def _normalize_position_encoding(value: int | None) -> int | None:
+    if value is None:
+        return None
+    normalized = int(value)
+    if normalized <= 0:
+        return None
+    return normalized
+
+
+def _normalize_text_document_encoding(value: int | None) -> str | None:
+    if value is None:
+        return None
+    normalized = int(value)
+    if normalized == 1:
+        return "utf-8"
+    if normalized == 2:
+        return "utf-16"
+    return None
 
 
 def _parse_package_triple(symbol: str) -> tuple[str | None, str | None, str | None]:

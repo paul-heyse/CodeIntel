@@ -1,28 +1,36 @@
-"""Tests for DuckDB expression helpers."""
+"""Tests for shared filter compiler helpers."""
 
 from __future__ import annotations
 
 import pytest
 
+from codeintel.core.filters import FilterSpecInput
 from codeintel.storage.duckdb_types import Expression
-from codeintel.storage.queries.expressions import and_all, col, eq, lit, snapshot_filter
+from codeintel.storage.queries.filter_compiler import (
+    FilterCompilerError,
+    compile_filter_predicates,
+    duckdb_filter_expression,
+)
 
 pytestmark = pytest.mark.no_runtime_env
 
 
-def test_and_all_requires_expressions() -> None:
-    """Ensure and_all enforces non-empty expressions."""
-    with pytest.raises(ValueError, match="and_all requires at least one expression"):
-        and_all([])
+def test_compile_filter_predicates_rejects_unknown_column() -> None:
+    """Ensure filter compilation fails when columns are not allowed."""
+    filters = [FilterSpecInput(column="repo", op="eq", value="demo")]
+    with pytest.raises(FilterCompilerError, match="Unknown filter column"):
+        compile_filter_predicates(filters, allowed_columns=frozenset({"commit"}))
 
 
-def test_expression_helpers_return_expressions() -> None:
-    """Ensure expression helpers return DuckDB expressions."""
-    expr = col("repo") == lit("demo")
-    assert isinstance(expr, Expression)
-
-    combined = and_all([expr, eq("commit", "abc")])
-    assert isinstance(combined, Expression)
-
-    snapshot = snapshot_filter(repo="demo", commit="abc")
-    assert isinstance(snapshot, Expression)
+def test_duckdb_filter_expression_builds_expression() -> None:
+    """Ensure filter compilation emits DuckDB expressions."""
+    filters = [
+        FilterSpecInput(column="repo", op="eq", value="demo"),
+        FilterSpecInput(column="commit", op="eq", value="abc"),
+    ]
+    predicates = compile_filter_predicates(
+        filters,
+        allowed_columns=frozenset({"commit", "repo"}),
+    )
+    expression = duckdb_filter_expression(predicates)
+    assert isinstance(expression, Expression)

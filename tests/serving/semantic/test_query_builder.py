@@ -38,11 +38,7 @@ def test_relation_ast_builder_filters_orders_and_paginates() -> None:
         offset=0,
         column_types={"id": "INTEGER", "label": "VARCHAR"},
     )
-    ast = build_sqlglot_query(
-        spec=spec,
-        allowed_columns=spec.allowed_columns,
-        column_types=spec.column_types,
-    )
+    ast = build_sqlglot_query(spec=spec)
     result = apply_query_ast(
         con.sql("SELECT * FROM docs.v_demo"),
         ast=ast,
@@ -89,7 +85,7 @@ def test_relation_ast_builder_rejects_unknown_column() -> None:
         limit=10,
         offset=0,
     )
-    ast = build_sqlglot_query(spec=spec, allowed_columns=spec.allowed_columns)
+    ast = build_sqlglot_query(spec=spec)
     with pytest.raises(DuckDBRelationQueryBuilderError, match="Unknown select column"):
         apply_query_ast(con.sql("SELECT * FROM docs.v_demo"), ast=ast, allowed_columns=frozenset())
 

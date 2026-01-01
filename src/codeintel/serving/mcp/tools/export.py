@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, get_type_hints
 
 import anyio
 from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
+from fastmcp.server.tasks import TaskConfig
 
 from codeintel.serving.errors import CodeIntelDomainError
 from codeintel.serving.export.formats import suffix_for_export_format, supports_preview
@@ -55,6 +57,8 @@ if TYPE_CHECKING:
     from codeintel.serving.mcp.resource_store import StoredArtifact, StoredMetadata
     from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.settings import ServingSettings
+
+_CURRENT_CONTEXT = CurrentContext()
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,18 +324,19 @@ def register_export_tool(
 
     async def semantic_export(
         request: SemanticExportToolRequest,
-        ctx: Context | None = None,
+        ctx: Context = _CURRENT_CONTEXT,
     ) -> ExportHandleResponse:
         validated = validate_semantic_export_request(request)
         return await workflow.run(validated, ctx=ctx)
 
     semantic_export.__annotations__ = get_type_hints(semantic_export, include_extras=True)
+    task_config = TaskConfig(mode="optional") if feature_set.enable_mcp_export_tasks else None
     mcp.tool(
         name="semantic_export",
         description="Export semantic view data and return a resource URI",
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEMANTIC, TAG_EXPORT},
-        task=feature_set.enable_mcp_export_tasks,
+        task=task_config,
     )(semantic_export)
 
 

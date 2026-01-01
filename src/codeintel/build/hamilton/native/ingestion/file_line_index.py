@@ -1,0 +1,227 @@
+"""Materialize per-file line byte offsets for span normalization."""
+
+from __future__ import annotations
+
+import io
+import logging
+import tokenize
+from pathlib import Path
+
+import polars as pl
+
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.table_utils import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
+from codeintel.build.hamilton.native.materialization_records import (
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns import (
+    DatasetSaveSpec,
+    SaverContext,
+    make_table_materializations_collector,
+    save_dataset,
+)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_dataset
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput
+
+log = logging.getLogger(__name__)
+
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
+
+FILE_LINE_INDEX_TARGET_NAME = "file_line_index"
+FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
+FILE_LINE_INDEX_SAVE_CONTEXT = SaverContext(
+    domain="ingestion",
+    target=FILE_LINE_INDEX_TARGET_NAME,
+)
+
+FILE_LINE_INDEX_COLUMNS = (
+    "repo",
+    "commit",
+    "rel_path",
+    "line",
+    "start_byte",
+    "end_byte",
+    "encoding",
+)
+
+
+def _resolve_module_paths(modules_frame: pl.DataFrame) -> dict[str, str | None]:
+    paths: dict[str, str | None] = {}
+    for row in modules_frame.iter_rows(named=True):
+        rel_path = row.get("path")
+        if not isinstance(rel_path, str) or not rel_path:
+            continue
+        if rel_path in paths:
+            continue
+        language = row.get("language")
+        paths[rel_path] = language if isinstance(language, str) else None
+    return paths
+
+
+def _resolve_file_path(repo_root: Path, rel_path: str) -> Path:
+    candidate = Path(rel_path)
+    if candidate.is_absolute():
+        return candidate
+    return repo_root / candidate
+
+
+def _detect_encoding(
+    *,
+    path: Path,
+    data: bytes,
+    language: str | None,
+) -> str:
+    if language == "python" or path.suffix == ".py":
+        try:
+            encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
+            return encoding
+        except (SyntaxError, UnicodeDecodeError, LookupError):
+            return "utf-8"
+    return "utf-8"
+
+
+def _line_rows_for_bytes(
+    *,
+    repo: str,
+    commit: str,
+    rel_path: str,
+    data: bytes,
+    encoding: str,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    offset = 0
+    for line_index, line_bytes in enumerate(data.splitlines(keepends=True)):
+        end_offset = offset + len(line_bytes)
+        rows.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "rel_path": rel_path,
+                "line": line_index,
+                "start_byte": offset,
+                "end_byte": end_offset,
+                "encoding": encoding,
+            }
+        )
+        offset = end_offset
+    return rows
+
+
+def file_line_index__base(
+    env: BuildEnv,
+    q__core__modules: InferableTabularInput,
+) -> pl.LazyFrame:
+    """Build core.file_line_index rows from repository files.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame of line index rows.
+    """
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    if modules_frame.is_empty():
+        return empty_frame_for_table(FILE_LINE_INDEX_TABLE_KEY)
+
+    repo_root = Path(env.snapshot.repo_root)
+    path_languages = _resolve_module_paths(modules_frame)
+    if not path_languages:
+        return empty_frame_for_table(FILE_LINE_INDEX_TABLE_KEY)
+
+    rows: list[dict[str, object]] = []
+    for rel_path, language in sorted(path_languages.items()):
+        file_path = _resolve_file_path(repo_root, rel_path)
+        if not file_path.is_file():
+            log.warning("Missing file for line index: %s", file_path)
+            continue
+        try:
+            data = file_path.read_bytes()
+        except OSError as exc:
+            log.warning("Failed to read %s: %s", file_path, exc)
+            continue
+        encoding = _detect_encoding(path=file_path, data=data, language=language)
+        rows.extend(
+            _line_rows_for_bytes(
+                repo=env.repo,
+                commit=env.commit,
+                rel_path=rel_path,
+                data=data,
+                encoding=encoding,
+            )
+        )
+
+    return rows_to_frame(FILE_LINE_INDEX_TABLE_KEY, rows, columns=FILE_LINE_INDEX_COLUMNS)
+
+
+@save_dataset(
+    context=FILE_LINE_INDEX_SAVE_CONTEXT,
+    spec=DatasetSaveSpec(
+        table_key=FILE_LINE_INDEX_TABLE_KEY,
+        partition_columns=("repo", "commit"),
+    ),
+)
+@tag_dataset(
+    domain="ingestion",
+    target=FILE_LINE_INDEX_TARGET_NAME,
+    table_key=FILE_LINE_INDEX_TABLE_KEY,
+)
+def file_line_index__table(file_line_index__base: pl.LazyFrame) -> pl.LazyFrame:
+    """Persist core.file_line_index rows.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Lazy frame to materialize for core.file_line_index.
+    """
+    return file_line_index__base
+
+
+file_line_index__table_materializations = make_table_materializations_collector(
+    domain="ingestion",
+    target=FILE_LINE_INDEX_TARGET_NAME,
+    table_keys=(FILE_LINE_INDEX_TABLE_KEY,),
+    node_name="file_line_index__table_materializations",
+)
+
+
+@codeintel_target(domain="ingestion", target=FILE_LINE_INDEX_TARGET_NAME)
+def t__file_line_index(
+    env: BuildEnv,
+    catalog: DagCatalog,
+    file_line_index__table_materializations: dict[str, MaterializationResult],
+) -> TargetRunRecord:
+    """Finalize file_line_index target run record.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record for the file_line_index target.
+    """
+    context = MaterializationRecordContext(
+        env=env,
+        catalog=catalog,
+        target_name=FILE_LINE_INDEX_TARGET_NAME,
+    )
+    return record_from_materializations(
+        context=context,
+        artifact_materializations=None,
+        table_materializations=file_line_index__table_materializations,
+    )
+
+
+__all__ = [
+    "FILE_LINE_INDEX_TABLE_KEY",
+    "FILE_LINE_INDEX_TARGET_NAME",
+    "file_line_index__base",
+    "file_line_index__table",
+    "file_line_index__table_materializations",
+    "t__file_line_index",
+]

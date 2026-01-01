@@ -149,10 +149,13 @@ def _collect_function_nodes(tree: ast.AST) -> dict[tuple[int, str], _FunctionNod
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             start_line = getattr(node, "lineno", None)
             if isinstance(start_line, int):
+                start_line = max(start_line - 1, 0)
+                end_line = getattr(node, "end_lineno", None)
+                normalized_end = max(end_line - 1, 0) if isinstance(end_line, int) else None
                 nodes[start_line, node.name] = _FunctionNodeInfo(
                     node=node,
                     start_line=start_line,
-                    end_line=getattr(node, "end_lineno", None),
+                    end_line=normalized_end,
                     name=node.name,
                 )
             for child in node.body:

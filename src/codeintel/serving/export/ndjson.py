@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from pyarrow import RecordBatch, RecordBatchReader
 
@@ -54,13 +53,19 @@ def iter_ndjson_bytes(rows: Iterable[Mapping[str, object]]) -> Iterator[bytes]:
         yield encode_ndjson_line(row)
 
 
-def iter_ndjson_bytes_from_reader(reader: RecordBatchReader) -> Iterator[bytes]:
+def iter_ndjson_bytes_from_reader(
+    reader: RecordBatchReader,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+) -> Iterator[bytes]:
     """Yield Arrow record batches as UTF-8 JSONL byte chunks.
 
     Parameters
     ----------
     reader
         Record batch reader to serialize as newline-delimited JSON.
+    cancel_check
+        Optional cancellation hook invoked between batches.
 
     Yields
     ------
@@ -72,6 +77,8 @@ def iter_ndjson_bytes_from_reader(reader: RecordBatchReader) -> Iterator[bytes]:
     This function uses shared row coercion to ensure consistent export encoding.
     """
     for batch in reader:
+        if cancel_check is not None:
+            cancel_check()
         payload = _batch_to_ndjson_bytes(batch, columns=batch.schema.names)
         if payload:
             yield payload

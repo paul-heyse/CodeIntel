@@ -98,11 +98,7 @@ def test_duckdb_ast_builder_filters_orders_and_paginates() -> None:
             offset=0,
             column_types={"id": "INTEGER", "label": "VARCHAR"},
         )
-        ast = build_sqlglot_query(
-            spec=spec,
-            allowed_columns=spec.allowed_columns,
-            column_types=spec.column_types,
-        )
+        ast = build_sqlglot_query(spec=spec)
         rows = apply_query_ast(
             relation,
             ast=ast,
@@ -172,11 +168,7 @@ def test_duckdb_relation_builder_uses_parquet_metadata(
             offset=0,
             column_types=column_types,
         )
-        ast = build_sqlglot_query(
-            spec=spec,
-            allowed_columns=spec.allowed_columns,
-            column_types=column_types,
-        )
+        ast = build_sqlglot_query(spec=spec)
         relation = build_relation_plan(
             con=con,
             spec=spec,

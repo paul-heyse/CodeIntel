@@ -10,11 +10,8 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-import sqlglot
 import sqlglot.expressions as exp
-from sqlglot.errors import ParseError
 
-from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 
 __all__ = [
@@ -54,26 +51,21 @@ def create_schema_if_not_exists_ast(
     Raises
     ------
     ValueError
-        If the generated DDL cannot be parsed or identifiers are invalid.
-    TypeError
-        If the generated DDL is not a CREATE statement.
+        If identifiers are invalid.
     """
     _validate_identifier(schema_name, kind="schema")
-    qualifier = schema_name
+    qualifier = exp.Table(
+        this=exp.to_identifier(schema_name),
+        db=exp.to_identifier(catalog) if catalog is not None else None,
+    )
     if catalog is not None:
         _validate_identifier(catalog, kind="catalog")
-        qualifier = f"{catalog}.{schema_name}"
 
-    sql = f"CREATE SCHEMA IF NOT EXISTS {qualifier}"
-    try:
-        parsed = sqlglot.parse_one(sql, read=DUCKDB_DIALECT)
-    except ParseError as exc:
-        msg = "Failed to parse generated schema DDL"
-        raise ValueError(msg) from exc
-    if not isinstance(parsed, exp.Create):
-        msg = "Generated DDL did not produce a CREATE statement"
-        raise TypeError(msg)
-    return parsed
+    return exp.Create(
+        this=qualifier,
+        kind="SCHEMA",
+        exists=True,
+    )
 
 
 def create_index_if_not_exists_ast(

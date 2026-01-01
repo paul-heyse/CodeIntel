@@ -450,6 +450,14 @@ class ScipOccurrenceRow:
         Ending column number (0-based).
     roles
         SCIP symbol roles bitmask.
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
+    start_byte
+        Start byte offset (nullable when not computed).
+    end_byte
+        End byte offset (nullable when not computed).
     created_at
         Row creation timestamp.
     """
@@ -463,6 +471,10 @@ class ScipOccurrenceRow:
     end_line: int
     end_col: int
     roles: int
+    position_encoding: int | None
+    text_document_encoding: str | None
+    start_byte: int | None
+    end_byte: int | None
     created_at: datetime
 
     def to_tuple(self) -> tuple[object, ...]:
@@ -581,6 +593,10 @@ class ScipDiagnosticRow:
         Diagnostic end line (0-based).
     end_col
         Diagnostic end column (0-based).
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
     severity
         Diagnostic severity string.
     code
@@ -600,6 +616,8 @@ class ScipDiagnosticRow:
     start_col: int
     end_line: int
     end_col: int
+    position_encoding: int | None
+    text_document_encoding: str | None
     severity: str
     code: str | None
     message: str

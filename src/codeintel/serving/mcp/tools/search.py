@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING
 
 from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
 
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
@@ -21,6 +22,8 @@ from codeintel.serving.search.models import SearchQueryRequest, SearchQueryRespo
 
 if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
+
+_CURRENT_CONTEXT = CurrentContext()
 
 
 def register_search_tool(
@@ -44,7 +47,7 @@ def register_search_tool(
         limit: int = 20,
         offset: int = 0,
         *,
-        ctx: Context,
+        ctx: Context = _CURRENT_CONTEXT,
     ) -> SearchQueryResponse:
         start = time.perf_counter()
         await ctx.info(f"Searching: {query}")

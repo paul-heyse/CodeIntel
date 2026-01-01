@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING
 
 from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
 
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
@@ -21,6 +22,8 @@ from codeintel.serving.semantic.models import SemanticCatalogResponse
 
 if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
+
+_CURRENT_CONTEXT = CurrentContext()
 
 
 def register_catalog_tool(
@@ -38,7 +41,7 @@ def register_catalog_tool(
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEMANTIC, TAG_READ},
     )
-    async def semantic_catalog(*, ctx: Context) -> SemanticCatalogResponse:
+    async def semantic_catalog(*, ctx: Context = _CURRENT_CONTEXT) -> SemanticCatalogResponse:
         start = time.perf_counter()
         catalog = await limiter.run(ops.catalog)
         row_count = len(catalog.views)

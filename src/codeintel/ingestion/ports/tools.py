@@ -175,6 +175,14 @@ class ScipOccurrence:
         End column (0-based).
     symbol_roles
         Bitmask of symbol roles (1=definition, 2=reference).
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
+    start_byte
+        Start byte offset, when computed.
+    end_byte
+        End byte offset, when computed.
     """
 
     symbol: str
@@ -183,6 +191,10 @@ class ScipOccurrence:
     range_end_line: int
     range_end_col: int
     symbol_roles: int
+    position_encoding: int | None = None
+    text_document_encoding: str | None = None
+    start_byte: int | None = None
+    end_byte: int | None = None
 
 
 @dataclass
@@ -197,11 +209,17 @@ class ScipDocument:
         Symbols defined in this document.
     occurrences
         Symbol occurrences in this document.
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
     """
 
     relative_path: str
     symbols: Sequence[ScipSymbol] = field(default_factory=list)
     occurrences: Sequence[ScipOccurrence] = field(default_factory=list)
+    position_encoding: int | None = None
+    text_document_encoding: str | None = None
 
 
 @dataclass

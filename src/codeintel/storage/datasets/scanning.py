@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
+
+from codeintel.core.manifests import ArrowDatasetManifest
 
 if TYPE_CHECKING:
     from pyarrow.dataset import Scanner
@@ -27,6 +31,60 @@ class DatasetScanOptions:
     columns: Sequence[str] | None = None
     unify_schemas: bool = False
     metrics_enabled: bool = False
+
+
+_METADATA_FILENAME = "_metadata"
+_COMMON_METADATA_FILENAME = "_common_metadata"
+
+
+def resolve_partitioning(
+    *,
+    manifest: ArrowDatasetManifest,
+    schema: pa.Schema | None,
+) -> ds.Partitioning | str | None:
+    """Resolve dataset partitioning from manifest metadata.
+
+    Returns
+    -------
+    pyarrow.dataset.Partitioning | str | None
+        Partitioning config for dataset reads.
+    """
+    if not manifest.partition_columns:
+        return None
+    if schema is None:
+        return "hive"
+    if any(column not in schema.names for column in manifest.partition_columns):
+        return "hive"
+    fields = [schema.field(column) for column in manifest.partition_columns]
+    return ds.partitioning(schema=pa.schema(fields))
+
+
+def dataset_for_manifest(
+    *,
+    manifest: ArrowDatasetManifest,
+    manifest_path: Path,
+) -> ds.Dataset:
+    """Return a PyArrow dataset for a manifest payload.
+
+    Returns
+    -------
+    pyarrow.dataset.Dataset
+        Dataset handle for the manifest.
+    """
+    dataset_dir = manifest_path.parent.resolve()
+    metadata_path = _dataset_metadata_path(dataset_dir)
+    schema = _schema_from_common_metadata(dataset_dir)
+    partitioning = resolve_partitioning(manifest=manifest, schema=schema)
+    if metadata_path is not None:
+        return ds.parquet_dataset(
+            str(metadata_path),
+            partitioning=partitioning,
+            partition_base_dir=str(dataset_dir),
+        )
+    if manifest.files:
+        paths = [str(dataset_dir / path) for path in manifest.files]
+        return ds.dataset(paths, format="parquet", partitioning=partitioning, schema=schema)
+    return ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning, schema=schema)
 
 
 def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanner:
@@ -88,12 +146,13 @@ def _dataset_fragments(dataset: ds.Dataset) -> Iterable[ds.Fragment] | None:
     if not callable(get_fragments):
         return None
     try:
-        fragments = get_fragments()
+        fragments = cast("Callable[[], Iterable[ds.Fragment]]", get_fragments)()
     except (TypeError, ValueError, pa.ArrowInvalid):
         return None
-    if not isinstance(fragments, Iterable):
+    try:
+        return tuple(fragments)
+    except TypeError:
         return None
-    return fragments
 
 
 def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> Scanner:
@@ -163,13 +222,84 @@ def _fragments_for_filter(
     get_fragments = getattr(dataset, "get_fragments", None)
     if not callable(get_fragments):
         return None
+    get_fragments_fn = cast("Callable[..., Iterable[ds.Fragment]]", get_fragments)
+    fragments = _safe_get_fragments(get_fragments_fn, filter_expression)
+    if fragments is None:
+        fragments = _safe_get_fragments(get_fragments_fn, None)
+    if fragments is None:
+        return None
+    return _apply_row_group_pruning(fragments, filter_expression)
+
+
+def _dataset_metadata_path(dataset_dir: Path) -> Path | None:
+    metadata_path = dataset_dir / _METADATA_FILENAME
+    return metadata_path if metadata_path.is_file() else None
+
+
+def _schema_from_common_metadata(dataset_dir: Path) -> pa.Schema | None:
+    common_metadata_path = dataset_dir / _COMMON_METADATA_FILENAME
+    if not common_metadata_path.is_file():
+        return None
     try:
-        fragments = get_fragments(filter=filter_expression)
-        if not isinstance(fragments, Iterable):
+        parquet_file = pq.ParquetFile(common_metadata_path)
+    except (OSError, ValueError, pa.ArrowInvalid):
+        return None
+    return parquet_file.schema_arrow
+
+
+def _safe_get_fragments(
+    get_fragments: Callable[..., Iterable[ds.Fragment]],
+    filter_expression: ds.Expression | None,
+) -> tuple[ds.Fragment, ...] | None:
+    if filter_expression is None:
+        try:
+            fragments = get_fragments()
+        except (TypeError, ValueError, pa.ArrowInvalid):
             return None
+    else:
+        try:
+            fragments = get_fragments(filter=filter_expression)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            return None
+    try:
         return tuple(fragments)
-    except (TypeError, ValueError, pa.ArrowInvalid):
+    except TypeError:
         return None
 
 
-__all__ = ["DatasetScanOptions", "build_scanner", "unify_dataset_schema"]
+def _apply_row_group_pruning(
+    fragments: tuple[ds.Fragment, ...],
+    filter_expression: ds.Expression,
+) -> tuple[ds.Fragment, ...]:
+    pruned: list[ds.Fragment] = []
+    for fragment in fragments:
+        subset = getattr(fragment, "subset", None)
+        if not callable(subset):
+            pruned.append(fragment)
+            continue
+        try:
+            subset_value = subset(filter_expression)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            pruned.append(fragment)
+            continue
+        if subset_value is None:
+            continue
+        if isinstance(subset_value, ds.Fragment):
+            pruned.append(subset_value)
+            continue
+        try:
+            iterator = iter(subset_value)
+        except TypeError:
+            pruned.append(fragment)
+            continue
+        pruned.extend(item for item in iterator if isinstance(item, ds.Fragment))
+    return tuple(pruned)
+
+
+__all__ = [
+    "DatasetScanOptions",
+    "build_scanner",
+    "dataset_for_manifest",
+    "resolve_partitioning",
+    "unify_dataset_schema",
+]

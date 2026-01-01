@@ -6,8 +6,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import sqlglot.expressions as exp
+
 from codeintel.storage.constants import META_CATALOG_NAME, META_DB_FILENAME
+from codeintel.storage.duckdb.catalog import is_valid_catalog_identifier
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -78,23 +82,43 @@ def attach_meta_database(con: DuckDBPyConnection, *, config: StorageConfig) -> N
         return
 
     meta_path = resolve_meta_db_path(config)
-    escaped_alias = catalog.replace('"', '""')
     if str(meta_path) == ":memory:":
-        con.execute(f"ATTACH DATABASE ':memory:' AS \"{escaped_alias}\"")
+        _attach_database(con, db_path=":memory:", alias=catalog, read_only=False)
         return
 
     if config.read_only:
         if not meta_path.exists():
             log.warning("Meta database not found for read-only attach: %s", meta_path)
             return
-        escaped_path = str(meta_path).replace("'", "''")
-        con.execute(f"ATTACH DATABASE '{escaped_path}' AS \"{escaped_alias}\" (READ_ONLY)")
+        _attach_database(con, db_path=str(meta_path), alias=catalog, read_only=True)
     else:
         meta_path.parent.mkdir(parents=True, exist_ok=True)
-        escaped_path = str(meta_path).replace("'", "''")
-        con.execute(f"ATTACH DATABASE '{escaped_path}' AS \"{escaped_alias}\"")
+        _attach_database(con, db_path=str(meta_path), alias=catalog, read_only=False)
 
 
 def _catalog_attached(con: DuckDBPyConnection, catalog: str) -> bool:
     rows = con.execute("PRAGMA database_list").fetchmany(128)
     return any(row[1] == catalog for row in rows)
+
+
+def _attach_database(
+    con: DuckDBPyConnection,
+    *,
+    db_path: str,
+    alias: str,
+    read_only: bool,
+) -> None:
+    if not is_valid_catalog_identifier(alias):
+        msg = f"Invalid catalog identifier: {alias!r}"
+        raise ValueError(msg)
+    options = None
+    if read_only:
+        options = [exp.AttachOption(this=exp.Var(this="READ_ONLY"))]
+    attach = exp.Attach(
+        this=exp.alias_(
+            exp.Literal.string(db_path),
+            exp.to_identifier(alias),
+        ),
+        expressions=options,
+    )
+    con.execute(render_sql_duckdb(attach))

@@ -706,7 +706,9 @@ def _merge_support_config(
     merged = dict(config)
     support_config = support_spec.to_hamilton_config()
     for key, value in support_config.items():
-        if key in merged and key.startswith("ci_support_include_"):
+        if key in merged and (
+            key.startswith("ci_support_include_") or key == "ci_seeded_datasets"
+        ):
             continue
         merged[key] = value
     return merged

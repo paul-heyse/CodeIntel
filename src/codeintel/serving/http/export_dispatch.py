@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -78,6 +78,20 @@ class ExportMetricsContext:
         )
 
 
+@dataclass(slots=True)
+class _ExportStreamMetrics:
+    metrics: ExportMetricsContext
+    started: float = field(default_factory=time.perf_counter)
+    row_count: int = 0
+
+    def record_row(self) -> None:
+        self.row_count += 1
+
+    def finalize(self) -> None:
+        duration_ms = (time.perf_counter() - self.started) * 1000
+        log_query_metrics(self.metrics.to_metrics(row_count=self.row_count, duration_ms=duration_ms))
+
+
 @dataclass(frozen=True, slots=True)
 class ExportDispatchOptions:
     """Options for dispatching export responses."""
@@ -115,18 +129,12 @@ def _iter_rows_with_metrics(
     *,
     ops: ServingOperations,
     payload: SemanticExportRequest,
-    metrics: ExportMetricsContext,
+    tracker: _ExportStreamMetrics,
     cancel_check: CancelCheck | None,
 ) -> Iterator[dict[str, object]]:
-    row_count = 0
-    started = time.perf_counter()
-    try:
-        for row in ops.export_rows(payload, cancel_check=cancel_check):
-            row_count += 1
-            yield row
-    finally:
-        duration_ms = (time.perf_counter() - started) * 1000
-        log_query_metrics(metrics.to_metrics(row_count=row_count, duration_ms=duration_ms))
+    for row in ops.export_rows(payload, cancel_check=cancel_check):
+        tracker.record_row()
+        yield row
 
 
 async def dispatch_semantic_export(
@@ -145,15 +153,17 @@ async def dispatch_semantic_export(
     """
     plan = build_export_plan(payload)
     if plan.delivery is ExportDelivery.ndjson_stream:
+        tracker = _ExportStreamMetrics(metrics=metrics)
         response = ndjson_response(
             _iter_rows_with_metrics(
                 ops=ops,
                 payload=payload,
-                metrics=metrics,
+                tracker=tracker,
                 cancel_check=options.cancel_check,
             ),
             filename=f"{payload.view_id}{plan.suffix}",
             headers=options.headers,
+            background=BackgroundTask(tracker.finalize),
         )
         return ExportDispatchResult(response=response, metrics_row_count=None)
     if plan.delivery is ExportDelivery.binary_file:
