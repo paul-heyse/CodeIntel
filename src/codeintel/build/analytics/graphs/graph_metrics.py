@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 SymbolModuleEdges = tuple[set[str], Mapping[str, set[str]], Mapping[str, set[str]]]
+ComponentMeta = Mapping[str, Mapping[str, int | bool]]
 
 
 @dataclass(frozen=True)
@@ -145,7 +146,7 @@ class GraphMetricsInputs:
     import_graph: nx.DiGraph
     symbol_module_edges: SymbolModuleEdges
     module_names: Iterable[str]
-    component_meta: Mapping[str, Mapping[object, int | bool]] | None = None
+    component_meta: ComponentMeta | None = None
     filters: GraphMetricFilters | None = None
     options: GraphMetricsOptions | None = None
     community_detection_limit: int | None = None
@@ -162,7 +163,7 @@ class ModuleGraphMetricsInputs:
     symbol_module_edges: SymbolModuleEdges
     module_names: Iterable[str]
     filters: GraphMetricFilters
-    component_meta_cache: Mapping[str, Mapping[object, int | bool]] | None = None
+    component_meta_cache: ComponentMeta | None = None
 
 
 def build_graph_metric_filters_from_sets(

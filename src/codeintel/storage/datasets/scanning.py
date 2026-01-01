@@ -65,12 +65,8 @@ def unify_dataset_schema(dataset: ds.Dataset) -> pa.Schema | None:
     pa.Schema | None
         Unified schema if available; otherwise dataset schema.
     """
-    get_fragments = getattr(dataset, "get_fragments", None)
-    if not callable(get_fragments):
-        return dataset.schema
-    try:
-        fragments = get_fragments()
-    except (TypeError, ValueError, pa.ArrowInvalid):
+    fragments = _dataset_fragments(dataset)
+    if fragments is None:
         return dataset.schema
     schemas: list[pa.Schema] = []
     for fragment in fragments:
@@ -85,6 +81,19 @@ def unify_dataset_schema(dataset: ds.Dataset) -> pa.Schema | None:
         return pa.unify_schemas(schemas)
     except (TypeError, ValueError, pa.ArrowInvalid):
         return dataset.schema
+
+
+def _dataset_fragments(dataset: ds.Dataset) -> Iterable[ds.Fragment] | None:
+    get_fragments = getattr(dataset, "get_fragments", None)
+    if not callable(get_fragments):
+        return None
+    try:
+        fragments = get_fragments()
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+    if not isinstance(fragments, Iterable):
+        return None
+    return fragments
 
 
 def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> Scanner:

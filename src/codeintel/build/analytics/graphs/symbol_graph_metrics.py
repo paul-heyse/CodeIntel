@@ -48,7 +48,8 @@ def build_symbol_module_graph(
             continue
         if graph.has_edge(use_module, def_module):
             attrs = graph[use_module][def_module]
-            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+            weight = _parse_int_node(attrs.get("weight")) or 0
+            attrs["weight"] = weight + 1
         else:
             graph.add_edge(use_module, def_module, weight=1)
     return graph
@@ -72,7 +73,8 @@ def build_symbol_function_graph(
             continue
         if graph.has_edge(use_goid, def_goid):
             attrs = graph[use_goid][def_goid]
-            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+            weight = _parse_int_node(attrs.get("weight")) or 0
+            attrs["weight"] = weight + 1
         else:
             graph.add_edge(use_goid, def_goid, weight=1)
     return graph

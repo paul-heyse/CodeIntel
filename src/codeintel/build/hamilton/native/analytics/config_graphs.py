@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import ast
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
 import polars as pl
 
+from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.graphs.config_data_flow import (
     CONFIG_DATA_FLOW_COLS,
     compute_config_data_flow_result,
@@ -16,8 +22,9 @@ from codeintel.build.analytics.graphs.config_graph_metrics import (
     ConfigGraphMetricsResult,
     compute_config_graph_metrics_result,
 )
-from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
-from codeintel.build.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.build.analytics.graphs.graph_metrics import build_call_graph_from_rows
+from codeintel.build.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -39,8 +46,10 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.catalog.service import CatalogService
+from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.paths import normalize_path
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -114,11 +123,144 @@ CONFIG_GRAPH_MODULE_EDGES_CONTRACT = TableContractSpec(
     input_name="config_projection_module_edges__base",
 )
 
+_FUNCTION_KINDS: frozenset[str] = frozenset({"function", "method"})
+
+
+@dataclass(frozen=True)
+class _GoidSpan:
+    goid: int
+    qualname: str
+    start_line: int
+    end_line: int
+
+
+def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
+    if env.execution_context is None:
+        return GraphRuntimeOptions(snapshot=env.snapshot)
+    return GraphRuntimeOptions(
+        snapshot=env.snapshot,
+        backend=env.execution_context.graph_backend,
+        features=env.execution_context.graph_features,
+    )
+
+
+def _collect_rows(
+    value: InferableTabularInput,
+    columns: tuple[str, ...],
+    *,
+    repo: str | None,
+    commit: str | None,
+) -> list[dict[str, object]]:
+    frame = tabular_to_lazyframe(value)
+    available = set(frame.columns)
+    if repo is not None and "repo" in available:
+        frame = frame.filter(pl.col("repo") == repo)
+    if commit is not None and "commit" in available:
+        frame = frame.filter(pl.col("commit") == commit)
+    return frame.select(list(columns)).collect().to_dicts()
+
+
+def _matches_optional_scope(value: object, expected: str) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return str(value) == expected
+
+
+def _coerce_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _group_goids_by_path(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    repo: str,
+    commit: str,
+) -> tuple[dict[str, list[_GoidSpan]], set[int]]:
+    grouped: dict[str, list[_GoidSpan]] = {}
+    missing: set[int] = set()
+    for row in rows:
+        if not _matches_optional_scope(row.get("repo"), repo):
+            continue
+        if not _matches_optional_scope(row.get("commit"), commit):
+            continue
+        kind = row.get("kind")
+        if kind is None or str(kind) not in _FUNCTION_KINDS:
+            continue
+        goid = normalize_decimal_id(row.get("goid_h128"))
+        if goid is None:
+            continue
+        rel_path = row.get("rel_path")
+        start_line = _coerce_int(row.get("start_line"))
+        end_line = _coerce_int(row.get("end_line")) or start_line
+        if rel_path is None or start_line is None or end_line is None:
+            missing.add(goid)
+            continue
+        qualname = row.get("qualname")
+        span = _GoidSpan(
+            goid=goid,
+            qualname=str(qualname) if qualname is not None else "",
+            start_line=start_line,
+            end_line=end_line,
+        )
+        grouped.setdefault(normalize_path(str(rel_path)), []).append(span)
+    return grouped, missing
+
+
+def _function_asts_from_goids(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    repo: str,
+    commit: str,
+    repo_root: Path,
+) -> tuple[dict[int, FunctionAst], set[int]]:
+    grouped, missing = _group_goids_by_path(rows, repo=repo, commit=commit)
+    ast_by_goid: dict[int, FunctionAst] = {}
+    for rel_path, spans in grouped.items():
+        abs_path = (repo_root / rel_path).resolve()
+        try:
+            parsed = parse_python_file(abs_path)
+        except (OSError, ValueError):
+            missing.update(span.goid for span in spans)
+            continue
+        for span in spans:
+            node = parsed.span_index.lookup(span.start_line, span.end_line)
+            if node is None or not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                missing.add(span.goid)
+                continue
+            ast_by_goid[span.goid] = FunctionAst(
+                goid=span.goid,
+                rel_path=rel_path,
+                qualname=span.qualname,
+                start_line=span.start_line,
+                end_line=span.end_line,
+                node=node,
+                lines=list(parsed.lines),
+            )
+    return ast_by_goid, missing
+
 
 def config_data_flow__base(
     env: BuildEnv,
     _q__analytics__config_values: InferableTabularInput,
+    _q__analytics__entrypoints: InferableTabularInput,
     _q__graph__call_graph_edges: InferableTabularInput,
+    _q__graph__call_graph_nodes: InferableTabularInput,
+    _q__core__goids: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build config data flow rows.
 
@@ -128,31 +270,62 @@ def config_data_flow__base(
         Build environment with gateway access.
     _q__analytics__config_values
         Config values input (unused, required for dependency ordering).
+    _q__analytics__entrypoints
+        Entrypoint rows input (unused, required for dependency ordering).
     _q__graph__call_graph_edges
         Call graph edges input (unused, required for dependency ordering).
+    _q__graph__call_graph_nodes
+        Call graph nodes input (unused, required for dependency ordering).
+    _q__core__goids
+        GOID rows for AST lookup (unused, required for dependency ordering).
 
     Returns
     -------
     pl.LazyFrame
         Lazy frame containing config data flow rows.
     """
-    runtime = resolve_graph_runtime(
-        env.gateway,
-        env.snapshot,
-        GraphRuntimeOptions(snapshot=env.snapshot),
+    config_value_rows = _collect_rows(
+        _q__analytics__config_values,
+        ("repo", "commit", "config_path", "key", "reference_paths"),
+        repo=env.repo,
+        commit=env.commit,
     )
-    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
-    request = FunctionAstLoadRequest(
+    entrypoint_rows = _collect_rows(
+        _q__analytics__entrypoints,
+        ("repo", "commit", "handler_goid_h128"),
+        repo=env.repo,
+        commit=env.commit,
+    )
+    call_edge_rows = _collect_rows(
+        _q__graph__call_graph_edges,
+        ("caller_goid_h128", "callee_goid_h128"),
+        repo=env.repo,
+        commit=env.commit,
+    )
+    call_node_rows = _collect_rows(
+        _q__graph__call_graph_nodes,
+        ("goid_h128", "kind"),
+        repo=None,
+        commit=None,
+    )
+    call_graph = build_call_graph_from_rows(call_edge_rows, call_node_rows)
+    goid_rows = _collect_rows(
+        _q__core__goids,
+        ("goid_h128", "rel_path", "qualname", "kind", "start_line", "end_line", "repo", "commit"),
+        repo=env.repo,
+        commit=env.commit,
+    )
+    ast_map, missing = _function_asts_from_goids(
+        goid_rows,
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
-        catalog_provider=catalog,
     )
-    ast_map, missing = load_function_asts(env.gateway, request)
     result = compute_config_data_flow_result(
-        env.gateway,
         env.snapshot,
-        call_graph=runtime.ensure_call_graph(),
+        config_value_rows=config_value_rows,
+        entrypoint_rows=entrypoint_rows,
+        call_graph=call_graph,
         ast_by_goid=ast_map,
         missing_goids=missing,
     )
@@ -216,6 +389,7 @@ def t__config_data_flow(
 def config_graph_metrics_result(
     env: BuildEnv,
     _q__analytics__config_values: InferableTabularInput,
+    _q__core__modules: InferableTabularInput,
 ) -> ConfigGraphMetricsResult:
     """Compute config graph metrics result rows.
 
@@ -224,7 +398,33 @@ def config_graph_metrics_result(
     ConfigGraphMetricsResult
         Computed config graph metrics container.
     """
-    return compute_config_graph_metrics_result(env.gateway, repo=env.repo, commit=env.commit)
+    config_value_rows = _collect_rows(
+        _q__analytics__config_values,
+        ("repo", "commit", "key", "reference_modules"),
+        repo=env.repo,
+        commit=env.commit,
+    )
+    module_rows = _collect_rows(
+        _q__core__modules,
+        ("module", "repo", "commit"),
+        repo=env.repo,
+        commit=env.commit,
+    )
+    allowed_modules = {
+        str(row["module"])
+        for row in module_rows
+        if row.get("module") is not None
+        and _matches_optional_scope(row.get("repo"), env.repo)
+        and _matches_optional_scope(row.get("commit"), env.commit)
+    }
+    runtime_options = _graph_runtime_options(env)
+    return compute_config_graph_metrics_result(
+        repo=env.repo,
+        commit=env.commit,
+        config_value_rows=config_value_rows,
+        allowed_modules=allowed_modules,
+        runtime=runtime_options,
+    )
 
 
 def config_graph_metrics_keys__base(

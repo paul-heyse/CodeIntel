@@ -7,10 +7,20 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.analytics.graphs.config_graph_metrics import build_config_module_bipartite
+from codeintel.build.analytics.graphs.graph_metrics import (
+    build_call_graph_from_rows,
+    build_import_graph_from_rows,
+)
 from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
 from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.build.analytics.graphs.symbol_graph_metrics import (
+    build_symbol_function_graph,
+    build_symbol_module_graph,
+)
 from codeintel.build.graphs.engine import NxGraphEngine
 from codeintel.build.graphs.validation import warn_graph_structure
+from codeintel.storage.query_results import records_from_relation
 from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
@@ -45,9 +55,34 @@ def _seed_test_modules(ctx: TestContext) -> None:
     )
 
 
+def _module_inputs(ctx: TestContext) -> tuple[dict[str, str], set[str]]:
+    module_rows = records_from_relation(
+        ctx.gateway.relation_from_table_key("core.modules").select(
+            "module",
+            "path",
+            "repo",
+            "commit",
+        )
+    )
+    module_by_path: dict[str, str] = {}
+    module_names: set[str] = set()
+    for row in module_rows:
+        module = row.get("module")
+        path = row.get("path")
+        if module is None or path is None:
+            continue
+        if str(row.get("repo")) != ctx.repo or str(row.get("commit")) != ctx.commit:
+            continue
+        module_name = str(module)
+        module_names.add(module_name)
+        module_by_path[str(path)] = module_name
+    return module_by_path, module_names
+
+
 def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) -> None:
     """Verify graph_stats covers symbol, function, and config projections."""
     _seed_test_modules(graph_ctx)
+    module_by_path, module_names = _module_inputs(graph_ctx)
 
     insert_rows(
         graph_ctx.gateway,
@@ -79,10 +114,41 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
         ],
     )
 
-    stats_rows = build_graph_stats_rows(
-        graph_ctx.gateway,
+    symbol_rows = records_from_relation(
+        graph_ctx.gateway.relation_from_table_key("graph.symbol_use_edges").select(
+            "def_path",
+            "use_path",
+            "def_goid_h128",
+            "use_goid_h128",
+        )
+    )
+    symbol_module_graph = build_symbol_module_graph(symbol_rows, module_by_path)
+    symbol_function_graph = build_symbol_function_graph(symbol_rows)
+    config_rows = records_from_relation(
+        graph_ctx.gateway.relation_from_table_key("analytics.config_values").select(
+            "repo",
+            "commit",
+            "key",
+            "reference_modules",
+        )
+    )
+    config_bipartite = build_config_module_bipartite(
+        config_rows,
+        allowed_modules=module_names,
         repo=graph_ctx.repo,
         commit=graph_ctx.commit,
+    )
+    call_graph = build_call_graph_from_rows([], [])
+    import_graph = build_import_graph_from_rows([], [])
+    stats_rows = build_graph_stats_rows(
+        repo=graph_ctx.repo,
+        commit=graph_ctx.commit,
+        call_graph=call_graph,
+        import_graph=import_graph,
+        symbol_module_graph=symbol_module_graph,
+        symbol_function_graph=symbol_function_graph,
+        config_module_bipartite=config_bipartite,
+        use_gpu=False,
     )
     if stats_rows:
         graph_ctx.gateway.policy.delete_for_snapshot(
@@ -172,10 +238,27 @@ def test_subsystem_agreement_summary_aggregates(graph_ctx: TestContext) -> None:
         ],
     )
 
+    subsystem_rows = records_from_relation(
+        graph_ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
+            "repo",
+            "commit",
+            "module",
+            "subsystem_id",
+        )
+    )
+    graph_metrics_rows = records_from_relation(
+        graph_ctx.gateway.relation_from_table_key("analytics.graph_metrics_modules_ext").select(
+            "repo",
+            "commit",
+            "module",
+            "import_community_id",
+        )
+    )
     agreement_rows = build_subsystem_agreement_rows(
-        graph_ctx.gateway,
         repo=graph_ctx.repo,
         commit=graph_ctx.commit,
+        subsystem_module_rows=subsystem_rows,
+        graph_metrics_module_rows=graph_metrics_rows,
     )
     if agreement_rows:
         graph_ctx.gateway.policy.delete_for_snapshot(

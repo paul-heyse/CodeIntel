@@ -302,6 +302,10 @@ def _apply_relation_alias(relation: DuckDBRelation, table: exp.Table) -> DuckDBR
     return aliased if isinstance(aliased, duckdb.DuckDBPyRelation) else relation
 
 
+def _true_relation_expr() -> Expression:
+    return ConstantExpression(1) == ConstantExpression(1)
+
+
 def _apply_join(
     *,
     relation: DuckDBRelation,
@@ -336,9 +340,9 @@ def _apply_join(
             return (
                 result
                 if isinstance(result, duckdb.DuckDBPyRelation)
-                else relation.join(join_relation, ConstantExpression(value=True), how="cross")
+                else relation.join(join_relation, _true_relation_expr(), how="cross")
             )
-        return relation.join(join_relation, ConstantExpression(value=True), how="cross")
+        return relation.join(join_relation, _true_relation_expr(), how="cross")
     if join_condition is None:
         msg = "JOIN requires an ON or USING clause"
         raise DuckDBRelationQueryBuilderError(msg)

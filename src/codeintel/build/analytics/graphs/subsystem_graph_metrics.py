@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import networkx as nx
@@ -14,18 +14,13 @@ from codeintel.build.analytics.compute.row_builders import (
     SubsystemMetricRow,
     build_subsystem_graph_rows,
 )
-from codeintel.build.analytics.graphs.graph_metrics import build_graph_metric_filters
-from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.build.analytics.graphs.graph_metrics import build_graph_metric_filters_from_sets
+from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.repositories.subsystems import SubsystemRepository
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
     from codeintel.build.graphs.runtime.context import GraphContext
-    from codeintel.storage.gateway import StorageGateway
 
 
 def _dag_layers(graph: nx.DiGraph) -> dict[str, int]:
@@ -112,12 +107,51 @@ def _coerce_edge_weight(value: object) -> float:
     return 1.0
 
 
-def build_subsystem_graph_metrics_rows(
-    gateway: StorageGateway,
+def _matches_optional_scope(value: object, expected: str) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return str(value) == expected
+
+
+def _normalize_membership_rows(
+    rows: Iterable[Mapping[str, object]] | Iterable[tuple[str, str]],
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+) -> list[tuple[str, str]]:
+    memberships: list[tuple[str, str]] = []
+    for row in rows:
+        if isinstance(row, tuple):
+            subsystem_id, module = row
+            memberships.append((str(subsystem_id), str(module)))
+            continue
+        subsystem_id = row.get("subsystem_id")
+        module = row.get("module")
+        if subsystem_id is None or module is None:
+            continue
+        if not _matches_optional_scope(row.get("repo"), repo):
+            continue
+        if not _matches_optional_scope(row.get("commit"), commit):
+            continue
+        memberships.append((str(subsystem_id), str(module)))
+    return memberships
+
+
+def _filters_from_memberships(memberships: list[tuple[str, str]]) -> GraphMetricFilters:
+    modules = {module for _, module in memberships}
+    subsystems = {subsystem_id for subsystem_id, _ in memberships}
+    return build_graph_metric_filters_from_sets(modules=modules, subsystems=subsystems)
+
+
+def build_subsystem_graph_metrics_rows(
+    *,
+    repo: str,
+    commit: str,
+    import_graph: nx.DiGraph,
+    membership_rows: Iterable[Mapping[str, object]] | Iterable[tuple[str, str]],
+    runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
 ) -> list[SubsystemMetricRow]:
     """Build subsystem-level condensed import graph metrics rows.
@@ -127,38 +161,27 @@ def build_subsystem_graph_metrics_rows(
     list[tuple[object, ...]]
         Row tuples for analytics.subsystem_graph_metrics.
     """
-    runtime_opts = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
-    )
-    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    active_filters = filters or build_graph_metric_filters(gateway, snapshot)
-    resolved_runtime = resolve_graph_runtime(
-        gateway,
-        snapshot,
-        runtime_opts,
-    )
+    runtime_opts = runtime or GraphRuntimeOptions()
+    membership_list = _normalize_membership_rows(membership_rows, repo=repo, commit=commit)
+    if not membership_list:
+        return []
+    active_filters = filters or _filters_from_memberships(membership_list)
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
             commit=commit,
-            use_gpu=resolved_runtime.backend.use_gpu,
+            use_gpu=runtime_opts.use_gpu,
             now=datetime.now(UTC),
             community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
-
-    repository = SubsystemRepository(gateway=gateway, repo=repo, commit=commit)
-    membership_rows: list[tuple[str, str]] = [
-        (str(row["subsystem_id"]), str(row["module"]))
-        for row in repository.list_subsystem_memberships()
-    ]
-    membership_rows = active_filters.filter_subsystem_memberships(membership_rows)
-    if not membership_rows:
+    membership_list = active_filters.filter_subsystem_memberships(membership_list)
+    if not membership_list:
         return []
 
     subsystem_graph = _build_subsystem_graph(
-        active_filters.filter_import_graph(resolved_runtime.ensure_import_graph()),
-        membership_rows,
+        active_filters.filter_import_graph(import_graph),
+        membership_list,
         graph_ctx,
     )
     subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)

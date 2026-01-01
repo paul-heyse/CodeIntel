@@ -12,6 +12,9 @@ from codeintel.build.analytics.compute.row_builders import (
     build_symbol_module_edges,
     component_metadata_from_import_rows,
 )
+from codeintel.build.analytics.graphs.config_graph_metrics import (
+    build_config_module_bipartite,
+)
 from codeintel.build.analytics.graphs.graph_metrics import (
     GraphMetricFilters,
     GraphMetricsInputs,
@@ -797,8 +800,9 @@ def t__symbol_graph_metrics(
 
 def graph_stats__base(
     env: BuildEnv,
-    _q__graph__call_graph_edges: InferableTabularInput,
-    _q__graph__import_graph_edges: InferableTabularInput,
+    graph_metric_inputs: GraphMetricInputs,
+    _q__analytics__config_values: InferableTabularInput,
+    _q__core__modules: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build base graph stats rows.
 
@@ -807,7 +811,41 @@ def graph_stats__base(
     pl.LazyFrame
         Lazy frame containing graph stats rows.
     """
-    rows = build_graph_stats_rows(env.gateway, repo=env.repo, commit=env.commit)
+    config_value_rows = _collect_rows(
+        _q__analytics__config_values,
+        ("repo", "commit", "key", "reference_modules"),
+        repo=env.repo,
+        commit=env.commit,
+    )
+    module_rows = _collect_rows(
+        _q__core__modules,
+        ("module", "repo", "commit"),
+        repo=env.repo,
+        commit=env.commit,
+    )
+    allowed_modules = {
+        str(row["module"])
+        for row in module_rows
+        if row.get("module") is not None
+        and _matches_optional_scope(row.get("repo"), env.repo)
+        and _matches_optional_scope(row.get("commit"), env.commit)
+    }
+    config_bipartite = build_config_module_bipartite(
+        config_value_rows,
+        allowed_modules=allowed_modules,
+        repo=env.repo,
+        commit=env.commit,
+    )
+    rows = build_graph_stats_rows(
+        repo=env.repo,
+        commit=env.commit,
+        call_graph=graph_metric_inputs.call_graph,
+        import_graph=graph_metric_inputs.import_graph,
+        symbol_module_graph=graph_metric_inputs.symbol_module_graph,
+        symbol_function_graph=graph_metric_inputs.symbol_function_graph,
+        config_module_bipartite=config_bipartite,
+        use_gpu=graph_metric_inputs.runtime_options.use_gpu,
+    )
     return rows_to_frame(GRAPH_STATS_TABLE_KEY, rows)
 
 

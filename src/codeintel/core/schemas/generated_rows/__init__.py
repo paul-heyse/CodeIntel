@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Protocol, cast
 
 from codeintel.core.schemas.generated_rows import analytics as _analytics_rows
@@ -37,11 +37,12 @@ def _table_key_from_row_model_name(*, prefix: str, name: str) -> str:
 
 def _row_models_from_module(*, module: object, prefix: str) -> dict[str, type[RowModelProtocol]]:
     names = getattr(module, "__all__", ())
-    if not isinstance(names, tuple):
+    if not isinstance(names, Sequence) or isinstance(names, (bytes, bytearray, str)):
         msg = f"Invalid __all__ for generated rows module: {module}"
         raise TypeError(msg)
+    names_sequence: Sequence[object] = names
     result: dict[str, type[RowModelProtocol]] = {}
-    for name in names:
+    for name in names_sequence:
         if not isinstance(name, str):
             continue
         model = getattr(module, name, None)

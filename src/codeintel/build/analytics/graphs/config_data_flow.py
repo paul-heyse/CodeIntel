@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -14,15 +15,13 @@ from networkx.exception import NetworkXNoPath
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 CONFIG_DATA_FLOW_COLS = (
@@ -241,34 +240,51 @@ def _coerce_paths(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
     return [normalize_path(path) for path in parsed]
 
 
-def _config_references(
-    con: DuckDBConnection, repo: str, commit: str
+def _matches_optional_scope(value: object, expected: str) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return str(value) == expected
+
+
+def _config_references_from_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[str, list[tuple[str, str]]]:
-    rows = con.execute(
-        """
-        SELECT config_path, key, reference_paths
-        FROM analytics.config_values
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
     refs: dict[str, list[tuple[str, str]]] = {}
-    for config_path, key, reference_paths in rows:
-        for rel_path in _coerce_paths(reference_paths):
+    for row in rows:
+        if not _matches_optional_scope(row.get("repo"), repo):
+            continue
+        if not _matches_optional_scope(row.get("commit"), commit):
+            continue
+        config_path = row.get("config_path")
+        key = row.get("key")
+        if config_path is None or key is None:
+            continue
+        for rel_path in _coerce_paths(row.get("reference_paths")):
             refs.setdefault(rel_path, []).append((str(key), str(config_path)))
     return refs
 
 
-def _entrypoints(con: DuckDBConnection, repo: str, commit: str) -> set[int]:
-    rows = con.execute(
-        """
-        SELECT handler_goid_h128
-        FROM analytics.entrypoints
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
-    return {int(row[0]) for row in rows if row[0] is not None}
+def _entrypoints_from_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    repo: str,
+    commit: str,
+) -> set[int]:
+    entrypoints: set[int] = set()
+    for row in rows:
+        if not _matches_optional_scope(row.get("repo"), repo):
+            continue
+        if not _matches_optional_scope(row.get("commit"), commit):
+            continue
+        handler_goid = normalize_decimal_id(row.get("handler_goid_h128"))
+        if handler_goid is not None:
+            entrypoints.add(handler_goid)
+    return entrypoints
 
 
 def _call_chains(
@@ -318,9 +334,10 @@ class ConfigDataFlowResult:
 
 
 def compute_config_data_flow_result(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
+    config_value_rows: Sequence[Mapping[str, object]],
+    entrypoint_rows: Sequence[Mapping[str, object]],
     call_graph: nx.DiGraph,
     ast_by_goid: dict[int, FunctionAst],
     missing_goids: set[int] | None = None,
@@ -332,10 +349,12 @@ def compute_config_data_flow_result(
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing DuckDB access.
     snapshot
         Repository and commit identifiers.
+    config_value_rows
+        Config value rows containing reference paths for config keys.
+    entrypoint_rows
+        Entrypoint rows containing handler GOIDs.
     call_graph
         Call graph for the repository snapshot.
     ast_by_goid
@@ -348,8 +367,11 @@ def compute_config_data_flow_result(
     ConfigDataFlowResult
         Container with config data flow rows.
     """
-    con = gateway.con
-    refs_by_path = _config_references(con, snapshot.repo, snapshot.commit)
+    refs_by_path = _config_references_from_rows(
+        config_value_rows,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     if not refs_by_path:
         log.info(
             "No config references found for %s@%s; skipping config flow analysis",
@@ -358,7 +380,11 @@ def compute_config_data_flow_result(
         )
         return ConfigDataFlowResult(rows=None)
 
-    entrypoints = _entrypoints(con, snapshot.repo, snapshot.commit)
+    entrypoints = _entrypoints_from_rows(
+        entrypoint_rows,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     missing = missing_goids or set()
     if missing:
         log.debug(

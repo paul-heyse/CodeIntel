@@ -3,22 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import TYPE_CHECKING
+
+import networkx as nx
 
 from codeintel.build.analytics.compute.graphs import (
     build_projection_graph,
     global_graph_stats,
 )
-from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.config.primitives import SnapshotRef
-
-if TYPE_CHECKING:
-    import networkx as nx
-
-    from codeintel.storage.gateway import StorageGateway
-
 
 _GRAPH_STATS_COLUMNS: tuple[str, ...] = (
     "graph_name",
@@ -37,41 +29,43 @@ _GRAPH_STATS_COLUMNS: tuple[str, ...] = (
 
 
 def build_graph_stats_rows(
-    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    call_graph: nx.DiGraph,
+    import_graph: nx.DiGraph,
+    symbol_module_graph: nx.Graph,
+    symbol_function_graph: nx.Graph,
+    config_module_bipartite: nx.Graph | None = None,
+    use_gpu: bool = False,
 ) -> list[tuple[object, ...]]:
     """
     Build analytics.graph_stats rows for call/import and related graphs.
 
     Parameters
     ----------
-    gateway :
-        StorageGateway providing the DuckDB connection for source reads and destination writes.
     repo : str
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
-    runtime : GraphRuntime | GraphRuntimeOptions | None
-        Optional runtime supplying cached graphs and backend selection.
+    call_graph : nx.DiGraph
+        Call graph for the repository snapshot.
+    import_graph : nx.DiGraph
+        Import graph for the repository snapshot.
+    symbol_module_graph : nx.Graph
+        Undirected symbol coupling graph at the module level.
+    symbol_function_graph : nx.Graph
+        Undirected symbol coupling graph at the function level.
+    config_module_bipartite : nx.Graph | None
+        Optional config bipartite graph (keys <-> modules).
+    use_gpu : bool
+        Whether to prefer GPU-backed graph operations when supported.
 
     Returns
     -------
     list[tuple[object, ...]]
         Rows ready for insertion into analytics.graph_stats.
     """
-    runtime_opts = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
-    )
-    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    resolved_runtime = resolve_graph_runtime(
-        gateway,
-        snapshot,
-        runtime_opts,
-    )
-    use_gpu = resolved_runtime.backend.use_gpu
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -81,26 +75,27 @@ def build_graph_stats_rows(
         )
     )
 
-    config_bipartite = resolved_runtime.ensure_config_module_bipartite()
     graphs: dict[str, nx.Graph | nx.DiGraph] = {
-        "call_graph": resolved_runtime.ensure_call_graph(),
-        "import_graph": resolved_runtime.ensure_import_graph(),
-        "symbol_module_graph": resolved_runtime.ensure_symbol_module_graph(),
-        "symbol_function_graph": resolved_runtime.ensure_symbol_function_graph(),
+        "call_graph": call_graph,
+        "import_graph": import_graph,
+        "symbol_module_graph": symbol_module_graph,
+        "symbol_function_graph": symbol_function_graph,
     }
 
-    if config_bipartite.number_of_nodes() > 0:
-        keys = {n for n, d in config_bipartite.nodes(data=True) if d.get("bipartite") == 0}
-        modules = set(config_bipartite) - keys
+    if config_module_bipartite is not None and config_module_bipartite.number_of_nodes() > 0:
+        keys = {
+            n for n, d in config_module_bipartite.nodes(data=True) if d.get("bipartite") == 0
+        }
+        modules = set(config_module_bipartite) - keys
         if keys and modules:
             graphs["config_key_projection"] = build_projection_graph(
-                config_bipartite,
+                config_module_bipartite,
                 keys,
                 label="config_keys",
             )
         if keys and modules and len(modules) > 1:
             graphs["config_module_projection"] = build_projection_graph(
-                config_bipartite,
+                config_module_bipartite,
                 modules,
                 label="config_modules",
             )

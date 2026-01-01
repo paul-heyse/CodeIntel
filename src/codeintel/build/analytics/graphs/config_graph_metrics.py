@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
+
+import networkx as nx
 
 from codeintel.build.analytics.compute.graphs import (
     build_projection_graph,
@@ -15,22 +18,16 @@ from codeintel.build.analytics.compute.graphs import (
 )
 from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES
 from codeintel.build.analytics.utilities.datasets import validate_contract_rows
-from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.schemas import get_contract_for_table_key
-from codeintel.config.primitives import SnapshotRef
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Hashable
 
-    import networkx as nx
-
-    from codeintel.build.analytics.compute.graphs import (
-        ProjectionMetrics,
-    )
+    from codeintel.build.analytics.compute.graphs import ProjectionMetrics
     from codeintel.build.graphs.runtime.context import GraphContext
-    from codeintel.storage.gateway import StorageGateway
 
 
 CONFIG_GRAPH_METRICS_KEYS_COLS = (
@@ -167,6 +164,85 @@ def _coerce_edge_weight(value: object) -> float:
     return 1.0
 
 
+def _matches_optional_scope(value: object, expected: str) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return str(value) == expected
+
+
+def _parse_reference_modules(ref_modules: object) -> list[str]:
+    if isinstance(ref_modules, list):
+        return [str(mod) for mod in ref_modules]
+    if isinstance(ref_modules, str):
+        try:
+            parsed = json.loads(ref_modules)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(parsed, list):
+            return [str(mod) for mod in parsed]
+    return []
+
+
+def build_config_module_bipartite(
+    config_value_rows: Iterable[Mapping[str, object]],
+    *,
+    allowed_modules: set[str] | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> nx.Graph:
+    """Build a bipartite graph of config keys to modules from config values rows.
+
+    Parameters
+    ----------
+    config_value_rows
+        Rows from analytics.config_values.
+    allowed_modules
+        Optional module allowlist to filter reference modules.
+    repo
+        Optional repo identifier for filtering.
+    commit
+        Optional commit identifier for filtering.
+
+    Returns
+    -------
+    nx.Graph
+        Undirected bipartite graph with config keys and modules.
+    """
+    graph = nx.Graph()
+    for row in config_value_rows:
+        if repo is not None and not _matches_optional_scope(row.get("repo"), repo):
+            continue
+        if commit is not None and not _matches_optional_scope(row.get("commit"), commit):
+            continue
+        key = row.get("key")
+        ref_modules = row.get("reference_modules")
+        if key is None or ref_modules is None:
+            continue
+        key_node = ("c", str(key))
+        if not graph.has_node(key_node):
+            graph.add_node(key_node, bipartite=0)
+        raw_modules = _parse_reference_modules(ref_modules)
+        filtered = (
+            [module for module in raw_modules if module in allowed_modules]
+            if allowed_modules
+            else raw_modules
+        )
+        if allowed_modules and raw_modules and not filtered:
+            filtered = raw_modules
+        for module_name in filtered:
+            module_node = ("m", module_name)
+            if not graph.has_node(module_node):
+                graph.add_node(module_node, bipartite=1)
+            if graph.has_edge(key_node, module_node):
+                attrs = graph[key_node][module_node]
+                attrs["weight"] = _coerce_edge_weight(attrs.get("weight", 0.0)) + 1.0
+            else:
+                graph.add_edge(key_node, module_node, weight=1.0)
+    return graph
+
+
 def _projection_payload(
     *,
     graph: nx.Graph,
@@ -218,11 +294,12 @@ class ConfigGraphMetricsResult:
 
 
 def compute_config_graph_metrics_result(
-    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    config_value_rows: Iterable[Mapping[str, object]],
+    allowed_modules: set[str] | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> ConfigGraphMetricsResult:
     """Compute config graph metrics rows without persisting.
 
@@ -231,12 +308,14 @@ def compute_config_graph_metrics_result(
 
     Parameters
     ----------
-    gateway
-        Storage gateway used for reading graphs.
     repo
         Repository identifier anchoring the metrics.
     commit
         Commit hash anchoring the metrics snapshot.
+    config_value_rows
+        Config value rows containing reference modules.
+    allowed_modules
+        Optional module allowlist for reference modules.
     runtime
         Optional runtime supplying cached graphs and backend selection.
 
@@ -245,17 +324,13 @@ def compute_config_graph_metrics_result(
     ConfigGraphMetricsResult
         Container with rows for all four config graph metrics tables.
     """
-    runtime_opts = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = runtime or GraphRuntimeOptions()
+    graph = build_config_module_bipartite(
+        config_value_rows,
+        allowed_modules=allowed_modules,
+        repo=repo,
+        commit=commit,
     )
-    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    resolved_runtime = resolve_graph_runtime(
-        gateway,
-        snapshot,
-        runtime_opts,
-    )
-
-    graph = resolved_runtime.ensure_config_module_bipartite()
     if graph.number_of_nodes() == 0:
         log_empty_graph("config_module_bipartite", graph)
         return ConfigGraphMetricsResult(
@@ -265,7 +340,7 @@ def compute_config_graph_metrics_result(
         GraphContextSpec(
             repo=repo,
             commit=commit,
-            use_gpu=resolved_runtime.backend.use_gpu,
+            use_gpu=runtime_opts.use_gpu,
             now=datetime.now(UTC),
             betweenness_cap=MAX_BETWEENNESS_NODES,
             pagerank_weight="weight",

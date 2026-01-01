@@ -22,6 +22,7 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -66,10 +67,23 @@ def subsystem_agreement__base(
     pl.LazyFrame
         Lazy frame containing subsystem agreement rows.
     """
+    subsystem_rows = (
+        tabular_to_lazyframe(_q__analytics__subsystem_modules)
+        .select(["repo", "commit", "module", "subsystem_id"])
+        .collect()
+        .to_dicts()
+    )
+    metrics_rows = (
+        tabular_to_lazyframe(_q__analytics__graph_metrics_modules_ext)
+        .select(["repo", "commit", "module", "import_community_id"])
+        .collect()
+        .to_dicts()
+    )
     rows = build_subsystem_agreement_rows(
-        env.gateway,
         repo=env.repo,
         commit=env.commit,
+        subsystem_module_rows=subsystem_rows,
+        graph_metrics_module_rows=metrics_rows,
     )
     return rows_to_frame(
         SUBSYSTEM_AGREEMENT_TABLE_KEY,

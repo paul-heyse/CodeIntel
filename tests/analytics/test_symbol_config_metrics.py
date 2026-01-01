@@ -129,6 +129,100 @@ def _write_rows_for_snapshot(
     gateway.policy.bulk_insert(table_key, rows)
 
 
+def _write_symbol_graph_metrics(
+    ctx: TestContext,
+    *,
+    module_by_path: dict[str, str],
+    known_modules: set[str],
+) -> None:
+    symbol_use_rows = records_from_relation(
+        ctx.gateway.relation_from_table_key("graph.symbol_use_edges").select(
+            "def_path",
+            "use_path",
+            "def_goid_h128",
+            "use_goid_h128",
+        )
+    )
+    symbol_graph = build_symbol_module_graph(symbol_use_rows, module_by_path)
+    symbol_rows = build_symbol_graph_metrics_module_rows(
+        repo=ctx.repo,
+        commit=ctx.commit,
+        graph=symbol_graph,
+        known_modules=known_modules or None,
+    )
+    _write_rows_for_snapshot(
+        ctx.gateway,
+        table_key="analytics.symbol_graph_metrics_modules",
+        repo=ctx.repo,
+        commit=ctx.commit,
+        rows=symbol_rows,
+    )
+
+
+def _write_config_graph_metrics(
+    ctx: TestContext,
+    *,
+    config_value_rows: Sequence[dict[str, object]],
+    allowed_modules: set[str],
+) -> None:
+    config_rows = compute_config_graph_metrics_result(
+        repo=ctx.repo,
+        commit=ctx.commit,
+        config_value_rows=config_value_rows,
+        allowed_modules=allowed_modules,
+    )
+    _write_rows_for_snapshot(
+        ctx.gateway,
+        table_key="analytics.config_graph_metrics_keys",
+        repo=ctx.repo,
+        commit=ctx.commit,
+        rows=config_rows.key_rows,
+    )
+    _write_rows_for_snapshot(
+        ctx.gateway,
+        table_key="analytics.config_graph_metrics_modules",
+        repo=ctx.repo,
+        commit=ctx.commit,
+        rows=config_rows.module_rows,
+    )
+    _write_rows_for_snapshot(
+        ctx.gateway,
+        table_key="analytics.config_projection_key_edges",
+        repo=ctx.repo,
+        commit=ctx.commit,
+        rows=config_rows.key_edge_rows,
+    )
+    _write_rows_for_snapshot(
+        ctx.gateway,
+        table_key="analytics.config_projection_module_edges",
+        repo=ctx.repo,
+        commit=ctx.commit,
+        rows=config_rows.module_edge_rows,
+    )
+
+
+def _assert_symbol_config_outputs(ctx: TestContext) -> None:
+    sym_rows = ctx.con.execute(
+        "SELECT module, symbol_community_id FROM analytics.symbol_graph_metrics_modules"
+    ).fetchall()
+    cfg_keys = ctx.con.execute(
+        "SELECT config_key FROM analytics.config_graph_metrics_keys"
+    ).fetchall()
+    cfg_modules = ctx.con.execute(
+        "SELECT module FROM analytics.config_graph_metrics_modules"
+    ).fetchall()
+
+    if len(sym_rows) != EXPECTED_SYMBOL_ROW_COUNT:
+        pytest.fail(f"Expected {EXPECTED_SYMBOL_ROW_COUNT} symbol rows, got {len(sym_rows)}")
+    if not any(row[1] is not None for row in sym_rows):
+        pytest.fail("Expected at least one non-null symbol_community_id")
+    if cfg_keys != [("feature.flag",)]:
+        pytest.fail(f"Unexpected config keys: {cfg_keys}")
+    modules = {row[0] for row in cfg_modules}
+    if modules != {"pkg.a", "pkg.b"}:
+        pytest.fail(f"Unexpected config modules: {modules}")
+
+
 def _seed_subsystem_agreement_data(ctx: TestContext) -> None:
     """Seed data for subsystem agreement testing.
 
@@ -209,85 +303,26 @@ def test_symbol_and_config_metrics_populate_and_views_create(
     """Verify symbol/config metrics compute and derived views materialize."""
     _seed_symbol_config_data(test_ctx)
     module_by_path, known_modules = _module_inputs_for_symbol_metrics(test_ctx)
-
-    symbol_use_rows = records_from_relation(
-        test_ctx.gateway.relation_from_table_key("graph.symbol_use_edges").select(
-            "def_path",
-            "use_path",
-            "def_goid_h128",
-            "use_goid_h128",
+    _write_symbol_graph_metrics(
+        test_ctx,
+        module_by_path=module_by_path,
+        known_modules=known_modules,
+    )
+    config_value_rows = records_from_relation(
+        test_ctx.gateway.relation_from_table_key("analytics.config_values").select(
+            "repo",
+            "commit",
+            "key",
+            "reference_modules",
         )
     )
-    symbol_graph = build_symbol_module_graph(symbol_use_rows, module_by_path)
-    symbol_rows = build_symbol_graph_metrics_module_rows(
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        graph=symbol_graph,
-        known_modules=known_modules or None,
-    )
-    _write_rows_for_snapshot(
-        test_ctx.gateway,
-        table_key="analytics.symbol_graph_metrics_modules",
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        rows=symbol_rows,
-    )
-
-    config_rows = compute_config_graph_metrics_result(
-        test_ctx.gateway,
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-    )
-    _write_rows_for_snapshot(
-        test_ctx.gateway,
-        table_key="analytics.config_graph_metrics_keys",
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        rows=config_rows.key_rows,
-    )
-    _write_rows_for_snapshot(
-        test_ctx.gateway,
-        table_key="analytics.config_graph_metrics_modules",
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        rows=config_rows.module_rows,
-    )
-    _write_rows_for_snapshot(
-        test_ctx.gateway,
-        table_key="analytics.config_projection_key_edges",
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        rows=config_rows.key_edge_rows,
-    )
-    _write_rows_for_snapshot(
-        test_ctx.gateway,
-        table_key="analytics.config_projection_module_edges",
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        rows=config_rows.module_edge_rows,
+    _write_config_graph_metrics(
+        test_ctx,
+        config_value_rows=config_value_rows,
+        allowed_modules=known_modules,
     )
     materialize_view_plans(test_ctx.con)
-
-    sym_rows = test_ctx.con.execute(
-        "SELECT module, symbol_community_id FROM analytics.symbol_graph_metrics_modules"
-    ).fetchall()
-    cfg_keys = test_ctx.con.execute(
-        "SELECT config_key FROM analytics.config_graph_metrics_keys"
-    ).fetchall()
-    cfg_modules = test_ctx.con.execute(
-        "SELECT module FROM analytics.config_graph_metrics_modules"
-    ).fetchall()
-
-    if len(sym_rows) != EXPECTED_SYMBOL_ROW_COUNT:
-        pytest.fail(f"Expected {EXPECTED_SYMBOL_ROW_COUNT} symbol rows, got {len(sym_rows)}")
-    if not any(row[1] is not None for row in sym_rows):
-        pytest.fail("Expected at least one non-null symbol_community_id")
-    if cfg_keys != [("feature.flag",)]:
-        pytest.fail(f"Unexpected config keys: {cfg_keys}")
-    modules = {row[0] for row in cfg_modules}
-    if modules != {"pkg.a", "pkg.b"}:
-        pytest.fail(f"Unexpected config modules: {modules}")
-
+    _assert_symbol_config_outputs(test_ctx)
     test_ctx.con.execute("SELECT * FROM docs.v_symbol_module_graph")
     test_ctx.con.execute("SELECT * FROM analytics.config_graph_metrics_keys")
     test_ctx.con.execute("SELECT * FROM analytics.config_projection_module_edges")
@@ -299,10 +334,27 @@ def test_subsystem_agreement_exposed_in_views(
     """Verify subsystem agreement results exposed through docs views."""
     _seed_subsystem_agreement_data(test_ctx)
 
+    subsystem_rows = records_from_relation(
+        test_ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
+            "repo",
+            "commit",
+            "module",
+            "subsystem_id",
+        )
+    )
+    graph_metrics_rows = records_from_relation(
+        test_ctx.gateway.relation_from_table_key("analytics.graph_metrics_modules_ext").select(
+            "repo",
+            "commit",
+            "module",
+            "import_community_id",
+        )
+    )
     agreement_rows = build_subsystem_agreement_rows(
-        test_ctx.gateway,
         repo=test_ctx.repo,
         commit=test_ctx.commit,
+        subsystem_module_rows=subsystem_rows,
+        graph_metrics_module_rows=graph_metrics_rows,
     )
     if agreement_rows:
         test_ctx.gateway.policy.delete_for_snapshot(

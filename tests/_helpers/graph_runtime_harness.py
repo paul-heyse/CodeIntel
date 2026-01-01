@@ -13,6 +13,7 @@ from codeintel.build.analytics.compute.row_builders import (
 )
 from codeintel.build.analytics.graphs.config_data_flow import compute_config_data_flow_result
 from codeintel.build.analytics.graphs.config_graph_metrics import (
+    build_config_module_bipartite,
     compute_config_graph_metrics_result,
 )
 from codeintel.build.analytics.graphs.graph_metrics import (
@@ -638,18 +639,36 @@ def _write_mapping_rows(
 
 
 def _write_config_metrics(ctx: GraphRuntimeHarness) -> None:
+    config_value_rows = records_from_relation(
+        ctx.gateway.relation_from_table_key("analytics.config_values").select(
+            "repo",
+            "commit",
+            "config_path",
+            "key",
+            "reference_paths",
+        )
+    )
+    entrypoint_rows = records_from_relation(
+        ctx.gateway.relation_from_table_key("analytics.entrypoints").select(
+            "repo",
+            "commit",
+            "handler_goid_h128",
+        )
+    )
     data_flow_result = compute_config_data_flow_result(
-        ctx.gateway,
         ctx.snapshot,
+        config_value_rows=config_value_rows,
+        entrypoint_rows=entrypoint_rows,
         call_graph=ctx.fixtures.call_graph,
         ast_by_goid=ctx.ast_by_goid,
     )
     _write_tuple_rows(ctx, "analytics.config_data_flow", data_flow_result.rows)
 
     config_metrics_result = compute_config_graph_metrics_result(
-        ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
+        config_value_rows=config_value_rows,
+        allowed_modules=module_names,
         runtime=ctx.runtime_options,
     )
     _write_tuple_rows(ctx, "analytics.config_graph_metrics_keys", config_metrics_result.key_rows)
@@ -728,27 +747,55 @@ def _run_graph_metrics_compute(
     )
     _write_mapping_rows(ctx, "analytics.graph_metrics_modules_ext", modules_ext_rows)
 
-    graph_stats_rows = build_graph_stats_rows(
-        ctx.gateway,
+    config_bipartite = build_config_module_bipartite(
+        config_value_rows,
+        allowed_modules=module_names,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
-        runtime=ctx.runtime_options,
+    )
+    graph_stats_rows = build_graph_stats_rows(
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        call_graph=ctx.fixtures.call_graph,
+        import_graph=ctx.fixtures.import_graph,
+        symbol_module_graph=ctx.fixtures.symbol_module_graph,
+        symbol_function_graph=ctx.fixtures.symbol_function_graph,
+        config_module_bipartite=config_bipartite,
+        use_gpu=ctx.runtime_options.use_gpu,
     )
     _write_tuple_rows(ctx, "analytics.graph_stats", graph_stats_rows)
 
+    subsystem_rows = records_from_relation(
+        ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
+            "repo",
+            "commit",
+            "subsystem_id",
+            "module",
+        )
+    )
     subsystem_graph_metrics_rows = build_subsystem_graph_metrics_rows(
-        ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
+        import_graph=ctx.fixtures.import_graph,
+        membership_rows=subsystem_rows,
         runtime=ctx.runtime_options,
         filters=active_filters,
     )
     _write_tuple_rows(ctx, "analytics.subsystem_graph_metrics", subsystem_graph_metrics_rows)
 
+    graph_metrics_ext_rows = records_from_relation(
+        ctx.gateway.relation_from_table_key("analytics.graph_metrics_modules_ext").select(
+            "repo",
+            "commit",
+            "module",
+            "import_community_id",
+        )
+    )
     subsystem_agreement_rows = build_subsystem_agreement_rows(
-        ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
+        subsystem_module_rows=subsystem_rows,
+        graph_metrics_module_rows=graph_metrics_ext_rows,
     )
     _write_tuple_rows(ctx, "analytics.subsystem_agreement", subsystem_agreement_rows)
 
