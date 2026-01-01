@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2026-01-01T14:39:19.767715+00:00",
+  "generated_at": "2026-01-01T14:52:57.299134+00:00",
   "overall_status": "failed",
-  "duration_seconds": 30.931519,
+  "duration_seconds": 31.607406,
   "results": [
     {
       "name": "guardrails",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-01T14:38:48.835569+00:00",
-      "ended_at": "2026-01-01T14:38:57.071509+00:00",
-      "duration_seconds": 8.23594,
+      "started_at": "2026-01-01T14:52:25.691300+00:00",
+      "ended_at": "2026-01-01T14:52:34.304825+00:00",
+      "duration_seconds": 8.613525,
       "stdout": [],
       "stderr": [
         "<frozen runpy>:128: RuntimeWarning: 'tools.guardrails' found in sys.modules after import of package 'tools', but prior to execution of 'tools.guardrails'; this may result in unpredictable behaviour",
@@ -168,17 +168,25 @@
       ],
       "status": "failed",
       "return_code": 1,
-      "started_at": "2026-01-01T14:38:57.071600+00:00",
-      "ended_at": "2026-01-01T14:38:57.138756+00:00",
-      "duration_seconds": 0.067156,
+      "started_at": "2026-01-01T14:52:34.304910+00:00",
+      "ended_at": "2026-01-01T14:52:34.375865+00:00",
+      "duration_seconds": 0.070955,
       "stdout": [
+        "src/codeintel/cli/core/result_types.py:",
+        "  1095:9 D102 Missing docstring in public method",
+        "",
         "src/codeintel/cli/handlers/build.py:",
-        "  1017:5 PLR0914 Too many local variables (18/15)",
+        "  1020:5  PLR0914 Too many local variables (18/15)",
+        "  1828:5  D417 Missing argument description in the docstring for `_publish_serving_snapshot_from_build`: `keep_last`",
+        "  1835:5  DOC201 `return` is not documented in docstring",
+        "  1885:12 RET504 Unnecessary assignment to `manifest` before `return` statement",
+        "  1979:5  DOC201 `return` is not documented in docstring",
         "",
         "src/codeintel/storage/sqlglot_tools.py:",
         "  451:5 PLR0913 Too many arguments in function definition (6 > 5)",
         "",
-        "Found 2 errors."
+        "Found 21 errors (14 fixed, 7 remaining).",
+        "No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option)."
       ],
       "stderr": []
     },
@@ -193,9 +201,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-01T14:38:57.138822+00:00",
-      "ended_at": "2026-01-01T14:38:59.093463+00:00",
-      "duration_seconds": 1.954641,
+      "started_at": "2026-01-01T14:52:34.375929+00:00",
+      "ended_at": "2026-01-01T14:52:36.294752+00:00",
+      "duration_seconds": 1.918823,
       "stdout": [],
       "stderr": []
     },
@@ -210,9 +218,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-01T14:38:59.093548+00:00",
-      "ended_at": "2026-01-01T14:39:17.786149+00:00",
-      "duration_seconds": 18.692601,
+      "started_at": "2026-01-01T14:52:36.294836+00:00",
+      "ended_at": "2026-01-01T14:52:55.210852+00:00",
+      "duration_seconds": 18.916016,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -228,9 +236,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-01T14:39:17.786322+00:00",
-      "ended_at": "2026-01-01T14:39:19.767088+00:00",
-      "duration_seconds": 1.980766,
+      "started_at": "2026-01-01T14:52:55.210958+00:00",
+      "ended_at": "2026-01-01T14:52:57.298706+00:00",
+      "duration_seconds": 2.087748,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/Users/paulheyse/CodeIntel/CodeIntel/pyrefly.toml`",

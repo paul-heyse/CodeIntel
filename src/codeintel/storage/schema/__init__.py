@@ -12,18 +12,18 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.storage.schema.arrow_schema import arrow_schema_for_table_key, arrow_schema_hash
-    from codeintel.storage.schema.ddl import (
-        SCHEMAS,
-        apply_all_schemas,
-        assert_schema_alignment,
-        create_schemas,
-        ensure_schemas_preserve,
-    )
     from codeintel.storage.schema.json_schema import (
         build_validator,
         generate_export_schemas,
         json_schema_from_typeddict,
         validate_row_with_schema,
+    )
+    from codeintel.storage.schema.lifecycle import (
+        SCHEMAS,
+        apply_all_schemas,
+        assert_schema_alignment,
+        create_schemas,
+        ensure_schemas_preserve,
     )
 
     _TYPE_CHECKING_EXPORTS = (
@@ -49,11 +49,11 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "codeintel.storage.schema.arrow_schema",
         "arrow_schema_hash",
     ),
-    "SCHEMAS": ("codeintel.storage.schema.ddl", "SCHEMAS"),
-    "apply_all_schemas": ("codeintel.storage.schema.ddl", "apply_all_schemas"),
-    "assert_schema_alignment": ("codeintel.storage.schema.ddl", "assert_schema_alignment"),
-    "create_schemas": ("codeintel.storage.schema.ddl", "create_schemas"),
-    "ensure_schemas_preserve": ("codeintel.storage.schema.ddl", "ensure_schemas_preserve"),
+    "SCHEMAS": ("codeintel.storage.schema.lifecycle", "SCHEMAS"),
+    "apply_all_schemas": ("codeintel.storage.schema.lifecycle", "apply_all_schemas"),
+    "assert_schema_alignment": ("codeintel.storage.schema.lifecycle", "assert_schema_alignment"),
+    "create_schemas": ("codeintel.storage.schema.lifecycle", "create_schemas"),
+    "ensure_schemas_preserve": ("codeintel.storage.schema.lifecycle", "ensure_schemas_preserve"),
     "build_validator": ("codeintel.storage.schema.json_schema", "build_validator"),
     "generate_export_schemas": ("codeintel.storage.schema.json_schema", "generate_export_schemas"),
     "json_schema_from_typeddict": (

@@ -7,9 +7,9 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.serving.semantic.datasets import DatasetManifestEntry, DatasetManifestIndex
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.storage.datasets.manifest_index import DatasetManifestEntry, DatasetManifestIndex
 from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.datasets.parquet_metadata import (
     column_types_from_metadata,

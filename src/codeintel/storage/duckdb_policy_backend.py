@@ -60,7 +60,7 @@ from codeintel.storage.helpers.table_key import (
 from codeintel.storage.metadata.schema import EXPORT_AUDIT_TABLE
 from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.query_results import coerce_str, iter_tuples_from_arrow_reader
-from codeintel.storage.schema.sqlglot_ddl import (
+from codeintel.storage.schema.ddl_builders import (
     create_index_if_not_exists_ast,
     create_schema_if_not_exists_ast,
 )

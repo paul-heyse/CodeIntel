@@ -11,10 +11,10 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.serving.db.pointer import ServingSnapshotPointer
-    from codeintel.serving.semantic.datasets import DatasetManifestIndex
     from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.registry import SemanticRegistry
     from codeintel.serving.settings import ServingSettings
+    from codeintel.storage.datasets.manifest_index import DatasetManifestIndex
     from codeintel.storage.warehouse import Warehouse
 
 

@@ -1,9 +1,4 @@
-"""SQLGlot DDL builders for DuckDB.
-
-This module centralizes SQLGlot AST construction for common schema/index DDL
-primitives used across storage subsystems (policy backend, metadata bootstrap,
-schema automation). Keeping these builders in one place prevents semantic drift.
-"""
+"""SQLGlot DDL builders for DuckDB schema and index operations."""
 
 from __future__ import annotations
 

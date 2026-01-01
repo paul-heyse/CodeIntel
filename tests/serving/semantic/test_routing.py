@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, cast
 from sqlglot import exp, parse_one
 
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.semantic.datasets import DatasetManifestIndex
 from codeintel.serving.semantic.engines.protocol import EngineContext
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.models import SemanticViewSpec
@@ -18,6 +17,7 @@ from codeintel.serving.semantic.routing import auto_preference
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.datasets.manifest_index import DatasetManifestIndex
 from codeintel.storage.datasets.scanning import QueryPlanSpec
 
 if TYPE_CHECKING:

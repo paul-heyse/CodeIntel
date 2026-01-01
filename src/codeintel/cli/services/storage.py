@@ -209,6 +209,8 @@ class StorageService:
         ...     gw.execute("INSERT INTO test VALUES (1)")
         """
         gateway = self._open_gateway(read_only=read_only)
+        if not read_only:
+            gateway.policy.ensure_schemas_preserve()
         try:
             yield gateway
         finally:

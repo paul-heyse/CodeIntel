@@ -36,9 +36,11 @@ from codeintel.cli.handlers._utilities import (
 )
 from codeintel.cli.handlers.build import (
     BuildHistoryResult,
+    BuildPublishSnapshotResult,
     BuildRunResult,
     BuildStatusResult,
     build_history_handler,
+    build_publish_serving_snapshot_handler,
     build_run_handler,
     build_status_handler,
 )
@@ -107,6 +109,7 @@ from codeintel.cli.handlers.storage import (
 
 __all__ = [
     "BuildHistoryResult",
+    "BuildPublishSnapshotResult",
     "BuildRunResult",
     "BuildStatusResult",
     "CommandContext",
@@ -136,6 +139,7 @@ __all__ = [
     "ValidateMacrosResult",
     "bootstrap_cli",
     "build_history_handler",
+    "build_publish_serving_snapshot_handler",
     "build_run_handler",
     "build_status_handler",
     "dataset_describe_handler",

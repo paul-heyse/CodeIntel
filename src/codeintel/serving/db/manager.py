@@ -31,9 +31,9 @@ from codeintel.core.runtime.loader import (
 )
 from codeintel.core.tools import ToolBinaries
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.semantic.datasets import DatasetManifestIndex, load_dataset_manifests
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.datasets.manifest_index import DatasetManifestIndex, load_dataset_manifests
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 

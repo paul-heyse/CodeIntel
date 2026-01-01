@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.protocols import ExportRelation
-from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation
+from codeintel.storage.protocols.duckdb_relation import adapt_duckdb_relation
 
 if TYPE_CHECKING:
     from collections.abc import Callable

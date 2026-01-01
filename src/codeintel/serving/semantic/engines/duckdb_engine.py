@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.serving.semantic.datasets import dataset_schema_for_entry
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
     RelationBuildContext,
@@ -21,8 +20,9 @@ from codeintel.serving.semantic.engines.polars_engine import (
 )
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.query_ast import ServingQuery
+from codeintel.storage.datasets.manifest_index import dataset_schema_for_entry
 from codeintel.storage.duckdb_explain import normalize_explain_output
-from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation_stream
+from codeintel.storage.protocols.duckdb_relation import adapt_duckdb_relation_stream
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

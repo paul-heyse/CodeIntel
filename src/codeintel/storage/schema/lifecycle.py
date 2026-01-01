@@ -1,12 +1,4 @@
-"""DuckDB schema definitions for the CodeIntel metadata warehouse.
-
-This module provides thin wrapper functions for schema management that delegate
-to `DuckDBPolicyBackend` for all DDL generation. The policy backend generates
-DDL from the canonical schema provider, making the DAG the single source of truth.
-
-All DDL is now generated via the schema provider and policy backend.
-Legacy string-based DDL constants have been removed.
-"""
+"""DuckDB schema lifecycle helpers backed by the policy backend."""
 
 from __future__ import annotations
 

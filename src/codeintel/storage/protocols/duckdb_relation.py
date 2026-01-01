@@ -1,4 +1,4 @@
-"""DuckDB adapters for export protocols."""
+"""DuckDB adapters for export relations and streaming results."""
 
 from __future__ import annotations
 

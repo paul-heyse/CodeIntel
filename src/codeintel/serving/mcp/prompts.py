@@ -18,11 +18,11 @@ from mcp import McpError
 from mcp.types import PromptMessage
 from pydantic import Field
 
+from codeintel.core.filters import allowed_ops_for_column_type, parse_filter_value
 from codeintel.serving.errors import CodeIntelDomainError
 from codeintel.serving.export.formats import default_export_format, export_format_choices
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.operations.ops import ServingOperations
-from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type, parse_filter_value
 from codeintel.serving.semantic.models import Op
 from codeintel.serving.settings import ServingSettings
 

@@ -136,7 +136,7 @@ def bootstrap_metadata_datasets(
     include_views: bool = True,
 ) -> None:
     """Populate metadata.datasets from DatasetContracts and default filename mappings."""
-    apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
+    apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=include_views)
 
     jsonl_mapping = dict(jsonl_filenames or {})
     parquet_mapping = dict(parquet_filenames or {})
@@ -349,7 +349,7 @@ def sync_table_schema_registry_from_latest_manifest(con: DuckDBPyConnection) -> 
     TypeError
         If the stored manifest payload is not a JSON object with list sections.
     """
-    apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
+    apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=False)
 
     entry = load_latest_canonical_catalog_from_connection(
         con,

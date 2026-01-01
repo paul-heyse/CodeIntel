@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
-from codeintel.serving.semantic.datasets import (
+from codeintel.serving.semantic.duckdb_contracts import table_schema_for_table_key
+from codeintel.storage.datasets.manifest_index import (
     DatasetManifestEntry,
     DatasetManifestIndex,
     dataset_for_entry,
 )
-from codeintel.serving.semantic.duckdb_contracts import table_schema_for_table_key
 from codeintel.storage.datasets.parquet_metadata import table_schema_from_dataset
 
 if TYPE_CHECKING:

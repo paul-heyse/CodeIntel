@@ -58,6 +58,7 @@ from codeintel.cli.core.result_types import (
     BuildLineageResult,
     BuildPlanResult,
     BuildPromoteResult,
+    BuildPublishSnapshotResult,
     BuildResolveResult,
     BuildRunResult,
     BuildStatusResult,
@@ -82,9 +83,10 @@ from codeintel.cli.handlers.runtime_helpers import (
 from codeintel.cli.handlers.tag_filters import filter_targets_by_tags, parse_tag_filters
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.core.manifests import DatasetSuiteManifest
+from codeintel.core.manifests import DatasetSuiteManifest, ServingSnapshotManifest
 from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.time import utc_now
 from codeintel.observability.runtime import flush_observability
 from codeintel.observability.semconv_keys import BUILD_COMMIT, BUILD_REPO, BUILD_RUN_ID
 from codeintel.observability.teardown import (
@@ -99,6 +101,7 @@ from codeintel.observability.teardown import (
 from codeintel.runtime.compose import compose_runtime
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.manifests import dataset_manifest_path
+from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 from codeintel.storage.validation import ContractValidationMode
@@ -1827,7 +1830,8 @@ def _publish_serving_snapshot_from_build(
     gateway: StorageGateway,
     *,
     run_id: str,
-) -> None:
+    keep_last: int = 10,
+) -> ServingSnapshotManifest:
     """Publish a serving snapshot for the current build DB.
 
     Parameters
@@ -1866,7 +1870,7 @@ def _publish_serving_snapshot_from_build(
     else:
         serve_dir = serve_dir.resolve()
 
-    publish_serving_snapshot(
+    manifest = publish_serving_snapshot(
         gateway=gateway,
         request=PublishServingSnapshotRequest(
             run_id=run_id,
@@ -1875,9 +1879,10 @@ def _publish_serving_snapshot_from_build(
             schema_manifest_path=schema_manifest_path,
             buildspec_path=buildspec_path,
             dataset_manifest_paths=_load_dataset_manifest_paths(artifacts_dir),
-            keep_last=10,
+            keep_last=keep_last,
         ),
     )
+    return manifest
 
 
 def _load_dataset_manifest_paths(artifacts_dir: Path) -> tuple[Path, ...]:
@@ -1896,6 +1901,23 @@ def _load_dataset_manifest_paths(artifacts_dir: Path) -> tuple[Path, ...]:
         return tuple(resolved)
     msg = "dataset_manifest_paths must be a list of strings"
     raise ValueError(msg)
+
+
+def _default_publish_snapshot_run_id(
+    runtime: ResolvedRuntime,
+    gateway: StorageGateway,
+) -> str:
+    repo = runtime.snapshot.repo
+    if repo and gateway.policy.table_exists(schema="build", table="runs"):
+        try:
+            runs = gateway.build.list_runs(repo=repo, limit=1)
+        except DuckDBError as exc:
+            LOG.debug("publish.snapshot.latest_run_id_failed error=%s", exc)
+        else:
+            if runs:
+                return runs[0].run_id
+    timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
+    return f"manual-{timestamp}"
 
 
 def build_history_handler(
@@ -1949,6 +1971,44 @@ def build_history_handler(
             count=len(runs),
         )
     )
+
+
+def build_publish_serving_snapshot_handler(
+    ctx: CommandContext,
+) -> CliResult[BuildPublishSnapshotResult]:
+    """Publish a DuckDB serving snapshot from Parquet-backed artifacts."""
+    try:
+        runtime = ctx.runtime
+    except ResolutionError as exc:
+        return fail_project_error("build", str(exc))
+
+    run_id = ctx.params.get_str("run_id")
+    keep_last = ctx.params.get_int("keep_last", 10)
+    if keep_last < 0:
+        return fail_invalid_value("keep_last", str(keep_last), "keep_last must be >= 0")
+
+    with ctx.write_gateway() as gateway:
+        resolved_run_id = run_id or _default_publish_snapshot_run_id(runtime, gateway)
+        manifest = _publish_serving_snapshot_from_build(
+            runtime,
+            gateway,
+            run_id=resolved_run_id,
+            keep_last=keep_last,
+        )
+
+    snapshot_manifest_path = str(Path(manifest.db_path).with_name("snapshot_manifest.json"))
+    result = BuildPublishSnapshotResult(
+        run_id=manifest.run_id,
+        published_at=manifest.published_at,
+        snapshot_manifest_path=snapshot_manifest_path,
+        snapshot_db_path=manifest.db_path,
+        semantic_registry_path=manifest.semantic_registry_path,
+        schema_manifest_path=manifest.schema_manifest_path,
+        buildspec_path=manifest.buildspec_path,
+        semantic_layer_version=manifest.semantic_layer_version,
+        dataset_count=len(manifest.datasets),
+    )
+    return CliResult.ok(result)
 
 
 @dataclass(frozen=True)
@@ -2952,6 +3012,7 @@ __all__ = [
     "BuildHistoryResult",
     "BuildImpactResult",
     "BuildPlanResult",
+    "BuildPublishSnapshotResult",
     "BuildRunResult",
     "BuildStatusResult",
     "RunMode",
@@ -2967,6 +3028,7 @@ __all__ = [
     "build_lineage_handler",
     "build_plan_handler",
     "build_promote_handler",
+    "build_publish_serving_snapshot_handler",
     "build_resolve_handler",
     "build_run_handler",
     "build_status_handler",

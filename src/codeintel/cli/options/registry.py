@@ -185,6 +185,17 @@ BUILD_HISTORY_LIMIT = OptionSpec(
     help="Number of recent runs to show.",
 )
 
+BUILD_PUBLISH_SNAPSHOT_RUN_ID = OptionSpec(
+    arg_name="run_id",
+    names=("--run-id", "-i"),
+    help="Run ID to associate with the snapshot (defaults to latest build run).",
+)
+BUILD_PUBLISH_SNAPSHOT_KEEP_LAST = OptionSpec(
+    arg_name="keep_last",
+    names=("--keep-last",),
+    help="Number of prior snapshots to retain.",
+)
+
 BUILD_VALIDATE_FORMAT = OptionSpec(
     arg_name="output_format",
     names=("--format",),
@@ -1089,6 +1100,8 @@ __all__ = [
     "BUILD_PROMOTE_FROM_RUN",
     "BUILD_PROMOTE_NOTE",
     "BUILD_PROMOTE_VERSION_HASH",
+    "BUILD_PUBLISH_SNAPSHOT_KEEP_LAST",
+    "BUILD_PUBLISH_SNAPSHOT_RUN_ID",
     "BUILD_RESOLVE_ALIAS",
     "BUILD_RESOLVE_ASSET",
     "BUILD_RESOLVE_FORMAT",

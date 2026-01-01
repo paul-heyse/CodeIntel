@@ -18,7 +18,7 @@ from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEnt
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.time import utc_now
-from codeintel.serving.semantic.datasets import load_dataset_manifests
+from codeintel.storage.datasets.manifest_index import load_dataset_manifests
 from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.tracking.schema_catalog_models import (
     DerivedSettingsPayload,

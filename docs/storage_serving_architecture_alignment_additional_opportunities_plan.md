@@ -397,8 +397,10 @@ allowed_ops = ops_for_column_type(column.type)
 - Remove any remaining helpers that allow ad hoc SQL string construction.
 - Decommission any eager result APIs that bypass streaming readers.
 - Remove legacy operator lists once schema-driven allowlists are in place.
+**Status (completed)**: All legacy files listed below have been decommissioned and removed,
+and imports were updated to their replacements.
 
-## Legacy and deletion targets (file-level)
+## Legacy and deletion targets (file-level, decommissioned)
 
 These files become legacy once the corresponding migration step is complete.
 Delete only after verifying no remaining imports/usages.
@@ -406,28 +408,29 @@ Delete only after verifying no remaining imports/usages.
 - `src/codeintel/serving/semantic/filter_compiler.py`
   - **Replacement**: import directly from
     `src/codeintel/storage/queries/filter_compiler.py`.
-  - **Deletion trigger**: all serving modules use the storage compiler directly.
+  - **Status**: deleted; serving modules use the storage compiler directly.
 - `src/codeintel/serving/semantic/filter_ops.py`
   - **Replacement**: schema-driven allowlists in
     `src/codeintel/core/filters.py` and
     `src/codeintel/storage/queries/filter_compiler.py`.
-  - **Deletion trigger**: no callers rely on serving-local operator validation.
+  - **Status**: deleted; no callers rely on serving-local operator validation.
 - `src/codeintel/storage/protocols/duckdb_export.py`
-  - **Replacement**: `ResultStream`/`SafeRelation` protocol from Phase 7.
-  - **Deletion trigger**: all export/query paths use streaming readers only.
+  - **Replacement**: `ResultStream`/`SafeRelation` protocol from Phase 7
+    (`src/codeintel/storage/protocols/duckdb_relation.py`).
+  - **Status**: deleted; export/query paths use streaming readers only.
 - `src/codeintel/serving/semantic/datasets.py`
   - **Replacement**: direct imports from
     `src/codeintel/storage/datasets/manifest_index.py` (or new shared module).
-  - **Deletion trigger**: no serving modules import the re-export shim.
+  - **Status**: deleted; serving modules import the storage manifest index directly.
 - `src/codeintel/storage/schema/ddl.py`
   - **Replacement**: relation-first schema creation or a single canonical DDL
     module post-Phase 1.
-  - **Deletion trigger**: no call sites rely on SQL-rendered schema DDL.
+  - **Status**: deleted; no call sites rely on SQL-rendered schema DDL.
 - `src/codeintel/storage/schema/sqlglot_ddl.py`
   - **Replacement**: relation-first schema/index creation or consolidated DDL
     builder using DuckDB Types API.
-  - **Deletion trigger**: schema/index DDL is fully centralized elsewhere.
+  - **Status**: deleted; schema/index DDL is fully centralized elsewhere.
 - `src/codeintel/storage/metadata/views.py`
   - **Replacement**: relation-first view builder (Phase 1).
-  - **Deletion trigger**: metadata view creation is fully handled by the new
+  - **Status**: deleted; metadata view creation is handled by the new
     relation-based implementation.

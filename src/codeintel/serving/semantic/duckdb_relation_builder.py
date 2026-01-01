@@ -14,19 +14,19 @@ from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.filters import FilterOpError, validate_filter_value
 from codeintel.core.schemas.primitives import column_type_base
 from codeintel.core.schemas.type_mappings import complex_type_mapping
-from codeintel.serving.semantic.datasets import (
+from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
+from codeintel.serving.semantic.models import FilterValue, Op
+from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.storage.datasets.manifest_index import (
     DatasetScannerOptions,
     dataset_filter_expression,
     dataset_for_entry,
     dataset_scanner_for_entry,
     dataset_schema_for_entry,
 )
-from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
-from codeintel.serving.semantic.filter_ops import FilterOpError, validate_filter_value
-from codeintel.serving.semantic.models import FilterValue, Op
-from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.datasets.scanning import QueryPlanSpec
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
@@ -45,8 +45,8 @@ if TYPE_CHECKING:
     from duckdb.typing import DuckDBPyType
 
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.serving.semantic.datasets import DatasetManifestEntry, DatasetManifestIndex
     from codeintel.serving.semantic.models import FilterScalar
+    from codeintel.storage.datasets.manifest_index import DatasetManifestEntry, DatasetManifestIndex
 
 
 class DuckDBRelationQueryBuilderError(ValueError):

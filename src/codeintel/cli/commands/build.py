@@ -39,6 +39,7 @@ from codeintel.cli.handlers.build import (
     build_lineage_handler,
     build_plan_handler,
     build_promote_handler,
+    build_publish_serving_snapshot_handler,
     build_resolve_handler,
     build_run_handler,
     build_status_handler,
@@ -87,6 +88,8 @@ from codeintel.cli.options.registry import (
     BUILD_PROMOTE_FROM_RUN,
     BUILD_PROMOTE_NOTE,
     BUILD_PROMOTE_VERSION_HASH,
+    BUILD_PUBLISH_SNAPSHOT_KEEP_LAST,
+    BUILD_PUBLISH_SNAPSHOT_RUN_ID,
     BUILD_RESOLVE_ALIAS,
     BUILD_RESOLVE_ASSET,
     BUILD_RESOLVE_FORMAT,
@@ -142,6 +145,7 @@ BUILD_RUN_PATH: CommandPath = ("build", "run")
 BUILD_BOOTSTRAP_INDEX_SUITE_PATH: CommandPath = ("build", "bootstrap-index-suite")
 BUILD_STATUS_PATH: CommandPath = ("build", "status")
 BUILD_HISTORY_PATH: CommandPath = ("build", "history")
+BUILD_PUBLISH_SNAPSHOT_PATH: CommandPath = ("build", "publish-serving-snapshot")
 BUILD_VALIDATE_PATH: CommandPath = ("build", "validate")
 BUILD_PLAN_PATH: CommandPath = ("build", "plan")
 BUILD_EXPLAIN_PATH: CommandPath = ("build", "explain")
@@ -159,6 +163,7 @@ _BUILD_RUN_FLAGS_FIELD = shared_flags_field(BUILD_RUN_PATH)
 _BUILD_BOOTSTRAP_INDEX_SUITE_FLAGS_FIELD = shared_flags_field(BUILD_BOOTSTRAP_INDEX_SUITE_PATH)
 _BUILD_STATUS_FLAGS_FIELD = shared_flags_field(BUILD_STATUS_PATH)
 _BUILD_HISTORY_FLAGS_FIELD = shared_flags_field(BUILD_HISTORY_PATH)
+_BUILD_PUBLISH_SNAPSHOT_FLAGS_FIELD = shared_flags_field(BUILD_PUBLISH_SNAPSHOT_PATH)
 _BUILD_VALIDATE_FLAGS_FIELD = shared_flags_field(BUILD_VALIDATE_PATH)
 _BUILD_PLAN_FLAGS_FIELD = shared_flags_field(BUILD_PLAN_PATH)
 _BUILD_EXPLAIN_FLAGS_FIELD = shared_flags_field(BUILD_EXPLAIN_PATH)
@@ -335,6 +340,27 @@ class BuildHistoryCommand:
         option_param(BUILD_HISTORY_LIMIT, command_path=BUILD_HISTORY_PATH),
     ] = 10
     flags: SharedFlagsProtocol = _BUILD_HISTORY_FLAGS_FIELD
+
+
+@cli_command(
+    "build.publish_serving_snapshot",
+    handler=build_publish_serving_snapshot_handler,
+    config=_BUILD_CONFIG,
+)
+@build_app.command(name="publish-serving-snapshot")
+@dataclass
+class BuildPublishServingSnapshotCommand:
+    """Publish a serving snapshot from Parquet datasets."""
+
+    run_id: Annotated[
+        str | None,
+        option_param(BUILD_PUBLISH_SNAPSHOT_RUN_ID, command_path=BUILD_PUBLISH_SNAPSHOT_PATH),
+    ] = None
+    keep_last: Annotated[
+        int,
+        option_param(BUILD_PUBLISH_SNAPSHOT_KEEP_LAST, command_path=BUILD_PUBLISH_SNAPSHOT_PATH),
+    ] = 10
+    flags: SharedFlagsProtocol = _BUILD_PUBLISH_SNAPSHOT_FLAGS_FIELD
 
 
 @cli_command("build.targets", require_storage=False)

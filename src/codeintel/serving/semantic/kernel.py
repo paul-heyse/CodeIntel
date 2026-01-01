@@ -85,7 +85,6 @@ if TYPE_CHECKING:
     from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest
-    from codeintel.serving.semantic.datasets import DatasetManifestIndex
     from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.models import (
         SemanticExportRequest,
@@ -94,6 +93,7 @@ if TYPE_CHECKING:
     )
     from codeintel.serving.semantic.planner import PlanInputs, ResolvedViewContext
     from codeintel.serving.settings import ServingSettings
+    from codeintel.storage.datasets.manifest_index import DatasetManifestIndex
     from codeintel.storage.warehouse import Warehouse
 
 

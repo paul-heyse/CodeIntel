@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING
 from sqlglot import exp
 
 from codeintel.core.schemas.type_mappings import normalize_engine_column_type
-from codeintel.serving.semantic.filter_compiler import (
+from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.queries.filter_compiler import (
     FilterCompilerError,
     compile_filter_predicates,
     sqlglot_filter_expression,
 )
-from codeintel.serving.semantic.specs import SemanticQuerySpec
-from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.sqlglot_tools import (
     canonicalize_select_duckdb,
     ensure_ast_capability,

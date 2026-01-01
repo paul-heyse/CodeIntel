@@ -9,7 +9,6 @@ import pyarrow as pa
 import pytest
 from sqlglot import exp, parse_one
 
-from codeintel.serving.semantic.datasets import DatasetManifestEntry, DatasetManifestIndex
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
     RelationBuildContext,
@@ -22,6 +21,7 @@ from codeintel.serving.semantic.models import FilterSpec
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.storage.datasets.manifest_index import DatasetManifestEntry, DatasetManifestIndex
 from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from tests._helpers.assertions.expectation_assertions import expect_equal
 

@@ -1079,6 +1079,34 @@ class BuildHistoryResult:
 
 
 @dataclass(frozen=True)
+class BuildPublishSnapshotResult:
+    """Result from build publish-serving-snapshot command."""
+
+    run_id: str
+    published_at: str
+    snapshot_manifest_path: str
+    snapshot_db_path: str
+    semantic_registry_path: str
+    schema_manifest_path: str
+    buildspec_path: str
+    semantic_layer_version: str
+    dataset_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "run_id": self.run_id,
+            "published_at": self.published_at,
+            "snapshot_manifest_path": self.snapshot_manifest_path,
+            "snapshot_db_path": self.snapshot_db_path,
+            "semantic_registry_path": self.semantic_registry_path,
+            "schema_manifest_path": self.schema_manifest_path,
+            "buildspec_path": self.buildspec_path,
+            "semantic_layer_version": self.semantic_layer_version,
+            "dataset_count": self.dataset_count,
+        }
+
+
+@dataclass(frozen=True)
 class GraphStatsResult:
     """Statistics about a graph.
 
@@ -1849,6 +1877,7 @@ __all__ = [
     "BuildExplainResult",
     "BuildHistoryResult",
     "BuildPlanResult",
+    "BuildPublishSnapshotResult",
     "BuildRunResult",
     "BuildStatusResult",
     "BuildTargetInfo",

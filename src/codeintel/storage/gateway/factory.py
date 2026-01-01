@@ -352,16 +352,14 @@ def open_gateway(
     """
     try:
         session_config = config
-        include_views_for_bootstrap = True
-        if config.ensure_views:
-            LOG.warning("DuckDB view materialization disabled; ignoring ensure_views=True.")
+        include_views_for_bootstrap = config.ensure_views
         if not config.read_only and config.apply_schema:
             session_config = replace(config, apply_schema=False)
         session = DuckDBSession(session_config)
         con = session.open_reader() if config.read_only else session.open()
         attach_meta_database(con, config=config)
         if not config.read_only:
-            apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
+            apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=config.ensure_views)
             if seed_contract_catalog is not None:
                 seed_contract_catalog(con)
         _ensure_contract_catalog(con)
@@ -414,7 +412,7 @@ def open_inference_gateway(*, schema_provider: SchemaProvider) -> InferenceGatew
         validate_schema=False,
     )
     attach_meta_database(con, config=config)
-    apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
+    apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=False)
     return InferenceGateway(con=con, schema_provider=schema_provider, config=config)
 
 
