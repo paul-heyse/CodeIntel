@@ -13,6 +13,7 @@ import networkx as nx
 
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -53,9 +54,9 @@ def load_modules(
     rows_iter = iter_tuples_from_arrow_reader(reader)
     first_row = next(rows_iter, None)
     if first_row is None:
-        fallback_reader = con.execute(
-            "SELECT module, tags FROM core.modules"
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        fallback_reader = con.execute("SELECT module, tags FROM core.modules").fetch_record_batch(
+            DEFAULT_ARROW_BATCH_SIZE
+        )
         rows_iter = iter_tuples_from_arrow_reader(fallback_reader)
     else:
         rows_iter = chain([first_row], rows_iter)

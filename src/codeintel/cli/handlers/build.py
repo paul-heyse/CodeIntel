@@ -2152,9 +2152,7 @@ def _build_assets_result(
             """,
             [repo, commit, target],
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        allowed = {
-            (str(row[0]), str(row[1])) for row in iter_tuples_from_arrow_reader(reader)
-        }
+        allowed = {(str(row[0]), str(row[1])) for row in iter_tuples_from_arrow_reader(reader)}
         assets_to_show = [pair for pair in assets_to_show if pair in allowed]
 
     if asset_type is not None:

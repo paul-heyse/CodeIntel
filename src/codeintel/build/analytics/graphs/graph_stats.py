@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import networkx as nx
@@ -28,38 +29,28 @@ _GRAPH_STATS_COLUMNS: tuple[str, ...] = (
 )
 
 
-def build_graph_stats_rows(
-    *,
-    repo: str,
-    commit: str,
-    call_graph: nx.DiGraph,
-    import_graph: nx.DiGraph,
-    symbol_module_graph: nx.Graph,
-    symbol_function_graph: nx.Graph,
-    config_module_bipartite: nx.Graph | None = None,
-    use_gpu: bool = False,
-) -> list[tuple[object, ...]]:
+@dataclass(frozen=True)
+class GraphStatsInputs:
+    """Inputs required to compute global graph stats rows."""
+
+    repo: str
+    commit: str
+    call_graph: nx.DiGraph
+    import_graph: nx.DiGraph
+    symbol_module_graph: nx.Graph
+    symbol_function_graph: nx.Graph
+    config_module_bipartite: nx.Graph | None = None
+    use_gpu: bool = False
+
+
+def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]:
     """
     Build analytics.graph_stats rows for call/import and related graphs.
 
     Parameters
     ----------
-    repo : str
-        Repository identifier anchoring the metrics.
-    commit : str
-        Commit hash anchoring the metrics snapshot.
-    call_graph : nx.DiGraph
-        Call graph for the repository snapshot.
-    import_graph : nx.DiGraph
-        Import graph for the repository snapshot.
-    symbol_module_graph : nx.Graph
-        Undirected symbol coupling graph at the module level.
-    symbol_function_graph : nx.Graph
-        Undirected symbol coupling graph at the function level.
-    config_module_bipartite : nx.Graph | None
-        Optional config bipartite graph (keys <-> modules).
-    use_gpu : bool
-        Whether to prefer GPU-backed graph operations when supported.
+    inputs
+        Graph stats inputs with repo/commit metadata and graph sources.
 
     Returns
     -------
@@ -68,34 +59,33 @@ def build_graph_stats_rows(
     """
     ctx = resolve_graph_context(
         GraphContextSpec(
-            repo=repo,
-            commit=commit,
-            use_gpu=use_gpu,
+            repo=inputs.repo,
+            commit=inputs.commit,
+            use_gpu=inputs.use_gpu,
             now=datetime.now(UTC),
         )
     )
 
     graphs: dict[str, nx.Graph | nx.DiGraph] = {
-        "call_graph": call_graph,
-        "import_graph": import_graph,
-        "symbol_module_graph": symbol_module_graph,
-        "symbol_function_graph": symbol_function_graph,
+        "call_graph": inputs.call_graph,
+        "import_graph": inputs.import_graph,
+        "symbol_module_graph": inputs.symbol_module_graph,
+        "symbol_function_graph": inputs.symbol_function_graph,
     }
 
-    if config_module_bipartite is not None and config_module_bipartite.number_of_nodes() > 0:
-        keys = {
-            n for n, d in config_module_bipartite.nodes(data=True) if d.get("bipartite") == 0
-        }
-        modules = set(config_module_bipartite) - keys
+    config_graph = inputs.config_module_bipartite
+    if config_graph is not None and config_graph.number_of_nodes() > 0:
+        keys = {n for n, d in config_graph.nodes(data=True) if d.get("bipartite") == 0}
+        modules = set(config_graph) - keys
         if keys and modules:
             graphs["config_key_projection"] = build_projection_graph(
-                config_module_bipartite,
+                config_graph,
                 keys,
                 label="config_keys",
             )
         if keys and modules and len(modules) > 1:
             graphs["config_module_projection"] = build_projection_graph(
-                config_module_bipartite,
+                config_graph,
                 modules,
                 label="config_modules",
             )
@@ -108,8 +98,8 @@ def build_graph_stats_rows(
         rows.append(
             (
                 name,
-                repo,
-                commit,
+                inputs.repo,
+                inputs.commit,
                 stats.node_count,
                 stats.edge_count,
                 stats.weak_component_count,

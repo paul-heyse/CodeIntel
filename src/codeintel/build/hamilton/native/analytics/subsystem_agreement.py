@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.build.analytics.graphs.subsystem_agreement import (
+    SubsystemAgreementInputs,
+    build_subsystem_agreement_rows,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -80,10 +83,12 @@ def subsystem_agreement__base(
         .to_dicts()
     )
     rows = build_subsystem_agreement_rows(
-        repo=env.repo,
-        commit=env.commit,
-        subsystem_module_rows=subsystem_rows,
-        graph_metrics_module_rows=metrics_rows,
+        SubsystemAgreementInputs(
+            repo=env.repo,
+            commit=env.commit,
+            subsystem_module_rows=subsystem_rows,
+            graph_metrics_module_rows=metrics_rows,
+        )
     )
     return rows_to_frame(
         SUBSYSTEM_AGREEMENT_TABLE_KEY,

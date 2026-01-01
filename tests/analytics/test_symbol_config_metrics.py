@@ -11,7 +11,10 @@ import pytest
 from codeintel.build.analytics.graphs.config_graph_metrics import (
     compute_config_graph_metrics_result,
 )
-from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.build.analytics.graphs.subsystem_agreement import (
+    SubsystemAgreementInputs,
+    build_subsystem_agreement_rows,
+)
 from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_module_rows,
     build_symbol_module_graph,
@@ -351,10 +354,12 @@ def test_subsystem_agreement_exposed_in_views(
         )
     )
     agreement_rows = build_subsystem_agreement_rows(
-        repo=test_ctx.repo,
-        commit=test_ctx.commit,
-        subsystem_module_rows=subsystem_rows,
-        graph_metrics_module_rows=graph_metrics_rows,
+        SubsystemAgreementInputs(
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+            subsystem_module_rows=subsystem_rows,
+            graph_metrics_module_rows=graph_metrics_rows,
+        )
     )
     if agreement_rows:
         test_ctx.gateway.policy.delete_for_snapshot(

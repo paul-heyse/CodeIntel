@@ -11,7 +11,10 @@ from codeintel.build.analytics.compute.row_builders import (
     build_symbol_module_edges,
     component_metadata_from_import_rows,
 )
-from codeintel.build.analytics.graphs.config_data_flow import compute_config_data_flow_result
+from codeintel.build.analytics.graphs.config_data_flow import (
+    ConfigDataFlowInputs,
+    compute_config_data_flow_result,
+)
 from codeintel.build.analytics.graphs.config_graph_metrics import (
     build_config_module_bipartite,
     compute_config_graph_metrics_result,
@@ -24,12 +27,19 @@ from codeintel.build.analytics.graphs.graph_metrics import (
 from codeintel.build.analytics.graphs.graph_metrics_ext import (
     build_graph_metrics_functions_ext_rows,
 )
-from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.build.analytics.graphs.graph_stats import (
+    GraphStatsInputs,
+    build_graph_stats_rows,
+)
 from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
-from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.build.analytics.graphs.subsystem_agreement import (
+    SubsystemAgreementInputs,
+    build_subsystem_agreement_rows,
+)
 from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
+    SubsystemGraphMetricInputs,
     build_subsystem_graph_metrics_rows,
 )
 from codeintel.build.analytics.graphs.symbol_graph_metrics import (
@@ -638,7 +648,7 @@ def _write_mapping_rows(
     ctx.gateway.policy.bulk_insert_mappings(table_key, rows)
 
 
-def _config_value_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
+def _config_value_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.config_values").select(
             "repo",
@@ -651,7 +661,7 @@ def _config_value_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
     )
 
 
-def _entrypoint_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
+def _entrypoint_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.entrypoints").select(
             "repo",
@@ -661,7 +671,7 @@ def _entrypoint_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
     )
 
 
-def _subsystem_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
+def _subsystem_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
             "repo",
@@ -687,16 +697,18 @@ def _graph_metric_filters(
 def _write_config_metrics(
     ctx: GraphRuntimeHarness,
     *,
-    config_value_rows: list[Mapping[str, object]],
-    entrypoint_rows: list[Mapping[str, object]],
+    config_value_rows: Sequence[Mapping[str, object]],
+    entrypoint_rows: Sequence[Mapping[str, object]],
     module_names: set[str],
 ) -> None:
     data_flow_result = compute_config_data_flow_result(
-        ctx.snapshot,
-        config_value_rows=config_value_rows,
-        entrypoint_rows=entrypoint_rows,
-        call_graph=ctx.fixtures.call_graph,
-        ast_by_goid=ctx.ast_by_goid,
+        ConfigDataFlowInputs(
+            snapshot=ctx.snapshot,
+            config_value_rows=config_value_rows,
+            entrypoint_rows=entrypoint_rows,
+            call_graph=ctx.fixtures.call_graph,
+            ast_by_goid=ctx.ast_by_goid,
+        )
     )
     _write_tuple_rows(ctx, "analytics.config_data_flow", data_flow_result.rows)
 
@@ -728,7 +740,7 @@ def _write_graph_metrics(
     *,
     module_names: set[str],
     active_filters: GraphMetricFilters,
-) -> list[Mapping[str, object]]:
+) -> Sequence[Mapping[str, object]]:
     import_module_rows = records_from_relation(
         ctx.gateway.relation_from_table_key("graph.import_modules").select(
             "module",
@@ -783,7 +795,7 @@ def _write_graph_metrics(
 def _write_graph_stats(
     ctx: GraphRuntimeHarness,
     *,
-    config_value_rows: list[Mapping[str, object]],
+    config_value_rows: Sequence[Mapping[str, object]],
     module_names: set[str],
 ) -> None:
     config_bipartite = build_config_module_bipartite(
@@ -793,14 +805,16 @@ def _write_graph_stats(
         commit=ctx.snapshot.commit,
     )
     graph_stats_rows = build_graph_stats_rows(
-        repo=ctx.snapshot.repo,
-        commit=ctx.snapshot.commit,
-        call_graph=ctx.fixtures.call_graph,
-        import_graph=ctx.fixtures.import_graph,
-        symbol_module_graph=ctx.fixtures.symbol_module_graph,
-        symbol_function_graph=ctx.fixtures.symbol_function_graph,
-        config_module_bipartite=config_bipartite,
-        use_gpu=ctx.runtime_options.use_gpu,
+        GraphStatsInputs(
+            repo=ctx.snapshot.repo,
+            commit=ctx.snapshot.commit,
+            call_graph=ctx.fixtures.call_graph,
+            import_graph=ctx.fixtures.import_graph,
+            symbol_module_graph=ctx.fixtures.symbol_module_graph,
+            symbol_function_graph=ctx.fixtures.symbol_function_graph,
+            config_module_bipartite=config_bipartite,
+            use_gpu=ctx.runtime_options.use_gpu,
+        )
     )
     _write_tuple_rows(ctx, "analytics.graph_stats", graph_stats_rows)
 
@@ -808,16 +822,18 @@ def _write_graph_stats(
 def _write_subsystem_metrics(
     ctx: GraphRuntimeHarness,
     *,
-    subsystem_rows: list[Mapping[str, object]],
+    subsystem_rows: Sequence[Mapping[str, object]],
     active_filters: GraphMetricFilters,
 ) -> None:
     subsystem_graph_metrics_rows = build_subsystem_graph_metrics_rows(
-        repo=ctx.snapshot.repo,
-        commit=ctx.snapshot.commit,
-        import_graph=ctx.fixtures.import_graph,
-        membership_rows=subsystem_rows,
-        runtime=ctx.runtime_options,
-        filters=active_filters,
+        SubsystemGraphMetricInputs(
+            repo=ctx.snapshot.repo,
+            commit=ctx.snapshot.commit,
+            import_graph=ctx.fixtures.import_graph,
+            membership_rows=subsystem_rows,
+            runtime=ctx.runtime_options,
+            filters=active_filters,
+        )
     )
     _write_tuple_rows(ctx, "analytics.subsystem_graph_metrics", subsystem_graph_metrics_rows)
 
@@ -825,14 +841,16 @@ def _write_subsystem_metrics(
 def _write_subsystem_agreement(
     ctx: GraphRuntimeHarness,
     *,
-    subsystem_rows: list[Mapping[str, object]],
-    modules_ext_rows: list[Mapping[str, object]],
+    subsystem_rows: Sequence[Mapping[str, object]],
+    modules_ext_rows: Sequence[Mapping[str, object]],
 ) -> None:
     subsystem_agreement_rows = build_subsystem_agreement_rows(
-        repo=ctx.snapshot.repo,
-        commit=ctx.snapshot.commit,
-        subsystem_module_rows=subsystem_rows,
-        graph_metrics_module_rows=modules_ext_rows,
+        SubsystemAgreementInputs(
+            repo=ctx.snapshot.repo,
+            commit=ctx.snapshot.commit,
+            subsystem_module_rows=subsystem_rows,
+            graph_metrics_module_rows=modules_ext_rows,
+        )
     )
     _write_tuple_rows(ctx, "analytics.subsystem_agreement", subsystem_agreement_rows)
 

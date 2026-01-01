@@ -1,4 +1,8 @@
-"""Factory helpers for constructing graph engines across surfaces."""
+"""Factory helpers for constructing graph engines across surfaces.
+
+Engines are configured from the graph_backend build config and consume
+Parquet-backed DuckDB tables (no view-registry fallbacks).
+"""
 
 from __future__ import annotations
 
@@ -20,7 +24,11 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class EngineBuildOptions:
-    """Optional configuration for building graph engines."""
+    """Optional configuration for building graph engines.
+
+    The graph_backend field mirrors the build config selection routed through
+    GraphRuntimeOptions and build_graph_runtime.
+    """
 
     graph_backend: GraphBackendConfig | None = None
     env: MutableMapping[str, str] | None = None
@@ -38,7 +46,7 @@ def build_graph_engine(
     Parameters
     ----------
     gateway :
-        Storage gateway providing graph tables and views.
+        Storage gateway providing Parquet-backed graph tables.
     snapshot :
         Repository snapshot anchoring the graph build or a (repo, commit) tuple.
     options : EngineBuildOptions | None

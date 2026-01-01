@@ -301,7 +301,9 @@ def _load_latest_observed_schema_rows(
         )
     )
     reader = con.execute(render_sql_duckdb(query)).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    return list(iter_tuples_from_arrow_reader(reader))
+    return [
+        (table_key, schema_json) for table_key, schema_json in iter_tuples_from_arrow_reader(reader)
+    ]
 
 
 def load_table_schema_from_connection(
@@ -396,9 +398,9 @@ def iter_table_schemas_from_connection(
         .join(versions, on=join_versions)
         .where(_inferred_registry_condition("registry"))
     )
-    inferred_reader = con.execute(
-        render_sql_duckdb(inferred_query)
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    inferred_reader = con.execute(render_sql_duckdb(inferred_query)).fetch_record_batch(
+        DEFAULT_ARROW_BATCH_SIZE
+    )
     schemas_by_key: dict[str, TableSchema] = {}
     for table_key, schema_json_raw in observed_rows:
         schema_json = decode_json_dict(schema_json_raw)
@@ -419,9 +421,9 @@ def iter_table_schemas_from_connection(
         .join(versions, on=join_versions)
         .order_by(exp.Ordered(this=exp.column("table_key", table="registry")))
     )
-    fallback_reader = con.execute(
-        render_sql_duckdb(fallback_query)
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    fallback_reader = con.execute(render_sql_duckdb(fallback_query)).fetch_record_batch(
+        DEFAULT_ARROW_BATCH_SIZE
+    )
     for table_key, schema_json_raw in iter_tuples_from_arrow_reader(fallback_reader):
         if str(table_key) in schemas_by_key:
             continue
@@ -503,7 +505,10 @@ class SchemaCatalogTracking:
         self._gateway = gateway
         self._con = gateway.con
         self._backend = gateway.policy
-        config = getattr(gateway, "config", None)
+        try:
+            config = gateway.config
+        except (AttributeError, NotImplementedError):
+            config = None
         self._read_only = bool(config.read_only) if isinstance(config, StorageConfig) else False
 
     def record_schema_versions_batch(self, records: Sequence[SchemaVersionRecord]) -> int:
@@ -1043,7 +1048,10 @@ class SchemaCatalogTracking:
             render_sql_duckdb(query),
             [limit],
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        return list(iter_tuples_from_arrow_reader(reader))
+        return [
+            (table_key, drift_summary, observed_at)
+            for table_key, drift_summary, observed_at in iter_tuples_from_arrow_reader(reader)
+        ]
 
     @staticmethod
     def _summarize_drift_rows(
@@ -1138,9 +1146,9 @@ class SchemaCatalogTracking:
             .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
         )
         schemas: dict[str, TableSchema] = {}
-        reader = self._con.execute(
-            render_sql_duckdb(query)
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = self._con.execute(render_sql_duckdb(query)).fetch_record_batch(
+            DEFAULT_ARROW_BATCH_SIZE
+        )
         for table_key, schema_json_raw in iter_tuples_from_arrow_reader(reader):
             schema_json = decode_json_dict(schema_json_raw)
             if not schema_json:
@@ -1333,7 +1341,11 @@ class SchemaCatalogTracking:
         reader = self._con.execute(render_sql_duckdb(query)).fetch_record_batch(
             DEFAULT_ARROW_BATCH_SIZE
         )
-        return list(iter_tuples_from_arrow_reader(reader))
+        rows = iter_tuples_from_arrow_reader(reader)
+        return [
+            (table_key, schema_hash, schema_digest, renderer_cache)
+            for table_key, schema_hash, schema_digest, renderer_cache in rows
+        ]
 
     @staticmethod
     def _build_contract_drift_report(

@@ -131,14 +131,15 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
   exercised in dataset tests.
 - coverage_functions now runs as a Polars pipeline (no DuckDB relation helper);
   legacy coverage compute + duckdb_helpers removed.
-- Remaining scope: run end-to-end validation and resolve graph metrics migration
-  quality gates.
+- Remaining scope: run end-to-end validation and resolve quality gates for graph
+  metrics + config/subsystem migrations.
 - Graph metrics orchestration now accepts DAG-provided graphs/rows
   (no gateway/runtime resolution); Hamilton graph_metric_inputs builds
   call/import/symbol graphs and filters.
+- Config + subsystem graph analytics now accept DAG-provided rows/graphs
+  (no gateway reads); Hamilton nodes build config bipartite + subsystem inputs.
 - Quality gates still pending for graph metrics migration (ruff/pyright/pyrefly
-  clean + targeted tests); quality_report currently fails due to a
-  generated_rows __all__ validation error.
+  clean + targeted tests).
 
 ## DAG Node Conventions
 - Dataset table outputs: `<table>__base -> <table>__table -> t__<target>`.
@@ -820,7 +821,8 @@ Source logic: `src/codeintel/build/analytics/graphs/config_data_flow.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_data_flow__base -> config_data_flow__table`.
-- Inputs: `analytics.config_values`, `graph.call_graph_edges`.
+- Inputs: `analytics.config_values`, `analytics.entrypoints`,
+  `graph.call_graph_edges`, `graph.call_graph_nodes`, `core.goids`.
 - Output: `analytics.config_data_flow` dataset.
 Acceptance criteria:
 - Config flow edges reference valid config keys and functions.
@@ -831,7 +833,7 @@ Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_graph_metrics_keys__base -> config_graph_metrics_keys__table`.
-- Inputs: `analytics.config_values`.
+- Inputs: `analytics.config_values`, `core.modules`.
 - Output: `analytics.config_graph_metrics_keys` dataset.
 Acceptance criteria:
 - Metrics align to config key nodes in the flow graph.
@@ -842,7 +844,7 @@ Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_graph_metrics_modules__base -> config_graph_metrics_modules__table`.
-- Inputs: `analytics.config_values`.
+- Inputs: `analytics.config_values`, `core.modules`.
 - Output: `analytics.config_graph_metrics_modules` dataset.
 Acceptance criteria:
 - Module metrics align to module nodes in config flow graph.
@@ -853,7 +855,7 @@ Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_projection_key_edges__base -> config_projection_key_edges__table`.
-- Inputs: `analytics.config_values`.
+- Inputs: `analytics.config_values`, `core.modules`.
 - Output: `analytics.config_projection_key_edges` dataset.
 Acceptance criteria:
 - Projection edges represent key-to-key reachability in config graph.
@@ -864,7 +866,7 @@ Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_projection_module_edges__base -> config_projection_module_edges__table`.
-- Inputs: `analytics.config_values`.
+- Inputs: `analytics.config_values`, `core.modules`.
 - Output: `analytics.config_projection_module_edges` dataset.
 Acceptance criteria:
 - Projection edges represent module-to-module config influence.
@@ -981,11 +983,12 @@ Source logic: `src/codeintel/build/analytics/graphs/graph_stats.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `graph_stats__base -> graph_stats__table`.
-- Inputs: `graph.call_graph_edges`, `graph.import_graph_edges`,
-  `graph.cfg_edges`, `graph.dfg_edges`.
+- Inputs: `graph.call_graph_edges`, `graph.call_graph_nodes`,
+  `graph.import_graph_edges`, `graph.import_modules`,
+  `graph.symbol_use_edges`, `analytics.config_values`, `core.modules`.
 - Output: `analytics.graph_stats` dataset.
 Acceptance criteria:
-- Stats rows include node/edge counts for each graph type.
+- Stats rows include node/edge counts for call/import/symbol/config projections.
 
 #### analytics.graph_validation
 Status: [x]
@@ -1098,7 +1101,8 @@ Source logic: `src/codeintel/build/analytics/compute/row_builders/subsystem_metr
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`.
 DAG node spec:
 - Nodes: `subsystem_graph_metrics__base -> subsystem_graph_metrics__table`.
-- Inputs: `analytics.subsystem_modules`, `analytics.graph_metrics_modules`.
+- Inputs: `analytics.subsystem_modules`, `graph.import_graph_edges`,
+  `graph.import_modules`.
 - Output: `analytics.subsystem_graph_metrics` dataset.
 Acceptance criteria:
 - Metrics aggregated by subsystem id.
@@ -1270,8 +1274,9 @@ Hamilton DAG; remaining cleanup focuses on removing unused orchestration wrapper
 - [x] `tests/build/hamilton/test_pr52_no_legacy_orchestrators.py` (update).
 - [x] `tests/analytics/test_public_exports.py` (reviewed; no changes required).
 
-## Orchestration Migration Checklists (Remaining)
-These files remain in use by the Hamilton DAG today. The migration work below
+## Orchestration Migration Checklists (Status)
+These files remain in use by the Hamilton DAG today. The checklists reflect
+completed migrations vs outstanding work (runtime/engine/validation). The work
 focuses on making inputs explicit, aligning I/O with the Parquet boundary, and
 keeping NetworkX-based analytics where they add value. Some modules are expected
 to remain hybrid orchestration layers rather than pure Hamilton nodes.
@@ -1312,29 +1317,32 @@ to remain hybrid orchestration layers rather than pure Hamilton nodes.
 
 ### Config graphs + subsystem orchestration (mixed SQL/NetworkX; hybrid allowed)
 #### `src/codeintel/build/analytics/graphs/config_data_flow.py`
-- [ ] Lift all source table reads into DAG inputs.
-- [ ] Keep graph construction in NetworkX if needed.
-- [ ] Ensure outputs are schema-aligned row models only.
+- [x] Lift all source table reads into DAG inputs.
+- [x] Keep graph construction in NetworkX if needed.
+- [x] Ensure outputs are schema-aligned row models only.
 
 #### `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
-- [ ] Replace runtime/gateway access with DAG-provided inputs.
-- [ ] Split graph build vs metrics into explicit helper functions.
-- [ ] Preserve NetworkX metrics where beneficial.
+- [x] Replace runtime/gateway access with DAG-provided inputs.
+- [x] Split graph build vs metrics into explicit helper functions.
+- [x] Preserve NetworkX metrics where beneficial.
 
 #### `src/codeintel/build/analytics/graphs/graph_stats.py`
-- [ ] Convert reads to DAG inputs; avoid direct gateway lookups.
-- [ ] Keep NetworkX/graph stats compute as a helper.
-- [ ] Add explicit input/row contracts for DAG wiring.
+- [x] Convert reads to DAG inputs; avoid direct gateway lookups.
+- [x] Keep NetworkX/graph stats compute as a helper.
+- [x] Add explicit input/row contracts for DAG wiring.
 
 #### `src/codeintel/build/analytics/graphs/subsystem_graph_metrics.py`
-- [ ] Provide subsystem + graph inputs explicitly via DAG nodes.
-- [ ] Retain NetworkX-based metric calculations (hybrid acceptable).
-- [ ] Confirm outputs map directly to Parquet materializers.
+- [x] Provide subsystem + graph inputs explicitly via DAG nodes.
+- [x] Retain NetworkX-based metric calculations (hybrid acceptable).
+- [x] Confirm outputs map directly to Parquet materializers.
 
 #### `src/codeintel/build/analytics/graphs/subsystem_agreement.py`
-- [ ] Replace gateway reads with DAG-provided subsystem/graph inputs.
-- [ ] Keep disagreement logic (likely NetworkX) in helper layer.
-- [ ] Add tests for schema/lineage only (no view registry).
+- [x] Replace gateway reads with DAG-provided subsystem/graph inputs.
+- [x] Keep disagreement logic (likely NetworkX) in helper layer.
+- [x] Add tests for schema/lineage only (no view registry).
+
+- [~] Validation gates pending: ruff/pyright/pyrefly clean + targeted tests for
+  config/subsystem graph migrations.
 
 ### Graph runtime + engine + validation (service layer; not fully migratable)
 These modules are expected to remain as a service layer because NetworkX

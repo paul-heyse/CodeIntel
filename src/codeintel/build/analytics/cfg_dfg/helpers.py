@@ -10,7 +10,11 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import (
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_arrow_reader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -111,7 +115,10 @@ def load_function_metadata(
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
-        result[int(goid)] = (rel_path, module, qualname)
+        rel_path_text = coerce_str(rel_path, ctx="function_metadata.rel_path")
+        module_text = coerce_optional_str(module, ctx="function_metadata.module")
+        qualname_text = coerce_optional_str(qualname, ctx="function_metadata.qualname")
+        result[goid] = (rel_path_text, module_text, qualname_text)
     return result
 
 

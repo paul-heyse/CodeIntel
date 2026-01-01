@@ -1,5 +1,8 @@
 """Graph runtime options and helpers.
 
+This module provides a hybrid service layer between Hamilton DAG outputs
+and NetworkX graph computations backed by Parquet datasets.
+
 Note
 ----
 For pipeline run and step tracking persistence, see `codeintel.storage.tracking`.
@@ -42,6 +45,7 @@ class GraphRuntimeOptions:
     """Configuration describing how to construct a `GraphRuntime`.
 
     Implements OptionsProtocol for consistent validation and serialization.
+    The `backend` field is derived from the `graph_backend` build config.
     """
 
     snapshot: SnapshotRef | None = None
@@ -61,7 +65,8 @@ class GraphRuntimeOptions:
         Parameters
         ----------
         params
-            Mapping of configuration values (typically from BuildConfig).
+            Mapping of configuration values (typically from BuildConfig), including
+            the `graph_backend` entry used for backend selection.
 
         Returns
         -------
@@ -91,7 +96,9 @@ class GraphRuntimeOptions:
             else None
         )
 
-        backend_raw = params.get("backend")
+        backend_raw = params.get("graph_backend")
+        if backend_raw is None:
+            backend_raw = params.get("backend")
         backend = cls._parse_graph_backend(backend_raw) if backend_raw is not None else None
 
         features_raw = params.get("features")
@@ -196,7 +203,7 @@ class GraphRuntimeOptions:
 
     @property
     def resolved_backend(self) -> GraphBackendConfig:
-        """Return a concrete backend configuration."""
+        """Return a concrete backend configuration derived from graph_backend."""
         return self.backend or GraphBackendConfig()
 
     @property
@@ -288,7 +295,10 @@ class GraphRuntimeOptions:
 
 @dataclass
 class GraphRuntime:
-    """Live runtime wrapping a GraphEngine plus cached graph instances."""
+    """Live runtime wrapping a GraphEngine plus cached graph instances.
+
+    This runtime expects Parquet-backed DuckDB tables as the graph sources.
+    """
 
     options: GraphRuntimeOptions
     engine: GraphEngine
@@ -541,9 +551,9 @@ def build_graph_runtime(
     Parameters
     ----------
     gateway
-        Storage gateway for the snapshot database.
+        Storage gateway for the snapshot database backed by Parquet datasets.
     options
-        Runtime options describing snapshot, backend, and graph flags.
+        Runtime options describing snapshot, graph_backend, and graph flags.
     env
         Optional environment mapping mutated by backend selection hooks.
     enabler

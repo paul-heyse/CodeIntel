@@ -1,7 +1,9 @@
 """NetworkX-backed GraphEngine implementation.
 
 This module provides the primary GraphEngine implementation using
-NetworkX for graph representation and DuckDB for data loading.
+NetworkX for graph representation and Parquet-backed DuckDB tables
+for data loading. It is a hybrid service layer (not a Hamilton DAG
+module) and avoids view-registry fallbacks.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class NxGraphEngine:
-    """NetworkX-backed GraphEngine powered by DuckDB views."""
+    """NetworkX-backed GraphEngine powered by Parquet-backed DuckDB tables."""
 
     gateway: StorageGateway
     snapshot: SnapshotRef

@@ -1799,3 +1799,360 @@ If you snapshot Python, set `--comment-syntax="#"` or you’ll generate invalid-
 [5]: https://github.com/sourcegraph/scip-ruby/issues/87 "No meaningful occurrences for rubocop repository · Issue #87 · sourcegraph/scip-ruby · GitHub"
 [6]: https://github.com/sourcegraph/scip/blob/main/docs/CLI.md?utm_source=chatgpt.com "scip/docs/CLI.md at main · sourcegraph/scip"
 
+Below is a **gap-fill addendum** that you can append to your existing `scip_python_overview.md` (), written in the same “dense technical guide” style as the attached template ().
+
+---
+
+# Addendum: contract-complete scip-python + SCIP CLI (upload contract, CLI surfaces, spec appendices, env.json generation)
+
+### Mental model: treat scip-python + scip + src as a **3-part toolchain**
+
+You don’t have “a CLI” — you have a versioned **compiler toolchain**:
+
+1. **scip-python**: builds `index.scip` from Python source using Pyright-class semantic analysis (precise nav depends on dependency + typing resolution). ([Sourcegraph][1])
+2. **scip (SCIP CLI)**: validates/prints/snapshots/converts indexes; it is your “object inspection + golden testing” layer. ([GitHub][2])
+3. **src code-intel upload**: binds an `index.scip` to a *repo@commit + root* in Sourcegraph; most brittleness is here (auth + root inference). ([GitHub][3])
+
+The stable contract surface is: **(a) pinned versions, (b) `--help` outputs, (c) the protobuf schema / bindings**, and (d) golden snapshot outputs.
+
+---
+
+## A) Version pinning + “CLI contract snapshots” (mandatory for drift resistance)
+
+### A1) Pin `scip` (SCIP CLI) by release tag (don’t “latest”)
+
+The GitHub releases page provides prebuilt binaries for multiple platforms (including **darwin-arm64** for Apple Silicon). ([GitHub][4])
+
+**Operational contract**:
+
+* Record the exact `TAG` you deploy (e.g. `v0.6.1`). ([GitHub][4])
+* Check in a copy of `scip --help` and `scip <subcmd> --help` output in-repo.
+
+**Why**: `scip` is actively evolving (e.g., new flags like `print --json`, snapshot options, test command additions). ([GitHub][2])
+
+### A2) Pin `scip-python` (indexer) as a toolchain component
+
+scip-python is a fork/addition on top of Pyright (not a “small wrapper”), but the repo itself notes there are **no substantial changes to the `pyright` library** “at this time” — meaning behavior is largely Pyright-driven and config-driven. ([GitHub][5])
+
+**Contract pattern**:
+
+* Always capture:
+
+  * `scip-python --version`
+  * `scip-python index --help`
+  * The exact Pyright config used for the run (resolved config path + contents)
+* Treat these as *golden artifacts*.
+
+### A3) Suggested repo artifacts (minimal but decisive)
+
+Store these under something like `tooling/scip/contracts/`:
+
+* `scip.version.txt`
+* `scip.help.txt`
+* `scip.help.print.txt`
+* `scip.help.snapshot.txt`
+* `scip.help.convert.txt`
+* `scip-python.version.txt`
+* `scip-python.help.index.txt`
+* `src.help.code-intel-upload.txt`
+
+Then add a CI check: **diff must be empty unless intentionally bumped**.
+
+---
+
+## B) Sourcegraph upload contract (src-cli): auth, root, commit identity
+
+### B1) Authentication + endpoint selection (don’t handwave this)
+
+At minimum, `src` expects:
+
+* `SRC_ACCESS_TOKEN`
+* `SRC_ENDPOINT`
+  Example instructions appear in multiple indexer docs (e.g., scip-dotnet). ([NuGet][6])
+
+**Contract rule**: your CI must set these explicitly; do not depend on interactive login.
+
+### B2) The `-root` inference footgun (must be explicitly handled)
+
+`src code-intel upload` currently infers the index root as the directory where the SCIP file lives, and there is an explicit feature request to infer root from SCIP metadata instead. ([GitHub][3])
+
+**Practical rule**:
+
+* Always pass `-root <repo-root>` (or the equivalent root flag in your `src` version) when:
+
+  * `index.scip` is emitted outside repo root (common in CI workspaces),
+  * you stage artifacts into a separate directory,
+  * you build indexes in a “dist/” folder.
+
+This avoids silent “indexed paths don’t match repo paths” failures (the most common “upload succeeded but navigation is broken” symptom).
+
+### B3) Commit identity constraints in CI
+
+The upload path often expects a Git commit hash; `src-cli` issues show backend validation behavior around commits (e.g., requiring a 40-char revhash). ([GitHub][7])
+
+**Rule**: in CI, always bind the upload to:
+
+* repo identifier
+* commit SHA
+* root path
+  …and do *not* rely on inference if reproducibility matters.
+
+---
+
+## C) SCIP CLI: the “inspection + golden testing” layer (what to use it for)
+
+### C1) `scip print`: deterministic introspection, now also machine-readable
+
+The SCIP changelog notes `scip print` supports `--json` output (vs colored text), and also supports disabling colors via `--color=false` or env config. ([GitHub][2])
+
+**Practical usage**:
+
+* Use `--json` for pipeline tooling (e.g., extract counts, verify invariants).
+* Use colorless output for golden snapshots in CI.
+
+### C2) `scip snapshot`: visual + diffable “semantic goldens”
+
+The CLI reference explicitly positions `snapshot` as generating snapshot files to inspect an index visually. ([GitHub][8])
+The changelog also indicates snapshot output has evolved (e.g., fields like diagnostics appearing in snapshot output). ([GitHub][2])
+
+**Contract pattern**:
+
+* snapshot outputs belong in your test corpus (golden diff).
+* use snapshot to validate **relationships**, **token kinds**, **document coverage**, and **diagnostics** stability across toolchain bumps.
+
+### C3) `scip convert` (SCIP→LSIF): compatibility bridge
+
+GitLab docs explicitly state they don’t natively support SCIP and recommend converting to LSIF via the SCIP CLI. ([GitLab Docs][9])
+Your base doc already references SCIP→LSIF conversion and experimental conversions. 
+
+**Important constraint**: conversion can impose semantic limitations; treat “SCIP as ground truth”, LSIF as a derived artifact.
+
+### C4) `scip test`: targeted conformance harness (emerging, high leverage)
+
+The scip changelog indicates a `test` command exists and has gained flags like `--check-documents`. ([GitHub][2])
+There’s also active discussion about extending this into a tree-sitter-style test workflow. ([GitHub][10])
+
+**Design implication**: `scip test` is converging toward being the canonical “spec conformance + regression” runner for SCIP producers (indexers) and consumers.
+
+### C5) “Last resort” binary decode for corruption triage
+
+Sourcegraph support docs provide the direct protobuf decode approach:
+
+```bash
+cat index.scip | protoc --decode=scip.Index scip.proto
+```
+
+Useful when the index is corrupted or upload fails and you need raw confirmation of metadata/documents. ([Sourcegraph Help Center][11])
+
+---
+
+## D) SCIP schema appendices (consumer-grade completeness)
+
+### D1) `SymbolRole` bitset: full known role surface + how to read it
+
+`SymbolRole` is explicitly a **bitset**; roles include (with documented semantics in schema/bindings):
+
+* `Definition = 0x01`
+* `Import = 0x02`
+* `WriteAccess = 0x04`
+* `ReadAccess = 0x08`
+* `Generated = 0x10`
+* `Test = 0x20`
+* `ForwardDefinition = 0x40` ([GitHub][12])
+
+Consumer logic must treat this as a bitmask, not an enum:
+
+```python
+is_import = (roles & IMPORT) != 0
+```
+
+Docs.rs also frames it exactly this way: check bits via `role.value & SymbolRole.Import.value`. ([Docs.rs][13])
+
+### D2) `SyntaxKind`: token classification (current canonical list + extensibility)
+
+A canonical list of `SyntaxKind` constants (from generated TS bindings discussion) includes:
+
+* Comment
+* PunctuationDelimiter, PunctuationBracket
+* Identifier* family: Keyword/Operator/Builtin/Null/Constant/MutableGlobal/Parameter/Local/Shadowed/Module/Function/FunctionDefinition/Macro/MacroDefinition/Type/BuiltinType/Attribute
+* Regex* family: Escape/Repeated/Wildcard/Delimiter/Join
+* Literals: StringLiteral/StringLiteralEscape/StringLiteralSpecial/StringLiteralKey/CharacterLiteral/NumericLiteral/BooleanLiteral
+* Tags: Tag/TagAttribute/TagDelimiter ([GitHub][14])
+
+**Forward-compat rule**: treat `SyntaxKind` as open-ended; changelog entries mention adding new “Kind enum constants” over time. ([GitHub][2])
+
+### D3) `Diagnostic`: exact fields + semantics (what to trust, what’s optional)
+
+The Diagnostic record is defined with the following primary fields:
+
+* `severity` (error/warning/info/hint semantics)
+* `code` (optional UI-facing code)
+* `message` (required human text)
+* `source` (optional producer label, e.g. “typescript”, “super lint”)
+* `tags` (enum-valued tags list) ([Docs.rs][15])
+
+**Consumer guidance**:
+
+* Always display `message`.
+* Treat `code`/`source` as optional (empty string is common).
+* Treat `tags` as hints, not invariants (producers differ).
+* Treat unknown enum values as “unknown” (don’t crash).
+
+### D4) `Relationship`: the real basis of “find implementations” and override semantics
+
+`Relationship` is not a “kind enum”; it’s a tuple of a **target symbol** plus boolean relationship flags:
+
+* `symbol` (target)
+* `is_reference` (Find references)
+* `is_implementation` (Find implementations) — explicitly *not always coupled* with references
+* `is_type_definition` (Go to type definition)
+* `is_definition` (override go-to-definition/reference behavior; special constraints exist) ([Docs.rs][16])
+
+Critical nuance (from bindings docs):
+
+* It’s common for `is_implementation` and `is_reference` to both be true, but not required; implementors may be excluded from references on purpose. ([Docs.rs][16])
+* `is_definition` can override def/ref behavior for symbols without a single canonical definition or with multi-definition semantics, but **SCIP→LSIF conversion currently only records `is_definition` reliably for global symbols** (locals may be dropped). ([Docs.rs][16])
+
+### D5) Consumer algorithm sketches (deterministic, index-local)
+
+**Find implementations for symbol S**:
+
+* iterate all `SymbolInformation` records
+* for each symbol T, check `relationships` for entries where `rel.symbol == S` and `rel.is_implementation == true`
+* return T as implementor set
+
+**Go to type definition for symbol S**:
+
+* locate `SymbolInformation(S)`
+* follow `relationships` where `is_type_definition == true`
+* resolve those symbols to definition locations (via their `occurrences`/ranges)
+
+**Find references for symbol S**:
+
+* canonical: occurrences where `occurrence.symbol == S` and role has `ReadAccess`/`WriteAccess` (bitmask checks) ([GitHub][12])
+* augmented: follow `relationships` targeting S with `is_reference == true` to include synthetically linked symbols (language-specific semantics) ([Docs.rs][16])
+
+---
+
+## E) Environment JSON (`--environment`) generation playbooks (pip/poetry/conda/editable)
+
+### E1) Mental model: env.json is a **site-packages relative distribution manifest**
+
+The overview doc’s format is:
+
+```json
+[
+  {
+    "name": "PyYAML",
+    "version": "6.0",
+    "files": [
+      "PyYAML-6.0.dist-info/INSTALLER",
+      ...
+    ]
+  }
+]
+```
+
+`files` are **paths relative to the environment’s site-packages directory**, including dist-info metadata. 
+
+scip-python uses this to **avoid invoking pip** and to stabilize dependency resolution for indexing. 
+
+### E2) Canonical generator strategy (works for pip + poetry venvs; often works for conda)
+
+Use `importlib.metadata` as the ground truth of installed distributions:
+
+* enumerate distributions (`importlib.metadata.distributions()`)
+* for each distribution:
+
+  * `name`, `version`
+  * file list from `dist.files` (these are already relative-ish paths)
+* normalize each file entry to a POSIX-ish relative path under site-packages
+* emit JSON list sorted by (name, version) for determinism
+
+**Why this is the right primitive**:
+
+* It reflects what Python import resolution sees.
+* It captures editable installs *when they expose dist-info*; when they don’t, you detect and handle separately.
+
+### E3) Conda edge cases (what breaks, how to detect)
+
+Conda environments may include packages that don’t present standard `dist-info` layouts (or present them differently). Your generator should:
+
+* log distributions where `dist.files` is `None` or empty
+* optionally fallback to:
+
+  * locate module root via `import <module>; module.__file__`
+  * include that package directory + any `.dist-info` that exists
+* treat these as “indexing degraded” if file lists are incomplete (expect missing symbol resolution for those deps).
+
+### E4) Editable installs (PEP 660 / legacy `.pth`)
+
+Editable installs often manifest as:
+
+* `direct_url.json` inside dist-info
+* `.pth` files that inject paths at runtime
+
+**Policy**:
+
+* If `dist.files` includes only metadata but not the source tree, add the editable source root explicitly (otherwise scip-python may not index the dependency sources even though imports resolve at runtime).
+* Detect this by comparing:
+
+  * importable module file path
+  * presence/absence of package files in `dist.files`
+
+### E5) Determinism requirements (for CI + golden tests)
+
+* normalize path separators to `/`
+* sort `files` lexicographically
+* sort package records by `(name.lower(), version)`
+* record the site-packages base path used during generation (so consumers can reproduce)
+
+---
+
+## F) Auto-indexing semantics: project identity is a cross-repo linking contract
+
+### F1) `--project-name` + `--project-version` are not optional “labels”
+
+Precise navigation “works” locally without strict identity, but cross-repo linking depends on stable project identity. scip-python’s issue tracker explicitly discusses improving **project name and version detection** for auto-indexing and cross-repo navigation. ([GitHub][17])
+
+**Policy**:
+
+* `project-name`: stable repo identifier (often matches Sourcegraph repo name)
+* `project-version`: immutable revision identifier (commit SHA or release tag)
+* `project-namespace`: stable org/host grouping (when needed)
+
+### F2) Practical “best defaults” for CodeIntel-like systems
+
+If you want determinism across:
+
+* local runs
+* CI runs
+* multi-repo graphs
+
+then default to:
+
+* `project-version = git rev-parse HEAD` (full SHA, not short)
+* `project-name = canonical repo slug`
+* `root = repo root` (and pass that root explicitly to uploader, per §B)
+
+---
+
+That covers the missing surfaces called out in the gap analysis, with the schema/relationship/diagnostic sections now “consumer complete,” and with upload + env.json treated as first-class contracts rather than incidental CLI usage.
+
+[1]: https://sourcegraph.com/blog/scip-python?utm_source=chatgpt.com "scip-python: a precise Python indexer"
+[2]: https://github.com/sourcegraph/scip/blob/main/CHANGELOG.md?utm_source=chatgpt.com "scip/CHANGELOG.md at main · sourcegraph/scip"
+[3]: https://github.com/sourcegraph/src-cli/issues/809?utm_source=chatgpt.com "[feature request] infer index root by reading scip metadata"
+[4]: https://github.com/sourcegraph/scip/releases "Releases · sourcegraph/scip · GitHub"
+[5]: https://github.com/sourcegraph/scip-python?utm_source=chatgpt.com "sourcegraph/scip-python: SCIP indexer for Python"
+[6]: https://www.nuget.org/packages/scip-dotnet/0.2.10?utm_source=chatgpt.com "scip-dotnet 0.2.10"
+[7]: https://github.com/sourcegraph/src-cli/issues/1035?utm_source=chatgpt.com "Support Perforce changelists in src code-intel upload #1035"
+[8]: https://github.com/sourcegraph/scip/blob/main/docs/CLI.md?utm_source=chatgpt.com "scip/docs/CLI.md at main · sourcegraph/scip"
+[9]: https://docs.gitlab.com/user/project/code_intelligence/?utm_source=chatgpt.com "Code intelligence"
+[10]: https://github.com/sourcegraph/scip/issues/235?utm_source=chatgpt.com "`scip test` command · Issue #235 · sourcegraph/scip"
+[11]: https://help.sourcegraph.com/hc/en-us/articles/15045932124941-Decoding-SCIP-index-file?utm_source=chatgpt.com "Decoding SCIP index file"
+[12]: https://github.com/sourcegraph/scip/blob/main/scip.proto?utm_source=chatgpt.com "scip/scip.proto at main · sourcegraph/scip"
+[13]: https://docs.rs/scip/latest/scip/types/index.html?utm_source=chatgpt.com "scip::types - Rust"
+[14]: https://github.com/sourcegraph/scip/issues/39?utm_source=chatgpt.com "Doc comments for generated TypeScript bindings · Issue #39"
+[15]: https://docs.rs/scip/latest/scip/types/struct.Diagnostic.html?search= "Diagnostic in scip::types - Rust"
+[16]: https://docs.rs/scip/latest/scip/types/struct.Relationship.html "Relationship in scip::types - Rust"
+[17]: https://github.com/sourcegraph/scip-python/issues/109?utm_source=chatgpt.com "Improve project name and version detection · Issue #109"

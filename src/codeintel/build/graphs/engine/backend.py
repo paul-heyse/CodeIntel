@@ -1,4 +1,7 @@
-"""Helpers for configuring NetworkX backends (CPU vs GPU)."""
+"""Helpers for configuring NetworkX backends (CPU vs GPU).
+
+These helpers apply the graph_backend configuration to the NetworkX runtime.
+"""
 
 from __future__ import annotations
 

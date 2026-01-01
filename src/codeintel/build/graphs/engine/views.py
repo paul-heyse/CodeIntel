@@ -1,7 +1,8 @@
-"""Shared helpers to materialize DuckDB graphs as NetworkX views.
+"""Shared helpers to materialize Parquet-backed DuckDB graphs as NetworkX views.
 
 This module provides functions to load various graph types from
-DuckDB into NetworkX graph structures.
+DuckDB base tables into NetworkX graph structures. View-registry
+fallthrough is intentionally disallowed in this layer.
 """
 
 from __future__ import annotations
@@ -15,15 +16,35 @@ import networkx as nx
 
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.query_results import coerce_optional_float, iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-    from decimal import Decimal
-
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+def _require_parquet_table(gateway: StorageGateway, table_key: str) -> bool:
+    schema, table = split_table_key(table_key)
+    row = gateway.execute(
+        """
+        SELECT table_type
+        FROM information_schema.tables
+        WHERE table_schema = ? AND table_name = ?
+        LIMIT 1
+        """,
+        [schema, table],
+    ).fetchone()
+    if row is None:
+        log.warning("Parquet-backed table missing: %s", table_key)
+        return False
+    table_type = str(row[0] or "").upper()
+    if table_type not in {"BASE TABLE", "TABLE"}:
+        message = f"Expected base table for {table_key}, found {table_type or 'unknown'}."
+        raise ValueError(message)
+    return True
 
 
 def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
@@ -87,9 +108,9 @@ def _coerce_edge_weight_float(value: object, *, default: float = 0.0) -> float:
 
 def module_attrs_from_row(
     module: object,
-    scc_id: int | Decimal | str | bytes | bytearray | None,
-    component_size: int | Decimal | str | bytes | bytearray | None,
-    layer: int | Decimal | str | bytes | bytearray | None,
+    scc_id: object | None,
+    component_size: object | None,
+    layer: object | None,
 ) -> tuple[str, dict[str, int]]:
     """
     Build a normalized node attribute mapping for an import module row.
@@ -152,8 +173,9 @@ def load_call_graph(
     nx.DiGraph
         Directed call graph with weighted edges and isolated nodes preserved.
     """
-    con = gateway.con
-    rows: Iterable[tuple[object, object | None]] = con.execute(
+    if not _require_parquet_table(gateway, "graph.call_graph_edges"):
+        return nx.DiGraph()
+    reader = gateway.execute(
         """
         SELECT caller_goid_h128, callee_goid_h128
         FROM graph.call_graph_edges
@@ -161,10 +183,10 @@ def load_call_graph(
           AND repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     graph = nx.DiGraph()
-    for caller_raw, callee_raw in rows:
+    for caller_raw, callee_raw in iter_tuples_from_arrow_reader(reader):
         caller = normalize_decimal(caller_raw)
         callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
@@ -175,22 +197,23 @@ def load_call_graph(
         else:
             graph.add_edge(caller, callee, weight=1)
 
-    node_rows = con.execute(
-        """
-        SELECT goid_h128, kind
-        FROM graph.call_graph_nodes
-        """
-    ).fetchall()
-    for node_raw, kind in node_rows:
-        node = normalize_decimal(node_raw)
-        if node is None:
-            continue
-        if node in graph:
-            continue
-        attrs: dict[str, object] = {}
-        if kind is not None:
-            attrs["kind"] = str(kind)
-        graph.add_node(node, **attrs)
+    if _require_parquet_table(gateway, "graph.call_graph_nodes"):
+        node_reader = gateway.execute(
+            """
+            SELECT goid_h128, kind
+            FROM graph.call_graph_nodes
+            """
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        for node_raw, kind in iter_tuples_from_arrow_reader(node_reader):
+            node = normalize_decimal(node_raw)
+            if node is None:
+                continue
+            if node in graph:
+                continue
+            attrs: dict[str, object] = {}
+            if kind is not None:
+                attrs["kind"] = str(kind)
+            graph.add_node(node, **attrs)
 
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
@@ -223,42 +246,41 @@ def load_import_graph(
     nx.DiGraph
         Directed import graph with weights capturing edge multiplicity.
     """
-    con = gateway.con
-    edge_rows = con.execute(
+    if not _require_parquet_table(gateway, "graph.import_graph_edges"):
+        return nx.DiGraph()
+    edge_reader = gateway.execute(
         """
         SELECT src_module, dst_module, module_layer
         FROM graph.import_graph_edges
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     graph = nx.DiGraph()
     fallback_layer_by_module: dict[str, int] = {}
-    for src, dst, layer in edge_rows:
+    for src, dst, layer in iter_tuples_from_arrow_reader(edge_reader):
         if src is None or dst is None:
             continue
         source = str(src)
         target = str(dst)
-        if layer is not None:
-            fallback_layer_by_module[source] = int(layer)
+        layer_value = as_int(layer)
+        if layer_value is not None:
+            fallback_layer_by_module[source] = layer_value
         edge_data = graph.get_edge_data(source, target)
         weight = _coerce_edge_weight_int(edge_data.get("weight") if edge_data is not None else None)
         graph.add_edge(source, target, weight=weight + 1)
 
-    try:
-        module_rows = con.execute(
+    if _require_parquet_table(gateway, "graph.import_modules"):
+        module_reader = gateway.execute(
             """
             SELECT module, scc_id, component_size, layer
             FROM graph.import_modules
             WHERE repo = ? AND commit = ?
             """,
             [repo, commit],
-        ).fetchall()
-    except DuckDBError:
-        module_rows = []
-    if module_rows:
-        for module_row in module_rows:
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        for module_row in iter_tuples_from_arrow_reader(module_reader):
             module_name, attrs = module_attrs_from_row(*module_row)
             graph.add_node(module_name, **attrs)
     elif fallback_layer_by_module:
@@ -297,18 +319,19 @@ def load_test_function_bipartite(
     nx.Graph
         Undirected bipartite graph with weighted coverage edges.
     """
-    con = gateway.con
-    rows: Iterable[tuple[str, object, float | None]] = con.execute(
+    if not _require_parquet_table(gateway, "analytics.test_coverage_edges"):
+        return nx.Graph()
+    reader = gateway.execute(
         """
         SELECT test_id, function_goid_h128, COALESCE(coverage_ratio, 0.0)
         FROM analytics.test_coverage_edges
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     graph = nx.Graph()
-    for test_id, goid_raw, coverage_ratio in rows:
+    for test_id, goid_raw, coverage_ratio in iter_tuples_from_arrow_reader(reader):
         goid = normalize_decimal(goid_raw)
         if test_id is None or goid is None:
             continue
@@ -318,7 +341,7 @@ def load_test_function_bipartite(
             graph.add_node(test_node, bipartite=0)
         if not graph.has_node(func_node):
             graph.add_node(func_node, bipartite=1)
-        weight = float(coverage_ratio or 0.0)
+        weight = coerce_optional_float(coverage_ratio, ctx="coverage_ratio") or 0.0
         if graph.has_edge(test_node, func_node):
             attrs = graph[test_node][func_node]
             attrs["weight"] = _coerce_edge_weight_float(attrs.get("weight")) + weight
@@ -379,22 +402,24 @@ def load_config_module_bipartite(
     nx.Graph
         Undirected bipartite graph for configuration references.
     """
-    con = gateway.con
-    allowed_modules = {
-        str(mod)
-        for (mod,) in con.execute(
-            "SELECT module FROM core.modules WHERE repo = ? AND commit = ?", [repo, commit]
-        ).fetchall()
-    }
+    if not _require_parquet_table(gateway, "core.modules"):
+        return nx.Graph()
+    if not _require_parquet_table(gateway, "analytics.config_values"):
+        return nx.Graph()
+    allowed_reader = gateway.execute(
+        "SELECT module FROM core.modules WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    allowed_modules = {str(mod) for (mod,) in iter_tuples_from_arrow_reader(allowed_reader)}
 
-    rows: Iterable[tuple[object, object]] = con.execute(
+    reader = gateway.execute(
         """
         SELECT key, reference_modules
         FROM analytics.config_values
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     graph = nx.Graph()
     total_rows = 0
@@ -402,7 +427,7 @@ def load_config_module_bipartite(
     parsed_modules = 0
     kept_modules = 0
     dropped_modules = 0
-    for key, ref_modules in rows:
+    for key, ref_modules in iter_tuples_from_arrow_reader(reader):
         total_rows += 1
         if key is None or ref_modules is None:
             empty_refs += 1
@@ -475,8 +500,11 @@ def load_symbol_module_graph(
     nx.Graph
         Undirected graph where weights reflect shared symbol relations.
     """
-    con = gateway.con
-    rows = con.execute(
+    if not _require_parquet_table(gateway, "graph.symbol_use_edges"):
+        return nx.Graph()
+    if not _require_parquet_table(gateway, "core.modules"):
+        return nx.Graph()
+    reader = gateway.execute(
         """
         SELECT m_use.module AS use_module, m_def.module AS def_module
         FROM graph.symbol_use_edges su
@@ -489,10 +517,10 @@ def load_symbol_module_graph(
           AND (m_use.commit = ? OR m_use.commit IS NULL)
         """,
         [repo, repo, commit, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     graph = nx.Graph()
-    for use_module, def_module in rows:
+    for use_module, def_module in iter_tuples_from_arrow_reader(reader):
         if use_module is None or def_module is None:
             continue
         left = str(use_module)
@@ -529,21 +557,19 @@ def load_symbol_function_graph(
     nx.Graph
         Undirected graph linking functions by shared symbol usage.
     """
-    con = gateway.con
-    try:
-        rows = con.execute(
-            """
-            SELECT su.def_goid_h128, su.use_goid_h128
-            FROM graph.symbol_use_edges su
-            WHERE su.def_goid_h128 IS NOT NULL
-              AND su.use_goid_h128 IS NOT NULL
-            """,
-        ).fetchall()
-    except DuckDBError:
+    if not _require_parquet_table(gateway, "graph.symbol_use_edges"):
         return nx.Graph()
+    reader = gateway.execute(
+        """
+        SELECT su.def_goid_h128, su.use_goid_h128
+        FROM graph.symbol_use_edges su
+        WHERE su.def_goid_h128 IS NOT NULL
+          AND su.use_goid_h128 IS NOT NULL
+        """,
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     graph = nx.Graph()
-    for def_goid, use_goid in rows:
+    for def_goid, use_goid in iter_tuples_from_arrow_reader(reader):
         if def_goid is None or use_goid is None:
             continue
         left = normalize_decimal(def_goid)

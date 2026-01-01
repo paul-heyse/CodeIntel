@@ -9,9 +9,11 @@ The helper functions are re-exported from core to maintain a consistent API.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.graphs.runtime import GraphRuntime
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.validation import (
     GRAPH_VALIDATION_COLS,
     BaseValidationOptions,
@@ -21,8 +23,8 @@ from codeintel.core.validation import (
     cap_findings,
     has_error_findings,
 )
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:
     from codeintel.build.graphs.runtime import GraphRuntimeOptions
@@ -116,14 +118,7 @@ def persist_findings(
     """
     if not findings:
         return
-    try:
-        gateway.policy.delete_for_snapshot(
-            "analytics.graph_validation",
-            repo=repo,
-            commit=commit,
-        )
-    except DuckDBError:
-        return
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
     reporter = GraphValidationReporter(repo=repo, commit=commit)
     for finding in findings:
         graph_name = str(finding.get("check_name") or "graph_validation")
@@ -146,14 +141,17 @@ def persist_findings(
             detail=detail,
             extras=extras,
         )
-    validation_rows = reporter.to_rows()
-    if validation_rows:
-        backend = DuckDBPolicyBackend(gateway)
-        backend.bulk_insert(
-            "analytics.graph_validation",
-            list(validation_rows),
-            columns=list(GRAPH_VALIDATION_COLS),
-        )
+    if reporter.rows:
+        warehouse = Warehouse(gateway)
+        try:
+            warehouse.materialize_mappings(
+                "analytics.graph_validation",
+                reporter.rows,
+                columns=list(GRAPH_VALIDATION_COLS),
+                options=MaterializeOptions(snapshot=snapshot, mode="replace"),
+            )
+        except DuckDBError:
+            return
 
 
 __all__ = [

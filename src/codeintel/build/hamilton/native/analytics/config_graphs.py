@@ -12,6 +12,7 @@ import polars as pl
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.graphs.config_data_flow import (
     CONFIG_DATA_FLOW_COLS,
+    ConfigDataFlowInputs,
     compute_config_data_flow_result,
 )
 from codeintel.build.analytics.graphs.config_graph_metrics import (
@@ -169,20 +170,21 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
 
 
 def _coerce_int(value: object) -> int | None:
+    parsed: int | None = None
     if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value) if value.is_integer() else None
-    if isinstance(value, str):
+        parsed = None
+    elif isinstance(value, bool):
+        parsed = int(value)
+    elif isinstance(value, int):
+        parsed = value
+    elif isinstance(value, float):
+        parsed = int(value) if value.is_integer() else None
+    elif isinstance(value, str):
         try:
-            return int(value.strip())
+            parsed = int(value.strip())
         except ValueError:
-            return None
-    return None
+            parsed = None
+    return parsed
 
 
 def _group_goids_by_path(
@@ -322,12 +324,14 @@ def config_data_flow__base(
         repo_root=env.snapshot.repo_root,
     )
     result = compute_config_data_flow_result(
-        env.snapshot,
-        config_value_rows=config_value_rows,
-        entrypoint_rows=entrypoint_rows,
-        call_graph=call_graph,
-        ast_by_goid=ast_map,
-        missing_goids=missing,
+        ConfigDataFlowInputs(
+            snapshot=env.snapshot,
+            config_value_rows=config_value_rows,
+            entrypoint_rows=entrypoint_rows,
+            call_graph=call_graph,
+            ast_by_goid=ast_map,
+            missing_goids=missing,
+        )
     )
     if result.rows is None:
         return empty_frame_for_table(CONFIG_DATA_FLOW_TABLE_KEY)

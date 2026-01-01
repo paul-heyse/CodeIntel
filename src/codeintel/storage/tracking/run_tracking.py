@@ -22,7 +22,15 @@ from codeintel.storage.helpers.json import (
     serialize_str_sequence,
 )
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
-from codeintel.storage.query_results import coerce_int, iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import (
+    coerce_datetime,
+    coerce_int,
+    coerce_literal,
+    coerce_optional_datetime,
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_arrow_reader,
+)
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
@@ -142,6 +150,28 @@ def _build_upsert_insert(
 
 ModuleKind = Literal["ingestion", "graphs", "analytics", "export", "views", "build"]
 """Classification of pipeline module."""
+
+_PIPELINE_STATUS_VALUES: tuple[PipelineStatus, ...] = (
+    "running",
+    "succeeded",
+    "failed",
+    "partial",
+)
+_STEP_STATUS_VALUES: tuple[StepStatus, ...] = (
+    "pending",
+    "running",
+    "succeeded",
+    "failed",
+    "skipped",
+)
+_MODULE_KIND_VALUES: tuple[ModuleKind, ...] = (
+    "ingestion",
+    "graphs",
+    "analytics",
+    "export",
+    "views",
+    "build",
+)
 
 
 @dataclass(frozen=True)
@@ -550,13 +580,24 @@ class PipelineRunTracking:
             extra = decode_json_dict(extra_raw) if extra_raw else None
             results.append(
                 PipelineStepRecord(
-                    run_id=str(run_id_val),
-                    module=module,
-                    stage=str(stage),
-                    name=str(name),
-                    status=status,
-                    started_at=started_at,
-                    completed_at=completed_at,
+                    run_id=coerce_str(run_id_val, ctx="pipeline_steps.run_id"),
+                    module=coerce_literal(
+                        module,
+                        ctx="pipeline_steps.module",
+                        allowed=_MODULE_KIND_VALUES,
+                    ),
+                    stage=coerce_str(stage, ctx="pipeline_steps.stage"),
+                    name=coerce_str(name, ctx="pipeline_steps.name"),
+                    status=coerce_literal(
+                        status,
+                        ctx="pipeline_steps.status",
+                        allowed=_STEP_STATUS_VALUES,
+                    ),
+                    started_at=coerce_datetime(started_at, ctx="pipeline_steps.started_at"),
+                    completed_at=coerce_optional_datetime(
+                        completed_at,
+                        ctx="pipeline_steps.completed_at",
+                    ),
                     row_counts=row_counts,
                     extra=extra,
                 )
@@ -658,18 +699,34 @@ class PipelineRunTracking:
         ) in iter_tuples_from_arrow_reader(reader):
             results.append(
                 PipelineRunRecord(
-                    run_id=str(run_id_val),
-                    repo=str(repo),
-                    commit=str(commit),
-                    kind=str(kind),
-                    trigger=str(trigger),
-                    status=status,
-                    started_at=started_at,
-                    completed_at=completed_at,
-                    requested_operation=str(requested_operation) if requested_operation else None,
+                    run_id=coerce_str(run_id_val, ctx="pipeline_runs.run_id"),
+                    repo=coerce_str(repo, ctx="pipeline_runs.repo"),
+                    commit=coerce_str(commit, ctx="pipeline_runs.commit"),
+                    kind=coerce_str(kind, ctx="pipeline_runs.kind"),
+                    trigger=coerce_str(trigger, ctx="pipeline_runs.trigger"),
+                    status=coerce_literal(
+                        status,
+                        ctx="pipeline_runs.status",
+                        allowed=_PIPELINE_STATUS_VALUES,
+                    ),
+                    started_at=coerce_datetime(started_at, ctx="pipeline_runs.started_at"),
+                    completed_at=coerce_optional_datetime(
+                        completed_at,
+                        ctx="pipeline_runs.completed_at",
+                    ),
+                    requested_operation=coerce_optional_str(
+                        requested_operation,
+                        ctx="pipeline_runs.requested_operation",
+                    ),
                     requested_datasets=deserialize_str_tuple(requested_datasets_raw),
-                    error_summary=str(error_summary) if error_summary else None,
-                    pipeline_name=str(pipeline_name) if pipeline_name else None,
+                    error_summary=coerce_optional_str(
+                        error_summary,
+                        ctx="pipeline_runs.error_summary",
+                    ),
+                    pipeline_name=coerce_optional_str(
+                        pipeline_name,
+                        ctx="pipeline_runs.pipeline_name",
+                    ),
                 )
             )
         return results

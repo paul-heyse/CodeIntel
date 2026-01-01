@@ -225,7 +225,7 @@ class ConfigUsageVisitor(ast.NodeVisitor):
         )
 
 
-def _coerce_paths(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
+def _coerce_paths(raw: object) -> list[str]:
     if raw is None:
         return []
     if isinstance(raw, str):
@@ -233,11 +233,13 @@ def _coerce_paths(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
             return []
-    else:
+    elif isinstance(raw, (list, tuple)):
         parsed = raw
+    else:
+        return []
     if not isinstance(parsed, (list, tuple)):
         return []
-    return [normalize_path(path) for path in parsed]
+    return [normalize_path(path) for path in parsed if isinstance(path, str)]
 
 
 def _matches_optional_scope(value: object, expected: str) -> bool:
@@ -333,15 +335,19 @@ class ConfigDataFlowResult:
     rows: tuple[tuple[object, ...], ...] | None
 
 
-def compute_config_data_flow_result(
-    snapshot: SnapshotRef,
-    *,
-    config_value_rows: Sequence[Mapping[str, object]],
-    entrypoint_rows: Sequence[Mapping[str, object]],
-    call_graph: nx.DiGraph,
-    ast_by_goid: dict[int, FunctionAst],
-    missing_goids: set[int] | None = None,
-) -> ConfigDataFlowResult:
+@dataclass(frozen=True)
+class ConfigDataFlowInputs:
+    """Inputs required to compute config data flow rows."""
+
+    snapshot: SnapshotRef
+    config_value_rows: Sequence[Mapping[str, object]]
+    entrypoint_rows: Sequence[Mapping[str, object]]
+    call_graph: nx.DiGraph
+    ast_by_goid: dict[int, FunctionAst]
+    missing_goids: set[int] | None = None
+
+
+def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataFlowResult:
     """Compute config data flow rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
@@ -349,18 +355,8 @@ def compute_config_data_flow_result(
 
     Parameters
     ----------
-    snapshot
-        Repository and commit identifiers.
-    config_value_rows
-        Config value rows containing reference paths for config keys.
-    entrypoint_rows
-        Entrypoint rows containing handler GOIDs.
-    call_graph
-        Call graph for the repository snapshot.
-    ast_by_goid
-        Mapping of function GOID to parsed AST data.
-    missing_goids
-        Optional set of function GOIDs that could not be parsed.
+    inputs
+        Config data flow inputs derived from DAG-provided tables.
 
     Returns
     -------
@@ -368,24 +364,24 @@ def compute_config_data_flow_result(
         Container with config data flow rows.
     """
     refs_by_path = _config_references_from_rows(
-        config_value_rows,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+        inputs.config_value_rows,
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
     )
     if not refs_by_path:
         log.info(
             "No config references found for %s@%s; skipping config flow analysis",
-            snapshot.repo,
-            snapshot.commit,
+            inputs.snapshot.repo,
+            inputs.snapshot.commit,
         )
         return ConfigDataFlowResult(rows=None)
 
     entrypoints = _entrypoints_from_rows(
-        entrypoint_rows,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+        inputs.entrypoint_rows,
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
     )
-    missing = missing_goids or set()
+    missing = inputs.missing_goids or set()
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during config data flow analysis",
@@ -394,14 +390,14 @@ def compute_config_data_flow_result(
 
     artifacts = ConfigFlowArtifacts(
         entrypoints=entrypoints,
-        call_graph=call_graph,
-        ast_by_goid=ast_by_goid,
+        call_graph=inputs.call_graph,
+        ast_by_goid=inputs.ast_by_goid,
         refs_by_path=refs_by_path,
     )
     now = datetime.now(tz=UTC)
     rows_to_insert = _build_config_flow_rows(
         artifacts=artifacts,
-        snapshot=snapshot,
+        snapshot=inputs.snapshot,
         now=now,
     )
     return ConfigDataFlowResult(rows=tuple(rows_to_insert) if rows_to_insert else None)

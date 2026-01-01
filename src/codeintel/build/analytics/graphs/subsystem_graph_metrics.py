@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
@@ -145,14 +146,20 @@ def _filters_from_memberships(memberships: list[tuple[str, str]]) -> GraphMetric
     return build_graph_metric_filters_from_sets(modules=modules, subsystems=subsystems)
 
 
+@dataclass(frozen=True)
+class SubsystemGraphMetricInputs:
+    """Inputs required to compute subsystem graph metrics rows."""
+
+    repo: str
+    commit: str
+    import_graph: nx.DiGraph
+    membership_rows: Iterable[Mapping[str, object]] | Iterable[tuple[str, str]]
+    runtime: GraphRuntimeOptions | None = None
+    filters: GraphMetricFilters | None = None
+
+
 def build_subsystem_graph_metrics_rows(
-    *,
-    repo: str,
-    commit: str,
-    import_graph: nx.DiGraph,
-    membership_rows: Iterable[Mapping[str, object]] | Iterable[tuple[str, str]],
-    runtime: GraphRuntimeOptions | None = None,
-    filters: GraphMetricFilters | None = None,
+    inputs: SubsystemGraphMetricInputs,
 ) -> list[SubsystemMetricRow]:
     """Build subsystem-level condensed import graph metrics rows.
 
@@ -161,15 +168,19 @@ def build_subsystem_graph_metrics_rows(
     list[tuple[object, ...]]
         Row tuples for analytics.subsystem_graph_metrics.
     """
-    runtime_opts = runtime or GraphRuntimeOptions()
-    membership_list = _normalize_membership_rows(membership_rows, repo=repo, commit=commit)
+    runtime_opts = inputs.runtime or GraphRuntimeOptions()
+    membership_list = _normalize_membership_rows(
+        inputs.membership_rows,
+        repo=inputs.repo,
+        commit=inputs.commit,
+    )
     if not membership_list:
         return []
-    active_filters = filters or _filters_from_memberships(membership_list)
+    active_filters = inputs.filters or _filters_from_memberships(membership_list)
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
-            repo=repo,
-            commit=commit,
+            repo=inputs.repo,
+            commit=inputs.commit,
             use_gpu=runtime_opts.use_gpu,
             now=datetime.now(UTC),
             community_detection_limit=runtime_opts.features.community_detection_limit,
@@ -180,7 +191,7 @@ def build_subsystem_graph_metrics_rows(
         return []
 
     subsystem_graph = _build_subsystem_graph(
-        active_filters.filter_import_graph(import_graph),
+        active_filters.filter_import_graph(inputs.import_graph),
         membership_list,
         graph_ctx,
     )
@@ -195,8 +206,8 @@ def build_subsystem_graph_metrics_rows(
 
     return build_subsystem_graph_rows(
         SubsystemMetricInputs(
-            repo=repo,
-            commit=commit,
+            repo=inputs.repo,
+            commit=inputs.commit,
             in_degree=degree_maps[0],
             out_degree=degree_maps[1],
             pagerank=centralities[0],

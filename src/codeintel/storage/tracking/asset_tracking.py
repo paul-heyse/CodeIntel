@@ -14,7 +14,13 @@ from sqlglot import exp
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.helpers.json import decode_json_dict
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import (
+    coerce_optional_datetime,
+    coerce_optional_int,
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_arrow_reader,
+)
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.upsert import UpsertSpec
 
@@ -695,15 +701,18 @@ class AssetTracking:
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         return [
             RunAssetVersionRecord(
-                run_id=str(row[0]),
-                repo=str(row[1]),
-                commit=str(row[2]),
-                asset_kind=str(row[3]),
-                asset_key=str(row[4]),
-                version_hash=str(row[5]),
-                target=str(row[6]) if row[6] else None,
-                resolution_kind=str(row[7]),
-                recorded_at=row[8],
+                run_id=coerce_str(row[0], ctx="run_asset_versions.run_id"),
+                repo=coerce_str(row[1], ctx="run_asset_versions.repo"),
+                commit=coerce_str(row[2], ctx="run_asset_versions.commit"),
+                asset_kind=coerce_str(row[3], ctx="run_asset_versions.asset_kind"),
+                asset_key=coerce_str(row[4], ctx="run_asset_versions.asset_key"),
+                version_hash=coerce_str(row[5], ctx="run_asset_versions.version_hash"),
+                target=coerce_optional_str(row[6], ctx="run_asset_versions.target"),
+                resolution_kind=coerce_str(row[7], ctx="run_asset_versions.resolution_kind"),
+                recorded_at=coerce_optional_datetime(
+                    row[8],
+                    ctx="run_asset_versions.recorded_at",
+                ),
                 meta=decode_json_dict(row[9]) if row[9] else None,
             )
             for row in iter_tuples_from_arrow_reader(reader)
@@ -770,14 +779,17 @@ class AssetTracking:
         if row is None:
             return None
         return AssetDiffRecord(
-            asset_kind=str(row[0]),
-            asset_key=str(row[1]),
-            from_version_hash=str(row[2]),
-            to_version_hash=str(row[3]),
-            diff_kind=str(row[4]),
+            asset_kind=coerce_str(row[0], ctx="asset_diffs.asset_kind"),
+            asset_key=coerce_str(row[1], ctx="asset_diffs.asset_key"),
+            from_version_hash=coerce_str(row[2], ctx="asset_diffs.from_version_hash"),
+            to_version_hash=coerce_str(row[3], ctx="asset_diffs.to_version_hash"),
+            diff_kind=coerce_str(row[4], ctx="asset_diffs.diff_kind"),
             summary=decode_json_dict(row[5]) if row[5] else None,
-            computed_at=row[6],
-            computed_by_run_id=str(row[7]) if row[7] else None,
+            computed_at=coerce_optional_datetime(row[6], ctx="asset_diffs.computed_at"),
+            computed_by_run_id=coerce_optional_str(
+                row[7],
+                ctx="asset_diffs.computed_by_run_id",
+            ),
         )
 
     def save_cached_diff(self, record: AssetDiffRecord) -> None:
@@ -825,23 +837,23 @@ class AssetTracking:
         row: tuple[Any, ...],
     ) -> AssetVersionHistoryRecord:
         return AssetVersionHistoryRecord(
-            asset_kind=str(row[0]),
-            asset_key=str(row[1]),
-            version_hash=str(row[2]),
-            repo=str(row[3]),
-            commit=str(row[4]),
-            status=str(row[5]),
-            run_id=str(row[6]) if row[6] else None,
-            target=str(row[7]) if row[7] else None,
-            impl_kind=str(row[8]) if row[8] else None,
-            location=str(row[9]) if row[9] else None,
-            input_hash=str(row[10]) if row[10] else None,
-            options_hash=str(row[11]) if row[11] else None,
-            schema_hash=str(row[12]) if row[12] else None,
-            row_count=int(row[13]) if row[13] is not None else None,
-            bytes=int(row[14]) if row[14] is not None else None,
-            created_at=row[15],
-            recorded_at=row[16],
+            asset_kind=coerce_str(row[0], ctx="asset_versions.asset_kind"),
+            asset_key=coerce_str(row[1], ctx="asset_versions.asset_key"),
+            version_hash=coerce_str(row[2], ctx="asset_versions.version_hash"),
+            repo=coerce_str(row[3], ctx="asset_version_events.repo"),
+            commit=coerce_str(row[4], ctx="asset_version_events.commit"),
+            status=coerce_str(row[5], ctx="asset_version_events.status"),
+            run_id=coerce_optional_str(row[6], ctx="asset_version_events.run_id"),
+            target=coerce_optional_str(row[7], ctx="asset_version_events.target"),
+            impl_kind=coerce_optional_str(row[8], ctx="asset_version_events.impl_kind"),
+            location=coerce_optional_str(row[9], ctx="asset_version_events.location"),
+            input_hash=coerce_optional_str(row[10], ctx="asset_version_events.input_hash"),
+            options_hash=coerce_optional_str(row[11], ctx="asset_version_events.options_hash"),
+            schema_hash=coerce_optional_str(row[12], ctx="asset_versions.schema_hash"),
+            row_count=coerce_optional_int(row[13], ctx="asset_versions.row_count"),
+            bytes=coerce_optional_int(row[14], ctx="asset_versions.bytes"),
+            created_at=coerce_optional_datetime(row[15], ctx="asset_versions.created_at"),
+            recorded_at=coerce_optional_datetime(row[16], ctx="asset_version_events.recorded_at"),
             meta=decode_json_dict(row[17]) if row[17] else None,
         )
 
@@ -908,14 +920,14 @@ class AssetTracking:
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         return [
             AssetLineageEdgeRecord(
-                downstream_kind=str(row[0]),
-                downstream_key=str(row[1]),
-                downstream_version=str(row[2]),
-                upstream_kind=str(row[3]),
-                upstream_key=str(row[4]),
-                upstream_version=str(row[5]),
-                edge_kind=str(row[6]),
-                created_at=row[7],
+                downstream_kind=coerce_str(row[0], ctx="asset_lineage.downstream_kind"),
+                downstream_key=coerce_str(row[1], ctx="asset_lineage.downstream_key"),
+                downstream_version=coerce_str(row[2], ctx="asset_lineage.downstream_version"),
+                upstream_kind=coerce_str(row[3], ctx="asset_lineage.upstream_kind"),
+                upstream_key=coerce_str(row[4], ctx="asset_lineage.upstream_key"),
+                upstream_version=coerce_str(row[5], ctx="asset_lineage.upstream_version"),
+                edge_kind=coerce_str(row[6], ctx="asset_lineage.edge_kind"),
+                created_at=coerce_optional_datetime(row[7], ctx="asset_lineage.created_at"),
                 meta=decode_json_dict(row[8]) if row[8] else None,
             )
             for row in iter_tuples_from_arrow_reader(reader)

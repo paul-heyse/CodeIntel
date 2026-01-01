@@ -9,6 +9,7 @@ from codeintel.build.analytics.graphs.graph_metrics import (
     build_import_graph_from_rows,
 )
 from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
+    SubsystemGraphMetricInputs,
     build_subsystem_graph_metrics_rows,
 )
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
@@ -125,9 +126,7 @@ def subsystem_graph_metrics__base(
     )
     import_graph = build_import_graph_from_rows(import_edge_rows, import_module_rows)
     subsystem_ids = {
-        str(row["subsystem_id"])
-        for row in membership_rows
-        if row.get("subsystem_id") is not None
+        str(row["subsystem_id"]) for row in membership_rows if row.get("subsystem_id") is not None
     }
     module_names = {str(row["module"]) for row in membership_rows if row.get("module") is not None}
     filters = build_graph_metric_filters_from_sets(
@@ -136,12 +135,14 @@ def subsystem_graph_metrics__base(
     )
     runtime_options = _graph_runtime_options(env)
     rows = build_subsystem_graph_metrics_rows(
-        repo=env.repo,
-        commit=env.commit,
-        import_graph=import_graph,
-        membership_rows=membership_rows,
-        runtime=runtime_options,
-        filters=filters,
+        SubsystemGraphMetricInputs(
+            repo=env.repo,
+            commit=env.commit,
+            import_graph=import_graph,
+            membership_rows=membership_rows,
+            runtime=runtime_options,
+            filters=filters,
+        )
     )
     return rows_to_frame(
         SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,

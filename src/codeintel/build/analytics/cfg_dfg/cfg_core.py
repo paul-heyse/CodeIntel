@@ -16,15 +16,15 @@ from codeintel.build.analytics.compute.graphs import (
     cfg_reachable_nodes,
     dfg_component_stats,
 )
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import coerce_int, coerce_str, iter_tuples_from_arrow_reader
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
     from datetime import datetime
 
     import networkx as nx
@@ -109,7 +109,17 @@ def load_cfg_blocks(
     except DuckDBError:
         return blocks_by_fn, edges_by_fn
     for fn, idx, kind, in_deg, out_deg in iter_tuples_from_arrow_reader(reader):
-        blocks_by_fn[int(fn)].append((int(idx), str(kind), int(in_deg), int(out_deg)))
+        fn_id = normalize_decimal_id(fn)
+        if fn_id is None:
+            continue
+        blocks_by_fn[fn_id].append(
+            (
+                coerce_int(idx, ctx="cfg_blocks.block_idx"),
+                coerce_str(kind, ctx="cfg_blocks.kind"),
+                coerce_int(in_deg, ctx="cfg_blocks.in_degree"),
+                coerce_int(out_deg, ctx="cfg_blocks.out_degree"),
+            )
+        )
 
     try:
         edge_reader = gateway.execute(
@@ -121,11 +131,20 @@ def load_cfg_blocks(
     except DuckDBError:
         return blocks_by_fn, edges_by_fn
     for fn, src_id, dst_id, edge_type in iter_tuples_from_arrow_reader(edge_reader):
-        src_idx = parse_block_idx(src_id) if src_id is not None else None
-        dst_idx = parse_block_idx(dst_id) if dst_id is not None else None
+        fn_id = normalize_decimal_id(fn)
+        if fn_id is None:
+            continue
+        src_idx = parse_block_idx(str(src_id)) if src_id is not None else None
+        dst_idx = parse_block_idx(str(dst_id)) if dst_id is not None else None
         if src_idx is None or dst_idx is None:
             continue
-        edges_by_fn[int(fn)].append((src_idx, dst_idx, str(edge_type)))
+        edges_by_fn[fn_id].append(
+            (
+                src_idx,
+                dst_idx,
+                coerce_str(edge_type, ctx="cfg_edges.edge_kind"),
+            )
+        )
 
     return blocks_by_fn, edges_by_fn
 

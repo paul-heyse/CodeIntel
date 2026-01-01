@@ -31,7 +31,6 @@ from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

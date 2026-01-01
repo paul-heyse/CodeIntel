@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.profiles.types import FunctionGraphFeatures
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import iter_tuples_from_relation
+from codeintel.storage.query_results import coerce_optional_int, iter_tuples_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -95,13 +96,23 @@ def summarize_graph_for_function_profile(
         call_is_entrypoint,
         call_is_public,
     ) in iter_tuples_from_relation(relation):
-        goid = int(function_goid_h128)
+        goid = normalize_decimal_id(function_goid_h128)
+        if goid is None:
+            continue
         features[goid] = FunctionGraphFeatures(
             function_goid_h128=goid,
-            call_fan_in=int(call_fan_in or 0),
-            call_fan_out=int(call_fan_out or 0),
-            call_edge_in_count=int(call_edge_in_count or 0),
-            call_edge_out_count=int(call_edge_out_count or 0),
+            call_fan_in=coerce_optional_int(call_fan_in, ctx="call_fan_in") or 0,
+            call_fan_out=coerce_optional_int(call_fan_out, ctx="call_fan_out") or 0,
+            call_edge_in_count=coerce_optional_int(
+                call_edge_in_count,
+                ctx="call_edge_in_count",
+            )
+            or 0,
+            call_edge_out_count=coerce_optional_int(
+                call_edge_out_count,
+                ctx="call_edge_out_count",
+            )
+            or 0,
             call_is_leaf=bool(call_is_leaf),
             call_is_entrypoint=bool(call_is_entrypoint),
             call_is_public=bool(call_is_public),

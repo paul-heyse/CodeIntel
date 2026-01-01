@@ -28,7 +28,10 @@ from codeintel.build.analytics.graphs.graph_metrics import (
 from codeintel.build.analytics.graphs.graph_metrics_ext import (
     build_graph_metrics_functions_ext_rows,
 )
-from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.build.analytics.graphs.graph_stats import (
+    GraphStatsInputs,
+    build_graph_stats_rows,
+)
 from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
@@ -837,14 +840,16 @@ def graph_stats__base(
         commit=env.commit,
     )
     rows = build_graph_stats_rows(
-        repo=env.repo,
-        commit=env.commit,
-        call_graph=graph_metric_inputs.call_graph,
-        import_graph=graph_metric_inputs.import_graph,
-        symbol_module_graph=graph_metric_inputs.symbol_module_graph,
-        symbol_function_graph=graph_metric_inputs.symbol_function_graph,
-        config_module_bipartite=config_bipartite,
-        use_gpu=graph_metric_inputs.runtime_options.use_gpu,
+        GraphStatsInputs(
+            repo=env.repo,
+            commit=env.commit,
+            call_graph=graph_metric_inputs.call_graph,
+            import_graph=graph_metric_inputs.import_graph,
+            symbol_module_graph=graph_metric_inputs.symbol_module_graph,
+            symbol_function_graph=graph_metric_inputs.symbol_function_graph,
+            config_module_bipartite=config_bipartite,
+            use_gpu=graph_metric_inputs.runtime_options.use_gpu,
+        )
     )
     return rows_to_frame(GRAPH_STATS_TABLE_KEY, rows)
 

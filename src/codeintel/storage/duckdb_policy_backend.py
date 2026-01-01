@@ -58,8 +58,8 @@ from codeintel.storage.helpers.table_key import (
     split_table_key_or_default,
 )
 from codeintel.storage.metadata.schema import EXPORT_AUDIT_TABLE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
+from codeintel.storage.query_results import coerce_str, iter_tuples_from_arrow_reader
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
     create_schema_if_not_exists_ast,
@@ -1303,7 +1303,10 @@ class DuckDBPolicyBackend:
             "SELECT * FROM pragma_table_info(?)",
             [qualified_name],
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        return [row[1] for row in iter_tuples_from_arrow_reader(reader)]
+        return [
+            coerce_str(row[1], ctx="pragma_table_info.name")
+            for row in iter_tuples_from_arrow_reader(reader)
+        ]
 
     def _add_missing_columns(self, table_schema: TableSchema, *, start_index: int) -> None:
         qualified_name = self._quoted_table_ref(table_schema.schema, table_schema.name)
@@ -1382,7 +1385,10 @@ class DuckDBPolicyBackend:
                     "SELECT * FROM pragma_table_info(?)",
                     [qualified_name],
                 ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-                columns = [row[1] for row in iter_tuples_from_arrow_reader(reader)]
+                columns = [
+                    coerce_str(row[1], ctx="pragma_table_info.name")
+                    for row in iter_tuples_from_arrow_reader(reader)
+                ]
             else:
                 message = f"Missing table {table_key}"
                 raise RuntimeError(message)

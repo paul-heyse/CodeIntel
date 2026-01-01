@@ -21,9 +21,17 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.profiles.functions import SLOW_TEST_THRESHOLD_MS
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import (
+    coerce_optional_float,
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_arrow_reader,
+)
 
 ENTRYPOINTS_COLS = [
     "repo",
@@ -340,19 +348,19 @@ def _decimal(value: int) -> Decimal:
 
 
 def _load_module_context(con: DuckDBConnection, repo: str, commit: str) -> dict[str, ModuleContext]:
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT path, module, tags, owners
         FROM core.modules
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     context: dict[str, ModuleContext] = {}
-    for rel_path, module, tags, owners in rows:
-        normalized = normalize_path(str(rel_path))
+    for rel_path, module, tags, owners in iter_tuples_from_arrow_reader(reader):
+        normalized = normalize_path(coerce_str(rel_path, ctx="core.modules.path"))
         context[normalized] = ModuleContext(
-            module=str(module),
+            module=coerce_str(module, ctx="core.modules.module"),
             tags=tags,
             owners=owners,
         )
@@ -363,7 +371,7 @@ def _load_coverage_by_goid(
     con: DuckDBConnection, repo: str, commit: str
 ) -> dict[int, float | None]:
     coverage: dict[int, float | None] = {}
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT function_goid_h128, coverage_ratio
         FROM (
@@ -382,11 +390,12 @@ def _load_coverage_by_goid(
         WHERE rn = 1
         """,
         [repo, commit],
-    ).fetchall()
-    for goid, ratio in rows:
-        if goid is None:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for goid, ratio in iter_tuples_from_arrow_reader(reader):
+        goid_int = normalize_decimal_id(goid)
+        if goid_int is None:
             continue
-        coverage[int(goid)] = float(ratio) if ratio is not None else None
+        coverage[goid_int] = coerce_optional_float(ratio, ctx="coverage_ratio")
     return coverage
 
 
@@ -394,41 +403,46 @@ def _load_test_edges(
     con: DuckDBConnection, repo: str, commit: str
 ) -> dict[int, dict[str, TestEdge]]:
     edges_by_goid: dict[int, dict[str, TestEdge]] = defaultdict(dict)
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT function_goid_h128, test_id, coverage_ratio
         FROM analytics.test_coverage_edges
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
-    for goid, test_id, coverage_ratio in rows:
-        if goid is None or test_id is None:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for goid, test_id, coverage_ratio in iter_tuples_from_arrow_reader(reader):
+        goid_int = normalize_decimal_id(goid)
+        if goid_int is None or test_id is None:
             continue
-        edges_by_goid[int(goid)][str(test_id)] = TestEdge(
-            test_id=str(test_id),
-            coverage_ratio=float(coverage_ratio) if coverage_ratio is not None else None,
+        test_id_text = coerce_str(test_id, ctx="test_coverage_edges.test_id")
+        edges_by_goid[goid_int][test_id_text] = TestEdge(
+            test_id=test_id_text,
+            coverage_ratio=coerce_optional_float(coverage_ratio, ctx="coverage_ratio"),
         )
     return edges_by_goid
 
 
 def _load_test_meta(con: DuckDBConnection, repo: str, commit: str) -> dict[str, TestMeta]:
     meta: dict[str, TestMeta] = {}
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT test_id, test_goid_h128, status, duration_ms, flaky
         FROM analytics.test_catalog
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
-    for test_id, test_goid_h128, status, duration_ms, flaky in rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for test_id, test_goid_h128, status, duration_ms, flaky in iter_tuples_from_arrow_reader(
+        reader
+    ):
         if test_id is None:
             continue
-        meta[str(test_id)] = TestMeta(
-            test_goid_h128=int(test_goid_h128) if test_goid_h128 is not None else None,
-            status=str(status) if status is not None else None,
-            duration_ms=float(duration_ms) if duration_ms is not None else None,
+        test_id_text = coerce_str(test_id, ctx="test_catalog.test_id")
+        meta[test_id_text] = TestMeta(
+            test_goid_h128=normalize_decimal_id(test_goid_h128),
+            status=coerce_optional_str(status, ctx="test_catalog.status"),
+            duration_ms=coerce_optional_float(duration_ms, ctx="test_catalog.duration_ms"),
             flaky=bool(flaky) if flaky is not None else None,
         )
     return meta
@@ -439,31 +453,35 @@ def _load_subsystem_maps(
 ) -> tuple[dict[str, str], dict[str, str]]:
     subsystem_by_module: dict[str, str] = {}
     subsystem_names: dict[str, str] = {}
-    module_rows = con.execute(
+    module_reader = con.execute(
         """
         SELECT module, subsystem_id
         FROM analytics.subsystem_modules
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
-    for module, subsystem_id in module_rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for module, subsystem_id in iter_tuples_from_arrow_reader(module_reader):
         if module is None or subsystem_id is None:
             continue
-        subsystem_by_module[str(module)] = str(subsystem_id)
+        subsystem_by_module[coerce_str(module, ctx="subsystem_modules.module")] = coerce_str(
+            subsystem_id, ctx="subsystem_modules.subsystem_id"
+        )
 
-    subsystem_rows = con.execute(
+    subsystem_reader = con.execute(
         """
         SELECT subsystem_id, name
         FROM analytics.subsystems
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
-    for subsystem_id, name in subsystem_rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for subsystem_id, name in iter_tuples_from_arrow_reader(subsystem_reader):
         if subsystem_id is None or name is None:
             continue
-        subsystem_names[str(subsystem_id)] = str(name)
+        subsystem_names[coerce_str(subsystem_id, ctx="subsystems.subsystem_id")] = coerce_str(
+            name, ctx="subsystems.name"
+        )
     return subsystem_by_module, subsystem_names
 
 

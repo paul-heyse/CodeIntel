@@ -10,7 +10,12 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import (
+    coerce_optional_float,
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_arrow_reader,
+)
 
 MEDIUM_RISK_THRESHOLD = 0.4
 
@@ -80,12 +85,14 @@ def aggregate_risk(
     for risk_score, risk_level, module in iter_tuples_from_arrow_reader(reader):
         if module is None:
             continue
-        label = labels.get(str(module))
+        module_name = coerce_str(module, ctx="core.modules.module")
+        label = labels.get(module_name)
         if label is None:
             continue
-        score = float(risk_score) if risk_score is not None else 0.0
+        score = coerce_optional_float(risk_score, ctx="risk_score") or 0.0
         entry = stats[label]
-        entry.add(score, is_high=risk_level == "high")
+        level = coerce_optional_str(risk_level, ctx="risk_level")
+        entry.add(score, is_high=level == "high")
 
     for label, entry in stats.items():
         count = entry.count

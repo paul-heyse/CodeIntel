@@ -23,8 +23,14 @@ from codeintel.build.hamilton.native.ingestion.frame_utils import (
     lazyframe_for_table_columns,
 )
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
+from codeintel.storage.query_results import (
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_relation,
+)
 from codeintel.storage.repositories import DataModelsRepository
 
 if TYPE_CHECKING:
@@ -456,10 +462,12 @@ def _subsystem_by_module(
         )
         .set_alias("modules")
     )
-    rows = relation.fetchall()
     mapping: dict[str, tuple[str, str]] = {}
-    for module, subsystem_id, name in rows:
-        mapping[str(module)] = (str(subsystem_id), str(name) if name is not None else "")
+    for module, subsystem_id, name in iter_tuples_from_relation(relation):
+        module_name = coerce_str(module, ctx="subsystem_modules.module")
+        subsystem_id_text = coerce_str(subsystem_id, ctx="subsystem_modules.subsystem_id")
+        subsystem_name = coerce_optional_str(name, ctx="subsystems.name") or ""
+        mapping[module_name] = (subsystem_id_text, subsystem_name)
     return mapping
 
 
@@ -551,9 +559,12 @@ def build_data_model_usage_rows(
         .select("function_goid_h128", "param_types")
     )
     param_types: dict[int, dict[str, str]] = {}
-    for goid_raw, raw_param_types in relation.fetchall():
-        goid_int = int(goid_raw)
-        param_types[goid_int] = _parse_param_types(raw_param_types)
+    for goid_raw, raw_param_types in iter_tuples_from_relation(relation):
+        goid_int = normalize_decimal_id(goid_raw)
+        if goid_int is None:
+            continue
+        parsed_input = raw_param_types if isinstance(raw_param_types, (str, dict)) else None
+        param_types[goid_int] = _parse_param_types(parsed_input)
 
     artifacts = ModelUsageArtifacts(
         ast_by_goid=ast_by_goid,

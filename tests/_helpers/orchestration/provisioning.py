@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import networkx as nx
@@ -32,7 +32,10 @@ from codeintel.build.analytics.graphs.graph_metrics import (
 from codeintel.build.analytics.graphs.graph_metrics_ext import (
     build_graph_metrics_functions_ext_rows,
 )
-from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.build.analytics.graphs.graph_stats import (
+    GraphStatsInputs,
+    build_graph_stats_rows,
+)
 from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
@@ -487,14 +490,16 @@ def _write_graph_stats(
         module_names,
     )
     graph_stats_rows = build_graph_stats_rows(
-        repo=artifacts.graph_inputs.snapshot.repo,
-        commit=artifacts.graph_inputs.snapshot.commit,
-        call_graph=artifacts.graph_inputs.call_graph,
-        import_graph=artifacts.graph_inputs.import_graph,
-        symbol_module_graph=artifacts.symbol_module_graph,
-        symbol_function_graph=artifacts.symbol_function_graph,
-        config_module_bipartite=config_bipartite,
-        use_gpu=runtime_options.use_gpu,
+        GraphStatsInputs(
+            repo=artifacts.graph_inputs.snapshot.repo,
+            commit=artifacts.graph_inputs.snapshot.commit,
+            call_graph=artifacts.graph_inputs.call_graph,
+            import_graph=artifacts.graph_inputs.import_graph,
+            symbol_module_graph=artifacts.symbol_module_graph,
+            symbol_function_graph=artifacts.symbol_function_graph,
+            config_module_bipartite=config_bipartite,
+            use_gpu=runtime_options.use_gpu,
+        )
     )
     if graph_stats_rows:
         gateway.policy.delete_for_snapshot(

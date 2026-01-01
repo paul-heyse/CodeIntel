@@ -26,8 +26,9 @@ from codeintel.build.analytics.testing.graph_metrics import (
 )
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import coerce_optional_float, iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -96,10 +97,12 @@ def compute_test_graph_metrics_pure(
     resolved_options = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime
     ) or GraphRuntimeOptions()
-    con = gateway.con
 
-    effective_snapshot = resolved_options.snapshot or snapshot
-    resolved_runtime = resolve_graph_runtime(gateway, effective_snapshot, resolved_options)
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        resolved_options.snapshot or snapshot,
+        resolved_options,
+    )
 
     graph = resolved_runtime.ensure_test_function_bipartite()
     graph_ctx = resolve_graph_context(
@@ -126,7 +129,7 @@ def compute_test_graph_metrics_pure(
         funcs,
         weight=graph_ctx.pagerank_weight,
     )
-    reader = con.execute(
+    reader = gateway.execute(
         """
         SELECT function_goid_h128, risk_score
         FROM analytics.goid_risk_factors
@@ -134,10 +137,12 @@ def compute_test_graph_metrics_pure(
         """,
         [snapshot.repo, snapshot.commit],
     ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    risk_by_goid = {
-        int(goid): float(score)
-        for goid, score in iter_tuples_from_arrow_reader(reader)
-    }
+    risk_by_goid: dict[int, float] = {}
+    for goid_raw, score_raw in iter_tuples_from_arrow_reader(reader):
+        goid = normalize_decimal_id(goid_raw)
+        if goid is None:
+            continue
+        risk_by_goid[goid] = coerce_optional_float(score_raw, ctx="risk_score") or 0.0
     ctx = TestMetricsContext(
         repo=snapshot.repo,
         commit=snapshot.commit,

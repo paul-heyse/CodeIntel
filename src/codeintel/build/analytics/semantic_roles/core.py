@@ -14,7 +14,12 @@ from codeintel.build.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, FunctionExpression
-from codeintel.storage.query_results import iter_tuples_from_relation
+from codeintel.storage.query_results import (
+    coerce_optional_int,
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_relation,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -326,7 +331,14 @@ def _load_function_rows(
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
-        result.append((goid, str(rel_path), str(qualname), loc))
+        result.append(
+            (
+                goid,
+                coerce_str(rel_path, ctx="function_metrics.rel_path"),
+                coerce_str(qualname, ctx="function_metrics.qualname"),
+                coerce_optional_int(loc, ctx="function_metrics.loc"),
+            )
+        )
     return result
 
 
@@ -419,8 +431,8 @@ def _load_graph_metrics(
         if goid is None:
             continue
         mapping[goid] = {
-            "call_fan_in": int(call_fan_in or 0),
-            "call_fan_out": int(call_fan_out or 0),
+            "call_fan_in": coerce_optional_int(call_fan_in, ctx="call_fan_in") or 0,
+            "call_fan_out": coerce_optional_int(call_fan_out, ctx="call_fan_out") or 0,
         }
     return mapping
 
@@ -442,9 +454,13 @@ def _load_module_meta(
     )
     meta: dict[str, ModuleRecord] = {}
     for module, path, tags in iter_tuples_from_relation(relation):
-        normalized_path = normalize_path(path) if path is not None else ""
+        path_value = coerce_optional_str(path, ctx="core.modules.path")
+        normalized_path = normalize_path(path_value) if path_value else ""
         normalized_tags = _normalize_tags(tags)
-        meta[str(module)] = ModuleRecord(path=normalized_path, tags=normalized_tags)
+        meta[coerce_str(module, ctx="core.modules.module")] = ModuleRecord(
+            path=normalized_path,
+            tags=normalized_tags,
+        )
     return meta
 
 

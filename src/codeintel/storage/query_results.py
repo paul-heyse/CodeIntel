@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Iterator, Sequence
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -24,10 +25,15 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ScalarCoercionError",
+    "coerce_datetime",
     "coerce_float",
     "coerce_int",
+    "coerce_literal",
+    "coerce_optional_datetime",
     "coerce_optional_float",
     "coerce_optional_int",
+    "coerce_optional_str",
+    "coerce_str",
     "iter_records_from_arrow_reader",
     "iter_records_from_relation",
     "iter_tuples_from_arrow_reader",
@@ -40,6 +46,9 @@ __all__ = [
 
 _KIND_FLOAT = "float"
 _KIND_INT = "int"
+_KIND_LITERAL = "literal"
+_KIND_STR = "str"
+_KIND_DATETIME = "datetime"
 
 
 class ScalarCoercionError(TypeError):
@@ -171,6 +180,148 @@ def coerce_optional_int(value: object | None, *, ctx: str) -> int | None:
     if value is None:
         return None
     return coerce_int(value, ctx=ctx)
+
+
+def coerce_str(value: object, *, ctx: str) -> str:
+    """Coerce an arbitrary scalar value to a string with runtime validation.
+
+    Parameters
+    ----------
+    value
+        Scalar value returned by DuckDB.
+    ctx
+        Human-readable context string included in errors.
+
+    Returns
+    -------
+    str
+        Coerced string value.
+
+    Raises
+    ------
+    ScalarCoercionError
+        If the value cannot be coerced to a string.
+    """
+    if value is None or isinstance(value, bool):
+        raise ScalarCoercionError(_KIND_STR, ctx=ctx, value=value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ScalarCoercionError(_KIND_STR, ctx=ctx, value=value) from exc
+    return str(value)
+
+
+def coerce_optional_str(value: object | None, *, ctx: str) -> str | None:
+    """Coerce a value to string, treating None as missing.
+
+    Parameters
+    ----------
+    value
+        Scalar value returned by DuckDB.
+    ctx
+        Human-readable context string included in errors.
+
+    Returns
+    -------
+    str | None
+        Coerced string value, or None when the value is missing.
+    """
+    if value is None:
+        return None
+    return coerce_str(value, ctx=ctx)
+
+
+def coerce_datetime(value: object, *, ctx: str) -> datetime:
+    """Coerce a value to datetime with runtime validation.
+
+    Parameters
+    ----------
+    value
+        Scalar value returned by DuckDB.
+    ctx
+        Human-readable context string included in errors.
+
+    Returns
+    -------
+    datetime
+        Coerced datetime value.
+
+    Raises
+    ------
+    ScalarCoercionError
+        If the value cannot be coerced to a datetime.
+    """
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    to_pydatetime = getattr(value, "to_pydatetime", None)
+    if callable(to_pydatetime):
+        resolved = to_pydatetime()
+        if isinstance(resolved, datetime):
+            return resolved
+    if isinstance(value, str):
+        text = value.strip()
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise ScalarCoercionError(_KIND_DATETIME, ctx=ctx, value=value) from exc
+    raise ScalarCoercionError(_KIND_DATETIME, ctx=ctx, value=value)
+
+
+def coerce_optional_datetime(value: object | None, *, ctx: str) -> datetime | None:
+    """Coerce a value to datetime, treating None as missing.
+
+    Parameters
+    ----------
+    value
+        Scalar value returned by DuckDB.
+    ctx
+        Human-readable context string included in errors.
+
+    Returns
+    -------
+    datetime | None
+        Coerced datetime value, or None when the value is missing.
+    """
+    if value is None:
+        return None
+    return coerce_datetime(value, ctx=ctx)
+
+
+def coerce_literal[TStr: str](value: object, *, ctx: str, allowed: Sequence[TStr]) -> TStr:
+    """Coerce a value to a specific literal set with runtime validation.
+
+    Parameters
+    ----------
+    value
+        Scalar value returned by DuckDB.
+    ctx
+        Human-readable context string included in errors.
+    allowed
+        Sequence of allowed literal values.
+
+    Returns
+    -------
+    TStr
+        Coerced literal value.
+
+    Raises
+    ------
+    ScalarCoercionError
+        If the value is not one of the allowed literals.
+    """
+    text = coerce_str(value, ctx=ctx)
+    if text not in allowed:
+        allowed_text = ", ".join(allowed)
+        ctx_detail = f"{ctx} (allowed: {allowed_text})"
+        raise ScalarCoercionError(_KIND_LITERAL, ctx=ctx_detail, value=text)
+    return cast("TStr", text)
 
 
 def records_from_arrow_batch(

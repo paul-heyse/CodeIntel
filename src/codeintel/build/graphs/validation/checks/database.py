@@ -11,8 +11,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.graphs.validation.base import GraphCheckBase
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import (
+    coerce_int,
+    coerce_str,
+    iter_tuples_from_relation,
+)
 
 if TYPE_CHECKING:
     import logging
@@ -153,7 +159,15 @@ def _warn_missing_function_goids_impl(
             .filter("coalesce(goid_counts.goid_count, 0) < funcs.function_count")
             .order("funcs.path")
         )
-        rows = relation.fetchall()
+        rows: list[tuple[str, int, int]] = []
+        for path, function_count, goid_count in iter_tuples_from_relation(relation):
+            rows.append(
+                (
+                    coerce_str(path, ctx="missing_function_goids.rel_path"),
+                    coerce_int(function_count, ctx="missing_function_goids.function_count"),
+                    coerce_int(goid_count, ctx="missing_function_goids.goid_count"),
+                )
+            )
     except DuckDBError:
         log.info("Skipping missing_function_goids check due to incomplete AST data")
         return []
@@ -206,17 +220,28 @@ def _warn_callsite_span_mismatches_impl(
             .filter(~ColumnExpression("callsite_line").isnull())
             .select("caller_goid_h128", "callsite_path", "callsite_line")
         )
-        rows = relation.fetchall()
+        rows = list(iter_tuples_from_relation(relation))
     except DuckDBError:
         return []
 
     mismatches = []
     for goid, path, line in rows:
-        span = spans_by_goid.get(int(goid)) if goid is not None else None
+        goid_int = normalize_decimal_id(goid)
+        if goid_int is None:
+            continue
+        span = spans_by_goid.get(goid_int)
         if span is None:
             continue
-        if line < span.start_line or line > span.end_line:
-            mismatches.append((path, line, span.start_line, span.end_line))
+        line_value = coerce_int(line, ctx="callsite_line")
+        if line_value < span.start_line or line_value > span.end_line:
+            mismatches.append(
+                (
+                    coerce_str(path, ctx="callsite_path"),
+                    line_value,
+                    span.start_line,
+                    span.end_line,
+                )
+            )
 
     if not mismatches:
         return []
@@ -274,10 +299,13 @@ def _warn_orphan_modules_impl(
             .filter(ColumnExpression("module_goids.cnt").isnull())
             .select("modules.path")
         )
-        rows = [(path,) for (path,) in relation.fetchall()]
+        rows = [
+            (coerce_str(path, ctx="orphan_modules.path"),)
+            for (path,) in iter_tuples_from_relation(relation)
+        ]
 
         count_row = modules.aggregate("count(*) as cnt").fetchone()
-        module_count = 0 if count_row is None else int(count_row[0])
+        module_count = 0 if count_row is None else coerce_int(count_row[0], ctx="module_count")
         if rows:
             stats_rel = (
                 modules.join(module_goids, "modules.path = module_goids.rel_path", how="left")
@@ -289,7 +317,8 @@ def _warn_orphan_modules_impl(
                 .limit(5)
             )
             sample_detail = ", ".join(
-                f"{path} (module_goids={cnt})" for path, cnt in stats_rel.fetchall()
+                f"{path} (module_goids={coerce_int(cnt, ctx='module_goids')})"
+                for path, cnt in iter_tuples_from_relation(stats_rel)
             )
             log.info(
                 "Orphan module debug: repo=%s commit=%s sample=%s",

@@ -19,15 +19,15 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import coerce_str, iter_tuples_from_arrow_reader
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
     from datetime import datetime
 
     import networkx as nx
@@ -106,12 +106,22 @@ def load_dfg_edges(
     for fn, src_id, dst_id, src_sym, dst_sym, via_phi, use_kind in iter_tuples_from_arrow_reader(
         reader
     ):
-        src_idx = parse_block_idx(src_id)
-        dst_idx = parse_block_idx(dst_id)
+        fn_id = normalize_decimal_id(fn)
+        if fn_id is None:
+            continue
+        src_idx = parse_block_idx(str(src_id)) if src_id is not None else None
+        dst_idx = parse_block_idx(str(dst_id)) if dst_id is not None else None
         if src_idx is None or dst_idx is None:
             continue
-        edges_by_fn[int(fn)].append(
-            (src_idx, dst_idx, str(src_sym), str(dst_sym), bool(via_phi), str(use_kind))
+        edges_by_fn[fn_id].append(
+            (
+                src_idx,
+                dst_idx,
+                coerce_str(src_sym, ctx="dfg_edges.src_var"),
+                coerce_str(dst_sym, ctx="dfg_edges.dst_var"),
+                bool(via_phi) if via_phi is not None else False,
+                coerce_str(use_kind, ctx="dfg_edges.use_kind"),
+            )
         )
     return edges_by_fn
 

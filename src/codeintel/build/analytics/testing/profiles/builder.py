@@ -31,10 +31,17 @@ from codeintel.build.analytics.testing.profiles.types import (
     TestRecord,
 )
 from codeintel.build.analytics.utilities.ast import resolve_call_target
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import path_to_module
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.query_results import (
+    coerce_optional_float,
+    coerce_optional_int,
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_arrow_reader,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -321,23 +328,26 @@ def _load_test_records(
         start_line,
         end_line,
     ) in iter_tuples_from_arrow_reader(reader):
-        module_name = str(module) if module is not None else path_to_module(str(rel_path))
+        rel_path_text = coerce_str(rel_path, ctx="test_catalog.rel_path")
+        module_name = coerce_optional_str(module, ctx="test_catalog.module") or path_to_module(
+            rel_path_text
+        )
         records.append(
             TestRecord(
-                test_id=str(test_id),
-                test_goid_h128=int(goid) if goid is not None else None,
-                urn=str(urn) if urn is not None else None,
-                rel_path=str(rel_path),
+                test_id=coerce_str(test_id, ctx="test_catalog.test_id"),
+                test_goid_h128=normalize_decimal_id(goid),
+                urn=coerce_optional_str(urn, ctx="test_catalog.urn"),
+                rel_path=rel_path_text,
                 module=module_name,
-                qualname=str(qualname) if qualname is not None else None,
-                language=str(language) if language is not None else None,
-                kind=str(kind) if kind is not None else None,
-                status=str(status) if status is not None else None,
-                duration_ms=float(duration_ms) if duration_ms is not None else None,
-                markers=_normalize_markers(markers),
+                qualname=coerce_optional_str(qualname, ctx="test_catalog.qualname"),
+                language=coerce_optional_str(language, ctx="test_catalog.language"),
+                kind=coerce_optional_str(kind, ctx="test_catalog.kind"),
+                status=coerce_optional_str(status, ctx="test_catalog.status"),
+                duration_ms=coerce_optional_float(duration_ms, ctx="test_catalog.duration_ms"),
+                markers=_normalize_markers(markers if isinstance(markers, list) else None),
                 flaky=bool(flaky) if flaky is not None else None,
-                start_line=int(start_line) if start_line is not None else None,
-                end_line=int(end_line) if end_line is not None else None,
+                start_line=coerce_optional_int(start_line, ctx="test_catalog.start_line"),
+                end_line=coerce_optional_int(end_line, ctx="test_catalog.end_line"),
             )
         )
     return records
@@ -461,33 +471,37 @@ def _load_functions_covered(
         qualname,
         rel_path,
     ) in iter_tuples_from_arrow_reader(reader):
-        module_name = module if module is not None else path_to_module(str(rel_path))
-        test_key = str(test_id)
+        rel_path_text = coerce_str(rel_path, ctx="test_coverage_edges.rel_path")
+        module_name = coerce_optional_str(
+            module, ctx="test_coverage_edges.module"
+        ) or path_to_module(rel_path_text)
+        test_key = coerce_str(test_id, ctx="test_coverage_edges.test_id")
         entry = result.get(test_key)
         if entry is None:
             entry = FunctionCoverageEntry(functions=[], count=0, primary=[])
             result[test_key] = entry
         functions = list(entry.functions)
         primary = list(entry.primary)
+        goid_value = normalize_decimal_id(function_goid_h128)
+        ratio_value = coerce_optional_float(coverage_ratio, ctx="coverage_ratio")
+        share_value = coerce_optional_float(coverage_share, ctx="coverage_share")
         functions.append(
             {
-                "function_goid_h128": (
-                    int(function_goid_h128) if function_goid_h128 is not None else None
-                ),
-                "urn": urn,
+                "function_goid_h128": goid_value,
+                "urn": coerce_optional_str(urn, ctx="test_coverage_edges.urn"),
                 "module": module_name,
-                "qualname": qualname,
-                "rel_path": rel_path,
-                "coverage_ratio": float(coverage_ratio) if coverage_ratio is not None else None,
-                "coverage_share": float(coverage_share) if coverage_share is not None else None,
+                "qualname": coerce_optional_str(qualname, ctx="test_coverage_edges.qualname"),
+                "rel_path": rel_path_text,
+                "coverage_ratio": ratio_value,
+                "coverage_share": share_value,
             }
         )
         if (
-            function_goid_h128 is not None
-            and coverage_share is not None
-            and float(coverage_share) >= PRIMARY_COVERAGE_THRESHOLD
+            goid_value is not None
+            and share_value is not None
+            and share_value >= PRIMARY_COVERAGE_THRESHOLD
         ):
-            primary.append(int(function_goid_h128))
+            primary.append(goid_value)
         result[test_key] = FunctionCoverageEntry(
             functions=functions,
             count=len(functions),
@@ -549,28 +563,43 @@ def _load_subsystems_covered(
     ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     result: dict[str, SubsystemCoverageEntry] = {}
-    for test_id, subsystem_id, coverage_share, name, max_risk_score in iter_tuples_from_arrow_reader(
-        reader
-    ):
-        test_key = str(test_id)
+    for (
+        test_id,
+        subsystem_id,
+        coverage_share,
+        name,
+        max_risk_score,
+    ) in iter_tuples_from_arrow_reader(reader):
+        test_key = coerce_str(test_id, ctx="subsystem_coverage.test_id")
         entry = result.get(test_key) or SubsystemCoverageEntry(
             subsystems=[],
             count=0,
             primary_subsystem_id=None,
             max_risk_score=0.0,
         )
-        share = float(coverage_share) if coverage_share is not None else 0.0
+        share = coerce_optional_float(coverage_share, ctx="coverage_share") or 0.0
+        subsystem_id_text = coerce_str(subsystem_id, ctx="subsystem_coverage.subsystem_id")
+        subsystem_name = coerce_optional_str(name, ctx="subsystems.name") or ""
         subsystems = list(entry.subsystems)
-        subsystems.append({"subsystem_id": subsystem_id, "name": name, "coverage_share": share})
+        subsystems.append(
+            {
+                "subsystem_id": subsystem_id_text,
+                "name": subsystem_name,
+                "coverage_share": share,
+            }
+        )
         primary_subsystem_id = entry.primary_subsystem_id
-        primary_share = share if primary_subsystem_id == subsystem_id else -1.0
+        primary_share = share if primary_subsystem_id == subsystem_id_text else -1.0
         if primary_subsystem_id is None or share > primary_share:
-            primary_subsystem_id = subsystem_id
+            primary_subsystem_id = subsystem_id_text
         result[test_key] = SubsystemCoverageEntry(
             subsystems=subsystems,
             count=len(subsystems),
             primary_subsystem_id=primary_subsystem_id,
-            max_risk_score=max(entry.max_risk_score or 0.0, max_risk_score or 0.0),
+            max_risk_score=max(
+                entry.max_risk_score or 0.0,
+                coerce_optional_float(max_risk_score, ctx="max_risk_score") or 0.0,
+            ),
         )
     return result
 
@@ -605,13 +634,23 @@ def _load_test_graph_metrics(
         proj_clustering,
         proj_betweenness,
     ) in iter_tuples_from_arrow_reader(reader):
-        metrics[str(test_id)] = TestGraphMetrics(
-            degree=int(degree) if degree is not None else None,
-            weighted_degree=float(weighted_degree) if weighted_degree is not None else None,
-            proj_degree=int(proj_degree) if proj_degree is not None else None,
-            proj_weight=float(proj_weight) if proj_weight is not None else None,
-            proj_clustering=float(proj_clustering) if proj_clustering is not None else None,
-            proj_betweenness=float(proj_betweenness) if proj_betweenness is not None else None,
+        test_id_text = coerce_str(test_id, ctx="test_graph_metrics.test_id")
+        metrics[test_id_text] = TestGraphMetrics(
+            degree=coerce_optional_int(degree, ctx="test_graph_metrics.degree"),
+            weighted_degree=coerce_optional_float(
+                weighted_degree,
+                ctx="test_graph_metrics.weighted_degree",
+            ),
+            proj_degree=coerce_optional_int(proj_degree, ctx="test_graph_metrics.proj_degree"),
+            proj_weight=coerce_optional_float(proj_weight, ctx="test_graph_metrics.proj_weight"),
+            proj_clustering=coerce_optional_float(
+                proj_clustering,
+                ctx="test_graph_metrics.proj_clustering",
+            ),
+            proj_betweenness=coerce_optional_float(
+                proj_betweenness,
+                ctx="test_graph_metrics.proj_betweenness",
+            ),
         )
     return metrics
 
@@ -653,13 +692,14 @@ def load_test_profile_context(
         raise_count,
         status,
     ) in iter_tuples_from_arrow_reader(reader):
-        ctx[str(test_id)] = {
+        test_id_text = coerce_str(test_id, ctx="test_profile.test_id")
+        ctx[test_id_text] = {
             "markers": markers,
             "functions_covered": functions_covered or [],
             "subsystems_covered": subsystems_covered or [],
-            "assert_count": int(assert_count) if assert_count is not None else 0,
-            "raise_count": int(raise_count) if raise_count is not None else 0,
-            "status": status,
+            "assert_count": coerce_optional_int(assert_count, ctx="test_profile.assert_count") or 0,
+            "raise_count": coerce_optional_int(raise_count, ctx="test_profile.raise_count") or 0,
+            "status": coerce_optional_str(status, ctx="test_profile.status"),
         }
     return ctx
 

@@ -18,7 +18,16 @@ from codeintel.build.analytics.testing.profiles.types import (
     TestRecord,
 )
 from codeintel.build.analytics.utilities.ast import resolve_call_target
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import (
+    coerce_optional_float,
+    coerce_optional_int,
+    coerce_optional_str,
+    coerce_str,
+    iter_tuples_from_arrow_reader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -79,7 +88,7 @@ def _default_load_test_records(
     list[TestRecord]
         Test records for the snapshot.
     """
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT
             t.test_id,
@@ -108,25 +117,25 @@ def _default_load_test_records(
         WHERE t.repo = ? AND t.commit = ?
         """,
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     return [
         TestRecord(
-            test_id=str(row[0]) if row[0] else "",
-            test_goid_h128=int(row[1]) if row[1] is not None else None,
-            urn=str(row[2]) if row[2] else None,
-            rel_path=str(row[3]) if row[3] else "",
-            module=str(row[4]) if row[4] else None,
-            qualname=str(row[5]) if row[5] else None,
-            language=str(row[6]) if row[6] else "python",
-            kind=str(row[7]) if row[7] else None,
-            status=str(row[8]) if row[8] else None,
-            duration_ms=float(row[9]) if row[9] is not None else None,
-            markers=list(row[10]) if row[10] else [],
+            test_id=coerce_str(row[0], ctx="test_catalog.test_id"),
+            test_goid_h128=normalize_decimal_id(row[1]),
+            urn=coerce_optional_str(row[2], ctx="test_catalog.urn"),
+            rel_path=coerce_str(row[3], ctx="test_catalog.rel_path"),
+            module=coerce_optional_str(row[4], ctx="test_catalog.module"),
+            qualname=coerce_optional_str(row[5], ctx="test_catalog.qualname"),
+            language=coerce_optional_str(row[6], ctx="test_catalog.language") or "python",
+            kind=coerce_optional_str(row[7], ctx="test_catalog.kind"),
+            status=coerce_optional_str(row[8], ctx="test_catalog.status"),
+            duration_ms=coerce_optional_float(row[9], ctx="test_catalog.duration_ms"),
+            markers=_normalize_markers(row[10] if isinstance(row[10], list) else None),
             flaky=bool(row[11]) if row[11] is not None else None,
-            start_line=int(row[12]) if row[12] is not None else None,
-            end_line=int(row[13]) if row[13] is not None else None,
+            start_line=coerce_optional_int(row[12], ctx="test_catalog.start_line"),
+            end_line=coerce_optional_int(row[13], ctx="test_catalog.end_line"),
         )
-        for row in rows
+        for row in iter_tuples_from_arrow_reader(reader)
     ]
 
 

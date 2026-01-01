@@ -17,6 +17,7 @@ from codeintel.build.graphs.validation.findings import (
 )
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import coerce_int, coerce_str, iter_tuples_from_relation
 
 if TYPE_CHECKING:
     import logging
@@ -109,7 +110,14 @@ def _symbol_community_findings_impl(
             .aggregate("count(*) as sym_count", "symbol_community_id")
             .filter(ColumnExpression("sym_count") > ConstantExpression(SYMBOL_COMMUNITY_MIN))
         )
-        comm_counts = relation.fetchall()
+        comm_counts: list[tuple[str, int]] = []
+        for community_id, sym_count in iter_tuples_from_relation(relation):
+            comm_counts.append(
+                (
+                    coerce_str(community_id, ctx="symbol_community_id"),
+                    coerce_int(sym_count, ctx="symbol_community_count"),
+                )
+            )
     except DuckDBError:
         return []
 
@@ -152,7 +160,18 @@ def _subsystem_disagreement_findings_impl(
             .filter(predicate)
             .select("module", "subsystem_id", "import_community_id")
         )
-        disagreements = relation.fetchall()
+        disagreements: list[tuple[str, str, str]] = []
+        for module, subsystem_id, import_community_id in iter_tuples_from_relation(relation):
+            disagreements.append(
+                (
+                    coerce_str(module, ctx="subsystem_agreement.module"),
+                    coerce_str(subsystem_id, ctx="subsystem_agreement.subsystem_id"),
+                    coerce_str(
+                        import_community_id,
+                        ctx="subsystem_agreement.import_community_id",
+                    ),
+                )
+            )
     except DuckDBError:
         return []
     if not disagreements:
