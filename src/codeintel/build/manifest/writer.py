@@ -11,7 +11,7 @@ from codeintel.build.manifest.records import CacheManifestEntry
 from codeintel.storage.tracking import ModuleKind, PipelineStepRecord
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 class CacheManifestWriter:
     """Persist cache events to the pipeline_steps table."""
 
-    gateway: StorageGateway
+    gateway: BuildGateway
     module: ModuleKind = "build"
     stage: str = "cache"
     strict: bool = False

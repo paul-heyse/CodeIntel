@@ -1,8 +1,8 @@
 """NetworkX-backed GraphEngine implementation.
 
 This module provides the primary GraphEngine implementation using
-NetworkX for graph representation and Parquet-backed DuckDB tables
-for data loading. It is a hybrid service layer (not a Hamilton DAG
+NetworkX for graph representation and Parquet-backed datasets for
+data loading. It is a hybrid service layer (not a Hamilton DAG
 module) and avoids view-registry fallbacks.
 """
 
@@ -19,16 +19,15 @@ import pyarrow.dataset as ds
 from codeintel.build.graphs.engine import views
 from codeintel.build.graphs.engine.cache import GraphCache, GraphCacheMetadata
 from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.core.datasets.parquet_metadata import metadata_from_schema
+from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.hashing.fingerprint import stable_hash
-from codeintel.storage.datasets.parquet_metadata import metadata_from_schema
-from codeintel.storage.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 
 if TYPE_CHECKING:
     import networkx as nx
 
     from codeintel.build.graphs.engine.backend import BackendEnablement
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -44,9 +43,9 @@ _GRAPH_CACHE_TABLES: dict[GraphKind, tuple[str, ...]] = {
 
 @dataclass
 class NxGraphEngine:
-    """NetworkX-backed GraphEngine powered by Parquet-backed DuckDB tables."""
+    """NetworkX-backed GraphEngine powered by Parquet-backed datasets."""
 
-    gateway: StorageGateway
+    dataset_root_dir: Path | None
     snapshot: SnapshotRef
     use_gpu: bool = False
     effective_use_gpu: bool = False
@@ -89,7 +88,7 @@ class NxGraphEngine:
         graph = self._cache.get(
             GraphKind.CALL_GRAPH,
             lambda: views.load_call_graph(
-                self.gateway,
+                self.dataset_root_dir,
                 self.repo,
                 self.commit,
                 use_gpu=self.effective_use_gpu,
@@ -122,7 +121,7 @@ class NxGraphEngine:
         graph = self._cache.get(
             GraphKind.IMPORT_GRAPH,
             lambda: views.load_import_graph(
-                self.gateway,
+                self.dataset_root_dir,
                 self.repo,
                 self.commit,
                 use_gpu=self.effective_use_gpu,
@@ -155,7 +154,7 @@ class NxGraphEngine:
         return self._cache.get(
             GraphKind.SYMBOL_MODULE_GRAPH,
             lambda: views.load_symbol_module_graph(
-                self.gateway,
+                self.dataset_root_dir,
                 self.repo,
                 self.commit,
                 use_gpu=self.effective_use_gpu,
@@ -187,7 +186,8 @@ class NxGraphEngine:
         return self._cache.get(
             GraphKind.SYMBOL_FUNCTION_GRAPH,
             lambda: views.load_symbol_function_graph(
-                self.gateway,
+                self.dataset_root_dir,
+                self.commit,
                 use_gpu=self.effective_use_gpu,
             ),
             metadata=metadata,
@@ -217,7 +217,7 @@ class NxGraphEngine:
         return self._cache.get(
             GraphKind.CONFIG_MODULE_BIPARTITE,
             lambda: views.load_config_module_bipartite(
-                self.gateway,
+                self.dataset_root_dir,
                 self.repo,
                 self.commit,
                 use_gpu=self.effective_use_gpu,
@@ -249,7 +249,7 @@ class NxGraphEngine:
         return self._cache.get(
             GraphKind.TEST_FUNCTION_BIPARTITE,
             lambda: views.load_test_function_bipartite(
-                self.gateway,
+                self.dataset_root_dir,
                 self.repo,
                 self.commit,
                 use_gpu=self.effective_use_gpu,
@@ -289,7 +289,7 @@ class NxGraphEngine:
         self,
         table_keys: tuple[str, ...],
     ) -> dict[str, dict[str, object]]:
-        dataset_root = self._dataset_root_dir()
+        dataset_root = self.dataset_root_dir
         if dataset_root is None or not table_keys:
             return {}
         snapshot_id = self.commit
@@ -299,15 +299,6 @@ class NxGraphEngine:
             if metadata:
                 entries[table_key] = metadata
         return entries
-
-    def _dataset_root_dir(self) -> Path | None:
-        dataset_root = self.gateway.datasets.dataset_root_dir
-        if dataset_root is not None:
-            return dataset_root
-        candidate = self.snapshot.repo_root / "Document Output" / "datasets"
-        if candidate.is_dir():
-            return candidate
-        return None
 
     @staticmethod
     def _parquet_metadata_for_table(

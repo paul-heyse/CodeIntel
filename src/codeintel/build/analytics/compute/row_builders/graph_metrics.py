@@ -6,13 +6,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
-from codeintel.storage.query_results import coerce_optional_int
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping

@@ -15,16 +15,16 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
-def _validate_dataset_contract(gateway: StorageGateway) -> None:
+def _validate_dataset_contract(gateway: BuildGateway) -> None:
     """Validate dataset contract using gateway connection.
 
     Parameters
     ----------
     gateway
-        StorageGateway with active connection.
+        BuildGateway with active connection.
     """
     validate_contract_or_raise(gateway.con)
 
@@ -34,7 +34,7 @@ class Exporter(Protocol):
 
     def __call__(
         self,
-        gateway: StorageGateway,
+        gateway: BuildGateway,
         document_output_dir: Path,
         *,
         settings: ExportAuditSettings,
@@ -45,7 +45,7 @@ class Exporter(Protocol):
         Parameters
         ----------
         gateway
-            StorageGateway for data access.
+            BuildGateway for data access.
         document_output_dir
             Target directory for exports.
         settings
@@ -61,7 +61,7 @@ class JsonlExporter(Protocol):
 
     def __call__(
         self,
-        gateway: StorageGateway,
+        gateway: BuildGateway,
         document_output_dir: Path,
         *,
         settings: ExportAuditSettings,
@@ -72,7 +72,7 @@ class JsonlExporter(Protocol):
         Parameters
         ----------
         gateway
-            StorageGateway for data access.
+            BuildGateway for data access.
         document_output_dir
             Target directory for exports.
         settings
@@ -94,7 +94,7 @@ class ExportRunner(Protocol):
     def __call__(
         self,
         *,
-        gateway: StorageGateway,
+        gateway: BuildGateway,
         output_dir: Path,
         options: ExportOptions | None = None,
     ) -> list[Path]:
@@ -103,7 +103,7 @@ class ExportRunner(Protocol):
         Parameters
         ----------
         gateway
-            StorageGateway for data access.
+            BuildGateway for data access.
         output_dir
             Target directory for exports.
         options
@@ -123,14 +123,14 @@ class ExportOptions:
 
     export: ExportCallOptions = field(default_factory=ExportCallOptions)
     settings: ExportAuditSettings = field(default_factory=ExportAuditSettings)
-    validator: Callable[[StorageGateway], None] = _validate_dataset_contract
+    validator: Callable[[BuildGateway], None] = _validate_dataset_contract
     export_parquet_fn: Exporter = field(default=export_all_parquet)
     export_jsonl_fn: JsonlExporter = field(default=export_all_jsonl)
 
 
 def run_validated_exports(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     output_dir: Path,
     options: ExportOptions | None = None,
 ) -> list[Path]:
@@ -139,7 +139,7 @@ def run_validated_exports(
     Parameters
     ----------
     gateway
-        StorageGateway providing datasets and connection metadata.
+        BuildGateway providing datasets and connection metadata.
     output_dir
         Document Output directory for emitted artifacts.
     options

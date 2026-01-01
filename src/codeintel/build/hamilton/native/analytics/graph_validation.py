@@ -89,13 +89,16 @@ def graph_validation__base(
     pl.LazyFrame
         Lazy frame containing graph validation rows.
     """
-    runtime = GraphRuntimeOptions(snapshot=env.snapshot)
+    runtime = GraphRuntimeOptions(
+        snapshot=env.snapshot,
+        dataset_root_dir=env.paths.dataset_root_dir,
+    )
     request = GraphValidationRunRequest(
         snapshot=env.snapshot,
         runtime=runtime,
         dataset_root_dir=env.paths.dataset_root_dir,
     )
-    report = run_graph_validations_with_runner(env.gateway, request=request)
+    report = run_graph_validations_with_runner(request=request)
     if not report.findings:
         return empty_frame_for_table(GRAPH_VALIDATION_TABLE_KEY)
     reporter = GraphValidationReporter(repo=env.repo, commit=env.commit)

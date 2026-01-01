@@ -12,11 +12,11 @@ from codeintel.build.hamilton.cache_index import CacheIndex
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.schemas.schema_index import SchemaIndex
-from codeintel.build.serving.semantic_compile import CompiledSemanticRegistry
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.runtime.variants import VariantConfig
 from codeintel.runtime.module_resolver import ModuleProvenance
 from codeintel.runtime.plugins.spec import TargetPack
+from codeintel.serving.semantic_compile import CompiledSemanticRegistry
 
 
 @dataclass(frozen=True, slots=True)

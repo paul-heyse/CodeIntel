@@ -14,11 +14,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.build.exports.common import ExportCallOptions
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
 def export_parquet_for_table(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_name: str,
     output_path: Path,
     settings: ExportAuditSettings,
@@ -28,7 +28,7 @@ def export_parquet_for_table(
     Parameters
     ----------
     gateway
-        StorageGateway providing the DuckDB connection.
+        BuildGateway providing the DuckDB connection.
     table_name
         Fully qualified table name (schema.table) to export.
     output_path
@@ -49,7 +49,7 @@ def export_parquet_for_table(
 
 
 def export_dataset_to_parquet(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     dataset_name: str,
     output_dir: Path,
     *,
@@ -60,7 +60,7 @@ def export_dataset_to_parquet(
     Parameters
     ----------
     gateway
-        StorageGateway providing the DuckDB connection.
+        BuildGateway providing the DuckDB connection.
     dataset_name
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir
@@ -92,7 +92,7 @@ def export_dataset_to_parquet(
 
 
 def export_all_parquet(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     document_output_dir: Path,
     *,
     settings: ExportAuditSettings,
@@ -103,7 +103,7 @@ def export_all_parquet(
     Parameters
     ----------
     gateway
-        StorageGateway providing the DuckDB connection.
+        BuildGateway providing the DuckDB connection.
     document_output_dir
         Target directory where Parquet artifacts are written.
     settings

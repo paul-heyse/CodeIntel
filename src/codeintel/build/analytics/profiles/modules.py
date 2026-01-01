@@ -6,6 +6,8 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.profiles.types import ModuleProfileInputs
 from codeintel.build.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
@@ -19,32 +21,49 @@ from codeintel.build.analytics.utilities.type_coercion import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsModuleProfileRow as ModuleProfileRowModel,
 )
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import records_from_relation
-from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.duckdb_types import DuckDBRelation
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 
+def _scope_frame(frame: pl.DataFrame, repo: str, commit: str) -> pl.DataFrame:
+    if frame.is_empty():
+        return frame
+    if "repo" in frame.columns and "commit" in frame.columns:
+        return frame.filter((pl.col("repo") == repo) & (pl.col("commit") == commit))
+    return frame
+
+
 def compute_module_profile_inputs(
-    gateway: StorageGateway, snapshot: SnapshotRef
+    snapshot: SnapshotRef,
+    *,
+    modules: pl.DataFrame,
+    function_profile: pl.DataFrame,
+    file_profile: pl.DataFrame,
+    import_graph_edges: pl.DataFrame,
+    semantic_roles_modules: pl.DataFrame,
 ) -> ModuleProfileInputs:
     """
     Construct snapshot inputs for module profile generation.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
     snapshot
         Repository and commit identifiers.
+    modules
+        Frame for ``core.modules``.
+    function_profile
+        Frame for ``analytics.function_profile``.
+    file_profile
+        Frame for ``analytics.file_profile``.
+    import_graph_edges
+        Frame for ``graph.import_graph_edges``.
+    semantic_roles_modules
+        Frame for ``analytics.semantic_roles_modules``.
 
     Returns
     -------
@@ -52,12 +71,14 @@ def compute_module_profile_inputs(
         Snapshot handle for module profile helpers.
     """
     return ModuleProfileInputs(
-        gateway=gateway,
-        con=gateway.con,
         repo=snapshot.repo,
         commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
-        slow_test_threshold_ms=0.0,
+        modules=modules,
+        function_profile=function_profile,
+        file_profile=file_profile,
+        import_graph_edges=import_graph_edges,
+        semantic_roles_modules=semantic_roles_modules,
     )
 
 
@@ -83,99 +104,128 @@ def build_module_profile_rows(
         msg = f"Unexpected module table: {module_table}"
         raise ValueError(msg)
 
-    try:
-        modules_scoped, func_stats, files, imports, roles = _load_module_aggregates(
-            inputs.gateway,
-            module_table,
-            inputs.repo,
-            inputs.commit,
-        )
-    except DuckDBError as exc:
-        log.warning("module_profile: failed to access tables: %s", exc)
+    modules = _scope_frame(inputs.modules, inputs.repo, inputs.commit)
+    if modules.is_empty():
         return
+    for col in ["repo", "commit", "module", "path", "language", "tags", "owners"]:
+        if col not in modules.columns:
+            modules = modules.with_columns(pl.lit(None).alias(col))
 
-    base = modules_scoped.set_alias("base")
-    func_rel = func_stats.set_alias("func_stats")
-    files_rel = files.set_alias("files")
-    imports_rel = imports.set_alias("imports")
-    roles_rel = roles.set_alias("roles")
-
-    joined = base.join(
-        func_rel,
-        (
-            "base.repo = func_stats.repo "
-            "AND base.commit = func_stats.commit "
-            "AND base.module = func_stats.module"
-        ),
-        how="left",
-    ).set_alias("base")
-    joined = joined.join(
-        files_rel,
-        "base.repo = files.repo AND base.commit = files.commit AND base.module = files.module",
-        how="left",
-    ).set_alias("base")
-    joined = joined.join(
-        imports_rel,
-        (
-            "base.repo = imports.repo "
-            "AND base.commit = imports.commit "
-            "AND base.module = imports.module"
-        ),
-        how="left",
-    ).set_alias("base")
-    joined = joined.join(
-        roles_rel,
-        "base.repo = roles.repo AND base.commit = roles.commit AND base.module = roles.module",
-        how="left",
-    ).set_alias("base")
-
-    try:
-        selected = joined.select(
-            "base.repo as repo",
-            "base.commit as commit",
-            "base.module as module",
-            "base.path as path",
-            "base.language as language",
-            "coalesce(base.file_count, 0) as file_count",
-            "coalesce(base.total_loc, 0) as total_loc",
-            "coalesce(base.total_logical_loc, 0) as total_logical_loc",
-            "coalesce(base.function_count, 0) as function_count",
-            "coalesce(base.class_count, 0) as class_count",
-            "base.avg_file_complexity as avg_file_complexity",
-            "base.max_file_complexity as max_file_complexity",
-            "coalesce(base.high_risk_function_count, 0) as high_risk_function_count",
-            "coalesce(base.medium_risk_function_count, 0) as medium_risk_function_count",
-            "coalesce(base.low_risk_function_count, 0) as low_risk_function_count",
-            "base.max_risk_score as max_risk_score",
-            "base.avg_risk_score as avg_risk_score",
-            (
-                "case when "
-                "(coalesce(base.tested_function_count, 0) + "
-                "coalesce(base.untested_function_count, 0)) = 0 "
-                "then NULL "
-                "else cast(coalesce(base.tested_function_count, 0) as double) / "
-                "(coalesce(base.tested_function_count, 0) + "
-                "coalesce(base.untested_function_count, 0)) "
-                "end as module_coverage_ratio"
-            ),
-            "coalesce(base.tested_function_count, 0) as tested_function_count",
-            "coalesce(base.untested_function_count, 0) as untested_function_count",
-            "coalesce(base.import_fan_in, 0) as import_fan_in",
-            "coalesce(base.import_fan_out, 0) as import_fan_out",
-            "base.cycle_group as cycle_group",
-            "coalesce(base.in_cycle_flag, 0) > 0 as in_cycle",
-            "base.role as role",
-            "base.role_confidence as role_confidence",
-            "base.role_sources_json as role_sources_json",
-            "base.tags as tags",
-            "base.owners as owners",
+    function_profile = _scope_frame(inputs.function_profile, inputs.repo, inputs.commit)
+    func_stats = (
+        function_profile.group_by(["repo", "commit", "module"]).agg(
+            [
+                pl.len().alias("function_count"),
+                pl.col("loc").fill_null(0).sum().alias("total_loc"),
+                pl.col("logical_loc").fill_null(0).sum().alias("total_logical_loc"),
+                (pl.col("risk_level") == "high")
+                .cast(pl.Int64)
+                .sum()
+                .alias("high_risk_function_count"),
+                (pl.col("risk_level") == "medium")
+                .cast(pl.Int64)
+                .sum()
+                .alias("medium_risk_function_count"),
+                (pl.col("risk_level") == "low")
+                .cast(pl.Int64)
+                .sum()
+                .alias("low_risk_function_count"),
+                pl.col("risk_score").max().alias("max_risk_score"),
+                pl.col("risk_score").mean().alias("avg_risk_score"),
+                pl.col("tested").cast(pl.Int64).sum().alias("tested_function_count"),
+                pl.col("tested").not_().cast(pl.Int64).sum().alias("untested_function_count"),
+            ]
         )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("module_profile: failed to execute aggregation: %s", exc)
-        return
+        if not function_profile.is_empty()
+        else pl.DataFrame(
+            schema={
+                "repo": pl.Utf8,
+                "commit": pl.Utf8,
+                "module": pl.Utf8,
+                "function_count": pl.Int64,
+                "total_loc": pl.Int64,
+                "total_logical_loc": pl.Int64,
+                "high_risk_function_count": pl.Int64,
+                "medium_risk_function_count": pl.Int64,
+                "low_risk_function_count": pl.Int64,
+                "max_risk_score": pl.Float64,
+                "avg_risk_score": pl.Float64,
+                "tested_function_count": pl.Int64,
+                "untested_function_count": pl.Int64,
+            }
+        )
+    )
 
-    for record in records:
+    file_profile = _scope_frame(inputs.file_profile, inputs.repo, inputs.commit)
+    files = (
+        file_profile.group_by(["repo", "commit", "module"]).agg(
+            [
+                pl.len().alias("file_count"),
+                pl.col("class_count").fill_null(0).sum().alias("class_count"),
+                pl.col("ast_complexity").mean().alias("avg_file_complexity"),
+                pl.col("ast_complexity").max().alias("max_file_complexity"),
+            ]
+        )
+        if not file_profile.is_empty()
+        else pl.DataFrame(
+            schema={
+                "repo": pl.Utf8,
+                "commit": pl.Utf8,
+                "module": pl.Utf8,
+                "file_count": pl.Int64,
+                "class_count": pl.Int64,
+                "avg_file_complexity": pl.Float64,
+                "max_file_complexity": pl.Float64,
+            }
+        )
+    )
+
+    import_edges = _scope_frame(inputs.import_graph_edges, inputs.repo, inputs.commit)
+    imports = (
+        import_edges.group_by(["repo", "commit", "src_module"]).agg(
+            [
+                pl.col("src_fan_out").max().alias("import_fan_out"),
+                pl.col("dst_fan_in").max().alias("import_fan_in"),
+                pl.col("cycle_group").max().alias("cycle_group"),
+                pl.col("cycle_group").is_not_null().cast(pl.Int64).sum().alias("in_cycle_flag"),
+            ]
+        )
+        if not import_edges.is_empty()
+        else pl.DataFrame(
+            schema={
+                "repo": pl.Utf8,
+                "commit": pl.Utf8,
+                "src_module": pl.Utf8,
+                "import_fan_out": pl.Int64,
+                "import_fan_in": pl.Int64,
+                "cycle_group": pl.Int64,
+                "in_cycle_flag": pl.Int64,
+            }
+        )
+    )
+    if not imports.is_empty():
+        imports = imports.rename({"src_module": "module"})
+
+    roles = _scope_frame(inputs.semantic_roles_modules, inputs.repo, inputs.commit)
+    for col in ["repo", "commit", "module", "role", "role_confidence", "role_sources_json"]:
+        if col not in roles.columns:
+            roles = roles.with_columns(pl.lit(None).alias(col))
+
+    base = modules.join(func_stats, on=["repo", "commit", "module"], how="left")
+    base = base.join(files, on=["repo", "commit", "module"], how="left")
+    base = base.join(imports, on=["repo", "commit", "module"], how="left")
+    base = base.join(roles, on=["repo", "commit", "module"], how="left")
+    tested_count = pl.col("tested_function_count").fill_null(0)
+    untested_count = pl.col("untested_function_count").fill_null(0)
+    base = base.with_columns(
+        pl.when((tested_count + untested_count) > 0)
+        .then(tested_count / (tested_count + untested_count))
+        .otherwise(None)
+        .alias("module_coverage_ratio")
+    )
+    base = base.with_columns((pl.col("in_cycle_flag").fill_null(0) > 0).alias("in_cycle"))
+
+    for record in base.iter_rows(named=True):
         record["created_at"] = inputs.created_at
         yield _row_to_module_profile_model(record, inputs)
 
@@ -184,7 +234,7 @@ def _row_to_module_profile_model(
     record: dict[str, object], inputs: ModuleProfileInputs
 ) -> ModuleProfileRowModel:
     """
-    Convert a DuckDB row mapping into a ModuleProfileRowModel.
+    Convert a tabular row mapping into a ModuleProfileRowModel.
 
     Returns
     -------
@@ -192,142 +242,40 @@ def _row_to_module_profile_model(
         Row model derived from the provided record.
     """
     return ModuleProfileRowModel(
-        repo=str(record["repo"]),
-        commit=str(record["commit"]),
-        module=str(record["module"]),
-        path=optional_str(record["path"]),
-        language=optional_str(record["language"]),
-        file_count=optional_int(record["file_count"]),
-        total_loc=optional_int(record["total_loc"]),
-        total_logical_loc=optional_int(record["total_logical_loc"]),
-        function_count=optional_int(record["function_count"]),
-        class_count=optional_int(record["class_count"]),
-        avg_file_complexity=optional_float(record["avg_file_complexity"]),
-        max_file_complexity=optional_float(record["max_file_complexity"]),
-        high_risk_function_count=optional_int(record["high_risk_function_count"]),
-        medium_risk_function_count=optional_int(record["medium_risk_function_count"]),
-        low_risk_function_count=optional_int(record["low_risk_function_count"]),
-        max_risk_score=optional_float(record["max_risk_score"]),
-        avg_risk_score=optional_float(record["avg_risk_score"]),
-        module_coverage_ratio=optional_float(record["module_coverage_ratio"]),
-        tested_function_count=optional_int(record["tested_function_count"]),
-        untested_function_count=optional_int(record["untested_function_count"]),
-        import_fan_in=optional_int(record["import_fan_in"]),
-        import_fan_out=optional_int(record["import_fan_out"]),
-        cycle_group=optional_int(record["cycle_group"]),
-        in_cycle=bool(record["in_cycle"]) if record["in_cycle"] is not None else None,
-        role=optional_str(record["role"]),
-        role_confidence=optional_float(record["role_confidence"]),
-        role_sources_json=record["role_sources_json"]
-        if record["role_sources_json"] is not None
+        repo=str(record.get("repo")),
+        commit=str(record.get("commit")),
+        module=str(record.get("module")),
+        path=optional_str(record.get("path")),
+        language=optional_str(record.get("language")),
+        file_count=optional_int(record.get("file_count")),
+        total_loc=optional_int(record.get("total_loc")),
+        total_logical_loc=optional_int(record.get("total_logical_loc")),
+        function_count=optional_int(record.get("function_count")),
+        class_count=optional_int(record.get("class_count")),
+        avg_file_complexity=optional_float(record.get("avg_file_complexity")),
+        max_file_complexity=optional_float(record.get("max_file_complexity")),
+        high_risk_function_count=optional_int(record.get("high_risk_function_count")),
+        medium_risk_function_count=optional_int(record.get("medium_risk_function_count")),
+        low_risk_function_count=optional_int(record.get("low_risk_function_count")),
+        max_risk_score=optional_float(record.get("max_risk_score")),
+        avg_risk_score=optional_float(record.get("avg_risk_score")),
+        module_coverage_ratio=optional_float(record.get("module_coverage_ratio")),
+        tested_function_count=optional_int(record.get("tested_function_count")),
+        untested_function_count=optional_int(record.get("untested_function_count")),
+        import_fan_in=optional_int(record.get("import_fan_in")),
+        import_fan_out=optional_int(record.get("import_fan_out")),
+        cycle_group=optional_int(record.get("cycle_group")),
+        in_cycle=bool(record.get("in_cycle")) if record.get("in_cycle") is not None else None,
+        role=optional_str(record.get("role")),
+        role_confidence=optional_float(record.get("role_confidence")),
+        role_sources_json=record.get("role_sources_json")
+        if record.get("role_sources_json") is not None
         else "[]",
-        tags=record["tags"] if record["tags"] is not None else "[]",
-        owners=record["owners"] if record["owners"] is not None else "[]",
+        tags=record.get("tags") if record.get("tags") is not None else "[]",
+        owners=record.get("owners") if record.get("owners") is not None else "[]",
         created_at=(
-            record["created_at"]
-            if isinstance(record["created_at"], datetime)
+            record.get("created_at")
+            if isinstance(record.get("created_at"), datetime)
             else inputs.created_at
         ),
     )
-
-
-def _load_module_aggregates(
-    gateway: StorageGateway, module_table: str, repo: str, commit: str
-) -> tuple[DuckDBRelation, DuckDBRelation, DuckDBRelation, DuckDBRelation, DuckDBRelation]:
-    """
-    Load scoped module and aggregate tables for module profiles.
-
-    Returns
-    -------
-    tuple[DuckDBRelation, DuckDBRelation, DuckDBRelation, DuckDBRelation, DuckDBRelation]
-        Modules table plus function, file, import, and roles aggregates.
-    """
-    modules_table = gateway.relation_from_table_key(module_table)
-    modules_scoped = maybe_scope_by_repo_commit(modules_table, repo=repo, commit=commit)
-
-    func_profile = maybe_scope_by_repo_commit(
-        gateway.relation_from_table_key("analytics.function_profile"),
-        repo=repo,
-        commit=commit,
-    )
-    func_stats = func_profile.aggregate(
-        ", ".join(
-            [
-                "count(function_goid_h128) as function_count",
-                "sum(loc) as total_loc",
-                "sum(logical_loc) as total_logical_loc",
-                (
-                    "sum(case when risk_level = 'high' then 1 else 0 end) "
-                    "as high_risk_function_count"
-                ),
-                (
-                    "sum(case when risk_level = 'medium' then 1 else 0 end) "
-                    "as medium_risk_function_count"
-                ),
-                ("sum(case when risk_level = 'low' then 1 else 0 end) as low_risk_function_count"),
-                "max(risk_score) as max_risk_score",
-                "avg(risk_score) as avg_risk_score",
-                "sum(case when tested then 1 else 0 end) as tested_function_count",
-                "sum(case when tested then 0 else 1 end) as untested_function_count",
-            ]
-        ),
-        "repo, commit, module",
-    )
-
-    file_profile = maybe_scope_by_repo_commit(
-        gateway.relation_from_table_key("analytics.file_profile"),
-        repo=repo,
-        commit=commit,
-    )
-    files = file_profile.aggregate(
-        ", ".join(
-            [
-                "count(rel_path) as file_count",
-                "sum(class_count) as class_count",
-                "avg(ast_complexity) as avg_file_complexity",
-                "max(ast_complexity) as max_file_complexity",
-            ]
-        ),
-        "repo, commit, module",
-    )
-
-    imports_table = maybe_scope_by_repo_commit(
-        gateway.relation_from_table_key("graph.import_graph_edges"),
-        repo=repo,
-        commit=commit,
-    )
-    imports = imports_table.aggregate(
-        ", ".join(
-            [
-                "max(src_fan_out) as import_fan_out",
-                "max(dst_fan_in) as import_fan_in",
-                "max(cycle_group) as cycle_group",
-                "sum(case when cycle_group is null then 0 else 1 end) as in_cycle_flag",
-            ]
-        ),
-        "repo, commit, src_module",
-    ).select(
-        "repo",
-        "commit",
-        "src_module as module",
-        "import_fan_out",
-        "import_fan_in",
-        "cycle_group",
-        "in_cycle_flag",
-    )
-
-    roles_table = maybe_scope_by_repo_commit(
-        gateway.relation_from_table_key("analytics.semantic_roles_modules"),
-        repo=repo,
-        commit=commit,
-    )
-    roles = roles_table.select(
-        "repo",
-        "commit",
-        "module",
-        "role",
-        "role_confidence",
-        "role_sources_json",
-    )
-
-    return modules_scoped, func_stats, files, imports, roles

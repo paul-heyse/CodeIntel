@@ -8,14 +8,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.functions.parsing import parse_python_file
-from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.core.catalog import FunctionCatalogProvider
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -44,17 +42,12 @@ class FunctionAstLoadRequest:
     max_functions: int | None = None
 
 
-def load_function_asts(
-    gateway: StorageGateway,
-    request: FunctionAstLoadRequest,
-) -> tuple[dict[int, FunctionAst], set[int]]:
+def load_function_asts(request: FunctionAstLoadRequest) -> tuple[dict[int, FunctionAst], set[int]]:
     """
     Build a mapping of GOID -> FunctionAst for a repository snapshot.
 
     Parameters
     ----------
-    gateway:
-        Storage gateway providing access to DuckDB.
     request:
         Details describing the target snapshot and budget constraints.
 
@@ -63,10 +56,16 @@ def load_function_asts(
     tuple[dict[int, FunctionAst], set[int]]
         Mapping of GOID to resolved AST details and a set of GOIDs that could
         not be resolved due to parse failures or missing spans.
+
+    Raises
+    ------
+    ValueError
+        If the catalog provider is missing from the request.
     """
-    provider = request.catalog_provider or CatalogService.from_db(
-        gateway, repo=request.repo, commit=request.commit
-    )
+    if request.catalog_provider is None:
+        msg = "FunctionAstLoadRequest.catalog_provider is required for AST loading."
+        raise ValueError(msg)
+    provider = request.catalog_provider
     catalog = provider.catalog()
     functions_by_path = catalog.functions_by_path
 

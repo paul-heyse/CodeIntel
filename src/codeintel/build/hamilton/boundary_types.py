@@ -9,7 +9,7 @@ matching to fail graph compilation.
 from __future__ import annotations
 
 from codeintel.core.execution.materialization import MaterializationResult
-from codeintel.storage.helpers.table_key import TableKey
+from codeintel.core.table_key import TableKey
 
 type RowCounts = dict[str, int]
 

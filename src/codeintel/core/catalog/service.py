@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
 from codeintel.core.catalog.function_span import FunctionSpan
 from codeintel.core.catalog.span_index import SpanIndex
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.helpers.module_index import load_module_map
@@ -270,6 +271,55 @@ def load_function_catalog(
         )
     module_by_path = load_module_map(gateway, repo, commit)
     return FunctionCatalog(functions=functions, module_by_path=module_by_path)
+
+
+def build_function_catalog_from_rows(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    module_by_path: Mapping[str, str],
+) -> FunctionCatalog:
+    """Build a FunctionCatalog from in-memory row mappings.
+
+    Parameters
+    ----------
+    rows
+        Iterable of function rows with goid, path, qualname, and line spans.
+    module_by_path
+        Mapping of repository-relative paths to module names.
+
+    Returns
+    -------
+    FunctionCatalog
+        Catalog built from the provided rows and module mapping.
+    """
+    functions: list[FunctionSpan] = []
+    for row in rows:
+        start_line = row.get("start_line")
+        if start_line is None:
+            continue
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        if not isinstance(rel_path, str) or not isinstance(qualname, str):
+            continue
+        goid_value = normalize_decimal_id(row.get("goid_h128") or row.get("goid"))
+        if goid_value is None:
+            continue
+        end_line = row.get("end_line")
+        urn = row.get("urn")
+        functions.append(
+            FunctionSpan(
+                goid=int(goid_value),
+                rel_path=normalize_path(rel_path),
+                qualname=qualname,
+                start_line=int(start_line),
+                end_line=int(end_line) if end_line is not None else int(start_line),
+                urn=str(urn) if urn is not None else None,
+            )
+        )
+    normalized_modules = {
+        normalize_path(path): str(module) for path, module in module_by_path.items()
+    }
+    return FunctionCatalog(functions=functions, module_by_path=normalized_modules)
 
 
 class FunctionCatalogProvider(Protocol):

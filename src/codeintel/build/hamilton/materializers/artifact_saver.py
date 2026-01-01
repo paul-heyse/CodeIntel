@@ -32,12 +32,12 @@ from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
     format_path_template,
 )
+from codeintel.core.duckdb_types import DuckDBRelation
 from codeintel.core.execution.materialization import (
     failed_artifact_result,
     succeeded_artifact_result,
 )
 from codeintel.core.exports import default_ipc_write_options
-from codeintel.storage.duckdb_types import DuckDBRelation
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ class BuildRunContext:
     """Factory for build-time environment and execution options."""
 
     snapshot: SnapshotRef
-    gateway: StorageGateway
+    gateway: BuildGateway
     paths: BuildPaths
     providers: Providers
     config: BuildConfig
@@ -170,7 +170,7 @@ class BuildRunContext:
         cls,
         *,
         execution_context: ExecutionContext,
-        gateway: StorageGateway,
+        gateway: BuildGateway,
         providers: Providers,
         config: BuildConfig,
         overrides: BuildRunContextOverrides | None = None,

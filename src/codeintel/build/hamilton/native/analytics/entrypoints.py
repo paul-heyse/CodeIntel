@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 import polars as pl
 
@@ -13,7 +14,11 @@ from codeintel.build.analytics.entrypoints.compute import (
     EntrypointsResult,
     compute_entrypoints_pure,
 )
-from codeintel.build.analytics.entrypoints.core import EntrypointBuildInputs
+from codeintel.build.analytics.entrypoints.core import (
+    EntrypointBuildInputs,
+    EntrypointContextInputs,
+)
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -37,7 +42,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.catalog.service import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -134,11 +138,14 @@ def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeat
 def entrypoints_result(
     env: BuildEnv,
     q__core__modules: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
-    _q__analytics__test_catalog: InferableTabularInput,
+    q__analytics__coverage_functions: InferableTabularInput,
+    q__analytics__test_catalog: InferableTabularInput,
     _q__analytics__test_profile: InferableTabularInput,
-    _q__analytics__test_coverage_edges: InferableTabularInput,
-    _q__analytics__subsystems: InferableTabularInput,
+    q__analytics__test_coverage_edges: InferableTabularInput,
+    q__analytics__subsystems: InferableTabularInput,
+    q__analytics__subsystem_modules: InferableTabularInput,
 ) -> EntrypointsResult:
     """Compute entrypoint rows using module and AST feature inputs.
 
@@ -148,17 +155,32 @@ def entrypoints_result(
         Entrypoints result containing entrypoint and test rows.
     """
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
     features_frame = tabular_to_lazyframe(q__analytics__function_ast_features).collect()
+    coverage_frame = tabular_to_lazyframe(q__analytics__coverage_functions).collect()
+    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
+    coverage_edges_frame = tabular_to_lazyframe(q__analytics__test_coverage_edges).collect()
+    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems).collect()
+    subsystem_modules_frame = tabular_to_lazyframe(q__analytics__subsystem_modules).collect()
     module_map = _module_map(modules_frame)
     if not module_map:
         return EntrypointsResult(entrypoint_rows=(), test_rows=())
-    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
+    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     inputs = EntrypointBuildInputs(
         catalog_provider=catalog,
         module_map=module_map,
         features_map=_features_by_goid(features_frame),
     )
-    return compute_entrypoints_pure(env.gateway, env.snapshot, inputs)
+    return compute_entrypoints_pure(
+        env.snapshot,
+        inputs,
+        modules_frame=modules_frame,
+        coverage_functions_frame=coverage_frame,
+        test_coverage_edges_frame=coverage_edges_frame,
+        test_catalog_frame=test_catalog_frame,
+        subsystem_modules_frame=subsystem_modules_frame,
+        subsystems_frame=subsystems_frame,
+    )
 
 
 def entrypoints__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:

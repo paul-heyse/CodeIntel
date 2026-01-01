@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
+import networkx as nx
+import polars as pl
+
 from codeintel.build.analytics.compute.graphs import bipartite_degrees
 from codeintel.build.analytics.testing.graph_metrics import (
     TEST_GRAPH_METRICS_FUNCTIONS_COLS,
@@ -24,15 +27,12 @@ from codeintel.build.analytics.testing.graph_metrics import (
     _build_function_rows,
     _build_test_rows,
 )
-from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import coerce_optional_float, iter_tuples_from_arrow_reader
+from codeintel.core.query_results import coerce_optional_float
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 
 log = logging.getLogger(__name__)
@@ -59,9 +59,10 @@ class TestGraphMetricsResult:
 
 
 def compute_test_graph_metrics_pure(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    *,
+    test_coverage_edges_frame: pl.DataFrame | None = None,
+    goid_risk_factors_frame: pl.DataFrame | None = None,
 ) -> TestGraphMetricsResult:
     """Compute test graph metrics without writing to database.
 
@@ -70,12 +71,12 @@ def compute_test_graph_metrics_pure(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for reading graph data and risk factors.
     snapshot
         Repository and commit snapshot reference.
-    runtime
-        Optional graph runtime or options for graph computation.
+    test_coverage_edges_frame
+        Coverage edges for the test/function bipartite graph.
+    goid_risk_factors_frame
+        Function risk scores keyed by GOID.
 
     Returns
     -------
@@ -94,22 +95,16 @@ def compute_test_graph_metrics_pure(
     - Projection metrics (clustering, betweenness)
     - Risk-weighted degree based on function risk scores
     """
-    resolved_options = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime
-    ) or GraphRuntimeOptions()
-
-    resolved_runtime = resolve_graph_runtime(
-        gateway,
-        resolved_options.snapshot or snapshot,
-        resolved_options,
+    graph = _test_function_graph_from_frame(
+        test_coverage_edges_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
-
-    graph = resolved_runtime.ensure_test_function_bipartite()
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=snapshot.repo,
             commit=snapshot.commit,
-            use_gpu=resolved_runtime.backend.use_gpu,
+            use_gpu=False,
             now=datetime.now(UTC),
             pagerank_weight="weight",
             betweenness_weight="weight",
@@ -129,20 +124,20 @@ def compute_test_graph_metrics_pure(
         funcs,
         weight=graph_ctx.pagerank_weight,
     )
-    reader = gateway.execute(
-        """
-        SELECT function_goid_h128, risk_score
-        FROM analytics.goid_risk_factors
-        WHERE repo = ? AND commit = ?
-        """,
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     risk_by_goid: dict[int, float] = {}
-    for goid_raw, score_raw in iter_tuples_from_arrow_reader(reader):
-        goid = normalize_decimal_id(goid_raw)
-        if goid is None:
-            continue
-        risk_by_goid[goid] = coerce_optional_float(score_raw, ctx="risk_score") or 0.0
+    if goid_risk_factors_frame is not None and not goid_risk_factors_frame.is_empty():
+        filtered = _filter_frame_by_snapshot(
+            goid_risk_factors_frame,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        for row in filtered.iter_rows(named=True):
+            goid = normalize_decimal_id(row.get("goid_h128"))
+            if goid is None:
+                continue
+            risk_by_goid[goid] = (
+                coerce_optional_float(row.get("risk_score"), ctx="risk_score") or 0.0
+            )
     ctx = TestMetricsContext(
         repo=snapshot.repo,
         commit=snapshot.commit,
@@ -167,6 +162,66 @@ def compute_test_graph_metrics_pure(
         test_rows=tuple(test_rows),
         function_rows=tuple(func_rows),
     )
+
+
+def _test_function_graph_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> nx.Graph:
+    graph = nx.Graph()
+    if frame is None or frame.is_empty():
+        return graph
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    for row in filtered.iter_rows(named=True):
+        test_id = row.get("test_id")
+        goid_raw = row.get("function_goid_h128")
+        goid = normalize_decimal_id(goid_raw)
+        if test_id is None or goid is None:
+            continue
+        test_node = ("t", str(test_id))
+        func_node = ("f", goid)
+        if not graph.has_node(test_node):
+            graph.add_node(test_node, bipartite=0)
+        if not graph.has_node(func_node):
+            graph.add_node(func_node, bipartite=1)
+        weight = coerce_optional_float(row.get("coverage_ratio"), ctx="coverage_ratio") or 0.0
+        if graph.has_edge(test_node, func_node):
+            attrs = graph[test_node][func_node]
+            attrs["weight"] = _coerce_edge_weight_float(attrs.get("weight")) + weight
+        else:
+            graph.add_edge(test_node, func_node, weight=weight)
+    return graph
+
+
+def _coerce_edge_weight_float(value: object) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
 
 
 __all__ = [

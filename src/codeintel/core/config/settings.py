@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from ipaddress import ip_address
 from pathlib import Path
 
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 
 
 @dataclass(frozen=True, slots=True)

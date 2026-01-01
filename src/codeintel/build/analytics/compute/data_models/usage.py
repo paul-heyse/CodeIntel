@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.hamilton.native.ingestion.frame_utils import (
@@ -25,13 +27,7 @@ from codeintel.build.hamilton.native.ingestion.frame_utils import (
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.query_results import (
-    coerce_optional_str,
-    coerce_str,
-    iter_tuples_from_relation,
-)
-from codeintel.storage.repositories import DataModelsRepository
+from codeintel.core.query_results import coerce_str
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -40,7 +36,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 DATA_MODEL_USAGE_COLS = [
     "repo",
@@ -83,6 +78,19 @@ class ModelUsageArtifacts:
     param_types: dict[int, dict[str, str]]
     model_index: ModelIndex
     subsystem_map: dict[str, tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class DataModelUsageInputs:
+    """Inputs required to compute data model usage rows."""
+
+    module_map: dict[str, str]
+    ast_by_goid: dict[int, FunctionAst]
+    models_frame: pl.DataFrame | None = None
+    subsystem_modules_frame: pl.DataFrame | None = None
+    subsystems_frame: pl.DataFrame | None = None
+    function_types_frame: pl.DataFrame | None = None
+    missing_goids: set[int] | None = None
 
 
 @dataclass(frozen=True)
@@ -427,46 +435,62 @@ class ModelUsageVisitor(ast.NodeVisitor):
         )
 
 
-def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelInfo]:
-    models = DataModelsRepository(gateway, repo, commit).list_models()
-    return [
-        ModelInfo(model_id=model.model_id, name=model.model_name, module=model.module)
-        for model in models
-    ]
+def _load_models_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> list[ModelInfo]:
+    if frame is None or frame.is_empty():
+        return []
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    models: list[ModelInfo] = []
+    for row in filtered.iter_rows(named=True):
+        model_id = row.get("model_id")
+        model_name = row.get("model_name")
+        module = row.get("module")
+        if model_id is None or model_name is None or module is None:
+            continue
+        models.append(ModelInfo(model_id=str(model_id), name=str(model_name), module=str(module)))
+    return models
 
 
-def _subsystem_by_module(
-    gateway: StorageGateway, repo: str, commit: str
+def _subsystem_by_module_from_frames(
+    subsystem_modules_frame: pl.DataFrame | None,
+    subsystems_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[str, tuple[str, str]]:
-    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
-    modules = (
-        gateway.relation_from_table_key("analytics.subsystem_modules")
-        .filter(predicate)
-        .set_alias("modules")
-    )
-    subsystems = gateway.relation_from_table_key("analytics.subsystems").set_alias("subsystems")
-    relation = (
-        modules.join(
-            subsystems,
-            "modules.repo = subsystems.repo "
-            "AND modules.commit = subsystems.commit "
-            "AND modules.subsystem_id = subsystems.subsystem_id",
-            how="left",
-        )
-        .select(
-            "modules.module as module",
-            "modules.subsystem_id as subsystem_id",
-            "subsystems.name as name",
-        )
-        .set_alias("modules")
-    )
     mapping: dict[str, tuple[str, str]] = {}
-    for module, subsystem_id, name in iter_tuples_from_relation(relation):
+    if subsystem_modules_frame is None or subsystem_modules_frame.is_empty():
+        return mapping
+    modules_filtered = _filter_frame_by_snapshot(
+        subsystem_modules_frame,
+        repo=repo,
+        commit=commit,
+    )
+    subsystems_filtered = (
+        _filter_frame_by_snapshot(subsystems_frame, repo=repo, commit=commit)
+        if subsystems_frame is not None and not subsystems_frame.is_empty()
+        else None
+    )
+    name_by_id: dict[str, str] = {}
+    if subsystems_filtered is not None:
+        for row in subsystems_filtered.iter_rows(named=True):
+            subsystem_id = row.get("subsystem_id")
+            name = row.get("name")
+            if subsystem_id is None or name is None:
+                continue
+            name_by_id[str(subsystem_id)] = coerce_str(name, ctx="subsystems.name")
+    for row in modules_filtered.iter_rows(named=True):
+        module = row.get("module")
+        subsystem_id = row.get("subsystem_id")
+        if module is None or subsystem_id is None:
+            continue
         module_name = coerce_str(module, ctx="subsystem_modules.module")
         subsystem_id_text = coerce_str(subsystem_id, ctx="subsystem_modules.subsystem_id")
-        subsystem_name = coerce_optional_str(name, ctx="subsystems.name") or ""
+        subsystem_name = name_by_id.get(subsystem_id_text, "")
         mapping[module_name] = (subsystem_id_text, subsystem_name)
     return mapping
 
@@ -487,12 +511,8 @@ def _context_for_module(
 
 
 def build_data_model_usage_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
-    *,
-    module_map: dict[str, str],
-    ast_by_goid: dict[int, FunctionAst],
-    missing_goids: set[int] | None = None,
+    inputs: DataModelUsageInputs,
 ) -> LazyFrame:
     """Build data_model_usage rows without writing to database.
 
@@ -501,16 +521,10 @@ def build_data_model_usage_rows(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for reading model and function metadata.
     snapshot
         Repository and commit identifiers.
-    module_map
-        Mapping of file path to module name.
-    ast_by_goid
-        Mapping of function GOID to parsed AST data.
-    missing_goids
-        Optional set of function GOIDs that lack AST spans.
+    inputs
+        Bundled inputs including module map, ASTs, and optional frames.
 
     Returns
     -------
@@ -526,12 +540,20 @@ def build_data_model_usage_rows(
 
     Examples
     --------
-    >>> frame = build_data_model_usage_rows(gateway, snapshot, ...)
+    >>> frame = build_data_model_usage_rows(snapshot, ...)
     >>> frame.collect().height > 0
     True
     """
     max_examples_per_usage = 3
-    models = _load_models(gateway, snapshot.repo, snapshot.commit)
+    module_map = inputs.module_map
+    ast_by_goid = inputs.ast_by_goid
+    models_frame = inputs.models_frame
+    subsystem_modules_frame = inputs.subsystem_modules_frame
+    subsystems_frame = inputs.subsystems_frame
+    function_types_frame = inputs.function_types_frame
+    missing_goids = inputs.missing_goids
+
+    models = _load_models_from_frame(models_frame, repo=snapshot.repo, commit=snapshot.commit)
     if not models:
         log.info(
             "No data models found for %s@%s; skipping usage analysis",
@@ -541,7 +563,12 @@ def build_data_model_usage_rows(
         return empty_lazyframe_for_table(DATA_MODEL_USAGE_TABLE_KEY)
 
     model_index = _build_model_index(models)
-    subsystem_map = _subsystem_by_module(gateway, snapshot.repo, snapshot.commit)
+    subsystem_map = _subsystem_by_module_from_frames(
+        subsystem_modules_frame,
+        subsystems_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
 
     missing = missing_goids or set()
     if missing:
@@ -550,22 +577,20 @@ def build_data_model_usage_rows(
             len(missing),
         )
 
-    predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
-        ColumnExpression("commit") == ConstantExpression(snapshot.commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("analytics.function_types")
-        .filter(predicate)
-        .select("function_goid_h128", "param_types")
-    )
     param_types: dict[int, dict[str, str]] = {}
-    for goid_raw, raw_param_types in iter_tuples_from_relation(relation):
-        goid_int = normalize_decimal_id(goid_raw)
-        if goid_int is None:
-            continue
-        parsed_input = raw_param_types if isinstance(raw_param_types, (str, dict)) else None
-        param_types[goid_int] = _parse_param_types(parsed_input)
-
+    if function_types_frame is not None and not function_types_frame.is_empty():
+        filtered = _filter_frame_by_snapshot(
+            function_types_frame,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        for row in filtered.iter_rows(named=True):
+            goid_int = normalize_decimal_id(row.get("function_goid_h128"))
+            if goid_int is None:
+                continue
+            raw_param_types = row.get("param_types")
+            parsed_input = raw_param_types if isinstance(raw_param_types, (str, dict)) else None
+            param_types[goid_int] = _parse_param_types(parsed_input)
     artifacts = ModelUsageArtifacts(
         ast_by_goid=ast_by_goid,
         module_map=module_map,
@@ -582,6 +607,20 @@ def build_data_model_usage_rows(
         buffer=buffer,
     )
     return lazyframe_for_table_columns(DATA_MODEL_USAGE_TABLE_KEY, buffer.data)
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
 
 
 def _build_usage_rows(

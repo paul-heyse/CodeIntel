@@ -29,7 +29,7 @@ from codeintel.core.validation.schema_constraints import validate_parquet_path
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ def validate_export_files(
     paths: list[Path],
     *,
     dataset_name: str | None = None,
-    gateway: StorageGateway | None = None,
+    gateway: BuildGateway | None = None,
 ) -> int:
     """Validate files against the table schema.
 

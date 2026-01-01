@@ -1,7 +1,7 @@
 """Factory helpers for constructing graph engines across surfaces.
 
 Engines are configured from the graph_backend build config and consume
-Parquet-backed DuckDB tables (no view-registry fallbacks).
+Parquet-backed datasets (no view-registry fallbacks).
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.graphs.engine.backend import BackendEnablement
     from codeintel.config.primitives import GraphBackendConfig
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -36,8 +35,9 @@ class EngineBuildOptions:
 
 
 def build_graph_engine(
-    gateway: StorageGateway,
+    *,
     snapshot: SnapshotRef | tuple[str, str],
+    dataset_root_dir: Path | None,
     options: EngineBuildOptions | None = None,
 ) -> NxGraphEngine:
     """
@@ -45,10 +45,10 @@ def build_graph_engine(
 
     Parameters
     ----------
-    gateway :
-        Storage gateway providing Parquet-backed graph tables.
     snapshot :
         Repository snapshot anchoring the graph build or a (repo, commit) tuple.
+    dataset_root_dir :
+        Dataset root directory for Parquet snapshots.
     options : EngineBuildOptions | None
         Optional bundle controlling backend selection, cache seeding, and env/enabler hooks.
 
@@ -82,7 +82,7 @@ def build_graph_engine(
         else SnapshotRef(repo=snapshot[0], commit=snapshot[1], repo_root=Path())
     )
     return NxGraphEngine(
-        gateway=gateway,
+        dataset_root_dir=dataset_root_dir,
         snapshot=normalized_snapshot,
         use_gpu=use_gpu_preference,
         effective_use_gpu=effective_use_gpu,

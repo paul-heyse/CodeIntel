@@ -9,8 +9,8 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.exports.serialization import coerce_export_value
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
 
 if TYPE_CHECKING:

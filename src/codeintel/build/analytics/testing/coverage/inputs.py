@@ -18,7 +18,7 @@ if TYPE_CHECKING:
         TestGraphMetricsProtocol,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import DuckDBConnection
+    from codeintel.core.duckdb_types import DuckDBConnection
 
 PRIMARY_COVERAGE_THRESHOLD = 0.4
 

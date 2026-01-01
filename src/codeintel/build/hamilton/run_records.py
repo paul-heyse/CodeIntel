@@ -22,9 +22,9 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
 from codeintel.build.hashing import compute_target_options_hash
 from codeintel.core.build_manifest import OutputManifest
+from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.errors.storage import StorageError
 from codeintel.core.hamilton.records import TargetRunRecord
-from codeintel.storage.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

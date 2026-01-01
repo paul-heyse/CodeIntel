@@ -6,7 +6,7 @@ import polars as pl
 
 from codeintel.build.analytics.functions.metrics import (
     FunctionAnalyticsResult,
-    compute_function_analytics_result_from_table,
+    compute_function_analytics_result_from_tabular,
 )
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import function_features
@@ -48,7 +48,7 @@ FUNCTION_METRICS_CONTRACT = TableContractSpec(
 
 
 def function_analytics_result(
-    env: BuildEnv, _q__core__goids: InferableTabularInput
+    env: BuildEnv, q__core__goids: InferableTabularInput
 ) -> FunctionAnalyticsResult:
     """Compute function analytics rows from core.goids.
 
@@ -57,8 +57,7 @@ def function_analytics_result(
     FunctionAnalyticsResult
         Metrics/types rows plus validation reporter.
     """
-    relation = env.gateway.relation_from_table_key("core.goids")
-    return compute_function_analytics_result_from_table(relation, env.snapshot)
+    return compute_function_analytics_result_from_tabular(q__core__goids, env.snapshot)
 
 
 def function_metrics__base(function_analytics_result: FunctionAnalyticsResult) -> pl.LazyFrame:

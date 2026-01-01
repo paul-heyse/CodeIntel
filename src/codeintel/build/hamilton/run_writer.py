@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.core.gateway import BuildGateway
     from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
-    from codeintel.storage.gateway.protocol import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ class BuildRunWriter:
         Storage gateway used for persistence.
     """
 
-    gateway: StorageGateway
+    gateway: BuildGateway
 
     def start_run(
         self,

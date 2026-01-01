@@ -15,9 +15,9 @@ from sqlglot import exp
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.utilities.persistence import DeleteScope
+    from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.storage.gateway import StorageGateway
 
 from codeintel.build.schemas import (
     ContractResolutionMode,
@@ -83,7 +83,7 @@ def get_delete_sql_by_table() -> dict[str, str]:
 
 
 def get_analytics_dataset_contract(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
 ) -> DatasetContract:
     """
@@ -99,7 +99,7 @@ def get_analytics_dataset_contract(
 
 
 def get_function_ast_features_contract(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
 ) -> DatasetContract:
     """
     Return the dataset contract for function AST features.
@@ -117,7 +117,7 @@ def get_function_ast_features_contract(
 
 
 def insert_analytics_rows(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     contract: DatasetContract,
     rows: Sequence[Mapping[str, object]],
     *,
@@ -174,7 +174,7 @@ def validate_contract_rows(
     table_key: str,
     rows: Sequence[Mapping[str, object]],
     *,
-    gateway: StorageGateway | None = None,
+    gateway: BuildGateway | None = None,
 ) -> list[dict[str, object]]:
     """
     Validate rows for a dataset using Arrow/Polars checks and return normalized dicts.

@@ -10,29 +10,19 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
+import networkx as nx
+import polars as pl
+
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
-from codeintel.build.analytics.parsing.ast_cache import (
-    FunctionAstLoadRequest,
-    load_function_asts,
-)
+from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.graphs.runtime import resolve_graph_runtime
-from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import coerce_int, iter_tuples_from_relation
+from codeintel.core.query_results import coerce_int
 
 if TYPE_CHECKING:
-    import networkx as nx
-
-    from codeintel.build.analytics.parsing.ast_cache import (
-        FunctionAst,
-    )
-    from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
+    from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -147,20 +137,21 @@ class FunctionEffectsInputs:
     """Optional inputs for function effects computation."""
 
     catalog_provider: FunctionCatalogProvider | None = None
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None
     ast_map: dict[int, FunctionAst] | None = None
     missing_goids: set[int] | None = None
+    call_graph_edges: pl.DataFrame | None = None
+    call_graph_nodes: pl.DataFrame | None = None
 
 
 @dataclass(frozen=True)
 class _EffectInputs:
-    gateway: StorageGateway
     snapshot: SnapshotRef
     options: FunctionEffectsOptions
     catalog: FunctionCatalogProvider
-    runtime: GraphRuntime
     ast_map: dict[int, FunctionAst] | None = None
     missing_goids: set[int] | None = None
+    call_graph_edges: pl.DataFrame | None = None
+    call_graph_nodes: pl.DataFrame | None = None
 
 
 def _effects_payload(
@@ -198,7 +189,6 @@ def _effects_payload(
 
 
 def build_function_effects_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     options: FunctionEffectsOptions | None = None,
@@ -212,8 +202,6 @@ def build_function_effects_rows(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for DuckDB.
     snapshot
         Snapshot reference (repo, commit, repo_root).
     options
@@ -225,26 +213,27 @@ def build_function_effects_rows(
     -------
     list[dict[str, object]]
         Effect rows ready for persistence.
+
+    Raises
+    ------
+    ValueError
+        If the catalog provider is missing from the inputs.
     """
     opts = options or FunctionEffectsOptions()
     input_opts = inputs or FunctionEffectsInputs()
-    catalog = input_opts.catalog_provider or CatalogService.from_db(
-        gateway, repo=snapshot.repo, commit=snapshot.commit
-    )
-    active_runtime = resolve_graph_runtime(
-        gateway,
-        snapshot,
-        input_opts.runtime,
-    )
+    if input_opts.catalog_provider is None:
+        msg = "FunctionEffectsInputs.catalog_provider is required."
+        raise ValueError(msg)
+    catalog = input_opts.catalog_provider
 
     effect_inputs = _EffectInputs(
-        gateway=gateway,
         snapshot=snapshot,
         options=opts,
         catalog=catalog,
-        runtime=active_runtime,
         ast_map=input_opts.ast_map,
         missing_goids=input_opts.missing_goids,
+        call_graph_edges=input_opts.call_graph_edges,
+        call_graph_nodes=input_opts.call_graph_nodes,
     )
     rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
     log.info(
@@ -265,13 +254,12 @@ def _build_effect_rows(
         missing = inputs.missing_goids or set()
     else:
         ast_by_goid, missing = load_function_asts(
-            inputs.gateway,
             FunctionAstLoadRequest(
                 repo=inputs.snapshot.repo,
                 commit=inputs.snapshot.commit,
                 repo_root=inputs.snapshot.repo_root,
                 catalog_provider=inputs.catalog,
-            ),
+            )
         )
     if missing:
         log.warning(
@@ -287,14 +275,21 @@ def _build_effect_rows(
         goid: analysis.direct_effectful for goid, analysis in analyses.items()
     }
 
-    call_graph = inputs.runtime.ensure_call_graph()
+    call_graph = _call_graph_from_frames(
+        inputs.call_graph_edges,
+        inputs.call_graph_nodes,
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
+    )
     transitive_hits = _compute_transitive_effects(
         call_graph,
         direct_flags,
         max_depth=inputs.options.max_call_depth,
     )
-    unresolved_calls = _unresolved_call_counts(
-        inputs.gateway, inputs.snapshot.repo, inputs.snapshot.commit
+    unresolved_calls = _unresolved_call_counts_from_frame(
+        inputs.call_graph_edges,
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
     )
     if unresolved_calls:
         log.warning(
@@ -390,29 +385,90 @@ def _compute_transitive_effects(
     return transitive
 
 
-def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> dict[int, int]:
+def _unresolved_call_counts_from_frame(
+    edges_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[int, int]:
     counts: dict[int, int] = {}
-    try:
-        relation = gateway.relation_from_table_key("graph.call_graph_edges").filter(
-            (ColumnExpression("repo") == ConstantExpression(repo))
-            & (ColumnExpression("commit") == ConstantExpression(commit))
-            & (
-                ColumnExpression("callee_goid_h128").isnull()
-                | (ColumnExpression("callee_goid_h128") == ConstantExpression(-1))
-            )
-        )
-        relation = relation.aggregate(
-            "count(*) as unresolved_count",
-            "caller_goid_h128",
-        )
-    except DuckDBError:
+    if edges_frame is None or edges_frame.is_empty():
         return counts
-    for caller_goid_h128, unresolved_count in iter_tuples_from_relation(relation):
-        goid = normalize_decimal_id(caller_goid_h128)
+    frame = edges_frame
+    if "repo" in frame.columns:
+        frame = frame.filter(pl.col("repo") == repo)
+    if "commit" in frame.columns:
+        frame = frame.filter(pl.col("commit") == commit)
+    if "callee_goid_h128" not in frame.columns:
+        return counts
+    unresolved = frame.filter(
+        pl.col("callee_goid_h128").is_null() | (pl.col("callee_goid_h128") == -1)
+    )
+    if unresolved.is_empty() or "caller_goid_h128" not in unresolved.columns:
+        return counts
+    grouped = unresolved.group_by("caller_goid_h128").len()
+    for row in grouped.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("caller_goid_h128"))
         if goid is None:
             continue
-        counts[goid] = coerce_int(unresolved_count, ctx="unresolved_count")
+        counts[goid] = coerce_int(row.get("len"), ctx="unresolved_count")
     return counts
+
+
+def _edge_weight_value(value: object) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return 0
+    return 0
+
+
+def _call_graph_from_frames(
+    edges_frame: pl.DataFrame | None,
+    nodes_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    if edges_frame is None or edges_frame.is_empty():
+        return graph
+    frame = edges_frame
+    if "repo" in frame.columns:
+        frame = frame.filter(pl.col("repo") == repo)
+    if "commit" in frame.columns:
+        frame = frame.filter(pl.col("commit") == commit)
+    for row in frame.iter_rows(named=True):
+        caller = normalize_decimal_id(row.get("caller_goid_h128"))
+        callee = normalize_decimal_id(row.get("callee_goid_h128"))
+        if caller is None or callee is None:
+            continue
+        if graph.has_edge(caller, callee):
+            attrs = graph[caller][callee]
+            attrs["weight"] = _edge_weight_value(attrs.get("weight")) + 1
+        else:
+            graph.add_edge(caller, callee, weight=1)
+    if nodes_frame is None or nodes_frame.is_empty():
+        return graph
+    for row in nodes_frame.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("goid_h128"))
+        if goid is None:
+            continue
+        if goid in graph:
+            continue
+        attrs: dict[str, object] = {}
+        kind = row.get("kind")
+        if kind is not None:
+            attrs["kind"] = str(kind)
+        graph.add_node(goid, **attrs)
+    return graph
 
 
 def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:

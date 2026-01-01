@@ -47,7 +47,7 @@ from codeintel.storage.tracking.schema_catalog_models import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
 LOG = logging.getLogger(__name__)
@@ -268,7 +268,7 @@ def observe_batches(
 
 def persist_observation_bundle(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     bundle: SchemaObservationBundle,
 ) -> None:
     """Persist observation data to the schema registry tables."""
@@ -997,7 +997,7 @@ def _renderer_cache_from_arrow_schema(
 
 def _apply_extras_policy(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     bundle: SchemaObservationBundle,
 ) -> SchemaObservationBundle:
     desired_policy = _resolve_extras_policy(
@@ -1043,7 +1043,7 @@ def _apply_extras_policy(
 
 def _resolve_extras_policy(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
     drift_summary: Mapping[str, object] | None,
 ) -> ExtrasPolicy:

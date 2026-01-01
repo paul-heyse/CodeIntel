@@ -6,6 +6,7 @@ import polars as pl
 
 from codeintel.build.analytics.functions.function_contracts import build_function_contracts_rows
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -22,8 +23,8 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.catalog.service import CatalogService
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -47,30 +48,36 @@ FUNCTION_CONTRACTS_CONTRACT = TableContractSpec(
 
 def function_contracts__base(
     env: BuildEnv,
-    _q__core__docstrings: InferableTabularInput,
-    _q__analytics__function_types: InferableTabularInput,
-    _q__core__goids: InferableTabularInput,
+    q__core__docstrings: InferableTabularInput,
+    q__analytics__function_types: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pl.LazyFrame:
-    """Build function contracts rows using gateway-backed helpers.
+    """Build function contracts rows using tabular inputs.
 
     Returns
     -------
     pl.LazyFrame
         Lazy frame containing function contract rows.
     """
-    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    docstrings_frame = tabular_to_lazyframe(q__core__docstrings).collect()
+    function_types_frame = tabular_to_lazyframe(q__analytics__function_types).collect()
+    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
     )
-    ast_map, _missing = load_function_asts(env.gateway, request)
+    ast_map, _missing = load_function_asts(request)
     rows = build_function_contracts_rows(
-        env.gateway,
         env.snapshot,
         function_ast_map=ast_map,
         catalog=catalog,
+        docstrings_frame=docstrings_frame,
+        function_types_frame=function_types_frame,
     )
     return rows_to_frame(FUNCTION_CONTRACTS_TABLE_KEY, rows)
 

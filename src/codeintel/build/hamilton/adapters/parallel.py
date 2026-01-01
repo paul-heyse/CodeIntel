@@ -40,10 +40,10 @@ from typing import TYPE_CHECKING
 from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.gateway.accessors import DuckDBGateway
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,9 +52,9 @@ if TYPE_CHECKING:
     from hamilton.lifecycle import ResultBuilder
     from hamilton.node import Node
 
-    from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.core.datasets import DatasetRegistry
+    from codeintel.core.gateway import BuildGateway
     from codeintel.storage.gateway.config import StorageConfig
-    from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = [
     "ExecutionBackend",
@@ -245,7 +245,7 @@ class ThreadPoolAdapter(
         self._result_builder = result_builder
         self._write_lock = write_lock or threading.Lock()
         self._primary_thread_id = threading.get_ident()
-        self._gateways: dict[tuple[int, bool], StorageGateway] = {}
+        self._gateways: dict[tuple[int, bool], BuildGateway] = {}
         self._gateway_lock = threading.Lock()
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -342,7 +342,7 @@ class ThreadPoolAdapter(
             return False
         return _is_in_memory_gateway(env)
 
-    def _get_thread_gateway(self, env: BuildEnv, *, _read_only: bool) -> StorageGateway:
+    def _get_thread_gateway(self, env: BuildEnv, *, _read_only: bool) -> BuildGateway:
         # DuckDB disallows mixing read-only and read-write connections per database file.
         effective_read_only = env.gateway.config.read_only
         key = (threading.get_ident(), effective_read_only)
@@ -599,7 +599,7 @@ def _open_thread_gateway(
     config: StorageConfig,
     *,
     datasets: DatasetRegistry,
-) -> StorageGateway:
+) -> BuildGateway:
     session = DuckDBSession(config)
     con = session.open_reader() if config.read_only else session.open()
     return DuckDBGateway(config=config, datasets=datasets, con=con)

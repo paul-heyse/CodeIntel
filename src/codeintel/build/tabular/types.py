@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 import pyarrow as pa
 
-from codeintel.storage.duckdb_types import DuckDBRelation
+from codeintel.core.duckdb_types import DuckDBRelation
 
 if TYPE_CHECKING:
     type RecordBatchIterable = Iterable[pa.RecordBatch]

@@ -1093,6 +1093,13 @@ class BuildPublishSnapshotResult:
     dataset_count: int
 
     def to_dict(self) -> dict[str, object]:
+        """Return a JSON-serializable representation of the result.
+
+        Returns
+        -------
+        dict[str, object]
+            Serialized result payload.
+        """
         return {
             "run_id": self.run_id,
             "published_at": self.published_at,

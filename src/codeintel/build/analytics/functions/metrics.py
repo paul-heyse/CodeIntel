@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
 
+import polars as pl
+
 from codeintel.build.analytics.compute.functions import (
     compute_complexity,
 )
@@ -36,14 +38,10 @@ from codeintel.build.analytics.functions.config import (
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.core.parsing import SourceSpan
+from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.validation.reporters import FunctionValidationReporter
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, DuckDBRelation
-from codeintel.storage.query_results import (
-    coerce_int,
-    coerce_optional_int,
-    records_from_relation,
-)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -55,6 +53,7 @@ if TYPE_CHECKING:
         ParamStats,
         TypednessFlags,
     )
+    from codeintel.build.tabular.types import InferableTabularInput
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.parsing import ParsedModule
     from codeintel.core.schemas.generated_rows.analytics import (
@@ -63,7 +62,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsFunctionTypesRow as FunctionTypesRow,
     )
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +128,7 @@ class FunctionDerived:
 
 
 class GoidRow(TypedDict):
-    """Row structure for function GOIDs pulled from DuckDB."""
+    """Row structure for function GOIDs pulled from tabular input."""
 
     goid_h128: int
     urn: str
@@ -409,16 +407,16 @@ def build_function_analytics(
     )
 
 
-def _load_goids_from_relation(
-    goids_relation: DuckDBRelation,
+def _load_goids_from_frame(
+    goids_frame: pl.DataFrame,
     snapshot: SnapshotRef,
 ) -> dict[str, list[GoidRow]]:
-    """Load function GOIDs from a DuckDB relation.
+    """Load function GOIDs from a polars frame.
 
     Parameters
     ----------
-    goids_relation
-        DuckDB relation for ``core.goids``.
+    goids_frame
+        Tabular ``core.goids`` frame.
     snapshot
         Repository and commit identifiers.
 
@@ -427,58 +425,56 @@ def _load_goids_from_relation(
     dict[str, list[GoidRow]]
         GOIDs grouped by relative file path.
     """
-    kind_col = ColumnExpression("kind")
-    predicate = (
-        (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
-        & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
-        & (
-            (kind_col == ConstantExpression("function"))
-            | (kind_col == ConstantExpression("method"))
-        )
-    )
-    scoped = goids_relation.filter(predicate)
-    rows = records_from_relation(scoped)
+    required = {
+        "goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+    }
+    missing = required.difference(goids_frame.columns)
+    if missing:
+        log.warning("core.goids is missing columns: %s", ", ".join(sorted(missing)))
+        return {}
 
-    if not rows:
+    filtered = (
+        goids_frame.lazy()
+        .filter(
+            (pl.col("repo") == snapshot.repo)
+            & (pl.col("commit") == snapshot.commit)
+            & (pl.col("kind").is_in(["function", "method"]))
+        )
+        .select(list(required))
+        .collect()
+    )
+
+    if filtered.is_empty():
         log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
         return {}
 
     goids_by_file: dict[str, list[GoidRow]] = {}
-    for record in rows:
-        rel_path = str(record["rel_path"]).replace("\\", "/")
+    for record in filtered.iter_rows(named=True):
+        rel_path_raw = record.get("rel_path")
+        rel_path = str(rel_path_raw).replace("\\", "/")
         goid_row: GoidRow = {
-            "goid_h128": coerce_int(record["goid_h128"], ctx="goid_h128"),
-            "urn": str(record["urn"]),
-            "repo": str(record["repo"]),
-            "commit": str(record["commit"]),
+            "goid_h128": coerce_int(record.get("goid_h128"), ctx="goid_h128"),
+            "urn": str(record.get("urn")),
+            "repo": str(record.get("repo")),
+            "commit": str(record.get("commit")),
             "rel_path": rel_path,
-            "language": str(record["language"]),
-            "kind": str(record["kind"]),
-            "qualname": str(record["qualname"]),
-            "start_line": coerce_int(record["start_line"], ctx="start_line"),
+            "language": str(record.get("language")),
+            "kind": str(record.get("kind")),
+            "qualname": str(record.get("qualname")),
+            "start_line": coerce_int(record.get("start_line"), ctx="start_line"),
             "end_line": coerce_optional_int(record.get("end_line"), ctx="end_line"),
         }
         goids_by_file.setdefault(rel_path, []).append(goid_row)
     return goids_by_file
-
-
-def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, list[GoidRow]]:
-    """Load function GOIDs from core.goids using DuckDB relations.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    snapshot
-        Repository and commit identifiers.
-
-    Returns
-    -------
-    dict[str, list[GoidRow]]
-        GOIDs grouped by relative file path.
-    """
-    relation = gateway.relation_from_table_key("core.goids")
-    return _load_goids_from_relation(relation, snapshot)
 
 
 def _meta_from_goid_row(info: GoidRow) -> FunctionMeta:
@@ -565,18 +561,18 @@ def _compute_from_goids(
     return build_function_analytics(goids_by_file=goids_by_file, state=state)
 
 
-def compute_function_analytics_result_from_table(
-    goids_relation: DuckDBRelation,
+def compute_function_analytics_result_from_tabular(
+    goids_input: InferableTabularInput,
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
 ) -> FunctionAnalyticsResult:
-    """Compute function analytics result from a GOIDs relation.
+    """Compute function analytics result from tabular GOID inputs.
 
     Parameters
     ----------
-    goids_relation
-        DuckDB relation for ``core.goids``.
+    goids_input
+        Tabular input for ``core.goids``.
     snapshot
         Repository and commit identifiers.
     options
@@ -588,7 +584,8 @@ def compute_function_analytics_result_from_table(
     FunctionAnalyticsResult
         Container with metrics_rows, types_rows, and validation reporter.
     """
-    goids_by_file = _load_goids_from_relation(goids_relation, snapshot)
+    goids_frame = tabular_to_lazyframe(goids_input).collect()
+    goids_by_file = _load_goids_from_frame(goids_frame, snapshot)
     return _compute_from_goids(goids_by_file, snapshot, options=options)
 
 
@@ -674,7 +671,7 @@ def _build_function_analytics_from_ast_data(
 
 
 def compute_function_analytics_result(
-    gateway: StorageGateway,
+    goids_input: InferableTabularInput,
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
@@ -687,8 +684,8 @@ def compute_function_analytics_result(
 
     Parameters
     ----------
-    gateway
-        StorageGateway providing the DuckDB connection with `core.goids` table.
+    goids_input
+        Tabular input for ``core.goids``.
     snapshot
         Repository and commit identifiers.
     options
@@ -700,5 +697,28 @@ def compute_function_analytics_result(
     FunctionAnalyticsResult
         Container with metrics_rows, types_rows, and validation reporter.
     """
-    goids_by_file = _load_goids(gateway, snapshot)
-    return _compute_from_goids(goids_by_file, snapshot, options=options)
+    return compute_function_analytics_result_from_tabular(
+        goids_input,
+        snapshot,
+        options=options,
+    )
+
+
+def compute_function_analytics_result_from_table(
+    goids_input: InferableTabularInput,
+    snapshot: SnapshotRef,
+    *,
+    options: FunctionAnalyticsOptions | None = None,
+) -> FunctionAnalyticsResult:
+    """Backward-compatible wrapper around tabular analytics computation.
+
+    Returns
+    -------
+    FunctionAnalyticsResult
+        Container with metrics_rows, types_rows, and validation reporter.
+    """
+    return compute_function_analytics_result_from_tabular(
+        goids_input,
+        snapshot,
+        options=options,
+    )

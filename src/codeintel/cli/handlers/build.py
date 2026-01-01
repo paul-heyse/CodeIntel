@@ -43,10 +43,6 @@ from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.planning.model import PlanRequest, PlanTargetEntry
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext, BuildRunContextOverrides
-from codeintel.build.serving.publisher import (
-    PublishServingSnapshotRequest,
-    publish_serving_snapshot,
-)
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
@@ -83,6 +79,7 @@ from codeintel.cli.handlers.runtime_helpers import (
 from codeintel.cli.handlers.tag_filters import filter_targets_by_tags, parse_tag_filters
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.manifests import DatasetSuiteManifest, ServingSnapshotManifest
 from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -99,7 +96,10 @@ from codeintel.observability.teardown import (
     emit_teardown_telemetry,
 )
 from codeintel.runtime.compose import compose_runtime
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.serving.publisher import (
+    PublishServingSnapshotRequest,
+    publish_serving_snapshot,
+)
 from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
@@ -1842,6 +1842,13 @@ def _publish_serving_snapshot_from_build(
         Open write-capable gateway for checkpointing the build DB.
     run_id
         Build run identifier used to name the published snapshot.
+    keep_last
+        Number of snapshots to retain after publishing.
+
+    Returns
+    -------
+    ServingSnapshotManifest
+        Manifest describing the published snapshot.
 
     Raises
     ------
@@ -1870,7 +1877,7 @@ def _publish_serving_snapshot_from_build(
     else:
         serve_dir = serve_dir.resolve()
 
-    manifest = publish_serving_snapshot(
+    return publish_serving_snapshot(
         gateway=gateway,
         request=PublishServingSnapshotRequest(
             run_id=run_id,
@@ -1882,7 +1889,6 @@ def _publish_serving_snapshot_from_build(
             keep_last=keep_last,
         ),
     )
-    return manifest
 
 
 def _load_dataset_manifest_paths(artifacts_dir: Path) -> tuple[Path, ...]:
@@ -1976,7 +1982,13 @@ def build_history_handler(
 def build_publish_serving_snapshot_handler(
     ctx: CommandContext,
 ) -> CliResult[BuildPublishSnapshotResult]:
-    """Publish a DuckDB serving snapshot from Parquet-backed artifacts."""
+    """Publish a DuckDB serving snapshot from Parquet-backed artifacts.
+
+    Returns
+    -------
+    CliResult[BuildPublishSnapshotResult]
+        CLI result containing the published snapshot metadata.
+    """
     try:
         runtime = ctx.runtime
     except ResolutionError as exc:

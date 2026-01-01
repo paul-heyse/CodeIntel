@@ -12,6 +12,7 @@ from codeintel.build.analytics.semantic_roles.core import (
     SemanticRolesResult,
     build_semantic_roles_rows,
 )
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -35,7 +36,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.catalog.service import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -135,11 +135,12 @@ def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeat
 def semantic_roles_result(
     env: BuildEnv,
     q__core__modules: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
-    _q__analytics__function_metrics: InferableTabularInput,
-    _q__analytics__function_effects: InferableTabularInput,
-    _q__analytics__function_contracts: InferableTabularInput,
-    _q__analytics__graph_metrics_functions: InferableTabularInput,
+    q__analytics__function_metrics: InferableTabularInput,
+    q__analytics__function_effects: InferableTabularInput,
+    q__analytics__function_contracts: InferableTabularInput,
+    q__analytics__graph_metrics_functions: InferableTabularInput,
 ) -> SemanticRolesResult:
     """Compute semantic role rows for functions and modules.
 
@@ -149,24 +150,33 @@ def semantic_roles_result(
         Container with semantic role rows for functions and modules.
     """
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
     features_frame = tabular_to_lazyframe(q__analytics__function_ast_features).collect()
+    function_metrics_frame = tabular_to_lazyframe(q__analytics__function_metrics).collect()
+    function_effects_frame = tabular_to_lazyframe(q__analytics__function_effects).collect()
+    function_contracts_frame = tabular_to_lazyframe(q__analytics__function_contracts).collect()
+    graph_metrics_frame = tabular_to_lazyframe(q__analytics__graph_metrics_functions).collect()
     module_map = _module_map(modules_frame)
     if not module_map:
         return SemanticRolesResult(function_rows=[], module_rows=[])
-    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
+    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
     )
-    ast_map, _missing = load_function_asts(env.gateway, request)
+    ast_map, _missing = load_function_asts(request)
     return build_semantic_roles_rows(
-        env.gateway,
         env.snapshot,
         module_by_path=module_map,
         ast_map=ast_map,
         features_map=_features_by_goid(features_frame),
+        function_metrics_frame=function_metrics_frame,
+        function_effects_frame=function_effects_frame,
+        function_contracts_frame=function_contracts_frame,
+        graph_metrics_frame=graph_metrics_frame,
+        modules_frame=modules_frame,
     )
 
 

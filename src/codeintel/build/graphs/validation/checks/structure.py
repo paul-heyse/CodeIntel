@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import networkx as nx
 
+from codeintel.build.graphs.engine.datasets import dataset_snapshot_exists
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     CALL_SCC_MIN,
@@ -23,15 +24,12 @@ from codeintel.build.graphs.validation.findings import (
     hub_threshold,
 )
 from codeintel.core.data_models.ids import as_int
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     import logging
 
     from codeintel.build.graphs.validation.context import GraphValidationContext
     from codeintel.core.validation import ValidationSeverity
-    from codeintel.storage.gateway import StorageGateway
 
 
 # =============================================================================
@@ -672,40 +670,13 @@ def _ensure_parquet_tables(
     ctx: GraphValidationContext,
     table_keys: tuple[str, ...],
 ) -> bool:
-    if ctx.gateway is None:
+    dataset_root = ctx.dataset_root_dir
+    if dataset_root is None:
         return True
     for table_key in table_keys:
-        if not _require_parquet_table(ctx.gateway, table_key, ctx.logger):
+        if not dataset_snapshot_exists(dataset_root, table_key, ctx.commit):
+            ctx.logger.warning("Validation table missing: %s", table_key)
             return False
-    return True
-
-
-def _require_parquet_table(
-    gateway: StorageGateway,
-    table_key: str,
-    log: logging.Logger,
-) -> bool:
-    schema, table = split_table_key(table_key)
-    try:
-        row = gateway.execute(
-            """
-            SELECT table_type
-            FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [schema, table],
-        ).fetchone()
-    except DuckDBError as exc:
-        log.warning("Validation table lookup failed for %s: %s", table_key, exc)
-        return False
-    if row is None:
-        log.warning("Validation table missing: %s", table_key)
-        return False
-    table_type = str(row[0] or "").upper()
-    if table_type not in {"BASE TABLE", "TABLE"}:
-        log.warning("Validation expects Parquet base table for %s, found %s", table_key, table_type)
-        return False
     return True
 
 

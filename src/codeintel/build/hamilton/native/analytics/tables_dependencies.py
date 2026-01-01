@@ -15,6 +15,7 @@ from codeintel.build.analytics.dependencies.compute import (
 )
 from codeintel.build.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -38,7 +39,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.catalog.service import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -142,7 +142,7 @@ def external_dependency_calls__base(
     env: BuildEnv,
     q__core__modules: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
-    _q__core__goids: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build external dependency call rows.
 
@@ -152,18 +152,19 @@ def external_dependency_calls__base(
         Lazy frame containing external dependency call rows.
     """
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
     features_frame = tabular_to_lazyframe(q__analytics__function_ast_features).collect()
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_frame_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
-    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
+    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
     )
-    ast_map, missing = load_function_asts(env.gateway, request)
+    ast_map, missing = load_function_asts(request)
     inputs = ExternalDependencyInputs(
         catalog_provider=catalog,
         module_map=module_map,
@@ -171,7 +172,7 @@ def external_dependency_calls__base(
         features_map=_features_by_goid(features_frame),
         missing_goids=missing,
     )
-    result = compute_dependency_calls_pure(env.gateway, env.snapshot, inputs)
+    result = compute_dependency_calls_pure(env.snapshot, inputs)
     return rows_to_frame(
         EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
         result.rows,
@@ -204,7 +205,8 @@ def external_dependency_calls__table(
 
 def external_dependencies__base(
     env: BuildEnv,
-    _q__analytics__external_dependency_calls: InferableTabularInput,
+    q__analytics__external_dependency_calls: InferableTabularInput,
+    q__analytics__config_values: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build external dependencies summary rows.
 
@@ -213,7 +215,13 @@ def external_dependencies__base(
     pl.LazyFrame
         Lazy frame containing external dependency summary rows.
     """
-    result = compute_external_dependencies_pure(env.gateway, env.snapshot)
+    dependency_calls_frame = tabular_to_lazyframe(q__analytics__external_dependency_calls).collect()
+    config_values_frame = tabular_to_lazyframe(q__analytics__config_values).collect()
+    result = compute_external_dependencies_pure(
+        env.snapshot,
+        dependency_calls_frame=dependency_calls_frame,
+        config_values_frame=config_values_frame,
+    )
     return rows_to_frame(
         EXTERNAL_DEPENDENCIES_TABLE_KEY,
         result.rows,

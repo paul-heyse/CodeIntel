@@ -35,10 +35,12 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_DFG_CENTRALITY_SAMPLE,
 )
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.cfg_dfg.cfg_core import CfgFnRows
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.build.tabular.types import InferableTabularInput
+    from codeintel.config.primitives import SnapshotRef
 
 
 @dataclass(frozen=True)
@@ -86,9 +88,11 @@ class DfgMetricsResult:
 
 
 def compute_cfg_metrics_pure(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
+    snapshot: SnapshotRef,
+    cfg_blocks_input: InferableTabularInput,
+    cfg_edges_input: InferableTabularInput,
+    goids_input: InferableTabularInput,
+    modules_input: InferableTabularInput,
 ) -> CfgMetricsResult:
     """Compute CFG metrics without writing to database.
 
@@ -97,12 +101,16 @@ def compute_cfg_metrics_pure(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for reading CFG blocks and function metadata.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
+    cfg_blocks_input
+        Tabular input for ``graph.cfg_blocks``.
+    cfg_edges_input
+        Tabular input for ``graph.cfg_edges``.
+    goids_input
+        Tabular input for ``core.goids``.
+    modules_input
+        Tabular input for ``core.modules``.
+    snapshot
+        Repository and commit identifiers.
 
     Returns
     -------
@@ -116,12 +124,16 @@ def compute_cfg_metrics_pure(
     does not write. The materialization is handled by the Hamilton native
     module to ensure proper asset catalog tracking.
     """
-    blocks_by_fn, edges_by_fn = load_cfg_blocks(gateway, repo, commit)
-    metadata = load_function_metadata(gateway, repo, commit)
+    cfg_blocks = tabular_to_lazyframe(cfg_blocks_input).collect()
+    cfg_edges = tabular_to_lazyframe(cfg_edges_input).collect()
+    goids = tabular_to_lazyframe(goids_input).collect()
+    modules = tabular_to_lazyframe(modules_input).collect()
+    blocks_by_fn, edges_by_fn = load_cfg_blocks(cfg_blocks, cfg_edges)
+    metadata = load_function_metadata(goids, modules, repo=snapshot.repo, commit=snapshot.commit)
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(
-            repo=repo,
-            commit=commit,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             use_gpu=False,
             now=datetime.now(UTC),
             betweenness_cap=MAX_CFG_CENTRALITY_SAMPLE,
@@ -135,8 +147,8 @@ def compute_cfg_metrics_pure(
     block_rows: list[tuple[object, ...]] = []
 
     inputs = CfgInputs(
-        repo=repo,
-        commit=commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         blocks_by_fn=blocks_by_fn,
         edges_by_fn=edges_by_fn,
         now=resolved_now,
@@ -163,7 +175,9 @@ def compute_cfg_metrics_pure(
 
 
 def compute_dfg_metrics_pure(
-    gateway: StorageGateway,
+    dfg_edges_input: InferableTabularInput,
+    goids_input: InferableTabularInput,
+    modules_input: InferableTabularInput,
     repo: str,
     commit: str,
 ) -> DfgMetricsResult:
@@ -174,8 +188,12 @@ def compute_dfg_metrics_pure(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for reading DFG edges and function metadata.
+    dfg_edges_input
+        Tabular input for ``graph.dfg_edges``.
+    goids_input
+        Tabular input for ``core.goids``.
+    modules_input
+        Tabular input for ``core.modules``.
     repo
         Repository identifier.
     commit
@@ -193,8 +211,11 @@ def compute_dfg_metrics_pure(
     does not write. The materialization is handled by the Hamilton native
     module to ensure proper asset catalog tracking.
     """
-    edges_by_fn = load_dfg_edges(gateway, repo, commit)
-    metadata = load_function_metadata(gateway, repo, commit)
+    dfg_edges = tabular_to_lazyframe(dfg_edges_input).collect()
+    goids = tabular_to_lazyframe(goids_input).collect()
+    modules = tabular_to_lazyframe(modules_input).collect()
+    edges_by_fn = load_dfg_edges(dfg_edges)
+    metadata = load_function_metadata(goids, modules, repo=repo, commit=commit)
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,

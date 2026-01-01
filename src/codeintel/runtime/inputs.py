@@ -10,8 +10,8 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.planning.model import PlanRequest
 from codeintel.build.schemas.schema_index import SchemaIndex
-from codeintel.build.serving.semantic_compile import CompiledSemanticRegistry
 from codeintel.core.hamilton.tag_query import TagQuery
+from codeintel.serving.semantic_compile import CompiledSemanticRegistry
 
 
 @dataclass(frozen=True, slots=True)

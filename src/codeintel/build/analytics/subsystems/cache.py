@@ -4,20 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+import polars as pl
+
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsSubsystemCoverageCacheRow as SubsystemCoverageCacheRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsSubsystemProfileCacheRow as SubsystemProfileCacheRow,
 )
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 PROFILE_CACHE_COLUMNS = (
     "repo",
@@ -71,166 +68,129 @@ COVERAGE_CACHE_COLUMNS = (
     "created_at",
 )
 
-PROFILE_CACHE_SQL = """
-    SELECT
-        s.repo,
-        s.commit,
-        s.subsystem_id,
-        s.name,
-        s.description,
-        s.module_count,
-        s.modules_json,
-        s.entrypoints_json,
-        s.internal_edge_count,
-        s.external_edge_count,
-        s.fan_in,
-        s.fan_out,
-        s.function_count,
-        s.avg_risk_score,
-        s.max_risk_score,
-        s.high_risk_function_count,
-        s.risk_level,
-        gm.import_in_degree,
-        gm.import_out_degree,
-        gm.import_pagerank,
-        gm.import_betweenness,
-        gm.import_closeness,
-        gm.import_layer,
-        s.created_at
-    FROM analytics.subsystems s
-    LEFT JOIN analytics.subsystem_graph_metrics gm
-      ON gm.repo = s.repo
-     AND gm.commit = s.commit
-     AND gm.subsystem_id = s.subsystem_id
-    WHERE s.repo = ?
-      AND s.commit = ?
-"""
-
-COVERAGE_CACHE_SQL = """
-    WITH cov AS (
-        SELECT
-            repo,
-            commit,
-            primary_subsystem_id AS subsystem_id,
-            COUNT(*) AS test_count,
-            SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) AS passed_test_count,
-            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_test_count,
-            SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) AS skipped_test_count,
-            SUM(CASE WHEN status = 'xfail' THEN 1 ELSE 0 END) AS xfail_test_count,
-            SUM(CASE WHEN coalesce(flaky, FALSE) THEN 1 ELSE 0 END) AS flaky_test_count,
-            SUM(coalesce(functions_covered_count, 0)) AS total_functions_covered,
-            AVG(coalesce(functions_covered_count, 0)) AS avg_functions_covered,
-            MAX(coalesce(functions_covered_count, 0)) AS max_functions_covered,
-            MIN(coalesce(functions_covered_count, 0)) AS min_functions_covered
-        FROM analytics.test_profile
-        WHERE primary_subsystem_id IS NOT NULL
-          AND repo = ?
-          AND commit = ?
-        GROUP BY repo, commit, primary_subsystem_id
-    )
-    SELECT
-        s.repo,
-        s.commit,
-        s.subsystem_id,
-        s.name,
-        s.description,
-        s.module_count,
-        s.function_count,
-        s.risk_level,
-        s.avg_risk_score,
-        s.max_risk_score,
-        cov.test_count,
-        cov.passed_test_count,
-        cov.failed_test_count,
-        cov.skipped_test_count,
-        cov.xfail_test_count,
-        cov.flaky_test_count,
-        cov.total_functions_covered,
-        cov.avg_functions_covered,
-        cov.max_functions_covered,
-        cov.min_functions_covered,
-        CASE
-            WHEN s.function_count = 0 THEN NULL
-            ELSE cov.total_functions_covered * 1.0 / s.function_count
-        END AS function_coverage_ratio,
-        s.created_at
-    FROM analytics.subsystems s
-    LEFT JOIN cov
-      ON cov.repo = s.repo
-     AND cov.commit = s.commit
-     AND cov.subsystem_id = s.subsystem_id
-    WHERE s.repo = ?
-      AND s.commit = ?
-"""
-
-
-def _rows_to_dicts(
-    columns: tuple[str, ...],
-    rows: Iterable[tuple[object, ...]],
-) -> list[dict[str, object]]:
-    return [dict(zip(columns, row, strict=True)) for row in rows]
-
 
 def build_subsystem_profile_cache_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
+    subsystems_frame: pl.LazyFrame,
+    subsystem_graph_metrics_frame: pl.LazyFrame,
 ) -> list[SubsystemProfileCacheRow]:
     """Build cache rows for analytics.subsystem_profile_cache.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
     snapshot
         Repository and commit identifiers.
+    subsystems_frame
+        Subsystems dataset frame.
+    subsystem_graph_metrics_frame
+        Subsystem graph metrics dataset frame.
 
     Returns
     -------
     list[SubsystemProfileCacheRow]
         Cache rows for subsystem profiles.
     """
-    reader = gateway.execute(
-        PROFILE_CACHE_SQL,
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    rows = iter_tuples_from_arrow_reader(reader)
-    return [
-        cast("SubsystemProfileCacheRow", row) for row in _rows_to_dicts(PROFILE_CACHE_COLUMNS, rows)
-    ]
+    subsystems = _filter_frame_by_snapshot(subsystems_frame, snapshot)
+    metrics = _filter_frame_by_snapshot(subsystem_graph_metrics_frame, snapshot)
+    joined = subsystems.join(
+        metrics,
+        on=["repo", "commit", "subsystem_id"],
+        how="left",
+    )
+    frame = _ensure_columns(joined, PROFILE_CACHE_COLUMNS)
+    rows = frame.collect().to_dicts()
+    return [cast("SubsystemProfileCacheRow", row) for row in rows]
 
 
 def build_subsystem_coverage_cache_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
+    subsystems_frame: pl.LazyFrame,
+    test_profile_frame: pl.LazyFrame,
 ) -> list[SubsystemCoverageCacheRow]:
     """Build cache rows for analytics.subsystem_coverage_cache.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
     snapshot
         Repository and commit identifiers.
+    subsystems_frame
+        Subsystems dataset frame.
+    test_profile_frame
+        Test profile dataset frame.
 
     Returns
     -------
     list[SubsystemCoverageCacheRow]
         Cache rows for subsystem coverage.
     """
-    reader = gateway.execute(
-        COVERAGE_CACHE_SQL,
+    subsystems = _filter_frame_by_snapshot(subsystems_frame, snapshot)
+    coverage_stats = _coverage_stats(test_profile_frame, snapshot)
+    joined = subsystems.join(
+        coverage_stats,
+        on=["repo", "commit", "subsystem_id"],
+        how="left",
+    ).with_columns(
+        _coverage_ratio_expr().alias("function_coverage_ratio"),
+    )
+    frame = _ensure_columns(joined, COVERAGE_CACHE_COLUMNS)
+    rows = frame.collect().to_dicts()
+    return [cast("SubsystemCoverageCacheRow", row) for row in rows]
+
+
+def _filter_frame_by_snapshot(frame: pl.LazyFrame, snapshot: SnapshotRef) -> pl.LazyFrame:
+    available = set(frame.columns)
+    if "repo" in available:
+        frame = frame.filter(pl.col("repo") == snapshot.repo)
+    if "commit" in available:
+        frame = frame.filter(pl.col("commit") == snapshot.commit)
+    return frame
+
+
+def _ensure_columns(frame: pl.LazyFrame, columns: tuple[str, ...]) -> pl.LazyFrame:
+    existing = set(frame.columns)
+    missing = [name for name in columns if name not in existing]
+    for name in missing:
+        frame = frame.with_columns(pl.lit(None).alias(name))
+    return frame.select(list(columns))
+
+
+def _coverage_stats(
+    test_profile_frame: pl.LazyFrame,
+    snapshot: SnapshotRef,
+) -> pl.LazyFrame:
+    frame = _filter_frame_by_snapshot(test_profile_frame, snapshot)
+    if "primary_subsystem_id" not in set(frame.columns):
+        return pl.LazyFrame(schema={"repo": pl.Utf8, "commit": pl.Utf8, "subsystem_id": pl.Utf8})
+    frame = frame.filter(pl.col("primary_subsystem_id").is_not_null())
+    status = pl.col("status")
+    covered_count = pl.col("functions_covered_count").fill_null(0)
+    grouped = frame.group_by(["repo", "commit", "primary_subsystem_id"]).agg(
         [
-            snapshot.repo,
-            snapshot.commit,
-            snapshot.repo,
-            snapshot.commit,
-        ],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    rows = iter_tuples_from_arrow_reader(reader)
-    return [
-        cast("SubsystemCoverageCacheRow", row)
-        for row in _rows_to_dicts(COVERAGE_CACHE_COLUMNS, rows)
-    ]
+            pl.len().alias("test_count"),
+            _status_count_expr(status, "passed").alias("passed_test_count"),
+            _status_count_expr(status, "failed").alias("failed_test_count"),
+            _status_count_expr(status, "skipped").alias("skipped_test_count"),
+            _status_count_expr(status, "xfail").alias("xfail_test_count"),
+            pl.sum(pl.col("flaky").fill_null(value=False).cast(pl.Int64)).alias("flaky_test_count"),
+            covered_count.sum().alias("total_functions_covered"),
+            covered_count.mean().alias("avg_functions_covered"),
+            covered_count.max().alias("max_functions_covered"),
+            covered_count.min().alias("min_functions_covered"),
+        ]
+    )
+    return grouped.rename({"primary_subsystem_id": "subsystem_id"})
+
+
+def _status_count_expr(status: pl.Expr, value: str) -> pl.Expr:
+    return pl.sum(pl.when(status == value).then(1).otherwise(0))
+
+
+def _coverage_ratio_expr() -> pl.Expr:
+    return (
+        pl.when(pl.col("function_count").is_null() | (pl.col("function_count") == 0))
+        .then(None)
+        .otherwise(pl.col("total_functions_covered") / pl.col("function_count"))
+    )
 
 
 __all__ = [

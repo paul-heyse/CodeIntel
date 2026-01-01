@@ -15,18 +15,18 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.core.duckdb_types import ColumnExpression, DuckDBRelation, Expression
 from codeintel.core.schemas.contract_service import (
     column_order_for_table_key,
     get_contract_for_table_key,
 )
-from codeintel.storage.duckdb_types import ColumnExpression, DuckDBRelation, Expression
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
 def build_export_relation_plan(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
     *,
     limit: int | None = None,
@@ -44,7 +44,7 @@ def build_export_relation_plan(
     Parameters
     ----------
     gateway
-        StorageGateway used for DuckDB relation access.
+        BuildGateway used for DuckDB relation access.
     table_key
         Fully qualified table/view name (schema.table).
     limit

@@ -32,26 +32,21 @@ from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.columnar.dataset_scanner import scan_dataset_lazyframe
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
+from codeintel.core.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
 from codeintel.core.schemas.resolution import resolve_table_schema
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
-from codeintel.storage.duckdb_types import DuckDBError
-from codeintel.storage.metadata.sync import (
-    sync_derived_lineage_columns,
-    sync_derived_lineage_edges,
-)
-from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
-from codeintel.storage.sqlglot_tools import (
+from codeintel.core.sqlglot_tools import (
     extract_column_lineage_from_ast,
     render_sql_duckdb,
 )
-from codeintel.storage.views.discovery import discover_view_builders
-from codeintel.storage.views.inventory import view_builder_modules
+from codeintel.core.views.discovery import discover_view_builders
+from codeintel.core.views.inventory import view_builder_modules
 
 if TYPE_CHECKING:
-    from codeintel.storage.views.discovery import DiscoveredViewBuilder
+    from codeintel.core.views.discovery import DiscoveredViewBuilder
 
 VIEWS_TARGET_NAME = "views"
 VIEWS_DOMAIN = "views"
@@ -552,27 +547,6 @@ def _view_lineage_payload(
     return lineage, column_lineage
 
 
-def _sync_view_lineage(env: BuildEnv, catalog: DagCatalog) -> None:
-    repo = env.repo
-    commit = env.commit
-    if not repo or not commit:
-        return
-    lineage, column_lineage = _view_lineage_payload(env, catalog)
-    try:
-        sync_derived_lineage_edges(env.gateway.con, repo=repo, commit=commit, lineage=lineage)
-    except DuckDBError:
-        LOG.exception("Failed to sync derived lineage edges repo=%s commit=%s", repo, commit)
-    try:
-        sync_derived_lineage_columns(
-            env.gateway.con,
-            repo=repo,
-            commit=commit,
-            lineage=column_lineage,
-        )
-    except DuckDBError:
-        LOG.exception("Failed to sync derived lineage columns repo=%s commit=%s", repo, commit)
-
-
 views__table_materializations = make_table_materializations_collector(
     domain=VIEWS_DOMAIN,
     target=VIEWS_TARGET_NAME,
@@ -603,7 +577,6 @@ def t__views(
     TargetRunRecord
         View materialization run record.
     """
-    _sync_view_lineage(env, catalog)
     context = MaterializationRecordContext(
         env=env,
         catalog=catalog,

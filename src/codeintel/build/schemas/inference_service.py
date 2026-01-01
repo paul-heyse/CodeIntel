@@ -40,6 +40,7 @@ from codeintel.core.config.settings import (
     ExportAuditSettings,
     HamiltonExecutionSettings,
 )
+from codeintel.core.gateway import open_inference_gateway
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
@@ -48,7 +49,6 @@ from codeintel.core.schemas.arrow_polars import (
 )
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
-from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -60,8 +60,8 @@ if TYPE_CHECKING:
     from codeintel.build.providers import Providers
     from codeintel.build.schemas.observations import SchemaHints
     from codeintel.build.schemas.seed_harness import SchemaObservationProvider
+    from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.arrow_gen import ExtrasPolicy
-    from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
     "HamiltonSchemaProvider",
@@ -254,7 +254,7 @@ def _dataset_param_to_table_key(param_name: str) -> str | None:
 def _schema_inference_gateway(
     *,
     schema_provider: SchemaProvider,
-) -> Iterator[StorageGateway]:
+) -> Iterator[BuildGateway]:
     gateway = open_inference_gateway(schema_provider=schema_provider)
     try:
         yield gateway
@@ -526,7 +526,7 @@ def _default_build_settings() -> BuildSettings:
     )
 
 
-def _inference_env(*, gateway: StorageGateway, force_targets: frozenset[str]) -> BuildEnv:
+def _inference_env(*, gateway: BuildGateway, force_targets: frozenset[str]) -> BuildEnv:
     snapshot = SnapshotRef.from_args(
         repo="demo/repo",
         commit="deadbeef",

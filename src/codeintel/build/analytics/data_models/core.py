@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import (
     call_name,
@@ -33,7 +35,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.repositories.data_models import DataModelsRepository
 
 
 DATA_MODELS_COLS = [
@@ -680,17 +681,35 @@ def _coerce_int(value: object) -> int | None:
     return None
 
 
-def _load_class_metadata(repo: DataModelsRepository) -> list[ClassMeta]:
-    """Load class metadata from storage repositories.
+def _load_class_metadata(
+    goids_frame: pl.DataFrame,
+    modules_frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> list[ClassMeta]:
+    """Load class metadata from tabular inputs.
 
     Returns
     -------
     list[ClassMeta]
-        Class metadata rows with normalized paths and line numbers.
+        Class metadata entries for the snapshot.
     """
-    rows = repo.list_class_metadata_rows()
+    goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
+    if "kind" in goids_filtered.columns:
+        goids_filtered = goids_filtered.filter(pl.col("kind") == "class")
+    modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
+    if {"path", "module"}.issubset(modules_filtered.columns):
+        joined = goids_filtered.join(
+            modules_filtered.select(["path", "module"]),
+            left_on="rel_path",
+            right_on="path",
+            how="left",
+        )
+    else:
+        joined = goids_filtered
     metas: list[ClassMeta] = []
-    for row in rows:
+    for row in joined.iter_rows(named=True):
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         start_line = _coerce_int(row.get("start_line"))
@@ -712,17 +731,24 @@ def _load_class_metadata(repo: DataModelsRepository) -> list[ClassMeta]:
     return metas
 
 
-def _doc_map(repo: DataModelsRepository) -> dict[tuple[str, str], tuple[str | None, str | None]]:
+def _doc_map(
+    docstrings_frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[tuple[str, str], tuple[str | None, str | None]]:
     """Return docstring summaries keyed by (path, qualname).
 
     Returns
     -------
     dict[tuple[str, str], tuple[str | None, str | None]]
-        Mapping of (rel_path, qualname) to (short_desc, long_desc).
+        Mapping of (path, qualname) to short and long docstring summaries.
     """
-    rows = repo.list_class_docstrings_rows()
+    filtered = _filter_frame_by_snapshot(docstrings_frame, repo=repo, commit=commit)
+    if "kind" in filtered.columns:
+        filtered = filtered.filter(pl.col("kind") == "class")
     mapping: dict[tuple[str, str], tuple[str | None, str | None]] = {}
-    for row in rows:
+    for row in filtered.iter_rows(named=True):
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
@@ -734,6 +760,27 @@ def _doc_map(repo: DataModelsRepository) -> dict[tuple[str, str], tuple[str | No
             str(long_desc) if long_desc is not None else None,
         )
     return mapping
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    """Filter a frame to a specific repo/commit snapshot.
+
+    Returns
+    -------
+    pl.DataFrame
+        Filtered frame containing only rows for the snapshot.
+    """
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
 
 
 def _class_decorators(node: ast.ClassDef) -> list[str]:

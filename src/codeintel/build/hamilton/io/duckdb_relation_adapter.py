@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.storage.duckdb_types import DuckDBRelation
-from codeintel.storage.gateway import StorageGateway
+from codeintel.core.duckdb_types import DuckDBRelation
+from codeintel.core.gateway import BuildGateway
 
 
-def load_dataset_relation(*, gateway: StorageGateway, ref: DatasetRef) -> DuckDBRelation:
+def load_dataset_relation(*, gateway: BuildGateway, ref: DatasetRef) -> DuckDBRelation:
     """Reject relation-based dataset loaders.
 
     Parameters

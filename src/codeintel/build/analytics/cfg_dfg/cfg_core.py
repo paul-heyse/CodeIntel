@@ -6,6 +6,8 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
 from codeintel.build.analytics.compute.graphs import (
     bounded_simple_path_count,
@@ -17,9 +19,6 @@ from codeintel.build.analytics.compute.graphs import (
     dfg_component_stats,
 )
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import coerce_int, coerce_str, iter_tuples_from_arrow_reader
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
@@ -30,7 +29,6 @@ if TYPE_CHECKING:
     import networkx as nx
 
     from codeintel.build.graphs.runtime.context import GraphContext
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -86,7 +84,8 @@ class CfgCentralityData:
 
 
 def load_cfg_blocks(
-    gateway: StorageGateway, _repo: str, _commit: str
+    cfg_blocks_frame: pl.DataFrame,
+    cfg_edges_frame: pl.DataFrame,
 ) -> tuple[dict[int, list[tuple[int, str, int, int]]], dict[int, list[tuple[int, int, str]]]]:
     """
     Load CFG blocks and edges grouped by function GOID.
@@ -99,50 +98,37 @@ def load_cfg_blocks(
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = defaultdict(list)
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = defaultdict(list)
 
-    try:
-        reader = gateway.execute(
-            """
-            SELECT function_goid_h128, block_idx, kind, in_degree, out_degree
-            FROM graph.cfg_blocks
-            """
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    except DuckDBError:
-        return blocks_by_fn, edges_by_fn
-    for fn, idx, kind, in_deg, out_deg in iter_tuples_from_arrow_reader(reader):
-        fn_id = normalize_decimal_id(fn)
-        if fn_id is None:
+    for row in cfg_blocks_frame.iter_rows(named=True):
+        fn_id = normalize_decimal_id(row.get("function_goid_h128"))
+        block_idx = normalize_decimal_id(row.get("block_idx"))
+        if fn_id is None or block_idx is None:
             continue
-        blocks_by_fn[fn_id].append(
+        kind = row.get("kind")
+        in_deg = normalize_decimal_id(row.get("in_degree")) or 0
+        out_deg = normalize_decimal_id(row.get("out_degree")) or 0
+        blocks_by_fn[int(fn_id)].append(
             (
-                coerce_int(idx, ctx="cfg_blocks.block_idx"),
-                coerce_str(kind, ctx="cfg_blocks.kind"),
-                coerce_int(in_deg, ctx="cfg_blocks.in_degree"),
-                coerce_int(out_deg, ctx="cfg_blocks.out_degree"),
+                int(block_idx),
+                str(kind) if kind is not None else "unknown",
+                int(in_deg),
+                int(out_deg),
             )
         )
 
-    try:
-        edge_reader = gateway.execute(
-            """
-            SELECT function_goid_h128, src_block_id, dst_block_id, edge_kind
-            FROM graph.cfg_edges
-            """
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    except DuckDBError:
-        return blocks_by_fn, edges_by_fn
-    for fn, src_id, dst_id, edge_type in iter_tuples_from_arrow_reader(edge_reader):
-        fn_id = normalize_decimal_id(fn)
+    for row in cfg_edges_frame.iter_rows(named=True):
+        fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
             continue
-        src_idx = parse_block_idx(str(src_id)) if src_id is not None else None
-        dst_idx = parse_block_idx(str(dst_id)) if dst_id is not None else None
+        src_idx = parse_block_idx(row.get("src_block_id"))
+        dst_idx = parse_block_idx(row.get("dst_block_id"))
         if src_idx is None or dst_idx is None:
             continue
-        edges_by_fn[fn_id].append(
+        edge_kind = row.get("edge_kind")
+        edges_by_fn[int(fn_id)].append(
             (
                 src_idx,
                 dst_idx,
-                coerce_str(edge_type, ctx="cfg_edges.edge_kind"),
+                str(edge_kind) if edge_kind is not None else "unknown",
             )
         )
 

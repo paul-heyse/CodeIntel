@@ -15,6 +15,7 @@ from codeintel.build.analytics.testing.compute import (
 )
 from codeintel.build.analytics.testing.coverage.edges import build_test_coverage_edges_rows
 from codeintel.build.analytics.testing.profiles.builder import build_test_profile_result
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -37,6 +38,7 @@ from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -118,8 +120,9 @@ _MODULE = sys.modules[__name__]
 def _coverage_edges__base(
     env: BuildEnv,
     _q__analytics__coverage_lines: InferableTabularInput,
-    _q__analytics__test_catalog: InferableTabularInput,
-    _q__core__goids: InferableTabularInput,
+    q__analytics__test_catalog: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build test coverage edges rows.
 
@@ -128,7 +131,16 @@ def _coverage_edges__base(
     pl.LazyFrame
         Lazy frame containing test coverage edges rows.
     """
-    rows = build_test_coverage_edges_rows(env.gateway, env.snapshot)
+    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
+    rows = build_test_coverage_edges_rows(
+        env.snapshot,
+        catalog_provider=catalog,
+        test_catalog_frame=test_catalog_frame,
+        goids_frame=goids_frame,
+    )
     return rows_to_frame(TEST_COVERAGE_TABLE_KEY, rows)
 
 
@@ -192,8 +204,8 @@ def t__test_coverage_edges(
 
 def _graph_metrics_result(
     env: BuildEnv,
-    _q__analytics__test_coverage_edges: InferableTabularInput,
-    _q__analytics__goid_risk_factors: InferableTabularInput,
+    q__analytics__test_coverage_edges: InferableTabularInput,
+    q__analytics__goid_risk_factors: InferableTabularInput,
 ) -> TestGraphMetricsResult:
     """Compute test graph metrics rows.
 
@@ -202,7 +214,13 @@ def _graph_metrics_result(
     TestGraphMetricsResult
         Computed test graph metrics result.
     """
-    return compute_test_graph_metrics_pure(env.gateway, env.snapshot)
+    coverage_edges_frame = tabular_to_lazyframe(q__analytics__test_coverage_edges).collect()
+    risk_factors_frame = tabular_to_lazyframe(q__analytics__goid_risk_factors).collect()
+    return compute_test_graph_metrics_pure(
+        env.snapshot,
+        test_coverage_edges_frame=coverage_edges_frame,
+        goid_risk_factors_frame=risk_factors_frame,
+    )
 
 
 attach_node(_MODULE, node_name="test_graph_metrics_result", fn=_graph_metrics_result)
@@ -353,10 +371,14 @@ def t__test_graph_metrics(
 
 def _profile__base(
     env: BuildEnv,
-    _q__analytics__test_catalog: InferableTabularInput,
-    _q__analytics__test_coverage_edges: InferableTabularInput,
-    _q__analytics__test_graph_metrics_tests: InferableTabularInput,
+    q__analytics__test_catalog: InferableTabularInput,
+    q__analytics__test_coverage_edges: InferableTabularInput,
+    q__analytics__test_graph_metrics_tests: InferableTabularInput,
     _q__analytics__subsystem_coverage_cache: InferableTabularInput,
+    q__analytics__subsystem_modules: InferableTabularInput,
+    q__analytics__subsystems: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build test profile rows.
 
@@ -365,7 +387,25 @@ def _profile__base(
     pl.LazyFrame
         Lazy frame containing test profile rows.
     """
-    result = build_test_profile_result(env.gateway, env.snapshot)
+    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
+    coverage_edges_frame = tabular_to_lazyframe(q__analytics__test_coverage_edges).collect()
+    test_graph_metrics_frame = tabular_to_lazyframe(
+        q__analytics__test_graph_metrics_tests
+    ).collect()
+    subsystem_modules_frame = tabular_to_lazyframe(q__analytics__subsystem_modules).collect()
+    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems).collect()
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    result = build_test_profile_result(
+        env.snapshot,
+        test_catalog_frame=test_catalog_frame,
+        goids_frame=goids_frame,
+        modules_frame=modules_frame,
+        test_coverage_edges_frame=coverage_edges_frame,
+        subsystem_modules_frame=subsystem_modules_frame,
+        subsystems_frame=subsystems_frame,
+        test_graph_metrics_frame=test_graph_metrics_frame,
+    )
     if result.rows is None:
         return empty_frame_for_table(TEST_PROFILE_TABLE_KEY)
     return rows_to_frame(TEST_PROFILE_TABLE_KEY, result.rows)
@@ -426,7 +466,10 @@ def t__test_profile(
 
 def behavioral_coverage__base(
     env: BuildEnv,
-    _q__analytics__test_profile: InferableTabularInput,
+    q__analytics__test_profile: InferableTabularInput,
+    q__analytics__test_catalog: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build behavioral coverage rows.
 
@@ -435,7 +478,17 @@ def behavioral_coverage__base(
     pl.LazyFrame
         Lazy frame containing behavioral coverage rows.
     """
-    rows = build_behavior_rows(env.gateway, env.snapshot)
+    test_profile_frame = tabular_to_lazyframe(q__analytics__test_profile).collect()
+    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    rows = build_behavior_rows(
+        env.snapshot,
+        test_catalog_frame=test_catalog_frame,
+        goids_frame=goids_frame,
+        modules_frame=modules_frame,
+        test_profile_frame=test_profile_frame,
+    )
     return rows_to_frame(BEHAVIORAL_COVERAGE_TABLE_KEY, rows)
 
 

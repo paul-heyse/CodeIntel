@@ -14,7 +14,7 @@ outputs:
       - "analytics.function_types"
       - "analytics.function_validation"
     downstream_consumers:
-      - "storage.views"
+      - "core.views"
       - "serving.search_index"
       - "cli.datasets"
     upstream_targets:
@@ -44,7 +44,7 @@ outputs:
     contracts:
       - "analytics.coverage_functions"
     downstream_consumers:
-      - "storage.views"
+      - "core.views"
       - "cli.datasets"
     upstream_targets:
       - "core.goids"
@@ -63,7 +63,7 @@ outputs:
       - "analytics.data_model_fields"
       - "analytics.data_model_relationships"
     downstream_consumers:
-      - "storage.views"
+      - "core.views"
       - "cli.datasets"
     upstream_targets:
       - "core.goids"
@@ -79,7 +79,7 @@ outputs:
     contracts:
       - "analytics.data_model_usage"
     downstream_consumers:
-      - "storage.views"
+      - "core.views"
       - "cli.datasets"
     upstream_targets:
       - "core.ast_nodes"
@@ -99,7 +99,7 @@ outputs:
       - "analytics.file_profile"
       - "analytics.module_profile"
     downstream_consumers:
-      - "storage.views"
+      - "core.views"
       - "serving.search_index"
       - "cli.datasets"
     upstream_targets:
@@ -422,7 +422,7 @@ outputs:
     downstream_consumers:
       - "analytics"
       - "graphs"
-      - "storage.views"
+      - "core.views"
     upstream_targets:
       - "core.modules"
     notes: "Foundational code entity IDs for analytics and graph targets."
@@ -836,7 +836,7 @@ outputs:
       - "serving.snapshot"
       - "cli.export"
     upstream_targets:
-      - "storage.views"
+      - "core.views"
       - "build.manifest"
     notes: "Serving artifacts plus schema inference errors for validation."
   - target: "export_jsonl"
@@ -848,7 +848,7 @@ outputs:
     downstream_consumers:
       - "cli.export"
     upstream_targets:
-      - "storage.views"
+      - "core.views"
     notes: "Dataset manifest exported as JSONL artifact."
   - target: "export_parquet"
     domain: "export"
@@ -859,7 +859,7 @@ outputs:
     downstream_consumers:
       - "cli.export"
     upstream_targets:
-      - "storage.views"
+      - "core.views"
     notes: "Dataset manifest exported as Parquet artifact."
   - target: "decision_trace"
     domain: "export"

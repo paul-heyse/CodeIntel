@@ -36,9 +36,9 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.core.execution import ExecutionContext, RunContext
+    from codeintel.core.gateway import BuildGateway
     from codeintel.core.registry import RegistryService
     from codeintel.storage import StorageFacade
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ class BuildEnv:
     >>> driver.execute(["t__risk_factors"], inputs={"env": env})
     """
 
-    gateway: StorageGateway
+    gateway: BuildGateway
     snapshot: SnapshotRef
     paths: BuildPaths
     providers: Providers

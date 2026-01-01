@@ -33,6 +33,7 @@ from codeintel.core.config.settings import (
     ServingSettings,
     SpanLimitSettings,
 )
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.env import (
     get_bool,
     get_float,
@@ -47,7 +48,6 @@ from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSett
 from codeintel.core.tools import ToolBinaries
 from codeintel.observability.semconv_keys import CODEINTEL_COMMIT, CODEINTEL_REPO
 from codeintel.observability.test_mode import apply_test_telemetry_settings
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 LOG = logging.getLogger(__name__)
 

@@ -22,6 +22,7 @@ import networkx as nx
 from networkx.readwrite import json_graph
 
 from codeintel.build.graphs.engine import GraphKind
+from codeintel.build.graphs.engine.datasets import resolve_dataset_root
 from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.options import ValidationOutcome
@@ -32,7 +33,6 @@ if TYPE_CHECKING:
     from codeintel.build.graphs.engine import GraphEngine
     from codeintel.build.graphs.engine.backend import BackendEnablement
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class GraphRuntimeOptions:
     cache_key: str | None = None
     engine: GraphEngine | None = None
     graph_cache_dir: Path | None = None
+    dataset_root_dir: Path | None = None
     features: GraphFeatureFlags = field(default_factory=GraphFeatureFlags)
 
     @classmethod
@@ -95,6 +96,12 @@ class GraphRuntimeOptions:
             if graph_cache_dir_raw is not None
             else None
         )
+        dataset_root_dir_raw = params.get("dataset_root_dir")
+        dataset_root_dir = (
+            cls._parse_path(dataset_root_dir_raw, key="dataset_root_dir")
+            if dataset_root_dir_raw is not None
+            else None
+        )
 
         backend_raw = params.get("graph_backend")
         if backend_raw is None:
@@ -117,6 +124,7 @@ class GraphRuntimeOptions:
             cache_key=cache_key,
             engine=None,
             graph_cache_dir=graph_cache_dir,
+            dataset_root_dir=dataset_root_dir,
             features=features,
         )
 
@@ -135,13 +143,17 @@ class GraphRuntimeOptions:
         raise TypeError(message)
 
     @staticmethod
-    def _parse_graph_cache_dir(value: object) -> Path:
+    def _parse_path(value: object, *, key: str) -> Path:
         if isinstance(value, str):
             return Path(value)
         if isinstance(value, Path):
             return value
-        message = f"Expected graph_cache_dir to be str|Path, got {type(value)}"
+        message = f"Expected {key} to be str|Path, got {type(value)}"
         raise TypeError(message)
+
+    @staticmethod
+    def _parse_graph_cache_dir(value: object) -> Path:
+        return GraphRuntimeOptions._parse_path(value, key="graph_cache_dir")
 
     @staticmethod
     def _parse_graph_kind(value: object) -> GraphKind:
@@ -270,6 +282,11 @@ class GraphRuntimeOptions:
                 if self.graph_cache_dir is not None
                 else defaults.graph_cache_dir
             ),
+            dataset_root_dir=(
+                self.dataset_root_dir
+                if self.dataset_root_dir is not None
+                else defaults.dataset_root_dir
+            ),
             features=self.features,
         )
 
@@ -297,7 +314,7 @@ class GraphRuntimeOptions:
 class GraphRuntime:
     """Live runtime wrapping a GraphEngine plus cached graph instances.
 
-    This runtime expects Parquet-backed DuckDB tables as the graph sources.
+    This runtime expects Parquet-backed datasets as the graph sources.
     """
 
     options: GraphRuntimeOptions
@@ -540,7 +557,6 @@ class GraphRuntime:
 
 
 def build_graph_runtime(
-    gateway: StorageGateway,
     options: GraphRuntimeOptions,
     *,
     env: MutableMapping[str, str] | None = None,
@@ -550,8 +566,6 @@ def build_graph_runtime(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for the snapshot database backed by Parquet datasets.
     options
         Runtime options describing snapshot, graph_backend, and graph flags.
     env
@@ -573,13 +587,14 @@ def build_graph_runtime(
         message = "GraphRuntimeOptions.snapshot is required to build a runtime."
         raise ValueError(message)
     resolved_backend = options.resolved_backend
+    dataset_root_dir = resolve_dataset_root(options.snapshot, options.dataset_root_dir)
     if options.engine is not None:
         engine = options.engine
     else:
         engine = build_graph_engine(
-            gateway,
-            options.snapshot,
-            EngineBuildOptions(
+            snapshot=options.snapshot,
+            dataset_root_dir=dataset_root_dir,
+            options=EngineBuildOptions(
                 graph_backend=resolved_backend,
                 env=env,
                 enabler=enabler,
@@ -613,7 +628,6 @@ def build_graph_runtime(
 
 
 def resolve_graph_runtime(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     runtime: GraphRuntime | GraphRuntimeOptions | None,
 ) -> GraphRuntime:
@@ -621,8 +635,6 @@ def resolve_graph_runtime(
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing graph sources.
     snapshot
         Snapshot reference anchoring the runtime.
     runtime
@@ -648,12 +660,13 @@ def resolve_graph_runtime(
         cache_key=opts.cache_key,
         engine=opts.engine,
         graph_cache_dir=opts.graph_cache_dir,
+        dataset_root_dir=opts.dataset_root_dir,
         features=opts.features,
     )
     if opts.engine is not None:
         return GraphRuntime(options=normalized_options, engine=opts.engine)
 
-    return build_graph_runtime(gateway, normalized_options)
+    return build_graph_runtime(normalized_options)
 
 
 @dataclass
@@ -685,7 +698,6 @@ class GraphRuntimePool:
 
     def get(
         self,
-        gateway: StorageGateway,
         options: GraphRuntimeOptions,
     ) -> GraphRuntime:
         """Return a pooled runtime or build and cache when missing/expired.
@@ -710,7 +722,7 @@ class GraphRuntimePool:
             entry.last_used = now
             return entry.runtime
 
-        runtime = resolve_graph_runtime(gateway, options.snapshot, options)
+        runtime = resolve_graph_runtime(options.snapshot, options)
         self._evict_lru(now)
         self._entries[key] = PooledRuntime(runtime=runtime, created_at=now, last_used=now)
         return runtime
@@ -747,6 +759,7 @@ class GraphRuntimePool:
             options.validate,
             options.cache_key,
             options.graph_cache_dir,
+            options.dataset_root_dir,
             options.features,
         )
 

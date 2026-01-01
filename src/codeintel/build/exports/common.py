@@ -19,16 +19,16 @@ from codeintel.build.schemas.json_schema_registry import compute_json_schema_dig
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.errors.schema import SchemaError
 from codeintel.core.errors.taxonomy import SCHEMA_MISMATCH, ErrorCode
+from codeintel.core.table_key import split_table_key
 from codeintel.storage.exports import ExportAuditRecord as AuditRecord
-from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -123,13 +123,13 @@ class ExportCallOptions:
 # ---------------------------------------------------------------------------
 
 
-def validate_registry_or_raise(gateway: StorageGateway) -> None:
+def validate_registry_or_raise(gateway: BuildGateway) -> None:
     """Validate dataset registry and normalize error type for schema mismatches.
 
     Parameters
     ----------
     gateway
-        StorageGateway providing access to dataset registry.
+        BuildGateway providing access to dataset registry.
 
     Raises
     ------
@@ -288,7 +288,7 @@ def compute_schema_digest(dataset: DatasetContract | None) -> str | None:
 
 # ---------------------------------------------------------------------------
 def build_export_relation(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
     row_limit: int,
     row_offset: int,
@@ -298,7 +298,7 @@ def build_export_relation(
     Parameters
     ----------
     gateway
-        StorageGateway providing connection.
+        BuildGateway providing connection.
     table_key
         Fully qualified table key.
     row_limit
@@ -328,7 +328,7 @@ def build_export_relation(
 def write_audit_entry(
     record: AuditRecord,
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     settings: ExportAuditSettings,
 ) -> None:
     """Write an audit entry for an export operation.

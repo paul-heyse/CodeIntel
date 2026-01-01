@@ -1,7 +1,7 @@
-"""Shared helpers to materialize Parquet-backed DuckDB graphs as NetworkX views.
+"""Shared helpers to materialize Parquet-backed graphs as NetworkX views.
 
 This module provides functions to load various graph types from
-DuckDB base tables into NetworkX graph structures. View-registry
+Parquet datasets into NetworkX graph structures. View-registry
 fallthrough is intentionally disallowed in this layer.
 """
 
@@ -10,41 +10,37 @@ from __future__ import annotations
 import importlib
 import json
 import logging
-from typing import TYPE_CHECKING, cast
+from pathlib import Path
+from typing import cast
 
 import networkx as nx
+import polars as pl
 
+from codeintel.build.graphs.engine.datasets import (
+    scan_snapshot_lazyframe,
+    scan_snapshot_reader,
+)
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.query_results import coerce_optional_float, iter_tuples_from_arrow_reader
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+from codeintel.core.query_results import coerce_optional_float, iter_tuples_from_arrow_reader
 
 log = logging.getLogger(__name__)
 
 
-def _require_parquet_table(gateway: StorageGateway, table_key: str) -> bool:
-    schema, table = split_table_key(table_key)
-    row = gateway.execute(
-        """
-        SELECT table_type
-        FROM information_schema.tables
-        WHERE table_schema = ? AND table_name = ?
-        LIMIT 1
-        """,
-        [schema, table],
-    ).fetchone()
-    if row is None:
-        log.warning("Parquet-backed table missing: %s", table_key)
-        return False
-    table_type = str(row[0] or "").upper()
-    if table_type not in {"BASE TABLE", "TABLE"}:
-        message = f"Expected base table for {table_key}, found {table_type or 'unknown'}."
-        raise ValueError(message)
-    return True
+def _ensure_dataset_root(dataset_root: Path | None, table_key: str) -> Path | None:
+    if dataset_root is None:
+        log.warning("Dataset root not configured; cannot load %s", table_key)
+        return None
+    return dataset_root
+
+
+def _filter_optional_scope(frame: pl.LazyFrame, *, repo: str, commit: str) -> pl.LazyFrame:
+    available = set(frame.columns)
+    if "repo" in available:
+        frame = frame.filter(pl.col("repo").is_null() | (pl.col("repo") == repo))
+    if "commit" in available:
+        frame = frame.filter(pl.col("commit").is_null() | (pl.col("commit") == commit))
+    return frame
 
 
 def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
@@ -146,7 +142,7 @@ def module_attrs_from_row(
 
 
 def load_call_graph(
-    gateway: StorageGateway,
+    dataset_root: Path | None,
     repo: str,
     commit: str,
     *,
@@ -159,8 +155,8 @@ def load_call_graph(
 
     Parameters
     ----------
-    gateway :
-        Gateway providing the DuckDB connection scoped to the target repository.
+    dataset_root :
+        Root directory for Parquet dataset snapshots.
     repo : str
         Repository identifier anchoring the view.
     commit : str
@@ -173,17 +169,19 @@ def load_call_graph(
     nx.DiGraph
         Directed call graph with weighted edges and isolated nodes preserved.
     """
-    if not _require_parquet_table(gateway, "graph.call_graph_edges"):
+    dataset_root = _ensure_dataset_root(dataset_root, "graph.call_graph_edges")
+    if dataset_root is None:
         return nx.DiGraph()
-    reader = gateway.execute(
-        """
-        SELECT caller_goid_h128, callee_goid_h128
-        FROM graph.call_graph_edges
-        WHERE callee_goid_h128 IS NOT NULL
-          AND repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = scan_snapshot_reader(
+        dataset_root=dataset_root,
+        table_key="graph.call_graph_edges",
+        snapshot_id=commit,
+        columns=("caller_goid_h128", "callee_goid_h128"),
+        repo=repo,
+        commit=commit,
+    )
+    if reader is None:
+        return nx.DiGraph()
 
     graph = nx.DiGraph()
     for caller_raw, callee_raw in iter_tuples_from_arrow_reader(reader):
@@ -197,13 +195,15 @@ def load_call_graph(
         else:
             graph.add_edge(caller, callee, weight=1)
 
-    if _require_parquet_table(gateway, "graph.call_graph_nodes"):
-        node_reader = gateway.execute(
-            """
-            SELECT goid_h128, kind
-            FROM graph.call_graph_nodes
-            """
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    node_reader = scan_snapshot_reader(
+        dataset_root=dataset_root,
+        table_key="graph.call_graph_nodes",
+        snapshot_id=commit,
+        columns=("goid_h128", "kind"),
+        repo=repo,
+        commit=commit,
+    )
+    if node_reader is not None:
         for node_raw, kind in iter_tuples_from_arrow_reader(node_reader):
             node = normalize_decimal(node_raw)
             if node is None:
@@ -219,7 +219,7 @@ def load_call_graph(
 
 
 def load_import_graph(
-    gateway: StorageGateway,
+    dataset_root: Path | None,
     repo: str,
     commit: str,
     *,
@@ -232,8 +232,8 @@ def load_import_graph(
 
     Parameters
     ----------
-    gateway :
-        Gateway providing the DuckDB connection scoped to the target repository.
+    dataset_root :
+        Root directory for Parquet dataset snapshots.
     repo : str
         Repository identifier anchoring the view.
     commit : str
@@ -246,16 +246,19 @@ def load_import_graph(
     nx.DiGraph
         Directed import graph with weights capturing edge multiplicity.
     """
-    if not _require_parquet_table(gateway, "graph.import_graph_edges"):
+    dataset_root = _ensure_dataset_root(dataset_root, "graph.import_graph_edges")
+    if dataset_root is None:
         return nx.DiGraph()
-    edge_reader = gateway.execute(
-        """
-        SELECT src_module, dst_module, module_layer
-        FROM graph.import_graph_edges
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    edge_reader = scan_snapshot_reader(
+        dataset_root=dataset_root,
+        table_key="graph.import_graph_edges",
+        snapshot_id=commit,
+        columns=("src_module", "dst_module", "module_layer"),
+        repo=repo,
+        commit=commit,
+    )
+    if edge_reader is None:
+        return nx.DiGraph()
 
     graph = nx.DiGraph()
     fallback_layer_by_module: dict[str, int] = {}
@@ -271,15 +274,15 @@ def load_import_graph(
         weight = _coerce_edge_weight_int(edge_data.get("weight") if edge_data is not None else None)
         graph.add_edge(source, target, weight=weight + 1)
 
-    if _require_parquet_table(gateway, "graph.import_modules"):
-        module_reader = gateway.execute(
-            """
-            SELECT module, scc_id, component_size, layer
-            FROM graph.import_modules
-            WHERE repo = ? AND commit = ?
-            """,
-            [repo, commit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    module_reader = scan_snapshot_reader(
+        dataset_root=dataset_root,
+        table_key="graph.import_modules",
+        snapshot_id=commit,
+        columns=("module", "scc_id", "component_size", "layer"),
+        repo=repo,
+        commit=commit,
+    )
+    if module_reader is not None:
         for module_row in iter_tuples_from_arrow_reader(module_reader):
             module_name, attrs = module_attrs_from_row(*module_row)
             graph.add_node(module_name, **attrs)
@@ -291,7 +294,7 @@ def load_import_graph(
 
 
 def load_test_function_bipartite(
-    gateway: StorageGateway,
+    dataset_root: Path | None,
     repo: str,
     commit: str,
     *,
@@ -305,8 +308,8 @@ def load_test_function_bipartite(
 
     Parameters
     ----------
-    gateway :
-        Gateway providing the DuckDB connection scoped to the target repository.
+    dataset_root :
+        Root directory for Parquet dataset snapshots.
     repo : str
         Repository identifier anchoring the view.
     commit : str
@@ -319,16 +322,19 @@ def load_test_function_bipartite(
     nx.Graph
         Undirected bipartite graph with weighted coverage edges.
     """
-    if not _require_parquet_table(gateway, "analytics.test_coverage_edges"):
+    dataset_root = _ensure_dataset_root(dataset_root, "analytics.test_coverage_edges")
+    if dataset_root is None:
         return nx.Graph()
-    reader = gateway.execute(
-        """
-        SELECT test_id, function_goid_h128, COALESCE(coverage_ratio, 0.0)
-        FROM analytics.test_coverage_edges
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = scan_snapshot_reader(
+        dataset_root=dataset_root,
+        table_key="analytics.test_coverage_edges",
+        snapshot_id=commit,
+        columns=("test_id", "function_goid_h128", "coverage_ratio"),
+        repo=repo,
+        commit=commit,
+    )
+    if reader is None:
+        return nx.Graph()
 
     graph = nx.Graph()
     for test_id, goid_raw, coverage_ratio in iter_tuples_from_arrow_reader(reader):
@@ -374,7 +380,7 @@ def parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> l
 
 
 def load_config_module_bipartite(
-    gateway: StorageGateway,
+    dataset_root: Path | None,
     repo: str,
     commit: str,
     *,
@@ -388,8 +394,8 @@ def load_config_module_bipartite(
 
     Parameters
     ----------
-    gateway :
-        Gateway providing the DuckDB connection scoped to the target repository.
+    dataset_root :
+        Root directory for Parquet dataset snapshots.
     repo : str
         Repository identifier anchoring the view.
     commit : str
@@ -402,24 +408,33 @@ def load_config_module_bipartite(
     nx.Graph
         Undirected bipartite graph for configuration references.
     """
-    if not _require_parquet_table(gateway, "core.modules"):
+    dataset_root = _ensure_dataset_root(dataset_root, "analytics.config_values")
+    if dataset_root is None:
         return nx.Graph()
-    if not _require_parquet_table(gateway, "analytics.config_values"):
+    modules_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id=commit,
+        columns=("module", "repo", "commit"),
+        repo=None,
+        commit=None,
+    )
+    if modules_frame is None:
         return nx.Graph()
-    allowed_reader = gateway.execute(
-        "SELECT module FROM core.modules WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    allowed_modules = {str(mod) for (mod,) in iter_tuples_from_arrow_reader(allowed_reader)}
+    modules_frame = _filter_optional_scope(modules_frame, repo=repo, commit=commit)
+    module_rows = modules_frame.select("module").collect()
+    allowed_modules = {str(mod) for mod in module_rows.get_column("module").to_list()}
 
-    reader = gateway.execute(
-        """
-        SELECT key, reference_modules
-        FROM analytics.config_values
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    config_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root,
+        table_key="analytics.config_values",
+        snapshot_id=commit,
+        columns=("key", "reference_modules", "repo", "commit"),
+        repo=repo,
+        commit=commit,
+    )
+    if config_frame is None:
+        return nx.Graph()
 
     graph = nx.Graph()
     total_rows = 0
@@ -427,8 +442,10 @@ def load_config_module_bipartite(
     parsed_modules = 0
     kept_modules = 0
     dropped_modules = 0
-    for key, ref_modules in iter_tuples_from_arrow_reader(reader):
+    for row in config_frame.collect().iter_rows(named=True):
         total_rows += 1
+        key = row.get("key")
+        ref_modules = row.get("reference_modules")
         if key is None or ref_modules is None:
             empty_refs += 1
             continue
@@ -473,7 +490,7 @@ def load_config_module_bipartite(
 
 
 def load_symbol_module_graph(
-    gateway: StorageGateway,
+    dataset_root: Path | None,
     repo: str,
     commit: str,
     *,
@@ -486,8 +503,8 @@ def load_symbol_module_graph(
 
     Parameters
     ----------
-    gateway :
-        Gateway providing the DuckDB connection scoped to the target repository.
+    dataset_root :
+        Root directory for Parquet dataset snapshots.
     repo : str
         Repository identifier anchoring the view.
     commit : str
@@ -500,27 +517,42 @@ def load_symbol_module_graph(
     nx.Graph
         Undirected graph where weights reflect shared symbol relations.
     """
-    if not _require_parquet_table(gateway, "graph.symbol_use_edges"):
+    dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
+    if dataset_root is None:
         return nx.Graph()
-    if not _require_parquet_table(gateway, "core.modules"):
+    edges_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root,
+        table_key="graph.symbol_use_edges",
+        snapshot_id=commit,
+        columns=("def_path", "use_path"),
+        repo=None,
+        commit=None,
+    )
+    if edges_frame is None:
         return nx.Graph()
-    reader = gateway.execute(
-        """
-        SELECT m_use.module AS use_module, m_def.module AS def_module
-        FROM graph.symbol_use_edges su
-        LEFT JOIN core.modules m_def ON m_def.path = su.def_path
-        LEFT JOIN core.modules m_use ON m_use.path = su.use_path
-        WHERE m_def.module IS NOT NULL AND m_use.module IS NOT NULL
-          AND (m_def.repo = ? OR m_def.repo IS NULL)
-          AND (m_use.repo = ? OR m_use.repo IS NULL)
-          AND (m_def.commit = ? OR m_def.commit IS NULL)
-          AND (m_use.commit = ? OR m_use.commit IS NULL)
-        """,
-        [repo, repo, commit, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    modules_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id=commit,
+        columns=("path", "module", "repo", "commit"),
+        repo=None,
+        commit=None,
+    )
+    if modules_frame is None:
+        return nx.Graph()
+    modules_frame = _filter_optional_scope(modules_frame, repo=repo, commit=commit).select(
+        ["path", "module"]
+    )
+    def_modules = modules_frame.rename({"path": "def_path", "module": "def_module"})
+    use_modules = modules_frame.rename({"path": "use_path", "module": "use_module"})
+    joined = edges_frame.join(def_modules, on="def_path", how="left").join(
+        use_modules, on="use_path", how="left"
+    )
 
     graph = nx.Graph()
-    for use_module, def_module in iter_tuples_from_arrow_reader(reader):
+    for row in joined.collect().iter_rows(named=True):
+        use_module = row.get("use_module")
+        def_module = row.get("def_module")
         if use_module is None or def_module is None:
             continue
         left = str(use_module)
@@ -536,7 +568,8 @@ def load_symbol_module_graph(
 
 
 def load_symbol_function_graph(
-    gateway: StorageGateway,
+    dataset_root: Path | None,
+    commit: str,
     *,
     use_gpu: bool = False,
 ) -> nx.Graph:
@@ -547,8 +580,10 @@ def load_symbol_function_graph(
 
     Parameters
     ----------
-    gateway :
-        Gateway providing the DuckDB connection scoped to the target repository.
+    dataset_root :
+        Root directory for Parquet dataset snapshots.
+    commit : str
+        Commit hash anchoring the snapshot.
     use_gpu : bool, optional
         Whether to prefer a GPU-backed graph when supported.
 
@@ -557,16 +592,17 @@ def load_symbol_function_graph(
     nx.Graph
         Undirected graph linking functions by shared symbol usage.
     """
-    if not _require_parquet_table(gateway, "graph.symbol_use_edges"):
+    dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
+    if dataset_root is None:
         return nx.Graph()
-    reader = gateway.execute(
-        """
-        SELECT su.def_goid_h128, su.use_goid_h128
-        FROM graph.symbol_use_edges su
-        WHERE su.def_goid_h128 IS NOT NULL
-          AND su.use_goid_h128 IS NOT NULL
-        """,
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = scan_snapshot_reader(
+        dataset_root=dataset_root,
+        table_key="graph.symbol_use_edges",
+        snapshot_id=commit,
+        columns=("def_goid_h128", "use_goid_h128"),
+    )
+    if reader is None:
+        return nx.Graph()
 
     graph = nx.Graph()
     for def_goid, use_goid in iter_tuples_from_arrow_reader(reader):

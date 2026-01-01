@@ -9,6 +9,7 @@ from codeintel.build.analytics.functions.function_effects import (
     build_function_effects_rows,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -25,8 +26,8 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.catalog.service import CatalogService
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -50,30 +51,36 @@ FUNCTION_EFFECTS_CONTRACT = TableContractSpec(
 
 def function_effects__base(
     env: BuildEnv,
-    _q__core__goids: InferableTabularInput,
-    _q__graph__call_graph_edges: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+    q__graph__call_graph_edges: InferableTabularInput,
+    q__graph__call_graph_nodes: InferableTabularInput,
 ) -> pl.LazyFrame:
-    """Build function effects rows using gateway-backed helpers.
+    """Build function effects rows using tabular inputs.
 
     Returns
     -------
     pl.LazyFrame
         Lazy frame with function effects columns.
     """
-    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
     )
-    ast_map, missing = load_function_asts(env.gateway, request)
+    ast_map, missing = load_function_asts(request)
     inputs = FunctionEffectsInputs(
         catalog_provider=catalog,
         ast_map=ast_map,
         missing_goids=missing,
+        call_graph_edges=tabular_to_lazyframe(q__graph__call_graph_edges).collect(),
+        call_graph_nodes=tabular_to_lazyframe(q__graph__call_graph_nodes).collect(),
     )
-    rows = build_function_effects_rows(env.gateway, env.snapshot, inputs=inputs)
+    rows = build_function_effects_rows(env.snapshot, inputs=inputs)
     return rows_to_frame(FUNCTION_EFFECTS_TABLE_KEY, rows)
 
 

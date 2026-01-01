@@ -11,12 +11,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import networkx as nx
 
     from codeintel.build.graphs.engine import GraphEngine
     from codeintel.build.graphs.runtime import GraphRuntime
     from codeintel.core.catalog import FunctionCatalog
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -31,8 +32,8 @@ class GraphValidationContext:
 
     Attributes
     ----------
-    gateway
-        Storage gateway for database access.
+    dataset_root_dir
+        Root directory for Parquet dataset snapshots.
     repo
         Repository identifier.
     commit
@@ -53,7 +54,7 @@ class GraphValidationContext:
         Optional pre-loaded symbol graph.
     """
 
-    gateway: StorageGateway | None
+    dataset_root_dir: Path | None
     repo: str
     commit: str
     engine: GraphEngine | None = None

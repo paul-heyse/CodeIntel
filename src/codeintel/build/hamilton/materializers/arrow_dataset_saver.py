@@ -49,6 +49,19 @@ from codeintel.core.columnar import (
 )
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.config.settings import BuildSettings
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.arrow_store import (
+    ArrowDatasetManifestRequest,
+    ArrowDatasetWriteOptions,
+    build_dataset_manifest,
+    write_dataset,
+)
+from codeintel.core.datasets.manifests import (
+    dataset_manifest_path,
+    read_dataset_manifest,
+    write_dataset_manifest,
+)
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_gen import (
@@ -65,19 +78,6 @@ from codeintel.core.schemas.arrow_polars import (
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.resolution import resolve_table_schema
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.datasets.arrow_store import (
-    ArrowDatasetManifestRequest,
-    ArrowDatasetWriteOptions,
-    build_dataset_manifest,
-    write_dataset,
-)
-from codeintel.storage.datasets.manifests import (
-    dataset_manifest_path,
-    read_dataset_manifest,
-    write_dataset_manifest,
-)
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
 
 if TYPE_CHECKING:
     from pathlib import Path

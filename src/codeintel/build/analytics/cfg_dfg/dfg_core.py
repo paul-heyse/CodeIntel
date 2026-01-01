@@ -7,6 +7,8 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
 from codeintel.build.analytics.compute.graphs import (
     bounded_simple_path_count,
@@ -20,9 +22,6 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_DFG_CENTRALITY_SAMPLE,
 )
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import coerce_str, iter_tuples_from_arrow_reader
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
     import networkx as nx
 
     from codeintel.build.graphs.runtime.context import GraphContext
-    from codeintel.storage.gateway import StorageGateway
 
 
 def _to_decimal(value: int) -> Decimal:
@@ -82,7 +80,7 @@ class DfgInputs:
 
 
 def load_dfg_edges(
-    gateway: StorageGateway, _repo: str, _commit: str
+    dfg_edges_frame: pl.DataFrame,
 ) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
     """
     Load DFG edges grouped by function GOID.
@@ -93,34 +91,27 @@ def load_dfg_edges(
         Mapping of GOID -> edge tuples.
     """
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = defaultdict(list)
-    try:
-        reader = gateway.execute(
-            """
-            SELECT function_goid_h128, src_block_id, dst_block_id,
-                   src_var, dst_var, via_phi, use_kind
-            FROM graph.dfg_edges
-            """
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    except DuckDBError:
-        return edges_by_fn
-    for fn, src_id, dst_id, src_sym, dst_sym, via_phi, use_kind in iter_tuples_from_arrow_reader(
-        reader
-    ):
-        fn_id = normalize_decimal_id(fn)
+    for row in dfg_edges_frame.iter_rows(named=True):
+        fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
             continue
-        src_idx = parse_block_idx(str(src_id)) if src_id is not None else None
-        dst_idx = parse_block_idx(str(dst_id)) if dst_id is not None else None
+        src_idx = parse_block_idx(row.get("src_block_id"))
+        dst_idx = parse_block_idx(row.get("dst_block_id"))
         if src_idx is None or dst_idx is None:
             continue
-        edges_by_fn[fn_id].append(
+        src_var = row.get("src_var")
+        dst_var = row.get("dst_var")
+        if not isinstance(src_var, str) or not isinstance(dst_var, str):
+            continue
+        use_kind = row.get("use_kind")
+        edges_by_fn[int(fn_id)].append(
             (
                 src_idx,
                 dst_idx,
-                coerce_str(src_sym, ctx="dfg_edges.src_var"),
-                coerce_str(dst_sym, ctx="dfg_edges.dst_var"),
-                bool(via_phi) if via_phi is not None else False,
-                coerce_str(use_kind, ctx="dfg_edges.use_kind"),
+                src_var,
+                dst_var,
+                bool(row.get("via_phi")),
+                str(use_kind) if use_kind is not None else "unknown",
             )
         )
     return edges_by_fn

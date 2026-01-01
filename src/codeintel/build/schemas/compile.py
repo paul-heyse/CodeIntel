@@ -28,7 +28,7 @@ from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.tag_filters import tf_schema_tables
 from codeintel.core.schemas.contract_service import iter_contracts
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.storage.views.inventory import discover_derived_docs_views
+from codeintel.core.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

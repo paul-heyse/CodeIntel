@@ -19,6 +19,7 @@ from codeintel.build.analytics.compute.entrypoints.detection import DetectorSett
 from codeintel.build.analytics.entrypoints.core import (
     ENTRYPOINT_TESTS_COLS,
     ENTRYPOINTS_COLS,
+    EntrypointContextInputs,
     _build_entrypoint_context,
     _collect_entrypoint_rows,
 )
@@ -26,7 +27,6 @@ from codeintel.build.analytics.entrypoints.core import (
 if TYPE_CHECKING:
     from codeintel.build.analytics.entrypoints.core import EntrypointBuildInputs
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 
 log = logging.getLogger(__name__)
@@ -52,9 +52,9 @@ class EntrypointsResult:
 
 
 def compute_entrypoints_pure(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     inputs: EntrypointBuildInputs,
+    context_inputs: EntrypointContextInputs,
 ) -> EntrypointsResult:
     """Compute entrypoints without writing to database.
 
@@ -63,12 +63,12 @@ def compute_entrypoints_pure(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for reading module context and test metadata.
     snapshot
         Repository and commit snapshot reference.
     inputs
         Bundled inputs containing catalog, module map, features, and settings.
+    context_inputs
+        Optional frames and overrides used to build the entrypoint context.
 
     Returns
     -------
@@ -87,14 +87,20 @@ def compute_entrypoints_pure(
     - Scheduled jobs and background tasks
     - Event handlers and message consumers
     """
-    con = gateway.con
-
-    entrypoint_context = _build_entrypoint_context(
-        con,
-        snapshot,
-        inputs.catalog_provider,
+    resolved_context_inputs = EntrypointContextInputs(
         module_map_override=inputs.module_map,
         features=inputs.features_map,
+        modules_frame=context_inputs.modules_frame,
+        coverage_functions_frame=context_inputs.coverage_functions_frame,
+        test_coverage_edges_frame=context_inputs.test_coverage_edges_frame,
+        test_catalog_frame=context_inputs.test_catalog_frame,
+        subsystem_modules_frame=context_inputs.subsystem_modules_frame,
+        subsystems_frame=context_inputs.subsystems_frame,
+    )
+    entrypoint_context = _build_entrypoint_context(
+        snapshot,
+        inputs.catalog_provider,
+        resolved_context_inputs,
     )
 
     if entrypoint_context is None:

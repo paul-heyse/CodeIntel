@@ -35,7 +35,6 @@ from codeintel.build.schemas.inference_service import (
 )
 from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
 from codeintel.build.schemas.service import configure_schema_service
-from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_tag_query
 from codeintel.core.config.settings import HamiltonTrackerSettings
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -51,6 +50,7 @@ from codeintel.runtime.plugins.config import (
 )
 from codeintel.runtime.plugins.spec import TargetPack
 from codeintel.runtime.runtime_bundle import RuntimeBundle, RuntimeKey
+from codeintel.serving.semantic_compile import compile_semantic_registry_from_tag_query
 from codeintel.storage.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:

@@ -10,16 +10,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, FunctionExpression
-from codeintel.storage.query_results import (
-    coerce_optional_int,
-    coerce_optional_str,
-    coerce_str,
-    iter_tuples_from_relation,
-)
+from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -27,7 +23,6 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -191,12 +186,16 @@ class SemanticRolesResult:
 
 
 def build_semantic_roles_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     module_by_path: dict[str, str],
     ast_map: dict[int, FunctionAst],
     features_map: dict[int, FunctionAstFeatures],
+    function_metrics_frame: pl.DataFrame | None = None,
+    function_effects_frame: pl.DataFrame | None = None,
+    function_contracts_frame: pl.DataFrame | None = None,
+    graph_metrics_frame: pl.DataFrame | None = None,
+    modules_frame: pl.DataFrame | None = None,
 ) -> SemanticRolesResult:
     """
     Build semantic role rows without persisting.
@@ -206,8 +205,6 @@ def build_semantic_roles_rows(
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing DuckDB access.
     snapshot
         Repository and commit identifiers.
     module_by_path
@@ -216,17 +213,35 @@ def build_semantic_roles_rows(
         Mapping of function GOID to parsed AST data.
     features_map
         Mapping of function GOID to feature vector.
+    function_metrics_frame
+        Function metrics rows for the snapshot.
+    function_effects_frame
+        Function effects rows for the snapshot.
+    function_contracts_frame
+        Function contracts rows for the snapshot.
+    graph_metrics_frame
+        Graph metrics rows for the snapshot.
+    modules_frame
+        Module rows for the snapshot.
 
     Returns
     -------
     SemanticRolesResult
         Container with function and module rows.
     """
-    module_meta = _load_module_meta(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    function_rows = _load_function_rows(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    effects = _load_effects(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    contracts = _load_contracts(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    graph_metrics = _load_graph_metrics(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    module_meta = _module_meta_from_frame(modules_frame, repo=snapshot.repo, commit=snapshot.commit)
+    function_rows = _function_rows_from_frame(
+        function_metrics_frame, repo=snapshot.repo, commit=snapshot.commit
+    )
+    effects = _effects_from_frame(
+        function_effects_frame, repo=snapshot.repo, commit=snapshot.commit
+    )
+    contracts = _contracts_from_frame(
+        function_contracts_frame, repo=snapshot.repo, commit=snapshot.commit
+    )
+    graph_metrics = _graph_metrics_from_frame(
+        graph_metrics_frame, repo=snapshot.repo, commit=snapshot.commit
+    )
 
     artifacts = RoleArtifacts(
         module_by_path=module_by_path,
@@ -315,145 +330,114 @@ def _build_function_role_rows(
     return fn_rows, roles_by_module
 
 
-def _load_function_rows(
-    gateway: StorageGateway, *, repo: str, commit: str
+def _function_rows_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> list[tuple[int, str, str, int | None]]:
-    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("analytics.function_metrics")
-        .filter(predicate)
-        .select("function_goid_h128", "rel_path", "qualname", "loc")
-    )
+    if frame is None or frame.is_empty():
+        return []
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
     result: list[tuple[int, str, str, int | None]] = []
-    for goid_raw, rel_path, qualname, loc in iter_tuples_from_relation(relation):
-        goid = normalize_decimal_id(goid_raw)
+    for row in filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
         result.append(
             (
                 goid,
-                coerce_str(rel_path, ctx="function_metrics.rel_path"),
-                coerce_str(qualname, ctx="function_metrics.qualname"),
-                coerce_optional_int(loc, ctx="function_metrics.loc"),
+                coerce_str(row.get("rel_path"), ctx="function_metrics.rel_path"),
+                coerce_str(row.get("qualname"), ctx="function_metrics.qualname"),
+                coerce_optional_int(row.get("loc"), ctx="function_metrics.loc"),
             )
         )
     return result
 
 
-def _load_effects(
-    gateway: StorageGateway, *, repo: str, commit: str
+def _effects_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[int, dict[str, object]]:
-    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("analytics.function_effects")
-        .filter(predicate)
-        .select(
-            "function_goid_h128",
-            "touches_db",
-            "uses_io",
-            "uses_time",
-            "uses_randomness",
-            "modifies_globals",
-            "modifies_closure",
-            "spawns_threads_or_tasks",
-        )
-    )
+    if frame is None or frame.is_empty():
+        return {}
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
     mapping: dict[int, dict[str, object]] = {}
-    for (
-        goid_raw,
-        touches_db,
-        uses_io,
-        uses_time,
-        uses_randomness,
-        modifies_globals,
-        modifies_closure,
-        spawns_threads_or_tasks,
-    ) in iter_tuples_from_relation(relation):
-        goid = normalize_decimal_id(goid_raw)
+    for row in filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
         mapping[goid] = {
-            "touches_db": bool(touches_db),
-            "uses_io": bool(uses_io),
-            "uses_time": bool(uses_time),
-            "uses_randomness": bool(uses_randomness),
-            "modifies_globals": bool(modifies_globals),
-            "modifies_closure": bool(modifies_closure),
-            "spawns_threads_or_tasks": bool(spawns_threads_or_tasks),
+            "touches_db": bool(row.get("touches_db")),
+            "uses_io": bool(row.get("uses_io")),
+            "uses_time": bool(row.get("uses_time")),
+            "uses_randomness": bool(row.get("uses_randomness")),
+            "modifies_globals": bool(row.get("modifies_globals")),
+            "modifies_closure": bool(row.get("modifies_closure")),
+            "spawns_threads_or_tasks": bool(row.get("spawns_threads_or_tasks")),
         }
     return mapping
 
 
-def _load_contracts(
-    gateway: StorageGateway, *, repo: str, commit: str
+def _contracts_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[int, dict[str, object]]:
-    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("analytics.function_contracts")
-        .filter(predicate)
-        .select("function_goid_h128", "preconditions_json", "raises_json", "param_nullability_json")
-    )
+    if frame is None or frame.is_empty():
+        return {}
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
     mapping: dict[int, dict[str, object]] = {}
-    for goid_raw, preconditions, raises_json, param_nullability in iter_tuples_from_relation(
-        relation
-    ):
-        goid = normalize_decimal_id(goid_raw)
+    for row in filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
         mapping[goid] = {
-            "preconditions": _coerce_json(preconditions) or [],
-            "raises": _coerce_json(raises_json) or [],
-            "param_nullability": _coerce_json(param_nullability) or {},
+            "preconditions": _coerce_json(row.get("preconditions_json")) or [],
+            "raises": _coerce_json(row.get("raises_json")) or [],
+            "param_nullability": _coerce_json(row.get("param_nullability_json")) or {},
         }
     return mapping
 
 
-def _load_graph_metrics(
-    gateway: StorageGateway, *, repo: str, commit: str
+def _graph_metrics_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[int, dict[str, int]]:
-    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("analytics.graph_metrics_functions")
-        .filter(predicate)
-        .select("function_goid_h128", "call_fan_in", "call_fan_out")
-    )
+    if frame is None or frame.is_empty():
+        return {}
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
     mapping: dict[int, dict[str, int]] = {}
-    for goid_raw, call_fan_in, call_fan_out in iter_tuples_from_relation(relation):
-        goid = normalize_decimal_id(goid_raw)
+    for row in filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
         mapping[goid] = {
-            "call_fan_in": coerce_optional_int(call_fan_in, ctx="call_fan_in") or 0,
-            "call_fan_out": coerce_optional_int(call_fan_out, ctx="call_fan_out") or 0,
+            "call_fan_in": coerce_optional_int(row.get("call_fan_in"), ctx="call_fan_in") or 0,
+            "call_fan_out": coerce_optional_int(row.get("call_fan_out"), ctx="call_fan_out") or 0,
         }
     return mapping
 
 
-def _load_module_meta(
-    gateway: StorageGateway, *, repo: str, commit: str
+def _module_meta_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[str, ModuleRecord]:
-    repo_expr = FunctionExpression("coalesce", ColumnExpression("repo"), ConstantExpression(repo))
-    commit_expr = FunctionExpression(
-        "coalesce", ColumnExpression("commit"), ConstantExpression(commit)
-    )
-    predicate = (repo_expr == ConstantExpression(repo)) & (
-        commit_expr == ConstantExpression(commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("core.modules")
-        .filter(predicate)
-        .select("module", "path", "tags")
-    )
+    if frame is None or frame.is_empty():
+        return {}
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
     meta: dict[str, ModuleRecord] = {}
-    for module, path, tags in iter_tuples_from_relation(relation):
+    for row in filtered.iter_rows(named=True):
+        module = row.get("module")
+        path = row.get("path")
+        tags = row.get("tags")
         path_value = coerce_optional_str(path, ctx="core.modules.path")
         normalized_path = normalize_path(path_value) if path_value else ""
         normalized_tags = _normalize_tags(tags)
@@ -462,6 +446,20 @@ def _load_module_meta(
             tags=normalized_tags,
         )
     return meta
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
 
 
 def _classify_function(

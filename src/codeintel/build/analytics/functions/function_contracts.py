@@ -9,18 +9,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
-
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -54,11 +51,12 @@ class _RowInputs:
 
 
 def build_function_contracts_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     function_ast_map: dict[int, FunctionAst] | None = None,
     catalog: FunctionCatalogProvider | None = None,
+    docstrings_frame: pl.DataFrame | None = None,
+    function_types_frame: pl.DataFrame | None = None,
     max_conditions_per_func: int = 64,
 ) -> list[dict[str, object]]:
     """
@@ -69,14 +67,16 @@ def build_function_contracts_rows(
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing DuckDB access.
     snapshot
         Repository and commit identifiers.
     function_ast_map
         Mapping of GOID to parsed function AST (from AstProvider).
     catalog
         Function catalog provider (from CatalogProvider).
+    docstrings_frame
+        Docstring rows for the snapshot.
+    function_types_frame
+        Function type rows for the snapshot.
     max_conditions_per_func
         Maximum number of preconditions/postconditions/raises per function.
 
@@ -92,8 +92,12 @@ def build_function_contracts_rows(
     else:
         all_goids = set()
 
-    doc_map = _load_docstrings(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    type_map = _load_function_types(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    doc_map = _doc_map_from_frame(docstrings_frame, repo=snapshot.repo, commit=snapshot.commit)
+    type_map = _type_map_from_frame(
+        function_types_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
 
     return _build_rows(
         _RowInputs(
@@ -164,57 +168,58 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
     return rows
 
 
-def _load_docstrings(
-    gateway: StorageGateway, *, repo: str, commit: str
+def _doc_map_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[tuple[str, str], dict[str, object]]:
-    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("core.docstrings")
-        .filter(predicate)
-        .select("rel_path", "qualname", "params", "returns")
-    )
-    rows = _normalize_records(records_from_relation(relation))
+    if frame is None or frame.is_empty():
+        return {}
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
     mapping: dict[tuple[str, str], dict[str, object]] = {}
-    for row in rows:
-        rel_path = row["rel_path"]
-        qualname = row["qualname"]
-        params = row["params"]
-        returns = row["returns"]
-        mapping[str(rel_path), str(qualname)] = {
+    for row in filtered.iter_rows(named=True):
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        if not isinstance(rel_path, str) or not isinstance(qualname, str):
+            continue
+        params = row.get("params")
+        returns = row.get("returns")
+        mapping[rel_path, qualname] = {
             "params": _coerce_json(params) or [],
             "returns": _coerce_json(returns),
         }
     return mapping
 
 
-def _load_function_types(
-    gateway: StorageGateway, *, repo: str, commit: str
+def _type_map_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[int, dict[str, object]]:
-    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
-    relation = (
-        gateway.relation_from_table_key("analytics.function_types")
-        .filter(predicate)
-        .select("function_goid_h128", "return_type", "param_types")
-    )
-    rows = _normalize_records(records_from_relation(relation))
+    if frame is None or frame.is_empty():
+        return {}
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
     mapping: dict[int, dict[str, object]] = {}
-    for row in rows:
-        goid = normalize_decimal_id(row["function_goid_h128"])
+    for row in filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
+        return_type = row.get("return_type")
         mapping[goid] = {
-            "return_type": str(row["return_type"]) if row["return_type"] is not None else None,
-            "param_types": _coerce_json(row["param_types"]) or {},
+            "return_type": str(return_type) if return_type is not None else None,
+            "param_types": _coerce_json(row.get("param_types")) or {},
         }
     return mapping
-
-
-def _normalize_records(records: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
-    return [{str(key): value for key, value in record.items()} for record in records]
 
 
 def _coerce_json(value: object) -> object:

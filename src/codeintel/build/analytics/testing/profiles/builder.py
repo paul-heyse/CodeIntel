@@ -8,6 +8,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from codeintel.build.analytics.ast_features.extract import build_import_map, io_flags_from_call
 from codeintel.build.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
 from codeintel.build.analytics.testing.behavioral.importance import (
@@ -33,15 +35,13 @@ from codeintel.build.analytics.testing.profiles.types import (
 from codeintel.build.analytics.utilities.ast import resolve_call_target
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import path_to_module
-from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import (
+from codeintel.core.query_results import (
     coerce_optional_float,
     coerce_optional_int,
     coerce_optional_str,
     coerce_str,
-    iter_tuples_from_arrow_reader,
 )
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -50,7 +50,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsTestProfileRow as ProfileRowModel,
     )
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -127,9 +126,15 @@ class TestProfileBuildResult:
 
 
 def build_test_profile_result(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
+    test_catalog_frame: pl.DataFrame | None = None,
+    goids_frame: pl.DataFrame | None = None,
+    modules_frame: pl.DataFrame | None = None,
+    test_coverage_edges_frame: pl.DataFrame | None = None,
+    subsystem_modules_frame: pl.DataFrame | None = None,
+    subsystems_frame: pl.DataFrame | None = None,
+    test_graph_metrics_frame: pl.DataFrame | None = None,
     options: TestProfileOptions | None = None,
 ) -> TestProfileBuildResult:
     """Compute test profile rows without persisting.
@@ -139,10 +144,22 @@ def build_test_profile_result(
 
     Parameters
     ----------
-    gateway
-        Storage gateway bound to the target DuckDB database.
     snapshot
         Snapshot reference with repo, commit, and repo_root.
+    test_catalog_frame
+        Test catalog rows for the snapshot.
+    goids_frame
+        GOID rows for the snapshot.
+    modules_frame
+        Module rows for the snapshot.
+    test_coverage_edges_frame
+        Coverage edges for tests/functions.
+    subsystem_modules_frame
+        Subsystem-module mappings for the snapshot.
+    subsystems_frame
+        Subsystem metadata for the snapshot.
+    test_graph_metrics_frame
+        Test graph metrics rows for the snapshot.
     options
         Optional test profile configuration options.
 
@@ -152,15 +169,38 @@ def build_test_profile_result(
         Container with profile row models.
     """
     opts = options or TestProfileOptions()
-    con = gateway.con
-    tests: list[TestRecord] = _load_test_records(con, snapshot.repo, snapshot.commit)
+    tests: list[TestRecord] = _load_test_records_from_frames(
+        test_catalog_frame,
+        goids_frame,
+        modules_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     if not tests:
         log.info("No tests found for %s@%s; skipping test_profile", snapshot.repo, snapshot.commit)
         return TestProfileBuildResult(rows=None)
 
-    functions_covered = _load_functions_covered(con, snapshot.repo, snapshot.commit)
-    subsystems_covered = _load_subsystems_covered(con, snapshot.repo, snapshot.commit)
-    tg_metrics = _load_test_graph_metrics(con, snapshot.repo, snapshot.commit)
+    functions_covered = _load_functions_covered_from_frames(
+        test_coverage_edges_frame,
+        goids_frame,
+        modules_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    subsystems_covered = _load_subsystems_covered_from_frames(
+        test_coverage_edges_frame,
+        goids_frame,
+        modules_frame,
+        subsystem_modules_frame,
+        subsystems_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    tg_metrics = _load_test_graph_metrics_from_frame(
+        test_graph_metrics_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     io_spec_raw = opts.io_spec if isinstance(opts.io_spec, dict) else None
     patterns = _patterns_from_io_spec(io_spec_raw)
     ast_info = _build_test_ast_index(snapshot.repo_root, tests, patterns)
@@ -276,78 +316,94 @@ def _normalize_markers(markers: list[str] | None) -> list[str]:
     return [str(marker) for marker in markers]
 
 
-def _load_test_records(
-    con: DuckDBConnection,
+def _filter_frame_by_snapshot(frame: pl.DataFrame, *, repo: str, commit: str) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
+
+
+def _load_test_records_from_frames(
+    test_catalog_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    modules_frame: pl.DataFrame | None,
+    *,
     repo: str,
     commit: str,
 ) -> list[TestRecord]:
-    reader = con.execute(
-        """
-        SELECT
-            t.test_id,
-            t.test_goid_h128,
-            t.urn,
-            t.rel_path,
-            m.module,
-            COALESCE(t.qualname, g.qualname),
-            COALESCE(g.language, 'python'),
-            t.kind,
-            t.status,
-            t.duration_ms,
-            t.markers,
-            t.flaky,
-            g.start_line,
-            g.end_line
-        FROM analytics.test_catalog t
-        LEFT JOIN core.goids g
-          ON g.goid_h128 = t.test_goid_h128
-         AND g.repo = t.repo
-         AND g.commit = t.commit
-        LEFT JOIN core.modules m
-          ON m.repo = t.repo
-         AND m.commit = t.commit
-         AND m.path = t.rel_path
-        WHERE t.repo = ? AND t.commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    if test_catalog_frame is None or test_catalog_frame.is_empty():
+        return []
+    filtered = _filter_frame_by_snapshot(test_catalog_frame, repo=repo, commit=commit)
+    module_by_path: dict[str, str] = {}
+    if modules_frame is not None and not modules_frame.is_empty():
+        modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
+        for row in modules_filtered.iter_rows(named=True):
+            path = row.get("path")
+            module = row.get("module")
+            if isinstance(path, str) and module is not None:
+                module_by_path[path] = str(module)
+    goid_meta: dict[int, dict[str, object]] = {}
+    if goids_frame is not None and not goids_frame.is_empty():
+        goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
+        for row in goids_filtered.iter_rows(named=True):
+            goid = normalize_decimal_id(row.get("goid_h128"))
+            if goid is None:
+                continue
+            goid_meta[goid] = {
+                "qualname": row.get("qualname"),
+                "language": row.get("language"),
+                "start_line": row.get("start_line"),
+                "end_line": row.get("end_line"),
+            }
     records: list[TestRecord] = []
-    for (
-        test_id,
-        goid,
-        urn,
-        rel_path,
-        module,
-        qualname,
-        language,
-        kind,
-        status,
-        duration_ms,
-        markers,
-        flaky,
-        start_line,
-        end_line,
-    ) in iter_tuples_from_arrow_reader(reader):
-        rel_path_text = coerce_str(rel_path, ctx="test_catalog.rel_path")
-        module_name = coerce_optional_str(module, ctx="test_catalog.module") or path_to_module(
-            rel_path_text
+    for row in filtered.iter_rows(named=True):
+        rel_path_text = coerce_str(row.get("rel_path"), ctx="test_catalog.rel_path")
+        module_name = coerce_optional_str(
+            module_by_path.get(rel_path_text),
+            ctx="test_catalog.module",
+        ) or path_to_module(rel_path_text)
+        goid_value = normalize_decimal_id(row.get("test_goid_h128"))
+        goid_info = goid_meta.get(goid_value, {}) if goid_value is not None else {}
+        qualname_value = coerce_optional_str(
+            row.get("qualname") or goid_info.get("qualname"),
+            ctx="test_catalog.qualname",
+        )
+        language_value = (
+            coerce_optional_str(
+                row.get("language") or goid_info.get("language"),
+                ctx="test_catalog.language",
+            )
+            or "python"
         )
         records.append(
             TestRecord(
-                test_id=coerce_str(test_id, ctx="test_catalog.test_id"),
-                test_goid_h128=normalize_decimal_id(goid),
-                urn=coerce_optional_str(urn, ctx="test_catalog.urn"),
+                test_id=coerce_str(row.get("test_id"), ctx="test_catalog.test_id"),
+                test_goid_h128=goid_value,
+                urn=coerce_optional_str(row.get("urn"), ctx="test_catalog.urn"),
                 rel_path=rel_path_text,
                 module=module_name,
-                qualname=coerce_optional_str(qualname, ctx="test_catalog.qualname"),
-                language=coerce_optional_str(language, ctx="test_catalog.language"),
-                kind=coerce_optional_str(kind, ctx="test_catalog.kind"),
-                status=coerce_optional_str(status, ctx="test_catalog.status"),
-                duration_ms=coerce_optional_float(duration_ms, ctx="test_catalog.duration_ms"),
-                markers=_normalize_markers(markers if isinstance(markers, list) else None),
-                flaky=bool(flaky) if flaky is not None else None,
-                start_line=coerce_optional_int(start_line, ctx="test_catalog.start_line"),
-                end_line=coerce_optional_int(end_line, ctx="test_catalog.end_line"),
+                qualname=qualname_value,
+                language=language_value,
+                kind=coerce_optional_str(row.get("kind"), ctx="test_catalog.kind"),
+                status=coerce_optional_str(row.get("status"), ctx="test_catalog.status"),
+                duration_ms=coerce_optional_float(
+                    row.get("duration_ms"),
+                    ctx="test_catalog.duration_ms",
+                ),
+                markers=_normalize_markers(
+                    row.get("markers") if isinstance(row.get("markers"), list) else None
+                ),
+                flaky=bool(row.get("flaky")) if row.get("flaky") is not None else None,
+                start_line=coerce_optional_int(
+                    goid_info.get("start_line"),
+                    ctx="test_catalog.start_line",
+                ),
+                end_line=coerce_optional_int(
+                    goid_info.get("end_line"),
+                    ctx="test_catalog.end_line",
+                ),
             )
         )
     return records
@@ -399,110 +455,110 @@ def load_test_graph_metrics_public(
 
 
 def load_test_records_public(
-    con: DuckDBConnection,
+    test_catalog_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    modules_frame: pl.DataFrame | None,
+    *,
     repo: str,
     commit: str,
 ) -> list[TestRecord]:
-    """Load test records from catalog.
+    """Load test records from tabular inputs.
 
     Returns
     -------
     list[TestRecord]
-        Test records for the snapshot.
+        Parsed test records for the snapshot.
     """
-    return _load_test_records(con, repo, commit)
+    return _load_test_records_from_frames(
+        test_catalog_frame,
+        goids_frame,
+        modules_frame,
+        repo=repo,
+        commit=commit,
+    )
 
 
-def _load_functions_covered(
-    con: DuckDBConnection,
+def _load_functions_covered_from_frames(
+    test_coverage_edges_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    modules_frame: pl.DataFrame | None,
+    *,
     repo: str,
     commit: str,
 ) -> dict[str, FunctionCoverageEntry]:
-    reader = con.execute(
-        """
-        WITH per_edge AS (
-            SELECT
-                test_id,
-                function_goid_h128,
-                SUM(covered_lines) AS covered_lines,
-                SUM(executable_lines) AS executable_lines
-            FROM analytics.test_coverage_edges
-            WHERE repo = ? AND commit = ?
-            GROUP BY test_id, function_goid_h128
-        ),
-        per_test_totals AS (
-            SELECT
-                test_id,
-                SUM(covered_lines) AS total_covered_lines
-            FROM per_edge
-            GROUP BY test_id
-        )
-        SELECT
-            pe.test_id,
-            pe.function_goid_h128,
-            pe.covered_lines * 1.0 / NULLIF(pe.executable_lines, 0) AS coverage_ratio,
-            pe.covered_lines * 1.0 / NULLIF(pt.total_covered_lines, 0) AS coverage_share,
-            g.urn,
-            m.module,
-            g.qualname,
-            g.rel_path
-        FROM per_edge pe
-        JOIN per_test_totals pt USING (test_id)
-        LEFT JOIN core.goids g
-          ON g.goid_h128 = pe.function_goid_h128
-         AND g.repo = ?
-         AND g.commit = ?
-        LEFT JOIN core.modules m
-          ON m.repo = g.repo
-         AND m.commit = g.commit
-         AND m.path = g.rel_path
-        """,
-        [repo, commit, repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-
+    if test_coverage_edges_frame is None or test_coverage_edges_frame.is_empty():
+        return {}
+    edges = _filter_frame_by_snapshot(test_coverage_edges_frame, repo=repo, commit=commit)
+    if edges.is_empty():
+        return {}
+    per_edge: dict[tuple[str, int], dict[str, int]] = {}
+    totals: dict[str, int] = {}
+    for row in edges.iter_rows(named=True):
+        test_id_raw = row.get("test_id")
+        func_goid = normalize_decimal_id(row.get("function_goid_h128"))
+        if test_id_raw is None or func_goid is None:
+            continue
+        test_id = str(test_id_raw)
+        covered = int(row.get("covered_lines") or 0)
+        executable = int(row.get("executable_lines") or 0)
+        key = (test_id, func_goid)
+        current = per_edge.get(key, {"covered": 0, "executable": 0})
+        current["covered"] += covered
+        current["executable"] += executable
+        per_edge[key] = current
+        totals[test_id] = totals.get(test_id, 0) + covered
+    goid_meta: dict[int, dict[str, object]] = {}
+    if goids_frame is not None and not goids_frame.is_empty():
+        goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
+        for row in goids_filtered.iter_rows(named=True):
+            goid = normalize_decimal_id(row.get("goid_h128"))
+            if goid is None:
+                continue
+            goid_meta[goid] = {
+                "urn": row.get("urn"),
+                "qualname": row.get("qualname"),
+                "rel_path": row.get("rel_path"),
+            }
+    module_by_path: dict[str, str] = {}
+    if modules_frame is not None and not modules_frame.is_empty():
+        modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
+        for row in modules_filtered.iter_rows(named=True):
+            path = row.get("path")
+            module = row.get("module")
+            if isinstance(path, str) and module is not None:
+                module_by_path[path] = str(module)
     result: dict[str, FunctionCoverageEntry] = {}
-    for (
-        test_id,
-        function_goid_h128,
-        coverage_ratio,
-        coverage_share,
-        urn,
-        module,
-        qualname,
-        rel_path,
-    ) in iter_tuples_from_arrow_reader(reader):
-        rel_path_text = coerce_str(rel_path, ctx="test_coverage_edges.rel_path")
-        module_name = coerce_optional_str(
-            module, ctx="test_coverage_edges.module"
-        ) or path_to_module(rel_path_text)
-        test_key = coerce_str(test_id, ctx="test_coverage_edges.test_id")
-        entry = result.get(test_key)
-        if entry is None:
-            entry = FunctionCoverageEntry(functions=[], count=0, primary=[])
-            result[test_key] = entry
+    for (test_id, func_goid), counts in per_edge.items():
+        total = totals.get(test_id, 0)
+        coverage_ratio = counts["covered"] / counts["executable"] if counts["executable"] else None
+        coverage_share = counts["covered"] / total if total else None
+        meta = goid_meta.get(func_goid, {})
+        rel_path_text = coerce_str(meta.get("rel_path") or "", ctx="test_coverage_edges.rel_path")
+        module_name = module_by_path.get(rel_path_text) or path_to_module(rel_path_text)
+        entry = result.get(test_id) or FunctionCoverageEntry(functions=[], count=0, primary=[])
         functions = list(entry.functions)
         primary = list(entry.primary)
-        goid_value = normalize_decimal_id(function_goid_h128)
-        ratio_value = coerce_optional_float(coverage_ratio, ctx="coverage_ratio")
-        share_value = coerce_optional_float(coverage_share, ctx="coverage_share")
         functions.append(
             {
-                "function_goid_h128": goid_value,
-                "urn": coerce_optional_str(urn, ctx="test_coverage_edges.urn"),
+                "function_goid_h128": func_goid,
+                "urn": coerce_optional_str(meta.get("urn"), ctx="test_coverage_edges.urn"),
                 "module": module_name,
-                "qualname": coerce_optional_str(qualname, ctx="test_coverage_edges.qualname"),
+                "qualname": coerce_optional_str(
+                    meta.get("qualname"),
+                    ctx="test_coverage_edges.qualname",
+                ),
                 "rel_path": rel_path_text,
-                "coverage_ratio": ratio_value,
-                "coverage_share": share_value,
+                "coverage_ratio": coverage_ratio,
+                "coverage_share": coverage_share,
             }
         )
         if (
-            goid_value is not None
-            and share_value is not None
-            and share_value >= PRIMARY_COVERAGE_THRESHOLD
+            func_goid is not None
+            and coverage_share is not None
+            and coverage_share >= PRIMARY_COVERAGE_THRESHOLD
         ):
-            primary.append(goid_value)
-        result[test_key] = FunctionCoverageEntry(
+            primary.append(func_goid)
+        result[test_id] = FunctionCoverageEntry(
             functions=functions,
             count=len(functions),
             primary=primary,
@@ -510,145 +566,154 @@ def _load_functions_covered(
     return result
 
 
-def _load_subsystems_covered(
-    con: DuckDBConnection,
+def _load_subsystems_covered_from_frames(
+    test_coverage_edges_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    modules_frame: pl.DataFrame | None,
+    subsystem_modules_frame: pl.DataFrame | None,
+    subsystems_frame: pl.DataFrame | None,
+    *,
     repo: str,
     commit: str,
 ) -> dict[str, SubsystemCoverageEntry]:
-    reader = con.execute(
-        """
-        WITH per_edge AS (
-            SELECT
-                e.test_id,
-                sm.subsystem_id,
-                SUM(e.covered_lines) AS covered_lines,
-                SUM(e.executable_lines) AS executable_lines
-            FROM analytics.test_coverage_edges e
-            JOIN core.goids g
-              ON g.goid_h128 = e.function_goid_h128
-             AND g.repo = e.repo
-             AND g.commit = e.commit
-            JOIN core.modules m
-              ON m.repo = g.repo
-             AND m.commit = g.commit
-             AND m.path = g.rel_path
-            JOIN analytics.subsystem_modules sm
-              ON sm.module = m.module
-             AND sm.repo = e.repo
-             AND sm.commit = e.commit
-            WHERE e.repo = ? AND e.commit = ?
-            GROUP BY e.test_id, sm.subsystem_id
-        ),
-        per_test_totals AS (
-            SELECT
-                test_id,
-                SUM(covered_lines) AS total_covered_lines
-            FROM per_edge
-            GROUP BY test_id
-        )
-        SELECT
-            pe.test_id,
-            pe.subsystem_id,
-            pe.covered_lines * 1.0 / NULLIF(pt.total_covered_lines, 0) AS coverage_share,
-            s.name,
-            s.max_risk_score
-        FROM per_edge pe
-        JOIN per_test_totals pt USING (test_id)
-        LEFT JOIN analytics.subsystems s
-          ON s.subsystem_id = pe.subsystem_id
-         AND s.repo = ?
-         AND s.commit = ?
-        """,
-        [repo, commit, repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-
+    if (
+        test_coverage_edges_frame is None
+        or test_coverage_edges_frame.is_empty()
+        or subsystem_modules_frame is None
+        or subsystem_modules_frame.is_empty()
+    ):
+        return {}
+    edges = _filter_frame_by_snapshot(test_coverage_edges_frame, repo=repo, commit=commit)
+    if edges.is_empty():
+        return {}
+    module_by_path: dict[str, str] = {}
+    if modules_frame is not None and not modules_frame.is_empty():
+        modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
+        for row in modules_filtered.iter_rows(named=True):
+            path = row.get("path")
+            module = row.get("module")
+            if isinstance(path, str) and module is not None:
+                module_by_path[path] = str(module)
+    goid_to_module: dict[int, str] = {}
+    if goids_frame is not None and not goids_frame.is_empty():
+        goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
+        for row in goids_filtered.iter_rows(named=True):
+            goid = normalize_decimal_id(row.get("goid_h128"))
+            if goid is None:
+                continue
+            rel_path = row.get("rel_path")
+            if isinstance(rel_path, str):
+                module = module_by_path.get(rel_path) or path_to_module(rel_path)
+                goid_to_module[goid] = module
+    subsystem_by_module: dict[str, str] = {}
+    subsys_filtered = _filter_frame_by_snapshot(
+        subsystem_modules_frame,
+        repo=repo,
+        commit=commit,
+    )
+    for row in subsys_filtered.iter_rows(named=True):
+        module = row.get("module")
+        subsystem_id = row.get("subsystem_id")
+        if module is None or subsystem_id is None:
+            continue
+        subsystem_by_module[str(module)] = str(subsystem_id)
+    subsys_meta: dict[str, dict[str, object]] = {}
+    if subsystems_frame is not None and not subsystems_frame.is_empty():
+        subs_filtered = _filter_frame_by_snapshot(subsystems_frame, repo=repo, commit=commit)
+        for row in subs_filtered.iter_rows(named=True):
+            subsystem_id = row.get("subsystem_id")
+            if subsystem_id is None:
+                continue
+            subsys_meta[str(subsystem_id)] = {
+                "name": row.get("name"),
+                "max_risk_score": row.get("max_risk_score"),
+            }
+    totals: dict[str, int] = {}
+    per_edge: dict[tuple[str, str], int] = {}
+    for row in edges.iter_rows(named=True):
+        test_id_raw = row.get("test_id")
+        func_goid = normalize_decimal_id(row.get("function_goid_h128"))
+        if test_id_raw is None or func_goid is None:
+            continue
+        module = goid_to_module.get(func_goid)
+        if module is None:
+            continue
+        subsystem_id = subsystem_by_module.get(module)
+        if subsystem_id is None:
+            continue
+        test_id = str(test_id_raw)
+        covered = int(row.get("covered_lines") or 0)
+        key = (test_id, subsystem_id)
+        per_edge[key] = per_edge.get(key, 0) + covered
+        totals[test_id] = totals.get(test_id, 0) + covered
     result: dict[str, SubsystemCoverageEntry] = {}
-    for (
-        test_id,
-        subsystem_id,
-        coverage_share,
-        name,
-        max_risk_score,
-    ) in iter_tuples_from_arrow_reader(reader):
-        test_key = coerce_str(test_id, ctx="subsystem_coverage.test_id")
-        entry = result.get(test_key) or SubsystemCoverageEntry(
+    for (test_id, subsystem_id), covered in per_edge.items():
+        total = totals.get(test_id, 0)
+        share = covered / total if total else 0.0
+        meta = subsys_meta.get(subsystem_id, {})
+        entry = result.get(test_id) or SubsystemCoverageEntry(
             subsystems=[],
             count=0,
             primary_subsystem_id=None,
             max_risk_score=0.0,
         )
-        share = coerce_optional_float(coverage_share, ctx="coverage_share") or 0.0
-        subsystem_id_text = coerce_str(subsystem_id, ctx="subsystem_coverage.subsystem_id")
-        subsystem_name = coerce_optional_str(name, ctx="subsystems.name") or ""
         subsystems = list(entry.subsystems)
         subsystems.append(
             {
-                "subsystem_id": subsystem_id_text,
-                "name": subsystem_name,
+                "subsystem_id": subsystem_id,
+                "name": coerce_optional_str(meta.get("name"), ctx="subsystems.name") or "",
                 "coverage_share": share,
             }
         )
         primary_subsystem_id = entry.primary_subsystem_id
-        primary_share = share if primary_subsystem_id == subsystem_id_text else -1.0
+        primary_share = share if primary_subsystem_id == subsystem_id else -1.0
         if primary_subsystem_id is None or share > primary_share:
-            primary_subsystem_id = subsystem_id_text
-        result[test_key] = SubsystemCoverageEntry(
+            primary_subsystem_id = subsystem_id
+        max_risk_score = coerce_optional_float(meta.get("max_risk_score"), ctx="max_risk_score")
+        result[test_id] = SubsystemCoverageEntry(
             subsystems=subsystems,
             count=len(subsystems),
             primary_subsystem_id=primary_subsystem_id,
-            max_risk_score=max(
-                entry.max_risk_score or 0.0,
-                coerce_optional_float(max_risk_score, ctx="max_risk_score") or 0.0,
-            ),
+            max_risk_score=max(entry.max_risk_score or 0.0, max_risk_score or 0.0),
         )
     return result
 
 
-def _load_test_graph_metrics(
-    con: DuckDBConnection,
+def _load_test_graph_metrics_from_frame(
+    frame: pl.DataFrame | None,
+    *,
     repo: str,
     commit: str,
 ) -> dict[str, TestGraphMetrics]:
-    reader = con.execute(
-        """
-        SELECT
-            test_id,
-            degree,
-            weighted_degree,
-            proj_degree,
-            proj_weight,
-            proj_clustering,
-            proj_betweenness
-        FROM analytics.test_graph_metrics_tests
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    if frame is None or frame.is_empty():
+        return {}
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
     metrics: dict[str, TestGraphMetrics] = {}
-    for (
-        test_id,
-        degree,
-        weighted_degree,
-        proj_degree,
-        proj_weight,
-        proj_clustering,
-        proj_betweenness,
-    ) in iter_tuples_from_arrow_reader(reader):
-        test_id_text = coerce_str(test_id, ctx="test_graph_metrics.test_id")
+    for row in filtered.iter_rows(named=True):
+        test_id_text = coerce_str(row.get("test_id"), ctx="test_graph_metrics.test_id")
         metrics[test_id_text] = TestGraphMetrics(
-            degree=coerce_optional_int(degree, ctx="test_graph_metrics.degree"),
+            degree=coerce_optional_int(
+                row.get("degree"),
+                ctx="test_graph_metrics.degree",
+            ),
             weighted_degree=coerce_optional_float(
-                weighted_degree,
+                row.get("weighted_degree"),
                 ctx="test_graph_metrics.weighted_degree",
             ),
-            proj_degree=coerce_optional_int(proj_degree, ctx="test_graph_metrics.proj_degree"),
-            proj_weight=coerce_optional_float(proj_weight, ctx="test_graph_metrics.proj_weight"),
+            proj_degree=coerce_optional_int(
+                row.get("proj_degree"),
+                ctx="test_graph_metrics.proj_degree",
+            ),
+            proj_weight=coerce_optional_float(
+                row.get("proj_weight"),
+                ctx="test_graph_metrics.proj_weight",
+            ),
             proj_clustering=coerce_optional_float(
-                proj_clustering,
+                row.get("proj_clustering"),
                 ctx="test_graph_metrics.proj_clustering",
             ),
             proj_betweenness=coerce_optional_float(
-                proj_betweenness,
+                row.get("proj_betweenness"),
                 ctx="test_graph_metrics.proj_betweenness",
             ),
         )
@@ -656,50 +721,42 @@ def _load_test_graph_metrics(
 
 
 def load_test_profile_context(
-    con: DuckDBConnection,
+    test_profile_frame: pl.DataFrame | None,
+    *,
     repo: str,
     commit: str,
 ) -> dict[str, dict[str, object]]:
-    """Load test profile context.
+    """Load test profile context from tabular inputs.
 
     Returns
     -------
     dict[str, dict[str, object]]
-        Profile context keyed by ``test_id``.
+        Test profile context keyed by test ID.
     """
-    reader = con.execute(
-        """
-        SELECT
-            test_id,
-            markers,
-            functions_covered,
-            subsystems_covered,
-            assert_count,
-            raise_count,
-            status
-        FROM analytics.test_profile
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     ctx: dict[str, dict[str, object]] = {}
-    for (
-        test_id,
-        markers,
-        functions_covered,
-        subsystems_covered,
-        assert_count,
-        raise_count,
-        status,
-    ) in iter_tuples_from_arrow_reader(reader):
+    if test_profile_frame is None or test_profile_frame.is_empty():
+        return ctx
+    filtered = _filter_frame_by_snapshot(test_profile_frame, repo=repo, commit=commit)
+    for row in filtered.iter_rows(named=True):
+        test_id = row.get("test_id")
+        if test_id is None:
+            continue
         test_id_text = coerce_str(test_id, ctx="test_profile.test_id")
         ctx[test_id_text] = {
-            "markers": markers,
-            "functions_covered": functions_covered or [],
-            "subsystems_covered": subsystems_covered or [],
-            "assert_count": coerce_optional_int(assert_count, ctx="test_profile.assert_count") or 0,
-            "raise_count": coerce_optional_int(raise_count, ctx="test_profile.raise_count") or 0,
-            "status": coerce_optional_str(status, ctx="test_profile.status"),
+            "markers": row.get("markers"),
+            "functions_covered": row.get("functions_covered") or [],
+            "subsystems_covered": row.get("subsystems_covered") or [],
+            "assert_count": coerce_optional_int(
+                row.get("assert_count"),
+                ctx="test_profile.assert_count",
+            )
+            or 0,
+            "raise_count": coerce_optional_int(
+                row.get("raise_count"),
+                ctx="test_profile.raise_count",
+            )
+            or 0,
+            "status": coerce_optional_str(row.get("status"), ctx="test_profile.status"),
         }
     return ctx
 

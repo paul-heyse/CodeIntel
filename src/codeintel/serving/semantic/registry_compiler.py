@@ -6,10 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.serving.semantic_compile import (
-    CompiledSemanticRegistry,
-    compile_semantic_registry_from_views,
-)
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import (
     TAG_SEMANTIC_ENTITY,
@@ -17,6 +13,10 @@ from codeintel.core.hamilton.semantic_tags import (
     TAG_SEMANTIC_KIND,
 )
 from codeintel.core.hamilton.tag_filters import tf_semantic_views
+from codeintel.serving.semantic_compile import (
+    CompiledSemanticRegistry,
+    compile_semantic_registry_from_views,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

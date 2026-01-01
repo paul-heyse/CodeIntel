@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+import polars as pl
 import yaml
 
 from codeintel.build.analytics.compute.dependencies.classification import (
@@ -38,8 +39,6 @@ from codeintel.build.analytics.utilities.ast import (
 )
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
     "repo",
@@ -85,7 +84,6 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
-    from codeintel.storage.gateway import DuckDBConnection
 
 log = logging.getLogger(__name__)
 
@@ -253,19 +251,29 @@ def _function_call_rows(
     return rows
 
 
-def _fetch_dependency_call_rows(
-    con: DuckDBConnection, snapshot: SnapshotRef
+def _dependency_call_rows_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> Iterable[tuple[object, ...]]:
-    reader = con.execute(
-        """
-        SELECT dep_id, library, function_goid_h128, module,
-               callsite_count, modes, severity, criticality, risk_score
-        FROM analytics.external_dependency_calls
-        WHERE repo = ? AND commit = ?
-        """,
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    return iter_tuples_from_arrow_reader(reader)
+    if frame is None or frame.is_empty():
+        return ()
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    return [
+        (
+            row.get("dep_id"),
+            row.get("library"),
+            row.get("function_goid_h128"),
+            row.get("module"),
+            row.get("callsite_count"),
+            row.get("modes"),
+            row.get("severity"),
+            row.get("criticality"),
+            row.get("risk_score"),
+        )
+        for row in filtered.iter_rows(named=True)
+    ]
 
 
 def _aggregate_dependency_calls(
@@ -500,23 +508,39 @@ def _classify_modes(
     return (["unknown"], None)
 
 
-def _load_config_keys(con: DuckDBConnection, repo: str, commit: str) -> dict[str, set[str]]:
+def _config_keys_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, set[str]]:
     mapping: dict[str, set[str]] = defaultdict(set)
-    reader = con.execute(
-        """
-        SELECT reference_modules, key
-        FROM analytics.config_values
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    for ref_modules, key in iter_tuples_from_arrow_reader(reader):
+    if frame is None or frame.is_empty():
+        return mapping
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    for row in filtered.iter_rows(named=True):
+        ref_modules = row.get("reference_modules")
+        key = row.get("key")
         if key is None or ref_modules is None:
             continue
         modules = _ensure_str_list(ref_modules)
         for module in modules:
             mapping[module].add(str(key))
     return mapping
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
 
 
 def load_config_key_map(con: DuckDBConnection, repo: str, commit: str) -> dict[str, set[str]]:

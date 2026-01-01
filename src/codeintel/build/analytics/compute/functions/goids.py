@@ -1,13 +1,13 @@
 """Function GOID types and loading utilities.
 
 This module provides data types and utilities for working with function
-global object identifiers (GOIDs), including loading from the database
+global object identifiers (GOIDs), including loading from tabular inputs
 and grouping by file path.
 
 Example
 -------
 >>> from codeintel.build.analytics.compute.functions.goids import FunctionGoidLoader
->>> loader = FunctionGoidLoader(gateway, snapshot)
+>>> loader = FunctionGoidLoader(goids_frame, snapshot)
 >>> for goid in loader.iter_goids():
 ...     print(f"{goid.qualname}: {goid.start_line}-{goid.end_line}")
 """
@@ -17,23 +17,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.query_results import (
-    coerce_int,
-    coerce_optional_int,
-    records_from_relation,
-)
+import polars as pl
+
+from codeintel.core.query_results import coerce_int, coerce_optional_int
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 
 class GoidRow(TypedDict):
-    """Row structure for function GOIDs from DuckDB."""
+    """Row structure for function GOIDs from tabular input."""
 
     goid_h128: int
     urn: str
@@ -49,7 +45,7 @@ class GoidRow(TypedDict):
 
 @dataclass(frozen=True)
 class FunctionGoid:
-    """Function GOID metadata loaded from database.
+    """Function GOID metadata loaded from tabular input.
 
     Attributes
     ----------
@@ -125,19 +121,19 @@ class FunctionGoidLoader:
 
     def __init__(
         self,
-        gateway: StorageGateway,
+        goids_frame: pl.LazyFrame,
         snapshot: SnapshotRef,
     ) -> None:
         """Initialize the loader.
 
         Parameters
         ----------
-        gateway
-            Storage gateway for database access.
+        goids_frame
+            LazyFrame for core.goids data.
         snapshot
             Repository snapshot reference.
         """
-        self._gateway = gateway
+        self._goids_frame = goids_frame
         self._snapshot = snapshot
 
     def load_all(self) -> list[FunctionGoid]:
@@ -151,35 +147,28 @@ class FunctionGoidLoader:
         return list(self.iter_goids())
 
     def iter_goids(self) -> Iterator[FunctionGoid]:
-        """Iterate over function GOIDs using DuckDB relations.
+        """Iterate over function GOIDs using tabular input.
 
         Yields
         ------
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        predicate = (ColumnExpression("repo") == ConstantExpression(self._snapshot.repo)) & (
-            ColumnExpression("commit") == ConstantExpression(self._snapshot.commit)
+        frame = _filter_frame_by_snapshot(self._goids_frame, self._snapshot)
+        filtered = frame.filter(pl.col("kind").is_in(["function", "method"]))
+        selected = filtered.select(
+            "goid_h128",
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
         )
-        kind_literals = [ConstantExpression("function"), ConstantExpression("method")]
-        relation = (
-            self._gateway.relation_from_table_key("core.goids")
-            .filter(predicate)
-            .filter(ColumnExpression("kind").isin(*kind_literals))
-            .select(
-                "goid_h128",
-                "urn",
-                "repo",
-                "commit",
-                "rel_path",
-                "language",
-                "kind",
-                "qualname",
-                "start_line",
-                "end_line",
-            )
-        )
-        for record in records_from_relation(relation):
+        for record in selected.collect().to_dicts():
             goid_row: GoidRow = {
                 "goid_h128": coerce_int(record["goid_h128"], ctx="goid_h128"),
                 "urn": str(record["urn"]),
@@ -221,6 +210,15 @@ class FunctionGoidLoader:
             Absolute path to the source file.
         """
         return (self._snapshot.repo_root / goid.rel_path).resolve()
+
+
+def _filter_frame_by_snapshot(frame: pl.LazyFrame, snapshot: SnapshotRef) -> pl.LazyFrame:
+    available = set(frame.columns)
+    if "repo" in available:
+        frame = frame.filter(pl.col("repo") == snapshot.repo)
+    if "commit" in available:
+        frame = frame.filter(pl.col("commit") == snapshot.commit)
+    return frame
 
 
 __all__ = [

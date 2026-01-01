@@ -31,9 +31,9 @@ from codeintel.build.schemas.observation_pipeline import (
 )
 from codeintel.build.schemas.observations import SchemaObservationInputs, observe_batches
 from codeintel.build.tabular.duckdb_relation import register_ephemeral
+from codeintel.core.duckdb_types import DuckDBRelation
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
-from codeintel.storage.duckdb_types import DuckDBRelation
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:

@@ -11,7 +11,7 @@ import pyarrow as pa
 
 from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, table_to_lazyframe
 from codeintel.build.tabular.types import TabularInputWithRelation, TabularRelation
-from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
+from codeintel.core.duckdb_types import DuckDBConnection, DuckDBRelation
 
 _NAME_SANITIZER = re.compile(r"[^0-9A-Za-z_]+")
 

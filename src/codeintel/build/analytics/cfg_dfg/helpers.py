@@ -8,20 +8,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+import polars as pl
+
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import (
-    coerce_optional_str,
-    coerce_str,
-    iter_tuples_from_arrow_reader,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     import networkx as nx
-
-    from codeintel.storage.gateway import StorageGateway
 
 
 def degree_dict(
@@ -78,14 +72,20 @@ def parse_block_idx(block_id: str | int | None) -> int | None:
 
 
 def load_function_metadata(
-    gateway: StorageGateway, repo: str, commit: str
+    goids_frame: pl.DataFrame,
+    modules_frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
 ) -> dict[int, tuple[str, str | None, str | None]]:
-    """Load function metadata keyed by GOID.
+    """Load function metadata keyed by GOID from tabular frames.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
+    goids_frame
+        Frame containing ``core.goids`` rows.
+    modules_frame
+        Frame containing ``core.modules`` rows.
     repo
         Repository identifier.
     commit
@@ -96,30 +96,33 @@ def load_function_metadata(
     dict[int, tuple[str, str | None, str | None]]
         Mapping of GOID -> (rel_path, module, qualname).
     """
-    reader = gateway.execute(
-        """
-        SELECT g.goid_h128,
-               g.rel_path,
-               m.module,
-               g.qualname
-        FROM core.goids g
-        LEFT JOIN core.modules m
-          ON m.path = g.rel_path
-        WHERE g.repo = ? AND g.commit = ?
-          AND g.kind IN ('function', 'method')
-        """,
-        [repo, commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    result: dict[int, tuple[str, str | None, str | None]] = {}
-    for goid_raw, rel_path, module, qualname in iter_tuples_from_arrow_reader(reader):
-        goid = normalize_decimal_id(goid_raw)
+    module_by_path: dict[str, str] = {}
+    for row in modules_frame.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_by_path[path] = module
+
+    metadata: dict[int, tuple[str, str | None, str | None]] = {}
+    for row in goids_frame.iter_rows(named=True):
+        if row.get("repo") != repo or row.get("commit") != commit:
+            continue
+        if row.get("kind") not in {"function", "method"}:
+            continue
+        goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
             continue
-        rel_path_text = coerce_str(rel_path, ctx="function_metadata.rel_path")
-        module_text = coerce_optional_str(module, ctx="function_metadata.module")
-        qualname_text = coerce_optional_str(qualname, ctx="function_metadata.qualname")
-        result[goid] = (rel_path_text, module_text, qualname_text)
-    return result
+        rel_path = row.get("rel_path")
+        if not isinstance(rel_path, str):
+            continue
+        qualname = row.get("qualname")
+        module = module_by_path.get(rel_path)
+        metadata[int(goid)] = (
+            rel_path,
+            module,
+            qualname if isinstance(qualname, str) else None,
+        )
+    return metadata
 
 
 __all__ = [

@@ -33,9 +33,6 @@ from codeintel.build.graphs.runtime.context import (
     resolve_graph_context,
 )
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
-from codeintel.storage.repositories.functions import FunctionRepository
-from codeintel.storage.repositories.modules import ModuleRepository
-from codeintel.storage.repositories.subsystems import SubsystemRepository
 
 if TYPE_CHECKING:
     from codeintel.build.graphs.runtime.context import GraphContext
@@ -46,7 +43,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
     )
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -186,46 +182,6 @@ def build_graph_metric_filters_from_sets(
         function_goids=function_set or None,
         modules=module_set or None,
         subsystems=subsystem_set or None,
-    )
-
-
-def build_graph_metric_filters(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-) -> GraphMetricFilters:
-    """
-    Construct repository-backed filters for graph metrics.
-
-    When repositories return no data, filters default to no-ops.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    snapshot
-        Repository snapshot reference (repo, commit, repo_root).
-
-    Returns
-    -------
-    GraphMetricFilters
-        Filter set derived from repository contents.
-    """
-    func_repo = FunctionRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
-    module_repo = ModuleRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
-    function_goids = cast("set[Hashable]", set(func_repo.list_function_goids()))
-    modules = set(module_repo.list_modules())
-    subsystem_repo = SubsystemRepository(
-        gateway=gateway, repo=snapshot.repo, commit=snapshot.commit
-    )
-    subsystem_ids: set[str] = set()
-    for row in subsystem_repo.list_subsystem_memberships():
-        subsystem_id = row.get("subsystem_id")
-        if isinstance(subsystem_id, str):
-            subsystem_ids.add(subsystem_id)
-    return GraphMetricFilters(
-        function_goids=function_goids or None,
-        modules=modules or None,
-        subsystems=subsystem_ids or None,
     )
 
 

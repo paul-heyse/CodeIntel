@@ -13,16 +13,16 @@ Data Types
 Usage
 -----
 For dependency injection, use service classes from ``core.catalog`` or
-`StorageGateway` implementations directly.
+`BuildGateway` implementations directly.
 
 Example
 -------
 ```python
 from codeintel.core.catalog import CatalogService
-from codeintel.storage.gateway import StorageGateway
+from codeintel.core.gateway import BuildGateway
 
 
-def process(storage: StorageGateway, catalog: CatalogService) -> None: ...
+def process(storage: BuildGateway, catalog: CatalogService) -> None: ...
 ```
 """
 

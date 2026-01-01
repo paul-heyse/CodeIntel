@@ -15,9 +15,9 @@ from codeintel.build.hamilton.naming import dataset_node, to_node_name
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.tagging import tag_loader_query
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.datasets.arrow_store import scan_dataset
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.arrow_store import scan_dataset
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 
 
 def _default_loader_name(*, target: str, table_key: str) -> str:

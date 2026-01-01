@@ -9,7 +9,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 
 
 def empty_reader_from_schema(schema: pa.Schema) -> pa.RecordBatchReader:

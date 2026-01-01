@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.graphs.runtime import GraphRuntime
+from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
@@ -31,11 +32,11 @@ from codeintel.core.validation import (
     has_error_findings,
 )
 from codeintel.core.validation.reporters import GRAPH_VALIDATION_TABLE_KEY
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.build.graphs.runtime import GraphRuntimeOptions
-    from codeintel.storage.gateway import StorageGateway
 
 
 SAMPLE_LIMIT = 5
@@ -110,14 +111,17 @@ def hub_threshold(node_count: int) -> int:
 
 
 def persist_findings(
-    gateway: StorageGateway, findings: list[dict[str, object]], repo: str, commit: str
+    dataset_root_dir: Path | None,
+    findings: list[dict[str, object]],
+    repo: str,
+    commit: str,
 ) -> None:
     """Persist validation findings to the analytics Parquet dataset.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for dataset root discovery.
+    dataset_root_dir
+        Root directory for Parquet dataset snapshots.
     findings
         List of findings to persist.
     repo
@@ -151,17 +155,17 @@ def persist_findings(
         )
     if not reporter.rows:
         return
-    _persist_findings_parquet(gateway, reporter.rows, repo=repo, commit=commit)
+    _persist_findings_parquet(dataset_root_dir, reporter.rows, repo=repo, commit=commit)
 
 
 def _persist_findings_parquet(
-    gateway: StorageGateway,
+    dataset_root_dir: Path | None,
     rows: Sequence[Mapping[str, object]],
     *,
     repo: str,
     commit: str,
 ) -> bool:
-    dataset_root = gateway.datasets.dataset_root_dir
+    dataset_root = dataset_root_dir
     if dataset_root is None:
         log.info("Graph validation persistence skipped; dataset_root_dir is not configured.")
         return False

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.build.analytics.compute.data_models.usage import build_data_model_usage_rows
+from codeintel.build.analytics.compute.data_models.usage import (
+    DataModelUsageInputs,
+    build_data_model_usage_rows,
+)
 from codeintel.build.analytics.data_models.compute import (
     DataModelsResult,
-    compute_data_models_from_inputs,
-    load_data_models_inputs,
+    compute_data_models_pure,
 )
 from codeintel.build.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
@@ -16,6 +18,7 @@ from codeintel.build.analytics.data_models.core import (
     DATA_MODELS_COLS,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -39,7 +42,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.catalog.service import CatalogService
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -110,16 +112,28 @@ def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
     return module_map
 
 
-def data_models_result(env: BuildEnv, _q__core__modules: InferableTabularInput) -> DataModelsResult:
-    """Compute data model rows from storage inputs.
+def data_models_result(
+    env: BuildEnv,
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+    q__core__docstrings: InferableTabularInput,
+) -> DataModelsResult:
+    """Compute data model rows from tabular inputs.
 
     Returns
     -------
     DataModelsResult
         Computed data model rows and metadata.
     """
-    inputs = load_data_models_inputs(env.gateway, env.snapshot)
-    return compute_data_models_from_inputs(inputs, env.snapshot)
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    docstrings_frame = tabular_to_lazyframe(q__core__docstrings).collect()
+    return compute_data_models_pure(
+        env.snapshot,
+        goids_frame=goids_frame,
+        modules_frame=modules_frame,
+        docstrings_frame=docstrings_frame,
+    )
 
 
 def data_models__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
@@ -264,8 +278,11 @@ def t__data_models(
 def data_model_usage__base(
     env: BuildEnv,
     q__core__modules: InferableTabularInput,
-    _q__core__goids: InferableTabularInput,
-    _q__analytics__data_models: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+    q__analytics__data_models: InferableTabularInput,
+    q__analytics__subsystem_modules: InferableTabularInput,
+    q__analytics__subsystems: InferableTabularInput,
+    q__analytics__function_types: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build data model usage rows.
 
@@ -275,23 +292,33 @@ def data_model_usage__base(
         Lazy frame containing data model usage rows.
     """
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    data_models_frame = tabular_to_lazyframe(q__analytics__data_models).collect()
+    subsystem_modules_frame = tabular_to_lazyframe(q__analytics__subsystem_modules).collect()
+    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems).collect()
+    function_types_frame = tabular_to_lazyframe(q__analytics__function_types).collect()
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_frame_for_table(DATA_MODEL_USAGE_TABLE_KEY)
-    catalog = CatalogService.from_db(env.gateway, repo=env.repo, commit=env.commit)
+    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
     )
-    ast_map, missing = load_function_asts(env.gateway, request)
+    ast_map, missing = load_function_asts(request)
     return build_data_model_usage_rows(
-        env.gateway,
         env.snapshot,
-        module_map=module_map,
-        ast_by_goid=ast_map,
-        missing_goids=missing,
+        DataModelUsageInputs(
+            module_map=module_map,
+            ast_by_goid=ast_map,
+            models_frame=data_models_frame,
+            subsystem_modules_frame=subsystem_modules_frame,
+            subsystems_frame=subsystems_frame,
+            function_types_frame=function_types_frame,
+            missing_goids=missing,
+        ),
     )
 
 

@@ -8,24 +8,63 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    import polars as pl
 
 
 @dataclass(frozen=True)
-class ProfileInputs:
-    """Snapshot handle for profile computations."""
+class FunctionProfileInputs:
+    """Snapshot handle for function profile computations."""
 
-    con: DuckDBConnection
-    gateway: StorageGateway
     repo: str
     commit: str
     created_at: datetime
     slow_test_threshold_ms: float
+    function_metrics: pl.DataFrame
+    function_types: pl.DataFrame
+    modules: pl.DataFrame
+    typedness: pl.DataFrame
+    diagnostics: pl.DataFrame
+    goid_risk_factors: pl.DataFrame
+    coverage_functions: pl.DataFrame
+    graph_metrics_functions: pl.DataFrame
+    function_effects: pl.DataFrame
+    function_contracts: pl.DataFrame
+    semantic_roles_functions: pl.DataFrame
+    docstrings: pl.DataFrame
+    hotspots: pl.DataFrame
+    call_graph_edges: pl.DataFrame
+    call_graph_nodes: pl.DataFrame
+    test_coverage_edges: pl.DataFrame
+    test_catalog: pl.DataFrame
 
 
-FunctionProfileInputs = ProfileInputs
-FileProfileInputs = ProfileInputs
-ModuleProfileInputs = ProfileInputs
+@dataclass(frozen=True)
+class FileProfileInputs:
+    """Snapshot handle for file profile computations."""
+
+    repo: str
+    commit: str
+    created_at: datetime
+    function_profile: pl.DataFrame
+    ast_metrics: pl.DataFrame
+    hotspots: pl.DataFrame
+    typedness: pl.DataFrame
+    static_diagnostics: pl.DataFrame
+    modules: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class ModuleProfileInputs:
+    """Snapshot handle for module profile computations."""
+
+    repo: str
+    commit: str
+    created_at: datetime
+    modules: pl.DataFrame
+    function_profile: pl.DataFrame
+    file_profile: pl.DataFrame
+    import_graph_edges: pl.DataFrame
+    semantic_roles_modules: pl.DataFrame
 
 
 @dataclass(frozen=True)

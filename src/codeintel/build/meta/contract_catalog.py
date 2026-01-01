@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.duckdb_types import DuckDBConnection
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.contract_serde import contract_to_json_obj
 from codeintel.core.schemas.contract_service import (
@@ -14,13 +15,12 @@ from codeintel.core.schemas.contract_service import (
     get_enriched_contract_service,
 )
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
-from codeintel.storage.duckdb_types import DuckDBConnection
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
 _CONTRACT_CATALOG_KIND = "dataset_contracts"
@@ -102,7 +102,7 @@ def persist_contract_catalog_to_connection(
 
 
 def persist_contract_catalog(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     *,
     inputs: Mapping[str, object] | None = None,
 ) -> ContractCatalogResult:

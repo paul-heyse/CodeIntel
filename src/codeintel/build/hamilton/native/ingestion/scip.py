@@ -55,8 +55,10 @@ from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.config.settings import ObservabilitySettings
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id
+from codeintel.core.query_results import records_from_arrow_reader
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
@@ -109,8 +111,6 @@ from codeintel.observability.teardown import (
     emit_scip_teardown_telemetry,
     emit_shutdown_error_event,
 )
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import records_from_arrow_reader
 from codeintel.storage.tracking.build_tracking import ScipRunRecord
 
 if TYPE_CHECKING:

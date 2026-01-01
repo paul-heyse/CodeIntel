@@ -48,17 +48,17 @@ from codeintel.build.exports.manifest import (
 from codeintel.build.exports.validation import validate_export_files
 from codeintel.build.exports.writers import write_jsonl_records, write_parquet_relation
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.errors.schema import SCHEMA_VALIDATION_FAILED
 from codeintel.core.exports.formats import normalize_export_format, suffix_for_export_format
-from codeintel.storage.duckdb_types import DuckDBError
-from codeintel.storage.queries.safe import safe_count
+from codeintel.core.queries.safe import safe_count
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from pathlib import Path
 
+    from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -74,11 +74,11 @@ class _ExportFormatSpec:
     mapping: Mapping[str, str]
     can_export_capability_key: str
     extension: str
-    write_table: Callable[[StorageGateway, str, Path, ExportAuditSettings], int]
+    write_table: Callable[[BuildGateway, str, Path, ExportAuditSettings], int]
 
 
 def export_jsonl_for_table(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
     output_path: Path,
     settings: ExportAuditSettings,
@@ -127,7 +127,7 @@ def export_jsonl_for_table(
 
 
 def export_parquet_for_table(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
     output_path: Path,
     settings: ExportAuditSettings,
@@ -173,7 +173,7 @@ def export_parquet_for_table(
     return rows_written
 
 
-def _format_spec(gateway: StorageGateway, fmt: ExportFormat) -> _ExportFormatSpec:
+def _format_spec(gateway: BuildGateway, fmt: ExportFormat) -> _ExportFormatSpec:
     if fmt == "jsonl":
         return _ExportFormatSpec(
             format="jsonl",
@@ -203,7 +203,7 @@ def _validate_written_exports(
     written: list[Path],
     registry_by_table_key: Mapping[str, DatasetContract],
     opts: ExportCallOptions,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
 ) -> None:
     if not opts.validate_exports:
         return
@@ -253,7 +253,7 @@ def _validate_written_exports(
 
 
 def _export_dataset(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     target: ExportTarget,
     *,
     spec: _ExportFormatSpec,
@@ -342,7 +342,7 @@ def _export_dataset(
 
 
 def export_all_datasets(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     document_output_dir: Path,
     *,
     fmt: ExportFormat,

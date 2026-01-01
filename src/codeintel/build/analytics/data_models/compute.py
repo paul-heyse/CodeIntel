@@ -28,12 +28,12 @@ from codeintel.build.analytics.data_models.core import (
     _load_class_metadata,
 )
 from codeintel.core.paths import normalize_path
-from codeintel.storage.repositories import RepositoryFactory
 
 if TYPE_CHECKING:
+    import polars as pl
+
     from codeintel.build.analytics.data_models.core import ClassMeta, ModelRecord
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 
 log = logging.getLogger(__name__)
@@ -195,19 +195,26 @@ def _build_relationship_rows(
 
 
 def load_data_models_inputs(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
+    *,
+    goids_frame: pl.DataFrame,
+    modules_frame: pl.DataFrame,
+    docstrings_frame: pl.DataFrame,
 ) -> DataModelsInputs:
-    """Load storage-backed inputs required for data model computation.
+    """Load tabular inputs required for data model computation.
 
     Returns
     -------
     DataModelsInputs
-        Loaded class metadata and docstring mappings.
+        Prepared class metadata and docstring map for the snapshot.
     """
-    repo = RepositoryFactory(gateway, repo=snapshot.repo, commit=snapshot.commit).data_models
-    class_metas = _load_class_metadata(repo)
-    docs = _doc_map(repo)
+    class_metas = _load_class_metadata(
+        goids_frame,
+        modules_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    docs = _doc_map(docstrings_frame, repo=snapshot.repo, commit=snapshot.commit)
     return DataModelsInputs(class_metas=tuple(class_metas), doc_map=docs)
 
 
@@ -279,8 +286,11 @@ def compute_data_models_from_inputs(
 
 
 def compute_data_models_pure(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
+    *,
+    goids_frame: pl.DataFrame,
+    modules_frame: pl.DataFrame,
+    docstrings_frame: pl.DataFrame,
 ) -> DataModelsResult:
     """Compute data models without writing to database.
 
@@ -289,10 +299,14 @@ def compute_data_models_pure(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for reading class metadata and docstrings.
     snapshot
         Repository and commit snapshot reference.
+    goids_frame
+        GOID rows for the snapshot.
+    modules_frame
+        Module rows for the snapshot.
+    docstrings_frame
+        Docstring rows for the snapshot.
 
     Returns
     -------
@@ -302,11 +316,16 @@ def compute_data_models_pure(
 
     Notes
     -----
-    This function is a pure transformation that reads from the database but
+    This function is a pure transformation that reads from tabular inputs but
     does not write. The materialization is handled by the Hamilton native
     module to ensure proper asset catalog tracking.
     """
-    inputs = load_data_models_inputs(gateway, snapshot)
+    inputs = load_data_models_inputs(
+        snapshot,
+        goids_frame=goids_frame,
+        modules_frame=modules_frame,
+        docstrings_frame=docstrings_frame,
+    )
     return compute_data_models_from_inputs(inputs, snapshot)
 
 

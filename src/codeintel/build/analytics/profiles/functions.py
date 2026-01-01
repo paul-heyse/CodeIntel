@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+import polars as pl
 
 from codeintel.build.analytics.profiles.types import (
     CoverageSummary,
@@ -28,9 +31,6 @@ from codeintel.build.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import records_from_relation
-from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -40,12 +40,35 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsFunctionProfileRow as FunctionProfileRowModel,
     )
-    from codeintel.storage.duckdb_types import DuckDBRelation
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 SLOW_TEST_THRESHOLD_MS = 1000.0
+
+
+def _scope_frame(frame: pl.DataFrame, repo: str, commit: str) -> pl.DataFrame:
+    if frame.is_empty():
+        return frame
+    if "repo" in frame.columns and "commit" in frame.columns:
+        return frame.filter((pl.col("repo") == repo) & (pl.col("commit") == commit))
+    return frame
+
+
+def _extract_annotation_ratio(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        ratio = value.get("params")
+        return float(ratio) if isinstance(ratio, (int, float)) else None
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(decoded, dict):
+            ratio = decoded.get("params")
+            return float(ratio) if isinstance(ratio, (int, float)) else None
+    return None
 
 
 def _coerce_goid(record: Mapping[str, object]) -> int | None:
@@ -66,68 +89,26 @@ class FunctionProfileViews:
     docs_by_func: Mapping[int, FunctionDocView]
 
 
-@dataclass(frozen=True)
-class _FunctionBaseTables:
-    """Filtered tables needed to assemble function base info."""
-
-    metrics: DuckDBRelation
-    types: DuckDBRelation
-    modules: DuckDBRelation
-    typedness: DuckDBRelation
-    diagnostics: DuckDBRelation
-
-
-def _load_function_base_tables(
-    inputs: FunctionProfileInputs,
-    module_table: str,
-) -> _FunctionBaseTables | None:
-    gw = inputs.gateway
-    repo = inputs.repo
-    commit = inputs.commit
-
-    try:
-        metrics = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.function_metrics"),
-            repo=repo,
-            commit=commit,
-        )
-        types = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.function_types"),
-            repo=repo,
-            commit=commit,
-        )
-        modules = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key(module_table),
-            repo=repo,
-            commit=commit,
-        )
-        typedness = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.typedness"),
-            repo=repo,
-            commit=commit,
-        )
-        diagnostics = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.static_diagnostics"),
-            repo=repo,
-            commit=commit,
-        )
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to access base tables: %s", exc)
-        return None
-
-    return _FunctionBaseTables(
-        metrics=metrics,
-        types=types,
-        modules=modules,
-        typedness=typedness,
-        diagnostics=diagnostics,
-    )
-
-
 def compute_function_profile_inputs(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
+    function_metrics: pl.DataFrame,
+    function_types: pl.DataFrame,
+    modules: pl.DataFrame,
+    typedness: pl.DataFrame,
+    diagnostics: pl.DataFrame,
+    goid_risk_factors: pl.DataFrame,
+    coverage_functions: pl.DataFrame,
+    graph_metrics_functions: pl.DataFrame,
+    function_effects: pl.DataFrame,
+    function_contracts: pl.DataFrame,
+    semantic_roles_functions: pl.DataFrame,
+    docstrings: pl.DataFrame,
+    hotspots: pl.DataFrame,
+    call_graph_edges: pl.DataFrame,
+    call_graph_nodes: pl.DataFrame,
+    test_coverage_edges: pl.DataFrame,
+    test_catalog: pl.DataFrame,
     slow_test_threshold_ms: float = SLOW_TEST_THRESHOLD_MS,
 ) -> FunctionProfileInputs:
     """
@@ -138,10 +119,42 @@ def compute_function_profile_inputs(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
     snapshot
         Repository and commit identifiers.
+    function_metrics
+        Frame for ``analytics.function_metrics``.
+    function_types
+        Frame for ``analytics.function_types``.
+    modules
+        Frame for ``core.modules``.
+    typedness
+        Frame for ``analytics.typedness``.
+    diagnostics
+        Frame for ``analytics.static_diagnostics``.
+    goid_risk_factors
+        Frame for ``analytics.goid_risk_factors``.
+    coverage_functions
+        Frame for ``analytics.coverage_functions``.
+    graph_metrics_functions
+        Frame for ``analytics.graph_metrics_functions``.
+    function_effects
+        Frame for ``analytics.function_effects``.
+    function_contracts
+        Frame for ``analytics.function_contracts``.
+    semantic_roles_functions
+        Frame for ``analytics.semantic_roles_functions``.
+    docstrings
+        Frame for ``core.docstrings``.
+    hotspots
+        Frame for ``analytics.hotspots``.
+    call_graph_edges
+        Frame for ``graph.call_graph_edges``.
+    call_graph_nodes
+        Frame for ``graph.call_graph_nodes``.
+    test_coverage_edges
+        Frame for ``analytics.test_coverage_edges``.
+    test_catalog
+        Frame for ``analytics.test_catalog``.
     slow_test_threshold_ms
         Threshold for slow tests in milliseconds.
 
@@ -151,12 +164,27 @@ def compute_function_profile_inputs(
         Snapshot handle used by downstream helpers.
     """
     return FunctionProfileInputs(
-        gateway=gateway,
-        con=gateway.con,
         repo=snapshot.repo,
         commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
         slow_test_threshold_ms=slow_test_threshold_ms,
+        function_metrics=function_metrics,
+        function_types=function_types,
+        modules=modules,
+        typedness=typedness,
+        diagnostics=diagnostics,
+        goid_risk_factors=goid_risk_factors,
+        coverage_functions=coverage_functions,
+        graph_metrics_functions=graph_metrics_functions,
+        function_effects=function_effects,
+        function_contracts=function_contracts,
+        semantic_roles_functions=semantic_roles_functions,
+        docstrings=docstrings,
+        hotspots=hotspots,
+        call_graph_edges=call_graph_edges,
+        call_graph_nodes=call_graph_nodes,
+        test_coverage_edges=test_coverage_edges,
+        test_catalog=test_catalog,
     )
 
 
@@ -181,167 +209,92 @@ def load_function_base_info(
         msg = f"Unexpected module table: {module_table}"
         raise ValueError(msg)
 
-    tables = _load_function_base_tables(inputs, module_table)
-    if tables is None:
+    metrics = _scope_frame(inputs.function_metrics, inputs.repo, inputs.commit)
+    if metrics.is_empty():
         return {}
 
-    try:
-        metrics_rel = tables.metrics.set_alias("metrics")
-        types_rel = tables.types.select(
-            "function_goid_h128",
-            "repo",
-            "commit",
-            "total_params",
-            "annotated_params",
-            "return_type",
-            "param_types",
-            "fully_typed",
-            "partial_typed",
-            "untyped",
-            "typedness_bucket",
-            "typedness_source",
-        ).set_alias("types")
-        joined = metrics_rel.join(
-            types_rel,
-            (
-                "metrics.function_goid_h128 = types.function_goid_h128 "
-                "AND metrics.repo = types.repo "
-                "AND metrics.commit = types.commit"
-            ),
-            how="left",
-        ).set_alias("base")
-        modules_rel = tables.modules.select(
-            "repo",
-            "commit",
-            "path",
-            "module",
-        ).set_alias("modules")
-        joined = joined.join(
-            modules_rel,
-            (
-                "base.repo = modules.repo "
-                "AND base.commit = modules.commit "
-                "AND base.rel_path = modules.path"
-            ),
-            how="left",
-        ).set_alias("base")
-        typedness_rel = tables.typedness.select(
-            "repo",
-            "commit",
-            "path",
-            "annotation_ratio",
-        ).set_alias("typedness")
-        joined = joined.join(
-            typedness_rel,
-            (
-                "base.repo = typedness.repo "
-                "AND base.commit = typedness.commit "
-                "AND base.rel_path = typedness.path"
-            ),
-            how="left",
-        ).set_alias("base")
-        diagnostics_rel = tables.diagnostics.select(
-            "repo",
-            "commit",
-            "rel_path",
-            "total_errors",
-            "has_errors",
-        ).set_alias("diagnostics")
-        joined = joined.join(
-            diagnostics_rel,
-            (
-                "base.repo = diagnostics.repo "
-                "AND base.commit = diagnostics.commit "
-                "AND base.rel_path = diagnostics.rel_path"
-            ),
-            how="left",
-        ).set_alias("base")
-        selected = joined.select(
-            "base.function_goid_h128 as function_goid_h128",
-            "base.urn as urn",
-            "base.repo as repo",
-            "base.commit as commit",
-            "base.rel_path as rel_path",
-            "base.module as module",
-            "base.language as language",
-            "base.kind as kind",
-            "base.qualname as qualname",
-            "base.start_line as start_line",
-            "base.end_line as end_line",
-            "base.loc as loc",
-            "base.logical_loc as logical_loc",
-            "base.cyclomatic_complexity as cyclomatic_complexity",
-            "base.complexity_bucket as complexity_bucket",
-            "base.param_count as param_count",
-            "base.positional_params as positional_params",
-            "base.keyword_only_params as keyword_params",
-            "base.has_varargs as vararg",
-            "base.has_varkw as kwarg",
-            "base.max_nesting_depth as max_nesting_depth",
-            "base.stmt_count as stmt_count",
-            "base.decorator_count as decorator_count",
-            "base.has_docstring as has_docstring",
-            "base.total_params as total_params",
-            "base.annotated_params as annotated_params",
-            "base.return_type as return_type",
-            "base.param_types as param_types",
-            "base.fully_typed as fully_typed",
-            "base.partial_typed as partial_typed",
-            "base.untyped as untyped",
-            "base.typedness_bucket as typedness_bucket",
-            "base.typedness_source as typedness_source",
-            "cast(json_extract(base.annotation_ratio, '$.params') as double) as file_typed_ratio",
-            "base.total_errors as static_error_count",
-            "base.has_errors as has_static_errors",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load base info: %s", exc)
-        return {}
+    types = _scope_frame(inputs.function_types, inputs.repo, inputs.commit)
+    modules = _scope_frame(inputs.modules, inputs.repo, inputs.commit)
+    typedness = _scope_frame(inputs.typedness, inputs.repo, inputs.commit)
+    diagnostics = _scope_frame(inputs.diagnostics, inputs.repo, inputs.commit)
+
+    types_by_goid: dict[int, dict[str, object]] = {}
+    for row in types.iter_rows(named=True):
+        goid = optional_int(row.get("function_goid_h128"))
+        if goid is None:
+            continue
+        types_by_goid[goid] = row
+
+    module_by_path: dict[str, str] = {}
+    for row in modules.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_by_path[path] = module
+
+    typedness_by_path: dict[str, float | None] = {}
+    for row in typedness.iter_rows(named=True):
+        path = row.get("path")
+        if isinstance(path, str):
+            typedness_by_path[path] = _extract_annotation_ratio(row.get("annotation_ratio"))
+
+    diagnostics_by_path: dict[str, tuple[int, bool]] = {}
+    for row in diagnostics.iter_rows(named=True):
+        path = row.get("rel_path")
+        if isinstance(path, str):
+            diagnostics_by_path[path] = (
+                int_or_default(row.get("total_errors")),
+                bool(row.get("has_errors")),
+            )
 
     result: dict[int, FunctionBaseInfo] = {}
-    for record in records:
+    for record in metrics.iter_rows(named=True):
         goid_value = _coerce_goid(record)
         if goid_value is None:
             continue
         goid_int = goid_value
+        type_row = types_by_goid.get(goid_int, {})
+        rel_path = optional_str(record.get("rel_path")) or ""
+        module = module_by_path.get(rel_path)
+        typed_ratio = typedness_by_path.get(rel_path)
+        static_errors = diagnostics_by_path.get(rel_path, (0, False))
         result[goid_int] = FunctionBaseInfo(
             function_goid_h128=goid_int,
-            urn=optional_str(record["urn"]),
-            repo=str(record["repo"]),
-            commit=str(record["commit"]),
-            rel_path=str(record["rel_path"]),
-            module=optional_str(record["module"]),
-            language=optional_str(record["language"]),
-            kind=optional_str(record["kind"]),
-            qualname=optional_str(record["qualname"]),
-            start_line=optional_int(record["start_line"]),
-            end_line=optional_int(record["end_line"]),
-            loc=int_or_default(record["loc"]),
-            logical_loc=int_or_default(record["logical_loc"]),
-            cyclomatic_complexity=int_or_default(record["cyclomatic_complexity"]),
-            complexity_bucket=optional_str(record["complexity_bucket"]),
-            param_count=int_or_default(record["param_count"]),
-            positional_params=int_or_default(record["positional_params"]),
-            keyword_params=int_or_default(record["keyword_params"]),
-            vararg=bool(record["vararg"]),
-            kwarg=bool(record["kwarg"]),
-            max_nesting_depth=optional_int(record["max_nesting_depth"]),
-            stmt_count=optional_int(record["stmt_count"]),
-            decorator_count=optional_int(record["decorator_count"]),
-            has_docstring=bool(record["has_docstring"]),
-            total_params=int_or_default(record["total_params"]),
-            annotated_params=int_or_default(record["annotated_params"]),
-            return_type=optional_str(record["return_type"]),
-            param_types=record["param_types"],
-            fully_typed=bool(record["fully_typed"]),
-            partial_typed=bool(record["partial_typed"]),
-            untyped=bool(record["untyped"]),
-            typedness_bucket=optional_str(record["typedness_bucket"]),
-            typedness_source=optional_str(record["typedness_source"]),
-            file_typed_ratio=optional_float(record["file_typed_ratio"]),
-            static_error_count=int_or_default(record["static_error_count"]),
-            has_static_errors=bool(record["has_static_errors"]),
+            urn=optional_str(record.get("urn")),
+            repo=str(record.get("repo")),
+            commit=str(record.get("commit")),
+            rel_path=rel_path,
+            module=module,
+            language=optional_str(record.get("language")),
+            kind=optional_str(record.get("kind")),
+            qualname=optional_str(record.get("qualname")),
+            start_line=optional_int(record.get("start_line")),
+            end_line=optional_int(record.get("end_line")),
+            loc=int_or_default(record.get("loc")),
+            logical_loc=int_or_default(record.get("logical_loc")),
+            cyclomatic_complexity=int_or_default(record.get("cyclomatic_complexity")),
+            complexity_bucket=optional_str(record.get("complexity_bucket")),
+            param_count=int_or_default(record.get("param_count")),
+            positional_params=int_or_default(record.get("positional_params")),
+            keyword_params=int_or_default(record.get("keyword_only_params")),
+            vararg=bool(record.get("has_varargs")),
+            kwarg=bool(record.get("has_varkw")),
+            max_nesting_depth=optional_int(record.get("max_nesting_depth")),
+            stmt_count=optional_int(record.get("stmt_count")),
+            decorator_count=optional_int(record.get("decorator_count")),
+            has_docstring=bool(record.get("has_docstring")),
+            total_params=int_or_default(type_row.get("total_params")),
+            annotated_params=int_or_default(type_row.get("annotated_params")),
+            return_type=optional_str(type_row.get("return_type")),
+            param_types=type_row.get("param_types"),
+            fully_typed=bool(type_row.get("fully_typed")),
+            partial_typed=bool(type_row.get("partial_typed")),
+            untyped=bool(type_row.get("untyped")),
+            typedness_bucket=optional_str(type_row.get("typedness_bucket")),
+            typedness_source=optional_str(type_row.get("typedness_source")),
+            file_typed_ratio=typed_ratio,
+            static_error_count=static_errors[0],
+            has_static_errors=static_errors[1],
         )
     return result
 
@@ -355,86 +308,49 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
     Mapping[int, FunctionRiskView]
         Mapping keyed by function GOID.
     """
-    try:
-        fm = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.function_metrics"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        ).set_alias("fm")
-        rf = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.goid_risk_factors"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        ).set_alias("rf")
-        modules = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key(DEFAULT_MODULE_TABLE),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        ).set_alias("modules")
-        hotspots = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.hotspots"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        ).set_alias("hotspots")
-        joined = fm.join(
-            rf,
-            (
-                "fm.function_goid_h128 = rf.function_goid_h128 "
-                "AND fm.repo = rf.repo "
-                "AND fm.commit = rf.commit"
-            ),
-            how="left",
-        ).set_alias("base")
-        modules_rel = modules.select(
-            "repo",
-            "commit",
-            "path",
-            "tags",
-            "owners",
-        ).set_alias("modules_rel")
-        joined = joined.join(
-            modules_rel,
-            (
-                "base.repo = modules_rel.repo "
-                "AND base.commit = modules_rel.commit "
-                "AND base.rel_path = modules_rel.path"
-            ),
-            how="left",
-        ).set_alias("base")
-        hotspots_rel = hotspots.select(
-            "rel_path",
-            "score as hotspot_score",
-        ).set_alias("hotspots_rel")
-        joined = joined.join(
-            hotspots_rel,
-            "base.rel_path = hotspots_rel.rel_path",
-            how="left",
-        ).set_alias("base")
-        selected = joined.select(
-            "base.function_goid_h128 as function_goid_h128",
-            "base.risk_score as risk_score",
-            "base.risk_level as risk_level",
-            "base.hotspot_score as hotspot_score",
-            "base.tags as tags",
-            "base.owners as owners",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load risk factors: %s", exc)
+    metrics = _scope_frame(inputs.function_metrics, inputs.repo, inputs.commit)
+    if metrics.is_empty():
         return {}
+
+    risk_factors = _scope_frame(inputs.goid_risk_factors, inputs.repo, inputs.commit)
+    modules = _scope_frame(inputs.modules, inputs.repo, inputs.commit)
+    hotspots = _scope_frame(inputs.hotspots, inputs.repo, inputs.commit)
+
+    risk_by_goid: dict[int, dict[str, object]] = {}
+    for row in risk_factors.iter_rows(named=True):
+        goid = _coerce_goid(row)
+        if goid is None:
+            continue
+        risk_by_goid[goid] = row
+
+    tags_by_path: dict[str, tuple[object, object]] = {}
+    for row in modules.iter_rows(named=True):
+        path = row.get("path")
+        if isinstance(path, str):
+            tags_by_path[path] = (row.get("tags"), row.get("owners"))
+
+    hotspots_by_path: dict[str, float | None] = {}
+    for row in hotspots.iter_rows(named=True):
+        rel_path = row.get("rel_path")
+        if isinstance(rel_path, str):
+            hotspots_by_path[rel_path] = optional_float(row.get("score"))
+
     result: dict[int, FunctionRiskView] = {}
-    for record in records:
+    for record in metrics.iter_rows(named=True):
         goid_value = _coerce_goid(record)
         if goid_value is None:
             continue
         goid = goid_value
+        risk_row = risk_by_goid.get(goid, {})
+        rel_path = optional_str(record.get("rel_path")) or ""
+        tags, owners = tags_by_path.get(rel_path, ("[]", "[]"))
         result[goid] = FunctionRiskView(
             function_goid_h128=goid,
-            risk_score=optional_float(record["risk_score"]) or 0.0,
-            risk_level=optional_str(record["risk_level"]),
-            hotspot_score=optional_float(record["hotspot_score"]),
-            tags=record["tags"] if record["tags"] is not None else "[]",
-            owners=record["owners"] if record["owners"] is not None else "[]",
+            risk_score=optional_float(risk_row.get("risk_score")) or 0.0,
+            risk_level=optional_str(risk_row.get("risk_level")),
+            hotspot_score=hotspots_by_path.get(rel_path),
+            tags=tags if tags is not None else "[]",
+            owners=owners if owners is not None else "[]",
         )
     return result
 
@@ -448,156 +364,82 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
     Mapping[int, CoverageSummary]
         Mapping keyed by function GOID.
     """
-    repo = inputs.repo
-    commit = inputs.commit
-
-    try:
-        edges, catalog = _load_test_tables(inputs.gateway, repo, commit)
-        t_stats, status_top = _compute_test_stats(
-            edges, catalog, slow_threshold_ms=inputs.slow_test_threshold_ms
-        )
-
-        cf = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.coverage_functions"),
-            repo=repo,
-            commit=commit,
-        ).set_alias("cf")
-        t_stats_rel = t_stats.set_alias("t_stats")
-        status_rel = status_top.set_alias("status_top")
-        joined = cf.join(
-            t_stats_rel,
-            "cf.function_goid_h128 = t_stats.function_goid_h128",
-            how="left",
-        ).set_alias("base")
-        joined = joined.join(
-            status_rel,
-            "base.function_goid_h128 = status_top.function_goid_h128",
-            how="left",
-        ).set_alias("base")
-        selected = joined.select(
-            "base.function_goid_h128 as function_goid_h128",
-            "base.executable_lines as executable_lines",
-            "base.covered_lines as covered_lines",
-            "base.coverage_ratio as coverage_ratio",
-            "base.tested as tested",
-            "base.untested_reason as untested_reason",
-            "coalesce(base.tests_touching, 0) as tests_touching",
-            "coalesce(base.failing_tests, 0) as failing_tests",
-            "coalesce(base.slow_tests, 0) as slow_tests",
-            "coalesce(base.flaky_tests, 0) as flaky_tests",
-            "coalesce(base.dominant_test_status, 'untested') as last_test_status",
-            "base.dominant_test_status as dominant_test_status",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load coverage: %s", exc)
+    coverage = _scope_frame(inputs.coverage_functions, inputs.repo, inputs.commit)
+    if coverage.is_empty():
         return {}
+
+    edges = _scope_frame(inputs.test_coverage_edges, inputs.repo, inputs.commit)
+    catalog = _scope_frame(inputs.test_catalog, inputs.repo, inputs.commit)
+
+    catalog_by_test: dict[str, dict[str, object]] = {}
+    for row in catalog.iter_rows(named=True):
+        test_id = row.get("test_id")
+        if isinstance(test_id, str):
+            catalog_by_test[test_id] = row
+
+    tests_touching: dict[int, set[str]] = {}
+    failing_tests: dict[int, set[str]] = {}
+    slow_tests: dict[int, set[str]] = {}
+    flaky_tests: dict[int, set[str]] = {}
+    status_sets: dict[int, dict[str, set[str]]] = {}
+
+    slow_threshold = float(inputs.slow_test_threshold_ms)
+    for row in edges.iter_rows(named=True):
+        goid = optional_int(row.get("function_goid_h128"))
+        test_id = row.get("test_id")
+        if goid is None or not isinstance(test_id, str):
+            continue
+        tests_touching.setdefault(goid, set()).add(test_id)
+        test_meta = catalog_by_test.get(test_id)
+        if test_meta is None:
+            continue
+        status = optional_str(test_meta.get("status")) or "unknown"
+        status_sets.setdefault(goid, {}).setdefault(status, set()).add(test_id)
+        if status in {"failed", "error"}:
+            failing_tests.setdefault(goid, set()).add(test_id)
+        duration = optional_float(test_meta.get("duration_ms")) or 0.0
+        if duration > slow_threshold:
+            slow_tests.setdefault(goid, set()).add(test_id)
+        if bool(test_meta.get("flaky")):
+            flaky_tests.setdefault(goid, set()).add(test_id)
+
+    dominant_status: dict[int, str | None] = {}
+    for goid, status_map in status_sets.items():
+        if not status_map:
+            dominant_status[goid] = None
+            continue
+        max_count = max(len(vals) for vals in status_map.values())
+        candidates = sorted(
+            [status for status, vals in status_map.items() if len(vals) == max_count]
+        )
+        dominant_status[goid] = candidates[0] if candidates else None
+
     result: dict[int, CoverageSummary] = {}
-    for record in records:
+    for record in coverage.iter_rows(named=True):
         goid_value = _coerce_goid(record)
         if goid_value is None:
             continue
         goid = goid_value
+        tests = tests_touching.get(goid, set())
+        failing = failing_tests.get(goid, set())
+        slow = slow_tests.get(goid, set())
+        flaky = flaky_tests.get(goid, set())
+        dominant = dominant_status.get(goid)
         result[goid] = CoverageSummary(
             function_goid_h128=goid,
-            executable_lines=int_or_default(record["executable_lines"]),
-            covered_lines=int_or_default(record["covered_lines"]),
-            coverage_ratio=optional_float(record["coverage_ratio"]),
-            tested=bool(record["tested"]),
-            untested_reason=optional_str(record["untested_reason"]),
-            tests_touching=int_or_default(record["tests_touching"]),
-            failing_tests=int_or_default(record["failing_tests"]),
-            slow_tests=int_or_default(record["slow_tests"]),
-            flaky_tests=int_or_default(record["flaky_tests"]),
-            last_test_status=optional_str(record["last_test_status"]),
-            dominant_test_status=(optional_str(record["dominant_test_status"])),
+            executable_lines=int_or_default(record.get("executable_lines")),
+            covered_lines=int_or_default(record.get("covered_lines")),
+            coverage_ratio=optional_float(record.get("coverage_ratio")),
+            tested=bool(record.get("tested")),
+            untested_reason=optional_str(record.get("untested_reason")),
+            tests_touching=len(tests),
+            failing_tests=len(failing),
+            slow_tests=len(slow),
+            flaky_tests=len(flaky),
+            last_test_status=dominant or "untested",
+            dominant_test_status=dominant,
         )
     return result
-
-
-def _load_test_tables(
-    gateway: StorageGateway, repo: str, commit: str
-) -> tuple[DuckDBRelation, DuckDBRelation]:
-    """Load coverage edge and catalog tables with repo/commit filtering.
-
-    Returns
-    -------
-    tuple[DuckDBRelation, DuckDBRelation]
-        Filtered coverage edge table and catalog table.
-    """
-    edges = maybe_scope_by_repo_commit(
-        gateway.relation_from_table_key("analytics.test_coverage_edges"),
-        repo=repo,
-        commit=commit,
-    )
-    catalog = maybe_scope_by_repo_commit(
-        gateway.relation_from_table_key("analytics.test_catalog"),
-        repo=repo,
-        commit=commit,
-    )
-    return edges, catalog
-
-
-def _compute_test_stats(
-    edges: DuckDBRelation,
-    catalog: DuckDBRelation,
-    *,
-    slow_threshold_ms: float,
-) -> tuple[DuckDBRelation, DuckDBRelation]:
-    """Compute per-function test stats and dominant status.
-
-    Returns
-    -------
-    tuple[DuckDBRelation, DuckDBRelation]
-        Aggregated coverage stats and status summaries.
-    """
-    edges_rel = edges.set_alias("edges")
-    catalog_rel = catalog.set_alias("catalog")
-    joined = edges_rel.join(
-        catalog_rel,
-        (
-            "edges.test_id = catalog.test_id "
-            "AND edges.repo = catalog.repo "
-            "AND edges.commit = catalog.commit"
-        ),
-        how="left",
-    )
-
-    slow_threshold = float(slow_threshold_ms)
-    t_stats = joined.aggregate(
-        ", ".join(
-            [
-                "count(distinct test_id) as tests_touching",
-                (
-                    "count(distinct case when status in ('failed', 'error') "
-                    "then test_id end) as failing_tests"
-                ),
-                (
-                    "count(distinct case when duration_ms > "
-                    f"{slow_threshold} then test_id end) as slow_tests"
-                ),
-                "count(distinct case when flaky then test_id end) as flaky_tests",
-            ]
-        ),
-        "function_goid_h128",
-    )
-
-    status_counts = joined.aggregate(
-        "count(test_id) as status_count",
-        "function_goid_h128, status",
-    )
-    status_ranked = status_counts.select(
-        "*",
-        (
-            "row_number() over (partition by function_goid_h128 "
-            "order by status_count desc, status) as status_rank"
-        ),
-    )
-    status_top = status_ranked.filter("status_rank = 1").select(
-        "function_goid_h128",
-        "status as dominant_test_status",
-    )
-    return t_stats, status_top
 
 
 def join_function_effects(inputs: FunctionProfileInputs) -> Mapping[int, FunctionEffectsView]:
@@ -609,47 +451,27 @@ def join_function_effects(inputs: FunctionProfileInputs) -> Mapping[int, Functio
     Mapping[int, FunctionEffectsView]
         Mapping keyed by function GOID.
     """
-    try:
-        effects = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.function_effects"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        selected = effects.select(
-            "function_goid_h128",
-            "is_pure",
-            "uses_io",
-            "touches_db",
-            "uses_time",
-            "uses_randomness",
-            "modifies_globals",
-            "modifies_closure",
-            "spawns_threads_or_tasks",
-            "has_transitive_effects",
-            "purity_confidence",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load effects: %s", exc)
+    effects = _scope_frame(inputs.function_effects, inputs.repo, inputs.commit)
+    if effects.is_empty():
         return {}
     result: dict[int, FunctionEffectsView] = {}
-    for record in records:
+    for record in effects.iter_rows(named=True):
         goid_value = _coerce_goid(record)
         if goid_value is None:
             continue
         goid = goid_value
         result[goid] = FunctionEffectsView(
             function_goid_h128=goid,
-            is_pure=bool(record["is_pure"]),
-            uses_io=bool(record["uses_io"]),
-            touches_db=bool(record["touches_db"]),
-            uses_time=bool(record["uses_time"]),
-            uses_randomness=bool(record["uses_randomness"]),
-            modifies_globals=bool(record["modifies_globals"]),
-            modifies_closure=bool(record["modifies_closure"]),
-            spawns_threads_or_tasks=bool(record["spawns_threads_or_tasks"]),
-            has_transitive_effects=bool(record["has_transitive_effects"]),
-            purity_confidence=optional_float(record["purity_confidence"]),
+            is_pure=bool(record.get("is_pure")),
+            uses_io=bool(record.get("uses_io")),
+            touches_db=bool(record.get("touches_db")),
+            uses_time=bool(record.get("uses_time")),
+            uses_randomness=bool(record.get("uses_randomness")),
+            modifies_globals=bool(record.get("modifies_globals")),
+            modifies_closure=bool(record.get("modifies_closure")),
+            spawns_threads_or_tasks=bool(record.get("spawns_threads_or_tasks")),
+            has_transitive_effects=bool(record.get("has_transitive_effects")),
+            purity_confidence=optional_float(record.get("purity_confidence")),
         )
     return result
 
@@ -663,39 +485,26 @@ def join_function_contracts(inputs: FunctionProfileInputs) -> Mapping[int, Funct
     Mapping[int, FunctionContractView]
         Mapping keyed by function GOID.
     """
-    try:
-        contracts = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.function_contracts"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        selected = contracts.select(
-            "function_goid_h128",
-            "param_nullability_json",
-            "return_nullability",
-            "coalesce(cast(preconditions_json as varchar), '') <> '' as has_preconditions",
-            "coalesce(cast(postconditions_json as varchar), '') <> '' as has_postconditions",
-            "coalesce(cast(raises_json as varchar), '') <> '' as has_raises",
-            "contract_confidence",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load contracts: %s", exc)
+    contracts = _scope_frame(inputs.function_contracts, inputs.repo, inputs.commit)
+    if contracts.is_empty():
         return {}
     result: dict[int, FunctionContractView] = {}
-    for record in records:
+    for record in contracts.iter_rows(named=True):
         goid_value = _coerce_goid(record)
         if goid_value is None:
             continue
         goid = goid_value
+        preconditions = record.get("preconditions_json")
+        postconditions = record.get("postconditions_json")
+        raises_json = record.get("raises_json")
         result[goid] = FunctionContractView(
             function_goid_h128=goid,
-            param_nullability_json=record["param_nullability_json"],
-            return_nullability=optional_str(record["return_nullability"]),
-            has_preconditions=bool(record["has_preconditions"]),
-            has_postconditions=bool(record["has_postconditions"]),
-            has_raises=bool(record["has_raises"]),
-            contract_confidence=optional_float(record["contract_confidence"]),
+            param_nullability_json=record.get("param_nullability_json"),
+            return_nullability=optional_str(record.get("return_nullability")),
+            has_preconditions=bool(preconditions) if preconditions not in {"", None} else False,
+            has_postconditions=bool(postconditions) if postconditions not in {"", None} else False,
+            has_raises=bool(raises_json) if raises_json not in {"", None} else False,
+            contract_confidence=optional_float(record.get("contract_confidence")),
         )
     return result
 
@@ -709,36 +518,24 @@ def join_function_roles(inputs: FunctionProfileInputs) -> Mapping[int, FunctionR
     Mapping[int, FunctionRoleView]
         Mapping keyed by function GOID.
     """
-    try:
-        roles = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.semantic_roles_functions"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        selected = roles.select(
-            "function_goid_h128",
-            "role",
-            "framework",
-            "role_confidence",
-            "role_sources_json",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load roles: %s", exc)
+    roles = _scope_frame(inputs.semantic_roles_functions, inputs.repo, inputs.commit)
+    if roles.is_empty():
         return {}
     result: dict[int, FunctionRoleView] = {}
-    for record in records:
+    for record in roles.iter_rows(named=True):
         goid_value = _coerce_goid(record)
         if goid_value is None:
             continue
         goid = goid_value
         result[goid] = FunctionRoleView(
             function_goid_h128=goid,
-            role=optional_str(record["role"]),
-            framework=optional_str(record["framework"]),
-            role_confidence=optional_float(record["role_confidence"]),
+            role=optional_str(record.get("role")),
+            framework=optional_str(record.get("framework")),
+            role_confidence=optional_float(record.get("role_confidence")),
             role_sources_json=(
-                record["role_sources_json"] if record["role_sources_json"] is not None else "[]"
+                record.get("role_sources_json")
+                if record.get("role_sources_json") is not None
+                else "[]"
             ),
         )
     return result
@@ -753,51 +550,35 @@ def join_function_docs(inputs: FunctionProfileInputs) -> Mapping[int, FunctionDo
     Mapping[int, FunctionDocView]
         Mapping keyed by function GOID.
     """
-    try:
-        fm = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("analytics.function_metrics"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        ).set_alias("fm")
-        docs = maybe_scope_by_repo_commit(
-            inputs.gateway.relation_from_table_key("core.docstrings"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        ).set_alias("docs")
-        joined = fm.join(
-            docs,
-            (
-                "fm.repo = docs.repo "
-                "AND fm.commit = docs.commit "
-                "AND fm.rel_path = docs.rel_path "
-                "AND fm.qualname = docs.qualname "
-                "AND fm.kind = docs.kind"
-            ),
-            how="left",
-        ).set_alias("base")
-        selected = joined.select(
-            "base.function_goid_h128 as function_goid_h128",
-            "base.short_desc as doc_short",
-            "base.long_desc as doc_long",
-            "base.params as doc_params",
-            "base.returns as doc_returns",
-        )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to load docs: %s", exc)
+    metrics = _scope_frame(inputs.function_metrics, inputs.repo, inputs.commit)
+    if metrics.is_empty():
         return {}
+
+    docs = _scope_frame(inputs.docstrings, inputs.repo, inputs.commit)
+    doc_by_key: dict[tuple[str, str, str], dict[str, object]] = {}
+    for row in docs.iter_rows(named=True):
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        kind = row.get("kind")
+        if isinstance(rel_path, str) and isinstance(qualname, str) and isinstance(kind, str):
+            doc_by_key[rel_path, qualname, kind] = row
+
     result: dict[int, FunctionDocView] = {}
-    for record in records:
+    for record in metrics.iter_rows(named=True):
         goid_value = _coerce_goid(record)
         if goid_value is None:
             continue
         goid = goid_value
+        rel_path = optional_str(record.get("rel_path")) or ""
+        qualname = optional_str(record.get("qualname")) or ""
+        kind = optional_str(record.get("kind")) or ""
+        doc_row = doc_by_key.get((rel_path, qualname, kind), {})
         result[goid] = FunctionDocView(
             function_goid_h128=goid,
-            doc_short=optional_str(record["doc_short"]),
-            doc_long=optional_str(record["doc_long"]),
-            doc_params=record["doc_params"],
-            doc_returns=record["doc_returns"],
+            doc_short=optional_str(doc_row.get("short_desc")),
+            doc_long=optional_str(doc_row.get("long_desc")),
+            doc_params=doc_row.get("params"),
+            doc_returns=doc_row.get("returns"),
         )
     return result
 

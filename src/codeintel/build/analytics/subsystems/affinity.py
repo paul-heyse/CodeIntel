@@ -6,17 +6,13 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import chain
 from typing import TYPE_CHECKING
 
 import networkx as nx
-
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+import polars as pl
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -35,40 +31,31 @@ class AffinityWeights:
     config_weight: float = DEFAULT_CONFIG_WEIGHT
 
 
-def load_modules(
-    gateway: StorageGateway, snapshot: SnapshotRef
+def load_modules_from_frame(
+    modules_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> tuple[set[str], dict[str, list[str]]]:
-    """
-    Load modules and tags for subsystem inference.
+    """Load modules and tags for subsystem inference.
 
     Returns
     -------
     tuple[set[str], dict[str, list[str]]]
-        Modules present and tags keyed by module.
+        Set of module names and tag mappings keyed by module.
     """
-    con = gateway.con
-    reader = con.execute(
-        "SELECT module, tags FROM core.modules WHERE repo = ? AND commit = ?",
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    rows_iter = iter_tuples_from_arrow_reader(reader)
-    first_row = next(rows_iter, None)
-    if first_row is None:
-        fallback_reader = con.execute("SELECT module, tags FROM core.modules").fetch_record_batch(
-            DEFAULT_ARROW_BATCH_SIZE
-        )
-        rows_iter = iter_tuples_from_arrow_reader(fallback_reader)
-    else:
-        rows_iter = chain([first_row], rows_iter)
-
+    if modules_frame is None or modules_frame.is_empty():
+        return set(), {}
+    filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
     modules: set[str] = set()
     tags_by_module: dict[str, list[str]] = {}
-    for module, tags in rows_iter:
+    for row in filtered.iter_rows(named=True):
+        module = row.get("module")
         if module is None:
             continue
         module_name = str(module)
         modules.add(module_name)
-        parsed_tags = parse_tags(tags)
+        parsed_tags = parse_tags(row.get("tags"))
         if parsed_tags:
             tags_by_module[module_name] = parsed_tags
     return modules, tags_by_module
@@ -99,9 +86,13 @@ def parse_tags(raw: object) -> list[str]:
 
 
 def build_weighted_adjacency(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     modules: set[str],
+    *,
+    import_graph_edges_frame: pl.DataFrame | None = None,
+    symbol_use_edges_frame: pl.DataFrame | None = None,
+    config_values_frame: pl.DataFrame | None = None,
+    modules_frame: pl.DataFrame | None = None,
     weights: AffinityWeights | None = None,
 ) -> dict[str, dict[str, float]]:
     """
@@ -112,14 +103,26 @@ def build_weighted_adjacency(
     dict[str, dict[str, float]]
         Weighted adjacency mapping.
     """
-    graph = build_weighted_graph(gateway, snapshot, modules, weights=weights)
+    graph = build_weighted_graph(
+        snapshot,
+        modules,
+        import_graph_edges_frame=import_graph_edges_frame,
+        symbol_use_edges_frame=symbol_use_edges_frame,
+        config_values_frame=config_values_frame,
+        modules_frame=modules_frame,
+        weights=weights,
+    )
     return graph_to_adjacency(graph)
 
 
 def build_weighted_graph(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     modules: set[str],
+    *,
+    import_graph_edges_frame: pl.DataFrame | None = None,
+    symbol_use_edges_frame: pl.DataFrame | None = None,
+    config_values_frame: pl.DataFrame | None = None,
+    modules_frame: pl.DataFrame | None = None,
     weights: AffinityWeights | None = None,
 ) -> nx.Graph:
     """
@@ -131,56 +134,85 @@ def build_weighted_graph(
         Weighted graph of module affinity.
     """
     w = weights or AffinityWeights()
-    con = gateway.con
     graph = nx.Graph()
     graph.add_nodes_from(modules)
+    if import_graph_edges_frame is not None and not import_graph_edges_frame.is_empty():
+        edges_filtered = _filter_frame_by_snapshot(
+            import_graph_edges_frame,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        for row in edges_filtered.iter_rows(named=True):
+            src = row.get("src_module")
+            dst = row.get("dst_module")
+            if src is None or dst is None:
+                continue
+            src_mod = str(src)
+            dst_mod = str(dst)
+            if src_mod in modules and dst_mod in modules:
+                add_graph_weight(graph, src_mod, dst_mod, w.import_weight)
 
-    reader = con.execute(
-        "SELECT src_module, dst_module FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    for src, dst in iter_tuples_from_arrow_reader(reader):
-        if src is None or dst is None:
-            continue
-        src_mod = str(src)
-        dst_mod = str(dst)
-        if src_mod in modules and dst_mod in modules:
-            add_graph_weight(graph, src_mod, dst_mod, w.import_weight)
+    if symbol_use_edges_frame is not None and not symbol_use_edges_frame.is_empty():
+        module_by_path: dict[str, str] = {}
+        if modules_frame is not None and not modules_frame.is_empty():
+            modules_filtered = _filter_frame_by_snapshot(
+                modules_frame,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+            for row in modules_filtered.iter_rows(named=True):
+                path = row.get("path")
+                module = row.get("module")
+                if isinstance(path, str) and module is not None:
+                    module_by_path[path] = str(module)
+        symbol_filtered = _filter_frame_by_snapshot(
+            symbol_use_edges_frame,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        for row in symbol_filtered.iter_rows(named=True):
+            use_path = row.get("use_path")
+            def_path = row.get("def_path")
+            if not isinstance(use_path, str) or not isinstance(def_path, str):
+                continue
+            src_mod = module_by_path.get(use_path)
+            dst_mod = module_by_path.get(def_path)
+            if src_mod is None or dst_mod is None:
+                continue
+            if src_mod in modules and dst_mod in modules:
+                add_graph_weight(graph, src_mod, dst_mod, w.symbol_weight)
 
-    reader = con.execute(
-        """
-        SELECT m_use.module, m_def.module
-        FROM graph.symbol_use_edges su
-        LEFT JOIN core.modules m_def ON m_def.path = su.def_path
-        LEFT JOIN core.modules m_use ON m_use.path = su.use_path
-        WHERE m_def.module IS NOT NULL AND m_use.module IS NOT NULL
-        """
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    for use_module, def_module in iter_tuples_from_arrow_reader(reader):
-        src_mod = str(use_module)
-        dst_mod = str(def_module)
-        if src_mod in modules and dst_mod in modules:
-            add_graph_weight(graph, src_mod, dst_mod, w.symbol_weight)
-
-    reader = con.execute(
-        """
-        SELECT reference_modules
-        FROM analytics.config_values
-        WHERE repo = ? AND commit = ?
-        """,
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    for (mods_raw,) in iter_tuples_from_arrow_reader(reader):
-        modules_list = parse_tags(mods_raw)
-        filtered = [m for m in modules_list if m in modules]
-        if len(filtered) < MIN_SHARED_MODULES:
-            continue
-        weight = w.config_weight / max(len(filtered) - 1, 1)
-        for idx, left in enumerate(filtered):
-            for right in filtered[idx + 1 :]:
-                add_graph_weight(graph, left, right, weight)
+    if config_values_frame is not None and not config_values_frame.is_empty():
+        config_filtered = _filter_frame_by_snapshot(
+            config_values_frame,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        for row in config_filtered.iter_rows(named=True):
+            modules_list = parse_tags(row.get("reference_modules"))
+            filtered = [m for m in modules_list if m in modules]
+            if len(filtered) < MIN_SHARED_MODULES:
+                continue
+            weight = w.config_weight / max(len(filtered) - 1, 1)
+            for idx, left in enumerate(filtered):
+                for right in filtered[idx + 1 :]:
+                    add_graph_weight(graph, left, right, weight)
 
     return graph
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
 
 
 def add_graph_weight(graph: nx.Graph, left: str, right: str, weight: float) -> None:

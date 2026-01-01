@@ -4,26 +4,21 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
-import pyarrow as pa
+import polars as pl
 from coverage import Coverage
 from coverage.exceptions import CoverageException
 
-from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTestCoverageEdgesRow as TestCoverageEdgeRow,
 )
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import iter_tuples_from_arrow_reader
-from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -32,7 +27,6 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -138,30 +132,25 @@ __all__ = [
 
 
 def _functions_by_path(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    catalog_provider: FunctionCatalogProvider | None = None,
+    _snapshot: SnapshotRef,
+    *,
+    catalog_provider: FunctionCatalogProvider,
 ) -> dict[str, list[FunctionRow]]:
     """Build mapping of file paths to function metadata.
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Snapshot reference.
+    _snapshot
+        Snapshot reference (unused).
     catalog_provider
-        Optional pre-loaded catalog provider.
+        Pre-loaded function catalog provider.
 
     Returns
     -------
     dict[str, list[FunctionRow]]
         Functions keyed by relative file path.
     """
-    provider = catalog_provider or CatalogService.from_db(
-        gateway, repo=snapshot.repo, commit=snapshot.commit
-    )
-    catalog = provider.catalog()
+    catalog = catalog_provider.catalog()
     if not catalog.function_spans:
         return {}
 
@@ -180,46 +169,39 @@ def _functions_by_path(
     return funcs_by_path
 
 
-def _reader_rows(
-    reader: pa.RecordBatchReader,
-) -> Iterator[tuple[object, ...]] | None:
-    rows_iter = iter_tuples_from_arrow_reader(reader)
-    first = next(rows_iter, None)
-    if first is None:
-        return None
-    return chain([first], rows_iter)
+def _test_catalog_rows_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> list[tuple[object, ...]]:
+    if frame is None or frame.is_empty():
+        return []
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    return [
+        (row.get("test_id"), row.get("rel_path"), row.get("qualname"))
+        for row in filtered.iter_rows(named=True)
+    ]
 
 
-def _test_catalog_rows(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-) -> Iterator[tuple[object, ...]] | None:
-    return _reader_rows(
-        gateway.execute(
-            """
-            SELECT test_id, rel_path, qualname
-            FROM analytics.test_catalog
-            WHERE repo = ? AND commit = ?
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    )
-
-
-def _goid_rows(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-) -> Iterator[tuple[object, ...]] | None:
-    return _reader_rows(
-        gateway.execute(
-            """
-            SELECT goid_h128, urn, rel_path, qualname
-            FROM core.goids
-            WHERE repo = ? AND commit = ?
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    )
+def _goid_rows_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> list[tuple[object, ...]]:
+    if frame is None or frame.is_empty():
+        return []
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    return [
+        (
+            row.get("goid_h128"),
+            row.get("urn"),
+            row.get("rel_path"),
+            row.get("qualname"),
+        )
+        for row in filtered.iter_rows(named=True)
+    ]
 
 
 def _goid_index(
@@ -258,88 +240,80 @@ def _collect_test_goid_updates(
     return goid_by_id, urn_by_id, updates
 
 
-def _apply_test_catalog_updates(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    updates: list[tuple[int, str, str, str]],
-) -> None:
-    if not updates:
-        return
-    backend = gateway.policy
-    backend.ensure_table("analytics.test_catalog")
-    rows = [
-        (test_id, goid, urn, snapshot.repo, snapshot.commit, rel_path)
-        for goid, urn, test_id, rel_path in updates
-    ]
-    backend.upsert(
-        "analytics.test_catalog",
-        rows,
-        columns=[
-            "test_id",
-            "test_goid_h128",
-            "urn",
-            "repo",
-            "commit",
-            "rel_path",
-        ],
-        upsert=UpsertSpec(
-            conflict_columns=("test_id",),
-            update_columns=("test_goid_h128", "urn"),
-        ),
-    )
-
-
-def _backfill_test_goids(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
+def _backfill_test_goids_from_frames(
+    test_catalog_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Try to map test_catalog entries to GOIDs and update catalog rows.
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Snapshot reference.
+    test_catalog_frame
+        Test catalog rows for the snapshot.
+    goids_frame
+        GOID rows for the snapshot.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
 
     Returns
     -------
     tuple[dict[str, int], dict[str, str]]
         Mappings from test_id to GOID h128 and URN.
     """
-    tests_rows = _test_catalog_rows(gateway, snapshot)
-    if tests_rows is None:
+    tests_rows = _test_catalog_rows_from_frame(
+        test_catalog_frame,
+        repo=repo,
+        commit=commit,
+    )
+    if not tests_rows:
         return {}, {}
 
-    goid_rows = _goid_rows(gateway, snapshot)
-    if goid_rows is None:
+    goid_rows = _goid_rows_from_frame(goids_frame, repo=repo, commit=commit)
+    if not goid_rows:
         return {}, {}
 
     index = _goid_index(goid_rows)
     goid_by_id, urn_by_id, updates = _collect_test_goid_updates(tests_rows, index=index)
-    _apply_test_catalog_updates(gateway, snapshot, updates)
+    _ = updates
     return goid_by_id, urn_by_id
 
 
 def backfill_test_goids_for_catalog(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
+    test_catalog_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Backfill GOIDs and URNs for tests in test_catalog.
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Snapshot reference.
+    test_catalog_frame
+        Test catalog rows for the snapshot.
+    goids_frame
+        GOID rows for the snapshot.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
 
     Returns
     -------
     tuple[dict[str, int], dict[str, str]]
         Mappings from test_id to GOID h128 and URN.
     """
-    return _backfill_test_goids(gateway, snapshot)
+    return _backfill_test_goids_from_frames(
+        test_catalog_frame,
+        goids_frame,
+        repo=repo,
+        commit=commit,
+    )
 
 
 def build_edges_for_file_for_tests(
@@ -475,38 +449,46 @@ def _edges_for_file(
     return edges
 
 
-def _test_status_and_meta(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
+def _test_status_and_meta_from_frames(
+    test_catalog_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
 ) -> tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]:
     """Load test status and metadata for the snapshot.
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Snapshot reference.
+    test_catalog_frame
+        Test catalog rows for the snapshot.
+    goids_frame
+        GOID rows for the snapshot.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
 
     Returns
     -------
     tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]
         Status by test ID and metadata (goid, urn) by test ID.
     """
-    status_reader = gateway.execute(
-        """
-        SELECT test_id, status
-        FROM analytics.test_catalog
-        WHERE repo = ? AND commit = ?
-        """,
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     status_by_test: dict[str, str] = {}
-    for test_id_raw, status in iter_tuples_from_arrow_reader(status_reader):
-        if test_id_raw is None or status is None:
-            continue
-        status_by_test[str(test_id_raw)] = str(status)
-    test_goid_by_id, test_urn_by_id = _backfill_test_goids(gateway, snapshot)
+    if test_catalog_frame is not None and not test_catalog_frame.is_empty():
+        filtered = _filter_frame_by_snapshot(test_catalog_frame, repo=repo, commit=commit)
+        for row in filtered.iter_rows(named=True):
+            test_id_raw = row.get("test_id")
+            status = row.get("status")
+            if test_id_raw is None or status is None:
+                continue
+            status_by_test[str(test_id_raw)] = str(status)
+    test_goid_by_id, test_urn_by_id = _backfill_test_goids_from_frames(
+        test_catalog_frame,
+        goids_frame,
+        repo=repo,
+        commit=commit,
+    )
     test_meta_by_id = {
         test_id: (test_goid_by_id.get(test_id), test_urn_by_id.get(test_id))
         for test_id in set(status_by_test.keys())
@@ -517,11 +499,12 @@ def _test_status_and_meta(
 
 
 def build_test_coverage_edges_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     options: TestCoverageOptions | None = None,
-    catalog_provider: FunctionCatalogProvider | None = None,
+    catalog_provider: FunctionCatalogProvider,
+    test_catalog_frame: pl.DataFrame | None = None,
+    goids_frame: pl.DataFrame | None = None,
 ) -> list[TestCoverageEdgeRow]:
     """Populate analytics.test_coverage_edges by combining coverage contexts with GOIDs.
 
@@ -531,14 +514,16 @@ def build_test_coverage_edges_rows(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for DuckDB.
     snapshot
         Snapshot reference with repo, commit, and repo_root.
     options
         Optional coverage configuration options.
     catalog_provider
-        Optional pre-loaded catalog provider.
+        Pre-loaded catalog provider.
+    test_catalog_frame
+        Snapshot test catalog rows.
+    goids_frame
+        Snapshot GOID rows.
 
     Returns
     -------
@@ -559,12 +544,17 @@ def build_test_coverage_edges_rows(
     if cov is None:
         return []
 
-    funcs_by_path = _functions_by_path(gateway, snapshot, catalog_provider=catalog_provider)
+    funcs_by_path = _functions_by_path(snapshot, catalog_provider=catalog_provider)
     if not funcs_by_path:
         log.info("No functions found; skipping test coverage edges")
         return []
 
-    status_by_test, test_meta_by_id = _test_status_and_meta(gateway, snapshot)
+    status_by_test, test_meta_by_id = _test_status_and_meta_from_frames(
+        test_catalog_frame,
+        goids_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
 
     edge_ctx = EdgeContext(
         status_by_test=status_by_test,
@@ -608,3 +598,17 @@ def build_test_coverage_edges_rows(
         snapshot.commit,
     )
     return insert_rows
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered

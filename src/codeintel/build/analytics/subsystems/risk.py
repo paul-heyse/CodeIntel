@@ -6,16 +6,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import polars as pl
+
+from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.query_results import coerce_optional_float, coerce_optional_str
+
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.query_results import (
-    coerce_optional_float,
-    coerce_optional_str,
-    coerce_str,
-    iter_tuples_from_arrow_reader,
-)
 
 MEDIUM_RISK_THRESHOLD = 0.4
 
@@ -57,7 +54,12 @@ class RiskTally:
 
 
 def aggregate_risk(
-    gateway: StorageGateway, snapshot: SnapshotRef, labels: dict[str, str]
+    snapshot: SnapshotRef,
+    labels: dict[str, str],
+    *,
+    risk_factors_frame: pl.DataFrame | None = None,
+    function_metrics_frame: pl.DataFrame | None = None,
+    modules_frame: pl.DataFrame | None = None,
 ) -> dict[str, SubsystemRisk]:
     """
     Aggregate risk across subsystems based on function risk factors.
@@ -67,31 +69,60 @@ def aggregate_risk(
     dict[str, SubsystemRisk]
         Risk summaries keyed by subsystem label.
     """
-    con = gateway.con
     risk_by_label: dict[str, SubsystemRisk] = {}
     stats: dict[str, RiskTally] = defaultdict(RiskTally)
-    reader = con.execute(
-        """
-        SELECT rf.risk_score, rf.risk_level, m.module
-        FROM analytics.goid_risk_factors rf
-        LEFT JOIN analytics.function_metrics fm
-          ON fm.function_goid_h128 = rf.function_goid_h128
-        LEFT JOIN core.modules m
-          ON m.path = fm.rel_path
-        WHERE rf.repo = ? AND rf.commit = ?
-        """,
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    for risk_score, risk_level, module in iter_tuples_from_arrow_reader(reader):
-        if module is None:
+    if (
+        risk_factors_frame is None
+        or risk_factors_frame.is_empty()
+        or function_metrics_frame is None
+        or function_metrics_frame.is_empty()
+        or modules_frame is None
+        or modules_frame.is_empty()
+    ):
+        return {}
+    module_by_path: dict[str, str] = {}
+    modules_filtered = _filter_frame_by_snapshot(
+        modules_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    for row in modules_filtered.iter_rows(named=True):
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and module is not None:
+            module_by_path[path] = str(module)
+    function_module: dict[int, str] = {}
+    metrics_filtered = _filter_frame_by_snapshot(
+        function_metrics_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    for row in metrics_filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
+        rel_path = row.get("rel_path")
+        if goid is None or not isinstance(rel_path, str):
             continue
-        module_name = coerce_str(module, ctx="core.modules.module")
+        module_name = module_by_path.get(rel_path)
+        if module_name is not None:
+            function_module[goid] = module_name
+    risk_filtered = _filter_frame_by_snapshot(
+        risk_factors_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    for row in risk_filtered.iter_rows(named=True):
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
+        if goid is None:
+            continue
+        module_name = function_module.get(goid)
+        if module_name is None:
+            continue
         label = labels.get(module_name)
         if label is None:
             continue
-        score = coerce_optional_float(risk_score, ctx="risk_score") or 0.0
+        score = coerce_optional_float(row.get("risk_score"), ctx="risk_score") or 0.0
         entry = stats[label]
-        level = coerce_optional_str(risk_level, ctx="risk_level")
+        level = coerce_optional_str(row.get("risk_level"), ctx="risk_level")
         entry.add(score, is_high=level == "high")
 
     for label, entry in stats.items():
@@ -112,3 +143,17 @@ def aggregate_risk(
             level=risk_level,
         )
     return risk_by_label
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered

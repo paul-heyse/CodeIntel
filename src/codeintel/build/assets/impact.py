@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.core.gateway import BuildGateway
     from codeintel.storage.tracking.asset_tracking import AssetTracking
 
 
@@ -65,7 +65,7 @@ class ImpactResult:
 
 
 def compute_impact(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     *,
     asset_kind: str,
     asset_key: str,

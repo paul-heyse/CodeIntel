@@ -18,7 +18,7 @@ from codeintel.core.schemas.contract_factory import (
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.service import SchemaService
-from codeintel.storage.views.inventory import discover_derived_docs_views
+from codeintel.core.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

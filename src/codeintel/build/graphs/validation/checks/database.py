@@ -12,14 +12,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.query_results import (
-    coerce_int,
-    coerce_str,
-    iter_tuples_from_relation,
-)
+from codeintel.core.query_results import coerce_int, coerce_str
 
 if TYPE_CHECKING:
     import logging
@@ -27,7 +20,6 @@ if TYPE_CHECKING:
     from codeintel.build.graphs.validation.context import GraphValidationContext
     from codeintel.core.catalog import FunctionCatalog
     from codeintel.core.validation import ValidationSeverity
-    from codeintel.storage.gateway import StorageGateway
 
 
 # =============================================================================
@@ -56,9 +48,12 @@ class MissingFunctionGoidsCheck(GraphCheckBase):
             Findings for files with missing function GOIDs.
         """
         _ = self  # Instance method required for CheckProtocol
-        if ctx.gateway is None:
-            return []
-        return _warn_missing_function_goids_impl(ctx.gateway, ctx.repo, ctx.commit, ctx.logger)
+        return _warn_missing_function_goids_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+        )
 
 
 class CallsiteSpanMismatchCheck(GraphCheckBase):
@@ -82,10 +77,14 @@ class CallsiteSpanMismatchCheck(GraphCheckBase):
             Findings for callsite span mismatches.
         """
         _ = self  # Instance method required for CheckProtocol
-        if ctx.gateway is None or ctx.catalog is None:
+        if ctx.catalog is None:
             return []
         return _warn_callsite_span_mismatches_impl(
-            ctx.gateway, ctx.catalog, ctx.repo, ctx.commit, ctx.logger
+            ctx.dataset_root_dir,
+            ctx.catalog,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
         )
 
 
@@ -110,9 +109,15 @@ class OrphanModulesCheck(GraphCheckBase):
             Findings for orphan modules.
         """
         _ = self  # Instance method required for CheckProtocol
-        if ctx.gateway is None or ctx.catalog is None:
+        if ctx.catalog is None:
             return []
-        return _warn_orphan_modules_impl(ctx.gateway, ctx.repo, ctx.commit, ctx.logger, ctx.catalog)
+        return _warn_orphan_modules_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+            ctx.catalog,
+        )
 
 
 # =============================================================================
@@ -121,7 +126,10 @@ class OrphanModulesCheck(GraphCheckBase):
 
 
 def _warn_missing_function_goids_impl(
-    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for files with functions in AST that are missing GOIDs (implementation).
 
@@ -130,52 +138,53 @@ def _warn_missing_function_goids_impl(
     list[dict[str, object]]
         Findings for files with missing function GOIDs.
     """
-    try:
-        if not _require_parquet_table(gateway, "core.ast_nodes", log):
-            return []
-        if not _require_parquet_table(gateway, "core.goids", log):
-            return []
-        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-            ColumnExpression("commit") == ConstantExpression(commit)
-        )
-        node_types = [ConstantExpression("FunctionDef"), ConstantExpression("AsyncFunctionDef")]
-        funcs = (
-            gateway.relation_from_table_key("core.ast_nodes")
-            .filter(predicate)
-            .filter(ColumnExpression("node_type").isin(*node_types))
-            .aggregate("count(*) as function_count", "path")
-            .set_alias("funcs")
-        )
-        kind_literals = [ConstantExpression("function"), ConstantExpression("method")]
-        goid_counts = (
-            gateway.relation_from_table_key("core.goids")
-            .filter(predicate)
-            .filter(ColumnExpression("kind").isin(*kind_literals))
-            .aggregate("count(*) as goid_count", "rel_path")
-            .set_alias("goid_counts")
-        )
-        relation = (
-            funcs.join(goid_counts, "funcs.path = goid_counts.rel_path", how="left")
-            .select(
-                "funcs.path as rel_path",
-                "funcs.function_count",
-                "coalesce(goid_counts.goid_count, 0) as goid_count",
-            )
-            .filter("coalesce(goid_counts.goid_count, 0) < funcs.function_count")
-            .order("funcs.path")
-        )
-        rows: list[tuple[str, int, int]] = []
-        for path, function_count, goid_count in iter_tuples_from_relation(relation):
-            rows.append(
-                (
-                    coerce_str(path, ctx="missing_function_goids.rel_path"),
-                    coerce_int(function_count, ctx="missing_function_goids.function_count"),
-                    coerce_int(goid_count, ctx="missing_function_goids.goid_count"),
-                )
-            )
-    except DuckDBError:
-        log.info("Skipping missing_function_goids check due to incomplete AST data")
+    if dataset_root_dir is None:
         return []
+    ast_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="core.ast_nodes",
+        snapshot_id=commit,
+        columns=("path", "node_type"),
+        repo=None,
+        commit=None,
+    )
+    if ast_frame is None:
+        return []
+    goids_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="core.goids",
+        snapshot_id=commit,
+        columns=("rel_path", "kind", "repo", "commit"),
+        repo=repo,
+        commit=commit,
+    )
+    if goids_frame is None:
+        return []
+    funcs = (
+        ast_frame.filter(pl.col("node_type").is_in(["FunctionDef", "AsyncFunctionDef"]))
+        .group_by("path")
+        .agg(pl.len().alias("function_count"))
+    )
+    goid_counts = (
+        goids_frame.filter(pl.col("kind").is_in(["function", "method"]))
+        .group_by("rel_path")
+        .agg(pl.len().alias("goid_count"))
+        .rename({"rel_path": "path"})
+    )
+    joined = funcs.join(goid_counts, on="path", how="left").with_columns(
+        pl.col("goid_count").fill_null(0)
+    )
+    rows = [
+        (
+            coerce_str(row.get("path"), ctx="missing_function_goids.rel_path"),
+            coerce_int(row.get("function_count"), ctx="missing_function_goids.function_count"),
+            coerce_int(row.get("goid_count"), ctx="missing_function_goids.goid_count"),
+        )
+        for row in joined.filter(pl.col("goid_count") < pl.col("function_count"))
+        .sort("path")
+        .collect()
+        .to_dicts()
+    ]
 
     if not rows:
         return []
@@ -201,7 +210,7 @@ def _warn_missing_function_goids_impl(
 
 
 def _warn_callsite_span_mismatches_impl(
-    gateway: StorageGateway,
+    dataset_root_dir: Path | None,
     catalog: FunctionCatalog,
     repo: str,
     commit: str,
@@ -215,35 +224,33 @@ def _warn_callsite_span_mismatches_impl(
         Findings for callsite span mismatches.
     """
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
-    try:
-        if not _require_parquet_table(gateway, "graph.call_graph_edges", log):
-            return []
-        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-            ColumnExpression("commit") == ConstantExpression(commit)
-        )
-        relation = (
-            gateway.relation_from_table_key("graph.call_graph_edges")
-            .filter(predicate)
-            .filter(~ColumnExpression("callsite_line").isnull())
-            .select("caller_goid_h128", "callsite_path", "callsite_line")
-        )
-        rows = list(iter_tuples_from_relation(relation))
-    except DuckDBError:
+    if dataset_root_dir is None:
         return []
+    frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="graph.call_graph_edges",
+        snapshot_id=commit,
+        columns=("caller_goid_h128", "callsite_path", "callsite_line", "repo", "commit"),
+        repo=repo,
+        commit=commit,
+    )
+    if frame is None:
+        return []
+    rows = frame.filter(pl.col("callsite_line").is_not_null()).collect().to_dicts()
 
     mismatches = []
-    for goid, path, line in rows:
-        goid_int = normalize_decimal_id(goid)
+    for row in rows:
+        goid_int = normalize_decimal_id(row.get("caller_goid_h128"))
         if goid_int is None:
             continue
         span = spans_by_goid.get(goid_int)
         if span is None:
             continue
-        line_value = coerce_int(line, ctx="callsite_line")
+        line_value = coerce_int(row.get("callsite_line"), ctx="callsite_line")
         if line_value < span.start_line or line_value > span.end_line:
             mismatches.append(
                 (
-                    coerce_str(path, ctx="callsite_path"),
+                    coerce_str(row.get("callsite_path"), ctx="callsite_path"),
                     line_value,
                     span.start_line,
                     span.end_line,
@@ -273,7 +280,7 @@ def _warn_callsite_span_mismatches_impl(
 
 
 def _warn_orphan_modules_impl(
-    gateway: StorageGateway,
+    dataset_root_dir: Path | None,
     repo: str,
     commit: str,
     log: logging.Logger,
@@ -286,50 +293,56 @@ def _warn_orphan_modules_impl(
     list[dict[str, object]]
         Findings for orphan modules.
     """
-    query_failed = False
-    try:
-        if not _require_parquet_table(gateway, "core.goids", log):
+    if dataset_root_dir is None:
+        return []
+    modules_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="core.modules",
+        snapshot_id=commit,
+        columns=("path", "repo", "commit"),
+        repo=repo,
+        commit=commit,
+    )
+    goids_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="core.goids",
+        snapshot_id=commit,
+        columns=("rel_path", "kind", "repo", "commit"),
+        repo=repo,
+        commit=commit,
+    )
+    if modules_frame is None or goids_frame is None:
+        if catalog.module_by_path:
+            rows = [(path,) for path in catalog.module_by_path]
+            module_count = 0
+        else:
             return []
-        if not _require_parquet_table(gateway, "core.modules", log):
-            return []
-        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-            ColumnExpression("commit") == ConstantExpression(commit)
-        )
+    else:
         module_goids = (
-            gateway.relation_from_table_key("core.goids")
-            .filter(predicate)
-            .filter(ColumnExpression("kind") == ConstantExpression("module"))
-            .aggregate("count(*) as cnt", "rel_path")
-            .set_alias("module_goids")
+            goids_frame.filter(pl.col("kind") == "module")
+            .group_by("rel_path")
+            .agg(pl.len().alias("cnt"))
+            .rename({"rel_path": "path"})
         )
-        modules = (
-            gateway.relation_from_table_key("core.modules").filter(predicate).set_alias("modules")
-        )
-        relation = (
-            modules.join(module_goids, "modules.path = module_goids.rel_path", how="left")
-            .filter(ColumnExpression("module_goids.cnt").isnull())
-            .select("modules.path")
-        )
+        modules = modules_frame.select("path")
+        joined = modules.join(module_goids, on="path", how="left")
         rows = [
-            (coerce_str(path, ctx="orphan_modules.path"),)
-            for (path,) in iter_tuples_from_relation(relation)
+            (coerce_str(row.get("path"), ctx="orphan_modules.path"),)
+            for row in joined.filter(pl.col("cnt").is_null()).collect().to_dicts()
         ]
-
-        count_row = modules.aggregate("count(*) as cnt").fetchone()
-        module_count = 0 if count_row is None else coerce_int(count_row[0], ctx="module_count")
+        module_count = int(modules.select(pl.len()).collect().to_series()[0])
         if rows:
-            stats_rel = (
-                modules.join(module_goids, "modules.path = module_goids.rel_path", how="left")
-                .select(
-                    "modules.path",
-                    "coalesce(module_goids.cnt, 0) as module_goids",
-                )
-                .order("module_goids, modules.path")
+            sample = (
+                joined.with_columns(pl.col("cnt").fill_null(0).alias("module_goids"))
+                .select("path", "module_goids")
+                .sort(["module_goids", "path"])
                 .limit(5)
+                .collect()
+                .to_dicts()
             )
             sample_detail = ", ".join(
-                f"{path} (module_goids={coerce_int(cnt, ctx='module_goids')})"
-                for path, cnt in iter_tuples_from_relation(stats_rel)
+                f"{row['path']} (module_goids={coerce_int(row['module_goids'], ctx='module_goids')})"
+                for row in sample
             )
             log.info(
                 "Orphan module debug: repo=%s commit=%s sample=%s",
@@ -337,16 +350,9 @@ def _warn_orphan_modules_impl(
                 commit,
                 sample_detail,
             )
-    except DuckDBError:
-        query_failed = True
-        rows = []
-        module_count = 0
 
-    if query_failed and catalog.module_by_path:
-        rows = [(path,) for path in catalog.module_by_path]
-
-    if not rows and module_count == 0 and catalog.module_by_path:
-        rows = [(path,) for path in catalog.module_by_path]
+        if not rows and module_count == 0 and catalog.module_by_path:
+            rows = [(path,) for path in catalog.module_by_path]
 
     if not rows:
         return []
@@ -364,35 +370,6 @@ def _warn_orphan_modules_impl(
         }
         for (path,) in rows
     ]
-
-
-def _require_parquet_table(
-    gateway: StorageGateway,
-    table_key: str,
-    log: logging.Logger,
-) -> bool:
-    schema, table = split_table_key(table_key)
-    try:
-        row = gateway.execute(
-            """
-            SELECT table_type
-            FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [schema, table],
-        ).fetchone()
-    except DuckDBError as exc:
-        log.warning("Validation table lookup failed for %s: %s", table_key, exc)
-        return False
-    if row is None:
-        log.warning("Validation table missing: %s", table_key)
-        return False
-    table_type = str(row[0] or "").upper()
-    if table_type not in {"BASE TABLE", "TABLE"}:
-        log.warning("Validation expects Parquet base table for %s, found %s", table_key, table_type)
-        return False
-    return True
 
 
 # =============================================================================

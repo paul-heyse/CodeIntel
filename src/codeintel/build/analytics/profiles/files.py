@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+import polars as pl
 
 from codeintel.build.analytics.profiles.types import FileProfileInputs
 from codeintel.build.analytics.profiles.utils import (
@@ -20,61 +22,72 @@ from codeintel.build.analytics.utilities.type_coercion import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFileProfileRow as FileProfileRowModel,
 )
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import records_from_relation
-from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.duckdb_types import DuckDBRelation
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
-_FILE_PROFILE_AGG_EXPR = ", ".join(
-    [
-        "count(rel_path) as total_functions",
-        "sum(case when call_is_public then 1 else 0 end) as public_functions",
-        "avg(loc) as avg_loc",
-        "max(loc) as max_loc",
-        "avg(cyclomatic_complexity) as avg_cyclomatic_complexity",
-        "max(cyclomatic_complexity) as max_cyclomatic_complexity",
-        ("sum(case when risk_level = 'high' then 1 else 0 end) as high_risk_function_count"),
-        ("sum(case when risk_level = 'medium' then 1 else 0 end) as medium_risk_function_count"),
-        "max(risk_score) as max_risk_score",
-        "sum(covered_lines) as sum_covered_lines",
-        "sum(executable_lines) as sum_exec_lines",
-        "sum(case when tested then 1 else 0 end) as tested_function_count",
-        "sum(case when tested then 0 else 1 end) as untested_function_count",
-        "sum(tests_touching) as tests_touching",
-    ]
-)
+
+def _scope_frame(frame: pl.DataFrame, repo: str, commit: str) -> pl.DataFrame:
+    if frame.is_empty():
+        return frame
+    if "repo" in frame.columns and "commit" in frame.columns:
+        return frame.filter((pl.col("repo") == repo) & (pl.col("commit") == commit))
+    return frame
 
 
-@dataclass(frozen=True)
-class _FileProfileTables:
-    fp: DuckDBRelation
-    ast_metrics: DuckDBRelation
-    hotspots: DuckDBRelation
-    typedness: DuckDBRelation
-    static_diag: DuckDBRelation
-    modules: DuckDBRelation
+def _extract_annotation_ratio(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        ratio = value.get("params")
+        return float(ratio) if isinstance(ratio, (int, float)) else None
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(decoded, dict):
+            ratio = decoded.get("params")
+            return float(ratio) if isinstance(ratio, (int, float)) else None
+    return None
+
+
+_PROFILE_GROUP_BY = ["repo", "commit", "rel_path"]
 
 
 def compute_file_profile_inputs(
-    gateway: StorageGateway, snapshot: SnapshotRef
+    snapshot: SnapshotRef,
+    *,
+    function_profile: pl.DataFrame,
+    ast_metrics: pl.DataFrame,
+    hotspots: pl.DataFrame,
+    typedness: pl.DataFrame,
+    static_diagnostics: pl.DataFrame,
+    modules: pl.DataFrame,
 ) -> FileProfileInputs:
     """
     Construct snapshot inputs for file profile generation.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
     snapshot
         Repository and commit identifiers.
+    function_profile
+        Frame for ``analytics.function_profile``.
+    ast_metrics
+        Frame for ``core.ast_metrics``.
+    hotspots
+        Frame for ``analytics.hotspots``.
+    typedness
+        Frame for ``analytics.typedness``.
+    static_diagnostics
+        Frame for ``analytics.static_diagnostics``.
+    modules
+        Frame for ``core.modules``.
 
     Returns
     -------
@@ -82,140 +95,16 @@ def compute_file_profile_inputs(
         Snapshot handle for file profile helpers.
     """
     return FileProfileInputs(
-        gateway=gateway,
-        con=gateway.con,
         repo=snapshot.repo,
         commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
-        slow_test_threshold_ms=0.0,
+        function_profile=function_profile,
+        ast_metrics=ast_metrics,
+        hotspots=hotspots,
+        typedness=typedness,
+        static_diagnostics=static_diagnostics,
+        modules=modules,
     )
-
-
-def _load_file_profile_tables(
-    inputs: FileProfileInputs, module_table: str
-) -> _FileProfileTables | None:
-    """
-    Load filtered profile source tables.
-
-    Returns
-    -------
-    tuple[DuckDBRelation, ...] | None
-        Filtered source tables or None on access failure.
-    """
-    gw = inputs.gateway
-    try:
-        fp = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.function_profile"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        ast_metrics = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("core.ast_metrics"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        hotspots = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.hotspots"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        typedness = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.typedness"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        static_diag = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key("analytics.static_diagnostics"),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-        modules = maybe_scope_by_repo_commit(
-            gw.relation_from_table_key(module_table),
-            repo=inputs.repo,
-            commit=inputs.commit,
-        )
-    except DuckDBError as exc:
-        log.warning("file_profile: failed to access tables: %s", exc)
-        return None
-    else:
-        return _FileProfileTables(
-            fp=fp,
-            ast_metrics=ast_metrics,
-            hotspots=hotspots,
-            typedness=typedness,
-            static_diag=static_diag,
-            modules=modules,
-        )
-
-
-def _build_file_profile_relation(tables: _FileProfileTables) -> DuckDBRelation:
-    """
-    Assemble the base relation used to compute file profile rows.
-
-    Parameters
-    ----------
-    tables
-        Container for the scoped relations used to build the file profile view.
-
-    Returns
-    -------
-    DuckDBRelation
-        Joined relation ready for selection into file profile rows.
-    """
-    fm = tables.fp.aggregate(_FILE_PROFILE_AGG_EXPR, "repo, commit, rel_path").set_alias("fm")
-    joined = fm.join(
-        tables.ast_metrics.set_alias("ast"),
-        "fm.rel_path = ast.rel_path",
-        how="left",
-    ).set_alias("base")
-    joined = joined.join(
-        tables.hotspots.set_alias("hotspots"),
-        "base.rel_path = hotspots.rel_path",
-        how="left",
-    ).set_alias("base")
-    joined = joined.join(
-        tables.typedness.select(
-            "repo",
-            "commit",
-            "path",
-            "annotation_ratio",
-            "untyped_defs",
-            "overlay_needed",
-            "type_error_count",
-        ).set_alias("typedness"),
-        (
-            "base.repo = typedness.repo "
-            "AND base.commit = typedness.commit "
-            "AND base.rel_path = typedness.path"
-        ),
-        how="left",
-    ).set_alias("base")
-    joined = joined.join(
-        tables.static_diag.set_alias("diagnostics"),
-        (
-            "base.repo = diagnostics.repo "
-            "AND base.commit = diagnostics.commit "
-            "AND base.rel_path = diagnostics.rel_path"
-        ),
-        how="left",
-    ).set_alias("base")
-    return joined.join(
-        tables.modules.select(
-            "repo",
-            "commit",
-            "path",
-            "module",
-            "language",
-            "tags",
-            "owners",
-        ).set_alias("modules"),
-        (
-            "base.repo = modules.repo "
-            "AND base.commit = modules.commit "
-            "AND base.rel_path = modules.path"
-        ),
-        how="left",
-    ).set_alias("base")
 
 
 def build_file_profile_rows(
@@ -240,61 +129,106 @@ def build_file_profile_rows(
         msg = f"Unexpected module table: {module_table}"
         raise ValueError(msg)
 
-    tables = _load_file_profile_tables(inputs, module_table)
-    if tables is None:
+    function_profile = _scope_frame(inputs.function_profile, inputs.repo, inputs.commit)
+    if function_profile.is_empty():
         return
 
-    joined = _build_file_profile_relation(tables)
+    agg = function_profile.group_by(_PROFILE_GROUP_BY).agg(
+        [
+            pl.len().alias("total_functions"),
+            pl.col("call_is_public").cast(pl.Int64).sum().alias("public_functions"),
+            pl.col("loc").mean().alias("avg_loc"),
+            pl.col("loc").max().alias("max_loc"),
+            pl.col("cyclomatic_complexity").mean().alias("avg_cyclomatic_complexity"),
+            pl.col("cyclomatic_complexity").max().alias("max_cyclomatic_complexity"),
+            (pl.col("risk_level") == "high").cast(pl.Int64).sum().alias("high_risk_function_count"),
+            (pl.col("risk_level") == "medium")
+            .cast(pl.Int64)
+            .sum()
+            .alias("medium_risk_function_count"),
+            pl.col("risk_score").max().alias("max_risk_score"),
+            pl.col("covered_lines").fill_null(0).sum().alias("sum_covered_lines"),
+            pl.col("executable_lines").fill_null(0).sum().alias("sum_exec_lines"),
+            pl.col("tested").cast(pl.Int64).sum().alias("tested_function_count"),
+            pl.col("tested").not_().cast(pl.Int64).sum().alias("untested_function_count"),
+            pl.col("tests_touching").fill_null(0).sum().alias("tests_touching"),
+        ]
+    )
+    agg = agg.with_columns(
+        pl.when(pl.col("sum_exec_lines") > 0)
+        .then(pl.col("sum_covered_lines") / pl.col("sum_exec_lines"))
+        .otherwise(None)
+        .alias("file_coverage_ratio")
+    )
 
-    try:
-        selected = joined.select(
-            "base.repo as repo",
-            "base.commit as commit",
-            "base.rel_path as rel_path",
-            "base.module as module",
-            "base.language as language",
-            "base.node_count as node_count",
-            "base.function_count as function_count",
-            "base.class_count as class_count",
-            "base.avg_depth as avg_depth",
-            "base.max_depth as max_depth",
-            "base.complexity as ast_complexity",
-            "base.score as hotspot_score",
-            "base.commit_count as commit_count",
-            "base.author_count as author_count",
-            "base.lines_added as lines_added",
-            "base.lines_deleted as lines_deleted",
-            "cast(json_extract(base.annotation_ratio, '$.params') as double) as annotation_ratio",
-            "base.untyped_defs as untyped_defs",
-            "base.overlay_needed as overlay_needed",
-            "base.type_error_count as type_error_count",
-            "base.total_errors as static_error_count",
-            "base.has_errors as has_static_errors",
-            "base.total_functions as total_functions",
-            "base.public_functions as public_functions",
-            "base.avg_loc as avg_loc",
-            "base.max_loc as max_loc",
-            "base.avg_cyclomatic_complexity as avg_cyclomatic_complexity",
-            "base.max_cyclomatic_complexity as max_cyclomatic_complexity",
-            "base.high_risk_function_count as high_risk_function_count",
-            "base.medium_risk_function_count as medium_risk_function_count",
-            "base.max_risk_score as max_risk_score",
-            (
-                "cast(base.sum_covered_lines as double) / "
-                "nullif(base.sum_exec_lines, 0) as file_coverage_ratio"
-            ),
-            "base.tested_function_count as tested_function_count",
-            "base.untested_function_count as untested_function_count",
-            "base.tests_touching as tests_touching",
-            "base.tags as tags",
-            "base.owners as owners",
+    ast_metrics = inputs.ast_metrics
+    if "complexity" in ast_metrics.columns:
+        ast_metrics = ast_metrics.rename({"complexity": "ast_complexity"})
+    for col in [
+        "node_count",
+        "function_count",
+        "class_count",
+        "avg_depth",
+        "max_depth",
+        "ast_complexity",
+    ]:
+        if col not in ast_metrics.columns:
+            ast_metrics = ast_metrics.with_columns(pl.lit(None).alias(col))
+
+    hotspots = inputs.hotspots
+    if "score" in hotspots.columns:
+        hotspots = hotspots.rename({"score": "hotspot_score"})
+    for col in ["commit_count", "author_count", "lines_added", "lines_deleted", "hotspot_score"]:
+        if col not in hotspots.columns:
+            hotspots = hotspots.with_columns(pl.lit(None).alias(col))
+
+    typedness = _scope_frame(inputs.typedness, inputs.repo, inputs.commit)
+    for col in ["repo", "commit", "path"]:
+        if col not in typedness.columns:
+            typedness = typedness.with_columns(pl.lit(None).alias(col))
+    for col in ["annotation_ratio", "untyped_defs", "overlay_needed", "type_error_count"]:
+        if col not in typedness.columns:
+            typedness = typedness.with_columns(pl.lit(None).alias(col))
+    static_diag = _scope_frame(inputs.static_diagnostics, inputs.repo, inputs.commit)
+    for col in ["repo", "commit", "rel_path"]:
+        if col not in static_diag.columns:
+            static_diag = static_diag.with_columns(pl.lit(None).alias(col))
+    if "total_errors" in static_diag.columns:
+        static_diag = static_diag.rename(
+            {"total_errors": "static_error_count", "has_errors": "has_static_errors"}
         )
-        records = records_from_relation(selected)
-    except DuckDBError as exc:
-        log.warning("file_profile: failed to execute aggregation: %s", exc)
-        return
+    for col in ["static_error_count", "has_static_errors"]:
+        if col not in static_diag.columns:
+            static_diag = static_diag.with_columns(pl.lit(None).alias(col))
+    modules = _scope_frame(inputs.modules, inputs.repo, inputs.commit)
+    for col in ["repo", "commit", "path"]:
+        if col not in modules.columns:
+            modules = modules.with_columns(pl.lit(None).alias(col))
+    for col in ["module", "language", "tags", "owners"]:
+        if col not in modules.columns:
+            modules = modules.with_columns(pl.lit(None).alias(col))
 
-    for record in records:
+    base = agg.join(ast_metrics, on="rel_path", how="left")
+    base = base.join(hotspots, on="rel_path", how="left")
+    base = base.join(
+        typedness,
+        left_on=["repo", "commit", "rel_path"],
+        right_on=["repo", "commit", "path"],
+        how="left",
+    ).drop("path")
+    base = base.join(
+        static_diag,
+        on=["repo", "commit", "rel_path"],
+        how="left",
+    )
+    base = base.join(
+        modules,
+        left_on=["repo", "commit", "rel_path"],
+        right_on=["repo", "commit", "path"],
+        how="left",
+    ).drop("path")
+
+    for record in base.iter_rows(named=True):
         record["created_at"] = inputs.created_at
         yield _row_to_file_profile_model(record, inputs)
 
@@ -303,7 +237,7 @@ def _row_to_file_profile_model(
     record: dict[str, object], inputs: FileProfileInputs
 ) -> FileProfileRowModel:
     """
-    Convert a DuckDB row mapping into a FileProfileRowModel.
+    Convert a tabular row mapping into a FileProfileRowModel.
 
     Returns
     -------
@@ -327,7 +261,7 @@ def _row_to_file_profile_model(
         author_count=optional_int(record["author_count"]),
         lines_added=optional_int(record["lines_added"]),
         lines_deleted=optional_int(record["lines_deleted"]),
-        annotation_ratio=optional_float(record["annotation_ratio"]),
+        annotation_ratio=_extract_annotation_ratio(record.get("annotation_ratio")),
         untyped_defs=optional_int(record["untyped_defs"]),
         overlay_needed=bool(record["overlay_needed"])
         if record["overlay_needed"] is not None

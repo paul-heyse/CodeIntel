@@ -27,9 +27,9 @@ import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:

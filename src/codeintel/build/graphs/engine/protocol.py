@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     import networkx as nx
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 
 class GraphKind(Flag):
@@ -45,8 +44,6 @@ class GraphEngine(Protocol):
     Implementations may cache results and route to CPU or GPU backends without
     exposing those details to analytics consumers.
     """
-
-    gateway: StorageGateway
 
     @property
     def use_gpu(self) -> bool:

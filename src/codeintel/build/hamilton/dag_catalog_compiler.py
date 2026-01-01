@@ -26,7 +26,7 @@ from codeintel.build.hamilton.target_spec_compiler import (
     compile_target_descriptors_from_driver,
 )
 from codeintel.core.hamilton import tags as ht
-from codeintel.storage.helpers.table_key import TableKeyValidationError, validate_table_key
+from codeintel.core.table_key import TableKeyValidationError, validate_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

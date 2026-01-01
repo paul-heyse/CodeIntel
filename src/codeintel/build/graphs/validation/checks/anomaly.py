@@ -8,23 +8,24 @@ Check classes implement CheckProtocol from core/validation.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+import polars as pl
+
+from codeintel.build.graphs.engine.datasets import scan_snapshot_lazyframe
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import coerce_int, coerce_str, iter_tuples_from_relation
+from codeintel.core.query_results import coerce_int, coerce_str
 
 if TYPE_CHECKING:
     import logging
 
     from codeintel.build.graphs.validation.context import GraphValidationContext
     from codeintel.core.validation import ValidationSeverity
-    from codeintel.storage.gateway import StorageGateway
 
 
 # =============================================================================
@@ -53,9 +54,12 @@ class SymbolCommunityCheck(GraphCheckBase):
             Findings for symbol community anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
-        if ctx.gateway is None:
-            return []
-        return _symbol_community_findings_impl(ctx.gateway, ctx.repo, ctx.commit, ctx.logger)
+        return _symbol_community_findings_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+        )
 
 
 class SubsystemDisagreementCheck(GraphCheckBase):
@@ -79,9 +83,12 @@ class SubsystemDisagreementCheck(GraphCheckBase):
             Findings for subsystem disagreement anomalies.
         """
         _ = self  # Instance method required for CheckProtocol
-        if ctx.gateway is None:
-            return []
-        return _subsystem_disagreement_findings_impl(ctx.gateway, ctx.repo, ctx.commit, ctx.logger)
+        return _subsystem_disagreement_findings_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+        )
 
 
 # =============================================================================
@@ -90,7 +97,10 @@ class SubsystemDisagreementCheck(GraphCheckBase):
 
 
 def _symbol_community_findings_impl(
-    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for large symbol communities (implementation).
 
@@ -99,27 +109,32 @@ def _symbol_community_findings_impl(
     list[dict[str, object]]
         Findings for symbol community anomalies.
     """
-    try:
-        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-            ColumnExpression("commit") == ConstantExpression(commit)
-        )
-        relation = (
-            gateway.relation_from_table_key("analytics.symbol_graph_metrics_modules")
-            .filter(predicate)
-            .filter(~ColumnExpression("symbol_community_id").isnull())
-            .aggregate("count(*) as sym_count", "symbol_community_id")
-            .filter(ColumnExpression("sym_count") > ConstantExpression(SYMBOL_COMMUNITY_MIN))
-        )
-        comm_counts: list[tuple[str, int]] = []
-        for community_id, sym_count in iter_tuples_from_relation(relation):
-            comm_counts.append(
-                (
-                    coerce_str(community_id, ctx="symbol_community_id"),
-                    coerce_int(sym_count, ctx="symbol_community_count"),
-                )
-            )
-    except DuckDBError:
+    if dataset_root_dir is None:
         return []
+    frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="analytics.symbol_graph_metrics_modules",
+        snapshot_id=commit,
+        columns=("symbol_community_id", "repo", "commit"),
+        repo=repo,
+        commit=commit,
+    )
+    if frame is None:
+        return []
+    counts = (
+        frame.filter(pl.col("symbol_community_id").is_not_null())
+        .group_by("symbol_community_id")
+        .agg(pl.len().alias("sym_count"))
+        .filter(pl.col("sym_count") > SYMBOL_COMMUNITY_MIN)
+        .collect()
+    )
+    comm_counts = [
+        (
+            coerce_str(row.get("symbol_community_id"), ctx="symbol_community_id"),
+            coerce_int(row.get("sym_count"), ctx="symbol_community_count"),
+        )
+        for row in counts.to_dicts()
+    ]
 
     if not comm_counts:
         return []
@@ -139,7 +154,10 @@ def _symbol_community_findings_impl(
 
 
 def _subsystem_disagreement_findings_impl(
-    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for subsystem vs import community disagreements (implementation).
 
@@ -148,32 +166,33 @@ def _subsystem_disagreement_findings_impl(
     list[dict[str, object]]
         Findings for subsystem disagreement anomalies.
     """
-    try:
-        agrees_value = False
-        predicate = (
-            (ColumnExpression("repo") == ConstantExpression(repo))
-            & (ColumnExpression("commit") == ConstantExpression(commit))
-            & (ColumnExpression("agrees") == ConstantExpression(agrees_value))
-        )
-        relation = (
-            gateway.relation_from_table_key("analytics.subsystem_agreement")
-            .filter(predicate)
-            .select("module", "subsystem_id", "import_community_id")
-        )
-        disagreements: list[tuple[str, str, str]] = []
-        for module, subsystem_id, import_community_id in iter_tuples_from_relation(relation):
-            disagreements.append(
-                (
-                    coerce_str(module, ctx="subsystem_agreement.module"),
-                    coerce_str(subsystem_id, ctx="subsystem_agreement.subsystem_id"),
-                    coerce_str(
-                        import_community_id,
-                        ctx="subsystem_agreement.import_community_id",
-                    ),
-                )
-            )
-    except DuckDBError:
+    if dataset_root_dir is None:
         return []
+    frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="analytics.subsystem_agreement",
+        snapshot_id=commit,
+        columns=("module", "subsystem_id", "import_community_id", "agrees", "repo", "commit"),
+        repo=repo,
+        commit=commit,
+    )
+    if frame is None:
+        return []
+    disagreements = [
+        (
+            coerce_str(row.get("module"), ctx="subsystem_agreement.module"),
+            coerce_str(row.get("subsystem_id"), ctx="subsystem_agreement.subsystem_id"),
+            coerce_str(
+                row.get("import_community_id"),
+                ctx="subsystem_agreement.import_community_id",
+            ),
+        )
+        for row in (
+            frame.filter(pl.col("agrees") == pl.lit(value=False))
+            .collect()
+            .to_dicts()
+        )
+    ]
     if not disagreements:
         return []
     sample = ", ".join(str(row[0]) for row in disagreements[:SAMPLE_LIMIT])

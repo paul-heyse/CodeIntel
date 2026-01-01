@@ -25,9 +25,9 @@ from codeintel.build.analytics.dependencies.core import (
     DependencyContext,
     _aggregate_dependency_calls,
     _build_alias_maps,
-    _fetch_dependency_call_rows,
+    _config_keys_from_frame,
+    _dependency_call_rows_from_frame,
     _group_calls,
-    _load_config_keys,
     _load_dependency_patterns,
     _serialize_dependency_rows,
 )
@@ -37,10 +37,11 @@ from codeintel.core.paths import normalize_path
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import polars as pl
+
     from codeintel.build.analytics.dependencies.core import ExternalDependencyInputs
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 
 log = logging.getLogger(__name__)
@@ -212,7 +213,6 @@ def _dep_id(repo: str, commit: str, library: str) -> str:
 
 
 def compute_dependency_calls_pure(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     inputs: ExternalDependencyInputs,
     dependency_patterns_path: Path | None = None,
@@ -224,8 +224,6 @@ def compute_dependency_calls_pure(
 
     Parameters
     ----------
-    gateway
-        Storage gateway (kept for API consistency, not used for writes).
     snapshot
         Repository and commit snapshot reference.
     inputs
@@ -244,7 +242,6 @@ def compute_dependency_calls_pure(
     does not write. The materialization is handled by the Hamilton native
     module to ensure proper asset catalog tracking.
     """
-    del gateway  # Kept for API consistency; patterns loaded from repo_root
     patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
     if not patterns:
         log.warning("No dependency patterns loaded; returning empty result")
@@ -292,8 +289,10 @@ def compute_dependency_calls_pure(
 
 
 def compute_external_dependencies_pure(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
+    *,
+    dependency_calls_frame: pl.DataFrame | None = None,
+    config_values_frame: pl.DataFrame | None = None,
     dependency_patterns_path: Path | None = None,
     language: str = "python",
 ) -> ExternalDependenciesResult:
@@ -304,10 +303,12 @@ def compute_external_dependencies_pure(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for reading dependency calls (not for writing).
     snapshot
         Repository and commit snapshot reference.
+    dependency_calls_frame
+        External dependency calls table snapshot.
+    config_values_frame
+        Config values table snapshot.
     dependency_patterns_path
         Optional path to dependency patterns YAML file.
     language
@@ -320,17 +321,24 @@ def compute_external_dependencies_pure(
 
     Notes
     -----
-    This function reads from analytics.external_dependency_calls which must
-    already be populated. It is called AFTER the calls table is materialized.
+    This function expects dependency_calls_frame to come from a materialized
+    external_dependency_calls table for the target snapshot.
     """
     patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
     if not patterns:
         log.warning("No dependency patterns loaded; returning empty result")
         return ExternalDependenciesResult(rows=())
 
-    con = gateway.con
-    config_keys_by_module = _load_config_keys(con, snapshot.repo, snapshot.commit)
-    call_rows = _fetch_dependency_call_rows(con, snapshot)
+    config_keys_by_module = _config_keys_from_frame(
+        config_values_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    call_rows = _dependency_call_rows_from_frame(
+        dependency_calls_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     aggregates = _aggregate_dependency_calls(call_rows, patterns)
     dep_rows = _serialize_dependency_rows(
         aggregates,

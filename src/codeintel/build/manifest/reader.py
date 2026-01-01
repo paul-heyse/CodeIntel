@@ -10,14 +10,14 @@ from codeintel.build.manifest.records import CacheEventStatus, CacheManifestEntr
 from codeintel.storage.tracking import StepStatus
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
 @dataclass(frozen=True, slots=True)
 class CacheManifestReader:
     """Read cache events from pipeline step tracking."""
 
-    gateway: StorageGateway
+    gateway: BuildGateway
     module: str = "build"
     stage: str = "cache"
 

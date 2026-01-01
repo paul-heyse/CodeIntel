@@ -9,18 +9,18 @@ from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
 from codeintel.build.exports.writers import write_json_array
 from codeintel.core.config.settings import ExportAuditSettings
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from codeintel.build.exports.common import ExportCallOptions
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 
 def export_jsonl_for_table(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_name: str,
     output_path: Path,
     *,
@@ -32,7 +32,7 @@ def export_jsonl_for_table(
     Parameters
     ----------
     gateway
-        StorageGateway providing the DuckDB connection.
+        BuildGateway providing the DuckDB connection.
     table_name
         Fully qualified table name (schema.table) to export.
     output_path
@@ -58,7 +58,7 @@ def export_jsonl_for_table(
 
 
 def export_dataset_to_jsonl(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     dataset_name: str,
     output_dir: Path,
     *,
@@ -69,7 +69,7 @@ def export_dataset_to_jsonl(
     Parameters
     ----------
     gateway
-        StorageGateway providing the DuckDB connection.
+        BuildGateway providing the DuckDB connection.
     dataset_name
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir
@@ -101,7 +101,7 @@ def export_dataset_to_jsonl(
 
 
 def export_all_jsonl(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     document_output_dir: Path,
     *,
     settings: ExportAuditSettings,
@@ -112,7 +112,7 @@ def export_all_jsonl(
     Parameters
     ----------
     gateway
-        StorageGateway providing the DuckDB connection.
+        BuildGateway providing the DuckDB connection.
     document_output_dir
         Target directory where JSONL artifacts are written.
     settings
@@ -135,7 +135,7 @@ def export_all_jsonl(
 
 
 def export_repo_map_json(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     document_output_dir: Path,
     *,
     settings: ExportAuditSettings,
@@ -146,7 +146,7 @@ def export_repo_map_json(
     Parameters
     ----------
     gateway
-        StorageGateway providing the DuckDB connection.
+        BuildGateway providing the DuckDB connection.
     document_output_dir
         Target directory where the export artifact is written.
     settings

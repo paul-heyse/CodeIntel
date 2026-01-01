@@ -5,7 +5,9 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+import polars as pl
 
 from codeintel.build.analytics.ast_features.extract import build_import_map, io_flags_from_call
 from codeintel.build.analytics.ast_features.model import IoFlags
@@ -19,15 +21,13 @@ from codeintel.build.analytics.testing.profiles.types import (
 )
 from codeintel.build.analytics.utilities.ast import resolve_call_target
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.query_results import (
+from codeintel.core.query_results import (
     coerce_optional_float,
     coerce_optional_int,
     coerce_optional_str,
     coerce_str,
-    iter_tuples_from_arrow_reader,
 )
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -38,7 +38,6 @@ if TYPE_CHECKING:
         BehavioralLLMRunner,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,13 @@ class _LLMInputs:
 class BehaviorRowHooks:
     """Optional hooks to override behavioral row inputs for testing."""
 
-    load_tests: Callable[[DuckDBConnection, SnapshotRef], list[TestRecord]] | None = None
+    load_tests: (
+        Callable[
+            [pl.DataFrame | None, pl.DataFrame | None, pl.DataFrame | None, SnapshotRef],
+            list[TestRecord],
+        ]
+        | None
+    ) = None
     build_ast: (
         Callable[
             [Path, Iterable[TestRecord], AstFeaturePatterns],
@@ -65,84 +70,105 @@ class BehaviorRowHooks:
         | None
     ) = None
     load_profile_ctx: (
-        Callable[[DuckDBConnection, SnapshotRef], Mapping[str, dict[str, object]]] | None
+        Callable[[pl.DataFrame | None, SnapshotRef], Mapping[str, dict[str, object]]] | None
     ) = None
     row_builder: Callable[[TestRecord, BehavioralContext], tuple[object, ...]] | None = None
 
 
 def _default_load_test_records(
-    con: DuckDBConnection,
+    test_catalog_frame: pl.DataFrame | None,
+    goids_frame: pl.DataFrame | None,
+    modules_frame: pl.DataFrame | None,
     snapshot: SnapshotRef,
 ) -> list[TestRecord]:
-    """Load test records from the database.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    snapshot
-        Snapshot reference.
+    """Load test records from tabular inputs.
 
     Returns
     -------
     list[TestRecord]
-        Test records for the snapshot.
+        Parsed test records for the snapshot.
     """
-    reader = con.execute(
-        """
-        SELECT
-            t.test_id,
-            t.test_goid_h128,
-            t.urn,
-            t.rel_path,
-            m.module,
-            COALESCE(t.qualname, g.qualname),
-            COALESCE(g.language, 'python'),
-            t.kind,
-            t.status,
-            t.duration_ms,
-            t.markers,
-            t.flaky,
-            g.start_line,
-            g.end_line
-        FROM analytics.test_catalog t
-        LEFT JOIN core.goids g
-          ON g.goid_h128 = t.test_goid_h128
-         AND g.repo = t.repo
-         AND g.commit = t.commit
-        LEFT JOIN core.modules m
-          ON m.repo = t.repo
-         AND m.commit = t.commit
-         AND m.path = t.rel_path
-        WHERE t.repo = ? AND t.commit = ?
-        """,
-        [snapshot.repo, snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    return [
-        TestRecord(
-            test_id=coerce_str(row[0], ctx="test_catalog.test_id"),
-            test_goid_h128=normalize_decimal_id(row[1]),
-            urn=coerce_optional_str(row[2], ctx="test_catalog.urn"),
-            rel_path=coerce_str(row[3], ctx="test_catalog.rel_path"),
-            module=coerce_optional_str(row[4], ctx="test_catalog.module"),
-            qualname=coerce_optional_str(row[5], ctx="test_catalog.qualname"),
-            language=coerce_optional_str(row[6], ctx="test_catalog.language") or "python",
-            kind=coerce_optional_str(row[7], ctx="test_catalog.kind"),
-            status=coerce_optional_str(row[8], ctx="test_catalog.status"),
-            duration_ms=coerce_optional_float(row[9], ctx="test_catalog.duration_ms"),
-            markers=_normalize_markers(row[10] if isinstance(row[10], list) else None),
-            flaky=bool(row[11]) if row[11] is not None else None,
-            start_line=coerce_optional_int(row[12], ctx="test_catalog.start_line"),
-            end_line=coerce_optional_int(row[13], ctx="test_catalog.end_line"),
+    if test_catalog_frame is None or test_catalog_frame.is_empty():
+        return []
+    filtered = _filter_frame_by_snapshot(test_catalog_frame, snapshot)
+    module_by_path: dict[str, str] = {}
+    if modules_frame is not None and not modules_frame.is_empty():
+        modules_filtered = _filter_frame_by_snapshot(modules_frame, snapshot)
+        for row in modules_filtered.iter_rows(named=True):
+            path = row.get("path")
+            module = row.get("module")
+            if isinstance(path, str) and module is not None:
+                module_by_path[path] = str(module)
+    goid_meta: dict[int, dict[str, object]] = {}
+    if goids_frame is not None and not goids_frame.is_empty():
+        goids_filtered = _filter_frame_by_snapshot(goids_frame, snapshot)
+        for row in goids_filtered.iter_rows(named=True):
+            goid = normalize_decimal_id(row.get("goid_h128"))
+            if goid is None:
+                continue
+            goid_meta[goid] = {
+                "qualname": row.get("qualname"),
+                "language": row.get("language"),
+                "start_line": row.get("start_line"),
+                "end_line": row.get("end_line"),
+            }
+    records: list[TestRecord] = []
+    for row in filtered.iter_rows(named=True):
+        test_id = coerce_str(row.get("test_id"), ctx="test_catalog.test_id")
+        test_goid = normalize_decimal_id(row.get("test_goid_h128"))
+        rel_path = coerce_str(row.get("rel_path"), ctx="test_catalog.rel_path")
+        module = module_by_path.get(rel_path)
+        goid_info = goid_meta.get(test_goid, {}) if test_goid is not None else {}
+        qualname = coerce_optional_str(
+            row.get("qualname") or goid_info.get("qualname"),
+            ctx="test_catalog.qualname",
         )
-        for row in iter_tuples_from_arrow_reader(reader)
-    ]
+        language = (
+            coerce_optional_str(
+                row.get("language") or goid_info.get("language"),
+                ctx="test_catalog.language",
+            )
+            or "python"
+        )
+        records.append(
+            TestRecord(
+                test_id=test_id,
+                test_goid_h128=test_goid,
+                urn=coerce_optional_str(row.get("urn"), ctx="test_catalog.urn"),
+                rel_path=rel_path,
+                module=coerce_optional_str(module, ctx="test_catalog.module"),
+                qualname=qualname,
+                language=language,
+                kind=coerce_optional_str(row.get("kind"), ctx="test_catalog.kind"),
+                status=coerce_optional_str(row.get("status"), ctx="test_catalog.status"),
+                duration_ms=coerce_optional_float(
+                    row.get("duration_ms"),
+                    ctx="test_catalog.duration_ms",
+                ),
+                markers=_normalize_markers(
+                    row.get("markers") if isinstance(row.get("markers"), list) else None
+                ),
+                flaky=bool(row.get("flaky")) if row.get("flaky") is not None else None,
+                start_line=coerce_optional_int(
+                    goid_info.get("start_line"),
+                    ctx="test_catalog.start_line",
+                ),
+                end_line=coerce_optional_int(
+                    goid_info.get("end_line"),
+                    ctx="test_catalog.end_line",
+                ),
+            )
+        )
+    return records
 
 
 def build_behavior_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
+    test_catalog_frame: pl.DataFrame | None = None,
+    goids_frame: pl.DataFrame | None = None,
+    modules_frame: pl.DataFrame | None = None,
+    test_profile_frame: pl.DataFrame | None = None,
     options: BehavioralCoverageOptions | None = None,
     llm_runner: BehavioralLLMRunner | None = None,
     hooks: BehaviorRowHooks | None = None,
@@ -151,10 +177,16 @@ def build_behavior_rows(
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
     snapshot
         Snapshot reference.
+    test_catalog_frame
+        Test catalog rows for the snapshot.
+    goids_frame
+        GOID rows for the snapshot.
+    modules_frame
+        Module metadata for the snapshot.
+    test_profile_frame
+        Test profile rows for the snapshot.
     options
         Optional behavioral coverage configuration.
     llm_runner
@@ -168,11 +200,10 @@ def build_behavior_rows(
         Rows aligned with ``analytics.behavioral_coverage`` column order.
     """
     opts = options or BehavioralCoverageOptions()
-    con = gateway.con
     load_tests_fn = hooks.load_tests if hooks is not None else None
     if load_tests_fn is None:
         load_tests_fn = _default_load_test_records
-    tests = load_tests_fn(con, snapshot)
+    tests = load_tests_fn(test_catalog_frame, goids_frame, modules_frame, snapshot)
     if not tests:
         return []
 
@@ -183,7 +214,7 @@ def build_behavior_rows(
     profile_loader = hooks.load_profile_ctx if hooks is not None else None
     if profile_loader is None:
         profile_loader = load_behavioral_context
-    profile_ctx = profile_loader(con, snapshot)
+    profile_ctx = profile_loader(test_profile_frame, snapshot)
     behavior_ctx = BehavioralContext(
         snapshot=snapshot,
         options=opts,
@@ -223,69 +254,31 @@ def infer_behavior_tags(
 
 
 def load_behavioral_context(
-    con: DuckDBConnection,
+    test_profile_frame: pl.DataFrame | None,
     snapshot: SnapshotRef,
 ) -> Mapping[str, dict[str, object]]:
     """Load behavioral profile context from analytics.test_profile.
 
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    snapshot
-        Snapshot reference.
-
     Returns
     -------
     Mapping[str, dict[str, object]]
-        Context keyed by ``test_id``.
-
-    Raises
-    ------
-    RuntimeError
-        If the provided connection does not support execute/fetchall.
+        Behavioral context keyed by test ID.
     """
-    execute = getattr(con, "execute", None)
-    fetchall = getattr(con, "fetchall", None)
-    if execute is None or fetchall is None or not callable(execute) or not callable(fetchall):
-        message = "DuckDB connection is required to load behavioral context."
-        raise RuntimeError(message)
-    execute_fn = cast("Callable[[str, list[object] | None], DuckDBConnection]", execute)
-    fetchall_fn = cast("Callable[[], list[tuple[object, ...]]]", fetchall)
-
-    execute_fn(
-        """
-        SELECT
-            test_id,
-            markers,
-            functions_covered,
-            subsystems_covered,
-            assert_count,
-            raise_count,
-            status
-        FROM analytics.test_profile
-        WHERE repo = ? AND commit = ?
-        """,
-        [snapshot.repo, snapshot.commit],
-    )
-    rows = fetchall_fn()
     ctx: dict[str, dict[str, object]] = {}
-    for (
-        test_id,
-        markers,
-        functions_covered,
-        subsystems_covered,
-        assert_count,
-        raise_count,
-        status,
-    ) in rows:
+    if test_profile_frame is None or test_profile_frame.is_empty():
+        return ctx
+    filtered = _filter_frame_by_snapshot(test_profile_frame, snapshot)
+    for row in filtered.iter_rows(named=True):
+        test_id = row.get("test_id")
+        if test_id is None:
+            continue
         ctx[str(test_id)] = {
-            "markers": markers,
-            "functions_covered": functions_covered or [],
-            "subsystems_covered": subsystems_covered or [],
-            "assert_count": _coerce_int(assert_count) or 0,
-            "raise_count": _coerce_int(raise_count) or 0,
-            "status": status,
+            "markers": row.get("markers"),
+            "functions_covered": row.get("functions_covered") or [],
+            "subsystems_covered": row.get("subsystems_covered") or [],
+            "assert_count": _coerce_int(row.get("assert_count")) or 0,
+            "raise_count": _coerce_int(row.get("raise_count")) or 0,
+            "status": row.get("status"),
         }
     return ctx
 
@@ -411,6 +404,15 @@ def _coerce_int(value: object | None) -> int | None:
     if isinstance(value, float):
         return int(value)
     return None
+
+
+def _filter_frame_by_snapshot(frame: pl.DataFrame, snapshot: SnapshotRef) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == snapshot.repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == snapshot.commit)
+    return filtered
 
 
 def _as_dict_list(value: object | None) -> list[dict[str, object]]:

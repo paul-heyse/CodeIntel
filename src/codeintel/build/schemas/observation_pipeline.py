@@ -15,14 +15,14 @@ from codeintel.build.schemas.observations import (
     schema_hints_from_tag_sets,
     table_schema_from_tag_sets,
 )
-from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.core.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
     from codeintel.build.schemas.observations import SchemaHints
+    from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.storage.gateway.protocol import StorageGateway
     from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 LOG = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ def build_observation_setup(
 
 def build_observation_inputs(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
     base: SchemaObservationInputs,
 ) -> SchemaObservationInputs:
@@ -115,7 +115,7 @@ def build_observation_inputs(
 
 def persist_observation(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     observation: SchemaObservationAccumulator,
     arrow_schema: pa.Schema,
     inputs: SchemaObservationInputs,
@@ -149,7 +149,7 @@ def persist_observation(
 
 def _load_drift_history(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
 ) -> Sequence[Mapping[str, object] | None] | None:
     try:
@@ -160,7 +160,7 @@ def _load_drift_history(
 
 def _load_latest_observation(
     *,
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table_key: str,
 ) -> SchemaObservationRecord | None:
     try:

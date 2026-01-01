@@ -31,6 +31,7 @@ from codeintel.cli.errors.results import (
     fail_storage,
     fail_storage_connection,
 )
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.errors.taxonomy import INVALID_FORMAT
 from codeintel.observability.cache_log_ingest import (
@@ -38,7 +39,6 @@ from codeintel.observability.cache_log_ingest import (
     ingest_cache_log_jsonl,
 )
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.gateway.minimal import MinimalStorageGateway

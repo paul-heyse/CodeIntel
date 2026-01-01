@@ -18,8 +18,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, SupportsInt, cast
+from typing import TYPE_CHECKING
 
+import polars as pl
+
+from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.graphs.engine.datasets import (
+    dataset_snapshot_exists,
+    resolve_dataset_root,
+    scan_snapshot_lazyframe,
+)
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.checks.anomaly import (
@@ -45,11 +53,7 @@ from codeintel.build.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
-from codeintel.core.catalog import load_function_catalog
 from codeintel.core.validation.runner import ValidationRunner
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, Expression
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from codeintel.build.graphs.engine import NxGraphEngine
@@ -59,7 +63,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.core.validation.runner import CheckProtocol, ValidationReport
-    from codeintel.storage.gateway import StorageGateway
 
 
 # =============================================================================
@@ -124,19 +127,7 @@ class GraphValidationRunRequest:
     dataset_root_dir: Path | None = None
 
 
-def _ensure_dataset_root(
-    gateway: StorageGateway,
-    dataset_root_dir: Path | None,
-) -> None:
-    if dataset_root_dir is None:
-        return
-    if gateway.datasets.dataset_root_dir == dataset_root_dir:
-        return
-    gateway.datasets = gateway.datasets.with_dataset_root(dataset_root_dir)
-
-
 def run_graph_validations_with_runner(
-    gateway: StorageGateway,
     *,
     request: GraphValidationRunRequest,
 ) -> ValidationReport:
@@ -147,8 +138,6 @@ def run_graph_validations_with_runner(
 
     Parameters
     ----------
-    gateway : StorageGateway
-        Storage gateway for database access.
     request : GraphValidationRunRequest
         Run parameters including snapshot, runtime, and optional overrides.
 
@@ -169,24 +158,24 @@ def run_graph_validations_with_runner(
     )
     active_log = logging.getLogger(__name__)
 
-    _ensure_dataset_root(gateway, request.dataset_root_dir)
-    log_db_snapshot(gateway, snapshot.repo, snapshot.commit, active_log)
+    dataset_root_dir = resolve_dataset_root(snapshot, request.dataset_root_dir)
+    log_db_snapshot(dataset_root_dir, snapshot.repo, snapshot.commit, active_log)
 
-    catalog = (
-        request.catalog_provider.catalog()
-        if request.catalog_provider is not None
-        else load_function_catalog(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    catalog_provider = request.catalog_provider or _catalog_provider_from_dataset(
+        dataset_root_dir=dataset_root_dir,
+        snapshot=snapshot,
     )
+    catalog = catalog_provider.catalog() if catalog_provider is not None else None
 
     resolved_runtime = resolve_validation_runtime(
-        gateway,
         snapshot=snapshot,
         runtime=request.runtime,
+        dataset_root_dir=dataset_root_dir,
     )
 
     # Build context for validation checks
     ctx = GraphValidationContext(
-        gateway=gateway,
+        dataset_root_dir=dataset_root_dir,
         repo=snapshot.repo,
         commit=snapshot.commit,
         engine=resolved_runtime.engine,
@@ -195,7 +184,7 @@ def run_graph_validations_with_runner(
         logger=active_log,
     )
 
-    missing_by_check = _parquet_validation_skips(gateway, active_log)
+    missing_by_check = _parquet_validation_skips(dataset_root_dir, snapshot.commit, active_log)
     check_filter = _parquet_check_filter(missing_by_check, active_log) if missing_by_check else None
 
     # Create and run the validation runner
@@ -203,7 +192,7 @@ def run_graph_validations_with_runner(
     report = runner.run(ctx, check_filter=check_filter)
 
     # Persist findings
-    persist_findings(gateway, report.findings, snapshot.repo, snapshot.commit)
+    persist_findings(dataset_root_dir, report.findings, snapshot.repo, snapshot.commit)
 
     active_log.info(
         "Graph validation completed for %s@%s: %d finding(s), %d checks run, %d skipped, %d failed",
@@ -249,15 +238,23 @@ def warn_graph_structure(
     active_log = log or logging.getLogger(__name__)
     snapshot = engine.snapshot
     runtime = resolve_validation_runtime(
-        engine.gateway,
         snapshot=snapshot,
-        runtime=GraphRuntimeOptions(snapshot=snapshot, engine=engine),
+        runtime=GraphRuntimeOptions(
+            snapshot=snapshot,
+            engine=engine,
+            dataset_root_dir=engine.dataset_root_dir,
+        ),
+        dataset_root_dir=engine.dataset_root_dir,
     )
     validation_opts = resolve_validation_options(runtime=runtime, options=None)
     runner = create_validation_runner(options=validation_opts)
-    catalog = load_function_catalog(engine.gateway, repo=repo, commit=commit)
+    catalog_provider = _catalog_provider_from_dataset(
+        dataset_root_dir=engine.dataset_root_dir,
+        snapshot=snapshot,
+    )
+    catalog = catalog_provider.catalog() if catalog_provider is not None else None
     ctx = GraphValidationContext(
-        gateway=engine.gateway,
+        dataset_root_dir=engine.dataset_root_dir,
         repo=repo,
         commit=commit,
         engine=engine,
@@ -265,7 +262,7 @@ def warn_graph_structure(
         runtime=runtime,
         logger=active_log,
     )
-    missing_by_check = _parquet_validation_skips(engine.gateway, active_log)
+    missing_by_check = _parquet_validation_skips(engine.dataset_root_dir, commit, active_log)
     check_filter = _parquet_check_filter(missing_by_check, active_log) if missing_by_check else None
     report = runner.run(ctx, check_filter=check_filter)
     return report.findings
@@ -276,22 +273,63 @@ def warn_graph_structure(
 # =============================================================================
 
 
+def _catalog_provider_from_dataset(
+    *,
+    dataset_root_dir: Path | None,
+    snapshot: SnapshotRef,
+) -> FunctionCatalogProvider | None:
+    if dataset_root_dir is None:
+        return None
+    goids_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="core.goids",
+        snapshot_id=snapshot.commit,
+        columns=(
+            "goid_h128",
+            "urn",
+            "rel_path",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+            "repo",
+            "commit",
+        ),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    modules_frame = scan_snapshot_lazyframe(
+        dataset_root=dataset_root_dir,
+        table_key="core.modules",
+        snapshot_id=snapshot.commit,
+        columns=("path", "module", "repo", "commit"),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    if goids_frame is None or modules_frame is None:
+        return None
+    return catalog_provider_from_frames(
+        goids_frame=goids_frame.collect(),
+        modules_frame=modules_frame.collect(),
+    )
+
+
 def resolve_validation_runtime(
-    gateway: StorageGateway,
     *,
     snapshot: SnapshotRef,
     runtime: GraphRuntime | GraphRuntimeOptions,
+    dataset_root_dir: Path | None,
 ) -> GraphRuntime:
     """Resolve the runtime for validation, ensuring snapshot consistency.
 
     Parameters
     ----------
-    gateway : StorageGateway
-        Storage gateway for database access.
     snapshot : SnapshotRef
         Repository snapshot reference.
     runtime : GraphRuntime | GraphRuntimeOptions
         Runtime or options to resolve.
+    dataset_root_dir : Path | None
+        Dataset root used for Parquet-backed graph loading.
 
     Returns
     -------
@@ -316,66 +354,44 @@ def resolve_validation_runtime(
         return runtime
 
     options = runtime if runtime.snapshot is not None else replace(runtime, snapshot=snapshot)
-    return resolve_graph_runtime(gateway, snapshot, options)
+    if options.dataset_root_dir is None and dataset_root_dir is not None:
+        options = replace(options, dataset_root_dir=dataset_root_dir)
+    return resolve_graph_runtime(snapshot, options)
 
 
-def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: logging.Logger) -> None:
-    """Record table counts to aid debugging validation state.
+def log_db_snapshot(
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+) -> None:
+    """Record table counts to aid debugging validation state."""
 
-    Parameters
-    ----------
-    gateway : StorageGateway
-        Storage gateway for database access.
-    repo : str
-        Repository identifier.
-    commit : str
-        Commit identifier.
-    log : logging.Logger
-        Logger for output.
-    """
-
-    def _count(
-        table_key: str,
-        *,
-        predicate: Expression | None = None,
-    ) -> int:
-        try:
-            if not _require_parquet_table(gateway, table_key, log):
-                return -1
-            relation = gateway.relation_from_table_key(table_key)
-            if predicate is not None:
-                relation = relation.filter(predicate)
-            result = relation.aggregate("count(*) as cnt").fetchone()
-            if result is None:
-                return 0
-            return int(cast("SupportsInt", result[0]))
-        except DuckDBError as exc:
-            log.warning("Validation snapshot count failed for %s: %s", table_key, exc)
+    def _count(table_key: str, *, filter_expr: pl.Expr | None = None) -> int:
+        if dataset_root_dir is None:
             return -1
+        frame = scan_snapshot_lazyframe(
+            dataset_root=dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=commit,
+            columns=None,
+            repo=repo,
+            commit=commit,
+        )
+        if frame is None:
+            return -1
+        if filter_expr is not None:
+            frame = frame.filter(filter_expr)
+        return int(frame.select(pl.len()).collect().to_series()[0])
 
-    snapshot_predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-        ColumnExpression("commit") == ConstantExpression(commit)
-    )
     counts = {
-        "modules": _count("core.modules", predicate=snapshot_predicate),
-        "goids": _count("core.goids", predicate=snapshot_predicate),
-        "module_goids": _count(
-            "core.goids",
-            predicate=snapshot_predicate
-            & (ColumnExpression("kind") == ConstantExpression("module")),
-        ),
-        "class_goids": _count(
-            "core.goids",
-            predicate=snapshot_predicate
-            & (ColumnExpression("kind") == ConstantExpression("class")),
-        ),
+        "modules": _count("core.modules"),
+        "goids": _count("core.goids"),
+        "module_goids": _count("core.goids", filter_expr=pl.col("kind") == "module"),
+        "class_goids": _count("core.goids", filter_expr=pl.col("kind") == "class"),
         "function_goids": _count(
             "core.goids",
-            predicate=snapshot_predicate
-            & ColumnExpression("kind").isin(
-                ConstantExpression("function"),
-                ConstantExpression("method"),
-            ),
+            filter_expr=pl.col("kind").is_in(["function", "method"]),
         ),
         "call_nodes": _count("graph.call_graph_nodes"),
         "call_edges": _count("graph.call_graph_edges"),
@@ -421,8 +437,9 @@ def _parquet_check_filter(
 
 
 def _parquet_validation_skips(
-    gateway: StorageGateway,
-    log: logging.Logger,
+    dataset_root_dir: Path | None,
+    snapshot_id: str,
+    _log: logging.Logger,
 ) -> dict[type[GraphCheckBase], tuple[str, ...]]:
     checks = {
         MissingFunctionGoidsCheck: ("core.ast_nodes", "core.goids"),
@@ -433,45 +450,24 @@ def _parquet_validation_skips(
     }
     missing_by_check: dict[type[GraphCheckBase], tuple[str, ...]] = {}
     for check_cls, table_keys in checks.items():
-        missing = _missing_parquet_tables(gateway, table_keys, log)
+        missing = _missing_parquet_tables(dataset_root_dir, snapshot_id, table_keys)
         if missing:
             missing_by_check[check_cls] = tuple(missing)
     return missing_by_check
 
 
 def _missing_parquet_tables(
-    gateway: StorageGateway,
+    dataset_root_dir: Path | None,
+    snapshot_id: str,
     table_keys: tuple[str, ...],
-    log: logging.Logger,
 ) -> list[str]:
+    if dataset_root_dir is None:
+        return list(table_keys)
     return [
-        table_key for table_key in table_keys if not _require_parquet_table(gateway, table_key, log)
+        table_key
+        for table_key in table_keys
+        if not dataset_snapshot_exists(dataset_root_dir, table_key, snapshot_id)
     ]
-
-
-def _require_parquet_table(gateway: StorageGateway, table_key: str, log: logging.Logger) -> bool:
-    schema, table = split_table_key(table_key)
-    try:
-        row = gateway.execute(
-            """
-            SELECT table_type
-            FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [schema, table],
-        ).fetchone()
-    except DuckDBError as exc:
-        log.warning("Validation table lookup failed for %s: %s", table_key, exc)
-        return False
-    if row is None:
-        log.warning("Validation table missing: %s", table_key)
-        return False
-    table_type = str(row[0] or "").upper()
-    if table_type not in {"BASE TABLE", "TABLE"}:
-        log.warning("Validation expects Parquet base table for %s, found %s", table_key, table_type)
-        return False
-    return True
 
 
 # =============================================================================

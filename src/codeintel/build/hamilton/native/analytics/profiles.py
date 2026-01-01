@@ -98,23 +98,52 @@ HOTSPOTS_CONTRACT = TableContractSpec(
 
 def function_profile_inputs(
     env: BuildEnv,
-    _q__analytics__function_metrics: InferableTabularInput,
-    _q__analytics__function_types: InferableTabularInput,
-    _q__analytics__goid_risk_factors: InferableTabularInput,
-    _q__analytics__coverage_functions: InferableTabularInput,
-    _q__analytics__graph_metrics_functions: InferableTabularInput,
-    _q__analytics__function_effects: InferableTabularInput,
-    _q__analytics__function_contracts: InferableTabularInput,
-    _q__analytics__semantic_roles_functions: InferableTabularInput,
-    _q__core__docstrings: InferableTabularInput,
-    _q__analytics__typedness: InferableTabularInput,
-    _q__analytics__static_diagnostics: InferableTabularInput,
+    q__analytics__function_metrics: InferableTabularInput,
+    q__analytics__function_types: InferableTabularInput,
+    q__analytics__goid_risk_factors: InferableTabularInput,
+    q__analytics__coverage_functions: InferableTabularInput,
+    q__analytics__graph_metrics_functions: InferableTabularInput,
+    q__analytics__function_effects: InferableTabularInput,
+    q__analytics__function_contracts: InferableTabularInput,
+    q__analytics__semantic_roles_functions: InferableTabularInput,
+    q__core__docstrings: InferableTabularInput,
+    q__analytics__typedness: InferableTabularInput,
+    q__analytics__static_diagnostics: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+    q__analytics__hotspots: InferableTabularInput,
+    q__graph__call_graph_edges: InferableTabularInput,
+    q__graph__call_graph_nodes: InferableTabularInput,
+    q__analytics__test_coverage_edges: InferableTabularInput,
+    q__analytics__test_catalog: InferableTabularInput,
 ) -> FunctionProfileInputs:
-    return compute_function_profile_inputs(env.gateway, env.snapshot)
+    return compute_function_profile_inputs(
+        env.snapshot,
+        function_metrics=tabular_to_lazyframe(q__analytics__function_metrics).collect(),
+        function_types=tabular_to_lazyframe(q__analytics__function_types).collect(),
+        modules=tabular_to_lazyframe(q__core__modules).collect(),
+        typedness=tabular_to_lazyframe(q__analytics__typedness).collect(),
+        diagnostics=tabular_to_lazyframe(q__analytics__static_diagnostics).collect(),
+        goid_risk_factors=tabular_to_lazyframe(q__analytics__goid_risk_factors).collect(),
+        coverage_functions=tabular_to_lazyframe(q__analytics__coverage_functions).collect(),
+        graph_metrics_functions=tabular_to_lazyframe(
+            q__analytics__graph_metrics_functions
+        ).collect(),
+        function_effects=tabular_to_lazyframe(q__analytics__function_effects).collect(),
+        function_contracts=tabular_to_lazyframe(q__analytics__function_contracts).collect(),
+        semantic_roles_functions=tabular_to_lazyframe(
+            q__analytics__semantic_roles_functions
+        ).collect(),
+        docstrings=tabular_to_lazyframe(q__core__docstrings).collect(),
+        hotspots=tabular_to_lazyframe(q__analytics__hotspots).collect(),
+        call_graph_edges=tabular_to_lazyframe(q__graph__call_graph_edges).collect(),
+        call_graph_nodes=tabular_to_lazyframe(q__graph__call_graph_nodes).collect(),
+        test_coverage_edges=tabular_to_lazyframe(q__analytics__test_coverage_edges).collect(),
+        test_catalog=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
+    )
 
 
 def function_profile__base(function_profile_inputs: FunctionProfileInputs) -> pl.LazyFrame:
-    """Build function profile rows using gateway-backed helpers.
+    """Build function profile rows using tabular inputs.
 
     Returns
     -------
@@ -181,18 +210,26 @@ def t__function_profile(
 
 def file_profile_inputs(
     env: BuildEnv,
-    _q__analytics__function_profile: InferableTabularInput,
-    _q__core__ast_metrics: InferableTabularInput,
-    _q__analytics__hotspots: InferableTabularInput,
-    _q__analytics__typedness: InferableTabularInput,
-    _q__analytics__static_diagnostics: InferableTabularInput,
-    _q__core__modules: InferableTabularInput,
+    q__analytics__function_profile: InferableTabularInput,
+    q__core__ast_metrics: InferableTabularInput,
+    q__analytics__hotspots: InferableTabularInput,
+    q__analytics__typedness: InferableTabularInput,
+    q__analytics__static_diagnostics: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> FileProfileInputs:
-    return compute_file_profile_inputs(env.gateway, env.snapshot)
+    return compute_file_profile_inputs(
+        env.snapshot,
+        function_profile=tabular_to_lazyframe(q__analytics__function_profile).collect(),
+        ast_metrics=tabular_to_lazyframe(q__core__ast_metrics).collect(),
+        hotspots=tabular_to_lazyframe(q__analytics__hotspots).collect(),
+        typedness=tabular_to_lazyframe(q__analytics__typedness).collect(),
+        static_diagnostics=tabular_to_lazyframe(q__analytics__static_diagnostics).collect(),
+        modules=tabular_to_lazyframe(q__core__modules).collect(),
+    )
 
 
 def file_profile__base(file_profile_inputs: FileProfileInputs) -> pl.LazyFrame:
-    """Build file profile rows using gateway-backed helpers.
+    """Build file profile rows using tabular inputs.
 
     Returns
     -------

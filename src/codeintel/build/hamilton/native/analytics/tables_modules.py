@@ -25,6 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -49,16 +50,27 @@ MODULE_PROFILE_CONTRACT = TableContractSpec(
 
 def module_profile__base(
     env: BuildEnv,
-    _q__core__modules: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+    q__analytics__function_profile: InferableTabularInput,
+    q__analytics__file_profile: InferableTabularInput,
+    q__graph__import_graph_edges: InferableTabularInput,
+    q__analytics__semantic_roles_modules: InferableTabularInput,
 ) -> pl.LazyFrame:
-    """Build module profile rows using gateway-backed helpers.
+    """Build module profile rows using tabular inputs.
 
     Returns
     -------
     pl.LazyFrame
         Lazy frame containing module profile rows.
     """
-    inputs = compute_module_profile_inputs(env.gateway, env.snapshot)
+    inputs = compute_module_profile_inputs(
+        env.snapshot,
+        modules=tabular_to_lazyframe(q__core__modules).collect(),
+        function_profile=tabular_to_lazyframe(q__analytics__function_profile).collect(),
+        file_profile=tabular_to_lazyframe(q__analytics__file_profile).collect(),
+        import_graph_edges=tabular_to_lazyframe(q__graph__import_graph_edges).collect(),
+        semantic_roles_modules=tabular_to_lazyframe(q__analytics__semantic_roles_modules).collect(),
+    )
     rows = list(build_module_profile_rows(inputs))
     return rows_to_frame(MODULE_PROFILE_TABLE_KEY, rows)
 

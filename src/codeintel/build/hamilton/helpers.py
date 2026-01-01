@@ -9,17 +9,17 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.duckdb_types import DuckDBError
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 __all__ = [
     "build_scan_profile",
@@ -187,7 +187,7 @@ def filter_mapping[T](
 
 
 def get_source_root(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     repo: str,
     commit: str,
     *,

@@ -19,9 +19,9 @@ from codeintel.core.columnar.dataset_scanner import (
     scan_dataset_reader,
 )
 from codeintel.core.columnar.ipc import schema_from_ipc_payload
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping

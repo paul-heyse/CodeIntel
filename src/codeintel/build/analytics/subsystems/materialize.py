@@ -8,13 +8,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import networkx as nx
+import polars as pl
+
 from codeintel.build.analytics.subsystems.affinity import (
     build_weighted_graph,
     clusters_from_labels,
     graph_to_adjacency,
     label_propagation_nx,
     limit_clusters,
-    load_modules,
+    load_modules_from_frame,
     reassign_small_clusters,
     seed_labels_from_tags,
 )
@@ -22,16 +25,12 @@ from codeintel.build.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
 from codeintel.build.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
-from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
 if TYPE_CHECKING:
-    import networkx as nx
-
     from codeintel.build.analytics.subsystems.affinity import (
         AffinityWeights,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -91,10 +90,14 @@ class SubsystemRows:
 
 
 def build_subsystem_rows(
-    gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    modules_frame: pl.DataFrame | None = None,
+    import_graph_edges_frame: pl.DataFrame | None = None,
+    symbol_use_edges_frame: pl.DataFrame | None = None,
+    config_values_frame: pl.DataFrame | None = None,
+    risk_factors_frame: pl.DataFrame | None = None,
+    function_metrics_frame: pl.DataFrame | None = None,
     options: SubsystemOptions | None = None,
 ) -> SubsystemRows:
     """
@@ -102,12 +105,20 @@ def build_subsystem_rows(
 
     Parameters
     ----------
-    gateway :
-        Storage gateway backing the analytics tables.
     snapshot :
         Repository and commit identifiers.
-    runtime :
-        Shared graph runtime or options describing how to build one.
+    modules_frame :
+        Module metadata for the snapshot.
+    import_graph_edges_frame :
+        Import graph edges for the snapshot.
+    symbol_use_edges_frame :
+        Symbol use edges for the snapshot.
+    config_values_frame :
+        Config values for the snapshot.
+    risk_factors_frame :
+        GOID risk factors for the snapshot.
+    function_metrics_frame :
+        Function metrics for the snapshot.
     options :
         Subsystem inference options.
 
@@ -118,34 +129,45 @@ def build_subsystem_rows(
     """
     opts = options or SubsystemOptions()
 
-    modules, tags_by_module = load_modules(gateway, snapshot)
+    modules, tags_by_module = load_modules_from_frame(
+        modules_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     if not modules:
         log.info("No modules available for subsystem inference; skipping.")
         return SubsystemRows(subsystem_rows=[], membership_rows=[])
 
-    affinity_graph = build_weighted_graph(gateway, snapshot, modules, weights=opts.weights)
+    affinity_graph = build_weighted_graph(
+        snapshot,
+        modules,
+        import_graph_edges_frame=import_graph_edges_frame,
+        symbol_use_edges_frame=symbol_use_edges_frame,
+        config_values_frame=config_values_frame,
+        modules_frame=modules_frame,
+        weights=opts.weights,
+    )
     adjacency = graph_to_adjacency(affinity_graph)
     labels = label_propagation_nx(affinity_graph, seed_labels_from_tags(tags_by_module))
     labels = reassign_small_clusters(labels, adjacency, opts.min_modules)
     labels = limit_clusters(labels, adjacency, opts.max_subsystems)
 
-    runtime_opts: GraphRuntimeOptions
-    if isinstance(runtime, GraphRuntime):
-        runtime_opts = runtime.options
-    else:
-        runtime_opts = runtime or GraphRuntimeOptions()
-
-    resolved_runtime = resolve_graph_runtime(
-        gateway,
-        snapshot,
-        runtime_opts,
-    )
     ctx = SubsystemBuildContext(
         snapshot=snapshot,
         labels=labels,
         tags_by_module=tags_by_module,
-        import_graph=resolved_runtime.ensure_import_graph(),
-        risk_stats=aggregate_risk(gateway, snapshot, labels),
+        import_graph=_import_graph_from_frame(
+            import_graph_edges_frame,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        ),
+        risk_stats=aggregate_risk(
+            snapshot,
+            labels,
+            risk_factors_frame=risk_factors_frame,
+            function_metrics_frame=function_metrics_frame,
+            modules_frame=modules_frame,
+        ),
         now=datetime.now(UTC),
     )
     subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)
@@ -219,6 +241,60 @@ def _subsystem_id(repo: str, modules: list[str]) -> str:
     raw = f"{repo}:{','.join(sorted(modules))}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return digest[:HASH_PREFIX_LENGTH]
+
+
+def _import_graph_from_frame(
+    frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    if frame is None or frame.is_empty():
+        return graph
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    for row in filtered.iter_rows(named=True):
+        src = row.get("src_module")
+        dst = row.get("dst_module")
+        if src is None or dst is None:
+            continue
+        src_mod = str(src)
+        dst_mod = str(dst)
+        if graph.has_edge(src_mod, dst_mod):
+            attrs = graph[src_mod][dst_mod]
+            attrs["weight"] = _coerce_edge_weight(attrs.get("weight")) + 1.0
+        else:
+            graph.add_edge(src_mod, dst_mod, weight=1.0)
+    return graph
+
+
+def _coerce_edge_weight(value: object) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(pl.col("repo") == repo)
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(pl.col("commit") == commit)
+    return filtered
 
 
 def _derive_name(modules: list[str], subsystem_id: str, dominant_role: str | None) -> str:

@@ -10,7 +10,7 @@ from codeintel.build.planning.preflight import (
     missing_input_issues,
     optional_inputs_for_targets,
 )
-from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.core.table_key import split_table_key
 
 
 def preflight_issues(

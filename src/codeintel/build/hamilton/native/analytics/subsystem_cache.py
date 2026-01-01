@@ -26,6 +26,7 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -77,7 +78,9 @@ def subsystem_profile_cache__base(
     pl.LazyFrame
         Lazy frame containing subsystem profile cache rows.
     """
-    rows = build_subsystem_profile_cache_rows(env.gateway, env.snapshot)
+    subsystems_frame = tabular_to_lazyframe(_q__analytics__subsystems)
+    metrics_frame = tabular_to_lazyframe(_q__analytics__subsystem_graph_metrics)
+    rows = build_subsystem_profile_cache_rows(env.snapshot, subsystems_frame, metrics_frame)
     return rows_to_frame(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY, rows)
 
 
@@ -118,7 +121,9 @@ def subsystem_coverage_cache__base(
     pl.LazyFrame
         Lazy frame containing subsystem coverage cache rows.
     """
-    rows = build_subsystem_coverage_cache_rows(env.gateway, env.snapshot)
+    subsystems_frame = tabular_to_lazyframe(_q__analytics__subsystems)
+    test_profile_frame = tabular_to_lazyframe(_q__analytics__test_profile)
+    rows = build_subsystem_coverage_cache_rows(env.snapshot, subsystems_frame, test_profile_frame)
     return rows_to_frame(SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY, rows)
 
 

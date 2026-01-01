@@ -24,7 +24,7 @@ from codeintel.build.graphs.validation import (
 
 
 request = GraphValidationRunRequest(snapshot=snapshot, runtime=runtime)
-report = run_graph_validations_with_runner(gateway, request=request)
+report = run_graph_validations_with_runner(request=request)
 print(f"Found {report.error_count} errors")
 ```
 """
