@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 
 import networkx as nx
 
-from codeintel.analytics.compute.graphs.centrality import (
+from codeintel.build.analytics.compute.graphs.centrality import (
     centrality_directed,
     centrality_undirected,
     neighbor_stats,
 )
-from codeintel.analytics.compute.graphs.cfg import (
+from codeintel.build.analytics.compute.graphs.cfg import (
     build_cfg_graph,
     cfg_avg_shortest_path_length,
     cfg_centralities,
@@ -20,27 +20,27 @@ from codeintel.analytics.compute.graphs.cfg import (
     cfg_longest_path_length,
     cfg_reachable_nodes,
 )
-from codeintel.analytics.compute.graphs.components import (
+from codeintel.build.analytics.compute.graphs.components import (
     component_ids_undirected,
     component_metadata,
     global_graph_stats,
 )
-from codeintel.analytics.compute.graphs.dfg import (
+from codeintel.build.analytics.compute.graphs.dfg import (
     build_dfg_graph,
     dfg_centralities,
     dfg_component_stats,
     dfg_path_lengths,
 )
-from codeintel.analytics.compute.graphs.projections import (
+from codeintel.build.analytics.compute.graphs.projections import (
     bipartite_degrees,
     build_projection_graph,
     projection_metrics,
 )
-from codeintel.analytics.compute.graphs.structural import (
+from codeintel.build.analytics.compute.graphs.structural import (
     bounded_simple_path_count,
     structural_metrics,
 )
-from codeintel.graphs.runtime.context import GraphContext
+from codeintel.build.graphs.runtime.context import GraphContext
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

@@ -37,7 +37,10 @@ from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.queries.expressions import snapshot_filter
 from codeintel.storage.query_results import coerce_int
-from codeintel.storage.schema.duckdb_contracts import contract_schema_for_table_key
+from codeintel.storage.schema.duckdb_contracts import (
+    contract_schema_for_table_key,
+    table_schema_for_table_key,
+)
 from codeintel.storage.snapshot_scoping import RepoCommitScope
 from codeintel.storage.staging import registered_temp_relation
 from codeintel.storage.upsert import UpsertSpec
@@ -602,13 +605,9 @@ def _contract_schema_metadata(
 ) -> tuple[str | None, str | None]:
     contract = _dataset_contract(gateway, table_key=table_key)
     schema_version = contract.schema_version if contract is not None else None
-    provider = gateway.policy.schema_provider
-    if provider is not None:
-        inferred_schema = provider.get_table_schema(table_key)
-        if inferred_schema is not None:
-            return schema_version, schema_hash(inferred_schema)
-    if contract is not None and contract.schema is not None:
-        return schema_version, schema_hash(contract.schema)
+    inferred_schema = table_schema_for_table_key(con=gateway.con, table_key=table_key)
+    if inferred_schema is not None:
+        return schema_version, schema_hash(inferred_schema)
     return schema_version, None
 
 

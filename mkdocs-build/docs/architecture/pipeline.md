@@ -91,8 +91,8 @@ steps = runs.fetch_steps(run_id)
 ### Calls
 
 - [`codeintel.ingestion`][codeintel.ingestion] recipes
-- [`codeintel.graphs`][codeintel.graphs] runtime
-- [`codeintel.analytics`][codeintel.analytics] pipeline bridge
+- [`codeintel.build.graphs`][codeintel.build.graphs] runtime
+- [`codeintel.build.analytics`][codeintel.build.analytics] pipeline bridge
 
 ## Extension Points
 

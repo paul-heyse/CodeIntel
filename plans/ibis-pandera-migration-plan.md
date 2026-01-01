@@ -315,10 +315,10 @@ class SubsystemQueryLayer:
 **Goal:** Add Pandera validation before all database inserts in analytics plugins.
 
 **Files to modify:**
-- `src/codeintel/analytics/functions/metrics.py` ✓ (already done)
-- `src/codeintel/analytics/utilities/datasets.py`
-- `src/codeintel/analytics/adapters/*.py`
-- `src/codeintel/analytics/plugins/**/*.py`
+- `src/codeintel/build/analytics/functions/metrics.py` ✓ (already done)
+- `src/codeintel/build/analytics/utilities/datasets.py`
+- `src/codeintel/build/analytics/adapters/*.py`
+- `src/codeintel/build/analytics/plugins/**/*.py`
 
 **Current state in `metrics.py`:**
 ```python
@@ -397,9 +397,9 @@ class FunctionAdapter:
 **Goal:** Add Pandera validation to ingestion and graph building plugins.
 
 **Files to modify:**
-- `src/codeintel/graphs/plugins/builders/callgraph.py`
-- `src/codeintel/graphs/plugins/builders/importgraph.py`
-- `src/codeintel/graphs/plugins/builders/cfg_dfg.py`
+- `src/codeintel/build/graphs/plugins/builders/callgraph.py`
+- `src/codeintel/build/graphs/plugins/builders/importgraph.py`
+- `src/codeintel/build/graphs/plugins/builders/cfg_dfg.py`
 - `src/codeintel/ingestion/plugins/*.py`
 - `src/codeintel/ingestion/adapters/duckdb_storage.py`
 
@@ -524,7 +524,7 @@ from hypothesis import given, settings
 from pandera import hypothesis as pah
 
 from codeintel.storage.pandera_schemas import get_dataset_schema
-from codeintel.analytics.compute.hotspots.metrics import compute_hotspot_score
+from codeintel.build.analytics.compute.hotspots.metrics import compute_hotspot_score
 
 
 METRICS_SCHEMA = get_dataset_schema("analytics.function_metrics")

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.compute.dependencies.classification import (
+from codeintel.build.analytics.compute.dependencies.classification import (
     CALLSITE_MEDIUM_THRESHOLD,
     SEVERITY_SCORES,
     DependencyModePattern,
@@ -18,13 +18,13 @@ from codeintel.analytics.compute.dependencies.classification import (
     risk_score,
     severity_score,
 )
-from codeintel.analytics.compute.dependencies.detection import (
+from codeintel.build.analytics.compute.dependencies.detection import (
     DependencyCallVisitor,
     build_alias_map,
     build_alias_maps,
     group_calls_by_library,
 )
-from codeintel.analytics.dependencies import load_config_key_map
+from codeintel.build.analytics.dependencies import load_config_key_map
 from tests._helpers.analytics_samples import (
     dependency_alias_sources,
     dependency_calls_sample,
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.analytics.compute.dependencies.classification import (
+    from codeintel.build.analytics.compute.dependencies.classification import (
         LibraryPattern,
     )
     from tests._helpers.context import TestContext

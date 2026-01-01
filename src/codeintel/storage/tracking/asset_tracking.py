@@ -9,8 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from sqlglot import exp
+
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import decode_json_dict
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
@@ -192,6 +195,22 @@ class AssetTracking:
         self._gateway = gateway
         self._con = gateway.con
         self._backend = gateway.policy
+
+    @staticmethod
+    def _combine_conditions(conditions: Sequence[exp.Expression]) -> exp.Expression | None:
+        if not conditions:
+            return None
+        combined = conditions[0]
+        for condition in conditions[1:]:
+            combined = exp.and_(combined, condition)
+        return combined
+
+    @staticmethod
+    def _aliased_table(table_ref: str, alias: str) -> exp.Table:
+        table_expr = table_expr_from_ref(table_ref)
+        aliased = table_expr.copy()
+        aliased.set("alias", exp.TableAlias(this=exp.to_identifier(alias)))
+        return aliased
 
     def record_asset_versions_batch(self, records: Sequence[AssetVersionRecord]) -> int:
         """Upsert multiple asset version records.
@@ -462,12 +481,29 @@ class AssetTracking:
         str | None
             Resolved version hash, or ``None`` when the alias is unknown.
         """
+        where_expr = self._combine_conditions(
+            [
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("alias")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("asset_kind")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("asset_key")),
+                    expression=exp.Placeholder(),
+                ),
+            ]
+        )
+        query = (
+            exp.select(exp.Column(this=exp.to_identifier("version_hash")))
+            .from_(table_expr_from_ref("build.asset_aliases"))
+            .where(where_expr)
+        )
         result = self._con.execute(
-            """
-            SELECT version_hash
-            FROM build.asset_aliases
-            WHERE alias = ? AND asset_kind = ? AND asset_key = ?
-            """,
+            render_sql_duckdb(query),
             [alias, asset_kind, asset_key],
         ).fetchone()
         if result is None:
@@ -490,21 +526,74 @@ class AssetTracking:
         list[AssetVersionHistoryRecord]
             Parsed asset version records ordered by recency.
         """
+        events_table = self._aliased_table("build.asset_version_events", "e")
+        versions_table = self._aliased_table("build.asset_versions", "v")
+        join_condition = exp.and_(
+            exp.EQ(
+                this=exp.column("asset_kind", table="v"),
+                expression=exp.column("asset_kind", table="e"),
+            ),
+            exp.EQ(
+                this=exp.column("asset_key", table="v"),
+                expression=exp.column("asset_key", table="e"),
+            ),
+            exp.EQ(
+                this=exp.column("version_hash", table="v"),
+                expression=exp.column("version_hash", table="e"),
+            ),
+        )
+        where_expr = self._combine_conditions(
+            [
+                exp.EQ(
+                    this=exp.column("repo", table="e"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.column("commit", table="e"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.column("asset_kind", table="e"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.column("asset_key", table="e"),
+                    expression=exp.Placeholder(),
+                ),
+            ]
+        )
+        query = (
+            exp.select(
+                exp.column("asset_kind", table="v"),
+                exp.column("asset_key", table="v"),
+                exp.column("version_hash", table="v"),
+                exp.column("repo", table="e"),
+                exp.column("commit", table="e"),
+                exp.column("status", table="e"),
+                exp.column("run_id", table="e"),
+                exp.column("target", table="e"),
+                exp.column("impl_kind", table="e"),
+                exp.column("location", table="e"),
+                exp.column("input_hash", table="e"),
+                exp.column("options_hash", table="e"),
+                exp.column("schema_hash", table="v"),
+                exp.column("row_count", table="v"),
+                exp.column("bytes", table="v"),
+                exp.column("created_at", table="v"),
+                exp.column("recorded_at", table="e"),
+                exp.column("meta", table="v"),
+            )
+            .from_(events_table)
+            .join(versions_table, on=join_condition)
+            .where(where_expr)
+            .order_by(
+                exp.Ordered(this=exp.column("recorded_at", table="e"), desc=True),
+                exp.Ordered(this=exp.column("version_hash", table="v"), desc=True),
+            )
+            .limit(exp.Placeholder())
+        )
         rows = self._con.execute(
-            """
-            SELECT v.asset_kind, v.asset_key, v.version_hash, e.repo, e.commit,
-                   e.status, e.run_id, e.target, e.impl_kind, e.location, e.input_hash,
-                   e.options_hash, v.schema_hash, v.row_count, v.bytes, v.created_at,
-                   e.recorded_at, v.meta
-            FROM build.asset_version_events e
-            JOIN build.asset_versions v
-              ON v.asset_kind = e.asset_kind
-             AND v.asset_key = e.asset_key
-             AND v.version_hash = e.version_hash
-            WHERE e.repo = ? AND e.commit = ? AND e.asset_kind = ? AND e.asset_key = ?
-            ORDER BY e.recorded_at DESC, v.version_hash DESC
-            LIMIT ?
-            """,
+            render_sql_duckdb(query),
             [repo, commit, asset_kind, asset_key, limit],
         ).fetchall()
         return [self._parse_asset_version_history_row(row) for row in rows]
@@ -524,14 +613,38 @@ class AssetTracking:
         str | None
             Newest version hash, or ``None`` when no versions exist.
         """
+        where_expr = self._combine_conditions(
+            [
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("repo")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("commit")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("asset_kind")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("asset_key")),
+                    expression=exp.Placeholder(),
+                ),
+            ]
+        )
+        query = (
+            exp.select(exp.Column(this=exp.to_identifier("version_hash")))
+            .from_(table_expr_from_ref("build.asset_version_events"))
+            .where(where_expr)
+            .order_by(
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("recorded_at")), desc=True),
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("version_hash")), desc=True),
+            )
+            .limit(exp.Literal.number(1))
+        )
         row = self._con.execute(
-            """
-            SELECT version_hash
-            FROM build.asset_version_events
-            WHERE repo = ? AND commit = ? AND asset_kind = ? AND asset_key = ?
-            ORDER BY recorded_at DESC, version_hash DESC
-            LIMIT 1
-            """,
+            render_sql_duckdb(query),
             [repo, commit, asset_kind, asset_key],
         ).fetchone()
         if row is None:
@@ -546,16 +659,32 @@ class AssetTracking:
         list[RunAssetVersionRecord]
             Run asset version mappings sorted by asset kind/key.
         """
-        rows = self._con.execute(
-            """
-            SELECT run_id, repo, commit, asset_kind, asset_key, version_hash,
-                   target, resolution_kind, recorded_at, meta
-            FROM build.run_asset_versions
-            WHERE run_id = ?
-            ORDER BY asset_kind, asset_key
-            """,
-            [run_id],
-        ).fetchall()
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("run_id")),
+                exp.Column(this=exp.to_identifier("repo")),
+                exp.Column(this=exp.to_identifier("commit")),
+                exp.Column(this=exp.to_identifier("asset_kind")),
+                exp.Column(this=exp.to_identifier("asset_key")),
+                exp.Column(this=exp.to_identifier("version_hash")),
+                exp.Column(this=exp.to_identifier("target")),
+                exp.Column(this=exp.to_identifier("resolution_kind")),
+                exp.Column(this=exp.to_identifier("recorded_at")),
+                exp.Column(this=exp.to_identifier("meta")),
+            )
+            .from_(table_expr_from_ref("build.run_asset_versions"))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
+            .order_by(
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("asset_kind"))),
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("asset_key"))),
+            )
+        )
+        rows = self._con.execute(render_sql_duckdb(query), [run_id]).fetchall()
         return [
             RunAssetVersionRecord(
                 run_id=str(row[0]),
@@ -588,14 +717,46 @@ class AssetTracking:
         AssetDiffRecord | None
             Cached diff record when found, otherwise ``None``.
         """
+        where_expr = self._combine_conditions(
+            [
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("asset_kind")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("asset_key")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("from_version_hash")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("to_version_hash")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("diff_kind")),
+                    expression=exp.Placeholder(),
+                ),
+            ]
+        )
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("asset_kind")),
+                exp.Column(this=exp.to_identifier("asset_key")),
+                exp.Column(this=exp.to_identifier("from_version_hash")),
+                exp.Column(this=exp.to_identifier("to_version_hash")),
+                exp.Column(this=exp.to_identifier("diff_kind")),
+                exp.Column(this=exp.to_identifier("summary")),
+                exp.Column(this=exp.to_identifier("computed_at")),
+                exp.Column(this=exp.to_identifier("computed_by_run_id")),
+            )
+            .from_(table_expr_from_ref("build.asset_diffs"))
+            .where(where_expr)
+        )
         row = self._con.execute(
-            """
-            SELECT asset_kind, asset_key, from_version_hash, to_version_hash,
-                   diff_kind, summary, computed_at, computed_by_run_id
-            FROM build.asset_diffs
-            WHERE asset_kind = ? AND asset_key = ? AND from_version_hash = ?
-              AND to_version_hash = ? AND diff_kind = ?
-            """,
+            render_sql_duckdb(query),
             [asset_kind, asset_key, from_version_hash, to_version_hash, diff_kind],
         ).fetchone()
         if row is None:
@@ -699,26 +860,41 @@ class AssetTracking:
         list[AssetLineageEdgeRecord]
             Lineage edges with the asset as upstream.
         """
+        conditions: list[exp.Expression] = [
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier("upstream_kind")),
+                expression=exp.Placeholder(),
+            ),
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier("upstream_key")),
+                expression=exp.Placeholder(),
+            ),
+        ]
+        params: list[object] = [upstream_kind, upstream_key]
         if upstream_version:
-            query = """
-                SELECT downstream_kind, downstream_key, downstream_version,
-                       upstream_kind, upstream_key, upstream_version,
-                       edge_kind, created_at, meta
-                FROM build.asset_lineage
-                WHERE upstream_kind = ? AND upstream_key = ? AND upstream_version = ?
-            """
-            params: list[object] = [upstream_kind, upstream_key, upstream_version]
-        else:
-            query = """
-                SELECT downstream_kind, downstream_key, downstream_version,
-                       upstream_kind, upstream_key, upstream_version,
-                       edge_kind, created_at, meta
-                FROM build.asset_lineage
-                WHERE upstream_kind = ? AND upstream_key = ?
-            """
-            params = [upstream_kind, upstream_key]
-
-        rows = self._con.execute(query, params).fetchall()
+            conditions.append(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("upstream_version")),
+                    expression=exp.Placeholder(),
+                )
+            )
+            params.append(upstream_version)
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("downstream_kind")),
+                exp.Column(this=exp.to_identifier("downstream_key")),
+                exp.Column(this=exp.to_identifier("downstream_version")),
+                exp.Column(this=exp.to_identifier("upstream_kind")),
+                exp.Column(this=exp.to_identifier("upstream_key")),
+                exp.Column(this=exp.to_identifier("upstream_version")),
+                exp.Column(this=exp.to_identifier("edge_kind")),
+                exp.Column(this=exp.to_identifier("created_at")),
+                exp.Column(this=exp.to_identifier("meta")),
+            )
+            .from_(table_expr_from_ref("build.asset_lineage"))
+            .where(self._combine_conditions(conditions))
+        )
+        rows = self._con.execute(render_sql_duckdb(query), params).fetchall()
         return [
             AssetLineageEdgeRecord(
                 downstream_kind=str(row[0]),
@@ -753,14 +929,30 @@ class AssetTracking:
         str | None
             Target name, or None if not found.
         """
+        query = (
+            exp.select(exp.Column(this=exp.to_identifier("target")))
+            .from_(table_expr_from_ref("build.asset_version_events"))
+            .where(
+                self._combine_conditions(
+                    [
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("asset_kind")),
+                            expression=exp.Placeholder(),
+                        ),
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("asset_key")),
+                            expression=exp.Placeholder(),
+                        ),
+                    ]
+                )
+            )
+            .order_by(
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("recorded_at")), desc=True)
+            )
+            .limit(exp.Literal.number(1))
+        )
         row = self._con.execute(
-            """
-            SELECT target
-            FROM build.asset_version_events
-            WHERE asset_kind = ? AND asset_key = ?
-            ORDER BY recorded_at DESC
-            LIMIT 1
-            """,
+            render_sql_duckdb(query),
             [asset_kind, asset_key],
         ).fetchone()
 
@@ -830,15 +1022,26 @@ class AssetTracking:
         RunEnvironmentRecord | None
             Environment record, or None if not found.
         """
-        row = self._con.execute(
-            """
-            SELECT run_id, python_version, os_name, os_version,
-                   tool_versions, config_hash, git_dirty, captured_at
-            FROM build.run_environments
-            WHERE run_id = ?
-            """,
-            [run_id],
-        ).fetchone()
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("run_id")),
+                exp.Column(this=exp.to_identifier("python_version")),
+                exp.Column(this=exp.to_identifier("os_name")),
+                exp.Column(this=exp.to_identifier("os_version")),
+                exp.Column(this=exp.to_identifier("tool_versions")),
+                exp.Column(this=exp.to_identifier("config_hash")),
+                exp.Column(this=exp.to_identifier("git_dirty")),
+                exp.Column(this=exp.to_identifier("captured_at")),
+            )
+            .from_(table_expr_from_ref("build.run_environments"))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
+        )
+        row = self._con.execute(render_sql_duckdb(query), [run_id]).fetchone()
 
         if row is None:
             return None

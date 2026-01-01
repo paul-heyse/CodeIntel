@@ -241,7 +241,7 @@ class BuildRunCommand:
 - Graph feature tests use idempotent setup and pass.
 
 #### Likely Touchpoints
-- `src/codeintel/analytics/**`
+- `src/codeintel/build/analytics/**`
 - `src/codeintel/build/hamilton/contracts/schemas/`
 - `tests/analytics/test_profiles_and_functions.py`
 - `tests/analytics/test_graph_features.py`

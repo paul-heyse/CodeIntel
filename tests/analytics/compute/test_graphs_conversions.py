@@ -1,4 +1,4 @@
-"""Tests for codeintel.analytics.compute.graphs.conversions module.
+"""Tests for codeintel.build.analytics.compute.graphs.conversions module.
 
 Testing Charter Compliance:
 - Pure function tests with realistic edge cases
@@ -14,7 +14,7 @@ from decimal import Decimal
 import networkx as nx
 import pytest
 
-from codeintel.analytics.compute.graphs.conversions import (
+from codeintel.build.analytics.compute.graphs.conversions import (
     log_empty_graph,
     log_projection_skipped,
     safe_float,

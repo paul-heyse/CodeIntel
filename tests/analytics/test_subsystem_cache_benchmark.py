@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.subsystems.cache import (
+from codeintel.build.analytics.subsystems.cache import (
     build_subsystem_coverage_cache_rows,
     build_subsystem_profile_cache_rows,
 )

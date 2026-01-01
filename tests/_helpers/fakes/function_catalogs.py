@@ -21,7 +21,7 @@ Example
 ... )
 >>>
 >>> # Use with CatalogProvider
->>> from codeintel.analytics.resources.catalog import CatalogProvider
+>>> from codeintel.build.analytics.resources.catalog import CatalogProvider
 >>> provider = CatalogProvider()
 >>> provider.set_preloaded(catalog)
 """

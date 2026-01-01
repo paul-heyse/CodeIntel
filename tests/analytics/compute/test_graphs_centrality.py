@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING, TypedDict
 import networkx as nx
 from networkx.exception import NetworkXAlgorithmError
 
-from codeintel.analytics.compute.graphs import centrality as centrality_module
+from codeintel.build.analytics.compute.graphs import centrality as centrality_module
+from codeintel.build.graphs.runtime.context import GraphContext
 from codeintel.core.compute.centrality import (
     CentralityMetrics,
     compute_betweenness,
     compute_pagerank,
 )
-from codeintel.graphs.runtime.context import GraphContext
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     assert_logged,

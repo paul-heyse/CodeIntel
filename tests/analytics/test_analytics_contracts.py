@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, get_type_hints
 
 import pytest
 
-from codeintel.analytics.utilities.datasets import (
+from codeintel.build.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.analytics.utilities.persistence import DeleteScope
+from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.catalog import FunctionCatalog
 from codeintel.core.schemas.generated_rows.analytics import (

@@ -19,8 +19,8 @@ Proposed
 
 2) Remove unused analytics tuple writer utilities
    - `AnalyticsTupleWriteOptions` and `write_analytics_tuple_rows` in
-     `src/codeintel/analytics/utilities/datasets.py`.
-   - Remove re-exports from `src/codeintel/analytics/utilities/__init__.py`.
+     `src/codeintel/build/analytics/utilities/datasets.py`.
+   - Remove re-exports from `src/codeintel/build/analytics/utilities/__init__.py`.
 
 3) Remove legacy build tracking migration path
    - `_migrate_impl_kind_columns` in
@@ -70,8 +70,8 @@ Acceptance:
 ### Phase 2: Remove analytics tuple writer utilities
 
 1) Delete `AnalyticsTupleWriteOptions` and `write_analytics_tuple_rows` from
-   `src/codeintel/analytics/utilities/datasets.py`.
-2) Remove the re-exports in `src/codeintel/analytics/utilities/__init__.py`.
+   `src/codeintel/build/analytics/utilities/datasets.py`.
+2) Remove the re-exports in `src/codeintel/build/analytics/utilities/__init__.py`.
 3) Update any tests or documentation if they referenced these utilities.
 
 Acceptance:

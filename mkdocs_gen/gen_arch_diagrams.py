@@ -111,10 +111,10 @@ def run_checked(
 
 
 TOP_LEVEL_PACKAGES = (
-    "codeintel.analytics",
+    "codeintel.build.analytics",
     "codeintel.config",
     "codeintel.core",
-    "codeintel.graphs",
+    "codeintel.build.graphs",
     "codeintel.ingestion",
     "codeintel.pipeline",
     "codeintel.runtime",

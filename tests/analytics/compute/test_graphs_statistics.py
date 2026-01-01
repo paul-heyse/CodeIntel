@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import networkx as nx
 
-from codeintel.graphs.compute.metrics.statistics import (
+from codeintel.build.graphs.compute.metrics.statistics import (
     GraphStatistics,
     compute_graph_statistics,
     get_degree_values,

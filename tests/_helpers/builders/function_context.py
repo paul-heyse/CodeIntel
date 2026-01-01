@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
-from codeintel.analytics.compute.semantic_roles.classification import FunctionContext
+from codeintel.build.analytics.compute.semantic_roles.classification import FunctionContext
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

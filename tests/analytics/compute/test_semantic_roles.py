@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.compute.semantic_roles.classification import (
+from codeintel.build.analytics.compute.semantic_roles.classification import (
     HELPER_LOC_THRESHOLD,
     ROLE_THRESHOLD,
     SERVICE_FAN_IN_THRESHOLD,
@@ -28,7 +28,7 @@ from tests._helpers.assertions import (
 from tests._helpers.fixtures.rows import FunctionContextBuilder
 
 if TYPE_CHECKING:
-    from codeintel.analytics.compute.semantic_roles.classification import (
+    from codeintel.build.analytics.compute.semantic_roles.classification import (
         FunctionContext,
     )
 

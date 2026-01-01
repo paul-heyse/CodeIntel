@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.dataset as ds
+from sqlglot import exp
 
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
@@ -18,12 +19,13 @@ from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManife
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.datasets.manifests import read_dataset_manifest
-from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
-from codeintel.storage.helpers.table_key import fully_qualified_table_ref, split_table_key
+from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.schema.duckdb_contracts import contract_schema_for_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
@@ -66,26 +68,24 @@ def _table_exists(
     table: str,
     catalog: str | None = None,
 ) -> bool:
-    if catalog is None:
-        result = con.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [schema, table],
-        ).fetchone()
-    else:
-        result = con.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_catalog = ? AND table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [catalog, schema, table],
-        ).fetchone()
+    info_table = table_expr_from_ref("information_schema.tables")
+    conditions: list[exp.Expression] = []
+    params: list[object] = []
+    if catalog is not None:
+        conditions.append(exp.EQ(this=exp.column("table_catalog"), expression=exp.Placeholder()))
+        params.append(catalog)
+    conditions.extend(
+        [
+            exp.EQ(this=exp.column("table_schema"), expression=exp.Placeholder()),
+            exp.EQ(this=exp.column("table_name"), expression=exp.Placeholder()),
+        ]
+    )
+    params.extend([schema, table])
+    where_expr = conditions[0]
+    for condition in conditions[1:]:
+        where_expr = exp.and_(where_expr, condition)
+    query = exp.select(exp.Literal.number(1)).from_(info_table).where(where_expr).limit(1)
+    result = con.execute(render_sql_duckdb(query), params).fetchone()
     return result is not None
 
 
@@ -104,11 +104,8 @@ def _require_table(
 
 def _require_search_documents(con: DuckDBConnection) -> None:
     _require_table(con, schema="docs", table="search_documents")
-    search_documents_ref = fully_qualified_table_ref(
-        "docs.search_documents",
-        catalog=duckdb_default_catalog(con),
-    )
-    row = con.execute(f"SELECT COUNT(*) FROM {search_documents_ref}").fetchone()
+    relation = MinimalStorageGateway(con).relation_from_table_key("docs.search_documents")
+    row = relation.count("*").fetchone()
     count = int(row[0]) if row is not None and row[0] is not None else 0
     if count <= 0:
         msg = "Search documents table is empty: docs.search_documents"
@@ -318,9 +315,9 @@ def _create_dataset_view(
     if current_schema != request.schema:
         _set_schema(con, request.schema)
     try:
-        contract_schema = _contract_schema_for_manifest(
-            manifest=request.manifest,
-            manifest_path=request.manifest_path,
+        contract_schema = contract_schema_for_table_key(
+            con=con,
+            table_key=request.table_key,
         )
         relation = _dataset_read_parquet_relation(
             con=con,
@@ -376,20 +373,6 @@ def _dataset_read_parquet_relation(
             return con.from_arrow(dataset)
 
 
-def _contract_schema_for_manifest(
-    *,
-    manifest: ArrowDatasetManifest,
-    manifest_path: Path,
-) -> pa.Schema | None:
-    dataset_dir = manifest_path.parent.resolve()
-    partitioning: str | None = "hive" if manifest.partition_columns else None
-    try:
-        dataset = ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning)
-    except (OSError, pa.ArrowInvalid, ValueError):
-        return None
-    return dataset.schema
-
-
 def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> ds.Scanner:
     try:
         return dataset.scanner(**scan_kwargs)
@@ -399,7 +382,8 @@ def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) ->
 
 
 def _current_schema(con: DuckDBConnection) -> str:
-    row = con.execute("SELECT current_schema()").fetchone()
+    query = exp.select(exp.Anonymous(this="current_schema"))
+    row = con.execute(render_sql_duckdb(query)).fetchone()
     if row is None or row[0] is None:
         msg = "DuckDB returned empty current_schema()"
         raise RuntimeError(msg)
@@ -407,8 +391,15 @@ def _current_schema(con: DuckDBConnection) -> str:
 
 
 def _set_schema(con: DuckDBConnection, schema: str) -> None:
-    escaped = schema.replace("'", "''")
-    con.execute(f"SET schema='{escaped}'")
+    statement = exp.Set(
+        expressions=[
+            exp.EQ(
+                this=exp.Var(this="schema"),
+                expression=exp.Literal.string(schema),
+            )
+        ]
+    )
+    con.execute(render_sql_duckdb(statement))
 
 
 __all__ = [

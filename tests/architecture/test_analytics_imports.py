@@ -33,13 +33,13 @@ def test_external_imports_use_domain_apis() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         for line in text.splitlines():
-            if "codeintel.analytics." not in line or "import" not in line:
+            if "codeintel.build.analytics." not in line or "import" not in line:
                 continue
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
             for suffix in FORBIDDEN_IMPORTS:
-                needle = f"codeintel.analytics.{suffix}"
+                needle = f"codeintel.build.analytics.{suffix}"
                 if needle in stripped:
                     violations.append(f"{path}:{suffix}")
     if violations:

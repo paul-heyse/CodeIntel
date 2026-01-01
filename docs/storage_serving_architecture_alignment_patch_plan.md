@@ -27,17 +27,17 @@ Acceptance
 Goal: Ensure inference-first pipelines avoid materialization and keep aggregation type-safe.
 
 Changes
-- Introduce a small helper that calls `relation.aggregate(*aggs, by)` with varargs
-  instead of `list[str]`, then replace current aggregate call sites.
+- Move coverage aggregation into the Hamilton-native Polars pipeline and remove
+  legacy DuckDB coverage compute.
+- Use direct `relation.aggregate(*aggs, by)` calls where needed (no shared helper).
 
 Files
-- `src/codeintel/analytics/compute/coverage/compute.py`
-- `src/codeintel/analytics/profiles/graph_features.py`
-- Optional shared helper module (e.g. `src/codeintel/analytics/duckdb_helpers.py`)
+- `src/codeintel/build/hamilton/native/analytics/tables_coverage.py`
+- `src/codeintel/build/analytics/profiles/graph_features.py`
 
 Acceptance
 - Pyright/Pyrefly aggregate argument errors resolved.
-- No change in aggregation semantics.
+- Coverage aggregation runs via Polars pipeline; no DuckDB coverage helper remains.
 
 ## Phase 3: Graph goids typing and symbol-use alignment
 Goal: Fix type safety around AST-derived nodes and symbol-use mapping while preserving

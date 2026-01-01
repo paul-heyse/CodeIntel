@@ -14,6 +14,7 @@ from codeintel.core.columnar.schema_metadata import encode_metadata
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import (
+    COMPLEX_TYPE_BASES,
     Column,
     ColumnType,
     TableSchema,
@@ -482,7 +483,7 @@ def _arrow_type_for_column_type(column_type: ColumnType) -> pa.DataType:
     base = column_type_base(normalized)
     if base == "DECIMAL":
         return _arrow_decimal_type(normalized.upper())
-    if base in {"STRUCT", "LIST", "MAP", "UNION"}:
+    if base in COMPLEX_TYPE_BASES:
         try:
             data_type = exp.DataType.build(normalized, dialect=_SQLGLOT_DIALECT)
         except (TypeError, ValueError) as exc:

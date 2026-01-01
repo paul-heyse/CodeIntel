@@ -8,12 +8,7 @@ from pathlib import Path
 
 import polars as pl
 
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
-from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
-from codeintel.graphs.compute.imports import (
+from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
     ImportEdge,
     analyze_imports,
@@ -21,6 +16,11 @@ from codeintel.graphs.compute.imports import (
     build_import_module_rows,
     collect_import_edges,
 )
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"

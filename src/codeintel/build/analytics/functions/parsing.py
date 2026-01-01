@@ -1,0 +1,73 @@
+"""Adapters exposing the centralized parsing subsystem to function analytics."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from codeintel.build.analytics.parsing import (
+    FunctionParserRegistry,
+    ParsedFunction,
+    ParsedModule,
+    parse_python_module,
+    resolve_span,
+)
+from codeintel.build.analytics.parsing.registry import get_parser
+from codeintel.build.analytics.parsing.types import FunctionParserKind
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+
+def parse_functions_in_module(
+    path: Path,
+    content: bytes,
+    *,
+    kind: FunctionParserKind = FunctionParserKind.PYTHON,
+) -> Iterable[ParsedFunction]:
+    """
+    Parse a module into ParsedFunction objects using the configured parser.
+
+    Parameters
+    ----------
+    path :
+        Path to the module being parsed.
+    content :
+        Raw file contents.
+    kind :
+        Parser kind to use; defaults to Python.
+
+    Returns
+    -------
+    Iterable[ParsedFunction]
+        Parsed functions extracted from the module.
+    """
+    parser = get_parser(kind)
+    return parser(path, content)
+
+
+def parse_python_file(path: Path) -> ParsedModule:
+    """
+    Parse a Python module and return the full ParsedModule payload.
+
+    This helper exists for analytics flows that need both functions and the
+    associated span index or source lines.
+
+    Returns
+    -------
+    ParsedModule
+        Parsed module containing functions, spans, and source lines.
+    """
+    content = path.read_bytes()
+    return parse_python_module(path, content)
+
+
+__all__ = [
+    "FunctionParserKind",
+    "FunctionParserRegistry",
+    "ParsedFunction",
+    "ParsedModule",
+    "parse_functions_in_module",
+    "parse_python_file",
+    "resolve_span",
+]

@@ -516,7 +516,6 @@ Update parameter typing + any internal lookups in:
   * `classification_targets.py`
   * `config_graph_targets.py`
   * `coverage_targets.py`
-  * `dependency_targets.py`
   * `function_detail_targets.py`
   * `function_metrics.py`
   * `hotspots.py`

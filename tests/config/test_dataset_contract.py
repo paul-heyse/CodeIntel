@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.utilities.datasets import get_delete_sql_by_table
+from codeintel.build.analytics.utilities.datasets import get_delete_sql_by_table
 from codeintel.build.schemas import (
     configure_schema_service,
     get_schema_provider,

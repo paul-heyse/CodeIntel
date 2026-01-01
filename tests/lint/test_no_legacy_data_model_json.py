@@ -8,7 +8,7 @@ import pytest
 
 TOKENS: tuple[str, ...] = ("fields_json", "relationships_json")
 ALLOWED: set[str] = {
-    "src/codeintel/analytics/data_models.py",
+    "src/codeintel/build/analytics/data_models.py",
     "src/codeintel/config/schemas/tables.py",
     "src/codeintel/storage/data_models.py",
     "src/codeintel/storage/views.py",

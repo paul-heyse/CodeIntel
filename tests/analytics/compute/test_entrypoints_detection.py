@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.compute.entrypoints.detection import (
+from codeintel.build.analytics.compute.entrypoints.detection import (
     DetectorSettings,
     EntryPointCandidate,
     ImportContext,

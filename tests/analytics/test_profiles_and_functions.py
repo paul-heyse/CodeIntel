@@ -10,31 +10,35 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from codeintel.analytics.compute.functions.complexity import (
+from codeintel.build.analytics.compute.functions.complexity import (
     COMPLEXITY_LOW,
     COMPLEXITY_MEDIUM,
     ComplexityMetrics,
     compute_complexity,
 )
-from codeintel.analytics.compute.functions.loc import LinesOfCode, compute_loc, count_logical_lines
-from codeintel.analytics.compute.functions.signatures import (
+from codeintel.build.analytics.compute.functions.loc import (
+    LinesOfCode,
+    compute_loc,
+    count_logical_lines,
+)
+from codeintel.build.analytics.compute.functions.signatures import (
     FunctionSignature,
     ParameterInfo,
     extract_signature,
 )
-from codeintel.analytics.compute.functions.typedness import (
+from codeintel.build.analytics.compute.functions.typedness import (
     ParamStats,
     TypednessFlags,
     compute_param_stats,
     compute_typedness_flags,
 )
-from codeintel.analytics.compute.profiles.aggregation import (
+from codeintel.build.analytics.compute.profiles.aggregation import (
     FunctionMetricInput,
     ProfileAggregates,
     aggregate_function_metrics,
     compute_profile_stats,
 )
-from codeintel.analytics.compute.profiles.features import (
+from codeintel.build.analytics.compute.profiles.features import (
     COMPLEXITY_NORMALIZATION,
     COMPLEXITY_WEIGHT,
     HIGH_COMPLEXITY_THRESHOLD,
@@ -48,11 +52,11 @@ from codeintel.analytics.compute.profiles.features import (
     ProfileFeatures,
     extract_profile_features,
 )
-from codeintel.analytics.profiles.files import (
+from codeintel.build.analytics.profiles.files import (
     build_file_profile_rows,
     compute_file_profile_inputs,
 )
-from codeintel.analytics.profiles.functions import (
+from codeintel.build.analytics.profiles.functions import (
     SLOW_TEST_THRESHOLD_MS,
     FunctionProfileViews,
     build_function_profile_rows,
@@ -65,13 +69,13 @@ from codeintel.analytics.profiles.functions import (
     join_function_roles,
     load_function_base_info,
 )
-from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
-from codeintel.analytics.profiles.modules import (
+from codeintel.build.analytics.profiles.graph_features import summarize_graph_for_function_profile
+from codeintel.build.analytics.profiles.modules import (
     build_module_profile_rows,
     compute_module_profile_inputs,
 )
-from codeintel.analytics.profiles.utils import DEFAULT_MODULE_TABLE
-from codeintel.analytics.testing.profiles import rows as profile_rows
+from codeintel.build.analytics.profiles.utils import DEFAULT_MODULE_TABLE
+from codeintel.build.analytics.testing.profiles import rows as profile_rows
 from codeintel.build.schemas import configure_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.runtime.runtime_bundle import RuntimeBundle
@@ -115,7 +119,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.analytics.profiles.types import FunctionProfileInputs
+    from codeintel.build.analytics.profiles.types import FunctionProfileInputs
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,

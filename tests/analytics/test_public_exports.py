@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.analytics import functions as functions_mod
-from codeintel.analytics import graphs as analytics_graphs_mod
-from codeintel.analytics import history as history_mod
+from codeintel.build.analytics import functions as functions_mod
+from codeintel.build.analytics import graphs as analytics_graphs_mod
 from tests._helpers import assert_frozen
 from tests._helpers.assertions.expectation_assertions import (
     expect_in,
@@ -36,17 +35,6 @@ def test_graphs_module_exports() -> None:
         "ConfigGraphMetricsResult",
     }
     exports = set(list_public_exports(analytics_graphs_mod))
-    for name in expected:
-        expect_in(name, exports)
-    assert_frozen(tuple(sorted(exports)), "__len__", len(exports))
-
-
-def test_history_module_exports() -> None:
-    """History API should expose timeseries helpers."""
-    expected = {
-        "FileCommitDelta",
-    }
-    exports = set(list_public_exports(history_mod))
     for name in expected:
         expect_in(name, exports)
     assert_frozen(tuple(sorted(exports)), "__len__", len(exports))

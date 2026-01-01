@@ -319,7 +319,7 @@ DUCKDB_BOUNDARY = ImportBoundary(
 NETWORKX_BOUNDARY = ImportBoundary(
     name="networkx",
     restricted_modules=frozenset({"networkx", "nx_cugraph"}),
-    allowed_paths=frozenset({"src/codeintel/graphs", "src/codeintel/analytics"}),
+    allowed_paths=frozenset({"src/codeintel/build/graphs", "src/codeintel/build/analytics"}),
     description="NetworkX imports must be confined to graphs/analytics layers",
 )
 

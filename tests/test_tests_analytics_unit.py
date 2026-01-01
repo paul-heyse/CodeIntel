@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 from coverage import Coverage
 
-from codeintel.analytics.testing.coverage.edges import (
+from codeintel.build.analytics.testing.coverage.edges import (
     EdgeContext,
     FunctionRow,
     backfill_test_goids_for_catalog,

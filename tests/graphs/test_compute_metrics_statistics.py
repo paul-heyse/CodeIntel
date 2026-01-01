@@ -10,7 +10,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.graphs.compute.metrics.statistics import (
+from codeintel.build.graphs.compute.metrics.statistics import (
     GraphStatistics,
     compute_avg_shortest_path_length,
     compute_condensation_layer_count,

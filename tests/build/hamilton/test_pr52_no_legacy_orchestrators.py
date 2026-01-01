@@ -134,20 +134,20 @@ def test_pr52_empty_plugin_directories_removed() -> None:
 def test_pr52_migrated_plugins_exist_as_native_modules() -> None:
     """Verify previously non-migrated plugins are now native Hamilton modules.
 
-    These plugins were migrated in Phase 4 of the Hamilton Native Implementation Plan.
-    Note: Modules have been consolidated as part of Phase 2 Analytics Consolidation:
-    - coverage_test_edges.py + behavioral_coverage.py + coverage_functions.py
-      -> coverage_targets.py
+    These plugins were migrated in the Hamilton-native analytics consolidation:
+    - config_data_flow.py -> config_graphs.py
+    - coverage_functions.py + behavioral_coverage.py + test coverage edges
+      -> tables_coverage.py + testing.py
     - subsystem_graph_metrics.py + symbol_graph_metrics.py + test_graph_metrics.py
-      + subsystem_agreement.py
-      -> metrics_targets.py
-    - config_data_flow.py -> config_graph_targets.py (already consolidated)
+      + subsystem_agreement.py -> graph_metrics.py + subsystem_agreement.py
     """
     native_root = SRC_ROOT / "build" / "hamilton" / "native" / "analytics"
     should_exist = (
-        "config_graph_targets.py",  # Contains config_data_flow target
-        "coverage_targets.py",  # Consolidated: coverage_test_edges + behavioral_coverage + coverage_functions
-        "metrics_targets.py",  # Consolidated: graph metrics + history + subsystem_agreement
+        "config_graphs.py",
+        "tables_coverage.py",
+        "testing.py",
+        "graph_metrics.py",
+        "subsystem_agreement.py",
     )
     missing: list[str] = []
     for file_name in should_exist:

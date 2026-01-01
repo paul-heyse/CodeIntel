@@ -631,7 +631,7 @@ def safe_min_value(
         return None
     try:
         expr = FunctionExpression("min", ColumnExpression(column)).alias("min_value")
-        result = relation.aggregate([expr]).fetchone()
+        result = relation.aggregate(expr).fetchone()
         if result is None:
             return None
         return coerce_optional_float(result[0], ctx=f"{table_key}.{column}.min")
@@ -670,7 +670,7 @@ def safe_max_value(
         return None
     try:
         expr = FunctionExpression("max", ColumnExpression(column)).alias("max_value")
-        result = relation.aggregate([expr]).fetchone()
+        result = relation.aggregate(expr).fetchone()
         if result is None:
             return None
         return coerce_optional_float(result[0], ctx=f"{table_key}.{column}.max")
@@ -854,8 +854,6 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         return 0
     if fk.source_column not in src.columns or fk.ref_column not in tgt.columns:
         return 0
-    src_name = fk.source_table
-    tgt_name = fk.ref_table
     src_col = fk.source_column
     tgt_col = fk.ref_column
     orphan_count = 0
@@ -866,7 +864,7 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         joined = src_relation.join(tgt_relation, join_condition, how="left")
         predicate = ColumnExpression(f"tgt.{tgt_col}").isnull()
         if not fk.allow_null:
-            predicate = predicate & ColumnExpression(f"src.{src_col}").isnotnull()
+            predicate &= ColumnExpression(f"src.{src_col}").isnotnull()
         result = joined.filter(predicate).count("*").fetchone()
         if result is not None:
             orphan_count = coerce_int(

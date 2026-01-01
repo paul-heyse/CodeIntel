@@ -1328,20 +1328,8 @@ I’m listing each module, the targets it defines, and the exact mechanical edit
 
 ### 11) `src/codeintel/build/hamilton/native/analytics/dependency_targets.py`
 
-**Targets & anchors**
-
-* `external_deps` → `t__external_deps`
-* `entrypoints` → `t__entrypoints`
-
-**Edits**
-
-1. Remove imports:
-
-   * `EXTERNAL_DEPS_OVERRIDE_TABLES`, `ENTRYPOINTS_OVERRIDE_TABLES` (registry-only)
-   * `TargetSpecOptions/make_output_target/register_output_targets`
-2. Add `codeintel_target`
-3. Delete registry block
-4. Decorator swaps:
+De-scoped. The `analytics.dependency_targets` output is no longer planned for
+the Hamilton DAG and has been removed from the active migration scope.
 
    ```py
    @codeintel_target(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)

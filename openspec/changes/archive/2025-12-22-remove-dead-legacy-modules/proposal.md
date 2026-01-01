@@ -24,4 +24,4 @@ clear set of interfaces aligned with current specs.
 ## Impact
 - Affected specs: interface-hygiene, build-execution, schema-contracts, storage-boundaries.
 - Affected code: `src/codeintel/cli`, `src/codeintel/build`, `src/codeintel/ingestion`,
-  `src/codeintel/storage`, `src/codeintel/analytics`, `src/codeintel/_architecture`.
+  `src/codeintel/storage`, `src/codeintel/build/analytics`, `src/codeintel/_architecture`.

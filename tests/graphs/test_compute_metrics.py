@@ -11,18 +11,7 @@ from typing import Final
 import networkx as nx
 import pytest
 
-from codeintel.core.compute.centrality import (
-    CentralityMetrics,
-    centrality_to_rows,
-    compute_all_centralities,
-    compute_betweenness,
-    compute_closeness,
-    compute_degree_centrality,
-    compute_in_degree_centrality,
-    compute_out_degree_centrality,
-    compute_pagerank,
-)
-from codeintel.graphs.compute.metrics.components import (
+from codeintel.build.graphs.compute.metrics.components import (
     ComponentInfo,
     SCCResult,
     compute_component_stats,
@@ -35,7 +24,7 @@ from codeintel.graphs.compute.metrics.components import (
     find_weakly_connected,
     topological_layers,
 )
-from codeintel.graphs.compute.metrics.structural import (
+from codeintel.build.graphs.compute.metrics.structural import (
     StructuralMetrics,
     compute_all_structural,
     compute_constraint,
@@ -43,8 +32,19 @@ from codeintel.graphs.compute.metrics.structural import (
     compute_effective_size,
     compute_triangles,
 )
-from codeintel.graphs.compute.metrics.structural import (
+from codeintel.build.graphs.compute.metrics.structural import (
     compute_clustering_coefficient as compute_structural_clustering,
+)
+from codeintel.core.compute.centrality import (
+    CentralityMetrics,
+    centrality_to_rows,
+    compute_all_centralities,
+    compute_betweenness,
+    compute_closeness,
+    compute_degree_centrality,
+    compute_in_degree_centrality,
+    compute_out_degree_centrality,
+    compute_pagerank,
 )
 from tests._helpers.assertions import (
     assert_cannot_setattr,

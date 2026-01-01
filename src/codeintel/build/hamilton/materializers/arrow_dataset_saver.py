@@ -111,7 +111,7 @@ _TABULAR_TYPES: tuple[type, ...] = (
     pl.LazyFrame,
 )
 
-_DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit", "target")
+_DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit")
 _COLLECT_GROUP_TAG = "ci.collect_group"
 _COLLECT_ALL_WAIT_S = 0.5
 _PROFILE_RESULT_TUPLE_LENGTH = 2

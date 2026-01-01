@@ -6,15 +6,15 @@ import json
 
 import polars as pl
 
-from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
-from codeintel.analytics.dependencies.compute import (
+from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
+from codeintel.build.analytics.dependencies.compute import (
     EXTERNAL_DEPENDENCIES_COLS,
     EXTERNAL_DEPENDENCY_CALLS_COLS,
     compute_dependency_calls_pure,
     compute_external_dependencies_pure,
 )
-from codeintel.analytics.dependencies.core import ExternalDependencyInputs
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.dependencies.core import ExternalDependencyInputs
+from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

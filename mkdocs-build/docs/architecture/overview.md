@@ -23,8 +23,8 @@ graph LR
     end
 
     subgraph Processing
-        Analytics[codeintel.analytics]
-        Graphs[codeintel.graphs]
+        Analytics[codeintel.build.analytics]
+        Graphs[codeintel.build.graphs]
     end
 
     subgraph Output
@@ -118,8 +118,8 @@ The source code lives under `src/codeintel`:
 | `src/codeintel/config/` | Configuration models and schemas |
 | `src/codeintel/ingestion/` | Source code ingestion pipeline |
 | `src/codeintel/storage/` | DuckDB gateway and dataset contracts |
-| `src/codeintel/graphs/` | Graph building and metrics |
-| `src/codeintel/analytics/` | Analytics plugin system |
+| `src/codeintel/build/graphs/` | Graph building and metrics |
+| `src/codeintel/build/analytics/` | Analytics plugin system |
 | `src/codeintel/serving/` | HTTP and MCP interfaces |
 | `src/codeintel/pipeline/` | Unified orchestration |
 | `src/codeintel/runtime/` | Runtime context management |

@@ -11,11 +11,11 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
 EXPECTED_EXPORTS: Mapping[str, set[str]] = {
-    "codeintel.analytics.functions": {
+    "codeintel.build.analytics.functions": {
         "FunctionAnalyticsOptions",
         "FunctionAnalyticsResult",
     },
-    "codeintel.analytics.graphs": {
+    "codeintel.build.analytics.graphs": {
         "ConfigDataFlowResult",
         "ConfigGraphMetricsResult",
         "CONFIG_DATA_FLOW_COLS",
@@ -24,7 +24,7 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
         "CONFIG_PROJECTION_KEY_EDGES_COLS",
         "CONFIG_PROJECTION_MODULE_EDGES_COLS",
     },
-    "codeintel.analytics.parsing": {
+    "codeintel.build.analytics.parsing": {
         "BaseValidationReporter",
         "FunctionParserRegistry",
         "FunctionValidationReporter",

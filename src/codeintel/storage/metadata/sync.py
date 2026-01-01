@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from sqlglot import exp
+
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
@@ -29,9 +31,12 @@ from codeintel.storage.metadata.bootstrap import (
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from duckdb import DuckDBPyConnection
 
 __all__ = [
@@ -66,28 +71,32 @@ class _SchemaSyncContext:
 
 def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> None:
     table_ref = meta_table_ref("metadata.datasets")
+    columns = [
+        "table_key",
+        "name",
+        "is_view",
+        "jsonl_filename",
+        "parquet_filename",
+        "family",
+        "description",
+        "schema_version",
+    ]
+    insert_expr = _insert_expr(table_ref, columns)
+    conflict = _on_conflict_update(
+        conflict_columns=["table_key"],
+        update_columns=[
+            "name",
+            "is_view",
+            "jsonl_filename",
+            "parquet_filename",
+            "family",
+            "description",
+            "schema_version",
+        ],
+    )
+    insert_expr.set("conflict", conflict)
     con.execute(
-        f"""
-        INSERT INTO {table_ref} (
-            table_key,
-            name,
-            is_view,
-            jsonl_filename,
-            parquet_filename,
-            family,
-            description,
-            schema_version
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(table_key) DO UPDATE SET
-            name             = excluded.name,
-            is_view          = excluded.is_view,
-            jsonl_filename   = excluded.jsonl_filename,
-            parquet_filename = excluded.parquet_filename,
-            family           = excluded.family,
-            description      = excluded.description,
-            schema_version   = excluded.schema_version;
-        """,
+        render_sql_duckdb(insert_expr),
         [
             payload.table_key,
             payload.name,
@@ -236,15 +245,27 @@ def load_derived_lineage_columns(
         Mapping of downstream column to upstream (table_key, column) references.
     """
     table_ref = meta_table_ref("metadata.derived_lineage_columns")
-    rows = con.execute(
-        f"""
-        SELECT downstream_column, upstream_table, upstream_column
-        FROM {table_ref}
-        WHERE repo = ? AND commit = ? AND downstream_table = ?
-        ORDER BY downstream_column, upstream_table, upstream_column
-        """,
-        [repo, commit, downstream_table],
-    ).fetchall()
+    table_expr = table_expr_from_ref(table_ref)
+    where_expr = exp.and_(
+        exp.EQ(this=exp.column("repo"), expression=exp.Placeholder()),
+        exp.EQ(this=exp.column("commit"), expression=exp.Placeholder()),
+        exp.EQ(this=exp.column("downstream_table"), expression=exp.Placeholder()),
+    )
+    query = (
+        exp.select(
+            exp.column("downstream_column"),
+            exp.column("upstream_table"),
+            exp.column("upstream_column"),
+        )
+        .from_(table_expr)
+        .where(where_expr)
+        .order_by(
+            exp.Ordered(this=exp.column("downstream_column")),
+            exp.Ordered(this=exp.column("upstream_table")),
+            exp.Ordered(this=exp.column("upstream_column")),
+        )
+    )
+    rows = con.execute(render_sql_duckdb(query), [repo, commit, downstream_table]).fetchall()
     out: dict[str, list[tuple[str, str]]] = {}
     for downstream_column, upstream_table, upstream_column in rows:
         out.setdefault(str(downstream_column), []).append(
@@ -363,46 +384,54 @@ def sync_table_schema_registry_from_latest_manifest(con: DuckDBPyConnection) -> 
         return 0
 
     schema_versions_ref = meta_table_ref("metadata.schema_versions")
+    schema_versions_columns = [
+        "schema_digest",
+        "schema_hash",
+        "schema_json",
+        "renderer_cache",
+        "created_at",
+    ]
+    schema_versions_insert = _insert_expr(schema_versions_ref, schema_versions_columns)
+    schema_versions_insert.set(
+        "conflict",
+        _on_conflict_do_nothing(conflict_columns=["schema_digest"]),
+    )
     con.executemany(
-        f"""
-        INSERT INTO {schema_versions_ref} (
-            schema_digest,
-            schema_hash,
-            schema_json,
-            renderer_cache,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (schema_digest) DO NOTHING
-        """,
+        render_sql_duckdb(schema_versions_insert),
         list(context.schema_versions.values()),
     )
 
     registry_ref = meta_table_ref("metadata.table_schema_registry")
+    registry_columns = [
+        "table_key",
+        "schema_digest",
+        "schema_hash",
+        "derivation_kind",
+        "derivation_source",
+        "inference_status",
+        "inference_error",
+        "catalog_hash",
+        "updated_at",
+    ]
+    registry_insert = _insert_expr(registry_ref, registry_columns)
+    registry_insert.set(
+        "conflict",
+        _on_conflict_update(
+            conflict_columns=["table_key"],
+            update_columns=[
+                "schema_digest",
+                "schema_hash",
+                "derivation_kind",
+                "derivation_source",
+                "inference_status",
+                "inference_error",
+                "catalog_hash",
+                "updated_at",
+            ],
+        ),
+    )
     con.executemany(
-        f"""
-        INSERT INTO {registry_ref} (
-            table_key,
-            schema_digest,
-            schema_hash,
-            derivation_kind,
-            derivation_source,
-            inference_status,
-            inference_error,
-            catalog_hash,
-            updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (table_key) DO UPDATE SET
-            schema_digest = excluded.schema_digest,
-            schema_hash = excluded.schema_hash,
-            derivation_kind = excluded.derivation_kind,
-            derivation_source = excluded.derivation_source,
-            inference_status = excluded.inference_status,
-            inference_error = excluded.inference_error,
-            catalog_hash = excluded.catalog_hash,
-            updated_at = excluded.updated_at
-        """,
+        render_sql_duckdb(registry_insert),
         [
             (
                 table_key,
@@ -429,3 +458,40 @@ def sync_table_schema_registry_from_latest_manifest(con: DuckDBPyConnection) -> 
     )
 
     return len(registry_rows)
+
+
+def _insert_expr(table_ref: str, columns: Sequence[str]) -> exp.Insert:
+    table_expr = table_expr_from_ref(table_ref)
+    placeholders = [exp.Placeholder() for _ in columns]
+    return exp.Insert(
+        this=exp.Schema(
+            this=table_expr,
+            expressions=[exp.to_identifier(column) for column in columns],
+        ),
+        expression=exp.Values(expressions=[exp.Tuple(expressions=placeholders)]),
+    )
+
+
+def _on_conflict_update(
+    *,
+    conflict_columns: Sequence[str],
+    update_columns: Sequence[str],
+) -> exp.OnConflict:
+    return exp.OnConflict(
+        conflict_keys=[exp.to_identifier(column) for column in conflict_columns],
+        action=exp.Var(this="DO UPDATE"),
+        expressions=[
+            exp.EQ(
+                this=exp.column(column),
+                expression=exp.column(column, table="excluded"),
+            )
+            for column in update_columns
+        ],
+    )
+
+
+def _on_conflict_do_nothing(*, conflict_columns: Sequence[str]) -> exp.OnConflict:
+    return exp.OnConflict(
+        conflict_keys=[exp.to_identifier(column) for column in conflict_columns],
+        action=exp.Var(this="DO NOTHING"),
+    )

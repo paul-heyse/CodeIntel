@@ -1,7 +1,7 @@
 """Extended tests for symbol computation module.
 
 This module provides additional test coverage for the symbols module
-from `codeintel.graphs.compute.symbols`, including:
+from `codeintel.build.graphs.compute.symbols`, including:
 
 - SymbolOccurrence role detection
 - Definition map building
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from codeintel.graphs.compute.symbols import (
+from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
     SymbolUseEdge,
     SymbolUseRow,

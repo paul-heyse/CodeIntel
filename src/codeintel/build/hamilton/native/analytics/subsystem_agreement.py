@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

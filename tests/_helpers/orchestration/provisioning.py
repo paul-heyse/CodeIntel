@@ -14,14 +14,18 @@ from typing import TYPE_CHECKING
 
 from coverage import Coverage
 
-from codeintel.analytics.graphs.graph_metrics import build_graph_metrics_rows
-from codeintel.analytics.graphs.graph_metrics_ext import build_graph_metrics_functions_ext_rows
-from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
-from codeintel.analytics.graphs.module_graph_metrics_ext import build_graph_metrics_modules_ext_rows
+from codeintel.build.analytics.graphs.graph_metrics import build_graph_metrics_rows
+from codeintel.build.analytics.graphs.graph_metrics_ext import (
+    build_graph_metrics_functions_ext_rows,
+)
+from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
+    build_graph_metrics_modules_ext_rows,
+)
 from codeintel.build.config import BuildConfig
+from codeintel.build.graphs.runtime import GraphMetricsOptions
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
-from codeintel.graphs.runtime import GraphMetricsOptions
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,

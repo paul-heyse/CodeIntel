@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.analytics.functions.function_contracts import build_function_contracts_rows
-from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.analytics.functions.function_contracts import build_function_contracts_rows
+from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.storage.warehouse import Warehouse
 from tests._helpers import TestScenario
 from tests._helpers.assertions import (

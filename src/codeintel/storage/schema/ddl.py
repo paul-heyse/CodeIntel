@@ -13,10 +13,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from sqlglot import exp
+
 from codeintel.storage.constants import SCHEMAS
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -147,13 +150,20 @@ def assert_schema_alignment(
         table = provider.get_table_schema(table_key)
         if table is None:
             continue
+        table_expr = table_expr_from_ref("information_schema.columns")
+        query = (
+            exp.select(exp.column("column_name"))
+            .from_(table_expr)
+            .where(
+                exp.and_(
+                    exp.EQ(this=exp.column("table_schema"), expression=exp.Placeholder()),
+                    exp.EQ(this=exp.column("table_name"), expression=exp.Placeholder()),
+                )
+            )
+            .order_by(exp.Ordered(this=exp.column("ordinal_position")))
+        )
         rows = con.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = ? AND table_name = ?
-            ORDER BY ordinal_position
-            """,
+            render_sql_duckdb(query),
             [table.schema, table.name],
         ).fetchall()
         actual = [row[0] for row in rows]

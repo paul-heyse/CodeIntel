@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.primitives import column_type_base
+from codeintel.core.schemas.primitives import COMPLEX_TYPE_BASES, column_type_base
 from codeintel.serving.semantic.models import FilterValue, Op
 
 if TYPE_CHECKING:
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 _ALL_OPS: tuple[Op, ...] = ("eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith")
 _ORDERING_OPS = frozenset({"lt", "lte", "gt", "gte"})
 _STRING_OPS = frozenset({"contains", "startswith"})
-_COMPLEX_TYPES = frozenset({"JSON", "STRUCT", "MAP", "LIST", "UNION"})
 
 
 class FilterOpError(ValueError):
@@ -45,7 +44,7 @@ def allowed_ops_for_column_type(column_type: ColumnType | str | None) -> tuple[O
             allowed_ops = ("eq", "ne")
         elif base == "VARCHAR":
             allowed_ops = ("eq", "ne", "in", "contains", "startswith")
-        elif base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
+        elif base in COMPLEX_TYPE_BASES:
             allowed_ops = ("eq", "ne")
         else:
             allowed_ops = ("eq", "ne", "lt", "lte", "gt", "gte", "in")
@@ -99,7 +98,7 @@ def validate_filter_value(
         if not isinstance(value, list):
             msg = "IN operator requires a list value"
             raise FilterOpError(msg)
-        if base in _COMPLEX_TYPES:
+        if base in COMPLEX_TYPE_BASES:
             msg = "IN operator is not supported for complex columns"
             raise FilterOpError(msg)
         return value

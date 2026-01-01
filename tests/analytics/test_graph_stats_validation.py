@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
-from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
-from codeintel.graphs.engine import NxGraphEngine
-from codeintel.graphs.validation import warn_graph_structure
+from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.build.graphs.engine import NxGraphEngine
+from codeintel.build.graphs.validation import warn_graph_structure
 from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,

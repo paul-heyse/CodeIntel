@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from sqlglot import exp
+
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import (
     decode_json_dict,
@@ -20,9 +22,10 @@ from codeintel.storage.helpers.json import (
 )
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import coerce_int
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
     from duckdb import DuckDBPyConnection
@@ -61,6 +64,79 @@ def _coerce_row_counts(raw: dict[str, object]) -> dict[str, int]:
         Row counts normalized to integer values.
     """
     return {key: coerce_int(value, ctx=f"row_counts[{key}]") for key, value in raw.items()}
+
+
+def _run_select_exprs() -> list[exp.Expression]:
+    return [
+        exp.Column(this=exp.to_identifier("run_id")),
+        exp.Column(this=exp.to_identifier("repo")),
+        exp.Column(this=exp.to_identifier("commit")),
+        exp.Column(this=exp.to_identifier("kind")),
+        exp.Column(this=exp.to_identifier("trigger")),
+        exp.Column(this=exp.to_identifier("requested_operation")),
+        exp.Column(this=exp.to_identifier("requested_datasets")),
+        exp.Column(this=exp.to_identifier("started_at")),
+        exp.Column(this=exp.to_identifier("completed_at")),
+        exp.Column(this=exp.to_identifier("status")),
+        exp.Column(this=exp.to_identifier("error_summary")),
+        exp.Column(this=exp.to_identifier("pipeline_name")),
+    ]
+
+
+def _step_select_exprs() -> list[exp.Expression]:
+    return [
+        exp.Column(this=exp.to_identifier("run_id")),
+        exp.Column(this=exp.to_identifier("module")),
+        exp.Column(this=exp.to_identifier("stage")),
+        exp.Column(this=exp.to_identifier("name")),
+        exp.Column(this=exp.to_identifier("started_at")),
+        exp.Column(this=exp.to_identifier("completed_at")),
+        exp.Column(this=exp.to_identifier("status")),
+        exp.Column(this=exp.to_identifier("row_counts")),
+        exp.Column(this=exp.to_identifier("extra")),
+    ]
+
+
+def _build_upsert_insert(
+    table_ref: str,
+    *,
+    columns: Sequence[str],
+    conflict_columns: Sequence[str],
+) -> exp.Insert:
+    insert = exp.Insert(
+        this=exp.Schema(
+            this=table_expr_from_ref(table_ref),
+            expressions=[exp.to_identifier(column) for column in columns],
+        ),
+        expression=exp.Values(
+            expressions=[exp.Tuple(expressions=[exp.Placeholder() for _ in columns])]
+        ),
+    )
+    update_columns = [column for column in columns if column not in conflict_columns]
+    conflict_keys = [exp.to_identifier(column) for column in conflict_columns]
+    if update_columns:
+        assignments = [
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier(column)),
+                expression=exp.Column(
+                    this=exp.to_identifier(column),
+                    table=exp.to_identifier("excluded"),
+                ),
+            )
+            for column in update_columns
+        ]
+        conflict = exp.OnConflict(
+            conflict_keys=conflict_keys,
+            action=exp.Var(this="DO UPDATE"),
+            expressions=assignments,
+        )
+    else:
+        conflict = exp.OnConflict(
+            conflict_keys=conflict_keys,
+            action=exp.Var(this="DO NOTHING"),
+        )
+    insert.set("conflict", conflict)
+    return insert
 
 
 ModuleKind = Literal["ingestion", "graphs", "analytics", "export", "views", "build"]
@@ -238,24 +314,27 @@ class PipelineRunTracking:
             Initial status (default: "running").
         """
         datasets_json = serialize_str_sequence(ctx.requested_datasets)
+        columns = [
+            "run_id",
+            "repo",
+            "commit",
+            "kind",
+            "trigger",
+            "requested_operation",
+            "requested_datasets",
+            "started_at",
+            "completed_at",
+            "status",
+            "error_summary",
+            "pipeline_name",
+        ]
+        insert_expr = _build_upsert_insert(
+            _PIPELINE_RUNS_TABLE,
+            columns=columns,
+            conflict_columns=["run_id"],
+        )
         self.con.execute(
-            f"""
-            INSERT OR REPLACE INTO {_PIPELINE_RUNS_TABLE} (
-                run_id,
-                repo,
-                commit,
-                kind,
-                trigger,
-                requested_operation,
-                requested_datasets,
-                started_at,
-                completed_at,
-                status,
-                error_summary,
-                pipeline_name
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+            render_sql_duckdb(insert_expr),
             [
                 ctx.run_id,
                 ctx.snapshot.repo,
@@ -292,14 +371,28 @@ class PipelineRunTracking:
         error_summary
             Optional summary of errors if failed.
         """
+        update_expr = exp.Update(
+            this=table_expr_from_ref(_PIPELINE_RUNS_TABLE),
+            expressions=[
+                exp.EQ(this=exp.to_identifier("status"), expression=exp.Placeholder()),
+                exp.EQ(
+                    this=exp.to_identifier("error_summary"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.to_identifier("completed_at"),
+                    expression=exp.Placeholder(),
+                ),
+            ],
+            where=exp.Where(
+                this=exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            ),
+        )
         self.con.execute(
-            f"""
-            UPDATE {_PIPELINE_RUNS_TABLE}
-            SET status = ?,
-                error_summary = ?,
-                completed_at = ?
-            WHERE run_id = ?
-            """,
+            render_sql_duckdb(update_expr),
             [status, error_summary, utc_now(), run_id],
         )
 
@@ -316,26 +409,17 @@ class PipelineRunTracking:
         PipelineRunRecord | None
             The run record if found, None otherwise.
         """
-        cur = self.con.execute(
-            f"""
-            SELECT
-                run_id,
-                repo,
-                commit,
-                kind,
-                trigger,
-                requested_operation,
-                requested_datasets,
-                started_at,
-                completed_at,
-                status,
-                error_summary,
-                pipeline_name
-            FROM {_PIPELINE_RUNS_TABLE}
-            WHERE run_id = ?
-            """,
-            [run_id],
+        query = (
+            exp.select(*_run_select_exprs())
+            .from_(table_expr_from_ref(_PIPELINE_RUNS_TABLE))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
         )
+        cur = self.con.execute(render_sql_duckdb(query), [run_id])
         row = cur.fetchone()
         if row is None:
             return None
@@ -384,21 +468,24 @@ class PipelineRunTracking:
         row_counts_json = dict(record.row_counts) if record.row_counts else None
         extra_json = dict(record.extra) if record.extra else None
 
+        columns = [
+            "run_id",
+            "module",
+            "stage",
+            "name",
+            "started_at",
+            "completed_at",
+            "status",
+            "row_counts",
+            "extra",
+        ]
+        insert_expr = _build_upsert_insert(
+            _PIPELINE_STEPS_TABLE,
+            columns=columns,
+            conflict_columns=["run_id", "module", "name"],
+        )
         self.con.execute(
-            f"""
-            INSERT OR REPLACE INTO {_PIPELINE_STEPS_TABLE} (
-                run_id,
-                module,
-                stage,
-                name,
-                started_at,
-                completed_at,
-                status,
-                row_counts,
-                extra
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+            render_sql_duckdb(insert_expr),
             [
                 record.run_id,
                 record.module,
@@ -425,24 +512,22 @@ class PipelineRunTracking:
         list[PipelineStepRecord]
             List of step records ordered by module, stage, and name.
         """
-        cur = self.con.execute(
-            f"""
-            SELECT
-                run_id,
-                module,
-                stage,
-                name,
-                started_at,
-                completed_at,
-                status,
-                row_counts,
-                extra
-            FROM {_PIPELINE_STEPS_TABLE}
-            WHERE run_id = ?
-            ORDER BY module, stage, name
-            """,
-            [run_id],
+        query = (
+            exp.select(*_step_select_exprs())
+            .from_(table_expr_from_ref(_PIPELINE_STEPS_TABLE))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
+            .order_by(
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("module"))),
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("stage"))),
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("name"))),
+            )
         )
+        cur = self.con.execute(render_sql_duckdb(query), [run_id])
 
         rows = cur.fetchall()
         results: list[PipelineStepRecord] = []
@@ -544,27 +629,15 @@ class PipelineRunTracking:
         list[PipelineRunRecord]
             List of run records ordered by started_at descending.
         """
-        cur = self.con.execute(
-            f"""
-            SELECT
-                run_id,
-                repo,
-                commit,
-                kind,
-                trigger,
-                requested_operation,
-                requested_datasets,
-                started_at,
-                completed_at,
-                status,
-                error_summary,
-                pipeline_name
-            FROM {_PIPELINE_RUNS_TABLE}
-            ORDER BY started_at DESC
-            LIMIT ?
-            """,
-            [limit],
+        query = (
+            exp.select(*_run_select_exprs())
+            .from_(table_expr_from_ref(_PIPELINE_RUNS_TABLE))
+            .order_by(
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True)
+            )
+            .limit(exp.Placeholder())
         )
+        cur = self.con.execute(render_sql_duckdb(query), [limit])
         rows = cur.fetchall()
         results: list[PipelineRunRecord] = []
         for (

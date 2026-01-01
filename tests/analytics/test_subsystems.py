@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.subsystems.materialize import (
+from codeintel.build.analytics.subsystems.materialize import (
     SubsystemOptions,
     build_subsystem_rows,
 )

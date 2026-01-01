@@ -7,8 +7,11 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from codeintel.graphs.validation import GraphValidationOptions, run_graph_validations_with_runner
-from codeintel.graphs.validation.checks.structure import (
+from codeintel.build.graphs.validation import (
+    GraphValidationOptions,
+    run_graph_validations_with_runner,
+)
+from codeintel.build.graphs.validation.checks.structure import (
     CallGraphStructureCheck,
     ConfigKeyCheck,
     ImportBridgeCheck,
@@ -18,7 +21,7 @@ from codeintel.graphs.validation.checks.structure import (
     ImportUpwardCheck,
     SymbolGraphCheck,
 )
-from codeintel.graphs.validation.context import GraphValidationContext
+from codeintel.build.graphs.validation.context import GraphValidationContext
 from tests._helpers.assertions import (
     ModulesAssertions,
     expect_equal,

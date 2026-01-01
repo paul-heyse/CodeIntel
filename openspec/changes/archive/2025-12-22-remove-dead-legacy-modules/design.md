@@ -15,7 +15,7 @@ clarifies the supported interfaces across build, ingestion, storage, and serving
 - Non-Goals:
   - Redesign ingestion, build, or storage pipelines.
   - Remove actively used analytics computation modules (for example,
-    codeintel.analytics.compute.functions.typedness).
+    codeintel.build.analytics.compute.functions.typedness).
   - Add new features or CLI commands.
 
 ## Decisions

@@ -74,14 +74,25 @@ Completed
 - Routing now prefers DuckDB only
   (`src/codeintel/serving/semantic/routing.py`).
 - `src/codeintel/serving/semantic/polars_query_builder.py` removed.
+- Serving AST capability checks are enforced during query build
+  (`src/codeintel/serving/semantic/query_ast.py`).
+- DuckDB relation builder expanded to cover non-equi join predicates,
+  qualified column references, and date/time/interval expressions
+  (`src/codeintel/serving/semantic/duckdb_relation_builder.py`).
+- Raw SQL removed from catalog persistence and safe query helpers:
+  `src/codeintel/storage/metadata/catalogs.py`,
+  `src/codeintel/storage/queries/safe.py`.
+- Raw SQL removed from metadata sync/views/validation/bootstrap and storage
+  helpers (`search_index`, `snapshot_service`, `dataflow`, `module_index`,
+  `datasets/registry`, `schema/ddl`, `validation/contract`).
 
 Remaining from original plan
 - Complete Phase 0 inventory and finalize the deprecation map for raw SQL
   and view sources (initial pass captured below).
 - Hamilton registry replacement for `view_ast_map.json` and build-time view
   map usage in `src/codeintel/build/hamilton/native/views/view_outputs.py`.
-- Remove raw SQL templates and string-based metadata queries across storage.
-- Unified filter compiler + AST capability envelope enforcement.
+- Remove remaining raw SQL templates and string-based metadata queries across storage.
+- Unified filter compiler + capability envelope reporting/expansion.
 - Storage/warehouse contract alignment to DuckDB (remove Arrow-based contract
   resolution in `src/codeintel/storage/warehouse.py`).
 - Scan tuning and Polars optimization alignment using advanced APIs.
@@ -89,12 +100,12 @@ Remaining from original plan
 - Final legacy cleanup and doc/test references updates.
 
 Phase status snapshot
-- Phase 0: in progress (inventory pass 1)
+- Phase 0: in progress (inventory pass 2)
 - Phase 1: partial
 - Phase 2: partial
 - Phase 3: not started
 - Phase 4: partial (serving done, storage pending)
-- Phase 5: not started
+- Phase 5: in progress
 - Phase 6: partial
 - Phase 7: partial
 - Phase 8: partial
@@ -128,14 +139,14 @@ Deliverables
 Work items
 - Inventory raw SQL usage in `src/codeintel/storage/**` and
   `src/codeintel/serving/**`, including:
-  - `src/codeintel/storage/metadata/catalogs.py`
   - `src/codeintel/storage/metadata/sync.py`
   - `src/codeintel/storage/metadata/views.py`
   - `src/codeintel/storage/serving/search_index.py`
   - `src/codeintel/storage/serving/snapshot_service.py`
   - `src/codeintel/storage/helpers/module_index.py`
   - `src/codeintel/storage/schema/ddl.py`
-  - `src/codeintel/storage/queries/safe.py`
+  - `src/codeintel/storage/queries/safe.py` (migrated to relations)
+  - `src/codeintel/storage/metadata/catalogs.py` (migrated to SQLGlot AST)
 - Inventory view sources:
   - Hamilton tags and DAG outputs
   - `src/codeintel/storage/views/view_ast_map.json`
@@ -146,7 +157,7 @@ Work items
   - `src/codeintel/storage/schema/arrow_schema.py`
   - `src/codeintel/storage/warehouse.py`
 
-Initial inventory findings (pass 1)
+Initial inventory findings (pass 2)
 - Raw SQL usage in serving query paths: none found; serving query execution
   is AST + DuckDB Expression API driven:
   - `src/codeintel/serving/semantic/query_ast.py`
@@ -155,28 +166,26 @@ Initial inventory findings (pass 1)
   - `src/codeintel/serving/search/engine.py`
 - Raw SQL usage in storage query paths (deprecate/migrate to AST/relations):
   - Metadata and validation:
-    `src/codeintel/storage/metadata/catalogs.py`,
-    `src/codeintel/storage/metadata/sync.py`,
-    `src/codeintel/storage/metadata/views.py`,
-    `src/codeintel/storage/metadata/validation.py`,
-    `src/codeintel/storage/metadata/bootstrap.py`
+    `src/codeintel/storage/metadata/sync.py` (migrated),
+    `src/codeintel/storage/metadata/views.py` (migrated),
+    `src/codeintel/storage/metadata/validation.py` (migrated),
+    `src/codeintel/storage/metadata/bootstrap.py` (migrated)
   - Tracking and registry:
     `src/codeintel/storage/tracking/build_tracking.py`,
     `src/codeintel/storage/tracking/run_tracking.py`,
     `src/codeintel/storage/tracking/asset_tracking.py`,
     `src/codeintel/storage/tracking/schema_catalog.py`,
-    `src/codeintel/storage/datasets/registry.py`
+    `src/codeintel/storage/datasets/registry.py` (migrated)
   - Serving helpers in storage:
-    `src/codeintel/storage/serving/search_index.py`,
-    `src/codeintel/storage/serving/snapshot_service.py`
+    `src/codeintel/storage/serving/search_index.py` (migrated),
+    `src/codeintel/storage/serving/snapshot_service.py` (migrated)
   - Repositories and helpers:
-    `src/codeintel/storage/repositories/dataflow.py`,
-    `src/codeintel/storage/helpers/module_index.py`
+    `src/codeintel/storage/repositories/dataflow.py` (migrated),
+    `src/codeintel/storage/helpers/module_index.py` (migrated)
   - Schema and query safety:
     `src/codeintel/storage/schema/arrow_schema.py`,
-    `src/codeintel/storage/schema/ddl.py`,
-    `src/codeintel/storage/validation/contract.py`,
-    `src/codeintel/storage/queries/safe.py`
+    `src/codeintel/storage/schema/ddl.py` (migrated),
+    `src/codeintel/storage/validation/contract.py` (migrated)
   - Policy backend metadata probes (evaluate conversion feasibility):
     `src/codeintel/storage/duckdb_policy_backend.py`
 - Raw SQL usage in DDL/bootstrapping (allowed but tracked):
@@ -185,6 +194,20 @@ Initial inventory findings (pass 1)
   `src/codeintel/storage/metadata/ddl.py`,
   `src/codeintel/storage/metadata/meta_catalog.py`,
   `src/codeintel/storage/warehouse.py`
+- Migrated to AST/relations since pass 1:
+  `src/codeintel/storage/metadata/catalogs.py`,
+  `src/codeintel/storage/queries/safe.py`,
+  `src/codeintel/storage/metadata/sync.py`,
+  `src/codeintel/storage/metadata/views.py`,
+  `src/codeintel/storage/metadata/validation.py`,
+  `src/codeintel/storage/metadata/bootstrap.py`,
+  `src/codeintel/storage/serving/search_index.py`,
+  `src/codeintel/storage/serving/snapshot_service.py`,
+  `src/codeintel/storage/repositories/dataflow.py`,
+  `src/codeintel/storage/helpers/module_index.py`,
+  `src/codeintel/storage/datasets/registry.py`,
+  `src/codeintel/storage/schema/ddl.py`,
+  `src/codeintel/storage/validation/contract.py`
 - View sources:
   - Hamilton tag discovery and compilation:
     `src/codeintel/storage/views/discovery.py`,
@@ -204,20 +227,22 @@ Initial inventory findings (pass 1)
     `src/codeintel/storage/datasets/contracts.py`
 
 Deprecation checklist (initial pass)
-- [ ] Replace raw SQL in metadata and tracking modules with SQLGlot AST or
+- [x] Replace raw SQL in `src/codeintel/storage/metadata/catalogs.py` with SQLGlot AST.
+- [x] Replace raw SQL in metadata and validation modules with SQLGlot AST or
   DuckDB relation APIs:
-  `src/codeintel/storage/metadata/catalogs.py`,
   `src/codeintel/storage/metadata/sync.py`,
   `src/codeintel/storage/metadata/views.py`,
   `src/codeintel/storage/metadata/validation.py`,
+  `src/codeintel/storage/metadata/bootstrap.py`
+- [ ] Replace raw SQL in tracking modules with SQLGlot AST or DuckDB relations:
   `src/codeintel/storage/tracking/build_tracking.py`,
   `src/codeintel/storage/tracking/run_tracking.py`,
   `src/codeintel/storage/tracking/asset_tracking.py`,
   `src/codeintel/storage/tracking/schema_catalog.py`
-- [ ] Replace raw SQL in storage serving helpers with AST/relations:
+- [x] Replace raw SQL in storage serving helpers with AST/relations:
   `src/codeintel/storage/serving/search_index.py`,
   `src/codeintel/storage/serving/snapshot_service.py`
-- [ ] Replace repository/helper SQL reads with relation helpers:
+- [x] Replace repository/helper SQL reads with relation helpers:
   `src/codeintel/storage/repositories/dataflow.py`,
   `src/codeintel/storage/helpers/module_index.py`,
   `src/codeintel/storage/datasets/registry.py`
@@ -234,6 +259,7 @@ Deprecation checklist (initial pass)
   `docs/storage_serving_best_in_class_plan.md`,
   `docs/storage_serving_phase1_phase2_ticket_backlog.md`,
   `docs/duckdb_arrow_polars_alignment_rollout_plan.md`
+- [x] Replace raw SQL in `src/codeintel/storage/queries/safe.py` with relations.
 
 Acceptance criteria
 - A list of raw SQL call sites and their replacement strategy.
@@ -252,10 +278,12 @@ Completed
 - Serving queries are built and canonicalized via SQLGlot
   (`src/codeintel/serving/semantic/query_ast.py`).
 - Canonical AST/SQL fingerprints are propagated to export metadata.
+- AST capability checks are enforced during serving AST build using
+  `ensure_ast_capability`.
 
 Remaining work
-- Add an AST capability envelope (unsupported-level + AST transforms) to
-  enforce the allowed feature set by construction.
+- Expand capability envelope reporting to include deterministic feature logs
+  and centralize enforcement outside serving query paths.
 - Implement a unified filter compiler that emits:
   - SQLGlot AST fragments (`src/codeintel/serving/semantic/sqlglot_query_builder.py`)
   - DuckDB Expression API (`src/codeintel/serving/semantic/duckdb_relation_builder.py`)
@@ -280,11 +308,13 @@ Completed
 - Typed DuckDB scan adapter introduced and used for Parquet/Arrow scans.
 - Routing prefers DuckDB only (`src/codeintel/serving/semantic/routing.py`).
 - Polars query builder removed; Polars remains downstream of relations.
+- Non-equi join predicates now supported in relation plans.
+- Date/time functions and interval expressions supported in relation plans.
+- Qualified column references preserved in joins, projections, and ordering.
 
 Remaining work
-- Expand AST coverage in `src/codeintel/serving/semantic/duckdb_relation_builder.py`
-  to include richer expressions (casts, COALESCE/CASE, JSON/list/struct access,
-  more join predicates, date/time ops).
+- Finish remaining AST coverage in `src/codeintel/serving/semantic/duckdb_relation_builder.py`
+  (edge-case function aliases, JSON/list/struct access gaps, remaining join cases).
 - Introduce contract-typed projections (explicit casts to contract types) so
   outputs cannot drift from contract expectations.
 - Use DuckDB replacement scans consistently for Arrow/Parquet inputs with
@@ -340,23 +370,34 @@ Acceptance criteria
 - Serving and storage resolve contract schemas from DuckDB only.
 - Arrow schemas are used strictly for zero-copy interchange.
 
-## Phase 5: Remove raw SQL templates and parameter interpolation (Status: not started)
+## Phase 5: Remove raw SQL templates and parameter interpolation (Status: in progress)
 
 Deliverables
 - Programmatic query construction across serving and storage.
 - SQL templates limited to DDL/bootstrapping only.
 
+Completed
+- `src/codeintel/storage/metadata/catalogs.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/queries/safe.py` migrated to DuckDB relations.
+- `src/codeintel/storage/metadata/sync.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/metadata/views.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/metadata/validation.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/metadata/bootstrap.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/serving/search_index.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/serving/snapshot_service.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/repositories/dataflow.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/helpers/module_index.py` migrated to DuckDB relations.
+- `src/codeintel/storage/datasets/registry.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/schema/ddl.py` migrated to SQLGlot AST.
+- `src/codeintel/storage/validation/contract.py` migrated to SQLGlot AST.
+
 Work items
-- Replace raw SELECT/INSERT/UPDATE templates with SQLGlot AST builders or
+- Replace remaining raw SELECT/INSERT/UPDATE templates with SQLGlot AST builders or
   DuckDB Expression/Relation API:
-  - `src/codeintel/storage/metadata/catalogs.py`
-  - `src/codeintel/storage/metadata/sync.py`
-  - `src/codeintel/storage/metadata/views.py`
-  - `src/codeintel/storage/serving/search_index.py`
-  - `src/codeintel/storage/serving/snapshot_service.py`
-  - `src/codeintel/storage/helpers/module_index.py`
-  - `src/codeintel/storage/schema/ddl.py`
-  - `src/codeintel/storage/queries/safe.py`
+  - `src/codeintel/storage/tracking/build_tracking.py`
+  - `src/codeintel/storage/tracking/run_tracking.py`
+  - `src/codeintel/storage/tracking/asset_tracking.py`
+  - `src/codeintel/storage/tracking/schema_catalog.py`
 - Use DuckDB relation APIs (`create_view`, `create`, `to_parquet`) for
   view/materialization paths in:
   - `src/codeintel/storage/duckdb_policy_backend.py`
@@ -404,7 +445,8 @@ Completed
 - AST/SQL fingerprints now included in export metadata.
 
 Remaining work
-- Add AST capability envelope enforcement and deterministic feature logging.
+- Add deterministic feature logging and broaden capability envelope enforcement
+  beyond serving query builds.
 - Integrate SQLGlot lineage extraction into metadata for derived columns.
 - Normalize explain outputs across DuckDB relation plans.
 - Add Polars profiling hooks (`profile`, `collect_schema`) and record
@@ -466,9 +508,9 @@ Acceptance criteria
 ### Phase 1 tickets
 
 #### T1.1 AST capability envelope enforcement
+- [x] Enforce capability checks in `src/codeintel/serving/semantic/query_ast.py`.
 - [ ] Define the supported AST node set and unsupported-level behavior.
-- [ ] Enforce capability checks in `src/codeintel/serving/semantic/query_ast.py`.
-- [ ] Centralize normalization rules in `src/codeintel/storage/sqlglot_tools.py`.
+- [ ] Centralize capability reporting beyond serving query builds.
 
 #### T1.2 Unified filter compiler
 - [ ] Introduce a single compiler that emits SQLGlot AST, DuckDB Expression API,
@@ -487,9 +529,13 @@ Acceptance criteria
 ### Phase 2 tickets
 
 #### T2.1 Expand SQLGlot to relation coverage
-- [ ] Add support for casts, CASE/COALESCE, date/time ops, JSON/list/struct
-  access, and richer join predicates in
+- [x] Add non-equi join predicates (AND/OR/NOT + comparison ops) in
   `src/codeintel/serving/semantic/duckdb_relation_builder.py`.
+- [x] Add date/time operations (date_add/date_diff/date_trunc/extract) and
+  interval literals in `src/codeintel/serving/semantic/duckdb_relation_builder.py`.
+- [x] Preserve qualified column references for joins/projections/order-by.
+- [ ] Fill remaining expression coverage gaps (JSON/list/struct edge cases,
+  function alias coverage, and any remaining join shapes).
 
 #### T2.2 Contract-typed projections
 - [ ] Emit contract-typed projections in
@@ -543,8 +589,8 @@ Acceptance criteria
 ### Phase 5 tickets
 
 #### T5.1 Metadata SQL migration
-- [ ] Replace raw SQL in:
-  `src/codeintel/storage/metadata/catalogs.py`,
+- [x] Replace raw SQL in `src/codeintel/storage/metadata/catalogs.py`.
+- [x] Replace raw SQL in:
   `src/codeintel/storage/metadata/sync.py`,
   `src/codeintel/storage/metadata/views.py`,
   `src/codeintel/storage/metadata/validation.py`,
@@ -559,20 +605,21 @@ Acceptance criteria
   `src/codeintel/storage/datasets/registry.py`.
 
 #### T5.3 Storage serving helper SQL migration
-- [ ] Replace raw SQL in:
+- [x] Replace raw SQL in:
   `src/codeintel/storage/serving/search_index.py`,
   `src/codeintel/storage/serving/snapshot_service.py`.
 
 #### T5.4 Repository/helper SQL migration
-- [ ] Replace raw SQL in:
+- [x] Replace raw SQL in:
   `src/codeintel/storage/repositories/dataflow.py`,
-  `src/codeintel/storage/helpers/module_index.py`.
+  `src/codeintel/storage/helpers/module_index.py`,
+  `src/codeintel/storage/datasets/registry.py`.
 
 #### T5.5 Schema and query safety SQL migration
-- [ ] Replace raw SQL in:
+- [x] Replace raw SQL in `src/codeintel/storage/queries/safe.py`.
+- [x] Replace raw SQL in:
   `src/codeintel/storage/schema/ddl.py`,
-  `src/codeintel/storage/validation/contract.py`,
-  `src/codeintel/storage/queries/safe.py`.
+  `src/codeintel/storage/validation/contract.py`.
 
 #### T5.6 Relation-based view/materialization APIs
 - [ ] Use DuckDB relation APIs (`create_view`, `create`, `to_parquet`) in:

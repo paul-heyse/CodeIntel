@@ -7,12 +7,12 @@
 - Ensure `src/codeintel/build` emits a metadata-rich Parquet dataset that is the
   only source for storage/serving (DuckDB/SQLGlot).
 - Provide table-by-table acceptance criteria and DAG node specs with tracking.
-- Retire legacy orchestration in `src/codeintel/analytics` and `src/codeintel/graphs`
+- Retire legacy orchestration in `src/codeintel/build/analytics` and `src/codeintel/build/graphs`
   after parity is verified.
 
 ## Scope
-- Analytics tables referenced by `src/codeintel/analytics/**`.
-- Graph tables referenced by `src/codeintel/graphs/**`.
+- Analytics tables referenced by `src/codeintel/build/analytics/**`.
+- Graph tables referenced by `src/codeintel/build/graphs/**`.
 - Core ingestion tables required as inputs (AST/CST/docstrings, GOIDs, modules).
 
 ## Constraints
@@ -28,8 +28,8 @@
 - Storage/serving consume explicit schemas derived from Parquet metadata, not
   from Python contracts.
 - Output registry entries are treated as legacy compatibility only; they will be
-  removed for analytics/graph tables once the Parquet metadata contract is
-  complete.
+  removed for analytics/graph tables once Parquet metadata coverage is
+  validated.
 
 ### Parquet Metadata Contract (required)
 All Parquet datasets produced by `src/codeintel/build` must include dataset-level
@@ -38,6 +38,7 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 - `codeintel.domain`: `core`, `graph`, `analytics`, `docs`, etc.
 - `codeintel.target`: Hamilton target name.
 - `codeintel.schema_hash`: stable hash of column names + logical types.
+- `codeintel.schema_digest`: full schema digest for contract parity.
 - `codeintel.columns_json`: JSON mapping `{name: logical_type}`.
 - `codeintel.nullability_json`: JSON mapping `{name: nullable}`.
 - `codeintel.primary_keys_json`: JSON list of primary key columns (if known).
@@ -60,18 +61,18 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 ## Phase Plan (tracking)
 ### Phase 0: Inventory and contracts
 - [x] Finalize the table inventory below against schema service and registry.
-- [~] For each table, confirm metadata coverage and remove explicit registry
-  entries once Parquet metadata is authoritative
-  (pending: `analytics.dependency_targets` decision).
+- [x] Confirm metadata coverage and remove explicit override reliance once
+  Parquet metadata is authoritative (metadata contract implemented;
+  non-inferable analytics overrides removed).
 - [x] Adopt inference-only schema policy; treat output registry as compatibility.
 - [x] Implement the Parquet metadata contract in build materializers.
 - [x] Update DuckDB/SQLGlot ingestion to derive schemas from Parquet metadata only.
 
 ### Phase 1: Core ingestion prerequisites
 - [~] Validate core inputs (AST/CST/docstrings/modules/GOIDs) are complete
-  (pending an end-to-end validation run).
+  (pending an end-to-end validation run; tests not run yet).
 - [~] Confirm typing, coverage, tests, config ingestion produce required tables
-  (pending an end-to-end validation run).
+  (pending an end-to-end validation run; tests not run yet).
 
 ### Phase 2: Graph extraction in Hamilton
 - [x] Implement call graph, import graph, CFG, DFG, symbol-use tables in DAG.
@@ -103,8 +104,11 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 ### Phase 8: Decommission legacy packages + history analytics
 - [x] Remove history_timeseries + function_history targets, schemas, CLI, docs.
 - [x] Remove docs.v_* history views and view map entries.
-- [ ] Freeze imports of legacy analytics/graphs in build runtime.
-- [ ] Remove unused legacy orchestration once parity is verified.
+- [x] Freeze imports of legacy analytics/graphs in build runtime
+  (guarded by architecture test).
+- [~] Remove unused legacy orchestration once parity is verified
+  (coverage_functions moved to Polars; coverage compute + duckdb_helpers removed;
+  remaining wrappers pending).
 
 ## Reconciliation Notes (current code vs plan)
 - Core ingestion tables marked [x] are backed by existing Hamilton ingestion targets
@@ -120,9 +124,14 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
   source for storage/serving.
 - History outputs (`analytics.function_history`, `analytics.history_timeseries`)
   have been decommissioned to keep analytics snapshot-only.
-- Remaining scope: implement Parquet metadata contract + DuckDB ingestion,
-  decide whether to add or de-scope `analytics.dependency_targets`, and complete
-  Phase 8 decommission steps.
+- Parquet metadata contract is wired through ArrowDatasetSaver and dataset writes;
+  serving/duckdb ingestion reads schema from Parquet metadata.
+- Test snapshots now emit Parquet metadata, and metadata round-trip coverage is
+  exercised in dataset tests.
+- coverage_functions now runs as a Polars pipeline (no DuckDB relation helper);
+  legacy coverage compute + duckdb_helpers removed.
+- Remaining scope: complete Phase 8 legacy decommission steps and run
+  end-to-end validation.
 
 ## DAG Node Conventions
 - Dataset table outputs: `<table>__base -> <table>__table -> t__<target>`.
@@ -137,8 +146,8 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 - Explicit output schemas live in `src/codeintel/core/schemas/output_registry.py`
   and are surfaced via `codeintel.build.schemas.get_schema_provider()`.
 - For analytics/graph tables, these are transitional compatibility references;
-  the authoritative schema will come from Parquet metadata once the contract is
-  implemented in build materializers.
+  the authoritative schema now comes from Parquet metadata, and non-inferable
+  overrides have been removed.
 
 ### Explicit table schemas already declared (analytics + graph)
 ```
@@ -235,7 +244,7 @@ graph.symbol_use_edges
 - [x] Extend `save_dataset` / ArrowDatasetSaver to emit the required metadata
   into Parquet key/value metadata and a dataset-level `_metadata` or sidecar
   manifest.
-- [ ] Standardize the dataset directory layout so each table key has a single
+- [x] Standardize the dataset directory layout so each table key has a single
   Parquet root and consistent partitioning.
 - [x] Update DuckDB ingestion to read schema + metadata from Parquet only
   (no fallback to output_registry).
@@ -243,6 +252,8 @@ graph.symbol_use_edges
   Parquet datasets.
 - [x] Add tests that assert metadata presence and DuckDB schema derivation for a
   representative analytics + graph table.
+- [x] Update test snapshot factory to emit Parquet metadata for dataset-backed
+  snapshots.
 
 ## Initial Implementation Slice (v1)
 First 10 tables to implement end-to-end in Hamilton DAG:
@@ -357,7 +368,7 @@ Acceptance criteria:
 
 #### core.goids
 Status: [x]
-Source logic: GOID inference in `src/codeintel/graphs/compute/goid.py`.
+Source logic: GOID inference in `src/codeintel/build/graphs/compute/goid.py`.
 DAG node spec:
 - Target: `goids` in `src/codeintel/build/hamilton/native/graphs/goids.py`.
 - Inputs: `core.modules`, `core.ast_nodes`.
@@ -368,7 +379,7 @@ Acceptance criteria:
 
 #### core.goid_crosswalk
 Status: [x]
-Source logic: GOID inference in `src/codeintel/graphs/compute/goid.py`.
+Source logic: GOID inference in `src/codeintel/build/graphs/compute/goid.py`.
 DAG node spec:
 - Target: `goids` in `src/codeintel/build/hamilton/native/graphs/goids.py`.
 - Inputs: `core.modules`, `core.ast_nodes`.
@@ -380,7 +391,7 @@ Acceptance criteria:
 ### Graph tables
 #### graph.import_modules
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/imports.py`.
+Source logic: `src/codeintel/build/graphs/compute/imports.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/import_graph.py`.
 DAG node spec:
 - Nodes: `import_modules__base -> import_graph__modules_table -> t__import_graph`.
@@ -392,7 +403,7 @@ Acceptance criteria:
 
 #### graph.import_graph_edges
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/imports.py`.
+Source logic: `src/codeintel/build/graphs/compute/imports.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/import_graph.py`.
 DAG node spec:
 - Nodes: `import_graph_edges__base -> import_graph__edges_table -> t__import_graph`.
@@ -404,7 +415,7 @@ Acceptance criteria:
 
 #### graph.call_graph_nodes
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/callgraph/collection.py`.
+Source logic: `src/codeintel/build/graphs/compute/callgraph/collection.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/call_graph.py`.
 DAG node spec:
 - Nodes: `call_graph_nodes__base -> call_graph__nodes_table -> t__call_graph`.
@@ -416,7 +427,7 @@ Acceptance criteria:
 
 #### graph.call_graph_edges
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/callgraph/collection.py`.
+Source logic: `src/codeintel/build/graphs/compute/callgraph/collection.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/call_graph.py`.
 DAG node spec:
 - Nodes: `call_graph_edges__base -> call_graph__edges_table -> t__call_graph`.
@@ -428,7 +439,7 @@ Acceptance criteria:
 
 #### graph.cfg_blocks
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/cfg.py`.
+Source logic: `src/codeintel/build/graphs/compute/cfg.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`.
 DAG node spec:
 - Nodes: `cfg_blocks__base -> cfg__blocks_table -> t__cfg`.
@@ -440,7 +451,7 @@ Acceptance criteria:
 
 #### graph.cfg_edges
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/cfg.py`.
+Source logic: `src/codeintel/build/graphs/compute/cfg.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`.
 DAG node spec:
 - Nodes: `cfg_edges__base -> cfg__edges_table -> t__cfg`.
@@ -452,7 +463,7 @@ Acceptance criteria:
 
 #### graph.dfg_edges
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/dfg.py`.
+Source logic: `src/codeintel/build/graphs/compute/dfg.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`.
 DAG node spec:
 - Nodes: `dfg_edges__base -> dfg__edges_table -> t__dfg`.
@@ -464,7 +475,7 @@ Acceptance criteria:
 
 #### graph.symbol_use_edges
 Status: [x]
-Source logic: `src/codeintel/graphs/compute/symbols.py`.
+Source logic: `src/codeintel/build/graphs/compute/symbols.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/graphs/symbol_use.py`.
 DAG node spec:
 - Nodes: `symbol_use_edges__base -> symbol_use_edges__table -> t__symbol_use`.
@@ -529,8 +540,8 @@ Acceptance criteria:
 ### Analytics tables (function analytics)
 #### analytics.function_metrics
 Status: [x]
-Source logic: `src/codeintel/analytics/functions/metrics.py`,
-`src/codeintel/analytics/compute/functions/*`.
+Source logic: `src/codeintel/build/analytics/functions/metrics.py`,
+`src/codeintel/build/analytics/compute/functions/*`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_functions.py`.
 DAG node spec:
 - Nodes: `function_metrics__base -> function_metrics__table -> t__function_metrics`.
@@ -542,7 +553,7 @@ Acceptance criteria:
 
 #### analytics.function_types
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/functions/typedness.py`.
+Source logic: `src/codeintel/build/analytics/compute/functions/typedness.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_types.py`.
 DAG node spec:
 - Nodes: `function_types__base -> function_types__table -> t__function_types`.
@@ -554,7 +565,7 @@ Acceptance criteria:
 
 #### analytics.function_ast_features
 Status: [x]
-Source logic: `src/codeintel/analytics/ast_features/extract.py`.
+Source logic: `src/codeintel/build/analytics/ast_features/extract.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_ast_features.py`.
 DAG node spec:
 - Nodes: `function_ast_features__base -> function_ast_features__table`.
@@ -566,7 +577,7 @@ Acceptance criteria:
 
 #### analytics.function_effects
 Status: [x]
-Source logic: `src/codeintel/analytics/functions/function_effects.py`.
+Source logic: `src/codeintel/build/analytics/functions/function_effects.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_effects.py`.
 DAG node spec:
 - Nodes: `function_effects__base -> function_effects__table`.
@@ -579,7 +590,7 @@ Acceptance criteria:
 
 #### analytics.function_contracts
 Status: [x]
-Source logic: `src/codeintel/analytics/functions/function_contracts.py`.
+Source logic: `src/codeintel/build/analytics/functions/function_contracts.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_contracts.py`.
 DAG node spec:
 - Nodes: `function_contracts__base -> function_contracts__table`.
@@ -591,8 +602,8 @@ Acceptance criteria:
 
 #### analytics.function_validation
 Status: [x]
-Source logic: `src/codeintel/analytics/parsing/compute.py`,
-`src/codeintel/analytics/functions/metrics.py`.
+Source logic: `src/codeintel/build/analytics/parsing/compute.py`,
+`src/codeintel/build/analytics/functions/metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_validation.py`.
 DAG node spec:
 - Nodes: `function_validation__base -> function_validation__table`.
@@ -604,7 +615,7 @@ Acceptance criteria:
 
 #### analytics.goid_risk_factors
 Status: [x]
-Source logic: `src/codeintel/analytics/subsystems/risk.py`.
+Source logic: `src/codeintel/build/analytics/subsystems/risk.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_risk.py`.
 DAG node spec:
 - Nodes: `risk_factors__base -> risk_factors__table -> t__risk_factors`.
@@ -618,7 +629,7 @@ Acceptance criteria:
 ### Analytics tables (profiles)
 #### analytics.function_profile
 Status: [x]
-Source logic: `src/codeintel/analytics/profiles/functions.py`.
+Source logic: `src/codeintel/build/analytics/profiles/functions.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/profiles.py`.
 DAG node spec:
 - Nodes: `function_profile__base -> function_profile__table`.
@@ -632,7 +643,7 @@ Acceptance criteria:
 
 #### analytics.file_profile
 Status: [x]
-Source logic: `src/codeintel/analytics/profiles/files.py`.
+Source logic: `src/codeintel/build/analytics/profiles/files.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/profiles.py`.
 DAG node spec:
 - Nodes: `file_profile__base -> file_profile__table`.
@@ -644,7 +655,7 @@ Acceptance criteria:
 
 #### analytics.module_profile
 Status: [x]
-Source logic: `src/codeintel/analytics/profiles/modules.py`.
+Source logic: `src/codeintel/build/analytics/profiles/modules.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_modules.py`.
 DAG node spec:
 - Nodes: `module_profile__base -> module_profile__table -> t__module_profile`.
@@ -657,7 +668,7 @@ Acceptance criteria:
 
 #### analytics.hotspots
 Status: [x]
-Source logic: `src/codeintel/analytics/hotspots.py`.
+Source logic: `src/codeintel/build/analytics/hotspots.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/profiles.py`.
 DAG node spec:
 - Nodes: `hotspots__base -> hotspots__table`.
@@ -670,7 +681,7 @@ Acceptance criteria:
 ### Analytics tables (coverage and testing)
 #### analytics.coverage_functions
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/coverage/compute.py`.
+Source logic: `src/codeintel/build/hamilton/native/analytics/tables_coverage.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_coverage.py`.
 DAG node spec:
 - Nodes: `coverage_functions__base -> coverage_functions__table`.
@@ -682,7 +693,7 @@ Acceptance criteria:
 
 #### analytics.test_coverage_edges
 Status: [x]
-Source logic: `src/codeintel/analytics/testing/coverage/edges.py`.
+Source logic: `src/codeintel/build/analytics/testing/coverage/edges.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/testing.py`.
 DAG node spec:
 - Nodes: `test_coverage_edges__base -> test_coverage_edges__table`.
@@ -694,7 +705,7 @@ Acceptance criteria:
 
 #### analytics.test_graph_metrics
 Status: [x]
-Source logic: `src/codeintel/analytics/testing/graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/testing/graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/testing.py`.
 DAG node spec:
 - Nodes: `test_graph_metrics_tests__base`, `test_graph_metrics_functions__base`
@@ -708,7 +719,7 @@ Acceptance criteria:
 
 #### analytics.test_graph_metrics_functions
 Status: [x]
-Source logic: `src/codeintel/analytics/testing/graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/testing/graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/testing.py`.
 DAG node spec:
 - Nodes: `test_graph_metrics_functions__base -> test_graph_metrics_functions__table`.
@@ -719,7 +730,7 @@ Acceptance criteria:
 
 #### analytics.test_graph_metrics_tests
 Status: [x]
-Source logic: `src/codeintel/analytics/testing/graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/testing/graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/testing.py`.
 DAG node spec:
 - Nodes: `test_graph_metrics_tests__base -> test_graph_metrics_tests__table`.
@@ -730,7 +741,7 @@ Acceptance criteria:
 
 #### analytics.test_profile
 Status: [x]
-Source logic: `src/codeintel/analytics/testing/profiles/rows.py`.
+Source logic: `src/codeintel/build/analytics/testing/profiles/rows.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/testing.py`.
 DAG node spec:
 - Nodes: `test_profile__base -> test_profile__table`.
@@ -743,7 +754,7 @@ Acceptance criteria:
 
 #### analytics.behavioral_coverage
 Status: [x]
-Source logic: `src/codeintel/analytics/testing/behavioral/tags.py`.
+Source logic: `src/codeintel/build/analytics/testing/behavioral/tags.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/testing.py`.
 DAG node spec:
 - Nodes: `behavioral_coverage__base -> behavioral_coverage__table`.
@@ -756,7 +767,7 @@ Acceptance criteria:
 
 #### analytics.entrypoint_tests
 Status: [x]
-Source logic: `src/codeintel/analytics/entrypoints/compute.py`.
+Source logic: `src/codeintel/build/analytics/entrypoints/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/entrypoints.py`.
 DAG node spec:
 - Nodes: `entrypoint_tests__base -> entrypoint_tests__table`.
@@ -769,7 +780,7 @@ Acceptance criteria:
 ### Analytics tables (dependencies and config)
 #### analytics.external_dependency_calls
 Status: [x]
-Source logic: `src/codeintel/analytics/dependencies/compute.py`.
+Source logic: `src/codeintel/build/analytics/dependencies/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`.
 DAG node spec:
 - Nodes: `external_dependency_calls__base -> external_dependency_calls__table`.
@@ -780,7 +791,7 @@ Acceptance criteria:
 
 #### analytics.external_dependencies
 Status: [x]
-Source logic: `src/codeintel/analytics/dependencies/compute.py`.
+Source logic: `src/codeintel/build/analytics/dependencies/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`.
 DAG node spec:
 - Nodes: `external_dependencies__base -> external_dependencies__table`.
@@ -790,21 +801,15 @@ Acceptance criteria:
 - One row per dependency signature per snapshot.
 
 #### analytics.dependency_targets
-Status: [!]
-Source logic: `src/codeintel/analytics/dependencies/core.py`.
-Planned DAG module: `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`.
-DAG node spec:
-- Nodes: `dependency_targets__base -> dependency_targets__table`.
-- Inputs: `analytics.external_dependencies`, `analytics.config_values`.
-- Output: `analytics.dependency_targets` dataset.
-Acceptance criteria:
-- Target classification matches dependency categories.
-Notes: `analytics.dependency_targets` is not declared in the schema registry and is
-not yet implemented in the DAG; decide to add the contract + node or de-scope it.
+Status: [x] (de-scoped)
+Source logic: `src/codeintel/build/analytics/dependencies/core.py` (legacy helper).
+Target DAG module: n/a (removed from scope).
+Notes: `analytics.dependency_targets` is not declared in the schema registry and
+is no longer planned for the Hamilton DAG.
 
 #### analytics.config_data_flow
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/config_data_flow.py`.
+Source logic: `src/codeintel/build/analytics/graphs/config_data_flow.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_data_flow__base -> config_data_flow__table`.
@@ -815,7 +820,7 @@ Acceptance criteria:
 
 #### analytics.config_graph_metrics_keys
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/config_graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_graph_metrics_keys__base -> config_graph_metrics_keys__table`.
@@ -826,7 +831,7 @@ Acceptance criteria:
 
 #### analytics.config_graph_metrics_modules
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/config_graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_graph_metrics_modules__base -> config_graph_metrics_modules__table`.
@@ -837,7 +842,7 @@ Acceptance criteria:
 
 #### analytics.config_projection_key_edges
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/config_graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_projection_key_edges__base -> config_projection_key_edges__table`.
@@ -848,7 +853,7 @@ Acceptance criteria:
 
 #### analytics.config_projection_module_edges
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/config_graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/graphs/config_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/config_graphs.py`.
 DAG node spec:
 - Nodes: `config_projection_module_edges__base -> config_projection_module_edges__table`.
@@ -859,7 +864,7 @@ Acceptance criteria:
 
 #### analytics.entrypoints
 Status: [x]
-Source logic: `src/codeintel/analytics/entrypoints/compute.py`.
+Source logic: `src/codeintel/build/analytics/entrypoints/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/entrypoints.py`.
 DAG node spec:
 - Nodes: `entrypoints__base -> entrypoints__table`.
@@ -872,7 +877,7 @@ Acceptance criteria:
 ### Analytics tables (semantic roles)
 #### analytics.semantic_roles_functions
 Status: [x]
-Source logic: `src/codeintel/analytics/semantic_roles/core.py`.
+Source logic: `src/codeintel/build/analytics/semantic_roles/core.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/semantic_roles.py`.
 DAG node spec:
 - Nodes: `semantic_roles_functions__base -> semantic_roles_functions__table`.
@@ -886,7 +891,7 @@ Acceptance criteria:
 
 #### analytics.semantic_roles_modules
 Status: [x]
-Source logic: `src/codeintel/analytics/semantic_roles/core.py`.
+Source logic: `src/codeintel/build/analytics/semantic_roles/core.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/semantic_roles.py`.
 DAG node spec:
 - Nodes: `semantic_roles_modules__base -> semantic_roles_modules__table`.
@@ -898,7 +903,7 @@ Acceptance criteria:
 ### Analytics tables (graph metrics)
 #### analytics.graph_metrics_functions
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/row_builders/graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/compute/row_builders/graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `graph_metrics_functions__base -> graph_metrics_functions__table`.
@@ -910,7 +915,7 @@ Acceptance criteria:
 
 #### analytics.graph_metrics_functions_ext
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/row_builders/graph_metrics_ext.py`.
+Source logic: `src/codeintel/build/analytics/compute/row_builders/graph_metrics_ext.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `graph_metrics_functions_ext__base -> graph_metrics_functions_ext__table`.
@@ -921,7 +926,7 @@ Acceptance criteria:
 
 #### analytics.graph_metrics_modules
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/row_builders/graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/compute/row_builders/graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `graph_metrics_modules__base -> graph_metrics_modules__table`.
@@ -932,7 +937,7 @@ Acceptance criteria:
 
 #### analytics.graph_metrics_modules_ext
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/row_builders/graph_metrics_ext.py`.
+Source logic: `src/codeintel/build/analytics/compute/row_builders/graph_metrics_ext.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `graph_metrics_modules_ext__base -> graph_metrics_modules_ext__table`.
@@ -943,7 +948,7 @@ Acceptance criteria:
 
 #### analytics.symbol_graph_metrics_functions
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/symbol_graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/graphs/symbol_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `symbol_graph_metrics_functions__base -> symbol_graph_metrics_functions__table`.
@@ -954,7 +959,7 @@ Acceptance criteria:
 
 #### analytics.symbol_graph_metrics_modules
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/symbol_graph_metrics.py`.
+Source logic: `src/codeintel/build/analytics/graphs/symbol_graph_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `symbol_graph_metrics_modules__base -> symbol_graph_metrics_modules__table`.
@@ -965,7 +970,7 @@ Acceptance criteria:
 
 #### analytics.graph_stats
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/graph_stats.py`.
+Source logic: `src/codeintel/build/analytics/graphs/graph_stats.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`.
 DAG node spec:
 - Nodes: `graph_stats__base -> graph_stats__table`.
@@ -977,8 +982,8 @@ Acceptance criteria:
 
 #### analytics.graph_validation
 Status: [x]
-Source logic: `src/codeintel/analytics/parsing/compute.py`,
-`src/codeintel/graphs/validation/*`.
+Source logic: `src/codeintel/build/analytics/parsing/compute.py`,
+`src/codeintel/build/graphs/validation/*`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/graph_validation.py`.
 DAG node spec:
 - Nodes: `graph_validation__base -> graph_validation__table`.
@@ -990,7 +995,7 @@ Acceptance criteria:
 ### Analytics tables (CFG/DFG analytics)
 #### analytics.cfg_function_metrics
 Status: [x]
-Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
+Source logic: `src/codeintel/build/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
 - Nodes: `cfg_function_metrics__base -> cfg_function_metrics__table`.
@@ -1001,7 +1006,7 @@ Acceptance criteria:
 
 #### analytics.cfg_block_metrics
 Status: [x]
-Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
+Source logic: `src/codeintel/build/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
 - Nodes: `cfg_block_metrics__base -> cfg_block_metrics__table`.
@@ -1012,7 +1017,7 @@ Acceptance criteria:
 
 #### analytics.cfg_function_metrics_ext
 Status: [x]
-Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
+Source logic: `src/codeintel/build/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
 - Nodes: `cfg_function_metrics_ext__base -> cfg_function_metrics_ext__table`.
@@ -1023,7 +1028,7 @@ Acceptance criteria:
 
 #### analytics.dfg_function_metrics
 Status: [x]
-Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
+Source logic: `src/codeintel/build/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
 - Nodes: `dfg_function_metrics__base -> dfg_function_metrics__table`.
@@ -1034,7 +1039,7 @@ Acceptance criteria:
 
 #### analytics.dfg_block_metrics
 Status: [x]
-Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
+Source logic: `src/codeintel/build/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
 - Nodes: `dfg_block_metrics__base -> dfg_block_metrics__table`.
@@ -1045,7 +1050,7 @@ Acceptance criteria:
 
 #### analytics.dfg_function_metrics_ext
 Status: [x]
-Source logic: `src/codeintel/analytics/cfg_dfg/compute.py`.
+Source logic: `src/codeintel/build/analytics/cfg_dfg/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`.
 DAG node spec:
 - Nodes: `dfg_function_metrics_ext__base -> dfg_function_metrics_ext__table`.
@@ -1057,7 +1062,7 @@ Acceptance criteria:
 ### Analytics tables (subsystems)
 #### analytics.subsystems
 Status: [x]
-Source logic: `src/codeintel/analytics/subsystems/materialize.py`.
+Source logic: `src/codeintel/build/analytics/subsystems/materialize.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/subsystems.py`.
 DAG node spec:
 - Nodes: `subsystems__base -> subsystems__table`.
@@ -1071,7 +1076,7 @@ Acceptance criteria:
 
 #### analytics.subsystem_modules
 Status: [x]
-Source logic: `src/codeintel/analytics/subsystems/materialize.py`.
+Source logic: `src/codeintel/build/analytics/subsystems/materialize.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/subsystems.py`.
 DAG node spec:
 - Nodes: `subsystem_modules__base -> subsystem_modules__table`.
@@ -1082,7 +1087,7 @@ Acceptance criteria:
 
 #### analytics.subsystem_graph_metrics
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/row_builders/subsystem_metrics.py`.
+Source logic: `src/codeintel/build/analytics/compute/row_builders/subsystem_metrics.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`.
 DAG node spec:
 - Nodes: `subsystem_graph_metrics__base -> subsystem_graph_metrics__table`.
@@ -1093,7 +1098,7 @@ Acceptance criteria:
 
 #### analytics.subsystem_agreement
 Status: [x]
-Source logic: `src/codeintel/analytics/graphs/subsystem_agreement.py`.
+Source logic: `src/codeintel/build/analytics/graphs/subsystem_agreement.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/subsystem_agreement.py`.
 DAG node spec:
 - Nodes: `subsystem_agreement__base -> subsystem_agreement__table`.
@@ -1104,7 +1109,7 @@ Acceptance criteria:
 
 #### analytics.subsystem_profile_cache
 Status: [x]
-Source logic: `src/codeintel/analytics/subsystems/cache.py`.
+Source logic: `src/codeintel/build/analytics/subsystems/cache.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/subsystem_cache.py`.
 DAG node spec:
 - Nodes: `subsystem_profile_cache__base -> subsystem_profile_cache__table`.
@@ -1116,7 +1121,7 @@ Acceptance criteria:
 
 #### analytics.subsystem_coverage_cache
 Status: [x]
-Source logic: `src/codeintel/analytics/subsystems/cache.py`.
+Source logic: `src/codeintel/build/analytics/subsystems/cache.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/subsystem_cache.py`.
 DAG node spec:
 - Nodes: `subsystem_coverage_cache__base -> subsystem_coverage_cache__table`.
@@ -1129,7 +1134,7 @@ Acceptance criteria:
 ### Analytics tables (data models)
 #### analytics.data_models
 Status: [x]
-Source logic: `src/codeintel/analytics/data_models/compute.py`.
+Source logic: `src/codeintel/build/analytics/data_models/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/data_models.py`.
 DAG node spec:
 - Nodes: `data_models__base -> data_models__table`.
@@ -1142,7 +1147,7 @@ Acceptance criteria:
 
 #### analytics.data_model_fields
 Status: [x]
-Source logic: `src/codeintel/analytics/data_models/compute.py`.
+Source logic: `src/codeintel/build/analytics/data_models/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/data_models.py`.
 DAG node spec:
 - Nodes: `data_model_fields__base -> data_model_fields__table`.
@@ -1153,7 +1158,7 @@ Acceptance criteria:
 
 #### analytics.data_model_relationships
 Status: [x]
-Source logic: `src/codeintel/analytics/data_models/compute.py`.
+Source logic: `src/codeintel/build/analytics/data_models/compute.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/data_models.py`.
 DAG node spec:
 - Nodes: `data_model_relationships__base -> data_model_relationships__table`.
@@ -1164,7 +1169,7 @@ Acceptance criteria:
 
 #### analytics.data_model_usage
 Status: [x]
-Source logic: `src/codeintel/analytics/compute/data_models/usage.py`.
+Source logic: `src/codeintel/build/analytics/compute/data_models/usage.py`.
 Target DAG module: `src/codeintel/build/hamilton/native/analytics/data_models.py`.
 DAG node spec:
 - Nodes: `data_model_usage__base -> data_model_usage__table`.
@@ -1186,7 +1191,7 @@ Acceptance criteria:
 
 ### File scope (delete or update)
 Timeseries-specific:
-- [x] `src/codeintel/analytics/history/history_timeseries.py` (delete).
+- [x] `src/codeintel/build/analytics/history/history_timeseries.py` (delete).
 - [x] `src/codeintel/build/hamilton/native/analytics/history_timeseries.py` (delete).
 - [x] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
 - [x] `src/codeintel/build/hamilton/env.py` (remove HistoryTimeseriesOptions).
@@ -1215,10 +1220,10 @@ Timeseries-specific:
 - [x] `docs/polars_arrow_rearchitecture_plan.md` (remove history timeseries plan).
 
 History (multi-commit) analytics removal:
-- [x] `src/codeintel/analytics/functions/function_history.py` (delete).
+- [x] `src/codeintel/build/analytics/functions/function_history.py` (delete).
 - [x] `src/codeintel/build/hamilton/native/analytics/function_history.py` (delete).
 - [x] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
-- [x] `src/codeintel/analytics/profiles/functions.py` (remove history joins).
+- [x] `src/codeintel/build/analytics/profiles/functions.py` (remove history joins).
 - [x] `src/codeintel/build/hamilton/native/analytics/profiles.py` (drop inputs).
 - [x] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
 - [x] `src/codeintel/core/schemas/output_registry.py` (remove function_history).
@@ -1232,21 +1237,28 @@ History (multi-commit) analytics removal:
 - [x] `docs/hamilton_best_in_class_inventory.md` (remove function_history table).
 
 ## Legacy Analytics/Graphs Decommission
+Note: full deletion of `src/codeintel/build/analytics` and
+`src/codeintel/build/graphs` is de-scoped. These packages now act as the
+canonical compute layer feeding the
+Hamilton DAG; remaining cleanup focuses on removing unused orchestration wrappers.
+
 ### Prereqs
-- [ ] Port any remaining compute kernels referenced by build into
-  `src/codeintel/build/hamilton/native/*` (or a new shared compute package).
+- [~] Port any remaining compute kernels referenced by build into
+  `src/codeintel/build/hamilton/native/*` (coverage_functions now Polars-based;
+  coverage compute removed; remaining kernels pending audit).
 
 ### Removal checklist
-- [ ] Remove direct imports of `codeintel.analytics` and `codeintel.graphs`
-  from build runtime once ports land.
-- [ ] Remove legacy orchestration modules and DuckDB helpers.
-- [ ] Update tests that enforce legacy orchestration or export lists.
-- [ ] Update docs to stop referencing legacy packages as sources of truth.
+- [x] Freeze imports of `codeintel.build.analytics` and `codeintel.build.graphs`
+  outside the Hamilton/native and compute packages (architecture guard added).
+- [~] Remove legacy orchestration modules and DuckDB helpers
+  (coverage_functions migrated; coverage compute + duckdb_helpers removed;
+  remaining wrappers pending).
+- [x] Update tests that enforce legacy orchestration or export lists
+  (PR-52 orchestration guard updated; public exports reviewed; no changes required).
+- [x] Update docs to clarify compute packages as the canonical source layer.
 
-### File scope (delete after ports complete)
-- [ ] `src/codeintel/analytics/` (ast_features, functions, profiles, graphs,
-  cfg_dfg, testing, entrypoints, dependencies, semantic_roles, data_models,
-  subsystems, parsing, utilities, writer_guard).
-- [ ] `src/codeintel/graphs/` (compute, validation, helpers).
-- [ ] `tests/build/hamilton/test_pr52_no_legacy_orchestrators.py` (update).
-- [ ] `tests/analytics/test_public_exports.py` (update public API expectations).
+### File scope (retained compute layer)
+- [x] `src/codeintel/build/analytics/` (compute layer retained; prune unused wrappers).
+- [x] `src/codeintel/build/graphs/` (compute layer retained; prune unused wrappers).
+- [x] `tests/build/hamilton/test_pr52_no_legacy_orchestrators.py` (update).
+- [x] `tests/analytics/test_public_exports.py` (reviewed; no changes required).

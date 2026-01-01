@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from codeintel.analytics.graphs.plugin_catalog import (
+from codeintel.build.analytics.graphs.plugin_catalog import (
     build_plugin_catalog,
     write_plugin_catalog,
     write_plugin_catalog_html,

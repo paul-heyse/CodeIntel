@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.compute.dependencies.classification import (
+from codeintel.build.analytics.compute.dependencies.classification import (
     DependencyModePattern,
     LibraryPattern,
 )
-from codeintel.analytics.compute.dependencies.detection import DependencyCall
+from codeintel.build.analytics.compute.dependencies.detection import DependencyCall
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable

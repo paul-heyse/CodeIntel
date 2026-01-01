@@ -1046,7 +1046,7 @@ all_keys = SCHEMA_REGISTRY.all()
 Adapters can inherit `SchemaValidationMixin` for automatic Pandera validation:
 
 ```python
-from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
+from codeintel.build.analytics.adapters.schema_adapter import SchemaValidationMixin
 
 class MyAdapter(BatchAdapter[MyRow], SchemaValidationMixin):
     table_key: ClassVar[str] = "analytics.my_table"

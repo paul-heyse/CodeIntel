@@ -10,10 +10,10 @@ import pytest
 def test_pr49_compat_reexport_modules_removed() -> None:
     """Verify legacy compatibility modules are not importable."""
     removed_modules = (
-        "codeintel.analytics.resources.registry",
-        "codeintel.graphs.catalog",
-        "codeintel.graphs.ports.catalog",
-        "codeintel.graphs.ports.storage",
+        "codeintel.build.analytics.resources.registry",
+        "codeintel.build.graphs.catalog",
+        "codeintel.build.graphs.ports.catalog",
+        "codeintel.build.graphs.ports.storage",
     )
     still_present = [name for name in removed_modules if importlib.util.find_spec(name) is not None]
     if still_present:

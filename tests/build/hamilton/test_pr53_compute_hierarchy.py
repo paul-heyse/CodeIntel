@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.build.graphs.compute.metrics import components, structural
 from codeintel.core.compute import centrality
-from codeintel.graphs.compute.metrics import components, structural
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src" / "codeintel"
@@ -70,7 +70,9 @@ class TestComputeHierarchy:
     @staticmethod
     def test_analytics_centrality_delegates_to_core() -> None:
         """Verify analytics centrality wrapper imports from core.compute."""
-        centrality_file = SRC_ROOT / "analytics" / "compute" / "graphs" / "centrality.py"
+        centrality_file = (
+            SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "centrality.py"
+        )
         text = centrality_file.read_text(encoding="utf-8")
 
         if "from codeintel.core.compute.centrality import" not in text:
@@ -86,17 +88,21 @@ class TestComputeHierarchy:
     @staticmethod
     def test_analytics_components_delegates_to_graphs() -> None:
         """Verify analytics components wrapper imports from graphs.compute."""
-        components_file = SRC_ROOT / "analytics" / "compute" / "graphs" / "components.py"
+        components_file = (
+            SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "components.py"
+        )
         text = components_file.read_text(encoding="utf-8")
-        if "from codeintel.graphs.compute.metrics" not in text:
+        if "from codeintel.build.graphs.compute.metrics" not in text:
             pytest.fail(f"{_relative_path(components_file)} missing graphs.compute.metrics import")
 
     @staticmethod
     def test_analytics_structural_delegates_to_graphs() -> None:
         """Verify analytics structural wrapper imports from graphs.compute."""
-        structural_file = SRC_ROOT / "analytics" / "compute" / "graphs" / "structural.py"
+        structural_file = (
+            SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "structural.py"
+        )
         text = structural_file.read_text(encoding="utf-8")
-        if "from codeintel.graphs.compute.metrics" not in text:
+        if "from codeintel.build.graphs.compute.metrics" not in text:
             pytest.fail(f"{_relative_path(structural_file)} missing graphs.compute.metrics import")
 
     @staticmethod
@@ -108,10 +114,10 @@ class TestComputeHierarchy:
             if py_file.name == "__init__.py":
                 continue
             text = py_file.read_text(encoding="utf-8")
-            if "from codeintel.analytics" in text:
-                bad.append(f"{_relative_path(py_file)} imports codeintel.analytics")
-            if "from codeintel.graphs.compute" in text:
-                bad.append(f"{_relative_path(py_file)} imports codeintel.graphs.compute")
+            if "from codeintel.build.analytics" in text:
+                bad.append(f"{_relative_path(py_file)} imports codeintel.build.analytics")
+            if "from codeintel.build.graphs.compute" in text:
+                bad.append(f"{_relative_path(py_file)} imports codeintel.build.graphs.compute")
         if bad:
             message = "core.compute import hygiene violations:\n" + "\n".join(sorted(bad))
             pytest.fail(message)
@@ -123,7 +129,7 @@ class TestAnalyticsComputeDelegation:
     @staticmethod
     def test_no_direct_networkx_algorithms_in_analytics_compute() -> None:
         """Enforce delegation to core.compute or graphs.compute for common algorithms."""
-        analytics_compute = SRC_ROOT / "analytics" / "compute"
+        analytics_compute = SRC_ROOT / "build" / "analytics" / "compute"
         forbidden = (
             "nx.pagerank(",
             "nx.betweenness_centrality(",
@@ -170,10 +176,10 @@ class TestComputeExports:
     def test_graphs_compute_metrics_exports() -> None:
         """Verify graphs.compute.metrics modules expose required functions."""
         required = [
-            ("codeintel.graphs.compute.metrics.structural", "compute_clustering_coefficient"),
-            ("codeintel.graphs.compute.metrics.structural", "compute_triangles"),
-            ("codeintel.graphs.compute.metrics.components", "find_connected"),
-            ("codeintel.graphs.compute.metrics.components", "find_strongly_connected"),
+            ("codeintel.build.graphs.compute.metrics.structural", "compute_clustering_coefficient"),
+            ("codeintel.build.graphs.compute.metrics.structural", "compute_triangles"),
+            ("codeintel.build.graphs.compute.metrics.components", "find_connected"),
+            ("codeintel.build.graphs.compute.metrics.components", "find_strongly_connected"),
         ]
 
         missing: list[str] = []

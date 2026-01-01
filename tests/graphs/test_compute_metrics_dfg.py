@@ -10,7 +10,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.graphs.compute.metrics.dfg import (
+from codeintel.build.graphs.compute.metrics.dfg import (
     DFGPathStats,
     compute_def_use_chains,
     compute_dfg_components,

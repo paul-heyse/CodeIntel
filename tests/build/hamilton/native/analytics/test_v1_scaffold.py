@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from codeintel.analytics.functions.metrics import FunctionAnalyticsResult
+from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.function_ast_features import (
     function_ast_features__base,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.profiles.modules import (
+from codeintel.build.analytics.profiles.modules import (
     build_module_profile_rows,
     compute_module_profile_inputs,
 )

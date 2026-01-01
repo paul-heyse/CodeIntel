@@ -8,6 +8,13 @@ from datetime import UTC, datetime
 
 import polars as pl
 
+from codeintel.build.graphs.compute.goid import (
+    GoidDescriptor,
+    build_crosswalk_row,
+    build_goid_row,
+    compute_goid_result,
+    determine_kind,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -28,13 +35,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
-from codeintel.graphs.compute.goid import (
-    GoidDescriptor,
-    build_crosswalk_row,
-    build_goid_row,
-    compute_goid_result,
-    determine_kind,
-)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.functions.metrics import (
+from codeintel.build.analytics.functions.metrics import (
     FunctionAnalyticsResult,
     compute_function_analytics_result,
 )

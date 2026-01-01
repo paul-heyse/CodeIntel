@@ -11,7 +11,7 @@ from typing import Final
 import networkx as nx
 import pytest
 
-from codeintel.graphs.compute.metrics.community import (
+from codeintel.build.graphs.compute.metrics.community import (
     compute_modularity,
     detect_communities_greedy,
     detect_communities_label_propagation,

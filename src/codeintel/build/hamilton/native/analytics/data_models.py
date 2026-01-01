@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.compute.data_models.usage import build_data_model_usage_rows
-from codeintel.analytics.data_models.compute import (
+from codeintel.build.analytics.compute.data_models.usage import build_data_model_usage_rows
+from codeintel.build.analytics.data_models.compute import (
     DataModelsResult,
     compute_data_models_from_inputs,
     load_data_models_inputs,
 )
-from codeintel.analytics.data_models.core import (
+from codeintel.build.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
     DATA_MODELS_COLS,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

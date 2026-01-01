@@ -1,6 +1,6 @@
 # Analytics
 
-The analytics module (`codeintel.analytics`) provides plugin-based computation
+The analytics module (`codeintel.build.analytics`) provides plugin-based computation
 of code metrics, profiles, and insights.
 
 ## Responsibility
@@ -34,9 +34,9 @@ of code metrics, profiles, and insights.
 
 ## Key Entrypoints
 
-- [`codeintel.analytics.core.pipeline_bridge`][codeintel.analytics.core.pipeline_bridge] - Pipeline integration
-- [`codeintel.analytics.core.executor`][codeintel.analytics.core.executor] - Plugin execution
-- [`codeintel.analytics.core.registry`][codeintel.analytics.core.registry] - Plugin discovery
+- [`codeintel.build.analytics.core.pipeline_bridge`][codeintel.build.analytics.core.pipeline_bridge] - Pipeline integration
+- [`codeintel.build.analytics.core.executor`][codeintel.build.analytics.core.executor] - Plugin execution
+- [`codeintel.build.analytics.core.registry`][codeintel.build.analytics.core.registry] - Plugin discovery
 
 ## Plugin Categories
 
@@ -73,7 +73,7 @@ of code metrics, profiles, and insights.
 
 ```python
 from dataclasses import dataclass
-from codeintel.analytics.core.base import TableWriterPlugin
+from codeintel.build.analytics.core.base import TableWriterPlugin
 
 @dataclass
 class MyPlugin(TableWriterPlugin):

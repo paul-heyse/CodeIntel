@@ -1,4 +1,4 @@
-"""Tests for codeintel.analytics.testing.profiles.builder module.
+"""Tests for codeintel.build.analytics.testing.profiles.builder module.
 
 Testing Charter Compliance:
 - Uses real DuckDB via TestContext (no mocking)
@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.testing.profiles.builder import (
+from codeintel.build.analytics.testing.profiles.builder import (
     build_test_profile_result,
     infer_behavior_tags,
 )
-from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
+from codeintel.build.analytics.testing.profiles.types import IoFlags, TestAstInfo
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
     expect_equal,

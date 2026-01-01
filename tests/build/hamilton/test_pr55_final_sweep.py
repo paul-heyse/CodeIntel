@@ -172,7 +172,7 @@ class TestNoDeadImports:
     def test_no_deleted_module_imports() -> None:
         """Verify no imports of deleted modules remain in src."""
         bad_substrings = (
-            "codeintel.analytics.runtime",
+            "codeintel.build.analytics.runtime",
             "codeintel.build.plugin_registry",
             "codeintel.config.datasets.schema_registry",
         )

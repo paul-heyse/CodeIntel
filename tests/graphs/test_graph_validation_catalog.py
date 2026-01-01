@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.graphs.validation import run_graph_validations_with_runner
+from codeintel.build.graphs.validation import run_graph_validations_with_runner
 from tests._helpers.assertions import ModulesAssertions, expect_rows_equal
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.fakes.graph_runtime import runtime_with_graphs

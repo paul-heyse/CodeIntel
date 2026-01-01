@@ -6,6 +6,13 @@ import dataclasses
 
 import polars as pl
 
+from codeintel.build.graphs.compute.symbols import (
+    SymbolOccurrence,
+    SymbolUseEdge,
+    build_use_edges,
+    edges_to_rows,
+    parse_symbol_roles,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -27,13 +34,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.graphs.compute.symbols import (
-    SymbolOccurrence,
-    SymbolUseEdge,
-    build_use_edges,
-    edges_to_rows,
-    parse_symbol_roles,
-)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 

@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
-from codeintel.analytics.profiles.types import FunctionProfileInputs
+from codeintel.build.analytics.profiles.graph_features import summarize_graph_for_function_profile
+from codeintel.build.analytics.profiles.types import FunctionProfileInputs
 from codeintel.storage.gateway.factory import MemoryGatewayOptions, open_memory_gateway
 from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.schemas import ensure_production_schemas

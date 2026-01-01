@@ -522,7 +522,6 @@ Delete the fragmented modules replaced by the consolidated files above:
 * `src/codeintel/build/hamilton/native/analytics/classification_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/config_graph_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/coverage_targets.py`
-* `src/codeintel/build/hamilton/native/analytics/dependency_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/function_detail_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/function_metrics.py`
 * `src/codeintel/build/hamilton/native/analytics/hotspots.py`
@@ -769,7 +768,6 @@ This phase assumes immediate deletion; therefore you must delete:
 * `src/codeintel/build/hamilton/native/analytics/classification_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/config_graph_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/coverage_targets.py`
-* `src/codeintel/build/hamilton/native/analytics/dependency_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/function_detail_targets.py`
 * `src/codeintel/build/hamilton/native/analytics/function_metrics.py`
 * `src/codeintel/build/hamilton/native/analytics/hotspots.py`

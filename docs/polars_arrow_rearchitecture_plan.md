@@ -431,7 +431,7 @@ Acceptance criteria:
 - [ ] Remove or strictly isolate row-based materialization entry points:
   `src/codeintel/storage/warehouse.py`
 - [ ] Sweep for row tuple usage in analytics/materialization:
-  `src/codeintel/analytics/compute/data_models/usage.py`
+  `src/codeintel/build/analytics/compute/data_models/usage.py`
 
 ### 7) Tests and coverage for new columnar flows
 - [ ] Add/extend ingestion tests that assert columnar payloads end-to-end:

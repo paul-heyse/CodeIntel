@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.hotspots import compute_hotspot_rows
-from codeintel.analytics.profiles.files import (
+from codeintel.build.analytics.hotspots import compute_hotspot_rows
+from codeintel.build.analytics.profiles.files import (
     build_file_profile_rows,
     compute_file_profile_inputs,
 )
-from codeintel.analytics.profiles.functions import (
+from codeintel.build.analytics.profiles.functions import (
     FunctionProfileViews,
     build_function_profile_rows,
     compute_function_profile_inputs,
@@ -21,8 +21,8 @@ from codeintel.analytics.profiles.functions import (
     join_function_roles,
     load_function_base_info,
 )
-from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
-from codeintel.analytics.profiles.types import FileProfileInputs, FunctionProfileInputs
+from codeintel.build.analytics.profiles.graph_features import summarize_graph_for_function_profile
+from codeintel.build.analytics.profiles.types import FileProfileInputs, FunctionProfileInputs
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

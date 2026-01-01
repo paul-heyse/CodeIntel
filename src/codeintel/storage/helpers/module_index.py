@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Final
 
 from codeintel.core.paths import normalize_path
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -42,17 +43,13 @@ def load_module_map(
     dict[str, str]
         Normalized mapping of relative path -> module name.
     """
-    con = gateway.con
-    params: list[object] = [repo, commit]
-    query = """
-        SELECT path, module
-        FROM core.modules
-        WHERE repo = ? AND commit = ?
-        """
+    relation = gateway.relation_from_table_key("core.modules")
+    predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
     if language is not None:
-        query += " AND language = ?"
-        params.append(language)
-    rows = con.execute(query, params).fetchall()
+        predicate &= ColumnExpression("language") == ConstantExpression(language)
+    rows = relation.filter(predicate).select("path", "module").fetchall()
     module_map = {normalize_path(str(path)): str(module) for path, module in rows}
     if not module_map:
         (logger or LOG).warning("No modules found in core.modules for %s@%s", repo, commit)

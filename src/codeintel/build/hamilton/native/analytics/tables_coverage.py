@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import polars as pl
 
-from codeintel.analytics.compute.coverage import build_coverage_functions_expr
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -22,7 +22,7 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
-from codeintel.build.tabular.conversion import relation_to_polars_lazy
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, pl.LazyFrame)
@@ -57,10 +57,109 @@ def coverage_functions__base(
     polars.LazyFrame
         LazyFrame with the coverage functions schema.
     """
-    relation = build_coverage_functions_expr(env.gateway, env.snapshot)
-    if relation is None:
-        return empty_frame_for_table(COVERAGE_FUNCTIONS_TABLE_KEY)
-    return relation_to_polars_lazy(relation)
+    goids = tabular_to_lazyframe(_q__core__goids)
+    coverage = tabular_to_lazyframe(_q__analytics__coverage_lines)
+
+    predicate = (pl.col("repo") == env.snapshot.repo) & (pl.col("commit") == env.snapshot.commit)
+    goids = goids.filter(predicate).filter(
+        pl.col("kind").is_in(["function", "method"])
+    ).select(
+        pl.col("goid_h128").alias("function_goid_h128"),
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+    )
+    coverage = coverage.filter(predicate).select(
+        "repo",
+        "commit",
+        "rel_path",
+        "line",
+        "is_executable",
+        "is_covered",
+    )
+
+    joined = goids.join(coverage, on=["repo", "commit", "rel_path"], how="left")
+    bounded = joined.filter(
+        pl.col("line").is_null()
+        | (
+            (pl.col("line") >= pl.col("start_line"))
+            & (
+                pl.col("line")
+                <= pl.coalesce(pl.col("end_line"), pl.col("start_line"))
+            )
+        )
+    )
+
+    aggregated = bounded.group_by(
+        [
+            "function_goid_h128",
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+        ]
+    ).agg(
+        pl.sum(
+            pl.when(pl.col("is_executable").fill_null(False))
+            .then(1)
+            .otherwise(0)
+        ).alias("executable_lines_raw"),
+        pl.sum(
+            pl.when(
+                pl.col("is_executable").fill_null(False)
+                & pl.col("is_covered").fill_null(False)
+            )
+            .then(1)
+            .otherwise(0)
+        ).alias("covered_lines_raw"),
+    )
+
+    executable = pl.col("executable_lines_raw").fill_null(0)
+    covered = pl.col("covered_lines_raw").fill_null(0)
+    coverage_ratio = pl.when(executable == 0).then(None).otherwise(covered / executable)
+    untested_reason = (
+        pl.when(executable == 0)
+        .then(pl.lit("no_executable_code"))
+        .when(covered == 0)
+        .then(pl.lit("no_tests"))
+        .otherwise(pl.lit(""))
+    )
+    return aggregated.with_columns(
+        executable.alias("executable_lines"),
+        covered.alias("covered_lines"),
+        coverage_ratio.alias("coverage_ratio"),
+        (covered > 0).alias("tested"),
+        untested_reason.alias("untested_reason"),
+        pl.lit(datetime.now(tz=UTC)).alias("created_at"),
+    ).select(
+        "function_goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+        "executable_lines",
+        "covered_lines",
+        "coverage_ratio",
+        "tested",
+        "untested_reason",
+        "created_at",
+    )
 
 
 @save_dataset(

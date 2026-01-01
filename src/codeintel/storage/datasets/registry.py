@@ -5,13 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
+from sqlglot import exp
+
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.contracts.provider import get_contract_for_table_key
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from duckdb import DuckDBPyConnection
@@ -226,80 +229,52 @@ def load_dataset_registry(
         If a metadata row lacks a corresponding DatasetContract.
     """
     table_ref = meta_table_ref("metadata.datasets")
-    rows = con.execute(
-        f"""
-        SELECT
-            table_key,
-            name,
-            is_view,
-            jsonl_filename,
-            parquet_filename,
-            family,
-            description
-        FROM {table_ref}
-        ORDER BY table_key
-        """
-    ).fetchall()
+    table_expr = table_expr_from_ref(table_ref)
+    query = (
+        exp.select(
+            exp.column("table_key"),
+            exp.column("name"),
+            exp.column("is_view"),
+            exp.column("jsonl_filename"),
+            exp.column("parquet_filename"),
+            exp.column("family"),
+            exp.column("description"),
+        )
+        .from_(table_expr)
+        .order_by(exp.Ordered(this=exp.column("table_key")))
+    )
+    rows = con.execute(render_sql_duckdb(query)).fetchall()
 
+    try:
+        return _registry_from_rows(
+            rows,
+            dataset_root_dir=dataset_root_dir,
+            dataset_manifests=dataset_manifests,
+        )
+    except KeyError as exc:
+        msg = str(exc)
+        raise KeyError(msg) from exc
+
+
+def _registry_from_rows(
+    rows: Sequence[tuple[object, ...]],
+    *,
+    dataset_root_dir: Path | None,
+    dataset_manifests: Mapping[str, ArrowDatasetManifest] | None,
+) -> DatasetRegistry:
     by_name: dict[str, DatasetContract] = {}
     by_table: dict[str, DatasetContract] = {}
     jsonl_map: dict[str, str] = {}
     parquet_map: dict[str, str] = {}
 
-    for (
-        table_key,
-        name,
-        is_view,
-        jsonl_filename,
-        parquet_filename,
-        db_family,
-        db_description,
-    ) in rows:
-        try:
-            base = get_contract_for_table_key(table_key)
-        except KeyError:
-            msg = f"metadata.datasets row {table_key} has no DatasetContract"
-            raise KeyError(msg) from None
-
-        inferred_family = split_table_key(table_key)[0] if "." in table_key else None
-        family = (
-            db_family
-            if db_family is not None
-            else base.family
-            if base.family is not None
-            else inferred_family
-        )
-        description = db_description if db_description is not None else base.description
-        effective_jsonl = jsonl_filename or base.jsonl_filename
-        effective_parquet = parquet_filename or base.parquet_filename
-
-        ds = DatasetContract(
-            table_key=table_key,
-            name=name,
-            schema=base.schema,
-            row_binding=base.row_binding,
-            json_schema_id=base.json_schema_id,
-            jsonl_filename=effective_jsonl,
-            parquet_filename=effective_parquet,
-            is_view=bool(is_view),
-            owner_package=base.owner_package,
-            tags=base.tags,
-            description=cast("str | None", description),
-            family=family,
-            owner=base.owner,
-            freshness_sla=base.freshness_sla,
-            retention_policy=base.retention_policy,
-            stable_id=base.stable_id,
-            schema_version=base.schema_version,
-            upstream_dependencies=base.upstream_dependencies,
-            validation_profile=base.validation_profile,
-        )
-        by_name[name] = ds
-        by_table[table_key] = ds
+    for row in rows:
+        ds = _dataset_contract_from_row(row)
+        by_name[ds.name] = ds
+        by_table[ds.table_key] = ds
         if ds.jsonl_filename:
-            jsonl_map[table_key] = ds.jsonl_filename
+            jsonl_map[ds.table_key] = ds.jsonl_filename
         if ds.parquet_filename:
-            parquet_map[table_key] = ds.parquet_filename
+            parquet_map[ds.table_key] = ds.parquet_filename
 
     return DatasetRegistry(
         by_name=by_name,
@@ -308,6 +283,57 @@ def load_dataset_registry(
         parquet_datasets=parquet_map,
         dataset_root_dir=dataset_root_dir,
         dataset_manifests=dict(dataset_manifests or {}),
+    )
+
+
+def _dataset_contract_from_row(row: tuple[object, ...]) -> DatasetContract:
+    (
+        table_key,
+        name,
+        is_view,
+        jsonl_filename,
+        parquet_filename,
+        db_family,
+        db_description,
+    ) = row
+    try:
+        base = get_contract_for_table_key(cast("str", table_key))
+    except KeyError:
+        msg = f"metadata.datasets row {table_key} has no DatasetContract"
+        raise KeyError(msg) from None
+
+    inferred_family = split_table_key(cast("str", table_key))[0] if "." in str(table_key) else None
+    family = (
+        db_family
+        if db_family is not None
+        else base.family
+        if base.family is not None
+        else inferred_family
+    )
+    description = db_description if db_description is not None else base.description
+    effective_jsonl = cast("str | None", jsonl_filename) or base.jsonl_filename
+    effective_parquet = cast("str | None", parquet_filename) or base.parquet_filename
+
+    return DatasetContract(
+        table_key=cast("str", table_key),
+        name=cast("str", name),
+        schema=base.schema,
+        row_binding=base.row_binding,
+        json_schema_id=base.json_schema_id,
+        jsonl_filename=effective_jsonl,
+        parquet_filename=effective_parquet,
+        is_view=bool(is_view),
+        owner_package=base.owner_package,
+        tags=base.tags,
+        description=cast("str | None", description),
+        family=cast("str | None", family),
+        owner=base.owner,
+        freshness_sla=base.freshness_sla,
+        retention_policy=base.retention_policy,
+        stable_id=base.stable_id,
+        schema_version=base.schema_version,
+        upstream_dependencies=base.upstream_dependencies,
+        validation_profile=base.validation_profile,
     )
 
 

@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from codeintel.analytics.functions.function_effects import (
+from codeintel.build.analytics.functions.function_effects import (
     FunctionEffectsInputs,
     FunctionEffectsOptions,
     build_function_effects_rows,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.build.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers import TestScenario
 from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog

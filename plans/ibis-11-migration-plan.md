@@ -191,7 +191,7 @@ Check for any direct `con.table()` calls that bypass `IbisGateway`.
 
 **Files**:
 - `src/codeintel/ingestion/adapters/duckdb_storage.py`
-- `src/codeintel/analytics/graphs/contracts.py`
+- `src/codeintel/build/analytics/graphs/contracts.py`
 
 Verify Ibis usage patterns are compatible.
 

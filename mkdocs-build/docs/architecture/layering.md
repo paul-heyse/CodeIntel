@@ -32,7 +32,7 @@ maintain architectural integrity.
 
 ### Engine Layer
 
-- **Modules**: `codeintel.analytics`, `codeintel.graphs`, `codeintel.ingestion`, `codeintel.storage`
+- **Modules**: `codeintel.build.analytics`, `codeintel.build.graphs`, `codeintel.ingestion`, `codeintel.storage`
 - **Can import**: `codeintel.core`, `codeintel.config`, and each other where needed
 - **Must NOT import**: `codeintel.serving`, `codeintel.pipeline`
 

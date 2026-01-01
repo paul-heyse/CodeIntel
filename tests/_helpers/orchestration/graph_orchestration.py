@@ -11,11 +11,11 @@ from typing import TYPE_CHECKING, Final
 import duckdb
 
 from codeintel.build.config import BuildConfig
+from codeintel.build.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.build.providers import create_default_providers
 from codeintel.config import SnapshotInit
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.storage.query_results import coerce_int
 from tests._helpers.assertions import ModulesAssertions, assert_target_ok
 from tests._helpers.configs.graph_config import SpanSnapshot, SpanTestEnv

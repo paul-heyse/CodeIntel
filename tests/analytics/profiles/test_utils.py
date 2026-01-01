@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.profiles.utils import CATALOG_MODULE_TABLE, DEFAULT_MODULE_TABLE
-from codeintel.analytics.utilities.type_coercion import (
+from codeintel.build.analytics.profiles.utils import CATALOG_MODULE_TABLE, DEFAULT_MODULE_TABLE
+from codeintel.build.analytics.utilities.type_coercion import (
     int_or_default,
     optional_bool,
     optional_float,

@@ -1,1 +1,1 @@
-"""Tests for codeintel.analytics.profiles modules."""
+"""Tests for codeintel.build.analytics.profiles modules."""

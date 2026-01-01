@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.parsing.span_resolver import (
+from codeintel.build.analytics.parsing.span_resolver import (
     SpanResolutionError,
     SpanResolutionResult,
     build_span_index,

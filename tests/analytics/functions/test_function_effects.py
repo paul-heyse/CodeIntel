@@ -8,7 +8,7 @@ This module tests:
 
 from __future__ import annotations
 
-from codeintel.analytics.functions.function_effects import (
+from codeintel.build.analytics.functions.function_effects import (
     EffectAnalysis,
     FunctionEffectsInputs,
 )

@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlglot import exp
+
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -22,6 +25,32 @@ __all__ = [
     "replace_derived_lineage_columns",
     "replace_derived_lineage_edges",
 ]
+
+
+def _delete_expr(
+    table_ref: str,
+    *,
+    where_columns: Sequence[str] | None = None,
+) -> exp.Delete:
+    table_expr = table_expr_from_ref(table_ref)
+    where_expr: exp.Expression | None = None
+    if where_columns:
+        for column in where_columns:
+            comparison = exp.EQ(this=exp.column(column), expression=exp.Placeholder())
+            where_expr = comparison if where_expr is None else exp.and_(where_expr, comparison)
+    return exp.Delete(this=table_expr, where=where_expr)
+
+
+def _insert_expr(table_ref: str, columns: Sequence[str]) -> exp.Insert:
+    table_expr = table_expr_from_ref(table_ref)
+    placeholders = [exp.Placeholder() for _ in columns]
+    return exp.Insert(
+        this=exp.Schema(
+            this=table_expr,
+            expressions=[exp.to_identifier(column) for column in columns],
+        ),
+        expression=exp.Values(expressions=[exp.Tuple(expressions=placeholders)]),
+    )
 
 
 def replace_dataset_dataflow_nodes(
@@ -39,20 +68,16 @@ def replace_dataset_dataflow_nodes(
         Node rows in table order: (id, kind, family, owner_package, description).
     """
     table_ref = meta_table_ref("metadata.dataset_dataflow_nodes")
-    con.execute(f"DELETE FROM {table_ref}")
+    delete_expr = _delete_expr(table_ref)
+    con.execute(render_sql_duckdb(delete_expr))
     if not rows:
         return
+    insert_expr = _insert_expr(
+        table_ref,
+        ["id", "kind", "family", "owner_package", "description"],
+    )
     con.executemany(
-        f"""
-        INSERT INTO {table_ref} (
-            id,
-            kind,
-            family,
-            owner_package,
-            description
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
+        render_sql_duckdb(insert_expr),
         list(rows),
     )
 
@@ -72,18 +97,13 @@ def replace_dataset_dataflow_edges(
         Edge rows in table order: (src, dst, edge_type).
     """
     table_ref = meta_table_ref("metadata.dataset_dataflow_edges")
-    con.execute(f"DELETE FROM {table_ref}")
+    delete_expr = _delete_expr(table_ref)
+    con.execute(render_sql_duckdb(delete_expr))
     if not rows:
         return
+    insert_expr = _insert_expr(table_ref, ["src", "dst", "edge_type"])
     con.executemany(
-        f"""
-        INSERT INTO {table_ref} (
-            src,
-            dst,
-            edge_type
-        )
-        VALUES (?, ?, ?)
-        """,
+        render_sql_duckdb(insert_expr),
         list(rows),
     )
 
@@ -113,27 +133,20 @@ def replace_derived_lineage_edges(
         (repo, commit, downstream, upstream, edge_type).
     """
     table_ref = meta_table_ref("metadata.derived_lineage_edges")
-    con.execute(
-        f"""
-        DELETE FROM {table_ref}
-        WHERE repo = ? AND commit = ? AND edge_type = ?
-        """,
-        [repo, commit, edge_type],
+    delete_expr = _delete_expr(
+        table_ref,
+        where_columns=["repo", "commit", "edge_type"],
     )
+    con.execute(render_sql_duckdb(delete_expr), [repo, commit, edge_type])
     row_list = list(rows)
     if not row_list:
         return
+    insert_expr = _insert_expr(
+        table_ref,
+        ["repo", "commit", "downstream", "upstream", "edge_type"],
+    )
     con.executemany(
-        f"""
-        INSERT INTO {table_ref} (
-            repo,
-            commit,
-            downstream,
-            upstream,
-            edge_type
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
+        render_sql_duckdb(insert_expr),
         row_list,
     )
 
@@ -164,28 +177,27 @@ def replace_derived_lineage_columns(
          upstream_table, upstream_column, edge_type).
     """
     table_ref = meta_table_ref("metadata.derived_lineage_columns")
-    con.execute(
-        f"""
-        DELETE FROM {table_ref}
-        WHERE repo = ? AND commit = ? AND edge_type = ?
-        """,
-        [repo, commit, edge_type],
+    delete_expr = _delete_expr(
+        table_ref,
+        where_columns=["repo", "commit", "edge_type"],
     )
+    con.execute(render_sql_duckdb(delete_expr), [repo, commit, edge_type])
     row_list = list(rows)
     if not row_list:
         return
+    insert_expr = _insert_expr(
+        table_ref,
+        [
+            "repo",
+            "commit",
+            "downstream_table",
+            "downstream_column",
+            "upstream_table",
+            "upstream_column",
+            "edge_type",
+        ],
+    )
     con.executemany(
-        f"""
-        INSERT INTO {table_ref} (
-            repo,
-            commit,
-            downstream_table,
-            downstream_column,
-            upstream_table,
-            upstream_column,
-            edge_type
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
+        render_sql_duckdb(insert_expr),
         row_list,
     )

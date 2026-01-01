@@ -11,7 +11,7 @@ from typing import Final
 import networkx as nx
 import pytest
 
-from codeintel.graphs.compute.metrics.cfg import (
+from codeintel.build.graphs.compute.metrics.cfg import (
     DominanceMetrics,
     compute_all_dominance,
     compute_cfg_longest_path,

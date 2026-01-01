@@ -15,20 +15,20 @@ from typing import TYPE_CHECKING, cast
 import networkx as nx
 import pytest
 
-from codeintel.analytics.resources.asts import AstProvider
-from codeintel.analytics.resources.catalog import CatalogProvider
-from codeintel.analytics.resources.factory import (
+from codeintel.build.analytics.resources.asts import AstProvider
+from codeintel.build.analytics.resources.catalog import CatalogProvider
+from codeintel.build.analytics.resources.factory import (
     ProviderFactory,
     ProviderFactoryOptions,
     ProviderRegistryOptions,
 )
-from codeintel.analytics.resources.features import FeaturesProvider
-from codeintel.analytics.resources.module_map import ModuleMapProvider
+from codeintel.build.analytics.resources.features import FeaturesProvider
+from codeintel.build.analytics.resources.module_map import ModuleMapProvider
+from codeintel.build.graphs.resources.graph_provider import GraphProvider, GraphRuntimeLike
+from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.catalog import CatalogService, FunctionCatalog, FunctionCatalogProvider
 from codeintel.core.resources import ResourceRegistry
-from codeintel.graphs.resources.graph_provider import GraphProvider, GraphRuntimeLike
-from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.assertions import (
     ModuleMapDiffOptions,
     expect_equal,

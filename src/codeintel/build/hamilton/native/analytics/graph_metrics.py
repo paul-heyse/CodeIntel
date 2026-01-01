@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.graphs.graph_metrics import GraphMetricsRows, build_graph_metrics_rows
-from codeintel.analytics.graphs.graph_metrics_ext import build_graph_metrics_functions_ext_rows
-from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
-from codeintel.analytics.graphs.module_graph_metrics_ext import (
+from codeintel.build.analytics.graphs.graph_metrics import (
+    GraphMetricsRows,
+    build_graph_metrics_rows,
+)
+from codeintel.build.analytics.graphs.graph_metrics_ext import (
+    build_graph_metrics_functions_ext_rows,
+)
+from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
-from codeintel.analytics.graphs.symbol_graph_metrics import (
+from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_function_rows,
     build_symbol_graph_metrics_module_rows,
 )

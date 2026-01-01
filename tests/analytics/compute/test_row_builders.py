@@ -10,9 +10,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.analytics.compute import row_builders as row_builders_module
-from codeintel.analytics.compute.graphs.types import ComponentBundle, NeighborStats
-from codeintel.analytics.compute.row_builders import (
+from codeintel.build.analytics.compute import row_builders as row_builders_module
+from codeintel.build.analytics.compute.graphs.types import ComponentBundle, NeighborStats
+from codeintel.build.analytics.compute.row_builders import (
     FunctionGraphMetricInputs,
     SubsystemMetricInputs,
     SymbolModuleMetricInputs,

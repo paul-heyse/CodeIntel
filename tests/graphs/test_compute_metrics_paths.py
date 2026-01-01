@@ -10,7 +10,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.graphs.compute.metrics.paths import (
+from codeintel.build.graphs.compute.metrics.paths import (
     compute_avg_shortest_path_from_source,
     compute_reachable_nodes,
     count_simple_paths,

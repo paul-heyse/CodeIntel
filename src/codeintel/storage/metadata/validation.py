@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from sqlglot import exp
+
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -46,21 +49,28 @@ def record_schema_validation_run(
     status = "passed" if issue_count == 0 else "failed"
     issues_payload = normalize_duckdb_json_value(run.issues) if run.issues else None
     run_ref = meta_table_ref("metadata.schema_validation_runs")
+    columns = [
+        "validation_id",
+        "repo",
+        "commit",
+        "validation_mode",
+        "include_views",
+        "issue_count",
+        "status",
+        "issues",
+        "created_at",
+    ]
+    insert = exp.Insert(
+        this=exp.Schema(
+            this=table_expr_from_ref(run_ref),
+            expressions=[exp.to_identifier(column) for column in columns],
+        ),
+        expression=exp.Values(
+            expressions=[exp.Tuple(expressions=[exp.Placeholder() for _ in columns])]
+        ),
+    )
     con.execute(
-        f"""
-        INSERT INTO {run_ref} (
-            validation_id,
-            repo,
-            commit,
-            validation_mode,
-            include_views,
-            issue_count,
-            status,
-            issues,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+        render_sql_duckdb(insert),
         [
             validation_id,
             run.repo,

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.testing.coverage.edges import (
+from codeintel.build.analytics.testing.coverage.edges import (
     TestCoverageOptions,
     build_test_coverage_edges_rows,
 )

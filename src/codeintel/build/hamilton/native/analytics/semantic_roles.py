@@ -6,9 +6,12 @@ import json
 
 import polars as pl
 
-from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
-from codeintel.analytics.semantic_roles.core import SemanticRolesResult, build_semantic_roles_rows
+from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
+from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.semantic_roles.core import (
+    SemanticRolesResult,
+    build_semantic_roles_rows,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

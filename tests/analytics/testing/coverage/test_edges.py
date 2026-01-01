@@ -1,4 +1,4 @@
-"""Tests for codeintel.analytics.testing.coverage.edges module.
+"""Tests for codeintel.build.analytics.testing.coverage.edges module.
 
 Testing Charter Compliance:
 - Uses real DuckDB via TestContext (no mocking)
@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.testing.coverage.edges import (
+from codeintel.build.analytics.testing.coverage.edges import (
     EdgeContext,
     TestCoverageOptions,
     backfill_test_goids_for_catalog,
@@ -36,7 +36,7 @@ from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.analytics.testing.coverage.edges import FunctionRow
+    from codeintel.build.analytics.testing.coverage.edges import FunctionRow
     from codeintel.core.schemas.generated_rows.analytics import AnalyticsTestCoverageEdgesRow
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers import TestContext

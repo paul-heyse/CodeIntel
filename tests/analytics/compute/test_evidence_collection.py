@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.analytics.compute.evidence.collection import (
+from codeintel.build.analytics.compute.evidence.collection import (
     EvidenceCollector,
     EvidenceSample,
     validate_evidence_samples,

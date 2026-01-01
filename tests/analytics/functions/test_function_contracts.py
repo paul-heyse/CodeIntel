@@ -11,11 +11,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.functions.function_contracts import (
+from codeintel.build.analytics.functions.function_contracts import (
     ConditionContext,
     build_function_contracts_rows,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_is_none
 from tests._helpers.db import count_rows

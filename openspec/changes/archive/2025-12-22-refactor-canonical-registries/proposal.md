@@ -48,7 +48,7 @@ gates + tests are green.
   src/codeintel/build/hamilton/driver_factory.py,
   src/codeintel/build/hamilton/nodes/support_factory.py,
   src/codeintel/config/datasets, src/codeintel/storage/metadata,
-  src/codeintel/ingestion, src/codeintel/analytics/compute/hotspots,
+  src/codeintel/ingestion, src/codeintel/build/analytics/compute/hotspots,
   src/codeintel/core/errors, src/codeintel/serving/errors,
   src/codeintel/build/exports/manifest.py, src/codeintel/build/serving/manifest.py,
   src/codeintel/build/analytics_resources.py, src/codeintel/build/providers.py

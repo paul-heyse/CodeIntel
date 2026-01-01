@@ -6,7 +6,7 @@ import ast
 
 import pytest
 
-from codeintel.analytics.utilities import (
+from codeintel.build.analytics.utilities import (
     call_name,
     literal_value,
     resolve_call_target,

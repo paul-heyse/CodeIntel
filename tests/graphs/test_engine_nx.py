@@ -5,9 +5,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING, Final
 
-from codeintel.graphs.engine import GraphKind, NxGraphEngine
-from codeintel.graphs.engine import views as nx_views
-from codeintel.graphs.engine.cache import GraphCache
+from codeintel.build.graphs.engine import GraphKind, NxGraphEngine
+from codeintel.build.graphs.engine import views as nx_views
+from codeintel.build.graphs.engine.cache import GraphCache
 from tests._helpers.assertions import (
     ModulesAssertions,
     assert_target_ok,

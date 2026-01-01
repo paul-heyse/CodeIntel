@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.graphs.engine import views as nx_views
+from codeintel.build.graphs.engine import views as nx_views
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

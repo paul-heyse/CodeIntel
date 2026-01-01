@@ -79,7 +79,7 @@ def test_pr50_no_analytics_runtime_imports() -> None:
     bad: list[str] = []
     for path in _iter_py_files():
         text = path.read_text(encoding="utf-8")
-        if "codeintel.analytics.runtime" in text:
+        if "codeintel.build.analytics.runtime" in text:
             bad.append(_relative_path(path))
     if bad:
         message = "analytics.runtime imports still exist:\n" + "\n".join(bad)

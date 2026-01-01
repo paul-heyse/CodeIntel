@@ -12,8 +12,8 @@ of Python codebases through ingestion, analytics, and graph-based insights.
 | Subsystem | Description |
 |-----------|-------------|
 | [`codeintel.ingestion`][codeintel.ingestion] | Build snapshots and datasets from source repositories |
-| [`codeintel.analytics`][codeintel.analytics] | Analytics runtime, metrics, profiles, and risk assessment |
-| [`codeintel.graphs`][codeintel.graphs] | Graph engines (call graph, import graph, CFG/DFG) |
+| [`codeintel.build.analytics`][codeintel.build.analytics] | Analytics runtime, metrics, profiles, and risk assessment |
+| [`codeintel.build.graphs`][codeintel.build.graphs] | Graph engines (call graph, import graph, CFG/DFG) |
 | [`codeintel.storage`][codeintel.storage] | DuckDB persistence, Parquet datasets, and contracts |
 | [`codeintel.serving`][codeintel.serving] | Backend services, HTTP APIs, and MCP integration |
 | [`codeintel.pipeline`][codeintel.pipeline] | Unified orchestration for ingestion, graphs, and analytics |

@@ -427,7 +427,7 @@ Create/update a short “decommission registry” table in this doc during imple
 | --- | --- | --- | --- | --- |
 | Ibis query builder + temp table staging | `src/codeintel/serving/semantic/query_builder.py` | legacy | P6 | Removed; serving query tests pass with relation + SQLGlot fallback. |
 | Ibis gateway facade | `src/codeintel/storage/gateway/ibis_facade.py` | legacy | P6 | Removed; no Ibis imports in codebase. |
-| Ibis analytics helpers | `src/codeintel/analytics/compute/ibis_utils.py`, `src/codeintel/core/ibis_typing.py` | legacy | P6 | Removed; analytics profiles use DuckDB relations. |
+| Ibis analytics helpers | `src/codeintel/build/analytics/compute/ibis_utils.py`, `src/codeintel/core/ibis_typing.py` | legacy | P6 | Removed; analytics profiles use DuckDB relations. |
 | Ibis dependency | `pyproject.toml` | legacy | P6 | Dependency removed; tooling metadata updated. |
 
 ## Phase-Specific Decommissioning Scope

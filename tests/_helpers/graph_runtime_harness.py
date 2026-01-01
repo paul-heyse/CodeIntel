@@ -7,22 +7,33 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow_result
-from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
-from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, build_graph_metrics_rows
-from codeintel.analytics.graphs.graph_metrics_ext import build_graph_metrics_functions_ext_rows
-from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
-from codeintel.analytics.graphs.module_graph_metrics_ext import build_graph_metrics_modules_ext_rows
-from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
-from codeintel.analytics.graphs.subsystem_graph_metrics import build_subsystem_graph_metrics_rows
-from codeintel.analytics.graphs.symbol_graph_metrics import (
+from codeintel.build.analytics.graphs.config_data_flow import compute_config_data_flow_result
+from codeintel.build.analytics.graphs.config_graph_metrics import (
+    compute_config_graph_metrics_result,
+)
+from codeintel.build.analytics.graphs.graph_metrics import (
+    GraphMetricsDeps,
+    build_graph_metrics_rows,
+)
+from codeintel.build.analytics.graphs.graph_metrics_ext import (
+    build_graph_metrics_functions_ext_rows,
+)
+from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
+    build_graph_metrics_modules_ext_rows,
+)
+from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
+    build_subsystem_graph_metrics_rows,
+)
+from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_function_rows,
     build_symbol_graph_metrics_module_rows,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.catalog import FunctionCatalog
-from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.catalogs import seed_goids_for_snapshot
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
@@ -64,7 +75,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-    from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters
+    from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
     from tests._helpers.fixtures.graphs import GraphFixtures

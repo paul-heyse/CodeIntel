@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.functions.metrics import (
+from codeintel.build.analytics.functions.metrics import (
     FunctionAnalyticsResult,
     compute_function_analytics_result_from_table,
 )

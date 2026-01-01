@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from codeintel.build.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from tests._helpers.assertions import expect_true
 
 

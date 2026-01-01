@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING, Final, cast
 
 import libcst as cst
 
-from codeintel.core.catalog import FunctionSpan, FunctionSpanIndex
-from codeintel.graphs.compute.callgraph import (
+from codeintel.build.graphs.compute.callgraph import (
     CallEdge,
     EdgeResolutionContext,
     ResolutionResult,
@@ -34,10 +33,16 @@ from codeintel.graphs.compute.callgraph import (
     resolve_callee,
     resolve_via_scip,
 )
-from codeintel.graphs.compute.callgraph.collection import LocalTypeTracker
-from codeintel.graphs.compute.callgraph.resolution import collect_aliases
-from codeintel.graphs.compute.cfg import BasicBlock, CFGBuilder, CFGEdge, CFGResult, cfg_to_rows
-from codeintel.graphs.compute.goid import (
+from codeintel.build.graphs.compute.callgraph.collection import LocalTypeTracker
+from codeintel.build.graphs.compute.callgraph.resolution import collect_aliases
+from codeintel.build.graphs.compute.cfg import (
+    BasicBlock,
+    CFGBuilder,
+    CFGEdge,
+    CFGResult,
+    cfg_to_rows,
+)
+from codeintel.build.graphs.compute.goid import (
     DECIMAL_38_MAX,
     GoidDescriptor,
     build_crosswalk_row,
@@ -47,7 +52,7 @@ from codeintel.graphs.compute.goid import (
     compute_goid_result,
     determine_kind,
 )
-from codeintel.graphs.compute.imports import (
+from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
     ImportEdge,
     analyze_imports,
@@ -56,10 +61,10 @@ from codeintel.graphs.compute.imports import (
     compute_layers,
     compute_scc,
 )
-from codeintel.graphs.compute.imports import (
+from codeintel.build.graphs.compute.imports import (
     collect_import_edges as collect_import_edges_for_analysis,
 )
-from codeintel.graphs.compute.symbols import (
+from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
     SymbolUseEdge,
     build_def_map,
@@ -68,7 +73,8 @@ from codeintel.graphs.compute.symbols import (
     edges_to_rows,
     parse_symbol_roles,
 )
-from codeintel.graphs.ports.parsing import ParsedModule
+from codeintel.build.graphs.ports.parsing import ParsedModule
+from codeintel.core.catalog import FunctionSpan, FunctionSpanIndex
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,

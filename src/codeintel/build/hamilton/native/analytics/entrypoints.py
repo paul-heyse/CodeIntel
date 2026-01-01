@@ -6,14 +6,14 @@ import json
 
 import polars as pl
 
-from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
-from codeintel.analytics.entrypoints.compute import (
+from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
+from codeintel.build.analytics.entrypoints.compute import (
     ENTRYPOINT_TESTS_COLS,
     ENTRYPOINTS_COLS,
     EntrypointsResult,
     compute_entrypoints_pure,
 )
-from codeintel.analytics.entrypoints.core import EntrypointBuildInputs
+from codeintel.build.analytics.entrypoints.core import EntrypointBuildInputs
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

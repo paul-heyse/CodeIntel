@@ -5,10 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sqlglot import exp
+
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.repositories.base import BaseRepository
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.storage.repositories.base import RowDict
 
 
@@ -18,10 +23,10 @@ class DataflowRepository(BaseRepository):
 
     def _fetch_rows(
         self,
-        sql: str,
-        params: list[object] | None = None,
+        expr: exp.Expression,
+        params: Sequence[object] | None = None,
     ) -> list[RowDict]:
-        cursor = self.con.execute(sql, params or [])
+        cursor = self.con.execute(render_sql_duckdb(expr), list(params) if params else [])
         rows = cursor.fetchall()
         if not rows:
             return []
@@ -39,13 +44,19 @@ class DataflowRepository(BaseRepository):
             Each row has keys: id, kind, family, owner_package, description.
         """
         table_ref = meta_table_ref("metadata.dataset_dataflow_nodes")
-        return self._fetch_rows(
-            f"""
-            SELECT id, kind, family, owner_package, description
-            FROM {table_ref}
-            ORDER BY id
-            """
+        table_expr = table_expr_from_ref(table_ref)
+        query = (
+            exp.select(
+                exp.column("id"),
+                exp.column("kind"),
+                exp.column("family"),
+                exp.column("owner_package"),
+                exp.column("description"),
+            )
+            .from_(table_expr)
+            .order_by(exp.Ordered(this=exp.column("id")))
         )
+        return self._fetch_rows(query)
 
     def list_edges(self, *, src: str | None = None, dst: str | None = None) -> list[RowDict]:
         """
@@ -64,21 +75,25 @@ class DataflowRepository(BaseRepository):
             Each row has keys: src, dst, edge_type.
         """
         table_ref = meta_table_ref("metadata.dataset_dataflow_edges")
-        filters: list[str] = []
+        table_expr = table_expr_from_ref(table_ref)
         params: list[object] = []
+        where_expr: exp.Expression | None = None
         if src is not None:
-            filters.append("src = ?")
             params.append(src)
+            where_expr = exp.EQ(this=exp.column("src"), expression=exp.Placeholder())
         if dst is not None:
-            filters.append("dst = ?")
             params.append(dst)
-        where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
-        return self._fetch_rows(
-            f"""
-            SELECT src, dst, edge_type
-            FROM {table_ref}
-            {where_sql}
-            ORDER BY src, dst, edge_type
-            """,
-            params,
+            predicate = exp.EQ(this=exp.column("dst"), expression=exp.Placeholder())
+            where_expr = predicate if where_expr is None else exp.and_(where_expr, predicate)
+        query = (
+            exp.select(exp.column("src"), exp.column("dst"), exp.column("edge_type"))
+            .from_(table_expr)
+            .order_by(
+                exp.Ordered(this=exp.column("src")),
+                exp.Ordered(this=exp.column("dst")),
+                exp.Ordered(this=exp.column("edge_type")),
+            )
         )
+        if where_expr is not None:
+            query = query.where(where_expr)
+        return self._fetch_rows(query, params)

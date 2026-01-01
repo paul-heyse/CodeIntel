@@ -184,26 +184,27 @@ def _duckdb_table_exists(
     table: str,
     catalog: str | None = None,
 ) -> bool:
-    if catalog is None:
-        row = con.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [schema, table],
-        ).fetchone()
-    else:
-        row = con.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_catalog = ? AND table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [catalog, schema, table],
-        ).fetchone()
+    info_table = exp.Table(
+        this=exp.to_identifier("tables"),
+        db=exp.to_identifier("information_schema"),
+    )
+    conditions: list[exp.Expression] = []
+    params: list[object] = []
+    if catalog is not None:
+        conditions.append(exp.EQ(this=exp.column("table_catalog"), expression=exp.Placeholder()))
+        params.append(catalog)
+    conditions.extend(
+        [
+            exp.EQ(this=exp.column("table_schema"), expression=exp.Placeholder()),
+            exp.EQ(this=exp.column("table_name"), expression=exp.Placeholder()),
+        ]
+    )
+    params.extend([schema, table])
+    where_expr = conditions[0]
+    for condition in conditions[1:]:
+        where_expr = exp.and_(where_expr, condition)
+    query = exp.select(exp.Literal.number(1)).from_(info_table).where(where_expr).limit(1)
+    row = con.execute(query.sql(dialect=DUCKDB_DIALECT), params).fetchone()
     return row is not None
 
 

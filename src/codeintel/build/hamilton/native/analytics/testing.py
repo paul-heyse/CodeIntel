@@ -6,15 +6,15 @@ import sys
 
 import polars as pl
 
-from codeintel.analytics.testing.behavioral.tags import build_behavior_rows
-from codeintel.analytics.testing.compute import (
+from codeintel.build.analytics.testing.behavioral.tags import build_behavior_rows
+from codeintel.build.analytics.testing.compute import (
     TEST_GRAPH_METRICS_FUNCTIONS_COLS,
     TEST_GRAPH_METRICS_TESTS_COLS,
     TestGraphMetricsResult,
     compute_test_graph_metrics_pure,
 )
-from codeintel.analytics.testing.coverage.edges import build_test_coverage_edges_rows
-from codeintel.analytics.testing.profiles.builder import build_test_profile_result
+from codeintel.build.analytics.testing.coverage.edges import build_test_coverage_edges_rows
+from codeintel.build.analytics.testing.profiles.builder import build_test_profile_result
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

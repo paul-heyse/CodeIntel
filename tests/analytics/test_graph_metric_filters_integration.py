@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
+from codeintel.build.analytics.graphs.graph_metrics import (
+    GraphMetricFilters,
+    build_graph_metric_filters,
+)
 from tests._helpers import TestScenario
 from tests._helpers.assertions import (
     assert_component_counts,

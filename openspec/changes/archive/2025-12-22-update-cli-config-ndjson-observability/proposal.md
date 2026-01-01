@@ -28,7 +28,7 @@ runtime behavior and enables charter-compliant tests.
   src/codeintel/cli/project/_project.py, src/codeintel/serving/export/ndjson.py,
   src/codeintel/build/hamilton/contracts/schemas/pandera_schemas.py,
   src/codeintel/observability/duckdb_tracing.py, src/codeintel/observability/otel.py,
-  src/codeintel/analytics/functions/function_effects.py, tests/cli/config/*,
+  src/codeintel/build/analytics/functions/function_effects.py, tests/cli/config/*,
   tests/serving/mcp/test_resources.py, tests/serving/test_streaming_ndjson.py,
   tests/analytics/test_profiles_and_functions.py, tests/analytics/functions/
   test_function_effects_runtime.py, tests/observability/*, pytest.ini

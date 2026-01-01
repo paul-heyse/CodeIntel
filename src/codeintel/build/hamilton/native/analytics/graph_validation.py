@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import polars as pl
 
+from codeintel.build.graphs.runtime import GraphRuntimeOptions
+from codeintel.build.graphs.validation.runner import run_graph_validations_with_runner
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -26,8 +28,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.validation.reporters import GraphValidationReporter
-from codeintel.graphs.runtime import GraphRuntimeOptions
-from codeintel.graphs.validation.runner import run_graph_validations_with_runner
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 

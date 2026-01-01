@@ -10,6 +10,7 @@ import sqlglot.expressions as exp
 
 from codeintel.core.schemas.arrow_gen import arrow_type_for_column_type
 from codeintel.core.schemas.primitives import (
+    COMPLEX_TYPE_BASES,
     Column,
     ColumnType,
     TableSchema,
@@ -27,7 +28,6 @@ try:
 except ImportError:  # pragma: no cover
     pl = None
 
-_COMPLEX_BASE_TYPES = frozenset({"STRUCT", "LIST", "MAP", "UNION"})
 _DECIMAL_PREFIX = "DECIMAL("
 
 
@@ -48,7 +48,7 @@ def normalize_engine_column_type(column_type: ColumnType | None) -> ColumnType |
         return None
     normalized = normalize_column_type(str(column_type))
     base = column_type_base(normalized)
-    if base in _COMPLEX_BASE_TYPES or normalized.upper().startswith(_DECIMAL_PREFIX):
+    if base in COMPLEX_TYPE_BASES or normalized.upper().startswith(_DECIMAL_PREFIX):
         try:
             data_type = exp.DataType.build(normalized, dialect="duckdb")
         except (TypeError, ValueError):

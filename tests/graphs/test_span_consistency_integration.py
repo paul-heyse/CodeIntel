@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from codeintel.analytics.testing.coverage.edges import (
+from codeintel.build.analytics.testing.coverage.edges import (
     TestCoverageOptions,
     build_test_coverage_edges_rows,
 )

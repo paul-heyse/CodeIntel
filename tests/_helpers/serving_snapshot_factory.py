@@ -25,7 +25,13 @@ from codeintel.core.hashing import stable_hash
 from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
 from codeintel.core.schemas import table_schema_from_json_obj
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
-from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
+from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
+from codeintel.core.schemas.hashing import (
+    schema_digest as compute_schema_digest,
+)
+from codeintel.core.schemas.hashing import (
+    schema_hash as compute_schema_hash,
+)
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -42,6 +48,8 @@ from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
+
+    import pyarrow as pa
 
     from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 
@@ -189,6 +197,8 @@ class ServingSnapshotFactory:
             run_id=run_id,
             serve_dir=paths.serve_dir,
             tables=tables,
+            repo=self.repo,
+            commit=self.commit,
         )
 
         snapshot = ServingSnapshot(
@@ -376,6 +386,8 @@ def _write_dataset_manifests(
     run_id: str,
     serve_dir: Path,
     tables: Iterable[dict[str, object]],
+    repo: str,
+    commit: str,
 ) -> tuple[Path, ...]:
     dataset_root = serve_dir / "datasets"
     dataset_root.mkdir(parents=True, exist_ok=True)
@@ -406,6 +418,21 @@ def _write_dataset_manifests(
                 if table_schema is None:
                     raise
                 contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+            table_schema = _table_schema_for_metadata(
+                table,
+                table_key=table_key,
+                contract_schema=contract_schema,
+            )
+            schema_digest_value = compute_schema_digest(table_schema)
+            parquet_metadata = _parquet_metadata_for_table(
+                table_schema=table_schema,
+                table_key=table_key,
+                schema_hash_value=schema_hash,
+                schema_digest_value=schema_digest_value,
+                run_id=run_id,
+                repo=repo,
+                commit=commit,
+            )
             aligned = align_reader_to_contract(
                 reader,
                 contract_schema,
@@ -416,7 +443,10 @@ def _write_dataset_manifests(
                 table_key=table_key,
                 snapshot_id=run_id,
                 data=aligned,
-                options=ArrowDatasetWriteOptions(schema_hash=schema_hash),
+                options=ArrowDatasetWriteOptions(
+                    schema_hash=schema_hash,
+                    schema_metadata=parquet_metadata,
+                ),
             )
             manifest_path = dataset_manifest_path(
                 dataset_root=dataset_root,
@@ -428,6 +458,58 @@ def _write_dataset_manifests(
     finally:
         con.close()
     return tuple(manifest_paths)
+
+
+def _table_schema_for_metadata(
+    table: Mapping[str, object],
+    *,
+    table_key: str,
+    contract_schema: pa.Schema,
+) -> TableSchema:
+    table_schema = _table_schema_from_entry(table)
+    if table_schema is not None:
+        return table_schema
+    try:
+        return table_schema_from_arrow_schema(
+            arrow_schema=contract_schema,
+            table_key=table_key,
+        )
+    except (TypeError, ValueError) as exc:
+        msg = f"table schema is required for dataset metadata: {table_key}"
+        raise ValueError(msg) from exc
+
+
+def _parquet_metadata_for_table(
+    *,
+    table_schema: TableSchema,
+    table_key: str,
+    schema_hash_value: str,
+    schema_digest_value: str,
+    run_id: str,
+    repo: str,
+    commit: str,
+) -> dict[str, object]:
+    columns_json = {col.name: col.type for col in table_schema.columns}
+    nullability_json = {col.name: col.nullable for col in table_schema.columns}
+    return {
+        "codeintel.table_key": table_key,
+        "codeintel.domain": table_schema.schema,
+        "codeintel.target": table_schema.name,
+        "codeintel.schema_hash": schema_hash_value,
+        "codeintel.schema_digest": schema_digest_value,
+        "codeintel.columns_json": columns_json,
+        "codeintel.nullability_json": nullability_json,
+        "codeintel.primary_keys_json": list(table_schema.primary_key),
+        "codeintel.partition_columns_json": [],
+        "codeintel.build_id": run_id,
+        "codeintel.repo": repo,
+        "codeintel.commit": commit,
+        "codeintel.snapshot_id": run_id,
+        "codeintel.generated_at": datetime.now(tz=UTC).isoformat(),
+        "codeintel.hamilton.node": table_key,
+        "codeintel.hamilton.graph_version": None,
+        "codeintel.inputs_json": [],
+    }
 
 
 def _write_snapshot_manifest(

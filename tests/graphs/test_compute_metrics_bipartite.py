@@ -10,7 +10,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.graphs.compute.metrics.bipartite import (
+from codeintel.build.graphs.compute.metrics.bipartite import (
     BipartiteDegreeMetrics,
     compute_bipartite_degrees,
     compute_weighted_projection,

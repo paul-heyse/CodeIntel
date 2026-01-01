@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 import networkx as nx
 import pytest
 
-from codeintel.analytics.compute.graphs.structural import structural_metrics
+from codeintel.build.analytics.compute.graphs.structural import structural_metrics
+from codeintel.build.graphs.engine import GraphKind
+from codeintel.build.graphs.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphFeatureFlags
-from codeintel.graphs.engine import GraphKind
-from codeintel.graphs.runtime import GraphRuntimeOptions, build_graph_runtime
 from tests._helpers import TestScenario
 from tests._helpers.assertions import expect_true
 from tests._helpers.fakes.graph_runtime import (

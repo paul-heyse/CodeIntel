@@ -17,7 +17,7 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.subsystems.affinity import (
+from codeintel.build.analytics.subsystems.affinity import (
     add_graph_weight,
     best_neighbor_label,
     cluster_sizes_map,

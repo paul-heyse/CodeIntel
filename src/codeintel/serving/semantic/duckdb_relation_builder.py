@@ -898,7 +898,7 @@ def _duckdb_date_add_expr(
     unit_expr = expr.args.get("unit")
     if unit_expr is not None:
         interval_expr = _interval_expr_from_unit_value(expr.this, expr.expression)
-        date_expr = _duckdb_expr_from_projection(
+        date_expr = _date_add_target_expr(
             unit_expr,
             allowed_columns=allowed_columns,
             column_types=column_types,
@@ -915,6 +915,27 @@ def _duckdb_date_add_expr(
         column_types=column_types,
     )
     return FunctionExpression("date_add", date_expr, interval_expr)
+
+
+def _date_add_target_expr(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if isinstance(expr, exp.Var):
+        name = expr.this
+        if not isinstance(name, str) or not name:
+            msg = "DATE_ADD target must be a column name"
+            raise DuckDBRelationQueryBuilderError(msg)
+        column = name if name in allowed_columns else name.lower()
+        _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="date_add")
+        return ColumnExpression(column)
+    return _duckdb_expr_from_projection(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
 
 
 def _duckdb_date_diff_expr(
@@ -1400,6 +1421,7 @@ def _duckdb_generic_function(
         for arg in expr.expressions
     ]
     func_name = (expr.name or "").lower()
+    func_name = _GENERIC_FUNCTION_ALIASES.get(func_name, func_name)
     return FunctionExpression(func_name, *args)
 
 
@@ -1955,7 +1977,11 @@ _NAMED_FUNCTION_ALIASES = {
     "dateadd": "date_add",
     "datediff": "date_diff",
     "extract": "date_part",
+    "json_extract_scalar": "json_extract_string",
     "timestamp_trunc": "date_trunc",
+}
+_GENERIC_FUNCTION_ALIASES = {
+    "json_extract_scalar": "json_extract_string",
 }
 _GENERIC_FUNCTIONS = frozenset(
     {
@@ -1966,6 +1992,7 @@ _GENERIC_FUNCTIONS = frozenset(
         "date_trunc",
         "json_extract",
         "json_extract_scalar",
+        "json_extract_string",
         "list_extract",
         "list_value",
         "map_extract",

@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from sqlglot import exp
+
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import (
@@ -21,6 +23,7 @@ from codeintel.storage.helpers.json import (
     serialize_str_sequence,
 )
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
@@ -137,6 +140,47 @@ def _parse_run_row(row: tuple[Any, ...]) -> BuildRunRecord:
     )
 
 
+def _combine_conditions(conditions: Sequence[exp.Expression]) -> exp.Expression | None:
+    if not conditions:
+        return None
+    combined = conditions[0]
+    for condition in conditions[1:]:
+        combined = exp.and_(combined, condition)
+    return combined
+
+
+def _manifest_select_exprs(impl_column: str) -> list[exp.Expression]:
+    return [
+        exp.Column(this=exp.to_identifier("target")),
+        exp.Column(this=exp.to_identifier("repo")),
+        exp.Column(this=exp.to_identifier("commit")),
+        exp.alias_(exp.Column(this=exp.to_identifier(impl_column)), "impl_kind"),
+        exp.Column(this=exp.to_identifier("computed_at")),
+        exp.Column(this=exp.to_identifier("duration_ms")),
+        exp.Column(this=exp.to_identifier("input_hash")),
+        exp.Column(this=exp.to_identifier("output_hash")),
+        exp.Column(this=exp.to_identifier("row_count")),
+        exp.Column(this=exp.to_identifier("options_hash")),
+        exp.Column(this=exp.to_identifier("change_delta")),
+    ]
+
+
+def _run_select_exprs() -> list[exp.Expression]:
+    return [
+        exp.Column(this=exp.to_identifier("run_id")),
+        exp.Column(this=exp.to_identifier("repo")),
+        exp.Column(this=exp.to_identifier("commit")),
+        exp.Column(this=exp.to_identifier("requested_targets")),
+        exp.Column(this=exp.to_identifier("computed_targets")),
+        exp.Column(this=exp.to_identifier("skipped_targets")),
+        exp.Column(this=exp.to_identifier("started_at")),
+        exp.Column(this=exp.to_identifier("completed_at")),
+        exp.Column(this=exp.to_identifier("status")),
+        exp.Column(this=exp.to_identifier("error_summary")),
+        exp.Column(this=exp.to_identifier("duration_ms")),
+    ]
+
+
 class BuildTracking:
     """Accessor for build manifest and run tracking tables.
 
@@ -177,14 +221,25 @@ class BuildTracking:
         if cached is not None:
             return cached
         schema, table = split_table_key(table_key)
-        rows = self._con.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = ? AND table_name = ?
-            """,
-            [schema, table],
-        ).fetchall()
+        query = (
+            exp.select(exp.Column(this=exp.to_identifier("column_name")))
+            .from_(table_expr_from_ref("information_schema.columns"))
+            .where(
+                _combine_conditions(
+                    [
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("table_schema")),
+                            expression=exp.Placeholder(),
+                        ),
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("table_name")),
+                            expression=exp.Placeholder(),
+                        ),
+                    ]
+                )
+            )
+        )
+        rows = self._con.execute(render_sql_duckdb(query), [schema, table]).fetchall()
         columns = {str(row[0]) for row in rows}
         if "impl_kind" in columns:
             column = "impl_kind"
@@ -270,15 +325,29 @@ class BuildTracking:
             The manifest if found, None otherwise.
         """
         impl_column = self._impl_kind_column("build.output_manifests")
-        select_impl = f'"{impl_column}"'
+        where_expr = _combine_conditions(
+            [
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("target")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("repo")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("commit")),
+                    expression=exp.Placeholder(),
+                ),
+            ]
+        )
+        query = (
+            exp.select(*_manifest_select_exprs(impl_column))
+            .from_(table_expr_from_ref("build.output_manifests"))
+            .where(where_expr)
+        )
         result = self._con.execute(
-            f"""
-            SELECT target, repo, commit, {select_impl} AS impl_kind, computed_at, duration_ms,
-                   input_hash, output_hash, row_count, options_hash
-                   , change_delta
-            FROM build.output_manifests
-            WHERE target = ? AND repo = ? AND commit = ?
-            """,
+            render_sql_duckdb(query),
             [target, repo, commit],
         ).fetchone()
 
@@ -303,16 +372,26 @@ class BuildTracking:
             All manifests for the given repo/commit.
         """
         impl_column = self._impl_kind_column("build.output_manifests")
-        select_impl = f'"{impl_column}"'
+        where_expr = _combine_conditions(
+            [
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("repo")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("commit")),
+                    expression=exp.Placeholder(),
+                ),
+            ]
+        )
+        query = (
+            exp.select(*_manifest_select_exprs(impl_column))
+            .from_(table_expr_from_ref("build.output_manifests"))
+            .where(where_expr)
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("target"))))
+        )
         results = self._con.execute(
-            f"""
-            SELECT target, repo, commit, {select_impl} AS impl_kind, computed_at, duration_ms,
-                   input_hash, output_hash, row_count, options_hash
-                   , change_delta
-            FROM build.output_manifests
-            WHERE repo = ? AND commit = ?
-            ORDER BY target
-            """,
+            render_sql_duckdb(query),
             [repo, commit],
         ).fetchall()
 
@@ -328,13 +407,24 @@ class BuildTracking:
         commit
             Commit SHA.
         """
-        self._con.execute(
-            """
-            DELETE FROM build.output_manifests
-            WHERE repo = ? AND commit = ?
-            """,
-            [repo, commit],
+        delete_expr = exp.Delete(
+            this=table_expr_from_ref("build.output_manifests"),
+            where=exp.Where(
+                this=_combine_conditions(
+                    [
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("repo")),
+                            expression=exp.Placeholder(),
+                        ),
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("commit")),
+                            expression=exp.Placeholder(),
+                        ),
+                    ]
+                )
+            ),
         )
+        self._con.execute(render_sql_duckdb(delete_expr), [repo, commit])
 
     def start_run(self, record: BuildRunRecord) -> None:
         """Record the start of a build run.
@@ -407,8 +497,18 @@ class BuildTracking:
         """
         completed_at = utc_now()
 
+        select_started = (
+            exp.select(exp.Column(this=exp.to_identifier("started_at")))
+            .from_(table_expr_from_ref("build.runs"))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
+        )
         result = self._con.execute(
-            "SELECT started_at FROM build.runs WHERE run_id = ?",
+            render_sql_duckdb(select_started),
             [run_id],
         ).fetchone()
 
@@ -417,17 +517,43 @@ class BuildTracking:
             started_at: datetime = cast("datetime", result[0])
             duration_ms = (completed_at - started_at).total_seconds() * 1000
 
+        update_expr = exp.Update(
+            this=table_expr_from_ref("build.runs"),
+            expressions=[
+                exp.EQ(
+                    this=exp.to_identifier("completed_at"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.to_identifier("status"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.to_identifier("computed_targets"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.to_identifier("skipped_targets"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.to_identifier("error_summary"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.to_identifier("duration_ms"),
+                    expression=exp.Placeholder(),
+                ),
+            ],
+            where=exp.Where(
+                this=exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            ),
+        )
         self._con.execute(
-            """
-            UPDATE build.runs
-            SET completed_at = ?,
-                status = ?,
-                computed_targets = ?,
-                skipped_targets = ?,
-                error_summary = ?,
-                duration_ms = ?
-            WHERE run_id = ?
-            """,
+            render_sql_duckdb(update_expr),
             [
                 completed_at,
                 status,
@@ -452,16 +578,17 @@ class BuildTracking:
         BuildRunRecord | None
             The run record if found, None otherwise.
         """
-        result = self._con.execute(
-            """
-            SELECT run_id, repo, commit, requested_targets, computed_targets,
-                   skipped_targets, started_at, completed_at, status,
-                   error_summary, duration_ms
-            FROM build.runs
-            WHERE run_id = ?
-            """,
-            [run_id],
-        ).fetchone()
+        query = (
+            exp.select(*_run_select_exprs())
+            .from_(table_expr_from_ref("build.runs"))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
+        )
+        result = self._con.execute(render_sql_duckdb(query), [run_id]).fetchone()
 
         if result is None:
             return None
@@ -483,18 +610,21 @@ class BuildTracking:
         tuple[BuildRunRecord, ...]
             Recent runs, newest first.
         """
-        results = self._con.execute(
-            """
-            SELECT run_id, repo, commit, requested_targets, computed_targets,
-                   skipped_targets, started_at, completed_at, status,
-                   error_summary, duration_ms
-            FROM build.runs
-            WHERE repo = ?
-            ORDER BY started_at DESC
-            LIMIT ?
-            """,
-            [repo, limit],
-        ).fetchall()
+        query = (
+            exp.select(*_run_select_exprs())
+            .from_(table_expr_from_ref("build.runs"))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("repo")),
+                    expression=exp.Placeholder(),
+                )
+            )
+            .order_by(
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True)
+            )
+            .limit(exp.Placeholder())
+        )
+        results = self._con.execute(render_sql_duckdb(query), [repo, limit]).fetchall()
 
         return tuple(_parse_run_row(row) for row in results)
 
@@ -587,17 +717,29 @@ class BuildTracking:
             List of target record dictionaries.
         """
         impl_column = self._impl_kind_column("build.run_targets")
-        select_impl = f'"{impl_column}"'
-        results = self._con.execute(
-            f"""
-            SELECT target, {select_impl} AS impl_kind, status, input_hash, options_hash,
-                   duration_ms, row_counts, drift_summaries, error, recorded_at
-            FROM build.run_targets
-            WHERE run_id = ?
-            ORDER BY target
-            """,
-            [run_id],
-        ).fetchall()
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("target")),
+                exp.alias_(exp.Column(this=exp.to_identifier(impl_column)), "impl_kind"),
+                exp.Column(this=exp.to_identifier("status")),
+                exp.Column(this=exp.to_identifier("input_hash")),
+                exp.Column(this=exp.to_identifier("options_hash")),
+                exp.Column(this=exp.to_identifier("duration_ms")),
+                exp.Column(this=exp.to_identifier("row_counts")),
+                exp.Column(this=exp.to_identifier("drift_summaries")),
+                exp.Column(this=exp.to_identifier("error")),
+                exp.Column(this=exp.to_identifier("recorded_at")),
+            )
+            .from_(table_expr_from_ref("build.run_targets"))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("run_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("target"))))
+        )
+        results = self._con.execute(render_sql_duckdb(query), [run_id]).fetchall()
 
         return [
             {
@@ -798,21 +940,38 @@ class BuildTracking:
         list[dict[str, Any]]
             List of node record dictionaries.
         """
-        query = """
-            SELECT node_name, target, node_type, status, started_at,
-                   completed_at, duration_ms, error, tags
-            FROM build.run_nodes
-            WHERE run_id = ?
-        """
+        conditions: list[exp.Expression] = [
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier("run_id")),
+                expression=exp.Placeholder(),
+            )
+        ]
         params: list[Any] = [run_id]
-
         if target:
-            query += " AND target = ?"
+            conditions.append(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("target")),
+                    expression=exp.Placeholder(),
+                )
+            )
             params.append(target)
-
-        query += " ORDER BY started_at"
-
-        results = self._con.execute(query, params).fetchall()
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("node_name")),
+                exp.Column(this=exp.to_identifier("target")),
+                exp.Column(this=exp.to_identifier("node_type")),
+                exp.Column(this=exp.to_identifier("status")),
+                exp.Column(this=exp.to_identifier("started_at")),
+                exp.Column(this=exp.to_identifier("completed_at")),
+                exp.Column(this=exp.to_identifier("duration_ms")),
+                exp.Column(this=exp.to_identifier("error")),
+                exp.Column(this=exp.to_identifier("tags")),
+            )
+            .from_(table_expr_from_ref("build.run_nodes"))
+            .where(_combine_conditions(conditions))
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at"))))
+        )
+        results = self._con.execute(render_sql_duckdb(query), params).fetchall()
 
         return [
             {

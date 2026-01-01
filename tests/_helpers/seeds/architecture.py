@@ -7,11 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.utilities.datasets import (
+from codeintel.build.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.analytics.utilities.persistence import DeleteScope
+from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas

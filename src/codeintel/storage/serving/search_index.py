@@ -7,6 +7,7 @@ isolated to ``codeintel.storage``.
 from __future__ import annotations
 
 import duckdb
+from sqlglot import exp
 
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.duckdb_policy_backend import (
@@ -19,6 +20,7 @@ from codeintel.storage.helpers.table_key import (
     fully_qualified_table_ref,
     split_table_key,
 )
+from codeintel.storage.sqlglot_tools import table_expr_from_ref
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 
@@ -49,10 +51,6 @@ __all__ = [
 def build_search_documents_table(con: DuckDBConnection) -> None:
     """Create and populate ``docs.search_documents`` in the current database."""
     catalog = duckdb_default_catalog(con)
-    search_documents_ref = fully_qualified_table_ref(
-        "docs.search_documents",
-        catalog=catalog,
-    )
     modules_ref = fully_qualified_table_ref("core.modules", catalog=catalog)
     docstrings_ref = fully_qualified_table_ref("core.docstrings", catalog=catalog)
     function_metrics_ref = fully_qualified_table_ref(
@@ -66,82 +64,31 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
     backend.create_table_from_schema(_SEARCH_DOCUMENTS_SCHEMA, drop_existing=True)
 
     if backend.table_exists(schema="core", table="modules"):
-        backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'module:' || COALESCE(repo, '') || ':' || COALESCE(commit, '') || ':' ||
-                    COALESCE(module, '') || ':' || COALESCE(path, '') AS doc_id,
-                'module' AS kind,
-                COALESCE(module, '') AS name,
-                COALESCE(module, '') AS module,
-                path AS rel_path,
-                COALESCE(module, '') || ' ' || COALESCE(path, '') AS text,
-                NULL AS ref_goid_h128,
-                repo,
-                commit
-            FROM {modules_ref}
-            """,
+        backend.insert_select(
+            "docs.search_documents",
+            columns=_search_document_columns(),
+            select_sql=_modules_select(modules_ref),
         )
 
     if backend.table_exists(schema="core", table="docstrings"):
-        backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'docstring:' || repo || ':' || commit || ':' || rel_path || ':' ||
-                    module || ':' || qualname || ':' || COALESCE(kind, '') || ':' ||
-                    COALESCE(CAST(lineno AS VARCHAR), '') AS doc_id,
-                'docstring' AS kind,
-                COALESCE(qualname, '') AS name,
-                COALESCE(module, '') AS module,
-                rel_path,
-                COALESCE(short_desc, '') || '\n' ||
-                    COALESCE(long_desc, '') || '\n' ||
-                    COALESCE(raw_docstring, '') AS text,
-                NULL AS ref_goid_h128,
-                repo,
-                commit
-            FROM {docstrings_ref}
-            """,
+        backend.insert_select(
+            "docs.search_documents",
+            columns=_search_document_columns(),
+            select_sql=_docstrings_select(docstrings_ref),
         )
 
     if backend.table_exists(schema="analytics", table="function_metrics"):
-        backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'function:' || COALESCE(CAST(function_goid_h128 AS VARCHAR), '') || ':' ||
-                    COALESCE(repo, '') || ':' || COALESCE(commit, '') AS doc_id,
-                'function' AS kind,
-                COALESCE(qualname, '') AS name,
-                NULL AS module,
-                rel_path,
-                COALESCE(qualname, '') || ' ' || COALESCE(urn, '') || ' ' || COALESCE(rel_path, '')
-                    AS text,
-                CAST(function_goid_h128 AS VARCHAR) AS ref_goid_h128,
-                repo,
-                commit
-            FROM {function_metrics_ref}
-            """,
+        backend.insert_select(
+            "docs.search_documents",
+            columns=_search_document_columns(),
+            select_sql=_function_metrics_select(function_metrics_ref),
         )
 
     if backend.table_exists(schema="core", table="scip_symbols"):
-        backend.execute_sql(
-            f"""
-            INSERT INTO {search_documents_ref}
-            SELECT
-                'symbol:' || repo || ':' || commit || ':' || rel_path || ':' || symbol AS doc_id,
-                'symbol' AS kind,
-                symbol AS name,
-                NULL AS module,
-                rel_path,
-                COALESCE(documentation, '') AS text,
-                NULL AS ref_goid_h128,
-                repo,
-                commit
-            FROM {scip_symbols_ref}
-            """,
+        backend.insert_select(
+            "docs.search_documents",
+            columns=_search_document_columns(),
+            select_sql=_scip_symbols_select(scip_symbols_ref),
         )
 
 
@@ -215,3 +162,168 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
     """
     backend.execute_sql(create_sql)
     return fts_schema
+
+
+def _search_document_columns() -> list[str]:
+    return [
+        "doc_id",
+        "kind",
+        "name",
+        "module",
+        "rel_path",
+        "text",
+        "ref_goid_h128",
+        "repo",
+        "commit",
+    ]
+
+
+def _coalesce_text(expr: exp.Expression) -> exp.Expression:
+    return exp.Coalesce(expressions=[expr, exp.Literal.string("")])
+
+
+def _concat(expressions: list[exp.Expression]) -> exp.Expression:
+    return exp.Concat(expressions=expressions)
+
+
+def _varchar_cast(expr: exp.Expression) -> exp.Expression:
+    return exp.Cast(this=expr, to=exp.DataType.build("VARCHAR", dialect="duckdb"))
+
+
+def _modules_select(modules_ref: str) -> exp.Select:
+    table_expr = table_expr_from_ref(modules_ref)
+    doc_id = _concat(
+        [
+            exp.Literal.string("module:"),
+            _coalesce_text(exp.column("repo")),
+            exp.Literal.string(":"),
+            _coalesce_text(exp.column("commit")),
+            exp.Literal.string(":"),
+            _coalesce_text(exp.column("module")),
+            exp.Literal.string(":"),
+            _coalesce_text(exp.column("path")),
+        ]
+    )
+    text = _concat(
+        [
+            _coalesce_text(exp.column("module")),
+            exp.Literal.string(" "),
+            _coalesce_text(exp.column("path")),
+        ]
+    )
+    return exp.select(
+        exp.alias_(doc_id, "doc_id"),
+        exp.alias_(exp.Literal.string("module"), "kind"),
+        exp.alias_(_coalesce_text(exp.column("module")), "name"),
+        exp.alias_(_coalesce_text(exp.column("module")), "module"),
+        exp.alias_(exp.column("path"), "rel_path"),
+        exp.alias_(text, "text"),
+        exp.alias_(exp.null(), "ref_goid_h128"),
+        exp.column("repo"),
+        exp.column("commit"),
+    ).from_(table_expr)
+
+
+def _docstrings_select(docstrings_ref: str) -> exp.Select:
+    table_expr = table_expr_from_ref(docstrings_ref)
+    lineno = _coalesce_text(_varchar_cast(exp.column("lineno")))
+    doc_id = _concat(
+        [
+            exp.Literal.string("docstring:"),
+            exp.column("repo"),
+            exp.Literal.string(":"),
+            exp.column("commit"),
+            exp.Literal.string(":"),
+            exp.column("rel_path"),
+            exp.Literal.string(":"),
+            exp.column("module"),
+            exp.Literal.string(":"),
+            exp.column("qualname"),
+            exp.Literal.string(":"),
+            _coalesce_text(exp.column("kind")),
+            exp.Literal.string(":"),
+            lineno,
+        ]
+    )
+    text = _concat(
+        [
+            _coalesce_text(exp.column("short_desc")),
+            exp.Literal.string("\n"),
+            _coalesce_text(exp.column("long_desc")),
+            exp.Literal.string("\n"),
+            _coalesce_text(exp.column("raw_docstring")),
+        ]
+    )
+    return exp.select(
+        exp.alias_(doc_id, "doc_id"),
+        exp.alias_(exp.Literal.string("docstring"), "kind"),
+        exp.alias_(_coalesce_text(exp.column("qualname")), "name"),
+        exp.alias_(_coalesce_text(exp.column("module")), "module"),
+        exp.column("rel_path"),
+        exp.alias_(text, "text"),
+        exp.alias_(exp.null(), "ref_goid_h128"),
+        exp.column("repo"),
+        exp.column("commit"),
+    ).from_(table_expr)
+
+
+def _function_metrics_select(function_metrics_ref: str) -> exp.Select:
+    table_expr = table_expr_from_ref(function_metrics_ref)
+    goid = _coalesce_text(_varchar_cast(exp.column("function_goid_h128")))
+    doc_id = _concat(
+        [
+            exp.Literal.string("function:"),
+            goid,
+            exp.Literal.string(":"),
+            _coalesce_text(exp.column("repo")),
+            exp.Literal.string(":"),
+            _coalesce_text(exp.column("commit")),
+        ]
+    )
+    text = _concat(
+        [
+            _coalesce_text(exp.column("qualname")),
+            exp.Literal.string(" "),
+            _coalesce_text(exp.column("urn")),
+            exp.Literal.string(" "),
+            _coalesce_text(exp.column("rel_path")),
+        ]
+    )
+    return exp.select(
+        exp.alias_(doc_id, "doc_id"),
+        exp.alias_(exp.Literal.string("function"), "kind"),
+        exp.alias_(_coalesce_text(exp.column("qualname")), "name"),
+        exp.alias_(exp.null(), "module"),
+        exp.column("rel_path"),
+        exp.alias_(text, "text"),
+        exp.alias_(_varchar_cast(exp.column("function_goid_h128")), "ref_goid_h128"),
+        exp.column("repo"),
+        exp.column("commit"),
+    ).from_(table_expr)
+
+
+def _scip_symbols_select(scip_symbols_ref: str) -> exp.Select:
+    table_expr = table_expr_from_ref(scip_symbols_ref)
+    doc_id = _concat(
+        [
+            exp.Literal.string("symbol:"),
+            exp.column("repo"),
+            exp.Literal.string(":"),
+            exp.column("commit"),
+            exp.Literal.string(":"),
+            exp.column("rel_path"),
+            exp.Literal.string(":"),
+            exp.column("symbol"),
+        ]
+    )
+    return exp.select(
+        exp.alias_(doc_id, "doc_id"),
+        exp.alias_(exp.Literal.string("symbol"), "kind"),
+        exp.alias_(exp.column("symbol"), "name"),
+        exp.alias_(exp.null(), "module"),
+        exp.column("rel_path"),
+        exp.alias_(_coalesce_text(exp.column("documentation")), "text"),
+        exp.alias_(exp.null(), "ref_goid_h128"),
+        exp.column("repo"),
+        exp.column("commit"),
+    ).from_(table_expr)

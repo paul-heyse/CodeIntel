@@ -71,9 +71,6 @@ def contract_schema_for_table_key(
     """
     if con is None:
         return None
-    relation_schema = _relation_schema_for_table(con, table_key=table_key)
-    if relation_schema is None:
-        return None
     metadata_schema = _metadata_schema_for_table(
         con,
         table_key=table_key,
@@ -81,6 +78,9 @@ def contract_schema_for_table_key(
         commit=commit,
         pii_by_column=pii_by_column,
     )
+    relation_schema = _relation_schema_for_table(con, table_key=table_key)
+    if relation_schema is None:
+        return metadata_schema
     if metadata_schema is None:
         return relation_schema
     return _merge_schema_metadata(relation_schema, metadata_schema)

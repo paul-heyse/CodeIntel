@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 import pytest
 
+from codeintel.build.graphs.resources import ResourceProvider
+from codeintel.build.graphs.resources.storage import StorageResource
 from codeintel.core.resources import ResourceNotFoundError, ResourceProviderBase, ResourceRegistry
-from codeintel.graphs.resources import ResourceProvider
-from codeintel.graphs.resources.storage import StorageResource
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

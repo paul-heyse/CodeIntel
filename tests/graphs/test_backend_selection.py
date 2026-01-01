@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from codeintel.build.graphs.engine import GraphKind
+from codeintel.build.graphs.engine.backend import BackendEnablement, maybe_enable_nx_gpu
+from codeintel.build.graphs.runtime import build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.engine import GraphKind
-from codeintel.graphs.engine.backend import BackendEnablement, maybe_enable_nx_gpu
-from codeintel.graphs.runtime import build_graph_runtime
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.graph_runtime import graph_engine_with_cache

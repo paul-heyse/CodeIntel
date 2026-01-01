@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.graphs.subsystem_graph_metrics import (
+from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
     build_subsystem_graph_metrics_rows,
 )
 from codeintel.build.hamilton.boundary_types import MaterializationResult

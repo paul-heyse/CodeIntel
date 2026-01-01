@@ -9,8 +9,8 @@ from pathlib import Path
 
 import polars as pl
 
-from codeintel.analytics.ast_features.extract import compute_function_features
-from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.analytics.ast_features.extract import compute_function_features
+from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv

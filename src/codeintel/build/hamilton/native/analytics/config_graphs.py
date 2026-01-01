@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.analytics.graphs.config_data_flow import (
+from codeintel.build.analytics.graphs.config_data_flow import (
     CONFIG_DATA_FLOW_COLS,
     compute_config_data_flow_result,
 )
-from codeintel.analytics.graphs.config_graph_metrics import (
+from codeintel.build.analytics.graphs.config_graph_metrics import (
     CONFIG_GRAPH_METRICS_KEYS_COLS,
     CONFIG_GRAPH_METRICS_MODULES_COLS,
     CONFIG_PROJECTION_KEY_EDGES_COLS,
@@ -16,7 +16,8 @@ from codeintel.analytics.graphs.config_graph_metrics import (
     ConfigGraphMetricsResult,
     compute_config_graph_metrics_result,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -40,7 +41,6 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.catalog.service import CatalogService
-from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 

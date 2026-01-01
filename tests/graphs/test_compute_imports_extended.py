@@ -1,7 +1,7 @@
 """Extended tests for import computation module.
 
 This module provides additional test coverage for the imports module
-from `codeintel.graphs.compute.imports`, including:
+from `codeintel.build.graphs.compute.imports`, including:
 
 - Import edge collection
 - SCC computation on import graphs
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from codeintel.graphs.compute.imports import (
+from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
     ImportEdge,
     ImportEdgeRow,

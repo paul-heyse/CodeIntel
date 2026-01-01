@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.subsystems.affinity import AffinityWeights
-from codeintel.analytics.subsystems.materialize import SubsystemOptions
+from codeintel.build.analytics.subsystems.affinity import AffinityWeights
+from codeintel.build.analytics.subsystems.materialize import SubsystemOptions
 from codeintel.config.primitives import SnapshotRef
 
 EXPECTED_MIN_MODULES = 5

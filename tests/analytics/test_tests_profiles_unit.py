@@ -14,21 +14,21 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.analytics.testing.behavioral import importance
-from codeintel.analytics.testing.behavioral import tags as behavioral_tags
-from codeintel.analytics.testing.behavioral.importance import (
+from codeintel.build.analytics.testing.behavioral import importance
+from codeintel.build.analytics.testing.behavioral import tags as behavioral_tags
+from codeintel.build.analytics.testing.behavioral.importance import (
     compute_flakiness_score,
     compute_importance_score,
 )
-from codeintel.analytics.testing.behavioral.tags import infer_behavior_tags
-from codeintel.analytics.testing.coverage import inputs as coverage_inputs
-from codeintel.analytics.testing.coverage.inputs import (
+from codeintel.build.analytics.testing.behavioral.tags import infer_behavior_tags
+from codeintel.build.analytics.testing.coverage import inputs as coverage_inputs
+from codeintel.build.analytics.testing.coverage.inputs import (
     aggregate_test_coverage_by_function,
     aggregate_test_coverage_by_subsystem,
     load_test_graph_metrics,
 )
-from codeintel.analytics.testing.profiles import rows
-from codeintel.analytics.testing.profiles.types import (
+from codeintel.build.analytics.testing.profiles import rows
+from codeintel.build.analytics.testing.profiles.types import (
     BehavioralCoverageOptions,
     BehavioralLLMResult,
     ImportanceInputs,
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 
     import duckdb
 
-    from codeintel.analytics.testing.profiles.types import (
+    from codeintel.build.analytics.testing.profiles.types import (
         BehavioralLLMRequest,
     )
     from codeintel.storage.gateway import StorageGateway

@@ -67,7 +67,7 @@ Proposed new module (design):
   - `resolve_arrow_schema(table_key, *, metadata_policy=...)`
 
 Consumers to migrate:
-- `src/codeintel/analytics/utilities/datasets.py`
+- `src/codeintel/build/analytics/utilities/datasets.py`
 - `src/codeintel/build/exports/validation.py`
 - `src/codeintel/storage/schema/registry_provider.py`
 - `src/codeintel/storage/validation/columnar.py`
@@ -328,7 +328,7 @@ Acceptance:
 The following are slated for deletion or reduction after cutover:
 
 - `_load_inferred_schema` and `_load_latest_observation` helpers in
-  `src/codeintel/analytics/utilities/datasets.py`.
+  `src/codeintel/build/analytics/utilities/datasets.py`.
 - `_get_inferred_schema` and `_get_latest_observation` in
   `src/codeintel/build/exports/validation.py`.
 - Direct registry access paths in

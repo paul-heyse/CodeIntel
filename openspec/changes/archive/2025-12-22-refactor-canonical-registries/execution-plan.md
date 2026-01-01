@@ -2234,9 +2234,9 @@ Keys in `TABLE_SCHEMAS` not produced by Hamilton targets (retain):
 
 ## Non-Hamilton Orchestration Cleanup
 Migrate remaining ToolRunner-based orchestration into Hamilton nodes or BuildEnv:
-- `src/codeintel/analytics/history/git_history.py`
-- `src/codeintel/analytics/history/history_timeseries.py`
-- `src/codeintel/analytics/functions/function_history.py`
+- `src/codeintel/build/analytics/history/git_history.py`
+- `src/codeintel/build/analytics/history/history_timeseries.py`
+- `src/codeintel/build/analytics/functions/function_history.py`
 
 ## Validation Gates
 Run and fix all failures after the migration:

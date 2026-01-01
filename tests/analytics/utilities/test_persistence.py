@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.utilities import DeleteScope as UtilitiesDeleteScope
-from codeintel.analytics.utilities.persistence import DeleteScope as PersistenceDeleteScope
+from codeintel.build.analytics.utilities import DeleteScope as UtilitiesDeleteScope
+from codeintel.build.analytics.utilities.persistence import DeleteScope as PersistenceDeleteScope
 
 UNIQUE_SCOPE_COUNT = 2
 

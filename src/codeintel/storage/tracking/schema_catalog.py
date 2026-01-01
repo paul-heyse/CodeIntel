@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard
 
 import pyarrow as pa
+from sqlglot import exp
 
 from codeintel.core.columnar.ipc import schema_from_ipc_payload
 from codeintel.core.execution.ids import new_uuid_str
@@ -21,6 +22,7 @@ from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.tracking.schema_catalog_compile import (
     arrow_contract_renderer_cache,
     compile_schema_catalog_batches,
@@ -60,15 +62,49 @@ if TYPE_CHECKING:
         def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None: ...
 
 
-_INFERRED_REGISTRY_FILTER = (
-    "AND ("
-    "registry.inference_status IN ('inferred', 'override') "
-    "OR registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
-    ")"
-)
-_OBSERVED_DERIVATION_FILTER = (
-    "AND registry.derivation_kind IN ('inferred_relation', 'view_inferred')"
-)
+def _combine_conditions(conditions: Sequence[exp.Expression]) -> exp.Expression | None:
+    if not conditions:
+        return None
+    combined = conditions[0]
+    for condition in conditions[1:]:
+        combined = exp.and_(combined, condition)
+    return combined
+
+
+def _aliased_table(table_ref: str, alias: str) -> exp.Table:
+    table_expr = table_expr_from_ref(table_ref)
+    aliased = table_expr.copy()
+    aliased.set("alias", exp.TableAlias(this=exp.to_identifier(alias)))
+    return aliased
+
+
+def _inferred_registry_condition(alias: str) -> exp.Expression:
+    return exp.or_(
+        exp.In(
+            this=exp.column("inference_status", table=alias),
+            expressions=[
+                exp.Literal.string("inferred"),
+                exp.Literal.string("override"),
+            ],
+        ),
+        exp.In(
+            this=exp.column("derivation_kind", table=alias),
+            expressions=[
+                exp.Literal.string("inferred_relation"),
+                exp.Literal.string("view_inferred"),
+            ],
+        ),
+    )
+
+
+def _observed_derivation_condition(alias: str) -> exp.Expression:
+    return exp.In(
+        this=exp.column("derivation_kind", table=alias),
+        expressions=[
+            exp.Literal.string("inferred_relation"),
+            exp.Literal.string("view_inferred"),
+        ],
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,21 +206,36 @@ def _load_latest_observed_schema_from_connection(
     observations_ref = meta_table_ref("metadata.schema_observations")
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
-    row = con.execute(
-        f"""
-        SELECT v.schema_json
-        FROM {observations_ref} AS o
-        JOIN {versions_ref} AS v
-          ON o.schema_digest = v.schema_digest
-        JOIN {registry_ref} AS registry
-          ON registry.table_key = o.table_key
-        WHERE o.table_key = ?
-        {_OBSERVED_DERIVATION_FILTER}
-        ORDER BY o.observed_at DESC
-        LIMIT 1
-        """,
-        [table_key],
-    ).fetchone()
+    observations = _aliased_table(observations_ref, "o")
+    versions = _aliased_table(versions_ref, "v")
+    registry = _aliased_table(registry_ref, "registry")
+    join_versions = exp.EQ(
+        this=exp.column("schema_digest", table="o"),
+        expression=exp.column("schema_digest", table="v"),
+    )
+    join_registry = exp.EQ(
+        this=exp.column("table_key", table="registry"),
+        expression=exp.column("table_key", table="o"),
+    )
+    where_expr = _combine_conditions(
+        [
+            exp.EQ(
+                this=exp.column("table_key", table="o"),
+                expression=exp.Placeholder(),
+            ),
+            _observed_derivation_condition("registry"),
+        ]
+    )
+    query = (
+        exp.select(exp.column("schema_json", table="v"))
+        .from_(observations)
+        .join(versions, on=join_versions)
+        .join(registry, on=join_registry)
+        .where(where_expr)
+        .order_by(exp.Ordered(this=exp.column("observed_at", table="o"), desc=True))
+        .limit(exp.Literal.number(1))
+    )
+    row = con.execute(render_sql_duckdb(query), [table_key]).fetchone()
     if row is None:
         return None
     schema_json = decode_json_dict(row[0])
@@ -199,27 +250,56 @@ def _load_latest_observed_schema_rows(
     observations_ref = meta_table_ref("metadata.schema_observations")
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
-    rows = con.execute(
-        f"""
-        SELECT table_key, schema_json
-        FROM (
-          SELECT
-            o.table_key AS table_key,
-            v.schema_json AS schema_json,
-            ROW_NUMBER() OVER (
-              PARTITION BY o.table_key ORDER BY o.observed_at DESC
-            ) AS rn
-          FROM {observations_ref} AS o
-          JOIN {versions_ref} AS v
-            ON o.schema_digest = v.schema_digest
-          JOIN {registry_ref} AS registry
-            ON registry.table_key = o.table_key
-          WHERE 1 = 1
-          {_OBSERVED_DERIVATION_FILTER}
+    observations = _aliased_table(observations_ref, "o")
+    versions = _aliased_table(versions_ref, "v")
+    registry = _aliased_table(registry_ref, "registry")
+    join_versions = exp.EQ(
+        this=exp.column("schema_digest", table="o"),
+        expression=exp.column("schema_digest", table="v"),
+    )
+    join_registry = exp.EQ(
+        this=exp.column("table_key", table="registry"),
+        expression=exp.column("table_key", table="o"),
+    )
+    row_number_expr = exp.alias_(
+        exp.Window(
+            this=exp.RowNumber(),
+            partition_by=[exp.column("table_key", table="o")],
+            order=exp.Order(
+                expressions=[exp.Ordered(this=exp.column("observed_at", table="o"), desc=True)]
+            ),
+        ),
+        "rn",
+    )
+    inner = (
+        exp.select(
+            exp.alias_(exp.column("table_key", table="o"), "table_key"),
+            exp.alias_(exp.column("schema_json", table="v"), "schema_json"),
+            row_number_expr,
         )
-        WHERE rn = 1
-        """
-    ).fetchall()
+        .from_(observations)
+        .join(versions, on=join_versions)
+        .join(registry, on=join_registry)
+        .where(_observed_derivation_condition("registry"))
+    )
+    ranked = exp.Subquery(
+        this=inner,
+        alias=exp.TableAlias(this=exp.to_identifier("ranked")),
+    )
+    query = (
+        exp.select(
+            exp.column("table_key"),
+            exp.column("schema_json"),
+        )
+        .from_(ranked)
+        .where(
+            exp.EQ(
+                this=exp.column("rn"),
+                expression=exp.Literal.number(1),
+            )
+        )
+    )
+    rows = con.execute(render_sql_duckdb(query)).fetchall()
     return list(rows)
 
 
@@ -247,28 +327,37 @@ def load_table_schema_from_connection(
         return observed
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
-    row = con.execute(
-        f"""
-        SELECT v.schema_json
-        FROM {registry_ref} AS registry
-        JOIN {versions_ref} AS v
-          ON registry.schema_digest = v.schema_digest
-        WHERE registry.table_key = ?
-        {_INFERRED_REGISTRY_FILTER}
-        """,
-        [table_key],
-    ).fetchone()
+    registry = _aliased_table(registry_ref, "registry")
+    versions = _aliased_table(versions_ref, "v")
+    join_versions = exp.EQ(
+        this=exp.column("schema_digest", table="registry"),
+        expression=exp.column("schema_digest", table="v"),
+    )
+    base_conditions = [
+        exp.EQ(
+            this=exp.column("table_key", table="registry"),
+            expression=exp.Placeholder(),
+        )
+    ]
+    inferred_query = (
+        exp.select(exp.column("schema_json", table="v"))
+        .from_(registry)
+        .join(versions, on=join_versions)
+        .where(
+            _combine_conditions(
+                base_conditions + [_inferred_registry_condition("registry")]
+            )
+        )
+    )
+    row = con.execute(render_sql_duckdb(inferred_query), [table_key]).fetchone()
     if row is None:
-        row = con.execute(
-            f"""
-            SELECT v.schema_json
-            FROM {registry_ref} AS registry
-            JOIN {versions_ref} AS v
-              ON registry.schema_digest = v.schema_digest
-            WHERE registry.table_key = ?
-            """,
-            [table_key],
-        ).fetchone()
+        fallback_query = (
+            exp.select(exp.column("schema_json", table="v"))
+            .from_(registry)
+            .join(versions, on=join_versions)
+            .where(_combine_conditions(base_conditions))
+        )
+        row = con.execute(render_sql_duckdb(fallback_query), [table_key]).fetchone()
     if row is None:
         return None
     schema_json = decode_json_dict(row[0])
@@ -295,16 +384,22 @@ def iter_table_schemas_from_connection(
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
     observed_rows = _load_latest_observed_schema_rows(con)
-    inferred_rows = con.execute(
-        f"""
-        SELECT registry.table_key, v.schema_json
-        FROM {registry_ref} AS registry
-        JOIN {versions_ref} AS v
-          ON registry.schema_digest = v.schema_digest
-        WHERE 1 = 1
-        {_INFERRED_REGISTRY_FILTER}
-        """
-    ).fetchall()
+    registry = _aliased_table(registry_ref, "registry")
+    versions = _aliased_table(versions_ref, "v")
+    join_versions = exp.EQ(
+        this=exp.column("schema_digest", table="registry"),
+        expression=exp.column("schema_digest", table="v"),
+    )
+    inferred_query = (
+        exp.select(
+            exp.column("table_key", table="registry"),
+            exp.column("schema_json", table="v"),
+        )
+        .from_(registry)
+        .join(versions, on=join_versions)
+        .where(_inferred_registry_condition("registry"))
+    )
+    inferred_rows = con.execute(render_sql_duckdb(inferred_query)).fetchall()
     schemas_by_key: dict[str, TableSchema] = {}
     for table_key, schema_json_raw in observed_rows:
         schema_json = decode_json_dict(schema_json_raw)
@@ -316,15 +411,16 @@ def iter_table_schemas_from_connection(
         if not schema_json:
             continue
         schemas_by_key[str(table_key)] = table_schema_from_json_obj(schema_json)
-    fallback_rows = con.execute(
-        f"""
-        SELECT registry.table_key, v.schema_json
-        FROM {registry_ref} AS registry
-        JOIN {versions_ref} AS v
-          ON registry.schema_digest = v.schema_digest
-        ORDER BY registry.table_key
-        """
-    ).fetchall()
+    fallback_query = (
+        exp.select(
+            exp.column("table_key", table="registry"),
+            exp.column("schema_json", table="v"),
+        )
+        .from_(registry)
+        .join(versions, on=join_versions)
+        .order_by(exp.Ordered(this=exp.column("table_key", table="registry")))
+    )
+    fallback_rows = con.execute(render_sql_duckdb(fallback_query)).fetchall()
     for table_key, schema_json_raw in fallback_rows:
         if str(table_key) in schemas_by_key:
             continue
@@ -735,29 +831,33 @@ class SchemaCatalogTracking:
         """
         observations_ref = meta_table_ref("metadata.schema_observations")
         try:
-            row = self._con.execute(
-                f"""
-                SELECT
-                  observation_id,
-                  table_key,
-                  repo,
-                  commit,
-                  target_name,
-                  schema_digest,
-                  schema_hash,
-                  arrow_schema_ipc_b64,
-                  column_stats,
-                  dataset_stats,
-                  derived_settings,
-                  drift_summary,
-                  observed_at
-                FROM {observations_ref}
-                WHERE table_key = ?
-                ORDER BY observed_at DESC
-                LIMIT 1
-                """,
-                [table_key],
-            ).fetchone()
+            query = (
+                exp.select(
+                    exp.Column(this=exp.to_identifier("observation_id")),
+                    exp.Column(this=exp.to_identifier("table_key")),
+                    exp.Column(this=exp.to_identifier("repo")),
+                    exp.Column(this=exp.to_identifier("commit")),
+                    exp.Column(this=exp.to_identifier("target_name")),
+                    exp.Column(this=exp.to_identifier("schema_digest")),
+                    exp.Column(this=exp.to_identifier("schema_hash")),
+                    exp.Column(this=exp.to_identifier("arrow_schema_ipc_b64")),
+                    exp.Column(this=exp.to_identifier("column_stats")),
+                    exp.Column(this=exp.to_identifier("dataset_stats")),
+                    exp.Column(this=exp.to_identifier("derived_settings")),
+                    exp.Column(this=exp.to_identifier("drift_summary")),
+                    exp.Column(this=exp.to_identifier("observed_at")),
+                )
+                .from_(table_expr_from_ref(observations_ref))
+                .where(
+                    exp.EQ(
+                        this=exp.Column(this=exp.to_identifier("table_key")),
+                        expression=exp.Placeholder(),
+                    )
+                )
+                .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("observed_at")), desc=True))
+                .limit(exp.Literal.number(1))
+            )
+            row = self._con.execute(render_sql_duckdb(query), [table_key]).fetchone()
         except DuckDBError:
             return None
         if row is None:
@@ -793,17 +893,25 @@ class SchemaCatalogTracking:
         """
         registry_ref = meta_table_ref("metadata.table_schema_registry")
         versions_ref = meta_table_ref("metadata.schema_versions")
-        row = self._con.execute(
-            f"""
-            SELECT v.renderer_cache
-            FROM {registry_ref} AS registry
-            JOIN {versions_ref} AS v
-              ON registry.schema_digest = v.schema_digest
-            WHERE registry.table_key = ?
-            LIMIT 1
-            """,
-            [table_key],
-        ).fetchone()
+        registry = _aliased_table(registry_ref, "registry")
+        versions = _aliased_table(versions_ref, "v")
+        join_versions = exp.EQ(
+            this=exp.column("schema_digest", table="registry"),
+            expression=exp.column("schema_digest", table="v"),
+        )
+        query = (
+            exp.select(exp.column("renderer_cache", table="v"))
+            .from_(registry)
+            .join(versions, on=join_versions)
+            .where(
+                exp.EQ(
+                    this=exp.column("table_key", table="registry"),
+                    expression=exp.Placeholder(),
+                )
+            )
+            .limit(exp.Literal.number(1))
+        )
+        row = self._con.execute(render_sql_duckdb(query), [table_key]).fetchone()
         if row is None or row[0] is None:
             return False
         renderer_cache = decode_json_dict(row[0])
@@ -832,16 +940,19 @@ class SchemaCatalogTracking:
         if limit <= 0:
             return ()
         observations_ref = meta_table_ref("metadata.schema_observations")
-        rows = self._con.execute(
-            f"""
-            SELECT drift_summary
-            FROM {observations_ref}
-            WHERE table_key = ?
-            ORDER BY observed_at DESC
-            LIMIT ?
-            """,
-            [table_key, limit],
-        ).fetchall()
+        query = (
+            exp.select(exp.Column(this=exp.to_identifier("drift_summary")))
+            .from_(table_expr_from_ref(observations_ref))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("table_key")),
+                    expression=exp.Placeholder(),
+                )
+            )
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("observed_at")), desc=True))
+            .limit(exp.Placeholder())
+        )
+        rows = self._con.execute(render_sql_duckdb(query), [table_key, limit]).fetchall()
         if not rows:
             return ()
         summaries: list[dict[str, object] | None] = []
@@ -858,35 +969,83 @@ class SchemaCatalogTracking:
             Aggregate drift summary across recent observations.
         """
         observations_ref = meta_table_ref("metadata.schema_observations")
-        totals_row = self._con.execute(
-            f"""
-            SELECT
-              COUNT(DISTINCT table_key),
-              COUNT(DISTINCT CASE WHEN drift_summary IS NOT NULL THEN table_key END)
-            FROM {observations_ref}
-            """
-        ).fetchone()
-        total_tables = int(totals_row[0]) if totals_row and totals_row[0] is not None else 0
-        drift_tables = int(totals_row[1]) if totals_row and totals_row[1] is not None else 0
+        total_query = exp.select(
+            exp.Count(this=exp.Distinct(expressions=[exp.Column(this=exp.to_identifier("table_key"))]))
+        ).from_(table_expr_from_ref(observations_ref))
+        total_row = self._con.execute(render_sql_duckdb(total_query)).fetchone()
+        total_tables = int(total_row[0]) if total_row and total_row[0] is not None else 0
 
-        rows = self._con.execute(
-            f"""
-            SELECT table_key, drift_summary, observed_at
-            FROM (
-              SELECT
-                table_key,
-                drift_summary,
-                observed_at,
-                ROW_NUMBER() OVER (PARTITION BY table_key ORDER BY observed_at DESC) AS rn
-              FROM {observations_ref}
-              WHERE drift_summary IS NOT NULL
+        drift_condition = exp.Not(
+            this=exp.Is(
+                this=exp.Column(this=exp.to_identifier("drift_summary")),
+                expression=exp.Null(),
             )
-            WHERE rn = 1
-            ORDER BY observed_at DESC
-            LIMIT ?
-            """,
-            [limit],
-        ).fetchall()
+        )
+        drift_query = (
+            exp.select(
+                exp.Count(
+                    this=exp.Distinct(
+                        expressions=[exp.Column(this=exp.to_identifier("table_key"))]
+                    )
+                )
+            )
+            .from_(table_expr_from_ref(observations_ref))
+            .where(drift_condition)
+        )
+        drift_row = self._con.execute(render_sql_duckdb(drift_query)).fetchone()
+        drift_tables = int(drift_row[0]) if drift_row and drift_row[0] is not None else 0
+
+        row_number_expr = exp.alias_(
+            exp.Window(
+                this=exp.RowNumber(),
+                partition_by=[exp.Column(this=exp.to_identifier("table_key"))],
+                order=exp.Order(
+                    expressions=[
+                        exp.Ordered(
+                            this=exp.Column(this=exp.to_identifier("observed_at")),
+                            desc=True,
+                        )
+                    ]
+                ),
+            ),
+            "rn",
+        )
+        inner = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("table_key")),
+                exp.Column(this=exp.to_identifier("drift_summary")),
+                exp.Column(this=exp.to_identifier("observed_at")),
+                row_number_expr,
+            )
+            .from_(table_expr_from_ref(observations_ref))
+            .where(drift_condition)
+        )
+        ranked = exp.Subquery(
+            this=inner,
+            alias=exp.TableAlias(this=exp.to_identifier("ranked")),
+        )
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("table_key")),
+                exp.Column(this=exp.to_identifier("drift_summary")),
+                exp.Column(this=exp.to_identifier("observed_at")),
+            )
+            .from_(ranked)
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("rn")),
+                    expression=exp.Literal.number(1),
+                )
+            )
+            .order_by(
+                exp.Ordered(
+                    this=exp.Column(this=exp.to_identifier("observed_at")),
+                    desc=True,
+                )
+            )
+            .limit(exp.Placeholder())
+        )
+        rows = self._con.execute(render_sql_duckdb(query), [limit]).fetchall()
 
         latest: list[dict[str, object]] = []
         missing_total = 0
@@ -927,15 +1086,22 @@ class SchemaCatalogTracking:
         """
         registry_ref = meta_table_ref("metadata.table_schema_override_registry")
         versions_ref = meta_table_ref("metadata.schema_versions")
-        rows = self._con.execute(
-            f"""
-            SELECT r.table_key, v.schema_json
-            FROM {registry_ref} AS r
-            JOIN {versions_ref} AS v
-              ON r.schema_digest = v.schema_digest
-            ORDER BY r.table_key
-            """
-        ).fetchall()
+        registry = _aliased_table(registry_ref, "r")
+        versions = _aliased_table(versions_ref, "v")
+        join_versions = exp.EQ(
+            this=exp.column("schema_digest", table="r"),
+            expression=exp.column("schema_digest", table="v"),
+        )
+        query = (
+            exp.select(
+                exp.column("table_key", table="r"),
+                exp.column("schema_json", table="v"),
+            )
+            .from_(registry)
+            .join(versions, on=join_versions)
+            .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
+        )
+        rows = self._con.execute(render_sql_duckdb(query)).fetchall()
         if not rows:
             return {}
 
@@ -1039,20 +1205,42 @@ class SchemaCatalogTracking:
         if not allowed_keys:
             return 0
 
-        placeholders = ", ".join(["?"] * len(allowed_keys))
         registry_ref = meta_table_ref("metadata.table_schema_registry")
         versions_ref = meta_table_ref("metadata.schema_versions")
-        sql = (
-            "SELECT r.table_key, v.schema_json "
-            f"FROM {registry_ref} AS r "
-            f"JOIN {versions_ref} AS v "
-            "  ON r.schema_digest = v.schema_digest "
-            "WHERE r.derivation_kind = ? "
-            "  AND r.inference_status IN (?, ?) "
-            f"  AND r.table_key IN ({placeholders})"
+        registry = _aliased_table(registry_ref, "r")
+        versions = _aliased_table(versions_ref, "v")
+        join_versions = exp.EQ(
+            this=exp.column("schema_digest", table="r"),
+            expression=exp.column("schema_digest", table="v"),
+        )
+        key_placeholders = [exp.Placeholder() for _ in allowed_keys]
+        where_expr = _combine_conditions(
+            [
+                exp.EQ(
+                    this=exp.column("derivation_kind", table="r"),
+                    expression=exp.Placeholder(),
+                ),
+                exp.In(
+                    this=exp.column("inference_status", table="r"),
+                    expressions=[exp.Placeholder(), exp.Placeholder()],
+                ),
+                exp.In(
+                    this=exp.column("table_key", table="r"),
+                    expressions=key_placeholders,
+                ),
+            ]
+        )
+        query = (
+            exp.select(
+                exp.column("table_key", table="r"),
+                exp.column("schema_json", table="v"),
+            )
+            .from_(registry)
+            .join(versions, on=join_versions)
+            .where(where_expr)
         )
         params: list[object] = ["inferred_relation", "inferred", "override", *allowed_keys]
-        rows = self._con.execute(sql, params).fetchall()
+        rows = self._con.execute(render_sql_duckdb(query), params).fetchall()
         if not rows:
             return 0
 
@@ -1084,15 +1272,24 @@ class SchemaCatalogTracking:
         """
         registry_ref = meta_table_ref("metadata.table_schema_registry")
         versions_ref = meta_table_ref("metadata.schema_versions")
-        rows = self._con.execute(
-            f"""
-            SELECT r.table_key, r.schema_hash, r.schema_digest, v.renderer_cache
-            FROM {registry_ref} AS r
-            JOIN {versions_ref} AS v
-              ON r.schema_digest = v.schema_digest
-            ORDER BY r.table_key
-            """
-        ).fetchall()
+        registry = _aliased_table(registry_ref, "r")
+        versions = _aliased_table(versions_ref, "v")
+        join_versions = exp.EQ(
+            this=exp.column("schema_digest", table="r"),
+            expression=exp.column("schema_digest", table="v"),
+        )
+        query = (
+            exp.select(
+                exp.column("table_key", table="r"),
+                exp.column("schema_hash", table="r"),
+                exp.column("schema_digest", table="r"),
+                exp.column("renderer_cache", table="v"),
+            )
+            .from_(registry)
+            .join(versions, on=join_versions)
+            .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
+        )
+        rows = self._con.execute(render_sql_duckdb(query)).fetchall()
         if not rows:
             return _contract_drift_payload(_ContractDriftReport(0, 0, 0, 0, 0, (), (), ()))
 
@@ -1166,16 +1363,21 @@ class SchemaCatalogTracking:
             return 0
 
         digests = tuple(payloads)
-        placeholders = ", ".join(["?"] * len(digests))
         versions_ref = meta_table_ref("metadata.schema_versions")
-        rows = self._con.execute(
-            f"""
-            SELECT schema_digest, renderer_cache
-            FROM {versions_ref}
-            WHERE schema_digest IN ({placeholders})
-            """,
-            list(digests),
-        ).fetchall()
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("schema_digest")),
+                exp.Column(this=exp.to_identifier("renderer_cache")),
+            )
+            .from_(table_expr_from_ref(versions_ref))
+            .where(
+                exp.In(
+                    this=exp.Column(this=exp.to_identifier("schema_digest")),
+                    expressions=[exp.Placeholder() for _ in digests],
+                )
+            )
+        )
+        rows = self._con.execute(render_sql_duckdb(query), list(digests)).fetchall()
         if not rows:
             return 0
 
@@ -1195,10 +1397,22 @@ class SchemaCatalogTracking:
         if not updates:
             return 0
 
-        self._con.executemany(
-            f"UPDATE {versions_ref} SET renderer_cache = ? WHERE schema_digest = ?",
-            updates,
+        update_expr = exp.Update(
+            this=table_expr_from_ref(versions_ref),
+            expressions=[
+                exp.EQ(
+                    this=exp.to_identifier("renderer_cache"),
+                    expression=exp.Placeholder(),
+                )
+            ],
+            where=exp.Where(
+                this=exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("schema_digest")),
+                    expression=exp.Placeholder(),
+                )
+            ),
         )
+        self._con.executemany(render_sql_duckdb(update_expr), updates)
         return len(updates)
 
     @staticmethod
@@ -1372,14 +1586,19 @@ class SchemaCatalogTracking:
 
     def _load_latest_manifest(self) -> _LatestManifest | None:
         manifest_runs_ref = meta_table_ref("metadata.schema_manifest_runs")
-        row = self._con.execute(
-            f"""
-            SELECT catalog_hash, repo, commit, manifest_kind, created_at
-            FROM {manifest_runs_ref}
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-        ).fetchone()
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("catalog_hash")),
+                exp.Column(this=exp.to_identifier("repo")),
+                exp.Column(this=exp.to_identifier("commit")),
+                exp.Column(this=exp.to_identifier("manifest_kind")),
+                exp.Column(this=exp.to_identifier("created_at")),
+            )
+            .from_(table_expr_from_ref(manifest_runs_ref))
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("created_at")), desc=True))
+            .limit(exp.Literal.number(1))
+        )
+        row = self._con.execute(render_sql_duckdb(query)).fetchone()
         if row is None:
             return None
         catalog_hash, repo, commit, manifest_kind, created_at = row
@@ -1398,14 +1617,20 @@ class SchemaCatalogTracking:
         created_at: datetime | None,
     ) -> _RegistryStats:
         registry_ref = meta_table_ref("metadata.table_schema_registry")
-        row = self._con.execute(
-            f"""
-            SELECT COUNT(*), MAX(updated_at)
-            FROM {registry_ref}
-            WHERE catalog_hash = ?
-            """,
-            [catalog_hash],
-        ).fetchone()
+        query = (
+            exp.select(
+                exp.Count(this=exp.Star()),
+                exp.Max(this=exp.Column(this=exp.to_identifier("updated_at"))),
+            )
+            .from_(table_expr_from_ref(registry_ref))
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("catalog_hash")),
+                    expression=exp.Placeholder(),
+                )
+            )
+        )
+        row = self._con.execute(render_sql_duckdb(query), [catalog_hash]).fetchone()
         row_count = int(row[0]) if row is not None else 0
         updated_at = row[1] if row is not None else None
         stale = updated_at is None
@@ -1415,34 +1640,68 @@ class SchemaCatalogTracking:
 
     def _inferable_stats(self, *, catalog_hash: str) -> _InferableStats:
         registry_ref = meta_table_ref("metadata.table_schema_registry")
-        row = self._con.execute(
-            f"""
-            SELECT
-                SUM(CASE WHEN derivation_kind = 'inferred_relation' THEN 1 ELSE 0 END) AS total,
-                SUM(
-                    CASE
-                        WHEN derivation_kind = 'inferred_relation'
-                         AND inference_status = 'inferred'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS inferred_count,
-                SUM(
-                    CASE
-                        WHEN derivation_kind = 'inferred_relation'
-                         AND inference_status = 'error'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS error_count
-            FROM {registry_ref}
-            WHERE catalog_hash = ?
-            """,
+        base_conditions = [
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier("catalog_hash")),
+                expression=exp.Placeholder(),
+            ),
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier("derivation_kind")),
+                expression=exp.Literal.string("inferred_relation"),
+            ),
+        ]
+        total_query = (
+            exp.select(exp.Count(this=exp.Star()))
+            .from_(table_expr_from_ref(registry_ref))
+            .where(_combine_conditions(base_conditions))
+        )
+        total_row = self._con.execute(
+            render_sql_duckdb(total_query),
             [catalog_hash],
         ).fetchone()
-        total = int(row[0] or 0) if row is not None else 0
-        inferred = int(row[1] or 0) if row is not None else 0
-        errors = int(row[2] or 0) if row is not None else 0
+        total = int(total_row[0] or 0) if total_row is not None else 0
+
+        inferred_query = (
+            exp.select(exp.Count(this=exp.Star()))
+            .from_(table_expr_from_ref(registry_ref))
+            .where(
+                _combine_conditions(
+                    base_conditions
+                    + [
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("inference_status")),
+                            expression=exp.Literal.string("inferred"),
+                        )
+                    ]
+                )
+            )
+        )
+        inferred_row = self._con.execute(
+            render_sql_duckdb(inferred_query),
+            [catalog_hash],
+        ).fetchone()
+        inferred = int(inferred_row[0] or 0) if inferred_row is not None else 0
+
+        error_query = (
+            exp.select(exp.Count(this=exp.Star()))
+            .from_(table_expr_from_ref(registry_ref))
+            .where(
+                _combine_conditions(
+                    base_conditions
+                    + [
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("inference_status")),
+                            expression=exp.Literal.string("error"),
+                        )
+                    ]
+                )
+            )
+        )
+        error_row = self._con.execute(
+            render_sql_duckdb(error_query),
+            [catalog_hash],
+        ).fetchone()
+        errors = int(error_row[0] or 0) if error_row is not None else 0
         success_rate = inferred / total if total else None
         return _InferableStats(
             total=total, inferred=inferred, errors=errors, success_rate=success_rate
@@ -1450,7 +1709,8 @@ class SchemaCatalogTracking:
 
     def _override_registry_rows(self) -> int:
         override_ref = meta_table_ref("metadata.table_schema_override_registry")
-        row = self._con.execute(f"SELECT COUNT(*) FROM {override_ref}").fetchone()
+        query = exp.select(exp.Count(this=exp.Star())).from_(table_expr_from_ref(override_ref))
+        row = self._con.execute(render_sql_duckdb(query)).fetchone()
         return int(row[0]) if row is not None else 0
 
     @staticmethod
@@ -1568,26 +1828,43 @@ class SchemaCatalogTracking:
         now = utc_now()
         versions_ref = meta_table_ref("metadata.table_schema_override_versions")
         params: list[object] = [table_key]
-        filters: list[str] = ["table_key = ?"]
+        conditions: list[exp.Expression] = [
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier("table_key")),
+                expression=exp.Placeholder(),
+            )
+        ]
 
         if schema_digest is not None:
-            filters.append("schema_digest = ?")
+            conditions.append(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("schema_digest")),
+                    expression=exp.Placeholder(),
+                )
+            )
             params.append(schema_digest)
         if version_id is not None:
-            filters.append("version_id = ?")
+            conditions.append(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("version_id")),
+                    expression=exp.Placeholder(),
+                )
+            )
             params.append(version_id)
 
-        where_clause = " AND ".join(filters)
-        row = self._con.execute(
-            f"""
-            SELECT table_key, schema_digest, schema_hash, version_id
-            FROM {versions_ref}
-            WHERE {where_clause}
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            params,
-        ).fetchone()
+        query = (
+            exp.select(
+                exp.Column(this=exp.to_identifier("table_key")),
+                exp.Column(this=exp.to_identifier("schema_digest")),
+                exp.Column(this=exp.to_identifier("schema_hash")),
+                exp.Column(this=exp.to_identifier("version_id")),
+            )
+            .from_(table_expr_from_ref(versions_ref))
+            .where(_combine_conditions(conditions))
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("created_at")), desc=True))
+            .limit(exp.Literal.number(1))
+        )
+        row = self._con.execute(render_sql_duckdb(query), params).fetchone()
 
         if row is None:
             msg = f"Override version not found for {table_key}"

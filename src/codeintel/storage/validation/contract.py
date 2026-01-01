@@ -5,6 +5,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from sqlglot import exp
+
 from codeintel.core.schemas.contract_validation import (
     ContractRegistry,
     ContractValidationLookups,
@@ -25,6 +27,7 @@ from codeintel.storage.datasets.registry import (
     load_dataset_registry,
 )
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -80,13 +83,20 @@ def clear_contract_validation_cache() -> None:
 def _table_columns_lookup(con: DuckDBPyConnection, *, missing_ok: bool) -> TableColumnsLookup:
     def _lookup(table_key: str) -> list[str] | None:
         schema_name, table_name = split_table_key(table_key)
+        table_expr = table_expr_from_ref("information_schema.columns")
+        query = (
+            exp.select(exp.column("column_name"))
+            .from_(table_expr)
+            .where(
+                exp.and_(
+                    exp.EQ(this=exp.column("table_schema"), expression=exp.Placeholder()),
+                    exp.EQ(this=exp.column("table_name"), expression=exp.Placeholder()),
+                )
+            )
+            .order_by(exp.Ordered(this=exp.column("ordinal_position")))
+        )
         reader = con.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = ? AND table_name = ?
-            ORDER BY ordinal_position
-            """,
+            render_sql_duckdb(query),
             [schema_name, table_name],
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         columns: list[str] = []

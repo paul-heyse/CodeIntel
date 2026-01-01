@@ -19,6 +19,7 @@ _DECIMAL_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"^DECIMAL\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)$"
 )
 _ADVANCED_TYPE_PREFIXES: Final[tuple[str, ...]] = ("STRUCT", "LIST", "MAP", "UNION")
+COMPLEX_TYPE_BASES: Final[frozenset[str]] = frozenset({*_ADVANCED_TYPE_PREFIXES, "JSON"})
 _ALIAS_CANONICAL: Final[dict[str, str]] = {
     "BOOL": "BOOLEAN",
     "BOOLEAN": "BOOLEAN",
@@ -479,6 +480,7 @@ class TableSchema:
 __all__ = [
     "COLUMN_TYPE_BASE_VALUES",
     "COLUMN_TYPE_REGISTRY",
+    "COMPLEX_TYPE_BASES",
     "Column",
     "ColumnType",
     "ColumnTypeRegistry",

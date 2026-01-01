@@ -23,7 +23,7 @@ class TupleRowSpec:
 
 
 GRAPH_METRICS_FUNCTIONS_SPEC = TupleRowSpec(
-    module="codeintel.analytics.graph_rows.graph_metrics",
+    module="codeintel.build.analytics.graph_rows.graph_metrics",
     builder_functions=["build_function_graph_metric_rows"],
     rows_var="rows",
     row_type_qualname="codeintel.storage.rows.GraphMetricsFunctionsRow",
@@ -44,7 +44,7 @@ GRAPH_METRICS_FUNCTIONS_SPEC = TupleRowSpec(
         "call_layer",
         "created_at",
     ],
-    dataset_contract_getter="codeintel.analytics.datasets.get_analytics_dataset_contract",
+    dataset_contract_getter="codeintel.build.analytics.datasets.get_analytics_dataset_contract",
 )
 
 ALL_SPECS: list[TupleRowSpec] = [

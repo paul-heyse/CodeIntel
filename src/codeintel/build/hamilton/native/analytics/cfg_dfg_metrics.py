@@ -7,20 +7,25 @@ from datetime import UTC, datetime
 
 import polars as pl
 
-from codeintel.analytics.cfg_dfg.cfg_core import CfgInputs, cfg_rows_for_fn
-from codeintel.analytics.cfg_dfg.compute import CfgMetricsResult, DfgMetricsResult
-from codeintel.analytics.cfg_dfg.dfg_core import (
+from codeintel.build.analytics.cfg_dfg.cfg_core import CfgInputs, cfg_rows_for_fn
+from codeintel.build.analytics.cfg_dfg.compute import CfgMetricsResult, DfgMetricsResult
+from codeintel.build.analytics.cfg_dfg.dfg_core import (
     DfgInputs,
     build_dfg_context,
     dfg_block_rows,
     dfg_ext_row,
     dfg_fn_row,
 )
-from codeintel.analytics.cfg_dfg.helpers import parse_block_idx
-from codeintel.analytics.graphs.constants import (
+from codeintel.build.analytics.cfg_dfg.helpers import parse_block_idx
+from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_CENTRALITY_SAMPLE,
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
+)
+from codeintel.build.graphs.runtime.context import (
+    GraphContext,
+    GraphContextSpec,
+    resolve_graph_context,
 )
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -42,7 +47,6 @@ from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.graphs.runtime.context import GraphContext, GraphContextSpec, resolve_graph_context
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 

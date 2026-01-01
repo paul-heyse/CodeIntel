@@ -1,6 +1,6 @@
 # Graphs
 
-The graphs module (`codeintel.graphs`) builds and analyzes code relationship
+The graphs module (`codeintel.build.graphs`) builds and analyzes code relationship
 graphs including call graphs, import graphs, and control/data flow graphs.
 
 ## Responsibility
@@ -34,9 +34,9 @@ graphs including call graphs, import graphs, and control/data flow graphs.
 
 ## Key Entrypoints
 
-- [`codeintel.graphs.runtime.executor`][codeintel.graphs.runtime.executor] - Plugin execution
-- [`codeintel.graphs.runtime.planning`][codeintel.graphs.runtime.planning] - Execution planning
-- [`codeintel.graphs.core.registry`][codeintel.graphs.core.registry] - Plugin registry
+- [`codeintel.build.graphs.runtime.executor`][codeintel.build.graphs.runtime.executor] - Plugin execution
+- [`codeintel.build.graphs.runtime.planning`][codeintel.build.graphs.runtime.planning] - Execution planning
+- [`codeintel.build.graphs.core.registry`][codeintel.build.graphs.core.registry] - Plugin registry
 
 ## Plugin Types
 
@@ -71,14 +71,14 @@ graphs including call graphs, import graphs, and control/data flow graphs.
 ### Called By
 
 - [`codeintel.pipeline`][codeintel.pipeline] orchestration
-- [`codeintel.analytics`][codeintel.analytics] for graph-based metrics
+- [`codeintel.build.analytics`][codeintel.build.analytics] for graph-based metrics
 
 ## Extension Points
 
 ### Adding a Graph Builder
 
 ```python
-from codeintel.graphs.core.protocol import GraphPluginProtocol
+from codeintel.build.graphs.core.protocol import GraphPluginProtocol
 
 class MyGraphBuilder(GraphPluginProtocol):
     plugin_name = "my.builder"

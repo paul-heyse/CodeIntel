@@ -6,13 +6,13 @@ and extracting profile features for classification.
 
 from __future__ import annotations
 
-from codeintel.analytics.compute.profiles.aggregation import (
+from codeintel.build.analytics.compute.profiles.aggregation import (
     FunctionMetricInput,
     ProfileAggregates,
     aggregate_function_metrics,
     compute_profile_stats,
 )
-from codeintel.analytics.compute.profiles.features import (
+from codeintel.build.analytics.compute.profiles.features import (
     COMPLEXITY_NORMALIZATION,
     COMPLEXITY_WEIGHT,
     HIGH_COMPLEXITY_THRESHOLD,

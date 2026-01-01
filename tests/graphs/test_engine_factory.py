@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
+from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from codeintel.config.models import GraphBackendConfig
-from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from tests._helpers.assertions import expect_true
 
 if TYPE_CHECKING:

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.hotspots import FileChurn, compute_hotspot_rows, parse_git_log_lines
+from codeintel.build.analytics.hotspots import FileChurn, compute_hotspot_rows, parse_git_log_lines
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -42,7 +42,7 @@ from tests._helpers.seeds.ast_metrics import MEDIUM_COMPLEXITY
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
