@@ -797,52 +797,6 @@ GRAPH_DEPENDENCY_POLICY = OptionSpec(
 
 
 # ---------------------------------------------------------------------------
-# History command options
-# ---------------------------------------------------------------------------
-
-HISTORY_REPO = OptionSpec(
-    arg_name="repo",
-    names=("--repo",),
-    help="Repository slug (e.g., 'my-org/my-repo').",
-)
-HISTORY_COMMITS = OptionSpec(
-    arg_name="commits",
-    names=("--commits",),
-    help="Commits to include in the timeseries (latest first).",
-)
-HISTORY_DB_DIR = OptionSpec(
-    arg_name="db_dir",
-    names=("--db-dir",),
-    help="Directory with per-commit DuckDB snapshots.",
-)
-HISTORY_OUTPUT_DB = OptionSpec(
-    arg_name="output_db",
-    names=("--output-db",),
-    help="Destination DuckDB for history_timeseries.",
-)
-HISTORY_ENTITY_KIND = OptionSpec(
-    arg_name="entity_kind",
-    names=("--entity-kind",),
-    help="Entity kind to include: function, module, or both.",
-)
-HISTORY_MAX_ENTITIES = OptionSpec(
-    arg_name="max_entities",
-    names=("--max-entities",),
-    help="Maximum entities to track (top-N by selection strategy).",
-)
-HISTORY_SELECTION_STRATEGY = OptionSpec(
-    arg_name="selection_strategy",
-    names=("--selection-strategy",),
-    help="Selection strategy for picking entities (default: risk_score).",
-)
-HISTORY_REPO_ROOT = OptionSpec(
-    arg_name="repo_root",
-    names=("--repo-root",),
-    help="Repository root directory.",
-)
-
-
-# ---------------------------------------------------------------------------
 # Jobs command options
 # ---------------------------------------------------------------------------
 
@@ -1204,14 +1158,6 @@ __all__ = [
     "HELP_BY_GROUP",
     "HELP_OPERATION_ID",
     "HELP_QUERY",
-    "HISTORY_COMMITS",
-    "HISTORY_DB_DIR",
-    "HISTORY_ENTITY_KIND",
-    "HISTORY_MAX_ENTITIES",
-    "HISTORY_OUTPUT_DB",
-    "HISTORY_REPO",
-    "HISTORY_REPO_ROOT",
-    "HISTORY_SELECTION_STRATEGY",
     "JOBS_JOB_ID",
     "JOBS_LIMIT",
     "JOBS_MAX_AGE_DAYS",

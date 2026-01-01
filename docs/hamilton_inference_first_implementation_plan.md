@@ -388,13 +388,10 @@ Ownership assignment is domain-based and should be confirmed:
 | docs.v_external_dependency_calls | T0 | Docs/Serving | [ ] |
 | docs.v_file_summary | T3 | Docs/Serving | [ ] |
 | docs.v_function_architecture | T3 | Docs/Serving | [ ] |
-| docs.v_function_history | T1 | Docs/Serving | [ ] |
-| docs.v_function_history_timeseries | T0 | Docs/Serving | [ ] |
 | docs.v_function_summary | T2 | Docs/Serving | [ ] |
 | docs.v_ide_hints | T3 | Docs/Serving | [ ] |
 | docs.v_module_architecture | T3 | Docs/Serving | [ ] |
 | docs.v_module_architecture_full | T3 | Docs/Serving | [ ] |
-| docs.v_module_history_timeseries | T0 | Docs/Serving | [ ] |
 | docs.v_module_with_subsystem | T3 | Docs/Serving | [ ] |
 | docs.v_subsystem_agreement | T0 | Docs/Serving | [ ] |
 | docs.v_subsystem_coverage | T2 | Docs/Serving | [ ] |

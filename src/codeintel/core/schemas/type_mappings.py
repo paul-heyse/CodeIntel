@@ -137,7 +137,11 @@ def polars_type_from_column_type(column_type: ColumnType) -> PolarsDataType | No
     except (TypeError, ValueError):
         return None
     frame = pl.from_arrow(table)
-    return frame.schema.get("_col")
+    if isinstance(frame, pl.DataFrame):
+        return frame.schema.get("_col")
+    if isinstance(frame, pl.Series):
+        return frame.dtype
+    return None
 
 
 __all__ = [

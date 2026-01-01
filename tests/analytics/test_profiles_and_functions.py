@@ -61,7 +61,6 @@ from codeintel.analytics.profiles.functions import (
     join_function_coverage,
     join_function_docs,
     join_function_effects,
-    join_function_history,
     join_function_risk,
     join_function_roles,
     load_function_base_info,
@@ -246,7 +245,6 @@ def _build_function_profile_views(
         contracts_by_func=join_function_contracts(inputs),
         roles_by_func=join_function_roles(inputs),
         docs_by_func=join_function_docs(inputs),
-        history_by_func=join_function_history(inputs),
     )
 
 

@@ -16,7 +16,6 @@ from codeintel.cli.commands.docs import docs_app
 from codeintel.cli.commands.graphs import graphs_app
 from codeintel.cli.commands.health import health_app
 from codeintel.cli.commands.help_commands import help_commands_app
-from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.jobs import jobs_app
 from codeintel.cli.commands.meta import meta_app
 from codeintel.cli.commands.plugins import plugins_app
@@ -48,7 +47,6 @@ app.command(serve_app, name="serve")
 app.command(graphs_app, name="graph")
 app.command(docs_app, name="docs")
 app.command(storage_app, name="storage")
-app.command(history_app, name="history")
 app.command(datasets_ext_app, name="datasets")
 
 
@@ -102,7 +100,6 @@ __all__ = [
     "graphs_app",
     "health_app",
     "help_commands_app",
-    "history_app",
     "jobs_app",
     "meta_app",
     "plugins_app",

@@ -24,7 +24,7 @@ from codeintel.serving.semantic.datasets import (
 )
 from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
 from codeintel.serving.semantic.filter_ops import FilterOpError, validate_filter_value
-from codeintel.serving.semantic.models import FilterValue
+from codeintel.serving.semantic.models import FilterValue, Op
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
@@ -116,6 +116,7 @@ def build_relation_plan(
             con=con,
             ast=ast,
             context=context,
+            allowed_columns=spec.allowed_columns,
         )
     else:
         relation = _resolve_relation(
@@ -237,6 +238,7 @@ def _relation_from_ast(
     con: DuckDBConnection,
     ast: exp.Select,
     context: RelationBuildContext,
+    allowed_columns: frozenset[str],
 ) -> DuckDBRelation:
     from_expr = ast.args.get("from_")
     if not isinstance(from_expr, exp.From):
@@ -262,6 +264,7 @@ def _relation_from_ast(
             con=con,
             join=join,
             context=context,
+            allowed_columns=allowed_columns,
         )
     return relation
 
@@ -301,13 +304,18 @@ def _apply_join(
     con: DuckDBConnection,
     join: exp.Join,
     context: RelationBuildContext,
+    allowed_columns: frozenset[str],
 ) -> DuckDBRelation:
     if not isinstance(join.this, exp.Table):
         msg = "JOIN targets must be tables"
         raise DuckDBRelationQueryBuilderError(msg)
     join_relation = _relation_for_table(con=con, table=join.this, context=context)
     join_relation = _apply_relation_alias(join_relation, join.this)
-    join_condition = _join_condition_expr(join.args.get("on"))
+    join_condition = _join_condition_expr(
+        join.args.get("on"),
+        allowed_columns=allowed_columns,
+        column_types=context.column_types,
+    )
     join_type = _join_type(join)
     try:
         return relation.join(join_relation, join_condition, how=join_type)
@@ -318,39 +326,143 @@ def _apply_join(
 
 def _join_type(join: exp.Join) -> str:
     side = join.args.get("side")
-    if not isinstance(side, str):
+    kind = join.args.get("kind")
+    normalized: str | None = None
+    if isinstance(side, str):
+        normalized = side.strip().lower()
+    elif isinstance(kind, str):
+        normalized = kind.strip().lower()
+    if not normalized:
         return "inner"
-    normalized = side.strip().lower()
     if normalized == "full":
         return "outer"
-    return normalized
+    if normalized in {"inner", "left", "right", "outer"}:
+        return normalized
+    msg = f"Unsupported join type: {normalized}"
+    raise DuckDBRelationQueryBuilderError(msg)
 
 
-def _join_condition_expr(expr: exp.Expression | None) -> Expression:
+def _join_condition_expr(
+    expr: exp.Expression | None,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
     if expr is None:
         msg = "JOIN requires an ON clause"
         raise DuckDBRelationQueryBuilderError(msg)
     if isinstance(expr, exp.Paren):
-        return _join_condition_expr(expr.this)
+        return _join_condition_expr(
+            expr.this,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
     if isinstance(expr, exp.And):
         if expr.this is None or expr.expression is None:
             msg = "JOIN AND requires two expressions"
             raise DuckDBRelationQueryBuilderError(msg)
-        return _join_condition_expr(expr.this) & _join_condition_expr(expr.expression)
-    if isinstance(expr, exp.EQ):
-        left = expr.this
-        right = expr.expression
-        if not isinstance(left, exp.Column) or not isinstance(right, exp.Column):
-            msg = "JOIN conditions must compare columns"
+        return _join_condition_expr(
+            expr.this,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        ) & _join_condition_expr(
+            expr.expression,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Or):
+        if expr.this is None or expr.expression is None:
+            msg = "JOIN OR requires two expressions"
             raise DuckDBRelationQueryBuilderError(msg)
-        left_expr = _qualified_column(left)
-        right_expr = _qualified_column(right)
-        return left_expr == right_expr
+        return _join_condition_expr(
+            expr.this,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        ) | _join_condition_expr(
+            expr.expression,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Not):
+        if expr.this is None:
+            msg = "JOIN NOT requires an expression"
+            raise DuckDBRelationQueryBuilderError(msg)
+        return ~_join_condition_expr(
+            expr.this,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, _AST_COMPARISON_TYPES):
+        return _join_comparison_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
     msg = f"Unsupported JOIN predicate: {type(expr).__name__}"
     raise DuckDBRelationQueryBuilderError(msg)
 
 
+def _join_comparison_expr(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    left = expr.this
+    right = expr.expression
+    if left is None or right is None:
+        msg = "JOIN comparisons require two expressions"
+        raise DuckDBRelationQueryBuilderError(msg)
+    left_expr = _join_operand_expr(
+        left,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    right_expr = _join_operand_expr(
+        right,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if isinstance(expr, exp.EQ):
+        return left_expr == right_expr
+    if isinstance(expr, exp.NEQ):
+        return left_expr != right_expr
+    if isinstance(expr, exp.LT):
+        return left_expr < right_expr
+    if isinstance(expr, exp.LTE):
+        return left_expr <= right_expr
+    if isinstance(expr, exp.GT):
+        return left_expr > right_expr
+    if isinstance(expr, exp.GTE):
+        return left_expr >= right_expr
+    msg = f"Unsupported JOIN comparison: {type(expr).__name__}"
+    raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _join_operand_expr(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if isinstance(expr, exp.Column):
+        column = _column_name(expr)
+        _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="join")
+        return _qualified_column(expr)
+    if isinstance(expr, (exp.Literal, exp.Boolean)):
+        return ConstantExpression(_literal_value(expr))
+    return _duckdb_expr_from_projection(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
 def _qualified_column(column: exp.Column) -> Expression:
+    return ColumnExpression(_qualified_column_name(column))
+
+
+def _qualified_column_name(column: exp.Column) -> str:
     name = _column_name(column)
     table = column.table
     if isinstance(table, exp.Identifier):
@@ -359,8 +471,7 @@ def _qualified_column(column: exp.Column) -> Expression:
         qualifier = table
     else:
         qualifier = None
-    column_name = f"{qualifier}.{name}" if qualifier else name
-    return ColumnExpression(column_name)
+    return f"{qualifier}.{name}" if qualifier else name
 
 
 def _table_key_from_table(table: exp.Table) -> str:
@@ -611,7 +722,7 @@ def _duckdb_projection_basic(
     if isinstance(expr, exp.Column):
         column = _column_name(expr)
         _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
-        return ColumnExpression(column)
+        return ColumnExpression(_qualified_column_name(expr))
     if isinstance(expr, exp.Alias):
         return _duckdb_alias_expr(
             expr,
@@ -649,6 +760,8 @@ def _duckdb_projection_structured(
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
+    elif result is None and isinstance(expr, exp.Interval):
+        result = _duckdb_interval_expr(expr)
     elif result is None and isinstance(expr, exp.Case):
         result = _duckdb_case_expr(
             expr,
@@ -678,19 +791,44 @@ def _duckdb_projection_function(
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None,
 ) -> Expression | None:
-    if isinstance(expr, exp.Anonymous):
-        return _duckdb_function_expr(
+    result: Expression | None = None
+    if isinstance(expr, exp.DateAdd):
+        result = _duckdb_date_add_expr(
             expr,
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
-    if isinstance(expr, exp.Func):
-        return _duckdb_named_function_expr(
+    elif isinstance(expr, exp.DateDiff):
+        result = _duckdb_date_diff_expr(
             expr,
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
-    return None
+    elif isinstance(expr, exp.TimestampTrunc):
+        result = _duckdb_date_trunc_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.Extract):
+        result = _duckdb_extract_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.Anonymous):
+        result = _duckdb_function_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    elif isinstance(expr, exp.Func):
+        result = _duckdb_named_function_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    return result
 
 
 def _duckdb_projection_literal(expr: exp.Expression) -> Expression | None:
@@ -746,6 +884,180 @@ def _duckdb_cast_expr(
         column_types=column_types,
     )
     return value.cast(duckdb_type)
+
+
+def _duckdb_date_add_expr(
+    expr: exp.DateAdd,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if expr.this is None or expr.expression is None:
+        msg = "DATE_ADD requires a date expression and interval"
+        raise DuckDBRelationQueryBuilderError(msg)
+    unit_expr = expr.args.get("unit")
+    if unit_expr is not None:
+        interval_expr = _interval_expr_from_unit_value(expr.this, expr.expression)
+        date_expr = _duckdb_expr_from_projection(
+            unit_expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        return FunctionExpression("date_add", date_expr, interval_expr)
+    date_expr = _duckdb_expr_from_projection(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    interval_expr = _interval_expr_from_expression(
+        expr.expression,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return FunctionExpression("date_add", date_expr, interval_expr)
+
+
+def _duckdb_date_diff_expr(
+    expr: exp.DateDiff,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    unit_expr = expr.args.get("unit")
+    if expr.this is None or expr.expression is None or unit_expr is None:
+        msg = "DATE_DIFF requires a unit and two expressions"
+        raise DuckDBRelationQueryBuilderError(msg)
+    unit = _duckdb_expr_from_projection(
+        unit_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    start_expr = _duckdb_expr_from_projection(
+        expr.expression,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    end_expr = _duckdb_expr_from_projection(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return FunctionExpression("date_diff", unit, start_expr, end_expr)
+
+
+def _duckdb_date_trunc_expr(
+    expr: exp.TimestampTrunc,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    unit_expr = expr.args.get("unit")
+    if expr.this is None or unit_expr is None:
+        msg = "DATE_TRUNC requires a unit and expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    unit = _duckdb_expr_from_projection(
+        unit_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    value_expr = _duckdb_expr_from_projection(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return FunctionExpression("date_trunc", unit, value_expr)
+
+
+def _duckdb_extract_expr(
+    expr: exp.Extract,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if expr.this is None or expr.expression is None:
+        msg = "EXTRACT requires a unit and expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    unit = _duckdb_expr_from_projection(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    value_expr = _duckdb_expr_from_projection(
+        expr.expression,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return FunctionExpression("date_part", unit, value_expr)
+
+
+def _duckdb_interval_expr(expr: exp.Interval) -> Expression:
+    if expr.this is None:
+        msg = "INTERVAL requires a literal value"
+        raise DuckDBRelationQueryBuilderError(msg)
+    unit_expr = expr.args.get("unit")
+    if unit_expr is None:
+        msg = "INTERVAL requires a unit"
+        raise DuckDBRelationQueryBuilderError(msg)
+    interval = _interval_literal_from_parts(expr.this, unit_expr)
+    return interval.cast(duckdb.sqltype("INTERVAL"))
+
+
+def _interval_expr_from_expression(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if isinstance(expr, exp.Interval):
+        return _duckdb_interval_expr(expr)
+    if isinstance(expr, exp.Literal) and expr.is_string:
+        return ConstantExpression(str(expr.this)).cast(duckdb.sqltype("INTERVAL"))
+    return _duckdb_expr_from_projection(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+def _interval_expr_from_unit_value(
+    unit_expr: exp.Expression,
+    value_expr: exp.Expression,
+) -> Expression:
+    interval = _interval_literal_from_parts(value_expr, unit_expr)
+    return interval.cast(duckdb.sqltype("INTERVAL"))
+
+
+def _interval_literal_from_parts(
+    value_expr: exp.Expression,
+    unit_expr: exp.Expression,
+) -> Expression:
+    unit = _interval_unit(unit_expr)
+    value = _interval_value(value_expr)
+    literal = f"{value} {unit}"
+    return ConstantExpression(literal)
+
+
+def _interval_unit(expr: exp.Expression) -> str:
+    if isinstance(expr, exp.Var) or (isinstance(expr, exp.Literal) and expr.is_string):
+        raw = expr.this
+    else:
+        msg = f"Unsupported interval unit: {type(expr).__name__}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if not isinstance(raw, str) or not raw:
+        msg = "Interval unit must be a string"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return raw.lower()
+
+
+def _interval_value(expr: exp.Expression) -> str:
+    value = _literal_value(expr)
+    if isinstance(value, bool):
+        msg = "Interval value must be numeric"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if isinstance(value, (int, float, str)):
+        return str(value)
+    msg = f"Unsupported interval value: {type(value).__name__}"
+    raise DuckDBRelationQueryBuilderError(msg)
 
 
 def _duckdb_case_expr(
@@ -999,8 +1311,7 @@ def _duckdb_named_function_expr(
     column_types: Mapping[str, ColumnType] | None,
 ) -> Expression:
     func_name = expr.sql_name().lower()
-    if func_name == "extract":
-        func_name = "date_part"
+    func_name = _NAMED_FUNCTION_ALIASES.get(func_name, func_name)
     if func_name not in _NAMED_FUNCTIONS:
         msg = f"Unsupported function: {func_name or '<unknown>'}"
         raise DuckDBRelationQueryBuilderError(msg)
@@ -1251,7 +1562,7 @@ def _order_by_from_ast(
             raise DuckDBRelationQueryBuilderError(msg)
         column = _column_name(expr.this)
         _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="order_by")
-        items.append((column, bool(expr.args.get("desc"))))
+        items.append((_qualified_column_name(expr.this), bool(expr.args.get("desc"))))
     return items
 
 
@@ -1441,7 +1752,7 @@ _AST_COMPARISON_TYPES: tuple[type[exp.Expression], ...] = (
     exp.GT,
     exp.GTE,
 )
-_AST_COMPARISON_OPS: dict[type[exp.Expression], str] = {
+_AST_COMPARISON_OPS: dict[type[exp.Expression], Op] = {
     exp.EQ: "eq",
     exp.NEQ: "ne",
     exp.LT: "lt",
@@ -1449,7 +1760,7 @@ _AST_COMPARISON_OPS: dict[type[exp.Expression], str] = {
     exp.GT: "gt",
     exp.GTE: "gte",
 }
-_REVERSED_OPS: dict[str, str] = {
+_REVERSED_OPS: dict[Op, Op] = {
     "eq": "eq",
     "ne": "ne",
     "lt": "gt",
@@ -1553,15 +1864,15 @@ def _literal_value(expr: exp.Expression | None) -> FilterScalar:
     if expr is None:
         msg = "Expected literal value"
         raise DuckDBRelationQueryBuilderError(msg)
-    value = _literal_from_to_py(expr)
-    if value is not None:
-        return value
-    value = _literal_from_boolean(expr)
-    if value is not None:
-        return value
-    value = _literal_from_literal(expr)
-    if value is not None:
-        return value
+    for extractor in (
+        _literal_from_to_py,
+        _literal_from_neg,
+        _literal_from_boolean,
+        _literal_from_literal,
+    ):
+        value = extractor(expr)
+        if value is not None:
+            return value
     msg = f"Unsupported literal type: {type(expr).__name__}"
     raise DuckDBRelationQueryBuilderError(msg)
 
@@ -1576,6 +1887,17 @@ def _literal_from_to_py(expr: exp.Expression) -> FilterScalar | None:
         if isinstance(value, (bool, int, float, str)):
             return value
     return None
+
+
+def _literal_from_neg(expr: exp.Expression) -> FilterScalar | None:
+    result: FilterScalar | None = None
+    if isinstance(expr, exp.Neg):
+        inner = expr.this
+        if inner is not None:
+            value = _literal_from_literal(inner)
+            if isinstance(value, (int, float)):
+                result = -value
+    return result
 
 
 def _literal_from_boolean(expr: exp.Expression) -> FilterScalar | None:
@@ -1623,12 +1945,18 @@ def _column_name(column: exp.Column) -> str:
 
 
 _STRING_FUNC_ARG_COUNT = 2
-_STRING_FUNC_MAP = {
+_STRING_FUNC_MAP: dict[str, Op] = {
     "contains": "contains",
     "starts_with": "startswith",
 }
 _STRING_PREDICATE_FUNCS = frozenset(_STRING_FUNC_MAP.keys())
 _STRING_UNARY_FUNCS = frozenset({"lower", "upper"})
+_NAMED_FUNCTION_ALIASES = {
+    "dateadd": "date_add",
+    "datediff": "date_diff",
+    "extract": "date_part",
+    "timestamp_trunc": "date_trunc",
+}
 _GENERIC_FUNCTIONS = frozenset(
     {
         "date_add",
@@ -1673,7 +2001,7 @@ def _typed_constant(value: FilterValue, *, column_type: ColumnType | None) -> Ex
 def _build_comparison_predicate(
     *,
     col_expr: Expression,
-    op: str,
+    op: Op,
     value: FilterValue,
     column_type: ColumnType | None,
 ) -> Expression:
@@ -1723,7 +2051,7 @@ def _build_in_predicate(
 def _build_string_predicate(
     *,
     col_expr: Expression,
-    op: str,
+    op: Op,
     value: FilterValue,
     column_type: ColumnType | None,
 ) -> Expression:

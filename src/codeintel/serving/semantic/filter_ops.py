@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.primitives import column_type_base
-from codeintel.serving.semantic.models import Op
+from codeintel.serving.semantic.models import FilterValue, Op
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType
@@ -56,9 +56,9 @@ def allowed_ops_for_column_type(column_type: ColumnType | str | None) -> tuple[O
 def validate_filter_value(
     *,
     op: Op,
-    value: object,
+    value: FilterValue,
     column_type: ColumnType | str | None,
-) -> object:
+) -> FilterValue:
     """Validate a filter operator/value pair for a column type.
 
     Parameters

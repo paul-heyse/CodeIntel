@@ -24,9 +24,6 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
         "CONFIG_PROJECTION_KEY_EDGES_COLS",
         "CONFIG_PROJECTION_MODULE_EDGES_COLS",
     },
-    "codeintel.analytics.history": {
-        "FileCommitDelta",
-    },
     "codeintel.analytics.parsing": {
         "BaseValidationReporter",
         "FunctionParserRegistry",

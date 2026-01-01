@@ -991,7 +991,6 @@ def build_function_profile_recipe(
         contracts_by_func=join_function_contracts(inputs),
         roles_by_func=join_function_roles(inputs),
         docs_by_func=join_function_docs(inputs),
-        history_by_func=join_function_history(inputs),
     )
     rows = list(build_function_profile_rows(inputs, views=views))
     if not rows:

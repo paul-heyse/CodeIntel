@@ -134,10 +134,6 @@ Objective: Ensure all analytics compute outputs are LazyFrame or
 RecordBatchReader, and remove any Python row assembly.
 
 Changes:
-- Convert `src/codeintel/analytics/history/history_timeseries.py` to a Polars
-  LazyFrame pipeline that returns a frame or RecordBatchReader instead of tuple rows.
-- Update `src/codeintel/build/hamilton/native/analytics/history_timeseries.py`
-  to use `save_dataset` or `save_relation_table` on a LazyFrame.
 - Standardize on `relation_to_polars(...)` returning LazyFrame for base frames in:
   - `src/codeintel/build/hamilton/native/analytics/tables_functions.py`
   - `src/codeintel/build/hamilton/native/analytics/tables_modules.py`
@@ -400,10 +396,6 @@ Acceptance criteria:
   `src/codeintel/build/hamilton/native/patterns/tool_target.py`
 
 ### 2) Analytics: LazyFrame/RecordBatchReader outputs only
-- [ ] Convert history timeseries to Polars-only computation and remove row lists:
-  `src/codeintel/analytics/history/history_timeseries.py`
-- [ ] Wire Hamilton native history_timeseries to save columnar outputs:
-  `src/codeintel/build/hamilton/native/analytics/history_timeseries.py`
 - [ ] Ensure analytics table functions source from LazyFrame and return LazyFrame:
   `src/codeintel/build/hamilton/native/analytics/tables_functions.py`,
   `src/codeintel/build/hamilton/native/analytics/tables_modules.py`,

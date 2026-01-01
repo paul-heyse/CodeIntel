@@ -141,12 +141,11 @@ ensuring tag filters remain expressive.
 
 2. **Update tests to assert normalized catalog names.**
    - Adjust snapshot/cli tests to accept normalized identifiers.
-   - Files: `tests/cli/test_history_timeseries_cli.py`,
-     `tests/storage/test_gateway_factory.py`.
+   - Files: `tests/storage/test_gateway_factory.py`.
 
 **Acceptance criteria:**
 - No `Invalid catalog identifier` errors.
-- Snapshot and history CLI tests pass with normalized catalog IDs.
+- Snapshot tests pass with normalized catalog IDs.
 
 
 ### Phase 4: Meta catalog attachment in tests
@@ -255,7 +254,7 @@ ensuring tag filters remain expressive.
 - Run targeted pytest subsets per phase to keep runtime manageable:
   - Tag/query: `tests/tags`, `tests/storage/test_docs_views.py`
   - Views: `tests/storage/repositories`, `tests/storage/test_graphs_repository.py`
-  - Catalog: `tests/cli/test_history_timeseries_cli.py`, `tests/storage/test_gateway_factory.py`
+  - Catalog: `tests/storage/test_gateway_factory.py`
   - CLI: `tests/cli/test_build_command.py`, `tests/cli/test_cli_scope_and_plan.py`
   - Docs export: `tests/docs_export`
   - Serving: `tests/serving`

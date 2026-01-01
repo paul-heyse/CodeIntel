@@ -35,7 +35,6 @@ __all__ = [
     "AnalyticsFunctionAstFeaturesRow",
     "AnalyticsFunctionContractsRow",
     "AnalyticsFunctionEffectsRow",
-    "AnalyticsFunctionHistoryRow",
     "AnalyticsFunctionMetricsRow",
     "AnalyticsFunctionProfileRow",
     "AnalyticsFunctionTypesRow",
@@ -47,7 +46,6 @@ __all__ = [
     "AnalyticsGraphMetricsModulesRow",
     "AnalyticsGraphStatsRow",
     "AnalyticsGraphValidationRow",
-    "AnalyticsHistoryTimeseriesRow",
     "AnalyticsHotspotsRow",
     "AnalyticsModuleProfileRow",
     "AnalyticsSemanticRolesFunctionsRow",
@@ -609,32 +607,6 @@ class AnalyticsFunctionEffectsRow(TypedDict):
     created_at: datetime
 
 
-class AnalyticsFunctionHistoryRow(TypedDict):
-    """Row model for analytics.function_history."""
-
-    repo: str
-    commit: str
-    function_goid_h128: int
-    urn: str
-    rel_path: str
-    module: str
-    qualname: str
-    created_in_commit: str | None
-    created_at: datetime | None
-    last_modified_commit: str | None
-    last_modified_at: datetime | None
-    age_days: int | None
-    commit_count: int
-    author_count: int
-    lines_added: int
-    lines_deleted: int
-    churn_score: float
-    stability_bucket: str
-    history_window_start: datetime | None
-    history_window_end: datetime | None
-    created_at_row: datetime
-
-
 class AnalyticsFunctionMetricsRow(TypedDict):
     """Row model for analytics.function_metrics."""
 
@@ -949,30 +921,6 @@ class AnalyticsGraphValidationRow(TypedDict):
     detail: str
     metadata: object | None
     created_at: datetime
-
-
-class AnalyticsHistoryTimeseriesRow(TypedDict):
-    """Row model for analytics.history_timeseries."""
-
-    repo: str
-    entity_kind: str
-    entity_stable_id: str
-    function_goid_h128: int | None
-    module: str | None
-    rel_path: str
-    language: str
-    qualname: str | None
-    commit: str
-    commit_ts: datetime
-    loc: int | None
-    cyclomatic_complexity: int | None
-    coverage_ratio: float | None
-    static_error_count: int | None
-    typedness_bucket: str | None
-    risk_score: float | None
-    risk_level: str | None
-    bucket_label: str | None
-    created_at_row: datetime
 
 
 class AnalyticsHotspotsRow(TypedDict):

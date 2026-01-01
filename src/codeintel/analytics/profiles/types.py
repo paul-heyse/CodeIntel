@@ -164,4 +164,3 @@ class FunctionDocView:
     doc_long: str | None
     doc_params: object
     doc_returns: object
-

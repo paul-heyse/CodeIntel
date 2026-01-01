@@ -64,8 +64,8 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
   entries once Parquet metadata is authoritative
   (pending: `analytics.dependency_targets` decision).
 - [x] Adopt inference-only schema policy; treat output registry as compatibility.
-- [ ] Implement the Parquet metadata contract in build materializers.
-- [ ] Update DuckDB/SQLGlot ingestion to derive schemas from Parquet metadata only.
+- [x] Implement the Parquet metadata contract in build materializers.
+- [x] Update DuckDB/SQLGlot ingestion to derive schemas from Parquet metadata only.
 
 ### Phase 1: Core ingestion prerequisites
 - [~] Validate core inputs (AST/CST/docstrings/modules/GOIDs) are complete
@@ -83,9 +83,9 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 
 ### Phase 4: Profiles and higher-level aggregates (snapshot-only)
 - [x] Implement function/profile, file_profile, module_profile, hotspots.
-- [ ] Remove history-based dependencies from profiles/hotspots
-  (deprecate `analytics.function_history`).
-- [ ] Decommission history_timeseries analytics (see decommission scope).
+- [x] Remove history-based dependencies from profiles/hotspots
+  (`analytics.function_history` removed).
+- [x] Decommission history_timeseries analytics (see decommission scope).
 
 ### Phase 5: Dependencies, config, semantic roles, subsystems
 - [x] Port external dependency detection and config flow graphs.
@@ -101,8 +101,8 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 - [x] Implement behavioral coverage and entrypoint test linking.
 
 ### Phase 8: Decommission legacy packages + history analytics
-- [ ] Remove history_timeseries + function_history targets, schemas, CLI, docs.
-- [ ] Remove docs.v_* history views and view map entries.
+- [x] Remove history_timeseries + function_history targets, schemas, CLI, docs.
+- [x] Remove docs.v_* history views and view map entries.
 - [ ] Freeze imports of legacy analytics/graphs in build runtime.
 - [ ] Remove unused legacy orchestration once parity is verified.
 
@@ -119,7 +119,7 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 - Inference-first policy is adopted; Parquet metadata is the authoritative schema
   source for storage/serving.
 - History outputs (`analytics.function_history`, `analytics.history_timeseries`)
-  are slated for decommission to keep analytics snapshot-only.
+  have been decommissioned to keep analytics snapshot-only.
 - Remaining scope: implement Parquet metadata contract + DuckDB ingestion,
   decide whether to add or de-scope `analytics.dependency_targets`, and complete
   Phase 8 decommission steps.
@@ -169,7 +169,6 @@ analytics.file_profile
 analytics.function_ast_features
 analytics.function_contracts
 analytics.function_effects
-analytics.function_history
 analytics.function_metrics
 analytics.function_profile
 analytics.function_types
@@ -182,7 +181,6 @@ analytics.graph_metrics_modules_ext
 analytics.graph_stats
 analytics.graph_validation
 analytics.hello_example
-analytics.history_timeseries
 analytics.hotspots
 analytics.module_profile
 analytics.semantic_roles_functions
@@ -218,7 +216,7 @@ graph.symbol_use_edges
 - Keep `analytics.hello_example` out of scope (dev example only).
 - Align graph table acceptance criteria to actual schema columns
   (e.g., `graph.call_graph_nodes` has no `repo/commit`).
-- Planned removals from registry once decommissioned:
+- Removed from registry after decommission:
   `analytics.history_timeseries`, `analytics.function_history`,
   `docs.v_function_history_timeseries`, `docs.v_module_history_timeseries`.
 
@@ -234,16 +232,16 @@ graph.symbol_use_edges
   output registry schemas are no longer a boundary requirement.
 
 ## Parquet Boundary Implementation Checklist
-- [ ] Extend `save_dataset` / ArrowDatasetSaver to emit the required metadata
+- [x] Extend `save_dataset` / ArrowDatasetSaver to emit the required metadata
   into Parquet key/value metadata and a dataset-level `_metadata` or sidecar
   manifest.
 - [ ] Standardize the dataset directory layout so each table key has a single
   Parquet root and consistent partitioning.
-- [ ] Update DuckDB ingestion to read schema + metadata from Parquet only
+- [x] Update DuckDB ingestion to read schema + metadata from Parquet only
   (no fallback to output_registry).
-- [ ] Update SQLGlot view building to consume only DuckDB sources derived from
+- [x] Update SQLGlot view building to consume only DuckDB sources derived from
   Parquet datasets.
-- [ ] Add tests that assert metadata presence and DuckDB schema derivation for a
+- [x] Add tests that assert metadata presence and DuckDB schema derivation for a
   representative analytics + graph table.
 
 ## Initial Implementation Slice (v1)
@@ -604,20 +602,6 @@ Acceptance criteria:
 - Each row contains `repo`, `commit`, `rel_path`, and issue category.
 - Issues are stable across identical inputs.
 
-#### analytics.function_history
-Status: [~] (decommission planned)
-Source logic: `src/codeintel/analytics/functions/function_history.py`.
-Target DAG module: `src/codeintel/build/hamilton/native/analytics/function_history.py`.
-DAG node spec:
-- Nodes: `function_history__base -> function_history__table`.
-- Inputs: `core.goids`, git history, `analytics.function_metrics`.
-- Output: `analytics.function_history` dataset.
-Decommission criteria:
-- Remove target + table key from DAG inventory and build specs.
-- Remove output registry entry + generated row model.
-- Update downstream tables (`analytics.function_profile`, `analytics.hotspots`)
-  to use snapshot-only inputs.
-
 #### analytics.goid_risk_factors
 Status: [x]
 Source logic: `src/codeintel/analytics/subsystems/risk.py`.
@@ -682,19 +666,6 @@ DAG node spec:
 Acceptance criteria:
 - Ranked outputs are deterministic per snapshot.
 - Scores fall within expected ranges.
-
-#### analytics.history_timeseries
-Status: [~] (decommission planned)
-Source logic: `src/codeintel/analytics/history/history_timeseries.py`.
-Target DAG module: `src/codeintel/build/hamilton/native/analytics/history_timeseries.py`.
-DAG node spec:
-- Nodes: `history_timeseries__base -> history_timeseries__table -> t__history_timeseries`.
-- Inputs: `env.history_options`, `env.history_db_resolver`.
-- Output: `analytics.history_timeseries` dataset.
-Decommission criteria:
-- Remove target + table key from DAG inventory and build specs.
-- Remove output registry entry + generated row model.
-- Remove CLI commands and tests for history timeseries.
 
 ### Analytics tables (coverage and testing)
 #### analytics.coverage_functions
@@ -1204,61 +1175,61 @@ Acceptance criteria:
 
 ## History + Timeseries Decommission (current-state only)
 ### Removal checklist
-- [ ] Remove history targets (`analytics.history_timeseries`,
+- [x] Remove history targets (`analytics.history_timeseries`,
   `analytics.function_history`) from DAG inventory and build specs.
-- [ ] Remove output registry + row models for history tables.
-- [ ] Remove CLI commands/options/results for history.timeseries.
-- [ ] Remove docs views that depend on history tables.
-- [ ] Update snapshot-only analytics to drop history inputs
+- [x] Remove output registry + row models for history tables.
+- [x] Remove CLI commands/options/results for history.timeseries.
+- [x] Remove docs views that depend on history tables.
+- [x] Update snapshot-only analytics to drop history inputs
   (`analytics.hotspots`, `analytics.function_profile`).
-- [ ] Remove tests and helpers that insert or validate history/timeseries rows.
+- [x] Remove tests and helpers that insert or validate history/timeseries rows.
 
 ### File scope (delete or update)
 Timeseries-specific:
-- [ ] `src/codeintel/analytics/history/history_timeseries.py` (delete).
-- [ ] `src/codeintel/build/hamilton/native/analytics/history_timeseries.py` (delete).
-- [ ] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
-- [ ] `src/codeintel/build/hamilton/env.py` (remove HistoryTimeseriesOptions).
-- [ ] `src/codeintel/build/run_context.py` (remove HistoryTimeseriesOptions).
-- [ ] `src/codeintel/build/config.py` (remove history_timeseries config).
-- [ ] `src/codeintel/cli/commands/history.py` (remove history.timeseries).
-- [ ] `src/codeintel/cli/handlers/history.py` (remove handler logic).
-- [ ] `src/codeintel/cli/options/registry.py` (remove timeseries flags).
-- [ ] `src/codeintel/cli/core/result_types.py` (remove HistoryTimeseriesResult).
-- [ ] `src/codeintel/cli/handlers/__init__.py` (drop export).
-- [ ] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
-- [ ] `src/codeintel/core/schemas/output_registry.py` (remove history_timeseries).
-- [ ] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
-- [ ] `src/codeintel/core/schemas/table_registry.py` (remove table key).
-- [ ] `src/codeintel/storage/views/view_ast_map.json`
-  (remove docs.v_*_history_timeseries).
-- [ ] `tests/cli/test_history_timeseries_cli.py` (remove).
-- [ ] `tests/cli/test_history_validation.py` (remove timeseries checks).
-- [ ] `tests/cli/test_cli_error_parity_apps.py` (update).
-- [ ] `tests/cli/test_help_rendering.py` (update history help).
-- [ ] `tests/build/hamilton/test_pr55_final_sweep.py` (remove history_timeseries).
-- [ ] `tests/build/hamilton/snapshots/*` (regenerate after removal).
-- [ ] `docs/architecture.md` (remove history env reference).
-- [ ] `docs/hamilton_inference_first_implementation_plan.md`
+- [x] `src/codeintel/analytics/history/history_timeseries.py` (delete).
+- [x] `src/codeintel/build/hamilton/native/analytics/history_timeseries.py` (delete).
+- [x] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
+- [x] `src/codeintel/build/hamilton/env.py` (remove HistoryTimeseriesOptions).
+- [x] `src/codeintel/build/run_context.py` (remove HistoryTimeseriesOptions).
+- [x] `src/codeintel/build/config.py` (remove history_timeseries config).
+- [x] `src/codeintel/cli/commands/history.py` (remove history.timeseries).
+- [x] `src/codeintel/cli/handlers/history.py` (remove handler logic).
+- [x] `src/codeintel/cli/options/registry.py` (remove timeseries flags).
+- [x] `src/codeintel/cli/core/result_types.py` (remove HistoryTimeseriesResult).
+- [x] `src/codeintel/cli/handlers/__init__.py` (drop export).
+- [x] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
+- [x] `src/codeintel/core/schemas/output_registry.py` (remove history_timeseries).
+- [x] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
+- [x] `src/codeintel/core/schemas/table_registry.py` (remove table key).
+- [x] `src/codeintel/storage/views/view_ast_map.json`
+  (remove docs.v_*_history_timeseries; view map already retired).
+- [x] `tests/cli/test_history_timeseries_cli.py` (remove).
+- [x] `tests/cli/test_history_validation.py` (remove timeseries checks).
+- [x] `tests/cli/test_cli_error_parity_apps.py` (update).
+- [x] `tests/cli/test_help_rendering.py` (update history help).
+- [x] `tests/build/hamilton/test_pr55_final_sweep.py` (remove history_timeseries).
+- [x] `tests/build/hamilton/snapshots/*` (regenerate after removal).
+- [x] `docs/architecture.md` (remove history env reference).
+- [x] `docs/hamilton_inference_first_implementation_plan.md`
   (remove docs.v_* history).
-- [ ] `docs/polars_arrow_rearchitecture_plan.md` (remove history timeseries plan).
+- [x] `docs/polars_arrow_rearchitecture_plan.md` (remove history timeseries plan).
 
 History (multi-commit) analytics removal:
-- [ ] `src/codeintel/analytics/functions/function_history.py` (delete).
-- [ ] `src/codeintel/build/hamilton/native/analytics/function_history.py` (delete).
-- [ ] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
-- [ ] `src/codeintel/analytics/profiles/functions.py` (remove history joins).
-- [ ] `src/codeintel/build/hamilton/native/analytics/profiles.py` (drop inputs).
-- [ ] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
-- [ ] `src/codeintel/core/schemas/output_registry.py` (remove function_history).
-- [ ] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
-- [ ] `src/codeintel/core/schemas/table_registry.py` (remove table key).
-- [ ] `src/codeintel/storage/views/view_ast_map.json`
-  (remove docs.v_function_history).
-- [ ] `tests/_helpers/orchestration/history.py` (remove function_history helpers).
-- [ ] `tests/analytics/test_profiles_and_functions.py` (remove joins).
-- [ ] `tests/architecture/test_analytics_imports.py` (update allowed exports).
-- [ ] `docs/hamilton_best_in_class_inventory.md` (remove function_history table).
+- [x] `src/codeintel/analytics/functions/function_history.py` (delete).
+- [x] `src/codeintel/build/hamilton/native/analytics/function_history.py` (delete).
+- [x] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
+- [x] `src/codeintel/analytics/profiles/functions.py` (remove history joins).
+- [x] `src/codeintel/build/hamilton/native/analytics/profiles.py` (drop inputs).
+- [x] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
+- [x] `src/codeintel/core/schemas/output_registry.py` (remove function_history).
+- [x] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
+- [x] `src/codeintel/core/schemas/table_registry.py` (remove table key).
+- [x] `src/codeintel/storage/views/view_ast_map.json`
+  (remove docs.v_function_history; view map already retired).
+- [x] `tests/_helpers/orchestration/history.py` (remove function_history helpers).
+- [x] `tests/analytics/test_profiles_and_functions.py` (remove joins).
+- [x] `tests/architecture/test_analytics_imports.py` (update allowed exports).
+- [x] `docs/hamilton_best_in_class_inventory.md` (remove function_history table).
 
 ## Legacy Analytics/Graphs Decommission
 ### Prereqs

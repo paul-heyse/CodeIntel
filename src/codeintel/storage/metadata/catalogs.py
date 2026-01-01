@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from sqlglot import exp
+
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -25,7 +28,7 @@ class CatalogGateway(Protocol):
         ...
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CanonicalCatalogEntry:
     """Stored canonical catalog payload."""
 
@@ -66,12 +69,22 @@ def load_canonical_catalog(
     if not catalog_kind or not catalog_hash:
         return None
     table_ref = meta_table_ref("metadata.canonical_catalogs")
+    table_expr = table_expr_from_ref(table_ref)
+    predicate = exp.and_(
+        exp.EQ(this=exp.column("catalog_kind"), expression=exp.Placeholder()),
+        exp.EQ(this=exp.column("catalog_hash"), expression=exp.Placeholder()),
+    )
+    query = (
+        exp.select(
+            exp.column("payload"),
+            exp.column("inputs"),
+            exp.column("created_at"),
+        )
+        .from_(table_expr)
+        .where(predicate)
+    )
     row = gateway.con.execute(
-        f"""
-        SELECT payload, inputs, created_at
-        FROM {table_ref}
-        WHERE catalog_kind = ? AND catalog_hash = ?
-        """,
+        render_sql_duckdb(query),
         [catalog_kind, catalog_hash],
     ).fetchone()
     if row is None:
@@ -103,16 +116,20 @@ def load_latest_canonical_catalog(
     if not catalog_kind:
         return None
     table_ref = meta_table_ref("metadata.canonical_catalogs")
-    row = gateway.con.execute(
-        f"""
-        SELECT catalog_hash, payload, inputs, created_at
-        FROM {table_ref}
-        WHERE catalog_kind = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        [catalog_kind],
-    ).fetchone()
+    table_expr = table_expr_from_ref(table_ref)
+    query = (
+        exp.select(
+            exp.column("catalog_hash"),
+            exp.column("payload"),
+            exp.column("inputs"),
+            exp.column("created_at"),
+        )
+        .from_(table_expr)
+        .where(exp.EQ(this=exp.column("catalog_kind"), expression=exp.Placeholder()))
+        .order_by(exp.Ordered(this=exp.column("created_at"), desc=True))
+        .limit(1)
+    )
+    row = gateway.con.execute(render_sql_duckdb(query), [catalog_kind]).fetchone()
     if row is None:
         return None
     catalog_hash, payload_raw, inputs_raw, created_at = row
@@ -142,16 +159,20 @@ def load_latest_canonical_catalog_from_connection(
     if not catalog_kind:
         return None
     table_ref = meta_table_ref("metadata.canonical_catalogs")
-    row = con.execute(
-        f"""
-        SELECT catalog_hash, payload, inputs, created_at
-        FROM {table_ref}
-        WHERE catalog_kind = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        [catalog_kind],
-    ).fetchone()
+    table_expr = table_expr_from_ref(table_ref)
+    query = (
+        exp.select(
+            exp.column("catalog_hash"),
+            exp.column("payload"),
+            exp.column("inputs"),
+            exp.column("created_at"),
+        )
+        .from_(table_expr)
+        .where(exp.EQ(this=exp.column("catalog_kind"), expression=exp.Placeholder()))
+        .order_by(exp.Ordered(this=exp.column("created_at"), desc=True))
+        .limit(1)
+    )
+    row = con.execute(render_sql_duckdb(query), [catalog_kind]).fetchone()
     if row is None:
         return None
     catalog_hash, payload_raw, inputs_raw, created_at = row
@@ -175,21 +196,42 @@ def upsert_canonical_catalog(
     payload_json = json.dumps(entry.payload, sort_keys=True)
     inputs_json = json.dumps(entry.inputs, sort_keys=True) if entry.inputs is not None else None
     table_ref = meta_table_ref("metadata.canonical_catalogs")
+    table_expr = table_expr_from_ref(table_ref)
+    columns = [
+        "catalog_kind",
+        "catalog_hash",
+        "payload",
+        "inputs",
+        "created_at",
+    ]
+    placeholders = [exp.Placeholder() for _ in columns]
+    insert = exp.Insert(
+        this=exp.Schema(
+            this=table_expr,
+            expressions=[exp.to_identifier(column) for column in columns],
+        ),
+        expression=exp.Values(expressions=[exp.Tuple(expressions=placeholders)]),
+        conflict=exp.OnConflict(
+            conflict_keys=[exp.to_identifier("catalog_kind"), exp.to_identifier("catalog_hash")],
+            action="update",
+            expressions=[
+                exp.EQ(
+                    this=exp.column("payload"),
+                    expression=exp.column("payload", table="excluded"),
+                ),
+                exp.EQ(
+                    this=exp.column("inputs"),
+                    expression=exp.column("inputs", table="excluded"),
+                ),
+                exp.EQ(
+                    this=exp.column("created_at"),
+                    expression=exp.column("created_at", table="excluded"),
+                ),
+            ],
+        ),
+    )
     gateway.con.execute(
-        f"""
-        INSERT INTO {table_ref} (
-            catalog_kind,
-            catalog_hash,
-            payload,
-            inputs,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (catalog_kind, catalog_hash) DO UPDATE SET
-            payload = excluded.payload,
-            inputs = excluded.inputs,
-            created_at = excluded.created_at
-        """,
+        render_sql_duckdb(insert),
         [entry.catalog_kind, entry.catalog_hash, payload_json, inputs_json, created_at],
     )
 

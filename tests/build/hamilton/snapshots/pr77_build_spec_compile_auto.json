@@ -110,10 +110,6 @@
       "table_key": "analytics.function_effects"
     },
     {
-      "schema_hash": "695d1e2580f1c3eb769654d0bbe96b2901d8a04fbbc8679a3746de102b477ed0",
-      "table_key": "analytics.function_history"
-    },
-    {
       "schema_hash": "fc4923def086847974b1c868aa23dbc72f15d6c4b203e46586f696795ecca395",
       "table_key": "analytics.function_metrics"
     },
@@ -156,10 +152,6 @@
     {
       "schema_hash": "1672bfe08473dbcb7ec68dca3ba8ff16365f4401afd055d9aa3d951f4affd281",
       "table_key": "analytics.graph_validation"
-    },
-    {
-      "schema_hash": "0aa079c93d3ac9592225d64e85942bb356dceb5ba19fbe0f29630cc557a7169b",
-      "table_key": "analytics.history_timeseries"
     },
     {
       "schema_hash": "525a2a75a6d17adff75058418e432a2ea108f7ac35c2c1c63feb5bdd8ed1d5fc",
@@ -661,16 +653,6 @@
     },
     {
       "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "function_history",
-      "outputs": [
-        "analytics.function_history"
-      ]
-    },
-    {
-      "artifacts": [],
       "deps": [
         "goids"
       ],
@@ -724,16 +706,6 @@
       "name": "graph_validation",
       "outputs": [
         "analytics.graph_validation"
-      ]
-    },
-    {
-      "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "history_timeseries",
-      "outputs": [
-        "analytics.history_timeseries"
       ]
     },
     {

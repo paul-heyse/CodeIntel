@@ -154,13 +154,38 @@ def polars_filter_expression(predicates: Sequence[FilterPredicate]) -> PolarsExp
 _COMPARISON_OPS = frozenset({"eq", "ne", "lt", "lte", "gt", "gte"})
 _STRING_OPS = frozenset({"contains", "startswith"})
 
-_DUCKDB_COMPARISON_DISPATCH: dict[Op, Callable[[ColumnExpression, Expression], Expression]] = {
-    "eq": lambda column, literal: column == literal,
-    "ne": lambda column, literal: column != literal,
-    "lt": lambda column, literal: column < literal,
-    "lte": lambda column, literal: column <= literal,
-    "gt": lambda column, literal: column > literal,
-    "gte": lambda column, literal: column >= literal,
+
+def _duckdb_eq(column: Expression, literal: Expression) -> Expression:
+    return column == literal
+
+
+def _duckdb_ne(column: Expression, literal: Expression) -> Expression:
+    return column != literal
+
+
+def _duckdb_lt(column: Expression, literal: Expression) -> Expression:
+    return column < literal
+
+
+def _duckdb_lte(column: Expression, literal: Expression) -> Expression:
+    return column <= literal
+
+
+def _duckdb_gt(column: Expression, literal: Expression) -> Expression:
+    return column > literal
+
+
+def _duckdb_gte(column: Expression, literal: Expression) -> Expression:
+    return column >= literal
+
+
+_DUCKDB_COMPARISON_DISPATCH: dict[Op, Callable[[Expression, Expression], Expression]] = {
+    "eq": _duckdb_eq,
+    "ne": _duckdb_ne,
+    "lt": _duckdb_lt,
+    "lte": _duckdb_lte,
+    "gt": _duckdb_gt,
+    "gte": _duckdb_gte,
 }
 _ARROW_COMPARISON_DISPATCH: dict[Op, Callable[[ds.Expression, FilterScalar], ds.Expression]] = {
     "eq": lambda field, value: field == value,
@@ -255,7 +280,7 @@ def _duckdb_predicate(predicate: FilterPredicate) -> Expression:
 def _duckdb_comparison(
     *,
     op: Op,
-    column: ColumnExpression,
+    column: Expression,
     literal: Expression,
 ) -> Expression:
     comparator = _DUCKDB_COMPARISON_DISPATCH.get(op)
@@ -265,7 +290,7 @@ def _duckdb_comparison(
     return comparator(column, literal)
 
 
-def _duckdb_in_predicate(*, column: ColumnExpression, predicate: FilterPredicate) -> Expression:
+def _duckdb_in_predicate(*, column: Expression, predicate: FilterPredicate) -> Expression:
     values = _require_list_value(op=predicate.op, value=predicate.value)
     if not values:
         return ConstantExpression(0) == ConstantExpression(1)
@@ -273,7 +298,7 @@ def _duckdb_in_predicate(*, column: ColumnExpression, predicate: FilterPredicate
     return column.isin(*constants)
 
 
-def _duckdb_string_predicate(*, column: ColumnExpression, predicate: FilterPredicate) -> Expression:
+def _duckdb_string_predicate(*, column: Expression, predicate: FilterPredicate) -> Expression:
     value = _require_string_value(op=predicate.op, value=predicate.value)
     literal = _duckdb_typed_constant(value, column_type=predicate.column_type)
     func_name = "contains" if predicate.op == "contains" else "starts_with"

@@ -20,6 +20,5 @@ def test_placeholder() -> None:
     - build_handlers.py -> handlers/build.py
     - ide_handlers.py -> handlers/ide.py
     - subsystem_handlers.py -> handlers/subsystem.py
-    - history_handlers.py -> handlers/history.py
     """
     _ = "placeholder"

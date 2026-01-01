@@ -39,10 +39,6 @@ from tests._helpers.orchestration.graph_orchestration import (
     create_span_test_env,
     generate_span_coverage,
 )
-from tests._helpers.orchestration.history import (
-    create_snapshot_db,
-    insert_function_history_row,
-)
 from tests._helpers.orchestration.seeding import (
     seed_call_graph_scoping,
     seed_callgraph_goids,
@@ -84,7 +80,6 @@ __all__ = [
     "collect_span_snapshot",
     "compute_coverage_edges",
     "create_coverage_edge_env",
-    "create_snapshot_db",
     "create_span_test_env",
     "docs_views_ready_gateway",
     "generate_coverage_artifact",
@@ -92,7 +87,6 @@ __all__ = [
     "generate_span_coverage",
     "graph_metrics_ready_gateway",
     "init_git_repo_with_history",
-    "insert_function_history_row",
     "make_coverage_seed_from_app",
     "make_repo_context",
     "make_tools_config",

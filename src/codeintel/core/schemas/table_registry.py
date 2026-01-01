@@ -569,7 +569,6 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
             "analytics.function_contracts",
             "analytics.coverage_functions",
             "analytics.semantic_roles_functions",
-            "analytics.function_history",
             "analytics.goid_risk_factors",
         ),
         shared_fragments=(FUNCTION_ENTITY_COLS,),

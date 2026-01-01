@@ -1572,81 +1572,6 @@ HOTSPOTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
-FUNCTION_HISTORY_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
-    TableSchema(
-        schema="analytics",
-        name="function_history",
-        columns=[
-            Column("repo", "VARCHAR", nullable=False),
-            Column("commit", "VARCHAR", nullable=False),
-            Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
-            Column("urn", "VARCHAR", nullable=False),
-            Column("rel_path", "VARCHAR", nullable=False),
-            Column("module", "VARCHAR", nullable=False),
-            Column("qualname", "VARCHAR", nullable=False),
-            Column("created_in_commit", "VARCHAR"),
-            Column("created_at", "TIMESTAMP"),
-            Column("last_modified_commit", "VARCHAR"),
-            Column("last_modified_at", "TIMESTAMP"),
-            Column("age_days", "INTEGER"),
-            Column("commit_count", "INTEGER", nullable=False),
-            Column("author_count", "INTEGER", nullable=False),
-            Column("lines_added", "BIGINT", nullable=False),
-            Column("lines_deleted", "BIGINT", nullable=False),
-            Column("churn_score", "DOUBLE", nullable=False),
-            Column("stability_bucket", "VARCHAR", nullable=False),
-            Column("history_window_start", "TIMESTAMP"),
-            Column("history_window_end", "TIMESTAMP"),
-            Column("created_at_row", "TIMESTAMP", nullable=False),
-        ],
-        primary_key=("repo", "commit", "function_goid_h128"),
-        indexes=(
-            Index("idx_analytics_function_history_goid", ("function_goid_h128",)),
-            Index("idx_analytics_function_history_repo_commit", ("repo", "commit")),
-        ),
-        description=(
-            "Per-function compressed git history & churn metrics derived from file history "
-            "and GOID spans."
-        ),
-    ),
-)
-
-HISTORY_TIMESERIES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
-    TableSchema(
-        schema="analytics",
-        name="history_timeseries",
-        columns=[
-            Column("repo", "VARCHAR", nullable=False),
-            Column("entity_kind", "VARCHAR", nullable=False),
-            Column("entity_stable_id", "VARCHAR", nullable=False),
-            Column("function_goid_h128", "DECIMAL(38,0)"),
-            Column("module", "VARCHAR"),
-            Column("rel_path", "VARCHAR", nullable=False),
-            Column("language", "VARCHAR", nullable=False),
-            Column("qualname", "VARCHAR"),
-            Column("commit", "VARCHAR", nullable=False),
-            Column("commit_ts", "TIMESTAMP", nullable=False),
-            Column("loc", "INTEGER"),
-            Column("cyclomatic_complexity", "INTEGER"),
-            Column("coverage_ratio", "DOUBLE"),
-            Column("static_error_count", "INTEGER"),
-            Column("typedness_bucket", "VARCHAR"),
-            Column("risk_score", "DOUBLE"),
-            Column("risk_level", "VARCHAR"),
-            Column("bucket_label", "VARCHAR"),
-            Column("created_at_row", "TIMESTAMP", nullable=False),
-        ],
-        primary_key=("repo", "entity_kind", "entity_stable_id", "commit"),
-        indexes=(
-            Index(
-                "idx_analytics_history_timeseries_entity",
-                ("repo", "entity_kind", "entity_stable_id"),
-            ),
-        ),
-        description="Per-commit metrics for selected functions/modules for temporal analysis.",
-    ),
-)
-
 GRAPH_METRICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="analytics",
@@ -2137,13 +2062,11 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *FUNCTION_AST_FEATURES_OVERRIDE_TABLES,
         *FUNCTION_CONTRACTS_OVERRIDE_TABLES,
         *FUNCTION_EFFECTS_OVERRIDE_TABLES,
-        *FUNCTION_HISTORY_OVERRIDE_TABLES,
         *FUNCTION_METRICS_OVERRIDE_TABLES,
         *RISK_FACTORS_OVERRIDE_TABLES,
         *GOIDS_OVERRIDE_TABLES,
         *GRAPH_METRICS_OVERRIDE_TABLES,
         *GRAPH_VALIDATION_OVERRIDE_TABLES,
-        *HISTORY_TIMESERIES_OVERRIDE_TABLES,
         *HOTSPOTS_OVERRIDE_TABLES,
         *IMPORT_GRAPH_OVERRIDE_TABLES,
         *MODULES_OVERRIDE_TABLES,
@@ -2230,12 +2153,10 @@ __all__ = [
     "FUNCTION_AST_FEATURES_OVERRIDE_TABLES",
     "FUNCTION_CONTRACTS_OVERRIDE_TABLES",
     "FUNCTION_EFFECTS_OVERRIDE_TABLES",
-    "FUNCTION_HISTORY_OVERRIDE_TABLES",
     "FUNCTION_METRICS_OVERRIDE_TABLES",
     "GOIDS_OVERRIDE_TABLES",
     "GRAPH_METRICS_OVERRIDE_TABLES",
     "GRAPH_VALIDATION_OVERRIDE_TABLES",
-    "HISTORY_TIMESERIES_OVERRIDE_TABLES",
     "HOTSPOTS_OVERRIDE_TABLES",
     "IMPORT_GRAPH_OVERRIDE_TABLES",
     "MODULES_OVERRIDE_TABLES",

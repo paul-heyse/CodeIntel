@@ -9,7 +9,6 @@ import pytest
 FORBIDDEN_IMPORTS = (
     "function_contracts",
     "function_effects",
-    "function_history",
     "functions.config",
     "functions.metrics",
     "functions.typedness",
@@ -22,7 +21,6 @@ FORBIDDEN_IMPORTS = (
     "subsystem_graph_metrics",
     "subsystem_agreement",
     "symbol_graph_metrics",
-    "history_timeseries",
 )
 
 

@@ -94,8 +94,6 @@ def test_pr52_no_deprecated_function_calls_in_cli() -> None:
         "compute_cfg_metrics(",
         "compute_dfg_metrics(",
         "compute_data_models(",
-        "compute_function_history(",
-        "compute_history_timeseries(",
         "compute_test_graph_metrics(",
         "build_entrypoints(",
         "build_external_dependency_calls(",
@@ -141,7 +139,7 @@ def test_pr52_migrated_plugins_exist_as_native_modules() -> None:
     - coverage_test_edges.py + behavioral_coverage.py + coverage_functions.py
       -> coverage_targets.py
     - subsystem_graph_metrics.py + symbol_graph_metrics.py + test_graph_metrics.py
-      + function_history.py + history_timeseries.py + subsystem_agreement.py
+      + subsystem_agreement.py
       -> metrics_targets.py
     - config_data_flow.py -> config_graph_targets.py (already consolidated)
     """

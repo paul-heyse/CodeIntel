@@ -1667,39 +1667,6 @@ class CacheLogIngestSummary:
 
 
 @dataclass(frozen=True)
-class HistoryTimeseriesResult:
-    """Result from history timeseries aggregation command.
-
-    Parameters
-    ----------
-    output_db
-        Path to the output database.
-    commits_processed
-        Number of commits processed.
-    entity_kind
-        Entity kind used for aggregation.
-    """
-
-    output_db: str
-    commits_processed: int
-    entity_kind: str
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "output_db": self.output_db,
-            "commits_processed": self.commits_processed,
-            "entity_kind": self.entity_kind,
-        }
-
-
-@dataclass(frozen=True)
 class ServeStartResult:
     """Result from server start command.
 
@@ -1879,7 +1846,6 @@ __all__ = [
     "HealthCheckResult",
     "HistoryDetailResult",
     "HistoryListResult",
-    "HistoryTimeseriesResult",
     "IdeConfigResult",
     "IdeStatusResult",
     "ListResult",

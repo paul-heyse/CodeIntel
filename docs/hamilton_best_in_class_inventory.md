@@ -43,7 +43,6 @@ schema authority, tagging, and validation sweeps are auditable.
 | `analytics.function_ast_features` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.function_contracts` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.function_effects` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
-| `analytics.function_history` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.function_metrics` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.function_profile` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.function_types` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
@@ -56,7 +55,6 @@ schema authority, tagging, and validation sweeps are auditable.
 | `analytics.graph_stats` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.graph_validation` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.hello_example` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
-| `analytics.history_timeseries` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.hotspots` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.module_profile` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
 | `analytics.semantic_roles_functions` | table | output_registry | `OUTPUT_TABLE_SCHEMAS` | pending |
@@ -137,4 +135,3 @@ modules. Record the schema source as `derived_views`.
 | `ci.plan.explain.md` | artifact | `ci_plan` | `src/codeintel/build/hamilton/native/planning/plan_targets.py` | pending |
 | `scip_index` | artifact | `scip` | `src/codeintel/build/hamilton/native/ingestion/scip.py` | pending |
 | `scip_pb2` | artifact | `scip_proto` | `src/codeintel/build/hamilton/native/ingestion/scip_proto.py` | pending |
-

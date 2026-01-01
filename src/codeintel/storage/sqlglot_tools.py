@@ -56,6 +56,7 @@ __all__ = [
     "render_sql_duckdb",
     "semantic_diff_sql_duckdb",
     "summarize_sql_duckdb",
+    "table_expr_from_ref",
 ]
 
 SchemaMapping = Mapping[str, Mapping[str, str]]
@@ -381,6 +382,17 @@ def render_sql_duckdb(root: exp.Expression) -> str:
         Rendered DuckDB SQL.
     """
     return root.sql(dialect=DUCKDB_DIALECT)
+
+
+def table_expr_from_ref(table_ref: str) -> exp.Table:
+    """Return a SQLGlot Table expression for a table reference.
+
+    Returns
+    -------
+    sqlglot.expressions.Table
+        SQLGlot table expression for the reference.
+    """
+    return exp.to_table(table_ref)
 
 
 def fingerprint_expression_duckdb(

@@ -26,7 +26,6 @@ UNKNOWN_OPTION_CASES: list[tuple[list[str], str]] = [
     (["graph", "plugins", "--bogus"], "--bogus"),
     (["docs", "export", "--bogus"], "--bogus"),
     (["storage", "validate-macros", "--bogus"], "--bogus"),
-    (["history", "timeseries", "--bogus"], "--bogus"),
     (["datasets", "list", "--bogus"], "--bogus"),
 ]
 
@@ -37,7 +36,6 @@ UNKNOWN_COMMAND_CASES: list[tuple[list[str], str]] = [
     (["graph", "nonesuch"], "nonesuch"),
     (["docs", "nonesuch"], "nonesuch"),
     (["storage", "nonesuch"], "nonesuch"),
-    (["history", "nonesuch"], "nonesuch"),
     (["datasets", "nonesuch"], "nonesuch"),
 ]
 

@@ -147,8 +147,6 @@ class TestPublicApiClean:
             "compute_cfg_metrics",
             "compute_data_models",
             "compute_dfg_metrics",
-            "compute_function_history",
-            "compute_history_timeseries",
             "compute_test_graph_metrics",
         ]
 

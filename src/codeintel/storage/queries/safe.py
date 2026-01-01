@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from duckdb import ColumnExpression, ConstantExpression
+from duckdb import ColumnExpression, ConstantExpression, FunctionExpression
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError
 
@@ -630,7 +630,8 @@ def safe_min_value(
     if column not in relation.columns:
         return None
     try:
-        result = relation.aggregate(f"min({column}) as min_value").fetchone()
+        expr = FunctionExpression("min", ColumnExpression(column)).alias("min_value")
+        result = relation.aggregate([expr]).fetchone()
         if result is None:
             return None
         return coerce_optional_float(result[0], ctx=f"{table_key}.{column}.min")
@@ -668,7 +669,8 @@ def safe_max_value(
     if column not in relation.columns:
         return None
     try:
-        result = relation.aggregate(f"max({column}) as max_value").fetchone()
+        expr = FunctionExpression("max", ColumnExpression(column)).alias("max_value")
+        result = relation.aggregate([expr]).fetchone()
         if result is None:
             return None
         return coerce_optional_float(result[0], ctx=f"{table_key}.{column}.max")
@@ -747,14 +749,12 @@ def safe_count_duplicates(
     try:
         non_null = relation.filter(~ColumnExpression(column).isnull())
         total_result = non_null.count("*").fetchone()
-        distinct_result = non_null.aggregate(
-            f"count(distinct {column}) as distinct_count"
-        ).fetchone()
-        if total_result is None or distinct_result is None:
+        distinct = non_null.distinct().count("*").fetchone()
+        if total_result is None or distinct is None:
             return 0
         total = coerce_int(total_result[0], ctx=f"{table_key}.{column}.non_null_count")
-        distinct = coerce_int(distinct_result[0], ctx=f"{table_key}.{column}.distinct_count")
-        return total - distinct
+        distinct_count = coerce_int(distinct[0], ctx=f"{table_key}.{column}.distinct_count")
+        return total - distinct_count
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count duplicates failed for %s.%s: %s", table_key, column, exc)
         return 0
@@ -804,7 +804,7 @@ def safe_not_null_fraction(
     return fraction
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ForeignKeyRef:
     """Foreign key reference specification for orphan counting.
 
@@ -860,16 +860,14 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
     tgt_col = fk.ref_column
     orphan_count = 0
     try:
-        sql = (
-            "SELECT COUNT(*) AS orphan_count "
-            f"FROM {src_name} AS src "
-            f"LEFT JOIN {tgt_name} AS tgt "
-            f"ON src.{src_col} = tgt.{tgt_col} "
-            f"WHERE tgt.{tgt_col} IS NULL"
-        )
+        src_relation = src.set_alias("src")
+        tgt_relation = tgt.set_alias("tgt")
+        join_condition = ColumnExpression(f"src.{src_col}") == ColumnExpression(f"tgt.{tgt_col}")
+        joined = src_relation.join(tgt_relation, join_condition, how="left")
+        predicate = ColumnExpression(f"tgt.{tgt_col}").isnull()
         if not fk.allow_null:
-            sql += f" AND src.{src_col} IS NOT NULL"
-        result = gateway.con.execute(sql).fetchone()
+            predicate = predicate & ColumnExpression(f"src.{src_col}").isnotnull()
+        result = joined.filter(predicate).count("*").fetchone()
         if result is not None:
             orphan_count = coerce_int(
                 result[0],

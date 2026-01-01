@@ -84,17 +84,6 @@ def test_graphs_help_renders_enum_choices(cli_ctx: CLIContext) -> None:
     expect_not_in("simplenamespace", output)
 
 
-def test_history_help_renders_positional(cli_ctx: CLIContext) -> None:
-    """History timeseries should render positional args cleanly."""
-    result = run_cli(["history", "timeseries", "--help"], env=cli_ctx.env, cwd=cli_ctx.repo_root)
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("repo", output)
-    expect_not_in("simplenamespace", output)
-
-
 def test_storage_help_renders_nested(cli_ctx: CLIContext) -> None:
     """Storage validate should render nested/grouped options without artifacts."""
     result = run_cli(

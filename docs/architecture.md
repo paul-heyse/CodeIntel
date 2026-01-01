@@ -233,7 +233,6 @@
 * Build history:
 
   * CLI entrypoint: `src/codeintel/cli/handlers/build.py :: build_history_handler(...)`
-  * Env supports timeseries options: `src/codeintel/build/hamilton/env.py :: BuildEnv.history_options`, type: `src/codeintel/analytics/history/history_timeseries.py :: HistoryTimeseriesOptions`
 * Build schema/spec products:
 
   * Schema manifest compile/diff/migrate: `src/codeintel/cli/handlers/build_schema.py :: build_schema_compile_handler(...)` / `build_schema_diff_handler(...)` / `build_schema_migrate_handler(...)`
