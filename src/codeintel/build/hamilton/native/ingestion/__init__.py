@@ -60,6 +60,14 @@ from codeintel.build.hamilton.native.ingestion.scip_proto import (
     t__scip_proto,
     t__scip_proto__run,
 )
+from codeintel.build.hamilton.native.ingestion.scip_resolution import (
+    t__scip_resolution,
+)
+from codeintel.build.hamilton.native.ingestion.tree_sitter import (
+    t__tree_sitter_index,
+    t__tree_sitter_index__ingest,
+    t__tree_sitter_index__run,
+)
 
 __all__: list[str] = [
     "ConfigScanResult",
@@ -97,12 +105,16 @@ __all__: list[str] = [
     "t__scip__run",
     "t__scip_proto",
     "t__scip_proto__run",
+    "t__scip_resolution",
     "t__syntax_index",
     "t__syntax_index__ingest",
     "t__syntax_index__run",
     "t__tests_ingest",
     "t__tests_ingest__ingest",
     "t__tests_ingest__run",
+    "t__tree_sitter_index",
+    "t__tree_sitter_index__ingest",
+    "t__tree_sitter_index__run",
     "t__typing",
     "t__typing__ingest",
     "t__typing__run",

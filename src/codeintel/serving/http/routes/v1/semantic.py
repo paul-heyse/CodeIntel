@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
@@ -26,13 +26,17 @@ from codeintel.serving.semantic.models import (
     SemanticViewDescriptionResponse,
 )
 
-router = APIRouter(prefix="/semantic", tags=["semantic"], dependencies=[Depends(require_api_key)])
+router = APIRouter(
+    prefix="/semantic",
+    tags=["semantic"],
+    dependencies=[Depends(require_api_key, scope="request")],
+)
 
 
 @dataclass(slots=True)
 class _QueryStreamMetrics:
-    stream: object
-    success_metrics: Callable[[object, float, str], QueryMetrics]
+    stream: Iterable[bytes]
+    success_metrics: Callable[[Iterable[bytes], float, str], QueryMetrics]
     error_metrics: Callable[[float, str], QueryMetrics]
     correlation_id: str
     started: float = field(default_factory=time.perf_counter)
@@ -199,7 +203,7 @@ async def query_view(
         Arrow IPC stream response.
     """
 
-    def _success(result: object, duration_ms: float, correlation_id: str) -> QueryMetrics:
+    def _success(result: Iterable[bytes], duration_ms: float, correlation_id: str) -> QueryMetrics:
         scan_metrics = getattr(result, "scan_metrics", None)
         return QueryMetrics(
             endpoint="/v1/semantic/query",
@@ -242,7 +246,7 @@ async def query_view(
         cancel_token=cancel_token,
     )
     try:
-        stream = await run_in_threadpool_with_metrics(
+        stream: Iterable[bytes] = await run_in_threadpool_with_metrics(
             context,
             ops.query_ipc_stream,
             payload,

@@ -45,6 +45,8 @@ from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
+    from pyarrow import RecordBatch
+
     from codeintel.serving.db.manager import ServingDBManager
     from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest
@@ -180,6 +182,14 @@ class _DummyKernel:
     def export_rows(
         request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
     ) -> Iterator[dict[str, object]]:
+        _ = cancel_check
+        _ = request
+        return iter(())
+
+    @staticmethod
+    def export_record_batches(
+        request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[RecordBatch]:
         _ = cancel_check
         _ = request
         return iter(())

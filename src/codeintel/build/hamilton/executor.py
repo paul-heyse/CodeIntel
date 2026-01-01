@@ -39,6 +39,7 @@ from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
+from codeintel.build.hamilton.native.views.view_outputs import view_plan_map
 from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
 from codeintel.build.hamilton.result_builder import BuildResultBuilder
 from codeintel.build.hamilton.run_records import (
@@ -813,6 +814,19 @@ def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
     return env.gateway.policy.table_exists(schema=schema, table=table)
 
 
+def _view_sql_map() -> dict[str, str] | None:
+    try:
+        plans = view_plan_map()
+    except (RuntimeError, ValueError, TypeError):
+        return None
+    view_sql: dict[str, str] = {}
+    for table_key, plan in plans.items():
+        sql = plan.sql
+        if isinstance(sql, str) and sql:
+            view_sql[table_key] = sql
+    return view_sql or None
+
+
 def _maybe_persist_schema_manifest(
     *,
     env: BuildEnv,
@@ -867,6 +881,9 @@ def _maybe_persist_schema_manifest(
     catalog_inputs: dict[str, object] = {"source": "build.execute"}
     if domain is not None:
         catalog_inputs["domain"] = domain
+    view_sql = _view_sql_map()
+    if view_sql is not None:
+        catalog_inputs["view_sql_map"] = view_sql
 
     catalog_request = SchemaCatalogRequest(
         run_id=run_id,

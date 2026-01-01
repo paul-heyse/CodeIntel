@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Annotated, cast
 from weakref import WeakKeyDictionary
 
 from fastmcp import Context, FastMCP
 from fastmcp.prompts import Message
+from fastmcp.prompts.prompt import PromptResult
 from mcp import McpError
 from mcp.types import PromptMessage
+from pydantic import Field
 
 from codeintel.serving.errors import CodeIntelDomainError
 from codeintel.serving.export.formats import default_export_format, export_format_choices
@@ -83,6 +85,7 @@ def register_prompts(
     """
     _register_explore_prompt(mcp)
     _register_export_wizard(mcp, settings=settings)
+    _register_query_help_prompt(mcp)
     _register_query_wizard(mcp, settings=settings, kernel=kernel)
     _register_snapshot_diff_prompt(mcp)
 
@@ -104,7 +107,7 @@ def _register_explore_prompt(mcp: FastMCP) -> None:
         tags={"onboarding", "semantic"},
         meta={"version": 2},
     )
-    def explore_codebase() -> list[PromptMessage]:
+    def explore_codebase() -> PromptResult:
         return [
             Message(
                 "Call `semantic_catalog()` to list available views, then choose a view and call "
@@ -138,7 +141,7 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
         tags={"export", "wizard"},
         meta={"version": 1},
     )
-    async def wizard_export_data(ctx: Context) -> list[PromptMessage]:
+    async def wizard_export_data(ctx: Context) -> PromptResult:
         no_elicitation = _wizard_export_data_no_elicitation(settings)
         cancelled = [Message("Export wizard cancelled.", role="assistant")]
         messages: list[PromptMessage] | None = None
@@ -217,7 +220,7 @@ def _register_query_wizard(
         tags={"semantic", "wizard"},
         meta={"version": 1},
     )
-    async def wizard_query_view(ctx: Context) -> list[PromptMessage]:
+    async def wizard_query_view(ctx: Context) -> PromptResult:
         if not _supports_elicitation(ctx):
             return _wizard_query_view_no_elicitation(settings)
 
@@ -291,6 +294,51 @@ def _register_query_wizard(
         ]
 
 
+def _register_query_help_prompt(mcp: FastMCP) -> None:
+    _prompt_registry(mcp).register("semantic_query_help")
+
+    @mcp.prompt(
+        name="semantic_query_help",
+        description="Template for constructing semantic_query requests.",
+        tags={"semantic", "help"},
+        meta={"version": 1},
+    )
+    def semantic_query_help(
+        view_id: Annotated[str, Field(description="Semantic view identifier to query.")],
+        select: Annotated[
+            list[str] | None,
+            Field(description="Optional list of column names to return."),
+        ] = None,
+        limit: Annotated[
+            int,
+            Field(description="Preview row limit for the sample query."),
+        ] = 10,
+    ) -> PromptResult:
+        resolved_limit = limit if limit > 0 else 10
+        request_payload: dict[str, object] = {
+            "view_id": view_id,
+            "pagination": {"limit": resolved_limit, "offset": 0},
+        }
+        if select is not None:
+            request_payload["select"] = select
+        return [
+            Message("Start with a schema check:", role="assistant"),
+            Message(_tool_invocation_json("semantic_describe", view_id=view_id), role="assistant"),
+            Message(
+                "Then run a preview query (add filters/order_by as needed):",
+                role="assistant",
+            ),
+            Message(
+                _tool_invocation_json("semantic_query", request=request_payload),
+                role="assistant",
+            ),
+            Message(
+                'Need Arrow IPC? Add `export_format: "arrow"` to semantic_query.',
+                role="assistant",
+            ),
+        ]
+
+
 def _register_snapshot_diff_prompt(mcp: FastMCP) -> None:
     _prompt_registry(mcp).register("what_changed_between_snapshots")
 
@@ -300,7 +348,7 @@ def _register_snapshot_diff_prompt(mcp: FastMCP) -> None:
         tags={"semantic", "snapshot"},
         meta={"version": 1},
     )
-    def what_changed_between_snapshots() -> list[PromptMessage]:
+    def what_changed_between_snapshots() -> PromptResult:
         return [
             Message(
                 "Capture the active snapshot metadata first:",

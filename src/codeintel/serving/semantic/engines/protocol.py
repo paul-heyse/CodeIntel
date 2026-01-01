@@ -45,10 +45,6 @@ class ExecutablePlan(Protocol):
         """Return a RecordBatchReader for this plan."""
         ...
 
-    def to_table(self) -> pa.Table:
-        """Return a fully materialized Arrow table for this plan."""
-        ...
-
     def explain(self) -> QueryExplain:
         """Return explain payload for this plan."""
         ...

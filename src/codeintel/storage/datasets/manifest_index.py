@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -36,7 +36,7 @@ from codeintel.storage.queries.filter_compiler import (
 from codeintel.storage.tracking.schema_catalog_models import DerivedSettingsPayload
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from codeintel.core.filters import FilterSpecLike
     from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
@@ -344,6 +344,10 @@ def _log_scan_metrics(
     row_groups = stats.get("row_groups")
     row_count = entry.manifest.row_count or stats.get("rows_from_metadata")
     total_bytes = stats.get("total_bytes")
+    row_group_stats = stats.get("row_group_stats")
+    dictionary_encoding = stats.get("dictionary_encoding")
+    dictionary_columns = _dictionary_columns(dictionary_encoding)
+    dictionary_row_groups = _dictionary_row_group_count(dictionary_encoding)
     total_fragments = _count_fragments(dataset, filter_expression=None)
     filtered_fragments = (
         _count_fragments(dataset, filter_expression=filter_expression)
@@ -352,7 +356,8 @@ def _log_scan_metrics(
     )
     LOG.info(
         "dataset_scan_metrics table=%s files=%s fragments=%s fragments_filtered=%s "
-        "row_groups=%s rows=%s bytes=%s duration_ms=%.2f memory_bytes=%s",
+        "row_groups=%s rows=%s bytes=%s row_group_stats=%s dictionary_columns=%s "
+        "dictionary_row_groups=%s duration_ms=%.2f memory_bytes=%s",
         entry.manifest.table_key,
         len(entry.manifest.files),
         total_fragments,
@@ -360,6 +365,9 @@ def _log_scan_metrics(
         row_groups,
         row_count,
         total_bytes,
+        row_group_stats,
+        dictionary_columns,
+        dictionary_row_groups,
         duration_ms,
         memory_bytes,
     )
@@ -395,6 +403,21 @@ def _total_allocated_bytes() -> int | None:
     except (TypeError, ValueError, pa.ArrowInvalid):
         return None
     return _coerce_int(total)
+
+
+def _dictionary_columns(dictionary_encoding: object) -> tuple[str, ...] | None:
+    if not isinstance(dictionary_encoding, Mapping):
+        return None
+    raw_columns = dictionary_encoding.get("columns")
+    if not isinstance(raw_columns, Mapping):
+        return None
+    return tuple(raw_columns.keys())
+
+
+def _dictionary_row_group_count(dictionary_encoding: object) -> int | None:
+    if not isinstance(dictionary_encoding, Mapping):
+        return None
+    return _coerce_int(dictionary_encoding.get("row_groups"))
 
 
 def _coerce_int(value: object) -> int | None:

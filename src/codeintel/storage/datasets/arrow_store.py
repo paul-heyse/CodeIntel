@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -19,13 +19,21 @@ import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema_metadata import merge_metadata
 from codeintel.core.manifests import ArrowDatasetManifest
-from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
+from codeintel.storage.datasets.manifests import (
+    dataset_manifest_path,
+    read_dataset_manifest,
+    write_dataset_manifest,
+)
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
-from codeintel.storage.datasets.scanning import DatasetScanOptions, build_scanner
+from codeintel.storage.datasets.scanning import (
+    DatasetScanOptions,
+    build_scanner,
+    dataset_for_manifest,
+)
 from codeintel.storage.schema import arrow_schema_hash
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from pyarrow import RecordBatchReader, Table
     from pyarrow.dataset import FileWriteOptions
@@ -66,6 +74,8 @@ class ArrowDatasetStats:
     total_bytes: int | None = None
     sort_keys: tuple[str, ...] | None = None
     column_min_max: Mapping[str, Mapping[str, object]] | None = None
+    row_group_stats: Mapping[str, Mapping[str, float]] | None = None
+    dictionary_encoding: Mapping[str, object] | None = None
 
     def to_mapping(self) -> dict[str, object] | None:
         """Return a stats mapping suitable for manifest storage.
@@ -90,6 +100,12 @@ class ArrowDatasetStats:
             stats["min_max"] = {
                 column: dict(values) for column, values in self.column_min_max.items()
             }
+        if self.row_group_stats:
+            stats["row_group_stats"] = {
+                key: dict(values) for key, values in self.row_group_stats.items()
+            }
+        if self.dictionary_encoding:
+            stats["dictionary_encoding"] = dict(self.dictionary_encoding)
         return stats or None
 
 
@@ -216,7 +232,7 @@ def scan_dataset(
     table_key: str,
     snapshot_id: str,
 ) -> ds.Dataset:
-    """Return a dataset scanner for a snapshot.
+    """Return a dataset handle for a snapshot.
 
     Parameters
     ----------
@@ -245,6 +261,17 @@ def scan_dataset(
     if not snapshot_dir.is_dir():
         msg = f"Dataset snapshot not found: {snapshot_dir}"
         raise FileNotFoundError(msg)
+    manifest_path = dataset_manifest_path(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    if manifest_path.is_file():
+        try:
+            manifest = read_dataset_manifest(manifest_path)
+            return dataset_for_manifest(manifest=manifest, manifest_path=manifest_path)
+        except (OSError, ValueError, pa.ArrowInvalid):
+            LOG.debug("Falling back to raw dataset scan for %s", manifest_path)
     return ds.dataset(str(snapshot_dir), format="parquet")
 
 
@@ -324,6 +351,14 @@ def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
     column_min_max = (
         parquet_stats.column_min_max if parquet_stats and parquet_stats.column_min_max else None
     )
+    row_group_stats = (
+        parquet_stats.row_group_stats if parquet_stats and parquet_stats.row_group_stats else None
+    )
+    dictionary_encoding = (
+        parquet_stats.dictionary_encoding
+        if parquet_stats and parquet_stats.dictionary_encoding
+        else None
+    )
     return ArrowDatasetStats(
         row_count=_count_rows(dataset, parquet_rows=parquet_rows),
         row_group_count=parquet_stats.row_group_count if parquet_stats else None,
@@ -332,6 +367,8 @@ def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
         total_bytes=parquet_stats.total_bytes if parquet_stats else None,
         sort_keys=sort_keys,
         column_min_max=column_min_max,
+        row_group_stats=row_group_stats,
+        dictionary_encoding=dictionary_encoding,
     )
 
 
@@ -360,6 +397,16 @@ def build_dataset_manifest(
     stats = dataset_stats(dataset)
     files = _relative_files(dataset.files, base_dir=snapshot_dir)
     resolved_hash = request.schema_hash or arrow_schema_hash(dataset.schema)
+    extras = dict(request.extras) if request.extras else {}
+    parquet_extras = _parquet_extras(stats)
+    if parquet_extras:
+        existing = extras.get("parquet_stats")
+        if isinstance(existing, Mapping):
+            merged = dict(existing)
+            merged.update(parquet_extras)
+            extras["parquet_stats"] = merged
+        else:
+            extras["parquet_stats"] = parquet_extras
     return ArrowDatasetManifest(
         dataset_id=request.table_key,
         snapshot_id=request.snapshot_id,
@@ -370,8 +417,19 @@ def build_dataset_manifest(
         row_count=stats.row_count,
         stats=stats.to_mapping(),
         created_at=request.created_at or datetime.now(tz=UTC).isoformat(),
-        extras=dict(request.extras) if request.extras else None,
+        extras=extras or None,
     )
+
+
+def _parquet_extras(stats: ArrowDatasetStats) -> dict[str, object] | None:
+    payload: dict[str, object] = {}
+    if stats.row_group_stats:
+        payload["row_group_stats"] = {
+            key: dict(values) for key, values in stats.row_group_stats.items()
+        }
+    if stats.dictionary_encoding:
+        payload["dictionary_encoding"] = dict(stats.dictionary_encoding)
+    return payload or None
 
 
 def _partitioning(
@@ -577,6 +635,11 @@ class _ParquetStats:
     total_bytes: int
     sort_keys: tuple[str, ...]
     column_min_max: dict[str, dict[str, object]]
+    row_group_stats: dict[str, dict[str, float]] | None
+    dictionary_encoding: dict[str, object] | None
+
+
+_DICTIONARY_ENCODINGS = frozenset({"PLAIN_DICTIONARY", "RLE_DICTIONARY"})
 
 
 def _parquet_stats(files: tuple[str, ...]) -> _ParquetStats | None:
@@ -588,6 +651,9 @@ def _parquet_stats(files: tuple[str, ...]) -> _ParquetStats | None:
     sort_keys: list[str] = []
     sort_key_seen: set[str] = set()
     min_max: dict[str, tuple[object, object]] = {}
+    row_group_rows: list[int] = []
+    row_group_bytes: list[int] = []
+    dictionary_counts: dict[str, int] = {}
     for path in files:
         file_path = Path(path)
         try:
@@ -609,6 +675,14 @@ def _parquet_stats(files: tuple[str, ...]) -> _ParquetStats | None:
                 schema=parquet_file.schema_arrow,
             )
             _merge_min_max(metadata, min_max)
+            _extend_row_group_stats(
+                metadata,
+                row_group_rows=row_group_rows,
+                row_group_bytes=row_group_bytes,
+                dictionary_counts=dictionary_counts,
+            )
+    row_group_stats = _row_group_stats(row_group_rows, row_group_bytes)
+    dictionary_encoding = _dictionary_encoding(dictionary_counts, row_group_count=row_groups)
     return _ParquetStats(
         row_group_count=row_groups,
         file_count=len(files),
@@ -616,6 +690,8 @@ def _parquet_stats(files: tuple[str, ...]) -> _ParquetStats | None:
         total_bytes=total_bytes,
         sort_keys=tuple(sort_keys),
         column_min_max=_min_max_to_mapping(min_max),
+        row_group_stats=row_group_stats,
+        dictionary_encoding=dictionary_encoding,
     )
 
 
@@ -639,6 +715,75 @@ def _extend_sort_keys(
             continue
         seen.add(name)
         keys.append(name)
+
+
+def _extend_row_group_stats(
+    metadata: pq.FileMetaData,
+    *,
+    row_group_rows: list[int],
+    row_group_bytes: list[int],
+    dictionary_counts: dict[str, int],
+) -> None:
+    for group_index in range(metadata.num_row_groups):
+        row_group = metadata.row_group(group_index)
+        row_count = _coerce_int(row_group.num_rows)
+        if row_count is not None:
+            row_group_rows.append(row_count)
+        byte_size = _coerce_int(row_group.total_byte_size)
+        if byte_size is not None:
+            row_group_bytes.append(byte_size)
+        for column_index in range(row_group.num_columns):
+            column = row_group.column(column_index)
+            if not _has_dictionary_encoding(column):
+                continue
+            column_name = column.path_in_schema
+            dictionary_counts[column_name] = dictionary_counts.get(column_name, 0) + 1
+
+
+def _has_dictionary_encoding(column: pq.ColumnChunkMetaData) -> bool:
+    encodings = getattr(column, "encodings", None)
+    if not encodings:
+        return False
+    return any(str(encoding).upper() in _DICTIONARY_ENCODINGS for encoding in encodings)
+
+
+def _row_group_stats(
+    row_group_rows: Sequence[int],
+    row_group_bytes: Sequence[int],
+) -> dict[str, dict[str, float]] | None:
+    stats: dict[str, dict[str, float]] = {}
+    row_stats = _summary_stats(row_group_rows)
+    if row_stats is not None:
+        stats["rows"] = row_stats
+    byte_stats = _summary_stats(row_group_bytes)
+    if byte_stats is not None:
+        stats["bytes"] = byte_stats
+    return stats or None
+
+
+def _summary_stats(values: Sequence[int]) -> dict[str, float] | None:
+    if not values:
+        return None
+    count = len(values)
+    total = sum(values)
+    return {
+        "min": float(min(values)),
+        "max": float(max(values)),
+        "avg": float(total / count),
+    }
+
+
+def _dictionary_encoding(
+    dictionary_counts: Mapping[str, int],
+    *,
+    row_group_count: int,
+) -> dict[str, object] | None:
+    if not dictionary_counts:
+        return None
+    return {
+        "row_groups": row_group_count,
+        "columns": dict(sorted(dictionary_counts.items())),
+    }
 
 
 def _merge_min_max(

@@ -437,22 +437,19 @@ def _prefix_for_position(
 ) -> str | None:
     if col < 0:
         return None
+    prefix: str | None = None
     if position_encoding == _POSITION_ENCODING_UTF8:
         encoded = text.encode("utf-8")
-        if col > len(encoded):
-            return None
-        return encoded[:col].decode("utf-8", errors="ignore")
-    if position_encoding == _POSITION_ENCODING_UTF16:
+        if col <= len(encoded):
+            prefix = encoded[:col].decode("utf-8", errors="ignore")
+    elif position_encoding == _POSITION_ENCODING_UTF16:
         encoded = text.encode("utf-16-le")
         byte_len = col * 2
-        if byte_len > len(encoded):
-            return None
-        return encoded[:byte_len].decode("utf-16-le", errors="ignore")
-    if position_encoding == _POSITION_ENCODING_UTF32:
-        if col > len(text):
-            return None
-        return text[:col]
-    return None
+        if byte_len <= len(encoded):
+            prefix = encoded[:byte_len].decode("utf-16-le", errors="ignore")
+    elif position_encoding == _POSITION_ENCODING_UTF32 and col <= len(text):
+        prefix = text[:col]
+    return prefix
 
 
 def _byte_offset_for_position(
@@ -529,6 +526,89 @@ def _byte_span_for_occurrence(
     return start_byte, end_byte
 
 
+def _document_has_byte_spans(doc: ScipDocument) -> bool:
+    return all(occ.start_byte is not None and occ.end_byte is not None for occ in doc.occurrences)
+
+
+def _load_document_bytes(repo_root: Path, rel_path: str) -> bytes | None:
+    file_path = repo_root / Path(rel_path)
+    try:
+        return file_path.read_bytes()
+    except OSError as exc:
+        log.warning("Failed to read file for SCIP byte spans: %s", exc)
+        return None
+
+
+def _update_occurrence_span(
+    *,
+    occ: ScipOccurrence,
+    doc: ScipDocument,
+    file_index: _FileLineIndex,
+    file_bytes: bytes,
+    context: _EncodingContext,
+) -> tuple[ScipOccurrence, bool]:
+    if occ.start_byte is not None and occ.end_byte is not None:
+        return occ, False
+    span = _byte_span_for_occurrence(
+        occ=occ,
+        position_encoding=occ.position_encoding or doc.position_encoding,
+        file_index=file_index,
+        file_bytes=file_bytes,
+        context=context,
+    )
+    if span is None:
+        return occ, False
+    return (
+        ScipOccurrence(
+            symbol=occ.symbol,
+            range_start_line=occ.range_start_line,
+            range_start_col=occ.range_start_col,
+            range_end_line=occ.range_end_line,
+            range_end_col=occ.range_end_col,
+            symbol_roles=occ.symbol_roles,
+            position_encoding=occ.position_encoding,
+            text_document_encoding=occ.text_document_encoding,
+            start_byte=span[0],
+            end_byte=span[1],
+        ),
+        True,
+    )
+
+
+def _apply_line_index_to_doc(
+    *,
+    doc: ScipDocument,
+    file_index: _FileLineIndex,
+    file_bytes: bytes,
+    context: _EncodingContext,
+) -> tuple[ScipDocument, bool]:
+    updated_occurrences: list[ScipOccurrence] = []
+    changed = False
+    for occ in doc.occurrences:
+        updated, occ_changed = _update_occurrence_span(
+            occ=occ,
+            doc=doc,
+            file_index=file_index,
+            file_bytes=file_bytes,
+            context=context,
+        )
+        updated_occurrences.append(updated)
+        if occ_changed:
+            changed = True
+    if not changed:
+        return doc, False
+    return (
+        ScipDocument(
+            relative_path=doc.relative_path,
+            symbols=doc.symbols,
+            occurrences=tuple(updated_occurrences),
+            position_encoding=doc.position_encoding,
+            text_document_encoding=doc.text_document_encoding,
+        ),
+        True,
+    )
+
+
 def _apply_file_line_index(
     env: BuildEnv,
     parsed: ScipParsedIndex,
@@ -548,16 +628,11 @@ def _apply_file_line_index(
         if file_index is None or not doc.occurrences:
             updated_docs.append(doc)
             continue
-        if all(
-            occ.start_byte is not None and occ.end_byte is not None for occ in doc.occurrences
-        ):
+        if _document_has_byte_spans(doc):
             updated_docs.append(doc)
             continue
-        file_path = repo_root / Path(doc.relative_path)
-        try:
-            file_bytes = file_path.read_bytes()
-        except OSError as exc:
-            log.warning("Failed to read file for SCIP byte spans: %s", exc)
+        file_bytes = _load_document_bytes(repo_root, doc.relative_path)
+        if file_bytes is None:
             updated_docs.append(doc)
             continue
         context = _resolve_encoding_context(
@@ -565,50 +640,15 @@ def _apply_file_line_index(
             encoding_hint=file_index.encoding,
             text_document_encoding=doc.text_document_encoding,
         )
-        updated_occurrences: list[ScipOccurrence] = []
-        doc_changed = False
-        for occ in doc.occurrences:
-            if occ.start_byte is not None and occ.end_byte is not None:
-                updated_occurrences.append(occ)
-                continue
-            span = _byte_span_for_occurrence(
-                occ=occ,
-                position_encoding=occ.position_encoding or doc.position_encoding,
-                file_index=file_index,
-                file_bytes=file_bytes,
-                context=context,
-            )
-            if span is None:
-                updated_occurrences.append(occ)
-                continue
-            updated_occurrences.append(
-                ScipOccurrence(
-                    symbol=occ.symbol,
-                    range_start_line=occ.range_start_line,
-                    range_start_col=occ.range_start_col,
-                    range_end_line=occ.range_end_line,
-                    range_end_col=occ.range_end_col,
-                    symbol_roles=occ.symbol_roles,
-                    position_encoding=occ.position_encoding,
-                    text_document_encoding=occ.text_document_encoding,
-                    start_byte=span[0],
-                    end_byte=span[1],
-                )
-            )
-            doc_changed = True
+        updated_doc, doc_changed = _apply_line_index_to_doc(
+            doc=doc,
+            file_index=file_index,
+            file_bytes=file_bytes,
+            context=context,
+        )
         if doc_changed:
             changed = True
-            updated_docs.append(
-                ScipDocument(
-                    relative_path=doc.relative_path,
-                    symbols=doc.symbols,
-                    occurrences=tuple(updated_occurrences),
-                    position_encoding=doc.position_encoding,
-                    text_document_encoding=doc.text_document_encoding,
-                )
-            )
-        else:
-            updated_docs.append(doc)
+        updated_docs.append(updated_doc)
     if not changed:
         return parsed
     return ScipParsedIndex(

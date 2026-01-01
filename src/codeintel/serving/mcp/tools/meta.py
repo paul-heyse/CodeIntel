@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext
+from fastmcp.server.tasks import TaskConfig
 
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp.models import DEFAULT_RESOURCE_TEMPLATES, ServingMetaResponse
@@ -16,10 +17,12 @@ from codeintel.serving.mcp.tools.shared import (
     READ_ONLY_LOCAL_ANNOTATIONS,
     TAG_META,
     TAG_READ,
+    maybe_report_progress,
     mcp_correlation_id,
 )
 from codeintel.serving.meta.service import ServingMetaExtras, build_serving_meta_payload
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.operations.ops import ServingOperations
 
 if TYPE_CHECKING:
@@ -28,8 +31,13 @@ if TYPE_CHECKING:
 _CURRENT_CONTEXT = CurrentContext()
 
 
-async def _catalog_view_count(ops: ServingOperations, limiter: QueryLimiter) -> int:
-    catalog = await limiter.run(ops.catalog)
+async def _catalog_view_count(
+    ops: ServingOperations,
+    limiter: QueryLimiter,
+    *,
+    timeout_s: float | None,
+) -> int:
+    catalog = await limiter.run_with_timeout(ops.catalog, timeout_s)
     return len(catalog.views)
 
 
@@ -48,12 +56,21 @@ def register_meta_tool(
         description="Get serving layer metadata including snapshot info",
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_META, TAG_READ},
+        task=TaskConfig(mode="optional"),
     )
     async def serving_meta(*, ctx: Context = _CURRENT_CONTEXT) -> ServingMetaResponse:
         start = time.perf_counter()
+        cancel_token = CancelToken.from_timeout(settings.query_timeout_s)
         await ctx.info("Retrieving serving metadata")
+        await maybe_report_progress(ctx, settings=settings, progress=10, total=100)
 
-        view_count = await _catalog_view_count(ops, limiter)
+        cancel_token.raise_if_cancelled()
+        view_count = await _catalog_view_count(
+            ops,
+            limiter,
+            timeout_s=settings.query_timeout_s,
+        )
+        cancel_token.raise_if_cancelled()
         feature_set = ServingFeatureSet.from_settings(settings)
         features = {
             "supports_explain": feature_set.enable_mcp_explain,
@@ -74,6 +91,8 @@ def register_meta_tool(
             started_at=started_at,
             extras=extras,
         )
+        cancel_token.raise_if_cancelled()
+        await maybe_report_progress(ctx, settings=settings, progress=100, total=100)
 
         duration_ms = (time.perf_counter() - start) * 1000
         log_query_metrics(

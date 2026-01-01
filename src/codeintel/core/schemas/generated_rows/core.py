@@ -18,7 +18,9 @@ __all__ = [
     "CoreModulesRow",
     "CoreParseManifestRow",
     "CoreRepoMapRow",
+    "CoreScipOccurrenceSpanXrefRow",
     "CoreScipOccurrencesRow",
+    "CoreScipSymbolGoidXrefRow",
     "CoreScipSymbolsRow",
     "CoreSyntaxCallsRow",
     "CoreSyntaxDefsRow",
@@ -26,6 +28,8 @@ __all__ = [
     "CoreSyntaxRefsRow",
     "CoreSyntaxScopesRow",
     "CoreSyntaxSpansRow",
+    "CoreTsCapturesRow",
+    "CoreTsParseErrorsRow",
 ]
 
 
@@ -205,6 +209,44 @@ class CoreSyntaxImportsRow(TypedDict):
     end_byte: int | None
 
 
+class CoreTsCapturesRow(TypedDict):
+    """Row model for core.ts_captures."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    query_pack: str
+    capture_name: str
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    node_type: str
+    text_preview: str | None
+    extras: object | None
+
+
+class CoreTsParseErrorsRow(TypedDict):
+    """Row model for core.ts_parse_errors."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    error_type: str
+    message: str | None
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    text_preview: str | None
+
+
 class CoreDocstringsRow(TypedDict):
     """Row model for core.docstrings."""
 
@@ -350,6 +392,49 @@ class CoreScipOccurrencesRow(TypedDict):
     text_document_encoding: str | None
     start_byte: int | None
     end_byte: int | None
+    created_at: datetime
+
+
+class CoreScipSymbolGoidXrefRow(TypedDict):
+    """Row model for core.scip_symbol_goid_xref."""
+
+    repo: str
+    commit: str
+    scip_symbol: str
+    goid_h128: int | None
+    def_rel_path: str | None
+    def_start_line: int | None
+    def_start_col: int | None
+    def_end_line: int | None
+    def_end_col: int | None
+    position_encoding: int | None
+    text_document_encoding: str | None
+    created_at: datetime
+
+
+class CoreScipOccurrenceSpanXrefRow(TypedDict):
+    """Row model for core.scip_occurrence_span_xref."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    scip_symbol: str
+    roles: int
+    is_definition: bool
+    is_reference: bool
+    is_import: bool
+    is_write: bool
+    is_read: bool
+    enclosing_symbol: str | None
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    position_encoding: int | None
+    text_document_encoding: str | None
+    start_byte: int | None
+    end_byte: int | None
+    goid_h128: int | None
     created_at: datetime
 
 

@@ -5,12 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.serving.semantic.datasets import dataset_filter_expression
 from codeintel.serving.semantic.duckdb_relation_builder import validate_query_ast
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
-from codeintel.storage.sqlglot_tools import canonicalize_select_duckdb
+from codeintel.storage.datasets.scanning import QueryPlanSpec
+from codeintel.storage.sqlglot_tools import canonicalize_select_duckdb, schema_mapping_for_table_key
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sqlglot import exp
 
 
@@ -20,6 +24,7 @@ class ServingQuery:
 
     spec: SemanticQuerySpec
     ast: exp.Select
+    plan_spec: QueryPlanSpec
 
 
 _ALLOWED_ANONYMOUS_FUNCTIONS = frozenset(
@@ -44,20 +49,26 @@ _ALLOWED_ANONYMOUS_FUNCTIONS = frozenset(
 )
 
 
-def normalize_serving_ast(ast: exp.Select) -> exp.Select:
+def normalize_serving_ast(
+    ast: exp.Select,
+    *,
+    schema: Mapping[str, Mapping[str, str]] | None = None,
+) -> exp.Select:
     """Normalize a serving AST for deterministic fingerprints.
 
     Parameters
     ----------
     ast
         SQLGlot Select expression to normalize.
+    schema
+        Optional SQLGlot schema mapping for type-aware canonicalization.
 
     Returns
     -------
     sqlglot.expressions.Select
         Canonicalized Select expression.
     """
-    return canonicalize_select_duckdb(ast)
+    return canonicalize_select_duckdb(ast, schema=schema)
 
 
 def build_serving_query(*, spec: SemanticQuerySpec) -> ServingQuery:
@@ -74,13 +85,38 @@ def build_serving_query(*, spec: SemanticQuerySpec) -> ServingQuery:
         allow_aggregates=False,
         log_context="serving_query_ast",
     )
-    canonical = normalize_serving_ast(ast)
+    schema_mapping = schema_mapping_for_table_key(
+        spec.table_key,
+        column_types=spec.column_types,
+    )
+    canonical = normalize_serving_ast(ast, schema=schema_mapping)
     validate_query_ast(
         ast=canonical,
         allowed_columns=spec.allowed_columns,
         column_types=spec.column_types,
     )
-    return ServingQuery(spec=spec, ast=canonical)
+    plan_spec = QueryPlanSpec(
+        table_key=spec.table_key,
+        columns=_plan_columns_for_spec(spec),
+        filter_expression=dataset_filter_expression(
+            filters=spec.filters,
+            allowed_columns=spec.allowed_columns,
+            column_types=spec.column_types,
+        ),
+    )
+    return ServingQuery(spec=spec, ast=canonical, plan_spec=plan_spec)
+
+
+def _plan_columns_for_spec(spec: SemanticQuerySpec) -> tuple[str, ...]:
+    columns = set(spec.columns)
+    for filt in spec.filters:
+        columns.add(filt.column)
+    for order in spec.order_by:
+        column = order[1:] if order.startswith("-") else order
+        columns.add(column)
+    if not columns:
+        return tuple(spec.columns)
+    return tuple(sorted(columns))
 
 
 __all__ = ["ServingQuery", "build_serving_query", "normalize_serving_ast"]

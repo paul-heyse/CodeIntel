@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext
+from fastmcp.server.tasks import TaskConfig
 
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
@@ -17,6 +18,7 @@ from codeintel.serving.mcp.tools.shared import (
     mcp_correlation_id,
 )
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
 
@@ -40,6 +42,7 @@ def register_search_tool(
         description="Search code metadata using BM25 full-text search",
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEARCH, TAG_READ},
+        task=TaskConfig(mode="optional"),
     )
     async def code_search(
         query: str,
@@ -50,6 +53,7 @@ def register_search_tool(
         ctx: Context = _CURRENT_CONTEXT,
     ) -> SearchQueryResponse:
         start = time.perf_counter()
+        cancel_token = CancelToken.from_timeout(settings.query_timeout_s)
         await ctx.info(f"Searching: {query}")
         await maybe_report_progress(ctx, settings=settings, progress=10, total=100)
         request = SearchQueryRequest(
@@ -59,7 +63,9 @@ def register_search_tool(
             offset=offset,
         )
         await maybe_report_progress(ctx, settings=settings, progress=20, total=100)
-        result = await limiter.run(ops.search, request)
+        cancel_token.raise_if_cancelled()
+        result = await limiter.run_with_timeout(ops.search, settings.query_timeout_s, request)
+        cancel_token.raise_if_cancelled()
         await maybe_report_progress(ctx, settings=settings, progress=100, total=100)
 
         duration_ms = (time.perf_counter() - start) * 1000

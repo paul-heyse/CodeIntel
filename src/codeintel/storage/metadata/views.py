@@ -22,15 +22,24 @@ def _aliased_table(table_ref: str, alias: str) -> exp.Table:
     return aliased
 
 
+def _column_ref(column: str | tuple[str, str | None]) -> exp.Column:
+    if isinstance(column, tuple):
+        name, table = column
+        if table:
+            return exp.column(name, table=table)
+        return exp.column(name)
+    return exp.column(column)
+
+
 def _row_number_expr(
     *,
-    partition_by: list[str],
-    order_by: list[tuple[str, bool]],
+    partition_by: list[str | tuple[str, str | None]],
+    order_by: list[tuple[str | tuple[str, str | None], bool]],
     alias: str,
 ) -> exp.Expression:
-    partitions = [exp.column(column) for column in partition_by]
+    partitions = [_column_ref(column) for column in partition_by]
     orders = [
-        exp.Ordered(this=exp.column(column), desc=descending) for column, descending in order_by
+        exp.Ordered(this=_column_ref(column), desc=descending) for column, descending in order_by
     ]
     window = exp.Window(
         this=exp.RowNumber(),
@@ -173,8 +182,8 @@ def _apply_latest_good_view(con: DuckDBPyConnection, *, catalog: str | None) -> 
         catalog=catalog,
     )
     latest_row_num = _row_number_expr(
-        partition_by=["repo"],
-        order_by=[("created_at", True)],
+        partition_by=[("repo", "m")],
+        order_by=[(("created_at", "m"), True)],
         alias="row_num",
     )
     manifest_table = _aliased_table(manifest_runs_ref, "m")

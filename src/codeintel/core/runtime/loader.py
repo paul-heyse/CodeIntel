@@ -279,6 +279,10 @@ def _load_serving_settings() -> ServingSettings:
             "CODEINTEL_SERVE_POLARS_STREAMING_FALLBACK",
             default=True,
         ),
+        polars_maintain_order=get_required_bool(
+            "CODEINTEL_SERVE_POLARS_MAINTAIN_ORDER",
+            default=True,
+        ),
         polars_use_arrow_scanner=get_required_bool(
             "CODEINTEL_SERVE_POLARS_USE_ARROW_SCANNER",
             default=False,

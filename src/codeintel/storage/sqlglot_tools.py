@@ -16,17 +16,20 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, TypedDict, Unpack, cast
 
 from sqlglot import diff as semantic_diff
 from sqlglot import exp, parse, parse_one
+from sqlglot.dialects.dialect import DialectType
+from sqlglot.dialects.duckdb import DuckDB
 from sqlglot.errors import ErrorLevel, ParseError, SqlglotError, UnsupportedError
 from sqlglot.lineage import lineage as build_lineage
 from sqlglot.optimizer import build_scope, normalize_identifiers, optimize, qualify
 from sqlglot.optimizer.scope import traverse_scope
 
+from codeintel.core.schemas.type_mappings import normalize_engine_column_type
 from codeintel.storage.constants import DUCKDB_DIALECT
 
 if TYPE_CHECKING:
@@ -34,11 +37,14 @@ if TYPE_CHECKING:
 
     from sqlglot.lineage import Node
 
+    from codeintel.core.schemas.primitives import ColumnType
+
 __all__ = [
     "SELECT_ONLY_DISALLOWED_NODES",
     "AstCapabilityError",
     "AstCapabilityIssue",
     "AstCapabilityReport",
+    "GeneratorConfig",
     "ParseError",
     "QuerySummaryConfig",
     "canonical_sql_duckdb",
@@ -57,6 +63,8 @@ __all__ = [
     "normalize_sql_for_hash",
     "parse_one_duckdb",
     "render_sql_duckdb",
+    "render_sql_duckdb_safe",
+    "schema_mapping_for_table_key",
     "semantic_diff_sql_duckdb",
     "summarize_sql_duckdb",
     "table_expr_from_ref",
@@ -119,6 +127,89 @@ _CAPABILITY_DISALLOWED_NODES: tuple[type[exp.Expression], ...] = (
     exp.Window,
 )
 SELECT_ONLY_DISALLOWED_NODES = _MUTATION_DISALLOWED_NODES
+_SAFE_DIALECT_UNSUPPORTED_NODES: tuple[type[exp.Expression], ...] = _CAPABILITY_DISALLOWED_NODES
+
+
+def _unsupported_transform(
+    node_type: type[exp.Expression],
+) -> Callable[[DuckDB.Generator, exp.Expression], str]:
+    def _transform(generator: DuckDB.Generator, _expression: exp.Expression) -> str:
+        return cast(
+            "str",
+            generator.unsupported(f"{node_type.__name__} is not supported in DuckDBSafe"),
+        )
+
+    return _transform
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratorConfig:
+    """Configuration for DuckDB SQL generation."""
+
+    pretty: bool | None = None
+    identify: str | bool = False
+    normalize: bool = False
+    pad: int = 2
+    indent: int = 2
+    normalize_functions: str | bool | None = None
+    unsupported_level: ErrorLevel = ErrorLevel.WARN
+    max_unsupported: int = 3
+    leading_comma: bool = False
+    max_text_width: int = 80
+    comments: bool = True
+    dialect: DialectType | None = None
+
+
+class _GeneratorConfigParams(TypedDict, total=False):
+    pretty: bool | None
+    identify: str | bool
+    normalize: bool
+    pad: int
+    indent: int
+    normalize_functions: str | bool | None
+    unsupported_level: ErrorLevel
+    max_unsupported: int
+    leading_comma: bool
+    max_text_width: int
+    comments: bool
+    dialect: DialectType | None
+
+
+class DuckDBSafe(DuckDB):
+    """DuckDB dialect that rejects unsupported SQL constructs by default."""
+
+    class Generator(DuckDB.Generator):
+        def __init__(
+            self,
+            *,
+            config: GeneratorConfig | None = None,
+            **kwargs: Unpack[_GeneratorConfigParams],
+        ) -> None:
+            if config is None:
+                config = GeneratorConfig(**kwargs)
+            elif kwargs:
+                config = replace(config, **kwargs)
+            super().__init__(
+                pretty=config.pretty,
+                identify=config.identify,
+                normalize=config.normalize,
+                pad=config.pad,
+                indent=config.indent,
+                normalize_functions=config.normalize_functions,
+                unsupported_level=config.unsupported_level,
+                max_unsupported=config.max_unsupported,
+                leading_comma=config.leading_comma,
+                max_text_width=config.max_text_width,
+                comments=config.comments,
+                dialect=config.dialect,
+            )
+            self.TRANSFORMS = {
+                **self.TRANSFORMS,
+                **{
+                    node_type: _unsupported_transform(node_type)
+                    for node_type in _SAFE_DIALECT_UNSUPPORTED_NODES
+                },
+            }
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,7 +262,7 @@ class AstCapabilityError(ValueError):
 def _capability_issue_for_sql(root: exp.Expression) -> AstCapabilityIssue | None:
     try:
         _ = root.sql(
-            dialect=DUCKDB_DIALECT,
+            dialect=DuckDBSafe,
             unsupported_level=ErrorLevel.RAISE,
             max_unsupported=0,
         )
@@ -276,6 +367,7 @@ def capability_envelope_report(
     allowed_anonymous_functions: frozenset[str] | None = None,
     disallowed_nodes: tuple[type[exp.Expression], ...] | None = None,
     allow_aggregates: bool = False,
+    enforce_safe_sql: bool = True,
 ) -> AstCapabilityReport:
     """Return a capability envelope report for a SQLGlot AST.
 
@@ -289,6 +381,8 @@ def capability_envelope_report(
         Optional tuple of disallowed SQLGlot node types.
     allow_aggregates
         Whether aggregate functions are permitted.
+    enforce_safe_sql
+        Whether to enforce the DuckDBSafe SQL capability envelope.
 
     Returns
     -------
@@ -309,9 +403,10 @@ def capability_envelope_report(
         issues.extend(node_issues)
         features.update(node_features)
 
-    sql_issue = _capability_issue_for_sql(root)
-    if sql_issue is not None:
-        issues.append(sql_issue)
+    if enforce_safe_sql:
+        sql_issue = _capability_issue_for_sql(root)
+        if sql_issue is not None:
+            issues.append(sql_issue)
 
     return AstCapabilityReport(
         supported=not issues,
@@ -359,6 +454,7 @@ def ensure_ast_capability(
     allowed_anonymous_functions: frozenset[str] | None = None,
     disallowed_nodes: tuple[type[exp.Expression], ...] | None = None,
     allow_aggregates: bool = False,
+    enforce_safe_sql: bool = True,
     log_context: str | None = None,
 ) -> AstCapabilityReport:
     """Validate a SQLGlot AST against the capability envelope.
@@ -373,6 +469,8 @@ def ensure_ast_capability(
         Optional tuple of disallowed SQLGlot node types.
     allow_aggregates
         Whether aggregate functions are permitted.
+    enforce_safe_sql
+        Whether to enforce the DuckDBSafe SQL capability envelope.
     log_context
         Optional context string for capability logs.
 
@@ -391,6 +489,7 @@ def ensure_ast_capability(
         allowed_anonymous_functions=allowed_anonymous_functions,
         disallowed_nodes=disallowed_nodes,
         allow_aggregates=allow_aggregates,
+        enforce_safe_sql=enforce_safe_sql,
     )
     log_ast_capability_report(report, context=log_context)
     if not report.supported:
@@ -479,6 +578,41 @@ def canonicalize_select_duckdb(
     return canonical
 
 
+def schema_mapping_for_table_key(
+    table_key: str,
+    *,
+    column_types: Mapping[str, ColumnType] | None,
+) -> SchemaMapping | None:
+    """Return a SQLGlot schema mapping for a single table key.
+
+    Parameters
+    ----------
+    table_key
+        Table key (schema.table) to associate with column types.
+    column_types
+        Column type mapping for the table.
+
+    Returns
+    -------
+    SchemaMapping | None
+        Schema mapping for SQLGlot optimization, when column types are available.
+    """
+    if not column_types:
+        return None
+    normalized: dict[str, str] = {}
+    for column, column_type in column_types.items():
+        try:
+            normalized_type = normalize_engine_column_type(column_type)
+        except ValueError:
+            normalized_type = str(column_type).strip()
+        if not normalized_type:
+            continue
+        normalized[column] = normalized_type
+    if not normalized:
+        return None
+    return {table_key: normalized}
+
+
 def render_sql_duckdb(root: exp.Expression) -> str:
     """Render a SQLGlot expression using the DuckDB dialect.
 
@@ -493,6 +627,21 @@ def render_sql_duckdb(root: exp.Expression) -> str:
         Rendered DuckDB SQL.
     """
     return root.sql(dialect=DUCKDB_DIALECT)
+
+
+def render_sql_duckdb_safe(root: exp.Expression) -> str:
+    """Render a SQLGlot expression using the DuckDB safe dialect.
+
+    Returns
+    -------
+    str
+        Rendered DuckDB SQL.
+    """
+    return root.sql(
+        dialect=DuckDBSafe,
+        unsupported_level=ErrorLevel.RAISE,
+        max_unsupported=0,
+    )
 
 
 def table_expr_from_ref(table_ref: str) -> exp.Table:

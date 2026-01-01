@@ -489,6 +489,145 @@ class ScipOccurrenceRow:
 
 
 @dataclass(frozen=True)
+class ScipSymbolGoidXrefRow:
+    """Row data for core.scip_symbol_goid_xref table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    scip_symbol
+        SCIP symbol identifier.
+    goid_h128
+        Resolved GOID (nullable when unresolved).
+    def_rel_path
+        Definition file path.
+    def_start_line
+        Definition start line (0-based).
+    def_start_col
+        Definition start column (0-based).
+    def_end_line
+        Definition end line (0-based).
+    def_end_col
+        Definition end column (0-based).
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    scip_symbol: str
+    goid_h128: int | None
+    def_rel_path: str | None
+    def_start_line: int | None
+    def_start_col: int | None
+    def_end_line: int | None
+    def_end_col: int | None
+    position_encoding: int | None
+    text_document_encoding: str | None
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
+class ScipOccurrenceSpanXrefRow:
+    """Row data for core.scip_occurrence_span_xref table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    rel_path
+        Repository-relative file path.
+    scip_symbol
+        SCIP symbol identifier.
+    roles
+        SCIP symbol roles bitmask.
+    is_definition
+        True when Definition role is set.
+    is_reference
+        True when Definition role is not set.
+    is_import
+        True when Import role is set.
+    is_write
+        True when WriteAccess role is set.
+    is_read
+        True when ReadAccess role is set.
+    enclosing_symbol
+        Optional enclosing symbol identifier.
+    start_line
+        Occurrence start line (0-based).
+    start_col
+        Occurrence start column (0-based).
+    end_line
+        Occurrence end line (0-based).
+    end_col
+        Occurrence end column (0-based).
+    position_encoding
+        Encoding enum for interpreting column offsets.
+    text_document_encoding
+        Text encoding for source files on disk.
+    start_byte
+        Start byte offset (nullable when not computed).
+    end_byte
+        End byte offset (nullable when not computed).
+    goid_h128
+        Resolved GOID (nullable when unresolved).
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    rel_path: str
+    scip_symbol: str
+    roles: int
+    is_definition: bool
+    is_reference: bool
+    is_import: bool
+    is_write: bool
+    is_read: bool
+    enclosing_symbol: str | None
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    position_encoding: int | None
+    text_document_encoding: str | None
+    start_byte: int | None
+    end_byte: int | None
+    goid_h128: int | None
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
 class ScipSymbolInformationRow:
     """Row data for core.scip_symbol_information table.
 
@@ -732,6 +871,8 @@ __all__ = [
     "ScipExternalSymbolRow",
     "ScipModuleStateRow",
     "ScipOccurrenceRow",
+    "ScipOccurrenceSpanXrefRow",
+    "ScipSymbolGoidXrefRow",
     "ScipSymbolInformationRow",
     "ScipSymbolRelationshipRow",
     "ScipSymbolRow",

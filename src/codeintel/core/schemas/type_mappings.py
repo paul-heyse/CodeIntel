@@ -182,8 +182,13 @@ def duckdb_pytype_from_column_type(column_type: ColumnType | None) -> DuckDBPyTy
     duckdb.typing.DuckDBPyType | None
         DuckDB type when available, otherwise None.
     """
-    normalized = normalize_engine_column_type(column_type)
-    if normalized is None:
+    if column_type is None:
+        return None
+    try:
+        normalized = normalize_engine_column_type(column_type)
+    except ValueError:
+        normalized = str(column_type).strip()
+    if not normalized:
         return None
     try:
         data_type = exp.DataType.build(normalized, dialect="duckdb")

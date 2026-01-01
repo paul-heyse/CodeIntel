@@ -1253,6 +1253,40 @@ class SemanticQueryKernel:
             finally:
                 plan.cleanup()
 
+    def export_record_batches(
+        self,
+        request: SemanticExportRequest,
+        *,
+        cancel_check: CancelCheck | None = None,
+    ) -> Iterator[pa.RecordBatch]:
+        """Yield Arrow record batches for a streaming export.
+
+        Parameters
+        ----------
+        request
+            Export request with filters, selection, and pagination.
+        cancel_check
+            Optional cancellation hook invoked during export.
+
+        Yields
+        ------
+        pyarrow.RecordBatch
+            Record batch for each export chunk.
+        """
+        with self.db.connect_export() as (warehouse, pointer):
+            export_plan = self._build_ipc_export_plan(
+                warehouse=warehouse,
+                pointer=pointer,
+                request=request,
+                cancel_check=cancel_check,
+            )
+            try:
+                for batch in export_plan.reader:
+                    _raise_if_cancelled(cancel_check)
+                    yield batch
+            finally:
+                export_plan.plan.cleanup()
+
     def export_sql(self, request: SemanticExportRequest) -> str:
         """Return the compiled SQL for an export request.
 

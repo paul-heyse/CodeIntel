@@ -41,6 +41,7 @@ from codeintel.build.hamilton.native.patterns import (
     save_relation_table,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.views.view_outputs import view_plan_map
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
@@ -87,6 +88,19 @@ def _package_version(name: str) -> str:
         return "unknown"
 
 
+def _view_sql_map() -> dict[str, str] | None:
+    try:
+        plans = view_plan_map()
+    except (RuntimeError, ValueError, TypeError):
+        return None
+    view_sql: dict[str, str] = {}
+    for table_key, plan in plans.items():
+        sql = plan.sql
+        if isinstance(sql, str) and sql:
+            view_sql[table_key] = sql
+    return view_sql or None
+
+
 def _semantic_registry_json(tag_query: TagQuery) -> str:
     schema_provider = get_schema_provider()
     compiled = compile_semantic_registry(
@@ -122,11 +136,15 @@ def _schema_manifest_json(
         ),
     )
     run_id = env.run_context.run_id if env.run_context is not None else new_run_id("schema")
+    catalog_inputs: dict[str, object] = {"source": "serving_artifacts"}
+    view_sql = _view_sql_map()
+    if view_sql is not None:
+        catalog_inputs["view_sql_map"] = view_sql
     catalog_request = SchemaCatalogRequest(
         run_id=run_id,
         repo=env.repo,
         commit=env.commit,
-        catalog_inputs={"source": "serving_artifacts"},
+        catalog_inputs=catalog_inputs,
     )
     result = env.gateway.schemas.persist_schema_manifest(
         manifest,

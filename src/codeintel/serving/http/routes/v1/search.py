@@ -12,7 +12,11 @@ from codeintel.serving.http.route_utils import (
 from codeintel.serving.metrics import QueryMetrics
 from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
 
-router = APIRouter(prefix="/search", tags=["search"], dependencies=[Depends(require_api_key)])
+router = APIRouter(
+    prefix="/search",
+    tags=["search"],
+    dependencies=[Depends(require_api_key, scope="request")],
+)
 
 
 @router.post("", response_model=SearchQueryResponse)

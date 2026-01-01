@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 from duckdb import DuckDBPyRelation
@@ -11,10 +12,15 @@ from duckdb import DuckDBPyRelation
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.protocols.export import ExportRelation, RecordBatch, RecordBatchReader
 
+if TYPE_CHECKING:
+    from codeintel.storage.protocols.export import ResultStream
+
 __all__ = [
     "ArrowRecordBatchReaderAdapter",
     "DuckDBRelationAdapter",
+    "DuckDBResultStreamAdapter",
     "adapt_duckdb_relation",
+    "adapt_duckdb_relation_stream",
 ]
 
 
@@ -109,6 +115,34 @@ class DuckDBRelationAdapter:
         self.relation.write_parquet(path)
 
 
+@dataclass(frozen=True, slots=True)
+class DuckDBResultStreamAdapter:
+    """Adapter to expose a DuckDB relation as a result stream."""
+
+    relation: DuckDBPyRelation
+
+    def to_reader(self, *, batch_size: int = DEFAULT_ARROW_BATCH_SIZE) -> pa.RecordBatchReader:
+        """Return a RecordBatchReader for this relation.
+
+        Parameters
+        ----------
+        batch_size
+            Maximum rows per batch.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Reader yielding record batches.
+        """
+        fetcher = getattr(self.relation, "fetch_arrow_reader", None)
+        if callable(fetcher):
+            try:
+                return fetcher(batch_size)
+            except TypeError:
+                return fetcher()
+        return self.relation.fetch_record_batch(batch_size)
+
+
 def adapt_duckdb_relation(relation: DuckDBPyRelation) -> ExportRelation:
     """Wrap a DuckDB relation with the export protocol adapter.
 
@@ -123,3 +157,19 @@ def adapt_duckdb_relation(relation: DuckDBPyRelation) -> ExportRelation:
         Adapted relation exposing the export protocol.
     """
     return DuckDBRelationAdapter(relation)
+
+
+def adapt_duckdb_relation_stream(relation: DuckDBPyRelation) -> ResultStream:
+    """Wrap a DuckDB relation with the result stream protocol adapter.
+
+    Parameters
+    ----------
+    relation
+        DuckDB relation to adapt.
+
+    Returns
+    -------
+    ResultStream
+        Adapted relation exposing the streaming protocol.
+    """
+    return DuckDBResultStreamAdapter(relation)

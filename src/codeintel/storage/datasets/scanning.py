@@ -33,6 +33,15 @@ class DatasetScanOptions:
     metrics_enabled: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class QueryPlanSpec:
+    """Shared query plan details for dataset scanning."""
+
+    table_key: str
+    columns: tuple[str, ...]
+    filter_expression: ds.Expression | None
+
+
 _METADATA_FILENAME = "_metadata"
 _COMMON_METADATA_FILENAME = "_common_metadata"
 
@@ -73,14 +82,19 @@ def dataset_for_manifest(
     """
     dataset_dir = manifest_path.parent.resolve()
     metadata_path = _dataset_metadata_path(dataset_dir)
+    common_metadata_path = _common_metadata_path(dataset_dir)
     schema = _schema_from_common_metadata(dataset_dir)
     partitioning = resolve_partitioning(manifest=manifest, schema=schema)
-    if metadata_path is not None:
-        return ds.parquet_dataset(
-            str(metadata_path),
+    metadata_source = metadata_path or common_metadata_path
+    if metadata_source is not None:
+        dataset = _dataset_from_metadata(
+            metadata_source,
+            dataset_dir=dataset_dir,
             partitioning=partitioning,
-            partition_base_dir=str(dataset_dir),
+            schema=schema,
         )
+        if dataset is not None:
+            return dataset
     if manifest.files:
         paths = [str(dataset_dir / path) for path in manifest.files]
         return ds.dataset(paths, format="parquet", partitioning=partitioning, schema=schema)
@@ -107,6 +121,7 @@ def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanne
         fragments,
         resolved_schema,
         scan_kwargs,
+        filter_expression=filter_expression,
     )
     if fragment_scanner is not None:
         return fragment_scanner
@@ -197,19 +212,24 @@ def _scanner_from_fragments(
     fragments: tuple[ds.Fragment, ...] | None,
     schema: pa.Schema,
     scan_kwargs: dict[str, object],
+    *,
+    filter_expression: ds.Expression | None,
 ) -> Scanner | None:
     if not fragments:
         return None
     from_fragments = getattr(ds.Scanner, "from_fragments", None)
+    scanner_kwargs = dict(scan_kwargs)
+    if filter_expression is not None:
+        scanner_kwargs["filter"] = filter_expression
     if callable(from_fragments):
         try:
-            return from_fragments(fragments, schema=schema, **scan_kwargs)
+            return from_fragments(fragments, schema=schema, **scanner_kwargs)
         except (TypeError, ValueError, pa.ArrowInvalid):
             return None
     from_fragment = getattr(ds.Scanner, "from_fragment", None)
     if callable(from_fragment) and len(fragments) == 1:
         try:
-            return from_fragment(fragments[0], schema=schema, **scan_kwargs)
+            return from_fragment(fragments[0], schema=schema, **scanner_kwargs)
         except (TypeError, ValueError, pa.ArrowInvalid):
             return None
     return None
@@ -236,15 +256,38 @@ def _dataset_metadata_path(dataset_dir: Path) -> Path | None:
     return metadata_path if metadata_path.is_file() else None
 
 
+def _common_metadata_path(dataset_dir: Path) -> Path | None:
+    metadata_path = dataset_dir / _COMMON_METADATA_FILENAME
+    return metadata_path if metadata_path.is_file() else None
+
+
 def _schema_from_common_metadata(dataset_dir: Path) -> pa.Schema | None:
-    common_metadata_path = dataset_dir / _COMMON_METADATA_FILENAME
-    if not common_metadata_path.is_file():
+    common_metadata_path = _common_metadata_path(dataset_dir)
+    if common_metadata_path is None:
         return None
     try:
         parquet_file = pq.ParquetFile(common_metadata_path)
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
     return parquet_file.schema_arrow
+
+
+def _dataset_from_metadata(
+    metadata_path: Path,
+    *,
+    dataset_dir: Path,
+    partitioning: ds.Partitioning | str | None,
+    schema: pa.Schema | None,
+) -> ds.Dataset | None:
+    try:
+        return ds.parquet_dataset(
+            str(metadata_path),
+            partitioning=partitioning,
+            partition_base_dir=str(dataset_dir),
+            schema=schema,
+        )
+    except (OSError, ValueError, pa.ArrowInvalid):
+        return None
 
 
 def _safe_get_fragments(
@@ -288,11 +331,15 @@ def _apply_row_group_pruning(
             pruned.append(subset_value)
             continue
         try:
-            iterator = iter(subset_value)
+            iterator = iter(cast("Iterable[ds.Fragment]", subset_value))
         except TypeError:
             pruned.append(fragment)
             continue
-        pruned.extend(item for item in iterator if isinstance(item, ds.Fragment))
+        filtered = [item for item in iterator if isinstance(item, ds.Fragment)]
+        if filtered:
+            pruned.extend(filtered)
+        else:
+            pruned.append(fragment)
     return tuple(pruned)
 
 

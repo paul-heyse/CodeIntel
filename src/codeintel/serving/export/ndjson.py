@@ -53,19 +53,22 @@ def iter_ndjson_bytes(rows: Iterable[Mapping[str, object]]) -> Iterator[bytes]:
         yield encode_ndjson_line(row)
 
 
-def iter_ndjson_bytes_from_reader(
-    reader: RecordBatchReader,
+def iter_ndjson_bytes_from_batches(
+    batches: Iterable[RecordBatch],
     *,
     cancel_check: Callable[[], None] | None = None,
+    batch_hook: Callable[[RecordBatch], None] | None = None,
 ) -> Iterator[bytes]:
     """Yield Arrow record batches as UTF-8 JSONL byte chunks.
 
     Parameters
     ----------
-    reader
-        Record batch reader to serialize as newline-delimited JSON.
+    batches
+        Record batch iterable to serialize as newline-delimited JSON.
     cancel_check
         Optional cancellation hook invoked between batches.
+    batch_hook
+        Optional callback invoked for each record batch.
 
     Yields
     ------
@@ -76,12 +79,43 @@ def iter_ndjson_bytes_from_reader(
     -----
     This function uses shared row coercion to ensure consistent export encoding.
     """
-    for batch in reader:
+    for batch in batches:
         if cancel_check is not None:
             cancel_check()
+        if batch_hook is not None:
+            batch_hook(batch)
         payload = _batch_to_ndjson_bytes(batch, columns=batch.schema.names)
         if payload:
             yield payload
+
+
+def iter_ndjson_bytes_from_reader(
+    reader: RecordBatchReader,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    batch_hook: Callable[[RecordBatch], None] | None = None,
+) -> Iterator[bytes]:
+    """Yield Arrow record batches from a reader as UTF-8 JSONL byte chunks.
+
+    Parameters
+    ----------
+    reader
+        Record batch reader to serialize as newline-delimited JSON.
+    cancel_check
+        Optional cancellation hook invoked between batches.
+    batch_hook
+        Optional callback invoked for each record batch.
+
+    Yields
+    ------
+    bytes
+        UTF-8 JSONL chunks for each record batch.
+    """
+    yield from iter_ndjson_bytes_from_batches(
+        reader,
+        cancel_check=cancel_check,
+        batch_hook=batch_hook,
+    )
 
 
 def _batch_to_ndjson_bytes(batch: RecordBatch, *, columns: list[str]) -> bytes:
@@ -91,4 +125,9 @@ def _batch_to_ndjson_bytes(batch: RecordBatch, *, columns: list[str]) -> bytes:
     return b"".join(encode_ndjson_line(row) for row in rows)
 
 
-__all__ = ["encode_ndjson_line", "iter_ndjson_bytes", "iter_ndjson_bytes_from_reader"]
+__all__ = [
+    "encode_ndjson_line",
+    "iter_ndjson_bytes",
+    "iter_ndjson_bytes_from_batches",
+    "iter_ndjson_bytes_from_reader",
+]

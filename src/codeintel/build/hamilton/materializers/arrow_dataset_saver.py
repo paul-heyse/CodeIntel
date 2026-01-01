@@ -405,6 +405,30 @@ def _materialize_dataset(
     return manifest, manifest_path
 
 
+def _record_batch_reader_from_iterable(data: Iterable[object]) -> pa.RecordBatchReader:
+    batch_iter = iter(data)
+    try:
+        first_batch = next(batch_iter)
+    except StopIteration as exc:
+        msg = "Record batch iterable is empty; schema cannot be inferred"
+        raise ValueError(msg) from exc
+    if not isinstance(first_batch, pa.RecordBatch):
+        msg = "Record batch iterable contains non-RecordBatch values"
+        raise TypeError(msg)
+    first_batch = cast("pa.RecordBatch", first_batch)
+    first_schema = first_batch.schema
+
+    def _iter_batches() -> Iterable[pa.RecordBatch]:
+        yield first_batch
+        for batch in batch_iter:
+            if not isinstance(batch, pa.RecordBatch):
+                msg = "Record batch iterable contains non-RecordBatch values"
+                raise TypeError(msg)
+            yield batch
+
+    return pa.RecordBatchReader.from_batches(first_schema, _iter_batches())
+
+
 def _normalize_tabular_data(data: TabularData) -> TabularData:
     if isinstance(data, pl.LazyFrame):
         return data
@@ -417,14 +441,7 @@ def _normalize_tabular_data(data: TabularData) -> TabularData:
         batches = table.to_batches()
         return pa.RecordBatchReader.from_batches(table.schema, batches)
     if isinstance(data, Iterable):
-        batches = list(data)
-        if not batches:
-            msg = "Record batch iterable is empty; schema cannot be inferred"
-            raise ValueError(msg)
-        if not all(isinstance(batch, pa.RecordBatch) for batch in batches):
-            msg = "Record batch iterable contains non-RecordBatch values"
-            raise TypeError(msg)
-        return pa.RecordBatchReader.from_batches(batches[0].schema, batches)
+        return _record_batch_reader_from_iterable(data)
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
     raise TypeError(msg)
 

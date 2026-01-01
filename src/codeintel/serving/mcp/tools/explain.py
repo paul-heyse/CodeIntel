@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, get_type_hints
 
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext
+from fastmcp.server.tasks import TaskConfig
 
 from codeintel.serving.mcp.models import SemanticExplainToolRequest
 from codeintel.serving.mcp.runtime import QueryLimiter
@@ -20,6 +21,7 @@ from codeintel.serving.mcp.tools.shared import (
     maybe_report_progress,
     validate_semantic_query_request,
 )
+from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryRequest
 
@@ -44,9 +46,16 @@ class SemanticExplainHandler:
         ctx: Context,
     ) -> SemanticExplainResponse:
         start = time.perf_counter()
+        cancel_token = CancelToken.from_timeout(self.settings.query_timeout_s)
         await ctx.info(f"Explaining query for view: {request.view_id}")
         await maybe_report_progress(ctx, settings=self.settings, progress=10, total=100)
-        result = await self.limiter.run(self.ops.explain, request)
+        cancel_token.raise_if_cancelled()
+        result = await self.limiter.run_with_timeout(
+            self.ops.explain,
+            self.settings.query_timeout_s,
+            request,
+        )
+        cancel_token.raise_if_cancelled()
         await maybe_report_progress(ctx, settings=self.settings, progress=100, total=100)
 
         duration_ms = (time.perf_counter() - start) * 1000
@@ -86,6 +95,7 @@ def register_explain_tool(
         description="Return compiled SQL and DuckDB plan for a semantic query",
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEMANTIC, TAG_READ},
+        task=TaskConfig(mode="optional"),
     )(semantic_explain)
 
 

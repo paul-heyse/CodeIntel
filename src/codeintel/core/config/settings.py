@@ -277,6 +277,7 @@ class ServingSettings:
     polars_query_opt_flags: tuple[str, ...] = ()
     polars_streaming: bool = True
     polars_streaming_fallback: bool = True
+    polars_maintain_order: bool = True
     polars_use_arrow_scanner: bool = False
     polars_set_sorted: bool = False
     polars_unify_dictionaries: bool = False

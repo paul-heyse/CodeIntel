@@ -217,9 +217,7 @@ class DatasetSuiteManifest(ManifestBase):
             Loaded suite manifest.
         """
         data = read_manifest_json(path)
-        dataset_manifest_paths = _parse_suite_manifest_paths(
-            data.get("dataset_manifest_paths")
-        )
+        dataset_manifest_paths = _parse_suite_manifest_paths(data.get("dataset_manifest_paths"))
         tool_versions = _coerce_str_mapping(data.get("tool_versions"))
         return cls(
             suite_manifest_version=_require_int(data, "suite_manifest_version"),

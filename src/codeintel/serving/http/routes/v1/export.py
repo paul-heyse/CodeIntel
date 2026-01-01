@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 router = APIRouter(
     prefix="/export",
     tags=["export"],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_api_key, scope="request")],
 )
 
 

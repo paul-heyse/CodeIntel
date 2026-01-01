@@ -122,6 +122,7 @@ dependencies = [
     "opentelemetry-sdk>=1.39.1",
     "grpc-stubs>=1.53.0.6",
     "pyiceberg>=0.10.0",
+    "adbc-driver-manager>=1.9.0",
 ]
 
 [project.scripts]

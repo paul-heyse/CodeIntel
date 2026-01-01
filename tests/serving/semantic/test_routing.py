@@ -18,6 +18,7 @@ from codeintel.serving.semantic.routing import auto_preference
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.datasets.scanning import QueryPlanSpec
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -68,7 +69,12 @@ def _serving_query(ast_sql: str, *, view: SemanticViewSpec) -> ServingQuery:
         column_types=None,
     )
     ast = cast("exp.Select", parse_one(ast_sql, dialect=DUCKDB_DIALECT))
-    return ServingQuery(spec=spec, ast=ast)
+    plan_spec = QueryPlanSpec(
+        table_key=view.table_key,
+        columns=tuple(view.columns),
+        filter_expression=None,
+    )
+    return ServingQuery(spec=spec, ast=ast, plan_spec=plan_spec)
 
 
 def test_auto_preference_prefers_duckdb_for_unregistered_views(tmp_path: Path) -> None:

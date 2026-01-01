@@ -749,25 +749,25 @@ This aligns with your best‑in‑class notes:
 
 ### Phase 4 — `scip_resolution` xref targets
 
-- [ ] `src/codeintel/core/schemas/output_registry.py`: add `core.scip_symbol_goid_xref` + `core.scip_occurrence_span_xref`.
-- [ ] `src/codeintel/core/schemas/generated_rows/*`: regenerate row models.
-- [ ] `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`: new target building xref tables (Polars joins).
-- [ ] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target.
+- [x] `src/codeintel/core/schemas/output_registry.py`: add `core.scip_symbol_goid_xref` + `core.scip_occurrence_span_xref`.
+- [x] `src/codeintel/core/schemas/generated_rows/*`: regenerate row models.
+- [x] `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`: new target building xref tables (Polars joins).
+- [x] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target.
 
 ### Phase 5 — Tree-sitter ingestion targets
 
-- [ ] `src/codeintel/ingestion/tree_sitter/registry.py`: language registry + ABI checks.
-- [ ] `src/codeintel/ingestion/tree_sitter/runner.py`: parse bytes, run query packs, capture errors.
-- [ ] `src/codeintel/ingestion/tree_sitter/packs/*`: query pack definitions by language.
-- [ ] `src/codeintel/core/schemas/output_registry.py`: add `core.ts_captures` + `core.ts_parse_errors`.
-- [ ] `src/codeintel/build/hamilton/native/ingestion/tree_sitter.py`: new target to materialize tree-sitter tables.
-- [ ] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target.
+- [x] `src/codeintel/ingestion/tree_sitter/registry.py`: language registry + ABI checks.
+- [x] `src/codeintel/ingestion/tree_sitter/runner.py`: parse bytes, run query packs, capture errors.
+- [x] `src/codeintel/ingestion/tree_sitter/packs/*`: query pack definitions by language.
+- [x] `src/codeintel/core/schemas/output_registry.py`: add `core.ts_captures` + `core.ts_parse_errors`.
+- [x] `src/codeintel/build/hamilton/native/ingestion/tree_sitter.py`: new target to materialize tree-sitter tables.
+- [x] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target.
 
 ### Phase 6 — Arrow streaming + dataset scanning defaults
 
-- [ ] `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`: accept `RecordBatchReader` and stream writes.
-- [ ] `src/codeintel/storage/datasets/arrow_store.py`: prefer dataset scanner + projection pushdown.
-- [ ] `src/codeintel/build/hamilton/native/patterns/loaders.py`: default to scanner-based loads for enrichment.
+- [x] `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`: accept `RecordBatchReader` and stream writes.
+- [x] `src/codeintel/storage/datasets/arrow_store.py`: prefer dataset scanner + projection pushdown.
+- [x] `src/codeintel/build/hamilton/native/patterns/loaders.py`: default to scanner-based loads for enrichment.
 
 ---
 

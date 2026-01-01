@@ -1050,16 +1050,20 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     if ctx.params.get_bool("no_workspace_targets"):
         allow_workspace_modules = False
 
+    all_targets = ctx.params.get_bool("all_targets")
+    dry_run = ctx.params.get_bool("dry_run")
+    publish_serving_snapshot = ctx.params.get_bool("publish_serving_snapshot")
+
     return _BuildRunParams(
         targets=targets,
         tag_filters=tag_filters,
         show_tags=ctx.params.get_bool("show_tags"),
         module=ctx.params.get_str("module"),
-        all_targets=ctx.params.get_bool("all_targets"),
-        dry_run=ctx.params.get_bool("dry_run"),
+        all_targets=all_targets,
+        dry_run=dry_run,
         force=force,
         validate_outputs=ctx.params.get_bool("validate_outputs"),
-        publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
+        publish_serving_snapshot=publish_serving_snapshot,
         parallel_backend=parallel_backend,
         max_workers=max_workers,
         enable_cache=ctx.params.get_bool("enable_cache"),

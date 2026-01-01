@@ -99,12 +99,7 @@ def _registry_has_schemas(con: duckdb.DuckDBPyConnection) -> bool:
             ],
         ),
     )
-    query = (
-        exp.select(exp.Literal.number(1))
-        .from_(registry_table)
-        .where(registry_filter)
-        .limit(1)
-    )
+    query = exp.select(exp.Literal.number(1)).from_(registry_table).where(registry_filter).limit(1)
     try:
         row = con.execute(render_sql_duckdb(query)).fetchone()
     except (duckdb.Error, RuntimeError, TypeError, ValueError):

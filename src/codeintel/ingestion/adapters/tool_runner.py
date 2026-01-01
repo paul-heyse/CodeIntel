@@ -364,6 +364,10 @@ def _convert_scip_occurrence(
     ----------
     occ
         Occurrence from SCIP service.
+    position_encoding
+        Override position encoding from the parent document if provided.
+    text_document_encoding
+        Override text document encoding from the SCIP metadata if provided.
 
     Returns
     -------

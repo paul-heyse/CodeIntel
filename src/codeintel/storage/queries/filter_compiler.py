@@ -13,6 +13,7 @@ from codeintel.core.filters import (
     FilterSpecLike,
     FilterValue,
     Op,
+    allowed_ops_for_column_types,
     validate_filter_value,
 )
 from codeintel.core.schemas.primitives import ColumnType, column_type_base
@@ -81,6 +82,7 @@ def compile_filter_predicates(
     FilterCompilerError
         If a filter column is unknown or filter values are invalid.
     """
+    allowed_ops_by_column = allowed_ops_for_column_types(column_types)
     predicates: list[FilterPredicate] = []
     for filt in filters:
         if filt.column not in allowed_columns:
@@ -92,6 +94,7 @@ def compile_filter_predicates(
                 op=filt.op,
                 value=filt.value,
                 column_type=column_type,
+                allowed_ops=allowed_ops_by_column.get(filt.column),
             )
         except FilterOpError as exc:
             raise FilterCompilerError(str(exc)) from exc

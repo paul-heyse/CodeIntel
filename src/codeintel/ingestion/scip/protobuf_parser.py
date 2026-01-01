@@ -44,6 +44,9 @@ _WIRE_TYPE_VARINT = 0
 _WIRE_TYPE_64BIT = 1
 _WIRE_TYPE_LENGTH = 2
 _WIRE_TYPE_32BIT = 5
+_MAX_VARINT_SHIFT = 64
+_TEXT_DOCUMENT_ENCODING_UTF8 = 1
+_TEXT_DOCUMENT_ENCODING_UTF16 = 2
 
 
 @dataclass(frozen=True)
@@ -109,9 +112,7 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
         if field_no == field_numbers.documents:
             doc = module.Document()
             _parse_from_string(doc, payload)
-            position_encoding = _normalize_position_encoding(
-                getattr(doc, "position_encoding", 0)
-            )
+            position_encoding = _normalize_position_encoding(getattr(doc, "position_encoding", 0))
             documents.append(
                 _parse_document(
                     doc,
@@ -341,7 +342,7 @@ def _read_varint(handle: BinaryIO) -> int:
         if not (byte & 0x80):
             return out
         shift += 7
-        if shift >= 64:
+        if shift >= _MAX_VARINT_SHIFT:
             message = "SCIP protobuf varint is too long"
             raise ValueError(message)
 
@@ -428,9 +429,9 @@ def _normalize_text_document_encoding(value: int | None) -> str | None:
     if value is None:
         return None
     normalized = int(value)
-    if normalized == 1:
+    if normalized == _TEXT_DOCUMENT_ENCODING_UTF8:
         return "utf-8"
-    if normalized == 2:
+    if normalized == _TEXT_DOCUMENT_ENCODING_UTF16:
         return "utf-16"
     return None
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
@@ -80,11 +81,35 @@ def allowed_ops_for_column_type(column_type: ColumnType | str | None) -> tuple[O
     return allowed_ops
 
 
+def allowed_ops_for_column_types(
+    column_types: Mapping[str, ColumnType] | None,
+) -> dict[str, tuple[Op, ...]]:
+    """Return per-column allowed operators for a column type mapping.
+
+    Parameters
+    ----------
+    column_types
+        Column type mapping (column name to type string).
+
+    Returns
+    -------
+    dict[str, tuple[Op, ...]]
+        Allowed operators per column.
+    """
+    if column_types is None:
+        return {}
+    return {
+        column: allowed_ops_for_column_type(column_type)
+        for column, column_type in column_types.items()
+    }
+
+
 def validate_filter_value(
     *,
     op: Op,
     value: FilterValue,
     column_type: ColumnType | str | None,
+    allowed_ops: tuple[Op, ...] | None = None,
 ) -> FilterValue:
     """Validate a filter operator/value pair for a column type.
 
@@ -96,6 +121,8 @@ def validate_filter_value(
         Filter value to validate.
     column_type
         Column type used to enforce operator constraints.
+    allowed_ops
+        Optional precomputed operator allowlist.
 
     Returns
     -------
@@ -108,8 +135,8 @@ def validate_filter_value(
         If the operator/value pair is invalid for the column type.
     """
     base = column_type_base(column_type) if column_type is not None else None
-    allowed_ops = allowed_ops_for_column_type(column_type)
-    if op not in allowed_ops:
+    resolved_ops = allowed_ops or allowed_ops_for_column_type(column_type)
+    if op not in resolved_ops:
         msg = f"Operator {op} is not supported for column type {column_type}"
         raise FilterOpError(msg)
 
@@ -200,6 +227,7 @@ __all__ = [
     "FilterValue",
     "Op",
     "allowed_ops_for_column_type",
+    "allowed_ops_for_column_types",
     "parse_filter_value",
     "validate_filter_value",
 ]

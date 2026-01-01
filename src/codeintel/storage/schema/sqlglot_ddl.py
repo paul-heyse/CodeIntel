@@ -53,13 +53,16 @@ def create_schema_if_not_exists_ast(
     ValueError
         If identifiers are invalid.
     """
-    _validate_identifier(schema_name, kind="schema")
+    if _IDENTIFIER_RE.fullmatch(schema_name) is None:
+        msg = f"Invalid schema identifier: {schema_name!r}"
+        raise ValueError(msg)
+    if catalog is not None and _IDENTIFIER_RE.fullmatch(catalog) is None:
+        msg = f"Invalid catalog identifier: {catalog!r}"
+        raise ValueError(msg)
     qualifier = exp.Table(
         this=exp.to_identifier(schema_name),
         db=exp.to_identifier(catalog) if catalog is not None else None,
     )
-    if catalog is not None:
-        _validate_identifier(catalog, kind="catalog")
 
     return exp.Create(
         this=qualifier,
@@ -96,7 +99,14 @@ def create_index_if_not_exists_ast(
     exp.Create
         SQLGlot expression for index creation with IF NOT EXISTS.
     """
+    _validate_identifier(index_name, kind="index")
     table_schema, table_name = split_table_key(table_key)
+    _validate_identifier(table_schema, kind="schema")
+    _validate_identifier(table_name, kind="table")
+    for column in columns:
+        _validate_identifier(column, kind="column")
+    if catalog is not None:
+        _validate_identifier(catalog, kind="catalog")
     table_expr = exp.Table(
         this=exp.to_identifier(table_name),
         db=exp.to_identifier(table_schema),

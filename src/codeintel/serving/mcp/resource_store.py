@@ -362,19 +362,70 @@ class ResourceStore:
         )
         return token, artifact, metadata
 
+    @staticmethod
+    def _count_ndjson_rows(chunk: bytes | bytearray) -> int:
+        return bytes(chunk).count(b"\n")
+
+    @staticmethod
+    def _write_ndjson_dict_rows(
+        path: Path,
+        *,
+        first_row: dict[str, object] | None,
+        rows_iter: Iterable[object],
+        spec: ExportArtifactSpec,
+    ) -> tuple[tuple[str, ...], int]:
+        row_count = 0
+        with path.open("wb") as f:
+            if first_row is None:
+                return spec.columns, row_count
+            resolved_columns = spec.columns or tuple(first_row.keys())
+            f.write(encode_ndjson_line(first_row))
+            row_count += 1
+            for row in rows_iter:
+                if not isinstance(row, dict):
+                    msg = "rows must yield dictionaries"
+                    raise TypeError(msg)
+                f.write(encode_ndjson_line(row))
+                row_count += 1
+        return resolved_columns, row_count
+
+    def _write_ndjson_byte_chunks(
+        self,
+        path: Path,
+        *,
+        first_chunk: bytes | bytearray,
+        rows_iter: Iterable[object],
+        spec: ExportArtifactSpec,
+    ) -> tuple[tuple[str, ...], int]:
+        resolved_columns = spec.columns or tuple(spec.column_types)
+        if not resolved_columns:
+            msg = "spec.columns is required for byte-stream exports"
+            raise ValueError(msg)
+        row_count = 0
+        with path.open("wb") as f:
+            f.write(first_chunk)
+            row_count += self._count_ndjson_rows(first_chunk)
+            for chunk in rows_iter:
+                if not isinstance(chunk, (bytes, bytearray)):
+                    msg = "rows must yield dictionaries or byte chunks"
+                    raise TypeError(msg)
+                f.write(chunk)
+                row_count += self._count_ndjson_rows(chunk)
+        return resolved_columns, row_count
+
     def put_with_metadata_stream(
         self,
-        rows: Iterable[dict[str, object]],
+        rows: Iterable[dict[str, object]] | Iterable[bytes],
         *,
         spec: ExportArtifactSpec,
         export_id: str | None = None,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
-        """Stream rows to a JSONL artifact with rich metadata sidecar.
+        """Stream rows or pre-encoded JSONL bytes to a JSONL artifact with metadata.
 
         Parameters
         ----------
         rows
-            Iterable of row dictionaries.
+            Iterable of row dictionaries or NDJSON byte chunks.
         spec
             Artifact metadata specification. Must use ``format="jsonl"``.
         export_id
@@ -389,7 +440,7 @@ class ResourceStore:
         Raises
         ------
         TypeError
-            If ``rows`` yields non-dictionary values.
+            If ``rows`` yields unexpected values.
         ValueError
             If ``spec.format`` is not ``"jsonl"``.
         """
@@ -406,30 +457,25 @@ class ResourceStore:
 
         rows_iter = iter(rows)
         first_row = next(rows_iter, None)
-        if first_row is not None and not isinstance(first_row, dict):
-            msg = "rows must yield dictionaries"
+        if first_row is not None and not isinstance(first_row, (dict, bytes, bytearray)):
+            msg = "rows must yield dictionaries or byte chunks"
             raise TypeError(msg)
-        row_count = 0
-
-        def _write_rows_to_path() -> tuple[tuple[str, ...], int]:
-            nonlocal row_count
-            with path.open("wb") as f:
-                if first_row is not None:
-                    resolved_columns = spec.columns or tuple(first_row.keys())
-                    f.write(encode_ndjson_line(first_row))
-                    row_count += 1
-                    for row in rows_iter:
-                        if not isinstance(row, dict):
-                            msg = "rows must yield dictionaries"
-                            raise TypeError(msg)
-                        f.write(encode_ndjson_line(row))
-                        row_count += 1
-                    return resolved_columns, row_count
-                resolved_columns = spec.columns
-                return resolved_columns, row_count
 
         try:
-            resolved_columns, row_count = _write_rows_to_path()
+            if first_row is None or isinstance(first_row, dict):
+                resolved_columns, row_count = self._write_ndjson_dict_rows(
+                    path,
+                    first_row=first_row,
+                    rows_iter=rows_iter,
+                    spec=spec,
+                )
+            else:
+                resolved_columns, row_count = self._write_ndjson_byte_chunks(
+                    path,
+                    first_chunk=first_row,
+                    rows_iter=rows_iter,
+                    spec=spec,
+                )
         except Exception:
             with suppress(FileNotFoundError):
                 path.unlink()

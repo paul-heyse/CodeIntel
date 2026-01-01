@@ -14,7 +14,11 @@ from codeintel.serving.semantic.filter_compiler import (
 )
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.sqlglot_tools import canonicalize_select_duckdb, ensure_ast_capability
+from codeintel.storage.sqlglot_tools import (
+    canonicalize_select_duckdb,
+    ensure_ast_capability,
+    schema_mapping_for_table_key,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -95,7 +99,11 @@ def build_sqlglot_query(
         if spec.offset:
             expr = expr.offset(spec.offset)
 
-    canonical = canonicalize_select_duckdb(expr)
+    schema_mapping = schema_mapping_for_table_key(
+        spec.table_key,
+        column_types=column_types,
+    )
+    canonical = canonicalize_select_duckdb(expr, schema=schema_mapping)
     ensure_ast_capability(
         canonical,
         allowed_anonymous_functions=allowed_anonymous_functions,

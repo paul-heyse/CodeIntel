@@ -790,6 +790,40 @@ outputs:
       - "core.modules"
       - "scip_proto"
     notes: "SCIP index plus symbol tables; emits scip_index artifact."
+  - target: "scip_resolution"
+    domain: "ingestion"
+    anchor: "t__scip_resolution"
+    materialization: "table"
+    table_keys:
+      - "core.scip_symbol_goid_xref"
+      - "core.scip_occurrence_span_xref"
+    contracts:
+      - "core.scip_symbol_goid_xref"
+      - "core.scip_occurrence_span_xref"
+    downstream_consumers:
+      - "graphs.symbol_uses"
+      - "cli.datasets"
+    upstream_targets:
+      - "scip"
+      - "goids"
+    notes: "Derived xref tables connecting SCIP symbols/occurrences to GOIDs."
+  - target: "tree_sitter_index"
+    domain: "ingestion"
+    anchor: "t__tree_sitter_index"
+    materialization: "table"
+    table_keys:
+      - "core.parse_manifest"
+      - "core.ts_captures"
+      - "core.ts_parse_errors"
+    contracts:
+      - "core.parse_manifest"
+      - "core.ts_captures"
+      - "core.ts_parse_errors"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "core.modules"
+    notes: "Tree-sitter query-pack captures and parse diagnostics."
   - target: "serving_artifacts"
     domain: "export"
     anchor: "t__serving_artifacts"

@@ -173,7 +173,7 @@ def _view_ast_from_builder(*, table_key: str, builder: Callable[..., object]) ->
 
 def _validate_view_sql(*, table_key: str, sql: str) -> None:
     try:
-        assert_select_perimeter(sql, policy=_VIEW_SQL_POLICY)
+        assert_select_perimeter(sql, policy=_VIEW_SQL_POLICY, enforce_safe_sql=False)
     except UnsafeSqlError as exc:
         msg = f"Unsafe SQL perimeter for view {table_key}: {exc}"
         raise ValueError(msg) from exc

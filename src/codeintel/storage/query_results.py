@@ -541,9 +541,7 @@ def records_from_arrow_reader(
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    return list(
-        iter_records_from_arrow_reader(reader, columns=columns, cancel_check=cancel_check)
-    )
+    return list(iter_records_from_arrow_reader(reader, columns=columns, cancel_check=cancel_check))
 
 
 def records_from_relation(

@@ -196,9 +196,7 @@ def run_graph_validations_with_runner(
     )
 
     missing_by_check = _parquet_validation_skips(gateway, active_log)
-    check_filter = (
-        _parquet_check_filter(missing_by_check, active_log) if missing_by_check else None
-    )
+    check_filter = _parquet_check_filter(missing_by_check, active_log) if missing_by_check else None
 
     # Create and run the validation runner
     runner = create_validation_runner(options=validation_opts)
@@ -268,9 +266,7 @@ def warn_graph_structure(
         logger=active_log,
     )
     missing_by_check = _parquet_validation_skips(engine.gateway, active_log)
-    check_filter = (
-        _parquet_check_filter(missing_by_check, active_log) if missing_by_check else None
-    )
+    check_filter = _parquet_check_filter(missing_by_check, active_log) if missing_by_check else None
     report = runner.run(ctx, check_filter=check_filter)
     return report.findings
 
@@ -449,9 +445,7 @@ def _missing_parquet_tables(
     log: logging.Logger,
 ) -> list[str]:
     return [
-        table_key
-        for table_key in table_keys
-        if not _require_parquet_table(gateway, table_key, log)
+        table_key for table_key in table_keys if not _require_parquet_table(gateway, table_key, log)
     ]
 
 

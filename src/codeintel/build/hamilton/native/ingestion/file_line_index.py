@@ -83,9 +83,10 @@ def _detect_encoding(
     if language == "python" or path.suffix == ".py":
         try:
             encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
-            return encoding
         except (SyntaxError, UnicodeDecodeError, LookupError):
             return "utf-8"
+        else:
+            return encoding
     return "utf-8"
 
 

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
     from pathlib import Path
 
+    from pyarrow import RecordBatch
+
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol as SemanticKernel
     from codeintel.serving.mcp.protocols import ServingDBManagerProtocol
     from codeintel.serving.meta.models import ServingKernelMetaResponse
@@ -75,6 +77,16 @@ class _SlowExportKernel:
             if index > 0:
                 time.sleep(self.delay_s)
             yield row
+
+    def export_record_batches(
+        self, request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[RecordBatch]:
+        for index, batch in enumerate(
+            self.inner.export_record_batches(request, cancel_check=cancel_check)
+        ):
+            if index > 0:
+                time.sleep(self.delay_s)
+            yield batch
 
     def export_sql(self, request: SemanticExportRequest) -> str:
         return self.inner.export_sql(request)

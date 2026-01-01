@@ -25,13 +25,16 @@ from codeintel.serving.export.engine import (
     build_export_plan,
     write_export_file,
 )
-from codeintel.serving.http.streaming import ndjson_response
+from codeintel.serving.http.streaming import (
+    NdjsonBatchResponseOptions,
+    ndjson_response_from_batches,
+)
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExportRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable
 
     from starlette.responses import Response
 
@@ -84,12 +87,14 @@ class _ExportStreamMetrics:
     started: float = field(default_factory=time.perf_counter)
     row_count: int = 0
 
-    def record_row(self) -> None:
-        self.row_count += 1
+    def record_rows(self, count: int) -> None:
+        self.row_count += count
 
     def finalize(self) -> None:
         duration_ms = (time.perf_counter() - self.started) * 1000
-        log_query_metrics(self.metrics.to_metrics(row_count=self.row_count, duration_ms=duration_ms))
+        log_query_metrics(
+            self.metrics.to_metrics(row_count=self.row_count, duration_ms=duration_ms)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,18 +130,6 @@ def export_hash_headers(
     return headers
 
 
-def _iter_rows_with_metrics(
-    *,
-    ops: ServingOperations,
-    payload: SemanticExportRequest,
-    tracker: _ExportStreamMetrics,
-    cancel_check: CancelCheck | None,
-) -> Iterator[dict[str, object]]:
-    for row in ops.export_rows(payload, cancel_check=cancel_check):
-        tracker.record_row()
-        yield row
-
-
 async def dispatch_semantic_export(
     ops: ServingOperations,
     payload: SemanticExportRequest,
@@ -154,16 +147,15 @@ async def dispatch_semantic_export(
     plan = build_export_plan(payload)
     if plan.delivery is ExportDelivery.ndjson_stream:
         tracker = _ExportStreamMetrics(metrics=metrics)
-        response = ndjson_response(
-            _iter_rows_with_metrics(
-                ops=ops,
-                payload=payload,
-                tracker=tracker,
+        response = ndjson_response_from_batches(
+            ops.export_record_batches(payload, cancel_check=options.cancel_check),
+            options=NdjsonBatchResponseOptions(
+                filename=f"{payload.view_id}{plan.suffix}",
+                headers=options.headers,
+                background=BackgroundTask(tracker.finalize),
                 cancel_check=options.cancel_check,
+                batch_hook=lambda batch: tracker.record_rows(batch.num_rows),
             ),
-            filename=f"{payload.view_id}{plan.suffix}",
-            headers=options.headers,
-            background=BackgroundTask(tracker.finalize),
         )
         return ExportDispatchResult(response=response, metrics_row_count=None)
     if plan.delivery is ExportDelivery.binary_file:

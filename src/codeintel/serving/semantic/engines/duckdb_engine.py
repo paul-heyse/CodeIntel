@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.columnar.schema import unify_schema_for_batches
 from codeintel.serving.semantic.datasets import dataset_schema_for_entry
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
@@ -21,10 +20,9 @@ from codeintel.serving.semantic.engines.polars_engine import (
     PolarsQueryBuilderError,
 )
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
-from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.serving.semantic.query_ast import ServingQuery
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_explain import normalize_explain_output
+from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation_stream
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -32,7 +30,7 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
     from codeintel.serving.settings import ServingSettings
-    from codeintel.storage.warehouse import Warehouse
+    from codeintel.storage.protocols.export import ResultStream
 
 LOG = logging.getLogger(__name__)
 
@@ -88,23 +86,6 @@ def _polars_reader(
         return _fetch_arrow_reader(relation, batch_size=batch_size)
 
 
-def _polars_table(
-    *,
-    relation: DuckDBPyRelation,
-    settings: ServingSettings,
-) -> pa.Table:
-    adapter = PolarsPlanAdapter(settings=settings)
-    plan = adapter.build(relation=relation)
-    try:
-        reader = plan.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
-    except PolarsQueryBuilderError as exc:
-        LOG.warning("Polars result engine failed; falling back to DuckDB: %s", exc)
-        reader = _fetch_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
-    batches = list(reader)
-    schema = unify_schema_for_batches(batches, base_schema=reader.schema)
-    return pa.Table.from_batches(batches, schema=schema)
-
-
 class QueryBuilderError(ValueError):
     """Raised when query construction fails."""
 
@@ -113,8 +94,8 @@ class QueryBuilderError(ValueError):
 class DuckDBRelationPlan:
     """Executable DuckDB relation plan wrapper."""
 
-    relation: DuckDBPyRelation
-    warehouse: Warehouse
+    _relation: DuckDBPyRelation
+    _stream: ResultStream
     settings: ServingSettings
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
@@ -127,27 +108,11 @@ class DuckDBRelationPlan:
         """
         if self.settings.result_engine.lower() == _RESULT_ENGINE_POLARS:
             return _polars_reader(
-                relation=self.relation,
+                relation=self._relation,
                 settings=self.settings,
                 batch_size=batch_size,
             )
-        return _fetch_arrow_reader(self.relation, batch_size=batch_size)
-
-    def to_table(self) -> pa.Table:
-        """Execute the plan and return an Arrow table.
-
-        Returns
-        -------
-        pyarrow.Table
-            Materialized Arrow table.
-        """
-        warn_eager_materialization(engine="duckdb", context="duckdb_relation_plan")
-        if self.settings.result_engine.lower() == _RESULT_ENGINE_POLARS:
-            return _polars_table(relation=self.relation, settings=self.settings)
-        reader = _fetch_arrow_reader(self.relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
-        batches = list(reader)
-        schema = unify_schema_for_batches(batches, base_schema=reader.schema)
-        return pa.Table.from_batches(batches, schema=schema)
+        return self._stream.to_reader(batch_size=batch_size)
 
     def explain(self) -> QueryExplain:
         """Return an EXPLAIN plan for the relation.
@@ -157,8 +122,8 @@ class DuckDBRelationPlan:
         QueryExplain
             Explain payload with SQL and plan text.
         """
-        plan = normalize_explain_output(self.relation.explain())
-        return QueryExplain(sql=self.relation.sql_query(), plan=plan)
+        plan = normalize_explain_output(self._relation.explain())
+        return QueryExplain(sql=self._relation.sql_query(), plan=plan)
 
     @staticmethod
     def cleanup() -> None:
@@ -233,10 +198,11 @@ class DuckDBQueryEngine:
                     column_types=spec.column_types,
                     contract_schema=contract_schema,
                 ),
+                plan_spec=query.plan_spec,
             )
             return DuckDBRelationPlan(
-                relation=relation,
-                warehouse=ctx.warehouse,
+                _relation=relation,
+                _stream=adapt_duckdb_relation_stream(relation),
                 settings=ctx.settings,
             )
         except DuckDBRelationQueryBuilderError as exc:
@@ -246,6 +212,5 @@ class DuckDBQueryEngine:
 
 __all__ = [
     "DuckDBQueryEngine",
-    "DuckDBRelationPlan",
     "cleanup_temp_tables_if_needed",
 ]

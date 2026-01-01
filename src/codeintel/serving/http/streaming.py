@@ -15,10 +15,16 @@ from starlette.responses import StreamingResponse
 
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
 from codeintel.serving.export.formats import mime_type_for_export_format
-from codeintel.serving.export.ndjson import iter_ndjson_bytes, iter_ndjson_bytes_from_reader
+from codeintel.serving.export.ndjson import (
+    iter_ndjson_bytes,
+    iter_ndjson_bytes_from_batches,
+    iter_ndjson_bytes_from_reader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
+
+    from pyarrow import RecordBatch
 
 
 def ndjson_stream(rows: Iterable[dict[str, object]]) -> Iterator[bytes]:
@@ -75,6 +81,43 @@ def ndjson_response(
     )
 
 
+def ndjson_response_from_batches(
+    batches: Iterable[RecordBatch],
+    *,
+    options: NdjsonBatchResponseOptions | None = None,
+) -> StreamingResponse:
+    """Create a JSONL streaming response from Arrow record batches.
+
+    Parameters
+    ----------
+    batches
+        Record batch iterable to serialize as JSONL.
+    options
+        Optional response options for filename, headers, cancellation, and hooks.
+
+    Returns
+    -------
+    StreamingResponse
+        Streaming response with JSONL content type.
+    """
+    resolved = options or NdjsonBatchResponseOptions()
+    response_headers = _response_headers(
+        filename=resolved.filename,
+        headers=resolved.headers,
+    )
+    payload = iter_ndjson_bytes_from_batches(
+        batches,
+        cancel_check=resolved.cancel_check,
+        batch_hook=resolved.batch_hook,
+    )
+    return StreamingResponse(
+        payload,
+        media_type=mime_type_for_export_format("jsonl"),
+        headers=response_headers,
+        background=resolved.background,
+    )
+
+
 def _response_headers(
     *,
     filename: str | None,
@@ -113,6 +156,17 @@ class ArrowIpcResponseOptions:
     options: pa.ipc.IpcWriteOptions | None = None
     cancel_check: Callable[[], None] | None = None
     background: BackgroundTask | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NdjsonBatchResponseOptions:
+    """Options for NDJSON batch streaming responses."""
+
+    filename: str | None = None
+    headers: Mapping[str, str] | None = None
+    background: BackgroundTask | None = None
+    cancel_check: Callable[[], None] | None = None
+    batch_hook: Callable[[RecordBatch], None] | None = None
 
 
 def arrow_ipc_response(
@@ -170,7 +224,9 @@ def arrow_ipc_response(
 
 __all__ = [
     "ArrowIpcResponseOptions",
+    "NdjsonBatchResponseOptions",
     "arrow_ipc_response",
     "ndjson_response",
+    "ndjson_response_from_batches",
     "ndjson_stream",
 ]

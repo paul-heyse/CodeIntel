@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard
 
@@ -19,7 +19,11 @@ from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
-from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
+from codeintel.storage.metadata.catalogs import (
+    build_catalog_entry,
+    load_latest_canonical_catalog_from_connection,
+    upsert_canonical_catalog,
+)
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
@@ -42,6 +46,7 @@ from codeintel.storage.tracking.schema_catalog_models import (
     TableSchemaRegistryRecord,
 )
 from codeintel.storage.upsert import UpsertSpec
+from codeintel.storage.views.diff import diff_sql_structural
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -105,6 +110,83 @@ def _observed_derivation_condition(alias: str) -> exp.Expression:
             exp.Literal.string("view_inferred"),
         ],
     )
+
+
+_VIEW_SQL_INPUT_KEYS = ("view_sql_map", "view_sql_by_key", "view_sql")
+
+
+def _view_sql_map_from_inputs(inputs: Mapping[str, object] | None) -> dict[str, str] | None:
+    if not inputs:
+        return None
+    for key in _VIEW_SQL_INPUT_KEYS:
+        raw = inputs.get(key)
+        if not isinstance(raw, Mapping):
+            continue
+        normalized: dict[str, str] = {}
+        for view_key, sql in raw.items():
+            if not isinstance(sql, str):
+                continue
+            normalized[str(view_key)] = sql
+        if normalized:
+            return normalized
+    return None
+
+
+def _structural_diff_payload(
+    *,
+    before: str | None,
+    after: str | None,
+) -> dict[str, object]:
+    if before is None:
+        return {"changed": True, "actions": {"added": 1}, "parse_error": None}
+    if after is None:
+        return {"changed": True, "actions": {"removed": 1}, "parse_error": None}
+    return diff_sql_structural(before=before, after=after).to_json_obj()
+
+
+def _view_sql_structural_diff(
+    before: Mapping[str, str],
+    after: Mapping[str, str],
+) -> dict[str, dict[str, object]]:
+    before_by_key = {key.lower(): sql for key, sql in before.items()}
+    after_by_key = {key.lower(): sql for key, sql in after.items()}
+    keys = sorted(set(before_by_key) | set(after_by_key))
+    out: dict[str, dict[str, object]] = {}
+    for key in keys:
+        before_sql = before_by_key.get(key)
+        after_sql = after_by_key.get(key)
+        if before_sql is None:
+            status = "added"
+        elif after_sql is None:
+            status = "removed"
+        else:
+            status = "changed" if before_sql != after_sql else "unchanged"
+        out[key] = {
+            "status": status,
+            "diff": _structural_diff_payload(before=before_sql, after=after_sql),
+        }
+    return out
+
+
+def _catalog_inputs_with_view_diff(
+    *,
+    inputs: Mapping[str, object] | None,
+    previous_inputs: Mapping[str, object] | None,
+) -> Mapping[str, object] | None:
+    if not inputs:
+        return None
+    after_view_sql = _view_sql_map_from_inputs(inputs)
+    if after_view_sql is None:
+        return dict(inputs)
+    before_view_sql = _view_sql_map_from_inputs(previous_inputs)
+    if before_view_sql is None:
+        return dict(inputs)
+    merged = dict(inputs)
+    merged["view_sql_structural_diff"] = _view_sql_structural_diff(
+        before_view_sql,
+        after_view_sql,
+    )
+    return merged
 
 
 @dataclass(frozen=True, slots=True)
@@ -1522,7 +1604,16 @@ class SchemaCatalogTracking:
             msg = "Cannot persist schema manifest into a read-only storage gateway"
             raise RuntimeError(msg)
 
-        batches = compile_schema_catalog_batches(manifest, request=request)
+        latest = load_latest_canonical_catalog_from_connection(
+            self._con,
+            catalog_kind=request.catalog_kind,
+        )
+        resolved_inputs = _catalog_inputs_with_view_diff(
+            inputs=request.catalog_inputs,
+            previous_inputs=latest.inputs if latest is not None else None,
+        )
+        resolved_request = replace(request, catalog_inputs=resolved_inputs)
+        batches = compile_schema_catalog_batches(manifest, request=resolved_request)
 
         entry = build_catalog_entry(
             catalog_kind=batches.catalog_kind,

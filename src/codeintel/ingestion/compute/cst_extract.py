@@ -14,9 +14,14 @@ from typing import TYPE_CHECKING
 
 import libcst as cst
 from libcst import metadata
+from libcst.helpers import get_full_name_for_node
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
+from codeintel.core.columnar.rows import (
+    ColumnarRowBuffer,
+    ColumnarRows,
+    columnar_buffer_for_table_key,
+)
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
@@ -106,6 +111,27 @@ class ScopeFrame:
     scope_kind: str
 
 
+@dataclass(frozen=True, slots=True)
+class _ParseManifestContext:
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    source_index: LineIndexedSource
+
+
+@dataclass(slots=True)
+class _CstBuffers:
+    cst: ColumnarRowBuffer
+    parse_manifest: ColumnarRowBuffer
+    spans: ColumnarRowBuffer
+    scopes: ColumnarRowBuffer
+    defs: ColumnarRowBuffer
+    refs: ColumnarRowBuffer
+    calls: ColumnarRowBuffer
+    imports: ColumnarRowBuffer
+
+
 class CstVisitor(CstCaptureVisitor):
     """Collect CST rows using shared capture helpers."""
 
@@ -168,42 +194,44 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         self._enter_scope(node, "module")
         return True
 
-    def leave_Module(self, original_node: cst.Module) -> None:
-        self._exit_scope()
-
     def visit_ClassDef(self, node: cst.ClassDef) -> bool:
         self._record_named_def(node.name, node.name.value, "class")
         self._enter_scope(node, "class")
         return True
 
-    def leave_ClassDef(self, original_node: cst.ClassDef) -> None:
-        self._exit_scope()
-
-    def visit_FunctionDef(self, node: cst.FunctionDef) -> bool:
-        self._record_named_def(node.name, node.name.value, "function")
-        self._enter_scope(node, "function")
-        self._record_params(node.params)
-        return True
-
-    def leave_FunctionDef(self, original_node: cst.FunctionDef) -> None:
-        self._exit_scope()
-
-    def visit_AsyncFunctionDef(self, node: cst.AsyncFunctionDef) -> bool:
-        self._record_named_def(node.name, node.name.value, "async_function")
-        self._enter_scope(node, "async_function")
-        self._record_params(node.params)
-        return True
-
-    def leave_AsyncFunctionDef(self, original_node: cst.AsyncFunctionDef) -> None:
-        self._exit_scope()
+    def visit_FunctionDef(self, node: cst.CSTNode) -> bool:
+        return self._visit_function_like(node)
 
     def visit_Lambda(self, node: cst.Lambda) -> bool:
         self._enter_scope(node, "lambda")
         self._record_params(node.params)
         return True
 
-    def leave_Lambda(self, original_node: cst.Lambda) -> None:
+    def visit_AsyncFunctionDef(self, node: cst.CSTNode) -> bool:
+        return self._visit_function_like(node)
+
+    def on_leave(self, original_node: cst.CSTNode) -> None:
+        if not isinstance(
+            original_node,
+            (cst.Module, cst.ClassDef, cst.FunctionDef, ASYNC_FUNC_DEF, cst.Lambda),
+        ):
+            return
+        if self._span_for_node(original_node) is None:
+            return
         self._exit_scope()
+
+    def _visit_function_like(self, node: cst.CSTNode) -> bool:
+        kind = "function"
+        if ASYNC_FUNC_DEF is not cst.FunctionDef and isinstance(node, ASYNC_FUNC_DEF):
+            kind = "async_function"
+        name = getattr(node, "name", None)
+        if isinstance(name, cst.Name):
+            self._record_named_def(name, name.value, kind)
+        self._enter_scope(node, kind)
+        params = getattr(node, "params", None)
+        if isinstance(params, cst.Parameters):
+            self._record_params(params)
+        return True
 
     def visit_Assign(self, node: cst.Assign) -> bool:
         for target in node.targets:
@@ -479,7 +507,9 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         if scope_id is None:
             return
         name_text = self._node_text(alias.name)
-        alias_text = alias.asname.name.value if alias.asname is not None else None
+        alias_text = None
+        if alias.asname is not None:
+            alias_text = self._binding_name_from_node(alias.asname.name)
         span_node = alias.asname.name if alias.asname is not None else alias.name
         span = self._span_for_node(span_node) or self._span_for_node(alias)
         if span is None:
@@ -592,20 +622,14 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
 
     def _binding_target(self, alias: cst.ImportAlias) -> tuple[cst.CSTNode | None, str | None]:
         if alias.asname is not None:
-            return alias.asname.name, alias.asname.name.value
-        name = self._binding_name_from_node(alias.name)
-        return alias.name, name
+            return alias.asname.name, self._binding_name_from_node(alias.asname.name)
+        return alias.name, self._binding_name_from_node(alias.name)
 
     @staticmethod
     def _binding_name_from_node(node: cst.CSTNode) -> str | None:
-        if isinstance(node, cst.Name):
-            return node.value
-        if isinstance(node, cst.Attribute):
-            value = node
-            while isinstance(value, cst.Attribute):
-                value = value.value
-            if isinstance(value, cst.Name):
-                return value.value
+        full_name = get_full_name_for_node(node)
+        if isinstance(full_name, str) and full_name:
+            return full_name
         return None
 
     def _node_text(self, node: cst.CSTNode | None) -> str | None:
@@ -666,16 +690,17 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
 
     def _parent(self, node: cst.CSTNode) -> cst.CSTNode | None:
         try:
-            return self.get_metadata(metadata.ParentNodeProvider, node)
+            parent = self.get_metadata(metadata.ParentNodeProvider, node)
         except KeyError:
             return None
+        return parent if isinstance(parent, cst.CSTNode) else None
 
     def _is_definition_name(self, node: cst.Name) -> bool:
         parent = self._parent(node)
         if parent is None:
             return False
-        if isinstance(parent, (cst.FunctionDef, cst.ClassDef, cst.Param)):
-            return parent.name is node
+        if isinstance(parent, (cst.ClassDef, cst.FunctionDef, ASYNC_FUNC_DEF, cst.Param)):
+            return getattr(parent, "name", None) is node
         if isinstance(
             parent,
             (cst.AssignTarget, cst.AnnAssign, cst.AugAssign, cst.For, cst.CompFor),
@@ -722,14 +747,10 @@ def _stable_id(*parts: object) -> str:
 
 
 def _parse_manifest_row(
+    context: _ParseManifestContext,
     *,
-    repo: str,
-    commit: str,
-    rel_path: str,
-    producer: str,
     parse_ok: bool,
     error: Exception | None,
-    source_index: LineIndexedSource,
 ) -> dict[str, object]:
     error_kind = None
     error_message = None
@@ -748,13 +769,13 @@ def _parse_manifest_row(
             if isinstance(raw_column, int) and raw_column >= 0:
                 error_col = raw_column
             if error_line is not None:
-                error_snippet = source_index.line_snippet(error_line)
+                error_snippet = context.source_index.line_snippet(error_line)
 
     return {
-        "repo": repo,
-        "commit": commit,
-        "rel_path": rel_path,
-        "producer": producer,
+        "repo": context.repo,
+        "commit": context.commit,
+        "rel_path": context.rel_path,
+        "producer": context.producer,
         "parse_ok": parse_ok,
         "error_kind": error_kind,
         "error_message": error_message,
@@ -762,6 +783,107 @@ def _parse_manifest_row(
         "error_col": error_col,
         "error_snippet": error_snippet,
     }
+
+
+def _build_cst_buffers() -> _CstBuffers:
+    return _CstBuffers(
+        cst=columnar_buffer_for_table_key(CST_NODES_TABLE_KEY),
+        parse_manifest=columnar_buffer_for_table_key(PARSE_MANIFEST_TABLE_KEY),
+        spans=columnar_buffer_for_table_key(SYNTAX_SPANS_TABLE_KEY),
+        scopes=columnar_buffer_for_table_key(SYNTAX_SCOPES_TABLE_KEY),
+        defs=columnar_buffer_for_table_key(SYNTAX_DEFS_TABLE_KEY),
+        refs=columnar_buffer_for_table_key(SYNTAX_REFS_TABLE_KEY),
+        calls=columnar_buffer_for_table_key(SYNTAX_CALLS_TABLE_KEY),
+        imports=columnar_buffer_for_table_key(SYNTAX_IMPORTS_TABLE_KEY),
+    )
+
+
+def _extract_module_syntax(
+    *,
+    module: ModuleRecord,
+    source: str,
+    repo: str,
+    commit: str,
+    buffers: _CstBuffers,
+) -> list[str]:
+    warnings: list[str] = []
+    source_bytes = source.encode("utf-8")
+    source_index = LineIndexedSource(source, source_bytes)
+    context = _ParseManifestContext(
+        repo=repo,
+        commit=commit,
+        rel_path=module.rel_path,
+        producer=SYNTAX_PRODUCER,
+        source_index=source_index,
+    )
+    try:
+        wrapper = metadata.MetadataWrapper(
+            cst.parse_module(source),
+            unsafe_skip_copy=True,
+        )
+    except (cst.ParserSyntaxError, ValueError, TypeError, RuntimeError) as exc:
+        buffers.parse_manifest.append(
+            _parse_manifest_row(
+                context,
+                parse_ok=False,
+                error=exc,
+            )
+        )
+        message = f"Failed to parse {module.rel_path}: {exc}"
+        warnings.append(message)
+        log.warning("%s", message)
+        return warnings
+
+    buffers.parse_manifest.append(
+        _parse_manifest_row(
+            context,
+            parse_ok=True,
+            error=None,
+        )
+    )
+
+    cst_visitor = CstVisitor(
+        rel_path=module.rel_path,
+        module_name=module.module_name,
+        source=source,
+        source_bytes=source_bytes,
+    )
+    syntax_visitor = SyntaxFactsVisitor(
+        repo=repo,
+        commit=commit,
+        rel_path=module.rel_path,
+        producer=SYNTAX_PRODUCER,
+        source_index=source_index,
+    )
+    try:
+        wrapper.visit(cst_visitor)
+        wrapper.visit(syntax_visitor)
+    except (ValueError, TypeError, RuntimeError) as exc:
+        message = f"Failed to extract syntax for {module.rel_path}: {exc}"
+        warnings.append(message)
+        log.warning("%s", message)
+        return warnings
+
+    for rel_path, node_id, kind, span, snippet, parents, qnames in cst_visitor.rows:
+        buffers.cst.append(
+            {
+                "path": rel_path,
+                "node_id": node_id,
+                "kind": kind,
+                "span": span,
+                "text_preview": snippet,
+                "parents": list(parents),
+                "qnames": list(qnames),
+            }
+        )
+
+    buffers.spans.extend(syntax_visitor.span_rows)
+    buffers.scopes.extend(syntax_visitor.scopes)
+    buffers.defs.extend(syntax_visitor.defs)
+    buffers.refs.extend(syntax_visitor.refs)
+    buffers.calls.extend(syntax_visitor.calls)
+    buffers.imports.extend(syntax_visitor.imports)
+    return warnings
 
 
 class CstExtractStep(BaseExtractStep):
@@ -800,124 +922,48 @@ class CstExtractStep(BaseExtractStep):
             Result bundle with row tuples and execution status.
         """
         try:
-            cst_buffer = columnar_buffer_for_table_key(CST_NODES_TABLE_KEY)
-            parse_manifest_buffer = columnar_buffer_for_table_key(PARSE_MANIFEST_TABLE_KEY)
-            spans_buffer = columnar_buffer_for_table_key(SYNTAX_SPANS_TABLE_KEY)
-            scopes_buffer = columnar_buffer_for_table_key(SYNTAX_SCOPES_TABLE_KEY)
-            defs_buffer = columnar_buffer_for_table_key(SYNTAX_DEFS_TABLE_KEY)
-            refs_buffer = columnar_buffer_for_table_key(SYNTAX_REFS_TABLE_KEY)
-            calls_buffer = columnar_buffer_for_table_key(SYNTAX_CALLS_TABLE_KEY)
-            imports_buffer = columnar_buffer_for_table_key(SYNTAX_IMPORTS_TABLE_KEY)
+            buffers = _build_cst_buffers()
         except (KeyError, RuntimeError) as exc:
             return CstExtractResult(result=ExecutionResult.failed(str(exc)))
 
         warnings: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
-            source_bytes = source.encode("utf-8")
-            source_index = LineIndexedSource(source, source_bytes)
-            try:
-                wrapper = metadata.MetadataWrapper(
-                    cst.parse_module(source),
-                    unsafe_skip_copy=True,
-                )
-            except (cst.ParserSyntaxError, ValueError, TypeError, RuntimeError) as exc:
-                parse_manifest_buffer.append(
-                    _parse_manifest_row(
-                        repo=repo,
-                        commit=commit,
-                        rel_path=module.rel_path,
-                        producer=SYNTAX_PRODUCER,
-                        parse_ok=False,
-                        error=exc,
-                        source_index=source_index,
-                    )
-                )
-                message = f"Failed to parse {module.rel_path}: {exc}"
-                warnings.append(message)
-                log.warning("%s", message)
-                continue
-
-            parse_manifest_buffer.append(
-                _parse_manifest_row(
+            warnings.extend(
+                _extract_module_syntax(
+                    module=module,
+                    source=source,
                     repo=repo,
                     commit=commit,
-                    rel_path=module.rel_path,
-                    producer=SYNTAX_PRODUCER,
-                    parse_ok=True,
-                    error=None,
-                    source_index=source_index,
+                    buffers=buffers,
                 )
             )
-
-            cst_visitor = CstVisitor(
-                rel_path=module.rel_path,
-                module_name=module.module_name,
-                source=source,
-                source_bytes=source_bytes,
-            )
-            syntax_visitor = SyntaxFactsVisitor(
-                repo=repo,
-                commit=commit,
-                rel_path=module.rel_path,
-                producer=SYNTAX_PRODUCER,
-                source_index=source_index,
-            )
-            try:
-                wrapper.visit(cst_visitor)
-                wrapper.visit(syntax_visitor)
-            except (ValueError, TypeError, RuntimeError) as exc:
-                message = f"Failed to extract syntax for {module.rel_path}: {exc}"
-                warnings.append(message)
-                log.warning("%s", message)
-                continue
-
-            for row in cst_visitor.rows:
-                rel_path, node_id, kind, span, snippet, parents, qnames = row
-                cst_buffer.append(
-                    {
-                        "path": rel_path,
-                        "node_id": node_id,
-                        "kind": kind,
-                        "span": span,
-                        "text_preview": snippet,
-                        "parents": list(parents),
-                        "qnames": list(qnames),
-                    }
-                )
-
-            spans_buffer.extend(syntax_visitor.span_rows)
-            scopes_buffer.extend(syntax_visitor.scopes)
-            defs_buffer.extend(syntax_visitor.defs)
-            refs_buffer.extend(syntax_visitor.refs)
-            calls_buffer.extend(syntax_visitor.calls)
-            imports_buffer.extend(syntax_visitor.imports)
 
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
             repo,
             commit,
-            cst_buffer.row_count,
+            buffers.cst.row_count,
         )
 
         return CstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            rows=cst_buffer.data,
-            parse_manifest_rows=parse_manifest_buffer.data,
-            syntax_spans_rows=spans_buffer.data,
-            syntax_scopes_rows=scopes_buffer.data,
-            syntax_defs_rows=defs_buffer.data,
-            syntax_refs_rows=refs_buffer.data,
-            syntax_calls_rows=calls_buffer.data,
-            syntax_imports_rows=imports_buffer.data,
-            row_count=cst_buffer.row_count,
-            parse_manifest_row_count=parse_manifest_buffer.row_count,
-            syntax_spans_row_count=spans_buffer.row_count,
-            syntax_scopes_row_count=scopes_buffer.row_count,
-            syntax_defs_row_count=defs_buffer.row_count,
-            syntax_refs_row_count=refs_buffer.row_count,
-            syntax_calls_row_count=calls_buffer.row_count,
-            syntax_imports_row_count=imports_buffer.row_count,
+            rows=buffers.cst.data,
+            parse_manifest_rows=buffers.parse_manifest.data,
+            syntax_spans_rows=buffers.spans.data,
+            syntax_scopes_rows=buffers.scopes.data,
+            syntax_defs_rows=buffers.defs.data,
+            syntax_refs_rows=buffers.refs.data,
+            syntax_calls_rows=buffers.calls.data,
+            syntax_imports_rows=buffers.imports.data,
+            row_count=buffers.cst.row_count,
+            parse_manifest_row_count=buffers.parse_manifest.row_count,
+            syntax_spans_row_count=buffers.spans.row_count,
+            syntax_scopes_row_count=buffers.scopes.row_count,
+            syntax_defs_row_count=buffers.defs.row_count,
+            syntax_refs_row_count=buffers.refs.row_count,
+            syntax_calls_row_count=buffers.calls.row_count,
+            syntax_imports_row_count=buffers.imports.row_count,
         )
 
 

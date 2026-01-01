@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
     from pathlib import Path
 
+    from pyarrow import RecordBatch
+
     from codeintel.serving.meta.models import ServingKernelMetaResponse
     from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
@@ -282,6 +284,44 @@ class ServingOperations:
             raise ExportTooLargeError(row_count=request.limit)
         try:
             yield from self.kernel.export_rows(request, cancel_check=cancel_check)
+        except KeyError as exc:
+            raise SemanticViewNotFoundError(request.view_id) from exc
+        except ValueError as exc:
+            raise CodeIntelDomainError(
+                code="CODEINTEL_EXPORT_INVALID_REQUEST",
+                details={"reason": str(exc)},
+            ) from exc
+
+    def export_record_batches(
+        self, request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[RecordBatch]:
+        """Yield export batches.
+
+        Parameters
+        ----------
+        request
+            Export request.
+        cancel_check
+            Optional cancellation hook invoked during export.
+
+        Yields
+        ------
+        pyarrow.RecordBatch
+            Record batch for each export chunk.
+
+        Raises
+        ------
+        ExportTooLargeError
+            When the requested export exceeds the configured maximum rows.
+        SemanticViewNotFoundError
+            When the requested view cannot be resolved.
+        CodeIntelDomainError
+            When the request is invalid.
+        """
+        if self._export_limit_exceeded(limit=request.limit):
+            raise ExportTooLargeError(row_count=request.limit)
+        try:
+            yield from self.kernel.export_record_batches(request, cancel_check=cancel_check)
         except KeyError as exc:
             raise SemanticViewNotFoundError(request.view_id) from exc
         except ValueError as exc:

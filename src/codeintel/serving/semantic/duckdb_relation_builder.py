@@ -27,6 +27,7 @@ from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parq
 from codeintel.serving.semantic.filter_ops import FilterOpError, validate_filter_value
 from codeintel.serving.semantic.models import FilterValue, Op
 from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.storage.datasets.scanning import QueryPlanSpec
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
     ConstantExpression,
@@ -99,6 +100,7 @@ def build_relation_plan(
     spec: SemanticQuerySpec,
     ast: exp.Select,
     context: RelationBuildContext,
+    plan_spec: QueryPlanSpec | None = None,
 ) -> DuckDBRelation:
     """Build a DuckDB relation plan for a semantic query spec.
 
@@ -107,14 +109,24 @@ def build_relation_plan(
     DuckDBRelation
         Lazy relation representing the query plan.
     """
-    filter_expression = dataset_filter_expression(
-        filters=spec.filters,
-        allowed_columns=spec.allowed_columns,
-        column_types=context.column_types,
+    filter_expression = (
+        plan_spec.filter_expression
+        if plan_spec is not None
+        else dataset_filter_expression(
+            filters=spec.filters,
+            allowed_columns=spec.allowed_columns,
+            column_types=context.column_types,
+        )
     )
     projection_columns = None
     if not _ast_has_joins(ast):
-        projection_columns = _projection_columns_from_ast(ast)
+        ast_columns = _projection_columns_from_ast(ast)
+        if ast_columns is None:
+            projection_columns = None
+        elif plan_spec is not None and plan_spec.columns:
+            projection_columns = tuple(sorted(set(plan_spec.columns) | set(ast_columns)))
+        else:
+            projection_columns = ast_columns
     if _ast_has_joins(ast):
         relation = _relation_from_ast(
             con=con,
@@ -858,7 +870,11 @@ def _duckdb_projection_basic(
     if isinstance(expr, exp.Column):
         column = _column_name(expr)
         _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
-        return ColumnExpression(_qualified_column_name(expr))
+        return _cast_projection_column(
+            ColumnExpression(_qualified_column_name(expr)),
+            column=column,
+            column_types=column_types,
+        )
     if isinstance(expr, exp.Alias):
         return _duckdb_alias_expr(
             expr,
@@ -866,6 +882,26 @@ def _duckdb_projection_basic(
             column_types=column_types,
         )
     return None
+
+
+def _cast_projection_column(
+    expr: Expression,
+    *,
+    column: str,
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if column_types is None:
+        return expr
+    column_type = column_types.get(column)
+    if column_type is None:
+        return expr
+    duckdb_type = duckdb_type_for_column_type(column_type)
+    if duckdb_type is None:
+        return expr
+    try:
+        return expr.cast(duckdb_type)
+    except (duckdb.Error, TypeError, ValueError):
+        return expr
 
 
 def _duckdb_projection_structured_core(

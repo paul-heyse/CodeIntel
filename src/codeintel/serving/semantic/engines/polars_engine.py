@@ -55,6 +55,7 @@ class _PolarsExecutionConfig:
     batch_size: int
     streaming: bool
     streaming_fallback: bool
+    maintain_order: bool
     sink_batches: bool
     collect_all: bool
     profile: bool
@@ -113,47 +114,6 @@ class PolarsExecutablePlan:
         )
         return pa.RecordBatchReader.from_batches(arrow_schema, record_batches)
 
-    def to_table(self) -> pa.Table:
-        """Execute the plan and return a fully materialized Arrow table.
-
-        Returns
-        -------
-        pyarrow.Table
-            Materialized Arrow table.
-
-        Raises
-        ------
-        PolarsQueryBuilderError
-            If Polars is unavailable.
-        """
-        warn_eager_materialization(engine="polars", context="polars_executable_plan")
-        if pl is None:  # pragma: no cover
-            msg = "polars is required for Polars query execution"
-            raise PolarsQueryBuilderError(msg)
-        execution = self.execution
-        if execution.streaming:
-            batches = _collect_frames(
-                self.lazyframe,
-                batch_size=execution.batch_size,
-                execution=execution,
-            )
-            schema = self.lazyframe.collect_schema()
-            if execution.collect_schema:
-                _log_schema(schema)
-            arrow_schema = schema.to_arrow()
-            record_batches = list(
-                _record_batches_from_frames(
-                    batches,
-                    unify_dictionaries=execution.unify_dictionaries,
-                )
-            )
-            return pa.Table.from_batches(record_batches, schema=arrow_schema)
-        frame = _collect_frame(self.lazyframe, execution=execution)
-        table = frame.to_arrow()
-        if execution.unify_dictionaries:
-            table = _unify_dictionaries(table)
-        return table
-
     def explain(self) -> QueryExplain:
         """Return the DuckDB relation explain plan.
 
@@ -202,6 +162,7 @@ def _execution_config(
         batch_size=settings.export_batch_size,
         streaming=settings.polars_streaming,
         streaming_fallback=settings.polars_streaming_fallback,
+        maintain_order=settings.polars_maintain_order,
         sink_batches=settings.polars_sink_batches,
         collect_all=settings.polars_collect_all,
         profile=settings.polars_profile,
@@ -419,6 +380,11 @@ def _collect_batch_kwargs(
         kwargs=kwargs,
         query_opt_flags=execution.query_opt_flags,
     )
+    _apply_maintain_order_kwargs(
+        signature,
+        kwargs=kwargs,
+        maintain_order=execution.maintain_order,
+    )
     return kwargs
 
 
@@ -544,6 +510,16 @@ def _apply_query_opt_kwargs(
     )
     if opt_param is not None:
         kwargs[opt_param] = query_opt_flags
+
+
+def _apply_maintain_order_kwargs(
+    signature: inspect.Signature,
+    *,
+    kwargs: dict[str, object],
+    maintain_order: bool,
+) -> None:
+    if "maintain_order" in signature.parameters:
+        kwargs["maintain_order"] = maintain_order
 
 
 def _resolve_query_opt_flags(flags: tuple[str, ...]) -> PolarsQueryOptFlags | None:

@@ -128,7 +128,12 @@ class SqlIngressPolicy:
     allow_cross_database_references: bool = False
 
 
-def assert_select_perimeter(sql: str, *, policy: SqlIngressPolicy) -> exp.Expression:
+def assert_select_perimeter(
+    sql: str,
+    *,
+    policy: SqlIngressPolicy,
+    enforce_safe_sql: bool = True,
+) -> exp.Expression:
     """Validate a SQL string against a policy perimeter.
 
     Parameters
@@ -137,13 +142,15 @@ def assert_select_perimeter(sql: str, *, policy: SqlIngressPolicy) -> exp.Expres
         DuckDB SQL string to validate.
     policy
         Additional ingress policy constraints applied after SELECT-only validation.
+    enforce_safe_sql
+        Whether to enforce the DuckDBSafe SQL capability envelope.
 
     Returns
     -------
     sqlglot.expressions.Expression
         Parsed SQLGlot AST root.
     """
-    root = assert_single_select_statement(sql)
+    root = assert_single_select_statement(sql, enforce_safe_sql=enforce_safe_sql)
     _validate_ingress_tables(root, policy=policy)
     _validate_ingress_functions(root, policy=policy)
     return root
@@ -214,13 +221,15 @@ def _extract_function_names(root: exp.Expression) -> tuple[str, ...]:
     return tuple(sorted(names))
 
 
-def assert_single_select_statement(sql: str) -> exp.Expression:
+def assert_single_select_statement(sql: str, *, enforce_safe_sql: bool = True) -> exp.Expression:
     """Validate a SQL string contains exactly one select-like statement.
 
     Parameters
     ----------
     sql
         DuckDB SQL string to validate.
+    enforce_safe_sql
+        Whether to enforce the DuckDBSafe SQL capability envelope.
 
     Returns
     -------
@@ -261,6 +270,7 @@ def assert_single_select_statement(sql: str) -> exp.Expression:
             root,
             disallowed_nodes=SELECT_ONLY_DISALLOWED_NODES,
             allow_aggregates=True,
+            enforce_safe_sql=enforce_safe_sql,
             log_context="storage_sql_ingress",
         )
     except AstCapabilityError as exc:

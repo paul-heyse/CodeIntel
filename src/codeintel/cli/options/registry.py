@@ -101,7 +101,7 @@ BUILD_RUN_PUBLISH_SNAPSHOT = OptionSpec(
     arg_name="publish_serving_snapshot",
     names=("--publish-serving-snapshot",),
     help="Publish an immutable serving snapshot (writes current.json and snapshot artifacts).",
-    negative=(),
+    negative=("--no-publish-serving-snapshot",),
 )
 BUILD_RUN_PARALLEL_BACKEND = OptionSpec(
     arg_name="parallel_backend",

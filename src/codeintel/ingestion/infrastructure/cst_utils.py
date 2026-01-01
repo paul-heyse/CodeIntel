@@ -215,10 +215,7 @@ class CstCaptureVisitor(cst.CSTVisitor):
 
         parents = tuple(self._parent_kinds[:-1])
         qnames = (self._current_qualname(),)
-        node_id = (
-            f"{self.rel_path}:{kind}:"
-            f"{start_line}:{start.column}:{end_line}:{end.column}"
-        )
+        node_id = f"{self.rel_path}:{kind}:{start_line}:{start.column}:{end_line}:{end.column}"
 
         if node_id in self._seen_ids:
             return

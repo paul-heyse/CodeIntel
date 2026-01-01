@@ -25,7 +25,7 @@ def _get_state(request: Request) -> ServingState:
     raise RuntimeError(msg)
 
 
-State = Annotated[ServingState, Depends(_get_state)]
+State = Annotated[ServingState, Depends(_get_state, scope="request")]
 
 
 def get_kernel(state: State) -> SemanticQueryKernel:
@@ -44,7 +44,7 @@ def get_kernel(state: State) -> SemanticQueryKernel:
     return state.kernel
 
 
-Kernel = Annotated[SemanticQueryKernel, Depends(get_kernel)]
+Kernel = Annotated[SemanticQueryKernel, Depends(get_kernel, scope="request")]
 
 
 def get_ops(state: State) -> ServingOperations:
@@ -63,7 +63,7 @@ def get_ops(state: State) -> ServingOperations:
     return state.ops
 
 
-Ops = Annotated[ServingOperations, Depends(get_ops)]
+Ops = Annotated[ServingOperations, Depends(get_ops, scope="request")]
 
 
 def require_api_key(request: Request, state: State) -> None:

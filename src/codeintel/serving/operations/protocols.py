@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
     from pathlib import Path
 
+    from pyarrow import RecordBatch
+
     from codeintel.serving.meta.models import ServingKernelMetaResponse
     from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
@@ -130,6 +132,12 @@ class ServingKernelProtocol(Protocol):
         self, request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
     ) -> Iterator[dict[str, object]]:
         """Return an iterator over export rows for a view."""
+        ...
+
+    def export_record_batches(
+        self, request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[RecordBatch]:
+        """Return an iterator over Arrow record batches for a view."""
         ...
 
     def export_sql(self, request: SemanticExportRequest) -> str:

@@ -13,6 +13,7 @@ __all__ = [
     "ExportRelation",
     "RecordBatch",
     "RecordBatchReader",
+    "ResultStream",
 ]
 
 
@@ -59,6 +60,14 @@ class RecordBatchReader(Protocol):
 
     def __iter__(self) -> Iterator[RecordBatch]:
         """Iterate record batches."""
+        ...
+
+
+class ResultStream(Protocol):
+    """Protocol for streaming result readers without eager materialization."""
+
+    def to_reader(self, *, batch_size: int = DEFAULT_ARROW_BATCH_SIZE) -> pa.RecordBatchReader:
+        """Return a RecordBatchReader for streaming results."""
         ...
 
 

@@ -205,6 +205,18 @@ class DuckDBSafe(Dialect):
 - **Targets**: `src/codeintel/storage/sqlglot_tools.py`.
 - **Acceptance**: unsupported SQL forms are unrepresentable by design.
 
+**Status (completed)**
+
+- Wired type-aware canonicalization using schema mappings in
+  `src/codeintel/storage/sqlglot_tools.py`,
+  `src/codeintel/serving/semantic/sqlglot_query_builder.py`,
+  `src/codeintel/serving/semantic/query_ast.py`.
+- Added DuckDB-safe dialect rendering to make unsupported constructs intrinsic.
+- Emitted view SQL maps and structural diffs in
+  `src/codeintel/storage/tracking/schema_catalog.py`,
+  `src/codeintel/build/hamilton/executor.py`,
+  `src/codeintel/build/hamilton/native/export/serving_artifacts.py`.
+
 ---
 
 ### Phase 5: Polars streaming and execution control
@@ -233,6 +245,18 @@ lazy_frame.collect(optimizations=query_opt_flags, maintain_order=True)
 - **Targets**: `src/codeintel/serving/settings.py`,
   `src/codeintel/serving/semantic/engines/polars_engine.py`.
 - **Acceptance**: deterministic behavior is configuration-driven.
+
+**Status (completed)**
+
+- Added batch-level NDJSON streaming and record-batch export surface in
+  `src/codeintel/serving/export/ndjson.py`,
+  `src/codeintel/serving/http/streaming.py`,
+  `src/codeintel/serving/http/export_dispatch.py`,
+  `src/codeintel/serving/semantic/kernel.py`.
+- Exposed `polars_maintain_order` settings and applied it to batch collection in
+  `src/codeintel/core/config/settings.py`,
+  `src/codeintel/core/runtime/loader.py`,
+  `src/codeintel/serving/semantic/engines/polars_engine.py`.
 
 ---
 
@@ -276,6 +300,20 @@ cancel_token.raise_if_cancelled()
 
 - **Targets**: `src/codeintel/serving/mcp/tools/*.py`.
 - **Acceptance**: all long-running MCP tools share a unified protocol.
+
+**Status (completed)**
+
+- Applied request-scoped FastAPI dependencies in
+  `src/codeintel/serving/http/dependencies.py` and
+  `src/codeintel/serving/http/routes/v1/*.py`.
+- Added typed prompt guidance (PromptResult) including `semantic_query_help` in
+  `src/codeintel/serving/mcp/prompts.py`.
+- Standardized MCP tool task/progress/cancel patterns in
+  `src/codeintel/serving/mcp/tools/catalog.py`,
+  `src/codeintel/serving/mcp/tools/describe.py`,
+  `src/codeintel/serving/mcp/tools/explain.py`,
+  `src/codeintel/serving/mcp/tools/search.py`,
+  `src/codeintel/serving/mcp/tools/meta.py`.
 
 ---
 

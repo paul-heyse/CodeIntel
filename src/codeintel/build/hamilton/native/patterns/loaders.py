@@ -6,14 +6,17 @@ import inspect
 from collections.abc import Callable
 from pathlib import Path
 
+import polars as pl
+import pyarrow as pa
+
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.naming import dataset_node, to_node_name
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.tagging import tag_loader_query
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
-from codeintel.core.columnar.dataset_scanner import scan_dataset_lazyframe
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.datasets.arrow_store import scan_dataset
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
 
 
@@ -82,11 +85,20 @@ def load_snapshot_lazyframe(
         If the dataset snapshot cannot be located on disk.
     """
     snapshot_dir = _snapshot_dir(env=env, table_key=table_key, snapshot_id=snapshot_id)
-    frame = scan_dataset_lazyframe(snapshot_dir, batch_size=DEFAULT_ARROW_BATCH_SIZE)
-    if frame is None:
+    try:
+        dataset = scan_dataset(
+            dataset_root=env.paths.dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+    except FileNotFoundError as exc:
         msg = f"Dataset snapshot not found: {snapshot_dir}"
-        raise FileNotFoundError(msg)
-    return frame
+        raise FileNotFoundError(msg) from exc
+    try:
+        return pl.scan_pyarrow_dataset(dataset, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    except (OSError, ValueError, TypeError, pa.ArrowInvalid) as exc:
+        msg = f"Dataset snapshot not found: {snapshot_dir}"
+        raise FileNotFoundError(msg) from exc
 
 
 def load_table(
