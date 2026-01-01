@@ -4,44 +4,78 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import networkx as nx
+
 from codeintel.build.analytics.compute.row_builders import (
     build_symbol_function_rows,
     build_symbol_module_rows,
 )
 from codeintel.build.analytics.graphs.symbol_orchestrator import (
+    UndirectedMetricInputs,
     UndirectedMetricsConfig,
     build_undirected_symbol_metric_rows,
 )
-from codeintel.storage.repositories.functions import FunctionRepository
-from codeintel.storage.repositories.modules import ModuleRepository
+from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
-    from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
-    from codeintel.storage.gateway import StorageGateway
+    from collections.abc import Iterable, Mapping
+
+    from codeintel.build.graphs.runtime import GraphRuntimeOptions
 
 
-def _get_known_modules(gateway: StorageGateway, repo: str, commit: str) -> set[str]:
-    """Load known modules from the database.
-
-    Returns
-    -------
-    set[str]
-        Set of known module names.
-    """
-    module_repo = ModuleRepository(gateway=gateway, repo=repo, commit=commit)
-    return set(module_repo.list_modules())
-
-
-def _get_known_functions(gateway: StorageGateway, repo: str, commit: str) -> set[int]:
-    """Load known function GOIDs from the database.
+def build_symbol_module_graph(
+    symbol_use_edges: Iterable[Mapping[str, object]],
+    module_by_path: Mapping[str, str],
+) -> nx.Graph:
+    """Build an undirected weighted symbol-module graph from use edges.
 
     Returns
     -------
-    set[int]
-        Set of known function GOIDs.
+    nx.Graph
+        Undirected graph linking modules by symbol coupling.
     """
-    function_repo = FunctionRepository(gateway=gateway, repo=repo, commit=commit)
-    return set(function_repo.list_function_goids())
+    graph = nx.Graph()
+    for record in symbol_use_edges:
+        def_path = record.get("def_path")
+        use_path = record.get("use_path")
+        if def_path is None or use_path is None:
+            continue
+        def_module = module_by_path.get(str(def_path))
+        use_module = module_by_path.get(str(use_path))
+        if def_module is None or use_module is None:
+            continue
+        if def_module == use_module:
+            continue
+        if graph.has_edge(use_module, def_module):
+            attrs = graph[use_module][def_module]
+            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+        else:
+            graph.add_edge(use_module, def_module, weight=1)
+    return graph
+
+
+def build_symbol_function_graph(
+    symbol_use_edges: Iterable[Mapping[str, object]],
+) -> nx.Graph:
+    """Build an undirected weighted symbol-function graph from use edges.
+
+    Returns
+    -------
+    nx.Graph
+        Undirected graph linking functions by symbol coupling.
+    """
+    graph = nx.Graph()
+    for record in symbol_use_edges:
+        def_goid = normalize_decimal_id(record.get("def_goid_h128"))
+        use_goid = normalize_decimal_id(record.get("use_goid_h128"))
+        if def_goid is None or use_goid is None or def_goid == use_goid:
+            continue
+        if graph.has_edge(use_goid, def_goid):
+            attrs = graph[use_goid][def_goid]
+            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+        else:
+            graph.add_edge(use_goid, def_goid, weight=1)
+    return graph
 
 
 def _parse_int_node(node: object) -> int | None:
@@ -66,8 +100,6 @@ def _parse_int_node(node: object) -> int | None:
 _MODULE_CONFIG: UndirectedMetricsConfig[str] = UndirectedMetricsConfig(
     table_key="analytics.symbol_graph_metrics_modules",
     graph_name="symbol_module_graph",
-    get_graph=lambda rt: rt.ensure_symbol_module_graph(),
-    get_known_nodes=_get_known_modules,
     filter_node=lambda node, known: str(node) in known,
     build_rows=build_symbol_module_rows,
 )
@@ -89,19 +121,18 @@ def _filter_function_node(node: object, known: set[int]) -> bool:
 _FUNCTION_CONFIG: UndirectedMetricsConfig[int] = UndirectedMetricsConfig(
     table_key="analytics.symbol_graph_metrics_functions",
     graph_name="symbol_function_graph",
-    get_graph=lambda rt: rt.ensure_symbol_function_graph(),
-    get_known_nodes=_get_known_functions,
     filter_node=_filter_function_node,
     build_rows=build_symbol_function_rows,
 )
 
 
 def build_symbol_graph_metrics_module_rows(
-    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    graph: nx.Graph,
+    known_modules: set[str] | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> list[tuple[object, ...]]:
     """Build analytics.symbol_graph_metrics_modules rows from module symbol coupling.
 
@@ -111,20 +142,24 @@ def build_symbol_graph_metrics_module_rows(
         Row tuples for analytics.symbol_graph_metrics_modules.
     """
     return build_undirected_symbol_metric_rows(
-        gateway,
-        repo=repo,
-        commit=commit,
+        inputs=UndirectedMetricInputs(
+            repo=repo,
+            commit=commit,
+            graph=graph,
+            known_nodes=known_modules,
+            runtime=runtime,
+        ),
         config=_MODULE_CONFIG,
-        runtime=runtime,
     )
 
 
 def build_symbol_graph_metrics_function_rows(
-    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    graph: nx.Graph,
+    known_functions: set[int] | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> list[tuple[object, ...]]:
     """Build analytics.symbol_graph_metrics_functions rows from function symbol coupling.
 
@@ -134,9 +169,12 @@ def build_symbol_graph_metrics_function_rows(
         Row tuples for analytics.symbol_graph_metrics_functions.
     """
     return build_undirected_symbol_metric_rows(
-        gateway,
-        repo=repo,
-        commit=commit,
+        inputs=UndirectedMetricInputs(
+            repo=repo,
+            commit=commit,
+            graph=graph,
+            known_nodes=known_functions,
+            runtime=runtime,
+        ),
         config=_FUNCTION_CONFIG,
-        runtime=runtime,
     )

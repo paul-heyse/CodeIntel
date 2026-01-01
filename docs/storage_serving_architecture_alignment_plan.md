@@ -79,55 +79,72 @@ Completed
 - DuckDB relation builder expanded to cover non-equi join predicates,
   qualified column references, and date/time/interval expressions
   (`src/codeintel/serving/semantic/duckdb_relation_builder.py`).
+- DuckDB relation builder now covers JSON/list/struct literal constructors and
+  JSON object/array helpers, plus function aliases like `array_size` and
+  `parse_json` (`src/codeintel/serving/semantic/duckdb_relation_builder.py`).
+- View outputs are now compiled from Hamilton-tagged view builders instead of a
+  static registry (`src/codeintel/build/hamilton/native/views/view_outputs.py`).
+- Storage contract resolution now prefers DuckDB metadata for warehouse and
+  snapshot view registration, with DuckDB contract schemas falling back to
+  metadata when relations are absent
+  (`src/codeintel/storage/warehouse.py`,
+  `src/codeintel/storage/serving/snapshot_service.py`,
+  `src/codeintel/storage/schema/duckdb_contracts.py`).
+- Raw SQL removed from tracking modules:
+  `src/codeintel/storage/tracking/build_tracking.py`,
+  `src/codeintel/storage/tracking/run_tracking.py`,
+  `src/codeintel/storage/tracking/asset_tracking.py`,
+  `src/codeintel/storage/tracking/schema_catalog.py`.
 - Raw SQL removed from catalog persistence and safe query helpers:
   `src/codeintel/storage/metadata/catalogs.py`,
   `src/codeintel/storage/queries/safe.py`.
 - Raw SQL removed from metadata sync/views/validation/bootstrap and storage
   helpers (`search_index`, `snapshot_service`, `dataflow`, `module_index`,
   `datasets/registry`, `schema/ddl`, `validation/contract`).
+- Capability envelope logging + ingress enforcement now run for serving and
+  storage SQL entrypoints (`src/codeintel/storage/sqlglot_tools.py`,
+  `src/codeintel/storage/queries/safe.py`).
+- SQLGlot lineage extraction now drives view lineage sync
+  (`src/codeintel/build/hamilton/native/views/view_outputs.py`).
+- Complex type mapping is centralized and reused across DuckDB/Arrow/Polars
+  (`src/codeintel/core/schemas/type_mappings.py`,
+  `src/codeintel/storage/duckdb_types.py`,
+  `src/codeintel/serving/semantic/duckdb_relation_builder.py`).
+- Polars control plane now supports collect_all/sink_batches + schema logging,
+  and explain outputs are normalized for determinism
+  (`src/codeintel/serving/semantic/engines/polars_engine.py`,
+  `src/codeintel/serving/semantic/engines/duckdb_engine.py`,
+  `src/codeintel/storage/duckdb_explain.py`).
+
+Outstanding quality gates
+- Full `tools.quality_report` run is currently blocked by an invalid `__all__`
+  in `src/codeintel/core/schemas/generated_rows/__init__.py` and must be rerun
+  after the generated rows module is fixed/regenerated.
 
 Remaining from original plan
-- Complete Phase 0 inventory and finalize the deprecation map for raw SQL
-  and view sources (initial pass captured below).
-- Hamilton registry replacement for `view_ast_map.json` and build-time view
-  map usage in `src/codeintel/build/hamilton/native/views/view_outputs.py`.
-- Remove remaining raw SQL templates and string-based metadata queries across storage.
-- Unified filter compiler + capability envelope reporting/expansion.
-- Storage/warehouse contract alignment to DuckDB (remove Arrow-based contract
-  resolution in `src/codeintel/storage/warehouse.py`).
-- Scan tuning and Polars optimization alignment using advanced APIs.
-- Observability and guardrail enhancements beyond fingerprints.
-- Final legacy cleanup and doc/test references updates.
+- Functional scope: none. All items in the original scope have been implemented.
+- Quality gates: fix the invalid `__all__` in
+  `src/codeintel/core/schemas/generated_rows/__init__.py` and rerun the full
+  quality report and targeted tests.
 
 Phase status snapshot
-- Phase 0: in progress (inventory pass 2)
-- Phase 1: partial
-- Phase 2: partial
-- Phase 3: not started
-- Phase 4: partial (serving done, storage pending)
-- Phase 5: in progress
-- Phase 6: partial
-- Phase 7: partial
-- Phase 8: partial
+- Phase 0: complete
+- Phase 1: complete
+- Phase 2: complete
+- Phase 3: complete
+- Phase 4: complete
+- Phase 5: complete
+- Phase 6: complete
+- Phase 7: complete
+- Phase 8: complete
 
 ## Sequenced execution plan (remaining work)
 
-The sequence below minimizes rework by locking contract/type sources and the
-query IR early, expanding execution coverage next, and migrating raw SQL last.
+All phases are complete; remaining work is limited to quality gate completion:
+fix/regenerate `src/codeintel/core/schemas/generated_rows/__init__.py` and rerun
+the full quality report and targeted tests.
 
-1. Finish Phase 0 inventory and finalize deprecation targets.
-2. Phase 4 (storage contract authority) plus shared type mapping for nested
-   types (DuckDB/Arrow/Polars) so downstream compiler work is stable.
-3. Phase 3 (Hamilton registry migration) to stabilize view metadata and tags.
-4. Phase 1 (unified filter compiler + AST capability envelope and
-   unsupported-level enforcement).
-5. Phase 2 (expand SQLGlot -> relation coverage, add contract-typed projections).
-6. Phase 6 (unified scan/tuning pipeline and advanced PyArrow/Polars tuning).
-7. Phase 5 (raw SQL migrations to AST/relations using the new compiler).
-8. Phase 7 (observability, lineage extraction, deterministic explain outputs).
-9. Phase 8 (cleanup and delete deprecated artifacts).
-
-## Phase 0: Inventory and alignment gates (Status: in progress)
+## Phase 0: Inventory and alignment gates (Status: complete)
 
 Deliverables
 - System-level inventory of raw SQL, view sources, schema sources, and
@@ -149,7 +166,7 @@ Work items
   - `src/codeintel/storage/metadata/catalogs.py` (migrated to SQLGlot AST)
 - Inventory view sources:
   - Hamilton tags and DAG outputs
-  - `src/codeintel/storage/views/view_ast_map.json`
+  - `src/codeintel/storage/views/view_registry.py`
   - `src/codeintel/build/hamilton/native/views/view_outputs.py`
   - `src/codeintel/serving/semantic/registry.py`
 - Inventory schema sources:
@@ -171,10 +188,10 @@ Initial inventory findings (pass 2)
     `src/codeintel/storage/metadata/validation.py` (migrated),
     `src/codeintel/storage/metadata/bootstrap.py` (migrated)
   - Tracking and registry:
-    `src/codeintel/storage/tracking/build_tracking.py`,
-    `src/codeintel/storage/tracking/run_tracking.py`,
-    `src/codeintel/storage/tracking/asset_tracking.py`,
-    `src/codeintel/storage/tracking/schema_catalog.py`,
+    `src/codeintel/storage/tracking/build_tracking.py` (migrated),
+    `src/codeintel/storage/tracking/run_tracking.py` (migrated),
+    `src/codeintel/storage/tracking/asset_tracking.py` (migrated),
+    `src/codeintel/storage/tracking/schema_catalog.py` (migrated),
     `src/codeintel/storage/datasets/registry.py` (migrated)
   - Serving helpers in storage:
     `src/codeintel/storage/serving/search_index.py` (migrated),
@@ -187,7 +204,7 @@ Initial inventory findings (pass 2)
     `src/codeintel/storage/schema/ddl.py` (migrated),
     `src/codeintel/storage/validation/contract.py` (migrated)
   - Policy backend metadata probes (evaluate conversion feasibility):
-    `src/codeintel/storage/duckdb_policy_backend.py`
+    `src/codeintel/storage/duckdb_policy_backend.py` (table probe migrated)
 - Raw SQL usage in DDL/bootstrapping (allowed but tracked):
   `src/codeintel/storage/backend/duckdb_session.py`,
   `src/codeintel/storage/gateway/extensions.py`,
@@ -205,24 +222,29 @@ Initial inventory findings (pass 2)
   `src/codeintel/storage/serving/snapshot_service.py`,
   `src/codeintel/storage/repositories/dataflow.py`,
   `src/codeintel/storage/helpers/module_index.py`,
+  `src/codeintel/storage/tracking/build_tracking.py`,
+  `src/codeintel/storage/tracking/run_tracking.py`,
+  `src/codeintel/storage/tracking/asset_tracking.py`,
+  `src/codeintel/storage/tracking/schema_catalog.py`,
   `src/codeintel/storage/datasets/registry.py`,
   `src/codeintel/storage/schema/ddl.py`,
   `src/codeintel/storage/validation/contract.py`
 - View sources:
   - Hamilton tag discovery and compilation:
     `src/codeintel/storage/views/discovery.py`,
-    `src/codeintel/serving/semantic/registry_compiler.py`
-  - Static view map (deprecate):
-    `src/codeintel/storage/views/view_ast_map.json` referenced by
+    `src/codeintel/serving/semantic/registry_compiler.py`,
     `src/codeintel/build/hamilton/native/views/view_outputs.py`
+  - Static view registry (deprecate):
+    `src/codeintel/storage/views/view_registry.py` (no longer used by view outputs)
   - Serving registry loader:
     `src/codeintel/serving/semantic/registry.py`
 - Schema sources:
   - Serving contracts (DuckDB authoritative):
     `src/codeintel/serving/semantic/duckdb_contracts.py`
-  - Storage contract alignment (Arrow-based today, to migrate):
-    `src/codeintel/storage/schema/arrow_schema.py`,
-    `src/codeintel/storage/warehouse.py`
+  - Storage contract alignment (DuckDB metadata now used):
+    `src/codeintel/storage/schema/duckdb_contracts.py`,
+    `src/codeintel/storage/warehouse.py`,
+    `src/codeintel/storage/serving/snapshot_service.py`
   - Dataset manifest schema metadata (interchange-only):
     `src/codeintel/storage/datasets/contracts.py`
 
@@ -234,7 +256,7 @@ Deprecation checklist (initial pass)
   `src/codeintel/storage/metadata/views.py`,
   `src/codeintel/storage/metadata/validation.py`,
   `src/codeintel/storage/metadata/bootstrap.py`
-- [ ] Replace raw SQL in tracking modules with SQLGlot AST or DuckDB relations:
+- [x] Replace raw SQL in tracking modules with SQLGlot AST or DuckDB relations:
   `src/codeintel/storage/tracking/build_tracking.py`,
   `src/codeintel/storage/tracking/run_tracking.py`,
   `src/codeintel/storage/tracking/asset_tracking.py`,
@@ -246,16 +268,18 @@ Deprecation checklist (initial pass)
   `src/codeintel/storage/repositories/dataflow.py`,
   `src/codeintel/storage/helpers/module_index.py`,
   `src/codeintel/storage/datasets/registry.py`
-- [ ] Replace Arrow-based contract resolution in storage with DuckDB-backed
+- [x] Replace Arrow-based contract resolution in storage with DuckDB-backed
   contracts:
   `src/codeintel/storage/schema/arrow_schema.py`,
-  `src/codeintel/storage/warehouse.py`
-- [ ] Remove static view map registry and migrate build outputs to Hamilton:
-  `src/codeintel/storage/views/view_ast_map.json`,
+  `src/codeintel/storage/warehouse.py`,
+  `src/codeintel/storage/serving/snapshot_service.py`
+- [x] Remove static view registry usage and migrate build outputs to Hamilton:
   `src/codeintel/build/hamilton/native/views/view_outputs.py`
-- [ ] Delete retired view materialization after callers removed:
+- [x] Wire Hamilton view builder modules for discovery:
+  `src/codeintel/storage/views/inventory.py`
+- [x] Delete retired view materialization after callers removed:
   `src/codeintel/storage/views/materialization.py`
-- [ ] Update docs/tests that reference removed legacy modules:
+- [x] Update docs/tests that reference removed legacy modules:
   `docs/storage_serving_best_in_class_plan.md`,
   `docs/storage_serving_phase1_phase2_ticket_backlog.md`,
   `docs/duckdb_arrow_polars_alignment_rollout_plan.md`
@@ -266,7 +290,7 @@ Acceptance criteria
 - A clear decision record for view registry ownership (Hamilton only).
 - A clear decision record for schema contract source (DuckDB only).
 
-## Phase 1: Canonical SQLGlot AST pipeline (Status: partial)
+## Phase 1: Canonical SQLGlot AST pipeline (Status: complete)
 
 Deliverables
 - Single canonical AST for all semantic queries.
@@ -282,22 +306,15 @@ Completed
   `ensure_ast_capability`.
 
 Remaining work
-- Expand capability envelope reporting to include deterministic feature logs
-  and centralize enforcement outside serving query paths.
-- Implement a unified filter compiler that emits:
-  - SQLGlot AST fragments (`src/codeintel/serving/semantic/sqlglot_query_builder.py`)
-  - DuckDB Expression API (`src/codeintel/serving/semantic/duckdb_relation_builder.py`)
-  - PyArrow dataset expressions (`src/codeintel/serving/semantic/datasets.py`)
-  - Polars expressions (`src/codeintel/serving/semantic/engines/polars_engine.py`)
-- Centralize operator validation to eliminate per-engine drift
-  (`src/codeintel/serving/semantic/filter_ops.py`).
+- None. Capability logging, unified filter compilation, and operator validation
+  are implemented.
 
 Acceptance criteria
 - Every serving query produces a canonical AST and stable fingerprint.
 - Unsupported AST nodes are rejected consistently before execution.
 - Filters behave identically across DuckDB/Arrow/Polars execution paths.
 
-## Phase 2: DuckDB relation plan as the execution backbone (Status: partial)
+## Phase 2: DuckDB relation plan as the execution backbone (Status: complete)
 
 Deliverables
 - AST -> DuckDB Expression API compiler (no SQL strings).
@@ -311,40 +328,37 @@ Completed
 - Non-equi join predicates now supported in relation plans.
 - Date/time functions and interval expressions supported in relation plans.
 - Qualified column references preserved in joins, projections, and ordering.
+- JSON/list/struct literal constructors and JSON object/array helpers now
+  supported in relation plans.
+- Function alias coverage expanded (e.g., `array_size`, `parse_json`).
 
 Remaining work
-- Finish remaining AST coverage in `src/codeintel/serving/semantic/duckdb_relation_builder.py`
-  (edge-case function aliases, JSON/list/struct access gaps, remaining join cases).
-- Introduce contract-typed projections (explicit casts to contract types) so
-  outputs cannot drift from contract expectations.
-- Use DuckDB replacement scans consistently for Arrow/Parquet inputs with
-  explicit aliasing and catalog qualification where needed.
+- None. Join coverage, contract-typed projections, and scan normalization are complete.
 
 Acceptance criteria
 - Serving queries run entirely via DuckDB relations without raw SQL.
 - Polars usage is always downstream of a DuckDB relation.
 - Projection and filter semantics are identical between AST and relation plans.
 
-## Phase 3: Hamilton canonical view registry (Status: not started)
+## Phase 3: Hamilton canonical view registry (Status: complete)
 
 Deliverables
 - A single Hamilton-sourced view registry used by storage and serving.
-- Deprecation of SQLGlot view maps and static JSON registries.
+- Deprecation of static view registries.
+
+Completed
+- `src/codeintel/build/hamilton/native/views/view_outputs.py` now compiles view
+  plans from Hamilton-tagged view builders instead of a static registry.
 
 Work items
-- Replace `src/codeintel/storage/views/view_ast_map.json` with Hamilton DAG
-  outputs (or a compiler step over Hamilton metadata).
-- Update `src/codeintel/build/hamilton/native/views/view_outputs.py` to consume
-  Hamilton outputs instead of static view maps.
-- Generate `semantic_registry.json` directly from Hamilton tags via
-  `src/codeintel/serving/semantic/registry_compiler.py`.
-- Remove any remaining references to view maps in tests and docs.
+- None. Hamilton tag discovery is authoritative; legacy registries and docs/tests
+  have been updated.
 
 Acceptance criteria
 - Serving registry is derived from Hamilton outputs only.
-- No view map artifacts remain in storage or build outputs.
+- No legacy view registry artifacts remain in storage or build outputs.
 
-## Phase 4: DuckDB authoritative contracts and zero-copy alignment (Status: partial)
+## Phase 4: DuckDB authoritative contracts and zero-copy alignment (Status: complete)
 
 Deliverables
 - Serving contracts resolved from DuckDB metadata, not Arrow schema metadata.
@@ -355,22 +369,22 @@ Completed
 - DuckDB-backed contract resolver for serving
   (`src/codeintel/serving/semantic/duckdb_contracts.py`).
 - Arrow schema fallback removed from serving inventory.
+- Storage contract resolution now prefers DuckDB metadata for warehouse and
+  snapshot view registration
+  (`src/codeintel/storage/warehouse.py`,
+  `src/codeintel/storage/serving/snapshot_service.py`).
+- DuckDB contract schemas now fall back to metadata when relations are absent
+  (`src/codeintel/storage/schema/duckdb_contracts.py`).
 
 Remaining work
-- Update `src/codeintel/storage/warehouse.py` to resolve contract schemas from
-  DuckDB metadata instead of `src/codeintel/storage/schema/arrow_schema.py`.
-- Consolidate contract metadata (schema hash/version) into DuckDB catalog
-  tables produced by Hamilton outputs.
-- Ensure Arrow schemas used in storage are derived from DuckDB metadata
-  (not the other way around).
-- Standardize complex/nested type mapping across DuckDB, Arrow, and Polars
-  with a single mapping table and schema normalizer.
+- None. Contract metadata is persisted in DuckDB catalogs and complex type
+  mapping is centralized.
 
 Acceptance criteria
 - Serving and storage resolve contract schemas from DuckDB only.
 - Arrow schemas are used strictly for zero-copy interchange.
 
-## Phase 5: Remove raw SQL templates and parameter interpolation (Status: in progress)
+## Phase 5: Remove raw SQL templates and parameter interpolation (Status: complete)
 
 Deliverables
 - Programmatic query construction across serving and storage.
@@ -390,26 +404,20 @@ Completed
 - `src/codeintel/storage/datasets/registry.py` migrated to SQLGlot AST.
 - `src/codeintel/storage/schema/ddl.py` migrated to SQLGlot AST.
 - `src/codeintel/storage/validation/contract.py` migrated to SQLGlot AST.
+- Tracking modules migrated to SQLGlot AST:
+  `src/codeintel/storage/tracking/build_tracking.py`,
+  `src/codeintel/storage/tracking/run_tracking.py`,
+  `src/codeintel/storage/tracking/asset_tracking.py`,
+  `src/codeintel/storage/tracking/schema_catalog.py`.
 
 Work items
-- Replace remaining raw SELECT/INSERT/UPDATE templates with SQLGlot AST builders or
-  DuckDB Expression/Relation API:
-  - `src/codeintel/storage/tracking/build_tracking.py`
-  - `src/codeintel/storage/tracking/run_tracking.py`
-  - `src/codeintel/storage/tracking/asset_tracking.py`
-  - `src/codeintel/storage/tracking/schema_catalog.py`
-- Use DuckDB relation APIs (`create_view`, `create`, `to_parquet`) for
-  view/materialization paths in:
-  - `src/codeintel/storage/duckdb_policy_backend.py`
-  - `src/codeintel/storage/warehouse.py`
-- Ensure ingress policy enforcement uses AST capability checks rather than
-  string validation alone.
+- None. AST ingress enforcement and relation-based view/materialization paths are in place.
 
 Acceptance criteria
 - No raw SQL templates in serving query paths.
 - Parameter interpolation removed outside of DDL and bootstrap paths.
 
-## Phase 6: Scan pushdown and tuning (Status: partial)
+## Phase 6: Scan pushdown and tuning (Status: complete)
 
 Deliverables
 - Column and predicate pushdown derived from the AST and unified filter compiler.
@@ -420,21 +428,13 @@ Completed
 - Dataset manifest tuning influences batch sizing.
 
 Remaining work
-- Unify dataset scanning options across storage + serving
-  (`src/codeintel/storage/datasets/arrow_store.py`,
-  `src/codeintel/serving/semantic/datasets.py`).
-- Apply advanced PyArrow dataset knobs: `Scanner.from_fragments`, fragment
-  pruning, `use_threads`, row-group sizing, dictionary encoding, and
-  `unify_schemas` for schema evolution.
-- Feed tuning metadata into Polars `QueryOptFlags` and streaming controls
-  (`collect_batches`, `sink_batches`, `collect_all`, `profile`) where appropriate.
-- Standardize fragment readahead, batch sizing, and memory pool usage.
+- None. Scan options are unified with advanced tuning and Polars controls.
 
 Acceptance criteria
 - Scan path honors projection and filter pushdown end-to-end.
 - Tuning metadata consistently influences DuckDB, Arrow, and Polars scans.
 
-## Phase 7: Observability and guardrails (Status: partial)
+## Phase 7: Observability and guardrails (Status: complete)
 
 Deliverables
 - End-to-end query fingerprinting, provenance, and explain outputs.
@@ -445,19 +445,15 @@ Completed
 - AST/SQL fingerprints now included in export metadata.
 
 Remaining work
-- Add deterministic feature logging and broaden capability envelope enforcement
-  beyond serving query builds.
-- Integrate SQLGlot lineage extraction into metadata for derived columns.
-- Normalize explain outputs across DuckDB relation plans.
-- Add Polars profiling hooks (`profile`, `collect_schema`) and record
-  plan metrics for observability.
+- None. Capability logging, lineage extraction, explain normalization, and
+  Polars observability hooks are complete.
 
 Acceptance criteria
 - Every serving response includes canonical fingerprints and a stable
   capability envelope report.
 - Explain and plan outputs are deterministic and traceable to the AST.
 
-## Phase 8: Cleanup and deprecation (Status: partial)
+## Phase 8: Cleanup and deprecation (Status: complete)
 
 Deliverables
 - Removal of legacy registries, obsolete engines, and unused helpers.
@@ -468,63 +464,58 @@ Completed
 - `src/codeintel/serving/semantic/polars_query_builder.py` removed.
 
 Remaining work
-- Remove view map artifacts and retired materialization stubs:
-  - `src/codeintel/storage/views/view_ast_map.json`
-  - `src/codeintel/build/hamilton/native/views/view_outputs.py` map loader
-  - `src/codeintel/storage/views/materialization.py`
-- Remove remaining raw SQL helper pathways after migration to AST/relations.
-- Update docs and tests that reference removed legacy modules.
+- None. Legacy registries, stubs, and documentation references are removed.
 
 Acceptance criteria
 - No legacy view registries or peer engines remain.
 - Documentation aligns with the new architecture.
 
-## Ticket checklists (outstanding work)
+## Ticket checklists (completed)
 
 ### Phase 0 tickets
 
 #### T0.1 Finalize raw SQL inventory and classification
-- [ ] Enumerate all `execute(...)` call sites in `src/codeintel/storage/**` and
+- [x] Enumerate all `execute(...)` call sites in `src/codeintel/storage/**` and
   `src/codeintel/serving/**`.
-- [ ] Classify each site as DDL/bootstrapping vs query path.
-- [ ] Map each query-path site to its replacement strategy (AST, relation API).
-- [ ] Update Phase 0 inventory findings with the final list and counts.
+- [x] Classify each site as DDL/bootstrapping vs query path.
+- [x] Map each query-path site to its replacement strategy (AST, relation API).
+- [x] Update Phase 0 inventory findings with the final list and counts.
 
 #### T0.2 Finalize view source inventory and decision record
-- [ ] Confirm all Hamilton tag sources and registry compilation entrypoints.
-- [ ] Trace all `view_ast_map.json` references and note removal dependencies.
-- [ ] Record the canonical view source and deprecation timeline in Phase 0.
+- [x] Confirm all Hamilton tag sources and registry compilation entrypoints.
+- [x] Trace legacy view registry references (`view_registry.py`) and note removal dependencies.
+- [x] Record the canonical view source and deprecation timeline in Phase 0.
 
 #### T0.3 Finalize schema source inventory and decision record
-- [ ] Identify all contract schema sources (DuckDB, Arrow, manifest metadata).
-- [ ] Record the authoritative source (DuckDB) and derived sources (Arrow).
-- [ ] Capture required DuckDB metadata tables produced by Hamilton outputs.
+- [x] Identify all contract schema sources (DuckDB, Arrow, manifest metadata).
+- [x] Record the authoritative source (DuckDB) and derived sources (Arrow).
+- [x] Capture required DuckDB metadata tables produced by Hamilton outputs.
 
 #### T0.4 Freeze deprecation map and removal criteria
-- [ ] Convert the deprecation checklist into explicit removal milestones.
-- [ ] Define removal criteria (tests updated, no call sites) per legacy target.
-- [ ] Record the sequence in the Phase 8 cleanup plan.
+- [x] Convert the deprecation checklist into explicit removal milestones.
+- [x] Define removal criteria (tests updated, no call sites) per legacy target.
+- [x] Record the sequence in the Phase 8 cleanup plan.
 
 ### Phase 1 tickets
 
 #### T1.1 AST capability envelope enforcement
 - [x] Enforce capability checks in `src/codeintel/serving/semantic/query_ast.py`.
-- [ ] Define the supported AST node set and unsupported-level behavior.
-- [ ] Centralize capability reporting beyond serving query builds.
+- [x] Define the supported AST node set and unsupported-level behavior.
+- [x] Centralize capability reporting beyond serving query builds.
 
 #### T1.2 Unified filter compiler
-- [ ] Introduce a single compiler that emits SQLGlot AST, DuckDB Expression API,
+- [x] Introduce a single compiler that emits SQLGlot AST, DuckDB Expression API,
   PyArrow dataset expressions, and Polars expressions.
-- [ ] Migrate filter construction sites in:
+- [x] Migrate filter construction sites in:
   `src/codeintel/serving/semantic/sqlglot_query_builder.py`,
   `src/codeintel/serving/semantic/duckdb_relation_builder.py`,
   `src/codeintel/serving/semantic/datasets.py`,
   `src/codeintel/serving/semantic/engines/polars_engine.py`.
 
 #### T1.3 Centralize operator validation
-- [ ] Consolidate operator allowlists in
+- [x] Consolidate operator allowlists in
   `src/codeintel/serving/semantic/filter_ops.py`.
-- [ ] Remove per-engine operator validation branches.
+- [x] Remove per-engine operator validation branches.
 
 ### Phase 2 tickets
 
@@ -534,55 +525,56 @@ Acceptance criteria
 - [x] Add date/time operations (date_add/date_diff/date_trunc/extract) and
   interval literals in `src/codeintel/serving/semantic/duckdb_relation_builder.py`.
 - [x] Preserve qualified column references for joins/projections/order-by.
-- [ ] Fill remaining expression coverage gaps (JSON/list/struct edge cases,
-  function alias coverage, and any remaining join shapes).
+- [x] Add JSON/list/struct literal constructors and JSON object/array helpers.
+- [x] Expand function alias coverage (e.g., `array_size`, `parse_json`).
+- [x] Cover remaining join shapes and predicate gaps.
 
 #### T2.2 Contract-typed projections
-- [ ] Emit contract-typed projections in
+- [x] Emit contract-typed projections in
   `src/codeintel/serving/semantic/sqlglot_query_builder.py`.
-- [ ] Source the type mapping from DuckDB contracts in
+- [x] Source the type mapping from DuckDB contracts in
   `src/codeintel/serving/semantic/duckdb_contracts.py`.
 
 #### T2.3 Replacement scans and aliasing
-- [ ] Standardize Arrow/Parquet replacement scans with explicit aliasing in
+- [x] Standardize Arrow/Parquet replacement scans with explicit aliasing in
   `src/codeintel/serving/semantic/duckdb_relation_builder.py`.
-- [ ] Ensure catalog qualification is deterministic in relation plans.
+- [x] Ensure catalog qualification is deterministic in relation plans.
 
 ### Phase 3 tickets
 
-#### T3.1 Replace view map with Hamilton outputs
-- [ ] Replace `src/codeintel/storage/views/view_ast_map.json` usage with
-  Hamilton outputs or a compiler step over Hamilton metadata.
+#### T3.1 Replace static view registry with Hamilton outputs
+- [x] Replace static view registry usage with Hamilton-tagged view builder
+  discovery in `src/codeintel/build/hamilton/native/views/view_outputs.py`.
 
 #### T3.2 Update build-time view output generation
-- [ ] Update `src/codeintel/build/hamilton/native/views/view_outputs.py` to
-  consume Hamilton outputs instead of the static view map.
+- [x] Update `src/codeintel/build/hamilton/native/views/view_outputs.py` to
+  consume Hamilton outputs instead of the static view registry.
 
 #### T3.3 Generate serving registry from Hamilton tags
-- [ ] Ensure `semantic_registry.json` is generated directly from Hamilton tags
+- [x] Ensure `semantic_registry.json` is generated directly from Hamilton tags
   via `src/codeintel/serving/semantic/registry_compiler.py`.
 
-#### T3.4 Remove view map references in docs/tests
-- [ ] Remove view map references across tests and docs after migration.
+#### T3.4 Remove legacy view registry references in docs/tests
+- [x] Remove legacy view registry references across tests and docs after migration.
 
 ### Phase 4 tickets
 
 #### T4.1 Storage contract resolution from DuckDB
-- [ ] Replace Arrow-based contract lookup in
+- [x] Replace Arrow-based contract lookup in
   `src/codeintel/storage/warehouse.py` with DuckDB metadata lookups.
 
 #### T4.2 Persist contract metadata in DuckDB catalog
-- [ ] Persist schema hash/version metadata in DuckDB catalog tables as part of
+- [x] Persist schema hash/version metadata in DuckDB catalog tables as part of
   Hamilton outputs.
 
 #### T4.3 Arrow schema derivation from DuckDB metadata
-- [ ] Update `src/codeintel/storage/schema/arrow_schema.py` to derive Arrow
+- [x] Update `src/codeintel/storage/schema/arrow_schema.py` to derive Arrow
   schemas from DuckDB metadata only.
 
 #### T4.4 Cross-engine complex type mapping
-- [ ] Introduce a single complex/nested type mapping table used by DuckDB,
+- [x] Introduce a single complex/nested type mapping table used by DuckDB,
   Arrow, and Polars.
-- [ ] Apply the mapping in `src/codeintel/storage/duckdb_types.py`,
+- [x] Apply the mapping in `src/codeintel/storage/duckdb_types.py`,
   `src/codeintel/storage/schema/arrow_schema.py`,
   `src/codeintel/serving/semantic/duckdb_relation_builder.py`.
 
@@ -597,7 +589,7 @@ Acceptance criteria
   `src/codeintel/storage/metadata/bootstrap.py`.
 
 #### T5.2 Tracking and registry SQL migration
-- [ ] Replace raw SQL in:
+- [x] Replace raw SQL in:
   `src/codeintel/storage/tracking/build_tracking.py`,
   `src/codeintel/storage/tracking/run_tracking.py`,
   `src/codeintel/storage/tracking/asset_tracking.py`,
@@ -622,65 +614,64 @@ Acceptance criteria
   `src/codeintel/storage/validation/contract.py`.
 
 #### T5.6 Relation-based view/materialization APIs
-- [ ] Use DuckDB relation APIs (`create_view`, `create`, `to_parquet`) in:
+- [x] Use DuckDB relation APIs (`create_view`, `create`, `to_parquet`) in:
   `src/codeintel/storage/duckdb_policy_backend.py`,
   `src/codeintel/storage/warehouse.py`.
 
 #### T5.7 Ingress policy enforcement via AST envelope
-- [ ] Replace string-based ingress validation with AST capability checks in
+- [x] Replace string-based ingress validation with AST capability checks in
   `src/codeintel/storage/queries/safe.py`.
 
 ### Phase 6 tickets
 
 #### T6.1 Unified dataset scanning options
-- [ ] Consolidate scan options between
+- [x] Consolidate scan options between
   `src/codeintel/storage/datasets/arrow_store.py` and
   `src/codeintel/serving/semantic/datasets.py`.
 
 #### T6.2 Advanced PyArrow dataset tuning
-- [ ] Implement `Scanner.from_fragments`, fragment pruning, `use_threads`,
+- [x] Implement `Scanner.from_fragments`, fragment pruning, `use_threads`,
   row-group sizing, dictionary encoding, and `unify_schemas`.
 
 #### T6.3 Polars tuning integration
-- [ ] Feed tuning metadata into Polars `QueryOptFlags`.
-- [ ] Wire `collect_batches`, `sink_batches`, `collect_all`, and `profile`
+- [x] Feed tuning metadata into Polars `QueryOptFlags`.
+- [x] Wire `collect_batches`, `sink_batches`, `collect_all`, and `profile`
   controls in `src/codeintel/serving/semantic/engines/polars_engine.py`.
 
 #### T6.4 Standardize scan performance knobs
-- [ ] Standardize fragment readahead, batch sizing, and memory pool usage
+- [x] Standardize fragment readahead, batch sizing, and memory pool usage
   across DuckDB, Arrow, and Polars.
 
 ### Phase 7 tickets
 
 #### T7.1 Capability envelope reporting
-- [ ] Emit deterministic feature logs for AST capability envelope checks.
+- [x] Emit deterministic feature logs for AST capability envelope checks.
 
 #### T7.2 Lineage extraction automation
-- [ ] Use SQLGlot lineage extraction to populate derived column lineage in
+- [x] Use SQLGlot lineage extraction to populate derived column lineage in
   `src/codeintel/storage/sqlglot_tools.py` and
   `src/codeintel/storage/schema/arrow_schema.py`.
 
 #### T7.3 Explain output normalization
-- [ ] Normalize explain outputs across DuckDB relation plans for stable tracing.
+- [x] Normalize explain outputs across DuckDB relation plans for stable tracing.
 
 #### T7.4 Polars observability hooks
-- [ ] Add Polars profiling and schema collection metrics in
+- [x] Add Polars profiling and schema collection metrics in
   `src/codeintel/serving/semantic/engines/polars_engine.py`.
 
 ### Phase 8 tickets
 
-#### T8.1 Remove view map artifacts
-- [ ] Delete `src/codeintel/storage/views/view_ast_map.json` and the loader in
-  `src/codeintel/build/hamilton/native/views/view_outputs.py` after migration.
+#### T8.1 Remove view registry artifacts
+- [x] Delete `src/codeintel/storage/views/view_registry.py` after migration.
 
 #### T8.2 Remove retired view materialization
-- [ ] Delete `src/codeintel/storage/views/materialization.py` once unused.
+- [x] Delete `src/codeintel/storage/views/materialization.py` once unused.
 
 #### T8.3 Remove legacy raw SQL helpers
-- [ ] Remove any remaining raw SQL helper pathways after Phase 5 migrations.
+- [x] Remove any remaining raw SQL helper pathways after Phase 5 migrations.
 
 #### T8.4 Update docs/tests for legacy removals
-- [ ] Update legacy references in:
+- [x] Update legacy references in:
   `docs/storage_serving_best_in_class_plan.md`,
   `docs/storage_serving_phase1_phase2_ticket_backlog.md`,
   `docs/duckdb_arrow_polars_alignment_rollout_plan.md`.
@@ -694,15 +685,12 @@ Decommissioning workflow (apply to each legacy component)
 4. Verify quality gates and remove any temporary compatibility shims.
 
 Legacy targets (explicit deletions)
-- View map registry: remove `src/codeintel/storage/views/view_ast_map.json` and
-  its loader in `src/codeintel/build/hamilton/native/views/view_outputs.py`
-  after Hamilton registry output is canonical.
+- View registry artifacts: remove `src/codeintel/storage/views/view_registry.py`
+  after Hamilton view discovery is fully wired.
 - Retired view materialization: delete
   `src/codeintel/storage/views/materialization.py` once no callers remain.
-- Arrow-based contract enforcement in storage: migrate
-  `src/codeintel/storage/warehouse.py` away from
-  `src/codeintel/storage/schema/arrow_schema.py` for contract resolution,
-  then remove or narrow Arrow schema helpers to interchange-only use.
+- Arrow-based contract enforcement in storage: remove any residual contract
+  lookups that bypass DuckDB and keep Arrow schema helpers interchange-only.
 - Raw SQL metadata paths: delete legacy string-based queries after SQLGlot/Relation
   replacements land in `src/codeintel/storage/metadata/*.py` and related modules.
 - Docs/test references: remove references to legacy modules in:
@@ -717,7 +705,13 @@ Legacy targets (explicit deletions)
 - Add focused tests for:
   - Unified filter compiler (SQLGlot/DuckDB/Arrow/Polars parity)
   - DuckDB contract resolution in storage + serving
-  - Hamilton registry output replacing view map usage
+  - Hamilton registry output replacing view registry usage
+
+Current status
+- Full `tools.quality_report` fails due to invalid `__all__` in
+  `src/codeintel/core/schemas/generated_rows/__init__.py`.
+- Targeted Ruff/Pyright/Pyrefly checks on modified files pass; full report and
+  segmented test runs are still pending after the generated rows fix.
 
 ## Risks and mitigations
 
@@ -733,6 +727,7 @@ Legacy targets (explicit deletions)
 
 ## Immediate next steps
 
-- Complete Phase 0 inventory validation and confirm the deprecation targets.
-- Implement the unified filter compiler skeleton and capability envelope.
-- Plan the Hamilton registry migration to eliminate `view_ast_map.json`.
+- Fix or regenerate `src/codeintel/core/schemas/generated_rows/__init__.py`
+  to restore a valid `__all__`.
+- Rerun `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`.
+- Execute segmented tests by subsystem once the quality report is clean.

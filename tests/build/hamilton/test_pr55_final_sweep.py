@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel import analytics
 from codeintel.build import hamilton
+from codeintel.build.hamilton.native import analytics
 from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
 
 

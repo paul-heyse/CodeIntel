@@ -15,6 +15,7 @@ from codeintel.core.columnar.schema_alignment import (
     extras_policy_from_schema,
 )
 from codeintel.core.schemas.primitives import column_type_base
+from codeintel.core.schemas.type_mappings import complex_type_mapping
 from codeintel.serving.semantic.datasets import (
     DatasetScannerOptions,
     dataset_filter_expression,
@@ -59,7 +60,10 @@ class RelationScanOptions:
     """Scan options for Arrow-backed DuckDB relations."""
 
     batch_size: int
+    batch_readahead: int | None = None
     fragment_readahead: int | None = DEFAULT_FRAGMENT_READAHEAD
+    use_threads: bool | None = None
+    unify_schemas: bool = False
     metrics_enabled: bool = False
 
 
@@ -309,14 +313,35 @@ def _apply_join(
     if not isinstance(join.this, exp.Table):
         msg = "JOIN targets must be tables"
         raise DuckDBRelationQueryBuilderError(msg)
+    if join.args.get("natural"):
+        msg = "NATURAL JOIN is not supported in relation plans"
+        raise DuckDBRelationQueryBuilderError(msg)
     join_relation = _relation_for_table(con=con, table=join.this, context=context)
     join_relation = _apply_relation_alias(join_relation, join.this)
+    join_type = _join_type(join)
     join_condition = _join_condition_expr(
-        join.args.get("on"),
+        join,
+        join_type=join_type,
         allowed_columns=allowed_columns,
         column_types=context.column_types,
     )
-    join_type = _join_type(join)
+    if join_type == "cross":
+        cross_join = getattr(relation, "cross_join", None)
+        if callable(cross_join):
+            try:
+                result = cross_join(join_relation)
+            except (TypeError, ValueError) as exc:
+                msg = "Failed to apply CROSS JOIN"
+                raise DuckDBRelationQueryBuilderError(msg) from exc
+            return (
+                result
+                if isinstance(result, duckdb.DuckDBPyRelation)
+                else relation.join(join_relation, ConstantExpression(value=True), how="cross")
+            )
+        return relation.join(join_relation, ConstantExpression(value=True), how="cross")
+    if join_condition is None:
+        msg = "JOIN requires an ON or USING clause"
+        raise DuckDBRelationQueryBuilderError(msg)
     try:
         return relation.join(join_relation, join_condition, how=join_type)
     except (TypeError, ValueError) as exc:
@@ -324,25 +349,129 @@ def _apply_join(
         raise DuckDBRelationQueryBuilderError(msg) from exc
 
 
+_JOIN_TYPE_MAP: dict[str, str] = {
+    "full": "outer",
+    "full outer": "outer",
+    "left outer": "left",
+    "left": "left",
+    "right outer": "right",
+    "right": "right",
+    "semi": "semi",
+    "left semi": "semi",
+    "leftsemi": "semi",
+    "anti": "anti",
+    "left anti": "anti",
+    "leftanti": "anti",
+    "cross": "cross",
+    "cross join": "cross",
+    "inner": "inner",
+}
+
+
 def _join_type(join: exp.Join) -> str:
-    side = join.args.get("side")
-    kind = join.args.get("kind")
-    normalized: str | None = None
-    if isinstance(side, str):
-        normalized = side.strip().lower()
-    elif isinstance(kind, str):
-        normalized = kind.strip().lower()
+    normalized = _normalize_join_type(join)
     if not normalized:
         return "inner"
-    if normalized == "full":
-        return "outer"
-    if normalized in {"inner", "left", "right", "outer"}:
-        return normalized
-    msg = f"Unsupported join type: {normalized}"
-    raise DuckDBRelationQueryBuilderError(msg)
+    resolved = _JOIN_TYPE_MAP.get(normalized)
+    if resolved is None:
+        msg = f"Unsupported join type: {normalized}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return resolved
+
+
+def _normalize_join_type(join: exp.Join) -> str:
+    tokens: list[str] = []
+    for value in (join.args.get("side"), join.args.get("kind"), join.args.get("method")):
+        if isinstance(value, str):
+            cleaned = value.strip().lower()
+            if cleaned:
+                tokens.append(cleaned)
+    normalized = " ".join(tokens).replace("_", " ").replace("-", " ").strip()
+    return " ".join(normalized.split())
 
 
 def _join_condition_expr(
+    join: exp.Join,
+    *,
+    join_type: str,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    using_expr = join.args.get("using")
+    on_expr = join.args.get("on")
+    if join_type == "cross":
+        if using_expr is not None or on_expr is not None:
+            msg = "CROSS JOIN cannot include ON or USING clauses"
+            raise DuckDBRelationQueryBuilderError(msg)
+        return None
+    if using_expr is not None:
+        right_alias = _join_table_alias(join.this)
+        return _join_condition_from_using(
+            using_expr,
+            right_alias=right_alias,
+            allowed_columns=allowed_columns,
+        )
+    return _join_condition_expr_from_on(
+        on_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+def _join_table_alias(table: exp.Table | None) -> str | None:
+    if not isinstance(table, exp.Table):
+        return None
+    alias = table.alias_or_name
+    if isinstance(alias, str) and alias:
+        return alias
+    name = table.name
+    return name if name else None
+
+
+def _join_condition_from_using(
+    expr: exp.Expression | list[exp.Expression],
+    *,
+    right_alias: str | None,
+    allowed_columns: frozenset[str],
+) -> Expression:
+    if not right_alias:
+        msg = "USING clause requires a right table alias"
+        raise DuckDBRelationQueryBuilderError(msg)
+    columns = _using_column_names(expr)
+    if not columns:
+        msg = "USING clause requires at least one column"
+        raise DuckDBRelationQueryBuilderError(msg)
+    conditions: list[Expression] = []
+    for column in columns:
+        _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="join")
+        left_expr = ColumnExpression(column)
+        right_expr = ColumnExpression(f"{right_alias}.{column}")
+        conditions.append(left_expr == right_expr)
+    combined = conditions[0]
+    for condition in conditions[1:]:
+        combined &= condition
+    return combined
+
+
+def _using_column_names(expr: exp.Expression | list[exp.Expression]) -> tuple[str, ...]:
+    values: list[str] = []
+    if isinstance(expr, list):
+        for item in expr:
+            values.extend(_using_column_names(item))
+        return tuple(values)
+    if isinstance(expr, exp.Identifier):
+        name = expr.this
+        return (name,) if isinstance(name, str) and name else ()
+    if isinstance(expr, exp.Column):
+        return (_column_name(expr),)
+    if isinstance(expr, exp.Tuple):
+        for item in expr.expressions:
+            values.extend(_using_column_names(item))
+        return tuple(values)
+    return ()
+
+
+def _join_condition_expr_from_on(
     expr: exp.Expression | None,
     *,
     allowed_columns: frozenset[str],
@@ -352,7 +481,7 @@ def _join_condition_expr(
         msg = "JOIN requires an ON clause"
         raise DuckDBRelationQueryBuilderError(msg)
     if isinstance(expr, exp.Paren):
-        return _join_condition_expr(
+        return _join_condition_expr_from_on(
             expr.this,
             allowed_columns=allowed_columns,
             column_types=column_types,
@@ -361,11 +490,11 @@ def _join_condition_expr(
         if expr.this is None or expr.expression is None:
             msg = "JOIN AND requires two expressions"
             raise DuckDBRelationQueryBuilderError(msg)
-        return _join_condition_expr(
+        return _join_condition_expr_from_on(
             expr.this,
             allowed_columns=allowed_columns,
             column_types=column_types,
-        ) & _join_condition_expr(
+        ) & _join_condition_expr_from_on(
             expr.expression,
             allowed_columns=allowed_columns,
             column_types=column_types,
@@ -374,11 +503,11 @@ def _join_condition_expr(
         if expr.this is None or expr.expression is None:
             msg = "JOIN OR requires two expressions"
             raise DuckDBRelationQueryBuilderError(msg)
-        return _join_condition_expr(
+        return _join_condition_expr_from_on(
             expr.this,
             allowed_columns=allowed_columns,
             column_types=column_types,
-        ) | _join_condition_expr(
+        ) | _join_condition_expr_from_on(
             expr.expression,
             allowed_columns=allowed_columns,
             column_types=column_types,
@@ -387,7 +516,7 @@ def _join_condition_expr(
         if expr.this is None:
             msg = "JOIN NOT requires an expression"
             raise DuckDBRelationQueryBuilderError(msg)
-        return ~_join_condition_expr(
+        return ~_join_condition_expr_from_on(
             expr.this,
             allowed_columns=allowed_columns,
             column_types=column_types,
@@ -506,11 +635,14 @@ def _scan_dataset(
     dataset = dataset_for_entry(entry)
     options = DatasetScannerOptions(
         batch_size=context.scan_options.batch_size,
+        batch_readahead=context.scan_options.batch_readahead,
         fragment_readahead=context.scan_options.fragment_readahead,
         filter_expression=filter_expression,
+        use_threads=context.scan_options.use_threads,
         metrics_enabled=context.scan_options.metrics_enabled,
         schema=schema,
         columns=projection_columns,
+        unify_schemas=context.scan_options.unify_schemas,
     )
     scanner = dataset_scanner_for_entry(
         entry,
@@ -732,6 +864,128 @@ def _duckdb_projection_basic(
     return None
 
 
+def _duckdb_projection_structured_core(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    if isinstance(expr, exp.Coalesce):
+        return _duckdb_coalesce_expr(
+            expr.expressions,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Cast):
+        return _duckdb_cast_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Interval):
+        return _duckdb_interval_expr(expr)
+    if isinstance(expr, exp.Case):
+        return _duckdb_case_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    return None
+
+
+def _duckdb_projection_structured_containers(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    if isinstance(expr, exp.Array):
+        return _duckdb_array_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Map):
+        return _duckdb_map_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Struct):
+        return _duckdb_struct_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    return None
+
+
+def _duckdb_projection_structured_json(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    if isinstance(expr, exp.JSONObject):
+        return _duckdb_json_object_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.JSONArray):
+        return _duckdb_json_array_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Bracket):
+        return _duckdb_bracket_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.JSONExtract):
+        return _duckdb_json_extract_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.JSONExtractScalar):
+        return _duckdb_json_extract_expr(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    return None
+
+
+def _duckdb_projection_structured_by_type(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression | None:
+    result = _duckdb_projection_structured_core(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if result is not None:
+        return result
+    result = _duckdb_projection_structured_containers(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if result is not None:
+        return result
+    return _duckdb_projection_structured_json(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
 def _duckdb_projection_structured(
     expr: exp.Expression,
     *,
@@ -748,41 +1002,16 @@ def _duckdb_projection_structured(
         allowed_columns=allowed_columns,
         column_types=column_types,
     )
-    if result is None and isinstance(expr, exp.Coalesce):
-        result = _duckdb_coalesce_expr(
-            expr.expressions,
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    elif result is None and isinstance(expr, exp.Cast):
-        result = _duckdb_cast_expr(
-            expr,
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    elif result is None and isinstance(expr, exp.Interval):
-        result = _duckdb_interval_expr(expr)
-    elif result is None and isinstance(expr, exp.Case):
-        result = _duckdb_case_expr(
-            expr,
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    elif result is None and isinstance(expr, exp.Bracket):
-        result = _duckdb_bracket_expr(
-            expr,
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    elif result is None and isinstance(expr, (exp.JSONExtract, exp.JSONExtractScalar)):
-        result = _duckdb_json_extract_expr(
-            expr,
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-    if result is None:
-        result = _string_predicate_projection(expr, context=predicate_context)
-    return result
+    if result is not None:
+        return result
+    result = _duckdb_projection_structured_by_type(
+        expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    if result is not None:
+        return result
+    return _string_predicate_projection(expr, context=predicate_context)
 
 
 def _duckdb_projection_function(
@@ -1136,6 +1365,162 @@ def _duckdb_case_expr(
     return case_expr
 
 
+def _duckdb_array_expr(
+    expr: exp.Array,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    args = [
+        _duckdb_expr_from_projection(
+            item,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        for item in expr.expressions
+    ]
+    return FunctionExpression("list_value", *args)
+
+
+def _duckdb_map_expr(
+    expr: exp.Map,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    keys_expr = expr.args.get("keys")
+    values_expr = expr.args.get("values")
+    if keys_expr is None or values_expr is None:
+        msg = "MAP requires both keys and values"
+        raise DuckDBRelationQueryBuilderError(msg)
+    keys = _duckdb_expr_from_projection(
+        keys_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    values = _duckdb_expr_from_projection(
+        values_expr,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return FunctionExpression("map", keys, values)
+
+
+def _duckdb_struct_expr(
+    expr: exp.Struct,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if not expr.expressions:
+        msg = "STRUCT requires at least one field"
+        raise DuckDBRelationQueryBuilderError(msg)
+    args: list[Expression] = []
+    for entry in expr.expressions:
+        field_name, value_expr = _struct_field_entry(entry)
+        value = _duckdb_expr_from_projection(
+            value_expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        args.append(value.alias(field_name))
+    return FunctionExpression("struct_pack", *args)
+
+
+def _struct_field_entry(entry: exp.Expression) -> tuple[str, exp.Expression]:
+    if isinstance(entry, exp.PropertyEQ):
+        key_expr = entry.this
+        value_expr = entry.expression
+    elif isinstance(entry, exp.Alias):
+        key_expr = entry.args.get("alias")
+        value_expr = entry.this
+    else:
+        msg = f"Unsupported STRUCT field: {type(entry).__name__}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if value_expr is None:
+        msg = "STRUCT field requires a value expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    name = _struct_field_name(key_expr)
+    return name, value_expr
+
+
+def _struct_field_name(expr: exp.Expression | None) -> str:
+    if expr is None:
+        msg = "STRUCT field requires a name"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if isinstance(expr, exp.Identifier) or (isinstance(expr, exp.Literal) and expr.is_string):
+        name = expr.this
+    elif isinstance(expr, str):
+        name = expr
+    else:
+        name = getattr(expr, "name", None)
+    if not isinstance(name, str) or not name:
+        msg = "STRUCT field name must be a non-empty string"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return name
+
+
+def _duckdb_json_object_expr(
+    expr: exp.JSONObject,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if not expr.expressions:
+        msg = "JSON_OBJECT requires at least one key/value pair"
+        raise DuckDBRelationQueryBuilderError(msg)
+    args: list[Expression] = []
+    for item in expr.expressions:
+        if not isinstance(item, exp.JSONKeyValue):
+            msg = "JSON_OBJECT entries must be key/value pairs"
+            raise DuckDBRelationQueryBuilderError(msg)
+        key = _json_object_key(item.this)
+        value_expr = item.expression
+        if value_expr is None:
+            msg = "JSON_OBJECT requires a value expression"
+            raise DuckDBRelationQueryBuilderError(msg)
+        args.append(ConstantExpression(key))
+        args.append(
+            _duckdb_expr_from_projection(
+                value_expr,
+                allowed_columns=allowed_columns,
+                column_types=column_types,
+            )
+        )
+    return FunctionExpression("json_object", *args)
+
+
+def _json_object_key(expr: exp.Expression | None) -> str:
+    if expr is None:
+        msg = "JSON_OBJECT requires string keys"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if isinstance(expr, exp.Identifier) or (isinstance(expr, exp.Literal) and expr.is_string):
+        name = expr.this
+    else:
+        name = getattr(expr, "name", None)
+    if not isinstance(name, str) or not name:
+        msg = "JSON_OBJECT keys must be string literals"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return name
+
+
+def _duckdb_json_array_expr(
+    expr: exp.JSONArray,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    args = [
+        _duckdb_expr_from_projection(
+            item,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        for item in expr.expressions
+    ]
+    return FunctionExpression("json_array", *args)
+
+
 def _case_condition_expr(
     case_operand: exp.Expression | None,
     clause: exp.If,
@@ -1232,6 +1617,31 @@ def _column_type_for_base(
     if isinstance(base_expr, exp.Column) and column_types is not None:
         column = _column_name(base_expr)
         return column_types.get(column)
+    return _base_type_hint(base_expr)
+
+
+def _base_type_hint(expr: exp.Expression) -> ColumnType | None:
+    if isinstance(expr, exp.Array):
+        return "LIST"
+    if isinstance(expr, exp.Map):
+        return "MAP"
+    if isinstance(expr, exp.Struct):
+        return "STRUCT"
+    if isinstance(
+        expr,
+        (
+            exp.JSONExtract,
+            exp.JSONExtractScalar,
+            exp.JSONObject,
+            exp.JSONArray,
+            exp.ParseJSON,
+        ),
+    ):
+        return "JSON"
+    if isinstance(expr, exp.Anonymous):
+        name = (expr.name or "").lower()
+        if name in {"json", "json_array", "json_object"}:
+            return "JSON"
     return None
 
 
@@ -1974,27 +2384,37 @@ _STRING_FUNC_MAP: dict[str, Op] = {
 _STRING_PREDICATE_FUNCS = frozenset(_STRING_FUNC_MAP.keys())
 _STRING_UNARY_FUNCS = frozenset({"lower", "upper"})
 _NAMED_FUNCTION_ALIASES = {
+    "array_size": "array_length",
     "dateadd": "date_add",
     "datediff": "date_diff",
     "extract": "date_part",
     "json_extract_scalar": "json_extract_string",
+    "parse_json": "json",
     "timestamp_trunc": "date_trunc",
 }
 _GENERIC_FUNCTION_ALIASES = {
+    "array_size": "array_length",
     "json_extract_scalar": "json_extract_string",
+    "list_length": "array_length",
+    "parse_json": "json",
 }
 _GENERIC_FUNCTIONS = frozenset(
     {
+        "array_length",
         "date_add",
         "date_diff",
         "date_part",
         "date_sub",
         "date_trunc",
+        "json",
+        "json_array",
         "json_extract",
         "json_extract_scalar",
         "json_extract_string",
+        "json_object",
         "list_extract",
         "list_value",
+        "map",
         "map_extract",
         "map_keys",
         "map_values",
@@ -2006,6 +2426,11 @@ _NAMED_FUNCTIONS = _GENERIC_FUNCTIONS
 
 
 def _duckdb_type_for_column(column_type: ColumnType | None) -> DuckDBPyType | None:
+    if column_type is None:
+        return None
+    mapping = complex_type_mapping(column_type)
+    if mapping is not None:
+        return duckdb_type_for_column_type(mapping.duckdb_type)
     return duckdb_type_for_column_type(column_type)
 
 

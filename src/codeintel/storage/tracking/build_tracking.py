@@ -619,9 +619,7 @@ class BuildTracking:
                     expression=exp.Placeholder(),
                 )
             )
-            .order_by(
-                exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True)
-            )
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True))
             .limit(exp.Placeholder())
         )
         results = self._con.execute(render_sql_duckdb(query), [repo, limit]).fetchall()

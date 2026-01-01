@@ -218,10 +218,8 @@ class PluginExecutionContext:
 
     Resource Access
     ---------------
-    Use `ctx.require(ProviderType)` to access resources:
-
-    - For graphs: `ctx.require(GraphResource)` - Graph data access
-    - For analytics: `ctx.require(GraphProvider)` - Graph runtime access
+    Use `ctx.require(ProviderType)` to access registered resources such as
+    catalog providers or schema observers.
 
     Configuration
     -------------
@@ -444,7 +442,7 @@ class PluginExecutionContextBuilder:
     Example
     -------
     >>> builder = PluginExecutionContextBuilder(gateway, snapshot, run_id)
-    >>> builder = builder.with_resource(GraphResource, graph_resource)
+    >>> builder = builder.with_resource(CatalogService, CatalogService(catalog))
     >>> ctx = builder.build()
     """
 

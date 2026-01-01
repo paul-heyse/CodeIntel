@@ -15,7 +15,6 @@ import networkx as nx
 from duckdb import Error as DuckDBError
 
 from codeintel.build.graphs.engine.protocol import GraphEngine, GraphKind
-from codeintel.build.graphs.resources.graph_provider import GraphRuntimeLike
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from tests._helpers.fixtures.graphs import (
     DEFAULT_SPOKES,
@@ -143,7 +142,7 @@ class GraphCallRecorder:
 
 
 @dataclass(init=False)
-class GraphRuntimeDouble(GraphRuntimeLike):
+class GraphRuntimeDouble:
     """Graph runtime/engine stand-in with DB-backed loading and call recording."""
 
     gateway: StorageGateway | None = None

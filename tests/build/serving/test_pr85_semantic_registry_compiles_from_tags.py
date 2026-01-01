@@ -5,9 +5,10 @@ from __future__ import annotations
 import hamilton.driver as h_driver
 
 from codeintel.build.hamilton.native.views import view_outputs
-from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_driver
+from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.serving.semantic.registry_compiler import compile_semantic_registry
 from tests._helpers.assertions.expectation_assertions import expect_true
 
 
@@ -28,5 +29,8 @@ def test_semantic_registry_compiles_from_hamilton_tags() -> None:
         }
     )
 
-    compiled = compile_semantic_registry_from_driver(schema_provider=provider, dr=driver)
+    compiled = compile_semantic_registry(
+        schema_provider=provider,
+        tag_query=TagQuery(driver),
+    )
     expect_true(any(v.get("id") == "function.summary" for v in compiled.views))

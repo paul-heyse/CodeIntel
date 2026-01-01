@@ -22,9 +22,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.graphs.resources.storage import StorageResource
 from codeintel.core.catalog import CatalogService, FunctionCatalog, FunctionSpan
-from codeintel.core.resources import ResourceRegistry
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
@@ -257,32 +255,6 @@ def function_span_factory() -> Callable[..., FunctionSpan]:
         )
 
     return _build
-
-
-@pytest.fixture
-def storage_resource(graph_gateway: StorageGateway, tmp_path: Path) -> StorageResource:
-    """Provide a reusable StorageResource instance for graph tests.
-
-    Returns
-    -------
-    StorageResource
-        Storage resource bound to the graph gateway and repo root.
-    """
-    return StorageResource(gateway=graph_gateway, _repo_root=tmp_path)
-
-
-@pytest.fixture
-def storage_registry(storage_resource: StorageResource) -> ResourceRegistry:
-    """Provide a registry pre-loaded with StorageResource.
-
-    Returns
-    -------
-    ResourceRegistry
-        Registry containing the storage resource provider.
-    """
-    registry = ResourceRegistry()
-    registry.register_provider(storage_resource)
-    return registry
 
 
 @pytest.fixture

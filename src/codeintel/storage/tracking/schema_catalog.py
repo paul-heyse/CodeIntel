@@ -343,11 +343,7 @@ def load_table_schema_from_connection(
         exp.select(exp.column("schema_json", table="v"))
         .from_(registry)
         .join(versions, on=join_versions)
-        .where(
-            _combine_conditions(
-                base_conditions + [_inferred_registry_condition("registry")]
-            )
-        )
+        .where(_combine_conditions([*base_conditions, _inferred_registry_condition("registry")]))
     )
     row = con.execute(render_sql_duckdb(inferred_query), [table_key]).fetchone()
     if row is None:
@@ -854,7 +850,9 @@ class SchemaCatalogTracking:
                         expression=exp.Placeholder(),
                     )
                 )
-                .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("observed_at")), desc=True))
+                .order_by(
+                    exp.Ordered(this=exp.Column(this=exp.to_identifier("observed_at")), desc=True)
+                )
                 .limit(exp.Literal.number(1))
             )
             row = self._con.execute(render_sql_duckdb(query), [table_key]).fetchone()
@@ -949,7 +947,9 @@ class SchemaCatalogTracking:
                     expression=exp.Placeholder(),
                 )
             )
-            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("observed_at")), desc=True))
+            .order_by(
+                exp.Ordered(this=exp.Column(this=exp.to_identifier("observed_at")), desc=True)
+            )
             .limit(exp.Placeholder())
         )
         rows = self._con.execute(render_sql_duckdb(query), [table_key, limit]).fetchall()
@@ -960,41 +960,29 @@ class SchemaCatalogTracking:
             summaries.append(_decode_optional_json_dict(summary_raw))
         return tuple(summaries)
 
-    def drift_summary_report(self, *, limit: int = 50) -> dict[str, object]:
-        """Return a summary of recent schema drift observations.
-
-        Returns
-        -------
-        dict[str, object]
-            Aggregate drift summary across recent observations.
-        """
-        observations_ref = meta_table_ref("metadata.schema_observations")
-        total_query = exp.select(
-            exp.Count(this=exp.Distinct(expressions=[exp.Column(this=exp.to_identifier("table_key"))]))
+    def _distinct_table_count(
+        self,
+        *,
+        observations_ref: str,
+        where_expr: exp.Expression | None = None,
+    ) -> int:
+        query = exp.select(
+            exp.Count(
+                this=exp.Distinct(expressions=[exp.Column(this=exp.to_identifier("table_key"))])
+            )
         ).from_(table_expr_from_ref(observations_ref))
-        total_row = self._con.execute(render_sql_duckdb(total_query)).fetchone()
-        total_tables = int(total_row[0]) if total_row and total_row[0] is not None else 0
+        if where_expr is not None:
+            query = query.where(where_expr)
+        row = self._con.execute(render_sql_duckdb(query)).fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
 
-        drift_condition = exp.Not(
-            this=exp.Is(
-                this=exp.Column(this=exp.to_identifier("drift_summary")),
-                expression=exp.Null(),
-            )
-        )
-        drift_query = (
-            exp.select(
-                exp.Count(
-                    this=exp.Distinct(
-                        expressions=[exp.Column(this=exp.to_identifier("table_key"))]
-                    )
-                )
-            )
-            .from_(table_expr_from_ref(observations_ref))
-            .where(drift_condition)
-        )
-        drift_row = self._con.execute(render_sql_duckdb(drift_query)).fetchone()
-        drift_tables = int(drift_row[0]) if drift_row and drift_row[0] is not None else 0
-
+    def _latest_drift_rows(
+        self,
+        *,
+        observations_ref: str,
+        drift_condition: exp.Expression,
+        limit: int,
+    ) -> list[tuple[object, object, object]]:
         row_number_expr = exp.alias_(
             exp.Window(
                 this=exp.RowNumber(),
@@ -1045,8 +1033,12 @@ class SchemaCatalogTracking:
             )
             .limit(exp.Placeholder())
         )
-        rows = self._con.execute(render_sql_duckdb(query), [limit]).fetchall()
+        return self._con.execute(render_sql_duckdb(query), [limit]).fetchall()
 
+    @staticmethod
+    def _summarize_drift_rows(
+        rows: list[tuple[object, object, object]],
+    ) -> tuple[list[dict[str, object]], int, int, int]:
         latest: list[dict[str, object]] = []
         missing_total = 0
         extra_total = 0
@@ -1059,13 +1051,47 @@ class SchemaCatalogTracking:
             missing_total += len(missing) if isinstance(missing, list) else 0
             extra_total += len(extra) if isinstance(extra, list) else 0
             type_change_total += len(type_changes) if isinstance(type_changes, list) else 0
+            if isinstance(observed_at, datetime):
+                observed_at_value: str | None = observed_at.isoformat()
+            elif isinstance(observed_at, str):
+                observed_at_value = observed_at
+            else:
+                observed_at_value = None
             latest.append(
                 {
                     "table_key": str(table_key),
                     "drift_summary": summary,
-                    "observed_at": observed_at.isoformat() if observed_at is not None else None,
+                    "observed_at": observed_at_value,
                 }
             )
+        return latest, missing_total, extra_total, type_change_total
+
+    def drift_summary_report(self, *, limit: int = 50) -> dict[str, object]:
+        """Return a summary of recent schema drift observations.
+
+        Returns
+        -------
+        dict[str, object]
+            Aggregate drift summary across recent observations.
+        """
+        observations_ref = meta_table_ref("metadata.schema_observations")
+        drift_condition = exp.Not(
+            this=exp.Is(
+                this=exp.Column(this=exp.to_identifier("drift_summary")),
+                expression=exp.Null(),
+            )
+        )
+        total_tables = self._distinct_table_count(observations_ref=observations_ref)
+        drift_tables = self._distinct_table_count(
+            observations_ref=observations_ref,
+            where_expr=drift_condition,
+        )
+        rows = self._latest_drift_rows(
+            observations_ref=observations_ref,
+            drift_condition=drift_condition,
+            limit=limit,
+        )
+        latest, missing_total, extra_total, type_change_total = self._summarize_drift_rows(rows)
 
         return {
             "total_tables": total_tables,
@@ -1270,6 +1296,12 @@ class SchemaCatalogTracking:
         dict[str, object]
             Drift summary comparing Arrow contract metadata to registry metadata.
         """
+        rows = self._contract_drift_rows()
+        if not rows:
+            return _contract_drift_payload(_ContractDriftReport(0, 0, 0, 0, 0, (), (), ()))
+        return self._build_contract_drift_report(rows, limit=limit)
+
+    def _contract_drift_rows(self) -> list[tuple[object, object, object, object]]:
         registry_ref = meta_table_ref("metadata.table_schema_registry")
         versions_ref = meta_table_ref("metadata.schema_versions")
         registry = _aliased_table(registry_ref, "r")
@@ -1289,10 +1321,14 @@ class SchemaCatalogTracking:
             .join(versions, on=join_versions)
             .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
         )
-        rows = self._con.execute(render_sql_duckdb(query)).fetchall()
-        if not rows:
-            return _contract_drift_payload(_ContractDriftReport(0, 0, 0, 0, 0, (), (), ()))
+        return self._con.execute(render_sql_duckdb(query)).fetchall()
 
+    @staticmethod
+    def _build_contract_drift_report(
+        rows: list[tuple[object, object, object, object]],
+        *,
+        limit: int,
+    ) -> dict[str, object]:
         accumulator = _ContractDriftAccumulator()
         for table_key, schema_hash, schema_digest, renderer_cache_raw in rows:
             contract_schema = _schema_from_renderer_cache(renderer_cache_raw)
@@ -1666,12 +1702,12 @@ class SchemaCatalogTracking:
             .from_(table_expr_from_ref(registry_ref))
             .where(
                 _combine_conditions(
-                    base_conditions
-                    + [
+                    [
+                        *base_conditions,
                         exp.EQ(
                             this=exp.Column(this=exp.to_identifier("inference_status")),
                             expression=exp.Literal.string("inferred"),
-                        )
+                        ),
                     ]
                 )
             )
@@ -1687,12 +1723,12 @@ class SchemaCatalogTracking:
             .from_(table_expr_from_ref(registry_ref))
             .where(
                 _combine_conditions(
-                    base_conditions
-                    + [
+                    [
+                        *base_conditions,
                         exp.EQ(
                             this=exp.Column(this=exp.to_identifier("inference_status")),
                             expression=exp.Literal.string("error"),
-                        )
+                        ),
                     ]
                 )
             )

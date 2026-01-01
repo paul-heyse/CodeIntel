@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.build.analytics.profiles.types import (
     CoverageSummary,
     FunctionBaseInfo,
@@ -22,10 +21,6 @@ from codeintel.build.analytics.profiles.types import (
 from codeintel.build.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
-)
-from codeintel.build.analytics.profiles.writer_guard import (
-    PolicyWriterConfig,
-    write_rows_via_policy_backend,
 )
 from codeintel.build.analytics.utilities.type_coercion import (
     int_or_default,
@@ -957,48 +952,3 @@ def build_function_profile_rows(
         }
 
         yield row
-
-
-def build_function_profile_recipe(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    module_table: str = DEFAULT_MODULE_TABLE,
-) -> int:
-    """Compute and persist analytics.function_profile rows.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    snapshot
-        Repository and commit identifiers.
-    module_table
-        Name of the module table to use.
-
-    Returns
-    -------
-    int
-        Number of rows inserted.
-    """
-    inputs = compute_function_profile_inputs(gateway, snapshot)
-    views = FunctionProfileViews(
-        base_by_func=load_function_base_info(inputs, module_table=module_table),
-        risk_by_func=join_function_risk(inputs),
-        coverage_by_func=join_function_coverage(inputs),
-        graph_by_func=summarize_graph_for_function_profile(inputs),
-        effects_by_func=join_function_effects(inputs),
-        contracts_by_func=join_function_contracts(inputs),
-        roles_by_func=join_function_roles(inputs),
-        docs_by_func=join_function_docs(inputs),
-    )
-    rows = list(build_function_profile_rows(inputs, views=views))
-    if not rows:
-        return 0
-
-    config = PolicyWriterConfig(
-        table_key="analytics.function_profile",
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-    return write_rows_via_policy_backend(gateway, rows=rows, config=config)

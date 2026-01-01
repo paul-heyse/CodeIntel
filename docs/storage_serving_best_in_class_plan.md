@@ -43,8 +43,9 @@
   over LazyFrames sourced from Arrow datasets via `serving/semantic/datasets.py`.
 - DuckDB execution: `serving/semantic/engines/duckdb_engine.py` builds a relation plan from AST
   using `serving/semantic/duckdb_relation_builder.py`, and streams Arrow readers.
-- Storage views: `storage/views/sqlglot_views.py` loads `view_sql_map.json` to build SQLGlot view
-  expressions for materialization/inference; lineage sync uses SQLGlot lineage helpers.
+- Storage views: `storage/views/generated_view_builders.py` exposes Hamilton-tagged
+  SQLGlot view builders; view outputs compile plans via
+  `build/hamilton/native/views/view_outputs.py`.
 - Dataset storage: `storage/datasets/arrow_store.py` writes Parquet datasets + manifests; serving
   reads use PyArrow dataset scanners with manifest-derived stats in `serving/semantic/datasets.py`.
 - Metadata: schema contracts/lineage are stored in DuckDB metadata tables and surfaced via
@@ -100,8 +101,8 @@ Deliverables
 - Expanded Polars feature envelope with explicit guardrails.
 
 Work items
-- Make AST the input to Polars compilation:
-  - `src/codeintel/serving/semantic/polars_query_builder.py`
+- Make AST the input to Polars execution (downstream of DuckDB relations):
+  - `src/codeintel/serving/semantic/sqlglot_query_builder.py`
   - `src/codeintel/serving/semantic/engines/polars_engine.py`
 - Expand AST support coverage:
   - Filters, ordering, limits, projections, basic functions
@@ -251,9 +252,8 @@ Deliverables
 Work items
 - Remove unused SQL view map or legacy adapters:
   - `src/codeintel/storage/views/view_sql_map.json`
-  - `src/codeintel/storage/views/sqlglot_views.py` (if replaced)
-- Remove redundant spec-based query paths if AST is canonical:
-  - `src/codeintel/serving/semantic/polars_query_builder.py`
+  - `src/codeintel/storage/views/view_registry.py` (removed)
+  - `src/codeintel/storage/views/materialization.py` (removed)
 
 Acceptance criteria
 - No raw SQL view templating remains in serving paths.

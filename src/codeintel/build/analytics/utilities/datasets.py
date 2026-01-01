@@ -170,32 +170,6 @@ def insert_analytics_rows(
     return backend.bulk_insert_mappings(contract.table_key, rows) if rows else 0
 
 
-def write_analytics_rows(
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[Mapping[str, object]],
-    *,
-    delete_scope: DeleteScope | None = None,
-    scope: str | None = None,
-) -> int:
-    """Validate and write analytics rows using the canonical contract registry.
-
-    Returns
-    -------
-    int
-        Number of rows inserted.
-    """
-    contract = get_analytics_dataset_contract(gateway, table_key)
-    validated_rows = validate_contract_rows(contract.table_key, rows, gateway=gateway)
-    return insert_analytics_rows(
-        gateway,
-        contract,
-        validated_rows,
-        delete_scope=delete_scope,
-        scope=scope,
-    )
-
-
 def validate_contract_rows(
     table_key: str,
     rows: Sequence[Mapping[str, object]],
@@ -268,5 +242,4 @@ __all__ = [
     "get_function_ast_features_contract",
     "insert_analytics_rows",
     "validate_contract_rows",
-    "write_analytics_rows",
 ]

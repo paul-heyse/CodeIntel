@@ -4,7 +4,7 @@ This subpackage provides:
 
 - ``types``: Shared type definitions (TestRecord, IoFlags, etc.)
 - ``builder``: Profile assembly and behavioral coverage building
-- ``rows``: Row assembly and database writers
+- ``rows``: Row assembly helpers
 
 Note: To avoid circular imports, ``builder`` and ``rows`` modules are not
 re-exported here. Import them directly:

@@ -8,6 +8,7 @@ on unchecked casts.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Iterator, Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -27,6 +28,8 @@ __all__ = [
     "coerce_int",
     "coerce_optional_float",
     "coerce_optional_int",
+    "iter_records_from_arrow_reader",
+    "records_from_arrow_batch",
     "records_from_arrow_reader",
     "records_from_arrow_table",
     "records_from_relation",
@@ -167,13 +170,49 @@ def coerce_optional_int(value: object | None, *, ctx: str) -> int | None:
     return coerce_int(value, ctx=ctx)
 
 
-def records_from_arrow_table(table: pa.Table) -> list[dict[str, object]]:
+def records_from_arrow_batch(
+    batch: pa.RecordBatch,
+    *,
+    columns: Sequence[str] | None = None,
+) -> list[dict[str, object]]:
+    """Convert an Arrow record batch to row dictionaries with normalized values.
+
+    Parameters
+    ----------
+    batch
+        Arrow record batch to normalize.
+    columns
+        Optional column subset/order to apply before conversion.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        List of row dictionaries with missing values set to None.
+    """
+    if batch.num_rows == 0:
+        return []
+    frame = pl.from_arrow(batch)
+    if isinstance(frame, pl.Series):
+        frame = frame.to_frame()
+    if columns is not None:
+        frame = frame.select(list(columns))
+    records = cast("list[dict[str, object]]", frame.to_dicts())
+    return _normalize_records(records)
+
+
+def records_from_arrow_table(
+    table: pa.Table,
+    *,
+    columns: Sequence[str] | None = None,
+) -> list[dict[str, object]]:
     """Convert an Arrow table to row dictionaries with normalized values.
 
     Parameters
     ----------
     table
         Arrow table to normalize.
+    columns
+        Optional column subset/order to apply before conversion.
 
     Returns
     -------
@@ -185,33 +224,56 @@ def records_from_arrow_table(table: pa.Table) -> list[dict[str, object]]:
     frame = pl.from_arrow(table)
     if isinstance(frame, pl.Series):
         frame = frame.to_frame()
+    if columns is not None:
+        frame = frame.select(list(columns))
     records = cast("list[dict[str, object]]", frame.to_dicts())
     return _normalize_records(records)
 
 
-def records_from_arrow_reader(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
+def iter_records_from_arrow_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    columns: Sequence[str] | None = None,
+) -> Iterator[dict[str, object]]:
+    """Yield row dictionaries from a RecordBatchReader with normalized values.
+
+    Parameters
+    ----------
+    reader
+        Arrow record batch reader to normalize.
+    columns
+        Optional column subset/order to apply before conversion.
+
+    Yields
+    ------
+    dict[str, object]
+        Normalized row dictionaries with missing values set to None.
+    """
+    batches: Iterable[pa.RecordBatch] = reader
+    for batch in batches:
+        yield from records_from_arrow_batch(batch, columns=columns)
+
+
+def records_from_arrow_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    columns: Sequence[str] | None = None,
+) -> list[dict[str, object]]:
     """Convert an Arrow RecordBatchReader to row dictionaries with normalized values.
 
     Parameters
     ----------
     reader
         Arrow record batch reader to normalize.
+    columns
+        Optional column subset/order to apply before conversion.
 
     Returns
     -------
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    records: list[dict[str, object]] = []
-    for batch in reader:
-        if batch.num_rows == 0:
-            continue
-        frame = pl.from_arrow(batch)
-        if isinstance(frame, pl.Series):
-            frame = frame.to_frame()
-        batch_records = cast("list[dict[str, object]]", frame.to_dicts())
-        records.extend(_normalize_records(batch_records))
-    return records
+    return list(iter_records_from_arrow_reader(reader, columns=columns))
 
 
 def records_from_relation(relation: DuckDBRelation) -> list[dict[str, object]]:

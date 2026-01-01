@@ -41,7 +41,12 @@ from codeintel.storage.duckdb_types import (
 )
 from codeintel.storage.helpers.table_key import is_valid_table_key
 from codeintel.storage.query_results import coerce_int, coerce_optional_float
-from codeintel.storage.sqlglot_tools import extract_table_refs
+from codeintel.storage.sqlglot_tools import (
+    SELECT_ONLY_DISALLOWED_NODES,
+    AstCapabilityError,
+    ensure_ast_capability,
+    extract_table_refs,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -106,31 +111,6 @@ class UnsafeSqlError(ValueError):
         super().__init__(msg)
         self.reason = reason
         self.detail = detail
-
-
-_DISALLOWED_SQL_NODES: tuple[type[exp.Expression], ...] = (
-    exp.Analyze,
-    exp.Attach,
-    exp.Alter,
-    exp.Command,
-    exp.Copy,
-    exp.Create,
-    exp.Delete,
-    exp.Detach,
-    exp.Drop,
-    exp.Grant,
-    exp.Insert,
-    exp.Merge,
-    exp.Pragma,
-    exp.Refresh,
-    exp.Revoke,
-    exp.Rollback,
-    exp.Commit,
-    exp.Set,
-    exp.Transaction,
-    exp.Use,
-    exp.Update,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,14 +248,21 @@ def assert_single_select_statement(sql: str) -> exp.Expression:
     if root is None:
         reason = "parse_failed"
         raise UnsafeSqlError(reason)
-    for node_type in _DISALLOWED_SQL_NODES:
-        if root.find(node_type) is not None:
-            reason = "disallowed_operation"
-            raise UnsafeSqlError(reason)
 
     if not root.find(exp.Select) and not isinstance(root, (exp.Select, exp.Union, exp.With)):
         reason = "not_select"
         raise UnsafeSqlError(reason)
+
+    try:
+        ensure_ast_capability(
+            root,
+            disallowed_nodes=SELECT_ONLY_DISALLOWED_NODES,
+            allow_aggregates=True,
+            log_context="storage_sql_ingress",
+        )
+    except AstCapabilityError as exc:
+        reason = "disallowed_operation"
+        raise UnsafeSqlError(reason, detail=str(exc)) from exc
 
     return root
 

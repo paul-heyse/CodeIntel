@@ -34,6 +34,7 @@ from codeintel.core.columnar import (
 )
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
+from codeintel.storage.duckdb_explain import normalize_explain_output
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.queries.expressions import snapshot_filter
 from codeintel.storage.query_results import coerce_int
@@ -375,10 +376,11 @@ class Warehouse:
                 raise
         relation = relation.limit(limited)
         if not analyze:
-            return relation.explain()
+            return normalize_explain_output(relation.explain()) or ""
         self.gateway.policy.execute_sql("PRAGMA enable_profiling")
         try:
-            return relation.explain(ExplainType.ANALYZE)
+            plan = relation.explain(ExplainType.ANALYZE)
+            return normalize_explain_output(plan) or ""
         finally:
             self.gateway.policy.execute_sql("PRAGMA disable_profiling")
 

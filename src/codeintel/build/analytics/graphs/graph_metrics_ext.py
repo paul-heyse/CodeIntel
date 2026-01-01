@@ -38,12 +38,11 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.graphs.orchestrator import (
         GraphViews,
     )
-    from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
+    from codeintel.build.graphs.runtime import GraphRuntimeOptions
     from codeintel.build.graphs.runtime.context import GraphContext
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
     )
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -221,7 +220,6 @@ def _function_metric_rows(
 _FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, GraphMetricsFunctionsExtRow] = (
     ExtendedMetricsConfig(
         table_key="analytics.graph_metrics_functions_ext",
-        get_source_graph=lambda rt: rt.ensure_call_graph(),
         filter_graph=lambda f, g: f.filter_call_graph(g),
         build_context=_resolve_function_context,
         build_slices=_function_metric_slices,
@@ -231,23 +229,23 @@ _FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, GraphMetricsFun
 
 
 def build_graph_metrics_functions_ext_rows(
-    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    call_graph: nx.DiGraph,
+    runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
 ) -> list[GraphMetricsFunctionsExtRow]:
     """Populate analytics.graph_metrics_functions_ext with additional centralities.
 
     Parameters
     ----------
-    gateway
-        StorageGateway providing the DuckDB connection used for reads and writes.
     repo
         Repository identifier anchoring the metrics.
     commit
         Commit hash anchoring the metrics snapshot.
+    call_graph
+        Call graph to analyze for extended metrics.
     runtime
         Optional runtime options including cached graphs and backend selection.
     filters
@@ -261,7 +259,8 @@ def build_graph_metrics_functions_ext_rows(
     request = ExtendedMetricsRequest(
         repo=repo,
         commit=commit,
+        graph=call_graph,
         runtime=runtime,
         filters=filters,
     )
-    return build_extended_metrics_rows(gateway, _FUNCTION_EXT_CONFIG, request)
+    return build_extended_metrics_rows(_FUNCTION_EXT_CONFIG, request)

@@ -27,7 +27,5 @@ def test_no_legacy_build_imports_outside_allowed() -> None:
         if any(needle in text for needle in needles):
             violations.append(rel)
     if violations:
-        message = "Legacy build imports outside allowed packages:\n" + "\n".join(
-            sorted(violations)
-        )
+        message = "Legacy build imports outside allowed packages:\n" + "\n".join(sorted(violations))
         pytest.fail(message)

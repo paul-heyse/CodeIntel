@@ -1,1 +1,1 @@
-"""Tests for analytics resources module."""
+"""Tests for resource registry helpers."""

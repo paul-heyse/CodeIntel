@@ -10,10 +10,9 @@ Plugins (graphs/plugins/):
 - metrics: Graph metric computation plugins
 - validation: Graph validation plugin
 
-Hexagonal Architecture (Ports, Compute, Resources):
+Hexagonal Architecture (Ports, Compute):
 - ports/: Protocol interfaces abstracting I/O (StoragePort, CatalogPort, etc.)
 - compute/: Pure stateless computation functions (no I/O)
-- resources/: DI container and resource providers
 
 Consolidated Domain Packages:
 - core.catalog: Function catalog (spans, metadata, service)
@@ -42,7 +41,6 @@ Architecture Notes
 The graphs package uses hexagonal architecture:
 
 - Plugins are the orchestration layer, composing resources and compute functions
-- Resources provide injectable access to I/O (storage, engine, catalog)
 - Compute functions are pure and stateless, taking data and returning data
 - Ports define protocol interfaces for abstraction
 
@@ -59,9 +57,8 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.build.graphs import compute, ports, resources
+    from codeintel.build.graphs import compute, ports
     from codeintel.build.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
-    from codeintel.build.graphs.resources import ResourceProvider
     from codeintel.core.catalog import CatalogService, FunctionSpan
     from codeintel.core.resources import ResourceRegistry
 
@@ -71,11 +68,9 @@ __all__ = [
     "GraphEngine",
     "GraphKind",
     "NxGraphEngine",
-    "ResourceProvider",
     "ResourceRegistry",
     "compute",
     "ports",
-    "resources",
 ]
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
@@ -84,7 +79,6 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "GraphEngine": ("codeintel.build.graphs.engine", "GraphEngine"),
     "GraphKind": ("codeintel.build.graphs.engine", "GraphKind"),
     "NxGraphEngine": ("codeintel.build.graphs.engine", "NxGraphEngine"),
-    "ResourceProvider": ("codeintel.build.graphs.resources", "ResourceProvider"),
     "ResourceRegistry": ("codeintel.core.resources", "ResourceRegistry"),
 }
 
@@ -107,7 +101,7 @@ def __getattr__(name: str) -> object:
     AttributeError
         If the attribute is not supported by this package.
     """
-    if name in {"compute", "ports", "resources"}:
+    if name in {"compute", "ports"}:
         return importlib.import_module(f"{__name__}.{name}")
     lazy = _LAZY_ATTRS.get(name)
     if lazy is None:

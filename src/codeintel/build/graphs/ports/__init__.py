@@ -12,17 +12,17 @@ Data Types
 
 Usage
 -----
-For dependency injection, use the resource classes from ``graphs.resources``
-or service classes from ``core.catalog`` directly.
+For dependency injection, use service classes from ``core.catalog`` or
+`StorageGateway` implementations directly.
 
 Example
 -------
 ```python
-from codeintel.build.graphs.resources import StorageResource
 from codeintel.core.catalog import CatalogService
+from codeintel.storage.gateway import StorageGateway
 
 
-def process(storage: StorageResource, catalog: CatalogService) -> None: ...
+def process(storage: StorageGateway, catalog: CatalogService) -> None: ...
 ```
 """
 

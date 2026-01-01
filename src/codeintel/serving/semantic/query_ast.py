@@ -80,6 +80,8 @@ def build_serving_query(*, spec: SemanticQuerySpec) -> ServingQuery:
     ensure_ast_capability(
         canonical,
         allowed_anonymous_functions=_ALLOWED_ANONYMOUS_FUNCTIONS,
+        allow_aggregates=False,
+        log_context="serving_query_ast",
     )
     validate_query_ast(
         ast=canonical,

@@ -70,6 +70,11 @@ def rows_to_frame(
     -------
     polars.LazyFrame
         LazyFrame with schema-ordered columns.
+
+    Raises
+    ------
+    ValueError
+        If tuple rows are provided without an explicit column order.
     """
     ordered_columns = _resolved_columns(table_key=table_key, columns=columns)
     if not rows:

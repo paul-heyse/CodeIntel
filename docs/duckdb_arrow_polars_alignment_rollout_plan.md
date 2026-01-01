@@ -190,7 +190,6 @@ Scope:
 Files:
 - `src/codeintel/serving/semantic/engines/polars_engine.py`
 - `src/codeintel/serving/semantic/kernel.py`
-- `src/codeintel/serving/semantic/polars_query_builder.py`
 
 Exit criteria:
 - Debug mode provides plan introspection without affecting outputs.
@@ -213,7 +212,6 @@ Scope:
 - Apply `set_sorted` when manifest exposes reliable sort keys.
 
 Files:
-- `src/codeintel/serving/semantic/polars_query_builder.py`
 - `src/codeintel/build/hamilton/transforms/tabular_steps.py`
 - `src/codeintel/serving/semantic/engines/polars_engine.py`
 

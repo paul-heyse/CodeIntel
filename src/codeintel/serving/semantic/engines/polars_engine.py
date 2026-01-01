@@ -5,13 +5,14 @@ from __future__ import annotations
 import inspect
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
 from codeintel.serving.semantic.engines.protocol import QueryExplain
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
+from codeintel.storage.duckdb_explain import normalize_explain_output
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -44,7 +45,23 @@ except ImportError:  # pragma: no cover
 LOG = logging.getLogger(__name__)
 
 
+_DEFAULT_ENGINE: PolarsEngineType = "auto"
 _STREAMING_ENGINE: PolarsEngineType = "streaming"
+
+
+@dataclass(frozen=True, slots=True)
+class _PolarsExecutionConfig:
+    engine: PolarsEngineType
+    batch_size: int
+    streaming: bool
+    streaming_fallback: bool
+    sink_batches: bool
+    collect_all: bool
+    profile: bool
+    inspect: bool
+    collect_schema: bool
+    unify_dictionaries: bool
+    query_opt_flags: PolarsQueryOptFlags | None
 
 
 class PolarsQueryBuilderError(ValueError):
@@ -57,8 +74,7 @@ class PolarsExecutablePlan:
 
     relation: DuckDBPyRelation
     lazyframe: PolarsLazyFrame
-    settings: ServingSettings
-    query_opt_flags: PolarsQueryOptFlags | None = None
+    execution: _PolarsExecutionConfig
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader for the plan results.
@@ -81,18 +97,21 @@ class PolarsExecutablePlan:
         if pl is None:  # pragma: no cover
             msg = "polars is required for Polars query execution"
             raise PolarsQueryBuilderError(msg)
-        batches = _collect_batches(
+        execution = self.execution
+        batches = _collect_frames(
             self.lazyframe,
             batch_size=batch_size,
-            settings=self.settings,
-            query_opt_flags=self.query_opt_flags,
+            execution=execution,
         )
-        schema = self.lazyframe.collect_schema().to_arrow()
+        schema = self.lazyframe.collect_schema()
+        if execution.collect_schema:
+            _log_schema(schema)
+        arrow_schema = schema.to_arrow()
         record_batches = _record_batches_from_frames(
             batches,
-            unify_dictionaries=self.settings.polars_unify_dictionaries,
+            unify_dictionaries=execution.unify_dictionaries,
         )
-        return pa.RecordBatchReader.from_batches(schema, record_batches)
+        return pa.RecordBatchReader.from_batches(arrow_schema, record_batches)
 
     def to_table(self) -> pa.Table:
         """Execute the plan and return a fully materialized Arrow table.
@@ -111,13 +130,27 @@ class PolarsExecutablePlan:
         if pl is None:  # pragma: no cover
             msg = "polars is required for Polars query execution"
             raise PolarsQueryBuilderError(msg)
-        frame = _collect_frame(
-            self.lazyframe,
-            settings=self.settings,
-            query_opt_flags=self.query_opt_flags,
-        )
+        execution = self.execution
+        if execution.streaming:
+            batches = _collect_frames(
+                self.lazyframe,
+                batch_size=execution.batch_size,
+                execution=execution,
+            )
+            schema = self.lazyframe.collect_schema()
+            if execution.collect_schema:
+                _log_schema(schema)
+            arrow_schema = schema.to_arrow()
+            record_batches = list(
+                _record_batches_from_frames(
+                    batches,
+                    unify_dictionaries=execution.unify_dictionaries,
+                )
+            )
+            return pa.Table.from_batches(record_batches, schema=arrow_schema)
+        frame = _collect_frame(self.lazyframe, execution=execution)
         table = frame.to_arrow()
-        if self.settings.polars_unify_dictionaries:
+        if execution.unify_dictionaries:
             table = _unify_dictionaries(table)
         return table
 
@@ -137,7 +170,8 @@ class PolarsExecutablePlan:
         if pl is None:  # pragma: no cover
             msg = "polars is required for Polars query execution"
             raise PolarsQueryBuilderError(msg)
-        return QueryExplain(sql=self.relation.sql_query(), plan=self.relation.explain())
+        plan = normalize_explain_output(self.relation.explain())
+        return QueryExplain(sql=self.relation.sql_query(), plan=plan)
 
     @staticmethod
     def cleanup() -> None:
@@ -157,30 +191,48 @@ def _record_batches_from_frames(
         yield from table.to_batches()
 
 
-def _collect_batches(
+def _execution_config(
+    *,
+    settings: ServingSettings,
+    query_opt_flags: PolarsQueryOptFlags | None,
+) -> _PolarsExecutionConfig:
+    engine = _STREAMING_ENGINE if settings.polars_streaming else _DEFAULT_ENGINE
+    return _PolarsExecutionConfig(
+        engine=engine,
+        batch_size=settings.export_batch_size,
+        streaming=settings.polars_streaming,
+        streaming_fallback=settings.polars_streaming_fallback,
+        sink_batches=settings.polars_sink_batches,
+        collect_all=settings.polars_collect_all,
+        profile=settings.polars_profile,
+        inspect=settings.polars_inspect,
+        collect_schema=settings.polars_collect_schema,
+        unify_dictionaries=settings.polars_unify_dictionaries,
+        query_opt_flags=query_opt_flags,
+    )
+
+
+def _fallback_execution(execution: _PolarsExecutionConfig) -> _PolarsExecutionConfig:
+    if not execution.streaming:
+        return execution
+    return replace(execution, streaming=False, engine=_DEFAULT_ENGINE)
+
+
+def _collect_frames(
     lazyframe: PolarsLazyFrame,
     *,
     batch_size: int,
-    settings: ServingSettings,
-    query_opt_flags: PolarsQueryOptFlags | None,
+    execution: _PolarsExecutionConfig,
 ) -> Iterable[PolarsDataFrame]:
-    def _collect(*, streaming: bool) -> Iterable[PolarsDataFrame]:
-        _maybe_inspect(lazyframe, settings=settings)
-        kwargs = _collect_batch_kwargs(
-            lazyframe.collect_batches,
-            batch_size=batch_size,
-            streaming=streaming,
-            query_opt_flags=query_opt_flags,
-        )
-        collect_batches = cast("Callable[..., object]", lazyframe.collect_batches)
-        result = collect_batches(**kwargs)
-        return cast("Iterable[PolarsDataFrame]", result)
-
-    if settings.polars_streaming:
+    if execution.streaming:
         try:
-            return _collect(streaming=True)
+            return _collect_batches(
+                lazyframe,
+                batch_size=batch_size,
+                execution=execution,
+            )
         except PolarsError as exc:
-            if settings.polars_streaming_fallback:
+            if execution.streaming_fallback:
                 LOG.warning(
                     "Polars streaming collect_batches failed; falling back to eager: %s",
                     exc,
@@ -189,45 +241,74 @@ def _collect_batches(
                     engine="polars",
                     context="collect_batches_fallback",
                 )
-                return _collect(streaming=False)
+                fallback = _fallback_execution(execution)
+                return (_collect_frame(lazyframe, execution=fallback),)
             raise
-    return _collect(streaming=False)
+    return (_collect_frame(lazyframe, execution=execution),)
+
+
+def _collect_batches(
+    lazyframe: PolarsLazyFrame,
+    *,
+    batch_size: int,
+    execution: _PolarsExecutionConfig,
+) -> Iterable[PolarsDataFrame]:
+    _log_plan_diagnostics(lazyframe, execution=execution)
+    if execution.sink_batches:
+        return _sink_batches(
+            lazyframe,
+            batch_size=batch_size,
+            execution=execution,
+        )
+    return _collect_batches_direct(
+        lazyframe,
+        batch_size=batch_size,
+        execution=execution,
+    )
+
+
+def _collect_batches_direct(
+    lazyframe: PolarsLazyFrame,
+    *,
+    batch_size: int,
+    execution: _PolarsExecutionConfig,
+) -> Iterable[PolarsDataFrame]:
+    kwargs = _collect_batch_kwargs(
+        lazyframe.collect_batches,
+        batch_size=batch_size,
+        execution=execution,
+    )
+    collect_batches = cast("Callable[..., object]", lazyframe.collect_batches)
+    result = collect_batches(**kwargs)
+    return cast("Iterable[PolarsDataFrame]", result)
 
 
 def _collect_frame(
     lazyframe: PolarsLazyFrame,
     *,
-    settings: ServingSettings,
-    query_opt_flags: PolarsQueryOptFlags | None,
+    execution: _PolarsExecutionConfig,
 ) -> PolarsDataFrame:
-    def _collect(*, streaming: bool) -> PolarsDataFrame:
-        _maybe_inspect(lazyframe, settings=settings)
-        kwargs = _collect_kwargs(
-            lazyframe.collect,
-            streaming=streaming,
-            query_opt_flags=query_opt_flags,
-            profile=settings.polars_profile,
-        )
-        collect = cast("Callable[..., object]", lazyframe.collect)
-        result = collect(**kwargs)
-        return _unwrap_profile_result(result)
-
-    if settings.polars_streaming:
-        try:
-            return _collect(streaming=True)
-        except PolarsError as exc:
-            if settings.polars_streaming_fallback:
-                LOG.warning(
-                    "Polars streaming collect failed; falling back to eager: %s",
-                    exc,
-                )
-                warn_eager_materialization(
-                    engine="polars",
-                    context="collect_fallback",
-                )
-                return _collect(streaming=False)
-            raise
-    return _collect(streaming=False)
+    _log_plan_diagnostics(lazyframe, execution=execution)
+    if execution.collect_all and execution.profile:
+        LOG.warning("polars_collect_all ignored because polars_profile is enabled")
+    if execution.collect_all and pl is not None and not execution.profile:
+        collect_all = getattr(pl, "collect_all", None)
+        if callable(collect_all):
+            kwargs = _collect_all_kwargs(
+                collect_all,
+                execution=execution,
+            )
+            result = collect_all([lazyframe], **kwargs)
+            if isinstance(result, list) and result:
+                return cast("PolarsDataFrame", result[0])
+    kwargs = _collect_kwargs(
+        lazyframe.collect,
+        execution=execution,
+        profile=execution.profile,
+    )
+    collect = cast("Callable[..., object]", lazyframe.collect)
+    result = collect(**kwargs)
+    return _unwrap_profile_result(result)
 
 
 def _unwrap_profile_result(result: object) -> PolarsDataFrame:
@@ -245,9 +326,66 @@ def _log_profile(profile: object) -> None:
     LOG.info("polars_profile %s", profile_repr)
 
 
-def _maybe_inspect(lazyframe: PolarsLazyFrame, *, settings: ServingSettings) -> None:
-    if not settings.polars_inspect:
+def _log_plan_diagnostics(
+    lazyframe: PolarsLazyFrame,
+    *,
+    execution: _PolarsExecutionConfig,
+) -> None:
+    if not execution.inspect:
         return
+    _maybe_inspect(lazyframe)
+    explain = _polars_explain(lazyframe, execution=execution)
+    if explain is not None:
+        LOG.debug("polars_explain %s", explain)
+
+
+def _polars_explain(
+    lazyframe: PolarsLazyFrame,
+    *,
+    execution: _PolarsExecutionConfig,
+) -> str | None:
+    explain_fn = getattr(lazyframe, "explain", None)
+    if not callable(explain_fn):
+        return None
+    kwargs = _plan_kwargs(
+        explain_fn,
+        execution=execution,
+        optimized=True,
+    )
+    try:
+        result = explain_fn(**kwargs)
+    except PolarsError:
+        return None
+    return result if isinstance(result, str) else None
+
+
+def _plan_kwargs(
+    func: object,
+    *,
+    execution: _PolarsExecutionConfig,
+    optimized: bool,
+) -> dict[str, object]:
+    signature = _signature(func)
+    if signature is None:
+        return {}
+    kwargs: dict[str, object] = {}
+    if "optimized" in signature.parameters:
+        kwargs["optimized"] = optimized
+    _apply_engine_kwargs(
+        signature,
+        kwargs=kwargs,
+        engine=execution.engine,
+        streaming=execution.streaming,
+    )
+    _apply_query_opt_kwargs(
+        signature,
+        kwargs=kwargs,
+        query_opt_flags=execution.query_opt_flags,
+    )
+    return kwargs
+
+
+def _maybe_inspect(lazyframe: PolarsLazyFrame) -> None:
     inspect_fn = getattr(lazyframe, "inspect", None)
     if not callable(inspect_fn):
         return
@@ -261,54 +399,104 @@ def _collect_batch_kwargs(
     func: object,
     *,
     batch_size: int,
-    streaming: bool,
-    query_opt_flags: PolarsQueryOptFlags | None,
+    execution: _PolarsExecutionConfig,
 ) -> dict[str, object]:
     signature = _signature(func)
     if signature is None:
         return {}
     kwargs: dict[str, object] = {}
-    if "chunk_size" in signature.parameters:
-        kwargs["chunk_size"] = batch_size
-    elif "batch_size" in signature.parameters:
-        kwargs["batch_size"] = batch_size
-    if "engine" in signature.parameters:
-        if streaming:
-            kwargs["engine"] = _STREAMING_ENGINE
-    elif "streaming" in signature.parameters:
-        kwargs["streaming"] = streaming
-    if query_opt_flags is not None:
-        if "optimization_flags" in signature.parameters:
-            kwargs["optimization_flags"] = query_opt_flags
-        elif "query_opt_flags" in signature.parameters:
-            kwargs["query_opt_flags"] = query_opt_flags
+    batch_param = _first_supported_param(signature, ("chunk_size", "batch_size"))
+    if batch_param is not None:
+        kwargs[batch_param] = batch_size
+    _apply_engine_kwargs(
+        signature,
+        kwargs=kwargs,
+        engine=execution.engine,
+        streaming=execution.streaming,
+    )
+    _apply_query_opt_kwargs(
+        signature,
+        kwargs=kwargs,
+        query_opt_flags=execution.query_opt_flags,
+    )
     return kwargs
 
 
 def _collect_kwargs(
     func: object,
     *,
-    streaming: bool,
-    query_opt_flags: PolarsQueryOptFlags | None,
+    execution: _PolarsExecutionConfig,
     profile: bool,
 ) -> dict[str, object]:
     signature = _signature(func)
     if signature is None:
         return {}
     kwargs: dict[str, object] = {}
-    if "engine" in signature.parameters:
-        if streaming:
-            kwargs["engine"] = _STREAMING_ENGINE
-    elif "streaming" in signature.parameters:
-        kwargs["streaming"] = streaming
-    if query_opt_flags is not None:
-        if "optimization_flags" in signature.parameters:
-            kwargs["optimization_flags"] = query_opt_flags
-        elif "query_opt_flags" in signature.parameters:
-            kwargs["query_opt_flags"] = query_opt_flags
+    _apply_engine_kwargs(
+        signature,
+        kwargs=kwargs,
+        engine=execution.engine,
+        streaming=execution.streaming,
+    )
+    _apply_query_opt_kwargs(
+        signature,
+        kwargs=kwargs,
+        query_opt_flags=execution.query_opt_flags,
+    )
     if profile and "profile" in signature.parameters:
         kwargs["profile"] = True
     return kwargs
+
+
+def _collect_all_kwargs(
+    func: object,
+    *,
+    execution: _PolarsExecutionConfig,
+) -> dict[str, object]:
+    signature = _signature(func)
+    if signature is None:
+        return {}
+    kwargs: dict[str, object] = {}
+    _apply_engine_kwargs(
+        signature,
+        kwargs=kwargs,
+        engine=execution.engine,
+        streaming=execution.streaming,
+    )
+    _apply_query_opt_kwargs(
+        signature,
+        kwargs=kwargs,
+        query_opt_flags=execution.query_opt_flags,
+    )
+    return kwargs
+
+
+def _sink_batches(
+    lazyframe: PolarsLazyFrame,
+    *,
+    batch_size: int,
+    execution: _PolarsExecutionConfig,
+) -> Iterable[PolarsDataFrame]:
+    sinker = getattr(lazyframe, "sink_batches", None)
+    if not callable(sinker):
+        return _collect_batches_direct(
+            lazyframe,
+            batch_size=batch_size,
+            execution=execution,
+        )
+    batches: list[PolarsDataFrame] = []
+
+    def _callback(batch: PolarsDataFrame) -> bool | None:
+        batches.append(batch)
+        return None
+
+    kwargs = _collect_batch_kwargs(
+        sinker,
+        batch_size=batch_size,
+        execution=execution,
+    )
+    sinker(_callback, **kwargs)
+    return batches
 
 
 def _signature(func: object) -> inspect.Signature | None:
@@ -316,6 +504,46 @@ def _signature(func: object) -> inspect.Signature | None:
         return inspect.signature(func)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+
+
+def _first_supported_param(
+    signature: inspect.Signature,
+    names: tuple[str, ...],
+) -> str | None:
+    for name in names:
+        if name in signature.parameters:
+            return name
+    return None
+
+
+def _apply_engine_kwargs(
+    signature: inspect.Signature,
+    *,
+    kwargs: dict[str, object],
+    engine: PolarsEngineType,
+    streaming: bool,
+) -> None:
+    if "engine" in signature.parameters:
+        kwargs["engine"] = engine
+        return
+    if "streaming" in signature.parameters:
+        kwargs["streaming"] = streaming
+
+
+def _apply_query_opt_kwargs(
+    signature: inspect.Signature,
+    *,
+    kwargs: dict[str, object],
+    query_opt_flags: PolarsQueryOptFlags | None,
+) -> None:
+    if query_opt_flags is None:
+        return
+    opt_param = _first_supported_param(
+        signature,
+        ("optimizations", "optimization_flags", "query_opt_flags"),
+    )
+    if opt_param is not None:
+        kwargs[opt_param] = query_opt_flags
 
 
 def _resolve_query_opt_flags(flags: tuple[str, ...]) -> PolarsQueryOptFlags | None:
@@ -365,6 +593,13 @@ def _maybe_to_string(value: object) -> str | None:
     return str(value)
 
 
+def _log_schema(schema: object) -> None:
+    schema_repr = _maybe_to_string(schema)
+    if schema_repr is None:
+        return
+    LOG.info("polars_schema %s", schema_repr)
+
+
 def _relation_to_lazyframe(relation: DuckDBPyRelation) -> PolarsLazyFrame:
     if pl is None:  # pragma: no cover
         msg = "polars is required for Polars query execution"
@@ -386,7 +621,6 @@ def _relation_to_lazyframe(relation: DuckDBPyRelation) -> PolarsLazyFrame:
 
 
 @dataclass(frozen=True, slots=True)
-@dataclass(frozen=True, slots=True)
 class PolarsPlanAdapter:
     """Adapter that converts DuckDB relations into Polars execution plans."""
 
@@ -406,12 +640,12 @@ class PolarsPlanAdapter:
             Polars plan backed by the DuckDB relation.
         """
         query_opt_flags = _resolve_query_opt_flags(self.settings.polars_query_opt_flags)
+        execution = _execution_config(settings=self.settings, query_opt_flags=query_opt_flags)
         lazyframe = _relation_to_lazyframe(relation)
         return PolarsExecutablePlan(
             relation=relation,
             lazyframe=lazyframe,
-            settings=self.settings,
-            query_opt_flags=query_opt_flags,
+            execution=execution,
         )
 
 

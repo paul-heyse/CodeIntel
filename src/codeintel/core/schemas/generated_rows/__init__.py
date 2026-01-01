@@ -18,8 +18,6 @@ _CAMEL_RE_2 = re.compile(r"([a-z0-9])([A-Z])")
 class RowModelProtocol(Protocol):
     """Protocol for generated TypedDict-style row models."""
 
-    __annotations__: Mapping[str, object]
-
 
 def _camel_to_snake(value: str) -> str:
     step1 = _CAMEL_RE_1.sub(r"\1_\2", value)
@@ -61,19 +59,31 @@ _ROW_MODEL_BY_TABLE_KEY.update(_row_models_from_module(module=_graph_rows, prefi
 
 
 def row_model_for_table_key(table_key: str) -> type[RowModelProtocol] | None:
-    """Return the generated row model for a table key, when available."""
+    """Return the generated row model for a table key, when available.
+
+    Returns
+    -------
+    type[RowModelProtocol] | None
+        Row model type for the table key, when present.
+    """
     return _ROW_MODEL_BY_TABLE_KEY.get(table_key)
 
 
 def columns_for_table_key(table_key: str) -> tuple[str, ...] | None:
-    """Return ordered column names for a table key based on row models."""
+    """Return ordered column names for a table key based on row models.
+
+    Returns
+    -------
+    tuple[str, ...] | None
+        Ordered column names from the row model, if available.
+    """
     model = row_model_for_table_key(table_key)
     if model is None:
         return None
     annotations = getattr(model, "__annotations__", None)
     if not isinstance(annotations, Mapping):
         return None
-    return tuple(str(name) for name in annotations.keys())
+    return tuple(str(name) for name in annotations)
 
 
 __all__ = [

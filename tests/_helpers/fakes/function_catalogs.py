@@ -20,10 +20,8 @@ Example
 ...     ]
 ... )
 >>>
->>> # Use with CatalogProvider
->>> from codeintel.build.analytics.resources.catalog import CatalogProvider
->>> provider = CatalogProvider()
->>> provider.set_preloaded(catalog)
+>>> # Use with catalog-aware helpers directly
+>>> catalog.urn_for_goid(1)
 """
 
 from __future__ import annotations

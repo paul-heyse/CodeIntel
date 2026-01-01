@@ -8,7 +8,7 @@ Data Classes
 
 See Also
 --------
-codeintel.build.graphs.resources.graphs : GraphResource for graph access
+codeintel.build.graphs.runtime : GraphRuntime for graph access
 """
 
 from __future__ import annotations

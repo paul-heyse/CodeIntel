@@ -39,7 +39,7 @@ Goal
 Primary files
 - `src/codeintel/serving/semantic/routing.py`
 - `src/codeintel/serving/semantic/sqlglot_query_builder.py`
-- `src/codeintel/serving/semantic/polars_query_builder.py`
+- `src/codeintel/serving/semantic/filter_compiler.py`
 - `src/codeintel/serving/semantic/duckdb_relation_builder.py`
 
 Checklist

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from codeintel.core.catalog import CatalogService, FunctionCatalog, FunctionSpan
+from codeintel.core.resources import ResourceRegistry
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -24,7 +25,6 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.core.resources import ResourceRegistry
     from tests.graphs.conftest import CatalogSampleData
 
 
@@ -55,6 +55,18 @@ def empty_catalog_resource(empty_catalog: FunctionCatalog) -> CatalogService:
     return CatalogService(empty_catalog)
 
 
+@pytest.fixture
+def resource_registry() -> ResourceRegistry:
+    """Provide a fresh ResourceRegistry for catalog tests.
+
+    Returns
+    -------
+    ResourceRegistry
+        Registry instance for tests.
+    """
+    return ResourceRegistry()
+
+
 def test_catalog_service_name_constant() -> None:
     """CatalogService.RESOURCE_NAME is 'catalog'."""
     expect_equal(CatalogService.RESOURCE_NAME, RESOURCE_NAME)
@@ -80,22 +92,22 @@ def test_catalog_service_has_expected_methods(catalog_resource: CatalogService) 
 
 
 def test_catalog_service_registers_with_registry(
-    storage_registry: ResourceRegistry, catalog_resource: CatalogService
+    resource_registry: ResourceRegistry, catalog_resource: CatalogService
 ) -> None:
     """CatalogService can be registered and retrieved from registry."""
-    storage_registry.register_provider(catalog_resource)
+    resource_registry.register_provider(catalog_resource)
 
-    retrieved = storage_registry.get_by_name(CatalogService.RESOURCE_NAME)
+    retrieved = resource_registry.get_by_name(CatalogService.RESOURCE_NAME)
     expect_true(retrieved is catalog_resource)
 
 
 def test_catalog_service_require_returns_registered(
-    storage_registry: ResourceRegistry, catalog_resource: CatalogService
+    resource_registry: ResourceRegistry, catalog_resource: CatalogService
 ) -> None:
     """Require returns the registered CatalogService."""
-    storage_registry.register_provider(catalog_resource)
+    resource_registry.register_provider(catalog_resource)
 
-    required = storage_registry.require_by_name(CatalogService.RESOURCE_NAME)
+    required = resource_registry.require_by_name(CatalogService.RESOURCE_NAME)
     expect_true(required is catalog_resource)
 
 

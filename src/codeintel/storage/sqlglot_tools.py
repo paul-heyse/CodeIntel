@@ -14,6 +14,7 @@ that need to reason about compiled SQL (view dependencies, diffs, perimeters).
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from sqlglot.lineage import Node
 
 __all__ = [
+    "SELECT_ONLY_DISALLOWED_NODES",
     "AstCapabilityError",
     "AstCapabilityIssue",
     "AstCapabilityReport",
@@ -45,6 +47,7 @@ __all__ = [
     "capability_envelope_report",
     "ensure_ast_capability",
     "extract_column_lineage_duckdb",
+    "extract_column_lineage_from_ast",
     "extract_table_keys_duckdb",
     "extract_table_refs",
     "fingerprint_canonical_sql",
@@ -78,7 +81,9 @@ _SQL_UUID_RE = re.compile(
 _SQL_NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
 _WS_RE = re.compile(r"\s+")
 
-_CAPABILITY_DISALLOWED_NODES: tuple[type[exp.Expression], ...] = (
+LOG = logging.getLogger(__name__)
+
+_MUTATION_DISALLOWED_NODES: tuple[type[exp.Expression], ...] = (
     exp.Alter,
     exp.Analyze,
     exp.Attach,
@@ -100,6 +105,9 @@ _CAPABILITY_DISALLOWED_NODES: tuple[type[exp.Expression], ...] = (
     exp.Transaction,
     exp.Update,
     exp.Use,
+)
+_CAPABILITY_DISALLOWED_NODES: tuple[type[exp.Expression], ...] = (
+    *_MUTATION_DISALLOWED_NODES,
     exp.Group,
     exp.Having,
     exp.Distinct,
@@ -110,6 +118,7 @@ _CAPABILITY_DISALLOWED_NODES: tuple[type[exp.Expression], ...] = (
     exp.Except,
     exp.Window,
 )
+SELECT_ONLY_DISALLOWED_NODES = _MUTATION_DISALLOWED_NODES
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,45 +187,95 @@ def _scan_capability_node(
     node: exp.Expression,
     *,
     allowed_anonymous_functions: frozenset[str] | None,
+    disallowed_nodes: tuple[type[exp.Expression], ...],
+    allow_aggregates: bool,
 ) -> tuple[list[AstCapabilityIssue], list[str]]:
-    if isinstance(node, _CAPABILITY_DISALLOWED_NODES):
-        return [AstCapabilityIssue(kind="unsupported_node", detail=type(node).__name__)], []
     issues: list[AstCapabilityIssue] = []
     features: list[str] = []
-    if isinstance(node, exp.AggFunc):
+    if isinstance(node, disallowed_nodes):
+        issues.append(AstCapabilityIssue(kind="unsupported_node", detail=type(node).__name__))
+        return issues, features
+    _append_agg_capability(
+        node, issues=issues, features=features, allow_aggregates=allow_aggregates
+    )
+    _append_anonymous_capability(
+        node,
+        issues=issues,
+        features=features,
+        allowed_anonymous_functions=allowed_anonymous_functions,
+    )
+    _append_join_capability(node, features=features)
+    _append_feature_flag(node, features=features, expr_type=exp.Cast, feature="cast")
+    _append_feature_flag(node, features=features, expr_type=exp.Coalesce, feature="coalesce")
+    _append_feature_flag(node, features=features, expr_type=exp.Case, feature="case")
+    return issues, features
+
+
+def _append_agg_capability(
+    node: exp.Expression,
+    *,
+    issues: list[AstCapabilityIssue],
+    features: list[str],
+    allow_aggregates: bool,
+) -> None:
+    if not isinstance(node, exp.AggFunc):
+        return
+    name = node.sql_name().lower()
+    features.append(f"agg:{name}")
+    if not allow_aggregates:
         issues.append(
             AstCapabilityIssue(
                 kind="aggregate_function",
-                detail=node.sql_name().lower(),
+                detail=name,
             )
         )
-    if isinstance(node, exp.Anonymous):
-        name = (node.name or "").lower()
-        if name:
-            features.append(f"func:{name}")
-        if allowed_anonymous_functions is not None and name not in allowed_anonymous_functions:
-            issues.append(
-                AstCapabilityIssue(
-                    kind="unsupported_function",
-                    detail=name or "<anonymous>",
-                )
+
+
+def _append_anonymous_capability(
+    node: exp.Expression,
+    *,
+    issues: list[AstCapabilityIssue],
+    features: list[str],
+    allowed_anonymous_functions: frozenset[str] | None,
+) -> None:
+    if not isinstance(node, exp.Anonymous):
+        return
+    name = (node.name or "").lower()
+    if name:
+        features.append(f"func:{name}")
+    if allowed_anonymous_functions is not None and name not in allowed_anonymous_functions:
+        issues.append(
+            AstCapabilityIssue(
+                kind="unsupported_function",
+                detail=name or "<anonymous>",
             )
-    if isinstance(node, exp.Join):
-        join_kind = (node.args.get("kind") or "inner").lower()
-        features.append(f"join:{join_kind}")
-    if isinstance(node, exp.Cast):
-        features.append("cast")
-    if isinstance(node, exp.Coalesce):
-        features.append("coalesce")
-    if isinstance(node, exp.Case):
-        features.append("case")
-    return issues, features
+        )
+
+
+def _append_join_capability(node: exp.Expression, *, features: list[str]) -> None:
+    if not isinstance(node, exp.Join):
+        return
+    join_kind = (node.args.get("kind") or "inner").lower()
+    features.append(f"join:{join_kind}")
+
+
+def _append_feature_flag(
+    node: exp.Expression,
+    *,
+    features: list[str],
+    expr_type: type[exp.Expression],
+    feature: str,
+) -> None:
+    if isinstance(node, expr_type):
+        features.append(feature)
 
 
 def capability_envelope_report(
     root: exp.Expression,
     *,
     allowed_anonymous_functions: frozenset[str] | None = None,
+    disallowed_nodes: tuple[type[exp.Expression], ...] | None = None,
+    allow_aggregates: bool = False,
 ) -> AstCapabilityReport:
     """Return a capability envelope report for a SQLGlot AST.
 
@@ -226,6 +285,10 @@ def capability_envelope_report(
         SQLGlot expression to inspect.
     allowed_anonymous_functions
         Optional allowlist of anonymous function names (lowercased).
+    disallowed_nodes
+        Optional tuple of disallowed SQLGlot node types.
+    allow_aggregates
+        Whether aggregate functions are permitted.
 
     Returns
     -------
@@ -235,10 +298,13 @@ def capability_envelope_report(
     issues: list[AstCapabilityIssue] = []
     features: set[str] = set()
 
+    active_disallowed = disallowed_nodes or _CAPABILITY_DISALLOWED_NODES
     for node in root.walk():
         node_issues, node_features = _scan_capability_node(
             node,
             allowed_anonymous_functions=allowed_anonymous_functions,
+            disallowed_nodes=active_disallowed,
+            allow_aggregates=allow_aggregates,
         )
         issues.extend(node_issues)
         features.update(node_features)
@@ -254,10 +320,46 @@ def capability_envelope_report(
     )
 
 
+def log_ast_capability_report(
+    report: AstCapabilityReport,
+    *,
+    context: str | None = None,
+    logger: logging.Logger | None = None,
+) -> None:
+    """Emit a deterministic capability envelope log entry.
+
+    Parameters
+    ----------
+    report
+        Capability envelope report to log.
+    context
+        Optional context string to include in the log payload.
+    logger
+        Optional logger override; defaults to module logger.
+    """
+    active_logger = logger or LOG
+    features = ",".join(report.features) if report.features else "-"
+    issues = (
+        ",".join(f"{issue.kind}:{issue.detail}" for issue in report.issues)
+        if report.issues
+        else "-"
+    )
+    active_logger.debug(
+        "sqlglot_ast_capability context=%s supported=%s features=%s issues=%s",
+        context or "unknown",
+        report.supported,
+        features,
+        issues,
+    )
+
+
 def ensure_ast_capability(
     root: exp.Expression,
     *,
     allowed_anonymous_functions: frozenset[str] | None = None,
+    disallowed_nodes: tuple[type[exp.Expression], ...] | None = None,
+    allow_aggregates: bool = False,
+    log_context: str | None = None,
 ) -> AstCapabilityReport:
     """Validate a SQLGlot AST against the capability envelope.
 
@@ -267,6 +369,12 @@ def ensure_ast_capability(
         SQLGlot expression to validate.
     allowed_anonymous_functions
         Optional allowlist of anonymous function names.
+    disallowed_nodes
+        Optional tuple of disallowed SQLGlot node types.
+    allow_aggregates
+        Whether aggregate functions are permitted.
+    log_context
+        Optional context string for capability logs.
 
     Returns
     -------
@@ -281,7 +389,10 @@ def ensure_ast_capability(
     report = capability_envelope_report(
         root,
         allowed_anonymous_functions=allowed_anonymous_functions,
+        disallowed_nodes=disallowed_nodes,
+        allow_aggregates=allow_aggregates,
     )
+    log_ast_capability_report(report, context=log_context)
     if not report.supported:
         raise AstCapabilityError(report.issues)
     return report
@@ -985,6 +1096,28 @@ def extract_column_lineage_duckdb(
         Mapping of output column name to upstream column keys (table.column).
     """
     root = parse_one_duckdb(sql)
+    return extract_column_lineage_from_ast(root, schema=schema)
+
+
+def extract_column_lineage_from_ast(
+    root: exp.Expression,
+    *,
+    schema: SchemaMapping | None = None,
+) -> dict[str, frozenset[str]]:
+    """Extract column-level lineage for a SQLGlot AST.
+
+    Parameters
+    ----------
+    root
+        SQLGlot expression to analyze.
+    schema
+        Optional schema mapping to improve qualification/lineage accuracy.
+
+    Returns
+    -------
+    dict[str, frozenset[str]]
+        Mapping of output column name to upstream column keys (table.column).
+    """
     canonical = canonicalize_expression_duckdb(root, schema=schema)
     scope = build_scope(canonical)
     if scope is None:

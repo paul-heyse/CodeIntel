@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
+import networkx as nx
+
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
     component_metadata,
@@ -38,12 +40,11 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.graphs.orchestrator import (
         GraphViews,
     )
-    from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
+    from codeintel.build.graphs.runtime import GraphRuntimeOptions
     from codeintel.build.graphs.runtime.context import GraphContext
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
     )
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -210,7 +211,6 @@ def _module_metric_rows(
 _MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, GraphMetricsModulesExtRow] = (
     ExtendedMetricsConfig(
         table_key="analytics.graph_metrics_modules_ext",
-        get_source_graph=lambda rt: rt.ensure_import_graph(),
         filter_graph=lambda f, g: f.filter_import_graph(g),
         build_context=_resolve_module_context,
         build_slices=_module_metric_slices,
@@ -220,23 +220,23 @@ _MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, GraphMetricsModules
 
 
 def build_graph_metrics_modules_ext_rows(
-    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    import_graph: nx.DiGraph,
+    runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
 ) -> list[GraphMetricsModulesExtRow]:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics.
 
     Parameters
     ----------
-    gateway
-        StorageGateway providing the DuckDB connection used for reads and writes.
     repo
         Repository identifier anchoring the metrics.
     commit
         Commit hash anchoring the metrics snapshot.
+    import_graph
+        Import graph to analyze for extended metrics.
     runtime
         Optional runtime options including cached graphs and backend selection.
     filters
@@ -250,7 +250,8 @@ def build_graph_metrics_modules_ext_rows(
     request = ExtendedMetricsRequest(
         repo=repo,
         commit=commit,
+        graph=import_graph,
         runtime=runtime,
         filters=filters,
     )
-    return build_extended_metrics_rows(gateway, _MODULE_EXT_CONFIG, request)
+    return build_extended_metrics_rows(_MODULE_EXT_CONFIG, request)

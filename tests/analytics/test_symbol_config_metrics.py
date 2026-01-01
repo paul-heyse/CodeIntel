@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -13,7 +14,9 @@ from codeintel.build.analytics.graphs.config_graph_metrics import (
 from codeintel.build.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
 from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_module_rows,
+    build_symbol_module_graph,
 )
+from codeintel.storage.query_results import records_from_relation
 from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
@@ -26,6 +29,7 @@ from tests._helpers.fixtures.rows import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers import TestContext
 
 
@@ -74,6 +78,55 @@ def _seed_symbol_config_data(ctx: TestContext) -> None:
             )
         ],
     )
+
+
+def _matches_optional_scope(value: object, expected: str) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return str(value) == expected
+
+
+def _module_inputs_for_symbol_metrics(test_ctx: TestContext) -> tuple[dict[str, str], set[str]]:
+    module_rows = records_from_relation(
+        test_ctx.gateway.relation_from_table_key("core.modules").select(
+            "module",
+            "path",
+            "repo",
+            "commit",
+        )
+    )
+    module_by_path: dict[str, str] = {}
+    known_modules: set[str] = set()
+    for row in module_rows:
+        module = row.get("module")
+        if module is None:
+            continue
+        if not _matches_optional_scope(row.get("repo"), test_ctx.repo):
+            continue
+        if not _matches_optional_scope(row.get("commit"), test_ctx.commit):
+            continue
+        module_name = str(module)
+        known_modules.add(module_name)
+        path = row.get("path")
+        if path is not None:
+            module_by_path[str(path)] = module_name
+    return module_by_path, known_modules
+
+
+def _write_rows_for_snapshot(
+    gateway: StorageGateway,
+    *,
+    table_key: str,
+    repo: str,
+    commit: str,
+    rows: Sequence[tuple[object, ...]] | None,
+) -> None:
+    if not rows:
+        return
+    gateway.policy.delete_for_snapshot(table_key, repo=repo, commit=commit)
+    gateway.policy.bulk_insert(table_key, rows)
 
 
 def _seed_subsystem_agreement_data(ctx: TestContext) -> None:
@@ -155,64 +208,64 @@ def test_symbol_and_config_metrics_populate_and_views_create(
 ) -> None:
     """Verify symbol/config metrics compute and derived views materialize."""
     _seed_symbol_config_data(test_ctx)
+    module_by_path, known_modules = _module_inputs_for_symbol_metrics(test_ctx)
 
+    symbol_use_rows = records_from_relation(
+        test_ctx.gateway.relation_from_table_key("graph.symbol_use_edges").select(
+            "def_path",
+            "use_path",
+            "def_goid_h128",
+            "use_goid_h128",
+        )
+    )
+    symbol_graph = build_symbol_module_graph(symbol_use_rows, module_by_path)
     symbol_rows = build_symbol_graph_metrics_module_rows(
-        test_ctx.gateway,
         repo=test_ctx.repo,
         commit=test_ctx.commit,
+        graph=symbol_graph,
+        known_modules=known_modules or None,
     )
-    if symbol_rows:
-        test_ctx.gateway.policy.delete_for_snapshot(
-            "analytics.symbol_graph_metrics_modules",
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-        )
-        test_ctx.gateway.policy.bulk_insert("analytics.symbol_graph_metrics_modules", symbol_rows)
+    _write_rows_for_snapshot(
+        test_ctx.gateway,
+        table_key="analytics.symbol_graph_metrics_modules",
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+        rows=symbol_rows,
+    )
 
     config_rows = compute_config_graph_metrics_result(
         test_ctx.gateway,
         repo=test_ctx.repo,
         commit=test_ctx.commit,
     )
-    if config_rows.key_rows:
-        test_ctx.gateway.policy.delete_for_snapshot(
-            "analytics.config_graph_metrics_keys",
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-        )
-        test_ctx.gateway.policy.bulk_insert(
-            "analytics.config_graph_metrics_keys", config_rows.key_rows
-        )
-    if config_rows.module_rows:
-        test_ctx.gateway.policy.delete_for_snapshot(
-            "analytics.config_graph_metrics_modules",
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-        )
-        test_ctx.gateway.policy.bulk_insert(
-            "analytics.config_graph_metrics_modules",
-            config_rows.module_rows,
-        )
-    if config_rows.key_edge_rows:
-        test_ctx.gateway.policy.delete_for_snapshot(
-            "analytics.config_projection_key_edges",
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-        )
-        test_ctx.gateway.policy.bulk_insert(
-            "analytics.config_projection_key_edges",
-            config_rows.key_edge_rows,
-        )
-    if config_rows.module_edge_rows:
-        test_ctx.gateway.policy.delete_for_snapshot(
-            "analytics.config_projection_module_edges",
-            repo=test_ctx.repo,
-            commit=test_ctx.commit,
-        )
-        test_ctx.gateway.policy.bulk_insert(
-            "analytics.config_projection_module_edges",
-            config_rows.module_edge_rows,
-        )
+    _write_rows_for_snapshot(
+        test_ctx.gateway,
+        table_key="analytics.config_graph_metrics_keys",
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+        rows=config_rows.key_rows,
+    )
+    _write_rows_for_snapshot(
+        test_ctx.gateway,
+        table_key="analytics.config_graph_metrics_modules",
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+        rows=config_rows.module_rows,
+    )
+    _write_rows_for_snapshot(
+        test_ctx.gateway,
+        table_key="analytics.config_projection_key_edges",
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+        rows=config_rows.key_edge_rows,
+    )
+    _write_rows_for_snapshot(
+        test_ctx.gateway,
+        table_key="analytics.config_projection_module_edges",
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+        rows=config_rows.module_edge_rows,
+    )
     materialize_view_plans(test_ctx.con)
 
     sym_rows = test_ctx.con.execute(

@@ -1,4 +1,4 @@
-"""Row assembly and writers for test and behavioral coverage profiles."""
+"""Row assembly helpers for test and behavioral coverage profiles."""
 
 from __future__ import annotations
 
@@ -6,10 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.analytics.profiles.writer_guard import (
-    PolicyWriterConfig,
-    write_rows_via_policy_backend,
-)
 from codeintel.build.analytics.testing.behavioral.importance import (
     compute_flakiness_score,
     compute_importance_score,
@@ -43,7 +39,6 @@ if TYPE_CHECKING:
         TestRecord,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -221,38 +216,6 @@ def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> Prof
     )
 
 
-def write_test_profile_rows(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    rows: Iterable[ProfileRowModel],
-) -> int:
-    """Insert rows into analytics.test_profile via policy backend.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Snapshot reference.
-    rows
-        Row models to insert.
-
-    Returns
-    -------
-    int
-        Number of inserted rows.
-    """
-    rows_list = list(rows)
-    if not rows_list:
-        return 0
-    config = PolicyWriterConfig(
-        table_key="analytics.test_profile",
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-    return write_rows_via_policy_backend(gateway, rows=rows_list, config=config)
-
-
 def build_behavioral_coverage_rows(
     rows: Iterable[tuple[object, ...]],
 ) -> list[BehavioralCoverageRowModel]:
@@ -297,38 +260,6 @@ def build_behavioral_coverage_rows(
             )
         )
     return models
-
-
-def write_behavioral_coverage_rows(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    rows: Iterable[BehavioralCoverageRowModel],
-) -> int:
-    """Insert rows into analytics.behavioral_coverage via policy backend.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    snapshot
-        Snapshot reference.
-    rows
-        Row models to insert.
-
-    Returns
-    -------
-    int
-        Number of inserted rows.
-    """
-    rows_list = list(rows)
-    if not rows_list:
-        return 0
-    config = PolicyWriterConfig(
-        table_key="analytics.behavioral_coverage",
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-    return write_rows_via_policy_backend(gateway, rows=rows_list, config=config)
 
 
 def _normalize_markers(markers: list[str] | None) -> list[str]:

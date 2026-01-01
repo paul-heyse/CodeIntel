@@ -94,7 +94,8 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 - [x] Implement subsystem mappings and subsystem metrics.
 
 ### Phase 6: Graph metrics and CFG/DFG analytics
-- [x] Port graph metrics (call/import/symbol) and stats tables.
+- [~] Port graph metrics (call/import/symbol) and stats tables
+  (code migrated; quality gates pending).
 - [x] Port CFG/DFG metrics tables.
 
 ### Phase 7: Test analytics
@@ -106,9 +107,9 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
 - [x] Remove docs.v_* history views and view map entries.
 - [x] Freeze imports of legacy analytics/graphs in build runtime
   (guarded by architecture test).
-- [~] Remove unused legacy orchestration once parity is verified
+- [x] Remove unused legacy orchestration once parity is verified
   (coverage_functions moved to Polars; coverage compute + duckdb_helpers removed;
-  remaining wrappers pending).
+  unused AST features persistence wrapper removed).
 
 ## Reconciliation Notes (current code vs plan)
 - Core ingestion tables marked [x] are backed by existing Hamilton ingestion targets
@@ -130,8 +131,14 @@ metadata so DuckDB/SQLGlot can build explicit schemas from the dataset alone:
   exercised in dataset tests.
 - coverage_functions now runs as a Polars pipeline (no DuckDB relation helper);
   legacy coverage compute + duckdb_helpers removed.
-- Remaining scope: complete Phase 8 legacy decommission steps and run
-  end-to-end validation.
+- Remaining scope: run end-to-end validation and resolve graph metrics migration
+  quality gates.
+- Graph metrics orchestration now accepts DAG-provided graphs/rows
+  (no gateway/runtime resolution); Hamilton graph_metric_inputs builds
+  call/import/symbol graphs and filters.
+- Quality gates still pending for graph metrics migration (ruff/pyright/pyrefly
+  clean + targeted tests); quality_report currently fails due to a
+  generated_rows __all__ validation error.
 
 ## DAG Node Conventions
 - Dataset table outputs: `<table>__base -> <table>__table -> t__<target>`.
@@ -1250,9 +1257,9 @@ Hamilton DAG; remaining cleanup focuses on removing unused orchestration wrapper
 ### Removal checklist
 - [x] Freeze imports of `codeintel.build.analytics` and `codeintel.build.graphs`
   outside the Hamilton/native and compute packages (architecture guard added).
-- [~] Remove legacy orchestration modules and DuckDB helpers
+- [x] Remove legacy orchestration modules and DuckDB helpers
   (coverage_functions migrated; coverage compute + duckdb_helpers removed;
-  remaining wrappers pending).
+  unused AST features persistence wrapper removed).
 - [x] Update tests that enforce legacy orchestration or export lists
   (PR-52 orchestration guard updated; public exports reviewed; no changes required).
 - [x] Update docs to clarify compute packages as the canonical source layer.
@@ -1262,3 +1269,153 @@ Hamilton DAG; remaining cleanup focuses on removing unused orchestration wrapper
 - [x] `src/codeintel/build/graphs/` (compute layer retained; prune unused wrappers).
 - [x] `tests/build/hamilton/test_pr52_no_legacy_orchestrators.py` (update).
 - [x] `tests/analytics/test_public_exports.py` (reviewed; no changes required).
+
+## Orchestration Migration Checklists (Remaining)
+These files remain in use by the Hamilton DAG today. The migration work below
+focuses on making inputs explicit, aligning I/O with the Parquet boundary, and
+keeping NetworkX-based analytics where they add value. Some modules are expected
+to remain hybrid orchestration layers rather than pure Hamilton nodes.
+
+### Graph metrics orchestration (NetworkX-heavy; hybrid allowed)
+#### `src/codeintel/build/analytics/graphs/orchestrator.py`
+- [x] Move runtime resolution into Hamilton nodes and pass `GraphRuntime`/views in.
+- [x] Remove direct `StorageGateway` reads; accept graph views or row inputs.
+- [x] Keep NetworkX view building here; mark as hybrid (not fully DAG-native).
+
+#### `src/codeintel/build/analytics/graphs/symbol_orchestrator.py`
+- [x] Require symbol graph inputs from DAG (no runtime lookup inside).
+- [x] Keep NetworkX coupling logic in this layer (hybrid by design).
+- [x] Document expected inputs and outputs for DAG wiring.
+
+#### `src/codeintel/build/analytics/graphs/graph_metrics.py`
+- [x] Replace internal runtime resolution with DAG-provided runtime or views.
+- [x] Ensure all upstream tables are provided as DAG inputs (no hidden reads).
+- [x] Keep NetworkX metric functions; return rows only.
+
+#### `src/codeintel/build/analytics/graphs/graph_metrics_ext.py`
+- [x] Convert to accept graph views from DAG (no gateway inside).
+- [x] Keep extended metrics in NetworkX; avoid forcing Polars for algorithms.
+- [x] Add explicit input contract for required graph tables.
+
+#### `src/codeintel/build/analytics/graphs/module_graph_metrics_ext.py`
+- [x] Same migration shape as `graph_metrics_ext.py`.
+- [x] Ensure module graph selection is explicit in DAG wiring.
+- [x] Preserve NetworkX algorithms; return rows only.
+
+#### `src/codeintel/build/analytics/graphs/symbol_graph_metrics.py`
+- [x] Replace runtime/gateway discovery with DAG-provided symbol graphs.
+- [x] Keep NetworkX graph ops; avoid forcing full DAG rewrite.
+- [x] Add table lineage notes in the plan (symbol edges + goids).
+
+- [~] Validation gates pending: resolve ruff/pyright/pyrefly issues in graph
+  metrics refactor and run targeted tests.
+
+### Config graphs + subsystem orchestration (mixed SQL/NetworkX; hybrid allowed)
+#### `src/codeintel/build/analytics/graphs/config_data_flow.py`
+- [ ] Lift all source table reads into DAG inputs.
+- [ ] Keep graph construction in NetworkX if needed.
+- [ ] Ensure outputs are schema-aligned row models only.
+
+#### `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
+- [ ] Replace runtime/gateway access with DAG-provided inputs.
+- [ ] Split graph build vs metrics into explicit helper functions.
+- [ ] Preserve NetworkX metrics where beneficial.
+
+#### `src/codeintel/build/analytics/graphs/graph_stats.py`
+- [ ] Convert reads to DAG inputs; avoid direct gateway lookups.
+- [ ] Keep NetworkX/graph stats compute as a helper.
+- [ ] Add explicit input/row contracts for DAG wiring.
+
+#### `src/codeintel/build/analytics/graphs/subsystem_graph_metrics.py`
+- [ ] Provide subsystem + graph inputs explicitly via DAG nodes.
+- [ ] Retain NetworkX-based metric calculations (hybrid acceptable).
+- [ ] Confirm outputs map directly to Parquet materializers.
+
+#### `src/codeintel/build/analytics/graphs/subsystem_agreement.py`
+- [ ] Replace gateway reads with DAG-provided subsystem/graph inputs.
+- [ ] Keep disagreement logic (likely NetworkX) in helper layer.
+- [ ] Add tests for schema/lineage only (no view registry).
+
+### Graph runtime + engine + validation (service layer; not fully migratable)
+These modules are expected to remain as a service layer because NetworkX
+graph construction and validation are not a clean fit for Hamilton DAG nodes.
+Migration focuses on boundary alignment (Parquet-backed inputs, no view registry).
+
+#### `src/codeintel/build/graphs/runtime/__init__.py`
+- [ ] Ensure exports reflect the supported runtime surface.
+- [ ] Update docstrings to emphasize Parquet-backed graph sources.
+
+#### `src/codeintel/build/graphs/runtime/context.py`
+- [ ] Require graph inputs from Parquet-derived tables only.
+- [ ] Keep context helpers pure and NetworkX-friendly.
+
+#### `src/codeintel/build/graphs/runtime/runtime.py`
+- [ ] Build graphs from Parquet-backed DuckDB scans only.
+- [ ] Centralize `graph_backend` selection into runtime options.
+- [ ] Keep caching and NetworkX graph construction here (hybrid by design).
+
+#### `src/codeintel/build/graphs/engine/backend.py`
+- [ ] Align backend selection with `graph_backend` config.
+- [ ] Document supported backends and hybrid nature.
+
+#### `src/codeintel/build/graphs/engine/protocol.py`
+- [ ] Confirm protocol boundaries for Parquet-backed graph loads.
+- [ ] Avoid leaking view registry assumptions in the interface.
+
+#### `src/codeintel/build/graphs/engine/cache.py`
+- [ ] Ensure cache invalidation keys track Parquet metadata (repo/commit/build_id).
+- [ ] Avoid view registry keys or SQLGlot view identifiers.
+
+#### `src/codeintel/build/graphs/engine/__init__.py`
+- [ ] Keep exports minimal; document hybrid service role.
+- [ ] Remove any references to removed resource providers.
+
+#### `src/codeintel/build/graphs/engine/factory.py`
+- [ ] Use build config to pick backend and wire Parquet-backed loaders.
+- [ ] Keep the engine factory separate from Hamilton orchestration.
+
+#### `src/codeintel/build/graphs/engine/views.py`
+- [ ] Ensure all SQL reads target Parquet-backed tables only.
+- [ ] Keep NetworkX conversion logic centralized here.
+- [ ] Avoid reliance on legacy view registry artifacts.
+
+#### `src/codeintel/build/graphs/engine/nx_engine.py`
+- [ ] Keep NetworkX engine as the canonical implementation.
+- [ ] Confirm loaders pull from Parquet-backed tables.
+- [ ] No full DAG migration expected (explicitly hybrid).
+
+#### `src/codeintel/build/graphs/validation/findings.py`
+- [ ] Ensure persistence targets Parquet-backed tables only.
+- [ ] Keep output schema mapping explicit for validation rows.
+
+#### `src/codeintel/build/graphs/validation/runner.py`
+- [ ] Run validations after DAG materialization, not during view builds.
+- [ ] Resolve runtime via Parquet-backed engine only.
+
+#### `src/codeintel/build/graphs/validation/checks/database.py`
+- [ ] Update checks to rely on Parquet-backed tables and metadata.
+- [ ] No view registry assumptions.
+
+#### `src/codeintel/build/graphs/validation/checks/anomaly.py`
+- [ ] Keep NetworkX-based anomaly checks; accept runtime graphs as inputs.
+- [ ] Document required graph variants for DAG wiring.
+
+#### `src/codeintel/build/graphs/validation/checks/structure.py`
+- [ ] Keep structural checks in NetworkX; accept runtime graphs.
+- [ ] Ensure checks read from Parquet-backed sources only.
+
+#### `src/codeintel/build/graphs/validation/checks/__init__.py`
+- [ ] Keep exports aligned with remaining checks.
+- [ ] Document hybrid validation layer expectations.
+
+#### `src/codeintel/build/graphs/validation/__init__.py`
+- [ ] Update exports and docstrings for Parquet-backed validation.
+- [ ] No DAG migration expected for the validation runner itself.
+
+#### `src/codeintel/build/graphs/validation/context.py`
+- [ ] Ensure context is constructed from Parquet-backed runtime only.
+- [ ] Keep NetworkX graph references explicit.
+
+#### `src/codeintel/build/graphs/validation/base.py`
+- [ ] Keep protocol definitions stable for hybrid validation.
+- [ ] Confirm contracts reflect Parquet-backed graph sources.

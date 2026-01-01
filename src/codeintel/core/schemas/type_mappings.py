@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -144,8 +145,48 @@ def polars_type_from_column_type(column_type: ColumnType) -> PolarsDataType | No
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class ComplexTypeMapping:
+    """Normalized type mapping for complex/nested column types."""
+
+    column_type: ColumnType
+    duckdb_type: ColumnType
+    arrow_type: pa.DataType
+    polars_type: PolarsDataType | None
+
+
+def complex_type_mapping(column_type: ColumnType) -> ComplexTypeMapping | None:
+    """Return the unified mapping for complex/nested column types.
+
+    Parameters
+    ----------
+    column_type
+        Column type string to normalize and map.
+
+    Returns
+    -------
+    ComplexTypeMapping | None
+        Normalized mapping when the column type is complex, otherwise None.
+    """
+    normalized = normalize_engine_column_type(column_type)
+    if normalized is None:
+        return None
+    base = column_type_base(normalized)
+    if base not in COMPLEX_TYPE_BASES:
+        return None
+    arrow_type = arrow_type_from_column_type(normalized)
+    return ComplexTypeMapping(
+        column_type=normalized,
+        duckdb_type=normalized,
+        arrow_type=arrow_type,
+        polars_type=polars_type_from_column_type(normalized),
+    )
+
+
 __all__ = [
+    "ComplexTypeMapping",
     "arrow_type_from_column_type",
+    "complex_type_mapping",
     "normalize_engine_column_type",
     "normalize_table_schema_types",
     "polars_type_from_column_type",

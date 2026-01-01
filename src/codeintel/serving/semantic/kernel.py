@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
@@ -66,6 +65,7 @@ from codeintel.serving.semantic.sqlglot_query_builder import SqlglotQueryBuilder
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
 from codeintel.storage.metadata import load_derived_lineage_columns
+from codeintel.storage.query_results import records_from_arrow_batch
 from codeintel.storage.sqlglot_tools import (
     extract_column_lineage_duckdb,
     extract_table_keys_duckdb,
@@ -105,25 +105,6 @@ class UnknownViewIdError(KeyError):
 MIN_COLUMN_LINEAGE_PARTS = 2
 
 LOG = logging.getLogger(__name__)
-
-
-def _sanitize_float_nan(value: object) -> object:
-    if isinstance(value, float) and math.isnan(value):
-        return None
-    return value
-
-
-def _sanitize_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [{k: _sanitize_float_nan(v) for k, v in row.items()} for row in rows]
-
-
-def _records_from_batch(batch: pa.RecordBatch) -> list[dict[str, object]]:
-    columns = batch.schema.names
-    arrays = [batch.column(idx) for idx in range(batch.num_columns)]
-    return [
-        {name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)}
-        for row_idx in range(batch.num_rows)
-    ]
 
 
 def _column_lineage_refs(entries: Iterable[str]) -> list[ColumnLineageRef]:
@@ -492,7 +473,7 @@ class SemanticQueryKernel:
         rows: list[dict[str, object]] = []
         for batch in reader:
             _raise_if_cancelled(cancel_check)
-            rows.extend(_records_from_batch(batch))
+            rows.extend(records_from_arrow_batch(batch))
         return rows
 
     @staticmethod
@@ -540,7 +521,7 @@ class SemanticQueryKernel:
         try:
             _raise_if_cancelled(cancel_check)
             reader = plan.to_reader(batch_size=self.settings.export_batch_size)
-            rows = _sanitize_rows(self._rows_from_reader(reader, cancel_check=cancel_check))
+            rows = self._rows_from_reader(reader, cancel_check=cancel_check)
             explain = plan.explain()
             self._log_ast_diff(
                 query=query,
@@ -1159,7 +1140,7 @@ class SemanticQueryKernel:
                 fts_available=is_fts_available(warehouse.gateway.con),
             )
             reader = relation.fetch_record_batch(self.settings.export_batch_size)
-            rows = _sanitize_rows(self._rows_from_reader(reader, cancel_check=None))
+            rows = self._rows_from_reader(reader, cancel_check=None)
 
         truncated = len(rows) > request.limit
         if truncated:
@@ -1267,15 +1248,7 @@ class SemanticQueryKernel:
                 reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 for batch in reader:
                     _raise_if_cancelled(cancel_check)
-                    columns = batch.schema.names
-                    column_index = {name: idx for idx, name in enumerate(columns)}
-                    indices = [column_index[name] for name in inputs.columns]
-                    arrays = [batch.column(idx) for idx in range(batch.num_columns)]
-                    for row_idx in range(batch.num_rows):
-                        yield {
-                            inputs.columns[col_idx]: arrays[array_idx][row_idx].as_py()
-                            for col_idx, array_idx in enumerate(indices)
-                        }
+                    yield from records_from_arrow_batch(batch, columns=inputs.columns)
             finally:
                 plan.cleanup()
 

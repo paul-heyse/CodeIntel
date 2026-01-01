@@ -8,12 +8,11 @@ import types
 
 import hamilton.driver as h_driver
 
-from codeintel.build.serving.semantic_compile import (
-    compile_semantic_registry_from_driver,
-)
 from codeintel.core.hamilton.semantic_tags import semantic_view
+from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.serving.semantic.registry_compiler import compile_semantic_registry
 
 
 @semantic_view(
@@ -68,9 +67,9 @@ def test_compile_semantic_registry_from_driver_tags() -> None:
             )
         }
     )
-    compiled = compile_semantic_registry_from_driver(
+    compiled = compile_semantic_registry(
         schema_provider=provider,
-        dr=_driver(),
+        tag_query=TagQuery(_driver()),
         version="v1",
     )
     payload = json.loads(compiled.to_json())

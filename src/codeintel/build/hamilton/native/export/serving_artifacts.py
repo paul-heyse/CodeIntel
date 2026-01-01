@@ -52,14 +52,12 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.build.schemas.schema_index import SchemaIndex
-from codeintel.build.serving.semantic_compile import (
-    compile_semantic_registry_from_tag_query,
-)
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
+from codeintel.serving.semantic.registry_compiler import compile_semantic_registry
 from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 
@@ -91,9 +89,9 @@ def _package_version(name: str) -> str:
 
 def _semantic_registry_json(tag_query: TagQuery) -> str:
     schema_provider = get_schema_provider()
-    compiled = compile_semantic_registry_from_tag_query(
-        schema_provider=schema_provider,
+    compiled = compile_semantic_registry(
         tag_query=tag_query,
+        schema_provider=schema_provider,
         version="v1",
     )
     return compiled.to_json() + "\n"

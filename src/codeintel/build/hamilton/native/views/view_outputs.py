@@ -6,10 +6,11 @@ import inspect
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import polars as pl
-from sqlglot import exp
+from sqlglot import exp, parse_one
+from sqlglot.errors import ParseError, SqlglotError
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -33,7 +34,7 @@ from codeintel.core.columnar.dataset_scanner import scan_dataset_lazyframe
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
 from codeintel.core.schemas.resolution import resolve_table_schema
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, SCHEMAS
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.metadata.sync import (
@@ -41,9 +42,15 @@ from codeintel.storage.metadata.sync import (
     sync_derived_lineage_edges,
 )
 from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
-from codeintel.storage.sqlglot_tools import render_sql_duckdb
-from codeintel.storage.views.view_registry import load_view_registry
+from codeintel.storage.sqlglot_tools import (
+    extract_column_lineage_from_ast,
+    render_sql_duckdb,
+)
+from codeintel.storage.views.discovery import discover_view_builders
+from codeintel.storage.views.inventory import view_builder_modules
 
+if TYPE_CHECKING:
+    from codeintel.storage.views.discovery import DiscoveredViewBuilder
 VIEWS_TARGET_NAME = "views"
 VIEWS_DOMAIN = "views"
 
@@ -118,6 +125,50 @@ def _render_view_sql(ast: exp.Expression) -> str:
     return render_sql_duckdb(rewritten)
 
 
+def _discover_registered_views() -> tuple[DiscoveredViewBuilder, ...]:
+    modules = view_builder_modules()
+    if not modules:
+        return ()
+    try:
+        return discover_view_builders(modules=modules)
+    except ValueError:
+        return ()
+
+
+def _view_ast_from_builder(*, table_key: str, builder: Callable[..., object]) -> exp.Expression:
+    try:
+        rendered = builder()
+    except TypeError as exc:
+        msg = f"View builder for {table_key} must be callable with no arguments"
+        raise ValueError(msg) from exc
+
+    ast: exp.Expression
+    if isinstance(rendered, exp.Expression):
+        ast = rendered
+    elif isinstance(rendered, str):
+        try:
+            ast = parse_one(rendered, read=DUCKDB_DIALECT)
+        except ParseError as exc:
+            msg = f"Failed to parse SQL for view {table_key}"
+            raise ValueError(msg) from exc
+    else:
+        msg = f"View builder for {table_key} must return SQLGlot AST or SQL string"
+        raise TypeError(msg)
+
+    if isinstance(ast, exp.Subquery):
+        inner = ast.this
+        if inner is None:
+            msg = f"View builder for {table_key} returned an empty subquery"
+            raise ValueError(msg)
+        ast = inner
+
+    if not isinstance(ast, (exp.Select, exp.SetOperation)):
+        msg = f"View builder for {table_key} must return a query expression"
+        raise TypeError(msg)
+
+    return ast
+
+
 def _validate_view_sql(*, table_key: str, sql: str) -> None:
     try:
         assert_select_perimeter(sql, policy=_VIEW_SQL_POLICY)
@@ -131,13 +182,27 @@ def _extra_tags(tags: Mapping[str, str]) -> Mapping[TagKey, TagValue]:
     return cast("Mapping[TagKey, TagValue]", filtered)
 
 
-def _normalize_view_tags(tags: Mapping[str, str]) -> dict[str, str]:
-    normalized = dict(tags)
+def _normalize_view_tags(tags: Mapping[str, object]) -> dict[str, str]:
+    normalized = {
+        str(key): _stringify_tag_value(value) for key, value in tags.items() if value is not None
+    }
     if tags.get(ht.TAG_OUTPUT_KIND) == ht.OUTPUT_KIND_SEMANTIC_VIEW:
         normalized.setdefault(ht.TAG_LAYER, "semantic")
         normalized.setdefault(ht.TAG_VERSION, "1")
         normalized.setdefault(ht.TAG_KIND, "view")
     return normalized
+
+
+def _stringify_tag_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bool, float, int)):
+        return str(value)
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if item is not None)
+    return str(value)
 
 
 def _apply_semantic_attr(fn: Callable[..., object], tags: Mapping[str, str]) -> None:
@@ -299,34 +364,29 @@ def _build_ast_view_node(
     return _decorate_view_node(view_fn, plan=plan)
 
 
-_VIEW_AST_MAP = load_view_registry()
-_VIEW_KEYS = frozenset(_VIEW_AST_MAP)
-
-_DEPENDENCIES_BY_VIEW = {
-    view_key: _table_keys_from_ast(exp.Expression.load(spec["ast"]))
-    for view_key, spec in _VIEW_AST_MAP.items()
-}
-
-_BASE_TABLE_KEYS = tuple(
-    sorted(
-        {dep for deps in _DEPENDENCIES_BY_VIEW.values() for dep in deps if dep not in _VIEW_KEYS}
-    )
-)
-
+_VIEW_BUILDERS = _discover_registered_views()
 _VIEW_PLANS: dict[str, ViewPlan] = {}
-for view_key, spec in _VIEW_AST_MAP.items():
-    ast = exp.Expression.load(spec["ast"])
-    tags = _normalize_view_tags(spec["tags"])
+for builder in _VIEW_BUILDERS:
+    ast = _view_ast_from_builder(table_key=builder.table_key, builder=builder.builder)
+    tags = _normalize_view_tags(builder.tags)
     sql = _render_view_sql(ast)
-    _validate_view_sql(table_key=view_key, sql=sql)
-    _VIEW_PLANS[view_key] = ViewPlan(
-        table_key=view_key,
-        node_name=spec["node_name"],
+    _validate_view_sql(table_key=builder.table_key, sql=sql)
+    dependencies = _table_keys_from_ast(ast)
+    _VIEW_PLANS[builder.table_key] = ViewPlan(
+        table_key=builder.table_key,
+        node_name=builder.node_name,
         ast=ast,
         sql=sql,
-        dependencies=_DEPENDENCIES_BY_VIEW[view_key],
+        dependencies=dependencies,
         tags=tags,
     )
+
+_VIEW_KEYS = frozenset(_VIEW_PLANS)
+_BASE_TABLE_KEYS = tuple(
+    sorted(
+        {dep for plan in _VIEW_PLANS.values() for dep in plan.dependencies if dep not in _VIEW_KEYS}
+    )
+)
 
 
 def view_plan_map() -> dict[str, ViewPlan]:
@@ -439,6 +499,18 @@ def _column_lineage_from_schemas(
     return column_lineage
 
 
+def _column_lineage_from_ast(plan: ViewPlan) -> dict[str, frozenset[str]]:
+    try:
+        raw_lineage = extract_column_lineage_from_ast(plan.ast)
+    except (SqlglotError, TypeError, ValueError):
+        return {}
+    normalized: dict[str, frozenset[str]] = {}
+    for column, refs in raw_lineage.items():
+        column_key = column.lower()
+        normalized[column_key] = frozenset(ref.lower() for ref in refs)
+    return normalized
+
+
 def _view_lineage_payload(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -451,11 +523,14 @@ def _view_lineage_payload(
         deps = _direct_table_dependencies(catalog=catalog, node_name=node_name)
         deps_lower = tuple(dep.lower() for dep in deps if dep.lower() != view_key_lower)
         lineage[view_key_lower] = frozenset(deps_lower)
-        column_map = _column_lineage_from_schemas(
-            env=env,
-            downstream_table=view_key,
-            upstream_tables=deps,
-        )
+        plan = _VIEW_PLANS.get(view_key)
+        column_map = _column_lineage_from_ast(plan) if plan is not None else {}
+        if not column_map:
+            column_map = _column_lineage_from_schemas(
+                env=env,
+                downstream_table=view_key,
+                upstream_tables=deps,
+            )
         if column_map:
             column_lineage[view_key_lower] = column_map
     return lineage, column_lineage

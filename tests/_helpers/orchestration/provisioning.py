@@ -8,13 +8,25 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+import networkx as nx
 from coverage import Coverage
 
-from codeintel.build.analytics.graphs.graph_metrics import build_graph_metrics_rows
+from codeintel.build.analytics.compute.row_builders import (
+    build_symbol_module_edges,
+    component_metadata_from_import_rows,
+)
+from codeintel.build.analytics.graphs.graph_metrics import (
+    GraphMetricsInputs,
+    SymbolModuleEdges,
+    build_call_graph_from_rows,
+    build_graph_metric_filters_from_sets,
+    build_graph_metrics_rows,
+    build_import_graph_from_rows,
+)
 from codeintel.build.analytics.graphs.graph_metrics_ext import (
     build_graph_metrics_functions_ext_rows,
 )
@@ -23,9 +35,10 @@ from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
 from codeintel.build.config import BuildConfig
-from codeintel.build.graphs.runtime import GraphMetricsOptions
+from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -95,6 +108,327 @@ if TYPE_CHECKING:
 
 
 log = logging.getLogger(__name__)
+
+
+def _matches_optional_scope(value: object, expected: str) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return str(value) == expected
+
+
+def _fetch_rows(
+    gateway: StorageGateway,
+    sql: str,
+    columns: tuple[str, ...],
+    params: Sequence[object],
+) -> list[dict[str, object]]:
+    rows = gateway.con.execute(sql, list(params)).fetchall()
+    return [dict(zip(columns, row, strict=True)) for row in rows]
+
+
+def _seed_graph_metrics_inputs(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+) -> None:
+    gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002)")
+    gateway.con.execute("DELETE FROM core.modules WHERE path IN ('pkg/mod_a.py', 'pkg/mod_b.py')")
+    gateway.con.execute("DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1001, 1002)")
+    insert_rows(
+        gateway,
+        [
+            GoidRow(
+                goid_h128=1001,
+                urn="urn:pkg.mod_a.a",
+                repo=repo,
+                commit=commit,
+                rel_path="pkg/mod_a.py",
+                kind="function",
+                qualname="pkg.mod_a.a",
+                start_line=1,
+                end_line=4,
+                created_at=utcnow(),
+            ),
+            GoidRow(
+                goid_h128=1002,
+                urn="urn:pkg.mod_b.b",
+                repo=repo,
+                commit=commit,
+                rel_path="pkg/mod_b.py",
+                kind="function",
+                qualname="pkg.mod_b.b",
+                start_line=1,
+                end_line=3,
+                created_at=utcnow(),
+            ),
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
+            CallGraphNodeRow(
+                1001,
+                "python",
+                "function",
+                0,
+                is_public=True,
+                rel_path="pkg/mod_a.py",
+            ),
+            CallGraphNodeRow(
+                1002,
+                "python",
+                "function",
+                0,
+                is_public=True,
+                rel_path="pkg/mod_b.py",
+            ),
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                1001,
+                1002,
+                "pkg/mod_a.py",
+                3,
+                0,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            )
+        ],
+    )
+
+
+def _module_inputs_for_graph_metrics(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> tuple[dict[str, str], set[str]]:
+    modules_rows = _fetch_rows(
+        gateway,
+        "SELECT module, path, repo, commit FROM core.modules",
+        ("module", "path", "repo", "commit"),
+        [],
+    )
+    module_by_path: dict[str, str] = {}
+    module_names: set[str] = set()
+    for row in modules_rows:
+        module = row.get("module")
+        if module is None:
+            continue
+        if not _matches_optional_scope(row.get("repo"), snapshot.repo):
+            continue
+        if not _matches_optional_scope(row.get("commit"), snapshot.commit):
+            continue
+        module_name = str(module)
+        module_names.add(module_name)
+        path = row.get("path")
+        if path is not None:
+            module_by_path[str(path)] = module_name
+    return module_by_path, module_names
+
+
+def _function_goids_for_graph_metrics(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> set[int]:
+    goid_rows = _fetch_rows(
+        gateway,
+        "SELECT goid_h128, kind FROM core.goids WHERE repo = ? AND commit = ?",
+        ("goid_h128", "kind"),
+        [snapshot.repo, snapshot.commit],
+    )
+    function_goids: set[int] = set()
+    for row in goid_rows:
+        if row.get("kind") not in {"function", "method"}:
+            continue
+        goid = normalize_decimal_id(row.get("goid_h128"))
+        if goid is not None:
+            function_goids.add(goid)
+    return function_goids
+
+
+def _subsystem_ids_for_graph_metrics(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> set[str]:
+    subsystem_rows = _fetch_rows(
+        gateway,
+        "SELECT subsystem_id FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?",
+        ("subsystem_id",),
+        [snapshot.repo, snapshot.commit],
+    )
+    subsystem_ids: set[str] = set()
+    for row in subsystem_rows:
+        subsystem_id = row.get("subsystem_id")
+        if subsystem_id is not None:
+            subsystem_ids.add(str(subsystem_id))
+    return subsystem_ids
+
+
+def _call_graph_for_graph_metrics(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> nx.DiGraph:
+    call_edge_rows = _fetch_rows(
+        gateway,
+        "SELECT caller_goid_h128, callee_goid_h128 "
+        "FROM graph.call_graph_edges WHERE repo = ? AND commit = ?",
+        ("caller_goid_h128", "callee_goid_h128"),
+        [snapshot.repo, snapshot.commit],
+    )
+    call_node_rows = _fetch_rows(
+        gateway,
+        "SELECT goid_h128, kind FROM graph.call_graph_nodes",
+        ("goid_h128", "kind"),
+        [],
+    )
+    return build_call_graph_from_rows(call_edge_rows, call_node_rows)
+
+
+def _import_graph_for_graph_metrics(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> tuple[nx.DiGraph, dict[str, dict[str, int | bool]] | None]:
+    import_edge_rows = _fetch_rows(
+        gateway,
+        "SELECT src_module, dst_module, module_layer "
+        "FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
+        ("src_module", "dst_module", "module_layer"),
+        [snapshot.repo, snapshot.commit],
+    )
+    import_module_rows = _fetch_rows(
+        gateway,
+        "SELECT module, scc_id, component_size, layer "
+        "FROM graph.import_modules WHERE repo = ? AND commit = ?",
+        ("module", "scc_id", "component_size", "layer"),
+        [snapshot.repo, snapshot.commit],
+    )
+    import_graph = build_import_graph_from_rows(import_edge_rows, import_module_rows)
+    component_meta = component_metadata_from_import_rows(import_module_rows)
+    return import_graph, component_meta
+
+
+def _symbol_module_edges_for_graph_metrics(
+    gateway: StorageGateway,
+    module_by_path: Mapping[str, str],
+) -> SymbolModuleEdges:
+    symbol_rows = _fetch_rows(
+        gateway,
+        "SELECT def_path, use_path, def_goid_h128, use_goid_h128 FROM graph.symbol_use_edges",
+        ("def_path", "use_path", "def_goid_h128", "use_goid_h128"),
+        [],
+    )
+    return build_symbol_module_edges(symbol_rows, module_by_path)
+
+
+def _run_graph_metrics_for_gateway(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    metric_options: GraphMetricsOptions,
+    runtime_options: GraphRuntimeOptions,
+) -> None:
+    module_by_path, module_names = _module_inputs_for_graph_metrics(gateway, snapshot)
+    function_goids = _function_goids_for_graph_metrics(gateway, snapshot)
+    subsystem_ids = _subsystem_ids_for_graph_metrics(gateway, snapshot)
+    filters = build_graph_metric_filters_from_sets(
+        function_goids=function_goids,
+        modules=module_names,
+        subsystems=subsystem_ids,
+    )
+    call_graph = _call_graph_for_graph_metrics(gateway, snapshot)
+    import_graph, component_meta = _import_graph_for_graph_metrics(gateway, snapshot)
+    symbol_module_edges = _symbol_module_edges_for_graph_metrics(gateway, module_by_path)
+    metrics_rows = build_graph_metrics_rows(
+        GraphMetricsInputs(
+            snapshot=snapshot,
+            call_graph=call_graph,
+            import_graph=import_graph,
+            symbol_module_edges=symbol_module_edges,
+            module_names=module_names,
+            component_meta=component_meta,
+            filters=filters,
+            options=metric_options,
+        )
+    )
+    backend = gateway.policy
+    if metrics_rows.function_rows:
+        backend.delete_for_snapshot(
+            "analytics.graph_metrics_functions",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings(
+            "analytics.graph_metrics_functions",
+            metrics_rows.function_rows,
+        )
+    if metrics_rows.module_rows:
+        backend.delete_for_snapshot(
+            "analytics.graph_metrics_modules",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings(
+            "analytics.graph_metrics_modules",
+            metrics_rows.module_rows,
+        )
+
+    functions_ext_rows = build_graph_metrics_functions_ext_rows(
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        call_graph=call_graph,
+        runtime=runtime_options,
+        filters=filters,
+    )
+    if functions_ext_rows:
+        backend.delete_for_snapshot(
+            "analytics.graph_metrics_functions_ext",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings(
+            "analytics.graph_metrics_functions_ext",
+            functions_ext_rows,
+        )
+
+    modules_ext_rows = build_graph_metrics_modules_ext_rows(
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        import_graph=import_graph,
+        runtime=runtime_options,
+        filters=filters,
+    )
+    if modules_ext_rows:
+        backend.delete_for_snapshot(
+            "analytics.graph_metrics_modules_ext",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings(
+            "analytics.graph_metrics_modules_ext",
+            modules_ext_rows,
+        )
+
+    graph_stats_rows = build_graph_stats_rows(
+        gateway,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    if graph_stats_rows:
+        backend.delete_for_snapshot(
+            "analytics.graph_stats",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert("analytics.graph_stats", graph_stats_rows)
 
 
 def make_repo_context(
@@ -805,79 +1139,7 @@ def graph_metrics_ready_gateway(
     )
     gateway = ctx.gateway
     if opts.run_metrics:
-        gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002)")
-        gateway.con.execute(
-            "DELETE FROM core.modules WHERE path IN ('pkg/mod_a.py', 'pkg/mod_b.py')"
-        )
-        gateway.con.execute("DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1001, 1002)")
-        insert_rows(
-            gateway,
-            [
-                GoidRow(
-                    goid_h128=1001,
-                    urn="urn:pkg.mod_a.a",
-                    repo=opts.repo,
-                    commit=opts.commit,
-                    rel_path="pkg/mod_a.py",
-                    kind="function",
-                    qualname="pkg.mod_a.a",
-                    start_line=1,
-                    end_line=4,
-                    created_at=utcnow(),
-                ),
-                GoidRow(
-                    goid_h128=1002,
-                    urn="urn:pkg.mod_b.b",
-                    repo=opts.repo,
-                    commit=opts.commit,
-                    rel_path="pkg/mod_b.py",
-                    kind="function",
-                    qualname="pkg.mod_b.b",
-                    start_line=1,
-                    end_line=3,
-                    created_at=utcnow(),
-                ),
-            ],
-        )
-        insert_rows(
-            gateway,
-            [
-                CallGraphNodeRow(
-                    1001,
-                    "python",
-                    "function",
-                    0,
-                    is_public=True,
-                    rel_path="pkg/mod_a.py",
-                ),
-                CallGraphNodeRow(
-                    1002,
-                    "python",
-                    "function",
-                    0,
-                    is_public=True,
-                    rel_path="pkg/mod_b.py",
-                ),
-            ],
-        )
-        insert_rows(
-            gateway,
-            [
-                CallGraphEdgeRow(
-                    opts.repo,
-                    opts.commit,
-                    1001,
-                    1002,
-                    "pkg/mod_a.py",
-                    3,
-                    0,
-                    "python",
-                    "direct",
-                    "local_name",
-                    1.0,
-                )
-            ],
-        )
+        _seed_graph_metrics_inputs(gateway, repo=opts.repo, commit=opts.commit)
     # Note: call_graph target should be executed via Hamilton if needed
     # The build_callgraph_enabled flag is legacy and can be ignored
     if opts.include_symbol_edges:
@@ -896,73 +1158,13 @@ def graph_metrics_ready_gateway(
     if opts.run_metrics:
         snapshot = SnapshotRef(repo=opts.repo, commit=opts.commit, repo_root=repo_root)
         metric_options = opts.metrics_options or GraphMetricsOptions()
-        metrics_rows = build_graph_metrics_rows(gateway, snapshot, options=metric_options)
-        backend = gateway.policy
-        if metrics_rows.function_rows:
-            backend.delete_for_snapshot(
-                "analytics.graph_metrics_functions",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-            )
-            backend.bulk_insert_mappings(
-                "analytics.graph_metrics_functions",
-                metrics_rows.function_rows,
-            )
-        if metrics_rows.module_rows:
-            backend.delete_for_snapshot(
-                "analytics.graph_metrics_modules",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-            )
-            backend.bulk_insert_mappings(
-                "analytics.graph_metrics_modules",
-                metrics_rows.module_rows,
-            )
-
-        functions_ext_rows = build_graph_metrics_functions_ext_rows(
+        runtime_options = GraphRuntimeOptions(snapshot=snapshot)
+        _run_graph_metrics_for_gateway(
             gateway,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            snapshot,
+            metric_options=metric_options,
+            runtime_options=runtime_options,
         )
-        if functions_ext_rows:
-            backend.delete_for_snapshot(
-                "analytics.graph_metrics_functions_ext",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-            )
-            backend.bulk_insert_mappings(
-                "analytics.graph_metrics_functions_ext",
-                functions_ext_rows,
-            )
-
-        modules_ext_rows = build_graph_metrics_modules_ext_rows(
-            gateway,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        if modules_ext_rows:
-            backend.delete_for_snapshot(
-                "analytics.graph_metrics_modules_ext",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-            )
-            backend.bulk_insert_mappings(
-                "analytics.graph_metrics_modules_ext",
-                modules_ext_rows,
-            )
-
-        graph_stats_rows = build_graph_stats_rows(
-            gateway,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        if graph_stats_rows:
-            backend.delete_for_snapshot(
-                "analytics.graph_stats",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-            )
-            backend.bulk_insert("analytics.graph_stats", graph_stats_rows)
     return ctx
 
 

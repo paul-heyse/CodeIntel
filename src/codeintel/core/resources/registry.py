@@ -134,10 +134,11 @@ class ResourceRegistry:
     Example
     -------
     >>> from codeintel.core.resources import ResourceRegistry
+    >>> from codeintel.core.catalog import CatalogService
     >>> registry = ResourceRegistry()
-    >>> registry.register(GraphProvider, graph_provider)
-    >>> provider = registry.get(GraphProvider)
-    >>> value = registry.require(GraphProvider)
+    >>> registry.register(CatalogService, CatalogService(catalog))
+    >>> provider = registry.get(CatalogService)
+    >>> value = registry.require(CatalogService)
     """
 
     def __init__(self) -> None:

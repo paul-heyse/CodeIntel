@@ -82,6 +82,21 @@ class SnapshotArtifacts:
 
 
 @dataclass(frozen=True, slots=True)
+class _DatasetManifestContext:
+    run_id: str
+    serve_dir: Path
+    repo: str
+    commit: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ParquetMetadataContext:
+    run_id: str
+    repo: str
+    commit: str
+
+
+@dataclass(frozen=True, slots=True)
 class _SnapshotPaths:
     serve_dir: Path
     db_path: Path
@@ -192,13 +207,16 @@ class ServingSnapshotFactory:
         _write_registry(paths.registry_path, views=views)
         _write_schema_manifest(paths.schema_manifest_path, tables=tables)
         _write_buildspec(paths.buildspec_path, tables=tables)
-        dataset_manifest_paths = _write_dataset_manifests(
-            paths.db_path,
+        manifest_context = _DatasetManifestContext(
             run_id=run_id,
             serve_dir=paths.serve_dir,
-            tables=tables,
             repo=self.repo,
             commit=self.commit,
+        )
+        dataset_manifest_paths = _write_dataset_manifests(
+            paths.db_path,
+            tables=tables,
+            context=manifest_context,
         )
 
         snapshot = ServingSnapshot(
@@ -383,81 +401,103 @@ def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None
 def _write_dataset_manifests(
     db_path: Path,
     *,
-    run_id: str,
-    serve_dir: Path,
+    context: _DatasetManifestContext,
     tables: Iterable[dict[str, object]],
-    repo: str,
-    commit: str,
 ) -> tuple[Path, ...]:
-    dataset_root = serve_dir / "datasets"
+    dataset_root = context.serve_dir / "datasets"
     dataset_root.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(db_path))
     manifest_paths: list[Path] = []
     try:
         for table in tables:
-            table_key = str(table.get("table_key", "")).strip()
-            if not table_key:
-                continue
-            try:
-                schema_name, table_name = split_table_key(table_key)
-            except ValueError:
-                continue
-            try:
-                relation = con.sql(f'SELECT * FROM "{schema_name}"."{table_name}"')
-                reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-            except duckdb.Error:
-                continue
-            schema_hash = _schema_hash_from_table(table)
-            if schema_hash is None:
-                msg = f"schema_hash is required for dataset manifest: {table_key}"
-                raise ValueError(msg)
-            try:
-                contract_schema = contract_schema_for_table_key(table_key)
-            except ValueError:
-                table_schema = _table_schema_from_entry(table)
-                if table_schema is None:
-                    raise
-                contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-            table_schema = _table_schema_for_metadata(
-                table,
-                table_key=table_key,
-                contract_schema=contract_schema,
-            )
-            schema_digest_value = compute_schema_digest(table_schema)
-            parquet_metadata = _parquet_metadata_for_table(
-                table_schema=table_schema,
-                table_key=table_key,
-                schema_hash_value=schema_hash,
-                schema_digest_value=schema_digest_value,
-                run_id=run_id,
-                repo=repo,
-                commit=commit,
-            )
-            aligned = align_reader_to_contract(
-                reader,
-                contract_schema,
-                extras_policy=extras_policy_from_schema(contract_schema),
-            )
-            write_dataset(
+            manifest_path = _manifest_path_for_table(
+                con,
                 dataset_root=dataset_root,
-                table_key=table_key,
-                snapshot_id=run_id,
-                data=aligned,
-                options=ArrowDatasetWriteOptions(
-                    schema_hash=schema_hash,
-                    schema_metadata=parquet_metadata,
-                ),
+                table=table,
+                context=context,
             )
-            manifest_path = dataset_manifest_path(
-                dataset_root=dataset_root,
-                table_key=table_key,
-                snapshot_id=run_id,
-            )
-            if manifest_path.is_file():
+            if manifest_path is not None and manifest_path.is_file():
                 manifest_paths.append(manifest_path)
     finally:
         con.close()
     return tuple(manifest_paths)
+
+
+def _manifest_path_for_table(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    dataset_root: Path,
+    table: Mapping[str, object],
+    context: _DatasetManifestContext,
+) -> Path | None:
+    table_key = str(table.get("table_key", "")).strip()
+    if not table_key:
+        return None
+    try:
+        schema_name, table_name = split_table_key(table_key)
+    except ValueError:
+        return None
+    try:
+        relation = con.sql(f'SELECT * FROM "{schema_name}"."{table_name}"')
+        reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    except duckdb.Error:
+        return None
+    schema_hash = _schema_hash_from_table(table)
+    if schema_hash is None:
+        msg = f"schema_hash is required for dataset manifest: {table_key}"
+        raise ValueError(msg)
+    contract_schema = _resolve_contract_schema(table, table_key=table_key)
+    table_schema = _table_schema_for_metadata(
+        table,
+        table_key=table_key,
+        contract_schema=contract_schema,
+    )
+    schema_digest_value = compute_schema_digest(table_schema)
+    parquet_metadata = _parquet_metadata_for_table(
+        table_schema=table_schema,
+        table_key=table_key,
+        schema_hash_value=schema_hash,
+        schema_digest_value=schema_digest_value,
+        context=_ParquetMetadataContext(
+            run_id=context.run_id,
+            repo=context.repo,
+            commit=context.commit,
+        ),
+    )
+    aligned = align_reader_to_contract(
+        reader,
+        contract_schema,
+        extras_policy=extras_policy_from_schema(contract_schema),
+    )
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=context.run_id,
+        data=aligned,
+        options=ArrowDatasetWriteOptions(
+            schema_hash=schema_hash,
+            schema_metadata=parquet_metadata,
+        ),
+    )
+    return dataset_manifest_path(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=context.run_id,
+    )
+
+
+def _resolve_contract_schema(
+    table: Mapping[str, object],
+    *,
+    table_key: str,
+) -> pa.Schema:
+    try:
+        return contract_schema_for_table_key(table_key)
+    except ValueError:
+        table_schema = _table_schema_from_entry(table)
+        if table_schema is None:
+            raise
+        return arrow_contract_for_table_schema(table_schema=table_schema)
 
 
 def _table_schema_for_metadata(
@@ -485,9 +525,7 @@ def _parquet_metadata_for_table(
     table_key: str,
     schema_hash_value: str,
     schema_digest_value: str,
-    run_id: str,
-    repo: str,
-    commit: str,
+    context: _ParquetMetadataContext,
 ) -> dict[str, object]:
     columns_json = {col.name: col.type for col in table_schema.columns}
     nullability_json = {col.name: col.nullable for col in table_schema.columns}
@@ -501,10 +539,10 @@ def _parquet_metadata_for_table(
         "codeintel.nullability_json": nullability_json,
         "codeintel.primary_keys_json": list(table_schema.primary_key),
         "codeintel.partition_columns_json": [],
-        "codeintel.build_id": run_id,
-        "codeintel.repo": repo,
-        "codeintel.commit": commit,
-        "codeintel.snapshot_id": run_id,
+        "codeintel.build_id": context.run_id,
+        "codeintel.repo": context.repo,
+        "codeintel.commit": context.commit,
+        "codeintel.snapshot_id": context.run_id,
         "codeintel.generated_at": datetime.now(tz=UTC).isoformat(),
         "codeintel.hamilton.node": table_key,
         "codeintel.hamilton.graph_version": None,

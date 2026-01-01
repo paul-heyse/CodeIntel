@@ -194,6 +194,11 @@ def _load_serving_settings() -> ServingSettings:
             return default_when_unset
         return get_int(name, default=None)
 
+    def get_optional_bool(name: str, *, default_when_unset: bool | None = None) -> bool | None:
+        if not is_set(name):
+            return default_when_unset
+        return get_bool(name, default=None)
+
     def get_optional_float(name: str, *, default_when_unset: float | None = None) -> float | None:
         if not is_set(name):
             return default_when_unset
@@ -242,6 +247,16 @@ def _load_serving_settings() -> ServingSettings:
         dataset_fragment_readahead=get_optional_int(
             "CODEINTEL_SERVE_DATASET_FRAGMENT_READAHEAD",
         ),
+        dataset_batch_readahead=get_optional_int(
+            "CODEINTEL_SERVE_DATASET_BATCH_READAHEAD",
+        ),
+        dataset_use_threads=get_optional_bool(
+            "CODEINTEL_SERVE_DATASET_USE_THREADS",
+        ),
+        dataset_unify_schemas=get_required_bool(
+            "CODEINTEL_SERVE_DATASET_UNIFY_SCHEMAS",
+            default=False,
+        ),
         ipc_enable_options=get_required_bool("CODEINTEL_SERVE_IPC_ENABLE_OPTIONS", default=False),
         ipc_compression=get_str("CODEINTEL_SERVE_IPC_COMPRESSION", default=None),
         ipc_use_threads=get_required_bool("CODEINTEL_SERVE_IPC_USE_THREADS", default=True),
@@ -271,6 +286,18 @@ def _load_serving_settings() -> ServingSettings:
         polars_set_sorted=get_required_bool("CODEINTEL_SERVE_POLARS_SET_SORTED", default=False),
         polars_unify_dictionaries=get_required_bool(
             "CODEINTEL_SERVE_POLARS_UNIFY_DICTIONARIES",
+            default=False,
+        ),
+        polars_collect_all=get_required_bool(
+            "CODEINTEL_SERVE_POLARS_COLLECT_ALL",
+            default=False,
+        ),
+        polars_sink_batches=get_required_bool(
+            "CODEINTEL_SERVE_POLARS_SINK_BATCHES",
+            default=False,
+        ),
+        polars_collect_schema=get_required_bool(
+            "CODEINTEL_SERVE_POLARS_COLLECT_SCHEMA",
             default=False,
         ),
         # MCP Context Features

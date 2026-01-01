@@ -12,16 +12,17 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import coerce_optional_int, records_from_relation
+from codeintel.storage.query_results import coerce_optional_int
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
     from datetime import datetime
 
     from codeintel.build.analytics.compute.graphs import ComponentBundle, NeighborStats
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.schemas.generated_rows.graph import (
+        GraphImportModulesRow,
+        GraphSymbolUseEdgesRow,
+    )
 
 
 @dataclass(frozen=True)
@@ -88,52 +89,43 @@ def build_function_graph_metric_rows(
     ]
 
 
-def component_metadata_from_import_table(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
+def component_metadata_from_import_rows(
+    rows: Iterable[Mapping[str, object]] | Iterable[GraphImportModulesRow],
 ) -> dict[str, dict[str, int | bool]] | None:
-    """Load cached import graph component metadata using Ibis.
+    """Build cached import graph metadata from pre-scoped rows.
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing the DuckDB connection.
-    repo
-        Repository slug anchoring the lookup.
-    commit
-        Commit hash anchoring the lookup.
+    rows
+        Import module rows containing module, scc_id, component_size, and layer.
 
     Returns
     -------
     dict[str, dict[str, int | bool]] | None
         Cached component metadata when present; otherwise ``None``.
     """
-    try:
-        relation = gateway.relation_from_table_key("graph.import_modules")
-        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-            ColumnExpression("commit") == ConstantExpression(commit)
-        )
-        scoped = relation.filter(predicate).select("module", "scc_id", "component_size", "layer")
-        rows = records_from_relation(scoped)
-    except DuckDBError:
-        return None
-    if not rows:
-        return None
-
     comp_id: dict[str, int] = {}
     in_cycle: dict[str, bool] = {}
     layer_by_module: dict[str, int] = {}
+    found = False
     for record in rows:
-        name = str(record["module"])
+        name = record.get("module")
+        if name is None:
+            continue
+        found = True
+        module = str(name)
         scc_id = coerce_optional_int(record.get("scc_id"), ctx="scc_id")
         component_size = coerce_optional_int(record.get("component_size"), ctx="component_size")
         layer = coerce_optional_int(record.get("layer"), ctx="layer")
-        comp_id[name] = scc_id if scc_id is not None else -1
+        comp_id[module] = scc_id if scc_id is not None else -1
         size = component_size or 0
-        in_cycle[name] = size > 1
+        in_cycle[module] = size > 1
         if layer is not None:
-            layer_by_module[name] = layer
+            layer_by_module[module] = layer
+
+    if not found:
+        return None
+
     return {
         "component_id": {node: int(val) for node, val in comp_id.items()},
         "in_cycle": {node: bool(flag) for node, flag in in_cycle.items()},
@@ -170,74 +162,35 @@ def merge_component_metadata(
     return {"component_id": ids, "in_cycle": in_cycle, "layer": layer}
 
 
-def load_symbol_module_edges(
-    gateway: StorageGateway,
-    module_by_path: dict[str, str] | None,
+def build_symbol_module_edges(
+    symbol_use_edges: Iterable[Mapping[str, object]] | Iterable[GraphSymbolUseEdgesRow],
+    module_by_path: Mapping[str, str],
 ) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
-    """Load symbol use edges aggregated to modules using Ibis.
+    """Aggregate symbol use edges to module-level adjacency.
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing the DuckDB connection.
+    symbol_use_edges
+        Symbol use edges containing def_path/use_path values.
     module_by_path
-        Optional mapping from file path to module name; when omitted, modules are
-        resolved directly from the database.
+        Mapping of file path to module name.
 
     Returns
     -------
     tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
         Modules involved plus inbound/outbound adjacency keyed by module.
     """
-    if module_by_path is None:
-        return _load_symbol_module_edges_from_db(gateway)
-    return _load_symbol_module_edges_from_mapping(gateway, module_by_path)
-
-
-def _load_symbol_module_edges_from_db(
-    gateway: StorageGateway,
-) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
     modules: set[str] = set()
     inbound: dict[str, set[str]] = defaultdict(set)
     outbound: dict[str, set[str]] = defaultdict(set)
 
-    edges = gateway.relation_from_table_key("graph.symbol_use_edges").set_alias("edges")
-    module_defs = gateway.relation_from_table_key("core.modules").set_alias("module_defs")
-    module_uses = gateway.relation_from_table_key("core.modules").set_alias("module_uses")
-    relation = (
-        edges.join(module_defs, "edges.def_path = module_defs.path", how="left")
-        .join(module_uses, "edges.use_path = module_uses.path", how="left")
-        .select(
-            "module_uses.module as use_module",
-            "module_defs.module as def_module",
-        )
-        .filter(~ColumnExpression("module_defs.module").isnull())
-        .filter(ColumnExpression("module_defs.module") != ConstantExpression(""))
-        .filter(~ColumnExpression("module_uses.module").isnull())
-        .filter(ColumnExpression("module_uses.module") != ConstantExpression(""))
-    )
-    for use_module, def_module in relation.fetchall():
-        src = str(use_module)
-        dst = str(def_module)
-        modules.update((src, dst))
-        outbound[src].add(dst)
-        inbound[dst].add(src)
-    return modules, inbound, outbound
-
-
-def _load_symbol_module_edges_from_mapping(
-    gateway: StorageGateway,
-    module_by_path: dict[str, str],
-) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
-    modules: set[str] = set()
-    inbound: dict[str, set[str]] = defaultdict(set)
-    outbound: dict[str, set[str]] = defaultdict(set)
-
-    relation = gateway.relation_from_table_key("graph.symbol_use_edges")
-    rows = records_from_relation(relation.select("def_path", "use_path"))
-    for record in rows:
-        def_module = module_by_path.get(str(record["def_path"]))
-        use_module = module_by_path.get(str(record["use_path"]))
+    for record in symbol_use_edges:
+        def_path = record.get("def_path")
+        use_path = record.get("use_path")
+        if def_path is None or use_path is None:
+            continue
+        def_module = module_by_path.get(str(def_path))
+        use_module = module_by_path.get(str(use_path))
         if def_module is None or use_module is None:
             continue
         modules.update((use_module, def_module))
@@ -298,7 +251,7 @@ __all__ = [
     "ModuleGraphMetricInputs",
     "build_function_graph_metric_rows",
     "build_module_graph_metric_rows",
-    "component_metadata_from_import_table",
-    "load_symbol_module_edges",
+    "build_symbol_module_edges",
+    "component_metadata_from_import_rows",
     "merge_component_metadata",
 ]

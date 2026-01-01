@@ -61,19 +61,21 @@ def coverage_functions__base(
     coverage = tabular_to_lazyframe(_q__analytics__coverage_lines)
 
     predicate = (pl.col("repo") == env.snapshot.repo) & (pl.col("commit") == env.snapshot.commit)
-    goids = goids.filter(predicate).filter(
-        pl.col("kind").is_in(["function", "method"])
-    ).select(
-        pl.col("goid_h128").alias("function_goid_h128"),
-        "urn",
-        "repo",
-        "commit",
-        "rel_path",
-        "language",
-        "kind",
-        "qualname",
-        "start_line",
-        "end_line",
+    goids = (
+        goids.filter(predicate)
+        .filter(pl.col("kind").is_in(["function", "method"]))
+        .select(
+            pl.col("goid_h128").alias("function_goid_h128"),
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+        )
     )
     coverage = coverage.filter(predicate).select(
         "repo",
@@ -89,10 +91,7 @@ def coverage_functions__base(
         pl.col("line").is_null()
         | (
             (pl.col("line") >= pl.col("start_line"))
-            & (
-                pl.col("line")
-                <= pl.coalesce(pl.col("end_line"), pl.col("start_line"))
-            )
+            & (pl.col("line") <= pl.coalesce(pl.col("end_line"), pl.col("start_line")))
         )
     )
 
@@ -110,19 +109,19 @@ def coverage_functions__base(
             "end_line",
         ]
     ).agg(
-        pl.sum(
-            pl.when(pl.col("is_executable").fill_null(False))
-            .then(1)
-            .otherwise(0)
-        ).alias("executable_lines_raw"),
-        pl.sum(
-            pl.when(
-                pl.col("is_executable").fill_null(False)
-                & pl.col("is_covered").fill_null(False)
-            )
-            .then(1)
-            .otherwise(0)
-        ).alias("covered_lines_raw"),
+        pl.when(pl.col("is_executable").fill_null(value=False))
+        .then(1)
+        .otherwise(0)
+        .sum()
+        .alias("executable_lines_raw"),
+        pl.when(
+            pl.col("is_executable").fill_null(value=False)
+            & pl.col("is_covered").fill_null(value=False)
+        )
+        .then(1)
+        .otherwise(0)
+        .sum()
+        .alias("covered_lines_raw"),
     )
 
     executable = pl.col("executable_lines_raw").fill_null(0)

@@ -11,10 +11,6 @@ from codeintel.build.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
 )
-from codeintel.build.analytics.profiles.writer_guard import (
-    PolicyWriterConfig,
-    write_rows_via_policy_backend,
-)
 from codeintel.build.analytics.utilities.type_coercion import (
     optional_float,
     optional_int,
@@ -335,38 +331,3 @@ def _load_module_aggregates(
     )
 
     return modules_scoped, func_stats, files, imports, roles
-
-
-def build_module_profile(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    module_table: str = DEFAULT_MODULE_TABLE,
-) -> int:
-    """Compute and persist analytics.module_profile rows.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    snapshot
-        Repository and commit identifiers.
-    module_table
-        Name of the module table to use.
-
-    Returns
-    -------
-    int
-        Number of rows inserted.
-    """
-    inputs = compute_module_profile_inputs(gateway, snapshot)
-    rows = list(build_module_profile_rows(inputs, module_table=module_table))
-    if not rows:
-        return 0
-
-    config = PolicyWriterConfig(
-        table_key="analytics.module_profile",
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-    return write_rows_via_policy_backend(gateway, rows=rows, config=config)

@@ -19,6 +19,7 @@ from codeintel.serving.semantic.engines.protocol import EngineContext, Executabl
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.duckdb_explain import normalize_explain_output
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -105,7 +106,8 @@ class DuckDBRelationPlan:
         QueryExplain
             Explain payload with SQL and plan text.
         """
-        return QueryExplain(sql=self.relation.sql_query(), plan=self.relation.explain())
+        plan = normalize_explain_output(self.relation.explain())
+        return QueryExplain(sql=self.relation.sql_query(), plan=plan)
 
     @staticmethod
     def cleanup() -> None:
@@ -171,7 +173,10 @@ class DuckDBQueryEngine:
                     dataset_manifests=ctx.dataset_manifests,
                     scan_options=RelationScanOptions(
                         batch_size=ctx.settings.export_batch_size,
+                        batch_readahead=ctx.settings.dataset_batch_readahead,
                         fragment_readahead=ctx.settings.dataset_fragment_readahead,
+                        use_threads=ctx.settings.dataset_use_threads,
+                        unify_schemas=ctx.settings.dataset_unify_schemas,
                         metrics_enabled=ctx.settings.dataset_scan_metrics_enabled,
                     ),
                     column_types=spec.column_types,

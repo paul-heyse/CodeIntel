@@ -21,6 +21,7 @@ from codeintel.core.columnar.schema_metadata import merge_metadata
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.storage.datasets.scanning import DatasetScanOptions, build_scanner
 from codeintel.storage.schema import arrow_schema_hash
 
 if TYPE_CHECKING:
@@ -112,13 +113,7 @@ class ArrowDatasetWriteOptions:
     unify_dictionaries: bool = False
 
 
-@dataclass(frozen=True, slots=True)
-class ArrowDatasetScanOptions:
-    """Options for streaming dataset scans."""
-
-    batch_size: int
-    fragment_readahead: int | None = None
-    filter_expression: ds.Expression | None = None
+ArrowDatasetScanOptions = DatasetScanOptions
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,14 +278,7 @@ def scan_dataset_scanner(
         table_key=table_key,
         snapshot_id=snapshot_id,
     )
-    scan_kwargs: dict[str, object] = {"batch_size": options.batch_size}
-    if options.fragment_readahead is not None:
-        scan_kwargs["fragment_readahead"] = options.fragment_readahead
-    return _build_scanner(
-        dataset,
-        filter_expression=options.filter_expression,
-        scan_kwargs=scan_kwargs,
-    )
+    return build_scanner(dataset, options=options)
 
 
 def scan_dataset_reader(
@@ -402,42 +390,6 @@ def _partitioning(
         msg = f"Partition columns missing from schema: {columns}"
         raise ValueError(msg) from exc
     return ds.partitioning(schema=pa.schema(fields))
-
-
-def _build_scanner(
-    dataset: ds.Dataset,
-    *,
-    filter_expression: ds.Expression | None,
-    scan_kwargs: Mapping[str, object],
-) -> ds.Scanner:
-    if filter_expression is None:
-        return dataset.scanner(**scan_kwargs)
-    fragments = _fragments_for_filter(dataset, filter_expression)
-    from_fragments = getattr(ds.Scanner, "from_fragments", None)
-    if fragments is not None and callable(from_fragments):
-        try:
-            return from_fragments(fragments, schema=dataset.schema, **scan_kwargs)
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            pass
-    scan_kwargs = dict(scan_kwargs)
-    scan_kwargs["filter"] = filter_expression
-    return dataset.scanner(**scan_kwargs)
-
-
-def _fragments_for_filter(
-    dataset: ds.Dataset,
-    filter_expression: ds.Expression,
-) -> tuple[ds.Fragment, ...] | None:
-    get_fragments = getattr(dataset, "get_fragments", None)
-    if not callable(get_fragments):
-        return None
-    try:
-        fragments = get_fragments(filter=filter_expression)
-        if not isinstance(fragments, Iterable):
-            return None
-        return tuple(fragments)
-    except (TypeError, ValueError, pa.ArrowInvalid):
-        return None
 
 
 def _parquet_write_options(

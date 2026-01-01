@@ -632,9 +632,7 @@ class PipelineRunTracking:
         query = (
             exp.select(*_run_select_exprs())
             .from_(table_expr_from_ref(_PIPELINE_RUNS_TABLE))
-            .order_by(
-                exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True)
-            )
+            .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True))
             .limit(exp.Placeholder())
         )
         cur = self.con.execute(render_sql_duckdb(query), [limit])

@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from codeintel.storage.views import generated_view_builders
 from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ def _view_modules() -> tuple[ModuleType, ...]:
     tuple[ModuleType, ...]
         Modules containing view-builder node functions.
     """
-    return ()
+    return (generated_view_builders,)
 
 
 def view_builder_modules() -> tuple[ModuleType, ...]:

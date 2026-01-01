@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING, cast
 
 import duckdb
 
-from codeintel.core.schemas.type_mappings import normalize_engine_column_type
+from codeintel.core.schemas.type_mappings import (
+    complex_type_mapping,
+    normalize_engine_column_type,
+)
 
 if TYPE_CHECKING:
     from duckdb.typing import DuckDBPyType
@@ -49,6 +52,9 @@ def duckdb_type_for_column_type(column_type: ColumnType | None) -> DuckDBPyType 
     normalized = normalize_engine_column_type(column_type)
     if normalized is None:
         return None
+    complex_mapping = complex_type_mapping(normalized)
+    if complex_mapping is not None:
+        normalized = complex_mapping.duckdb_type
     try:
         return duckdb.sqltype(normalized)
     except (TypeError, ValueError):

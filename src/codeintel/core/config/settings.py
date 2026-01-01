@@ -258,6 +258,9 @@ class ServingSettings:
     export_metrics_enabled: bool = False
     dataset_scan_metrics_enabled: bool = False
     dataset_fragment_readahead: int | None = None
+    dataset_batch_readahead: int | None = None
+    dataset_use_threads: bool | None = None
+    dataset_unify_schemas: bool = False
 
     # Arrow IPC Control Plane
     ipc_enable_options: bool = False
@@ -277,6 +280,9 @@ class ServingSettings:
     polars_use_arrow_scanner: bool = False
     polars_set_sorted: bool = False
     polars_unify_dictionaries: bool = False
+    polars_collect_all: bool = False
+    polars_sink_batches: bool = False
+    polars_collect_schema: bool = False
 
     # MCP Context Features
     mcp_enable_sampling: bool = False

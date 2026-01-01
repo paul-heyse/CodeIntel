@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import logging
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -75,7 +74,11 @@ from codeintel.build.analytics.profiles.modules import (
     compute_module_profile_inputs,
 )
 from codeintel.build.analytics.profiles.utils import DEFAULT_MODULE_TABLE
-from codeintel.build.analytics.testing.profiles import rows as profile_rows
+from codeintel.build.analytics.utilities.datasets import (
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+    validate_contract_rows,
+)
 from codeintel.build.schemas import configure_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.runtime.runtime_bundle import RuntimeBundle
@@ -556,26 +559,29 @@ def test_profile_tuple_alignment() -> None:
         pytest.fail("Behavioral coverage tuple length mismatch with column constants.")
 
 
-def test_test_and_behavioral_profile_writers(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Test profile and behavioral coverage writers respect snapshot alignment."""
+def test_test_and_behavioral_profile_insertion(tmp_path: Path) -> None:
+    """Insert test profile and behavioral coverage rows via dataset contracts."""
     ctx = TestScenario.minimal().build(tmp_path)
     try:
-        snapshot = ctx.to_snapshot_ref()
-        caplog.set_level(logging.WARNING)
-
         test_rows = _test_rows(ctx.repo, ctx.commit)
         ctx.gateway.con.execute("DELETE FROM analytics.test_profile")
-        inserted = profile_rows.write_test_profile_rows(ctx.gateway, snapshot, test_rows)
+        test_contract = get_analytics_dataset_contract(ctx.gateway, "analytics.test_profile")
+        validated_tests = validate_contract_rows(
+            test_contract.table_key, test_rows, gateway=ctx.gateway
+        )
+        inserted = insert_analytics_rows(ctx.gateway, test_contract, validated_tests)
         expect_equal(inserted, len(test_rows))
         stored = ctx.gateway.con.execute(
             "SELECT test_id, rel_path FROM analytics.test_profile ORDER BY test_id"
         ).fetchall()
         expect_equal(len(stored), len(test_rows))
 
-        replaced = profile_rows.write_test_profile_rows(ctx.gateway, snapshot, test_rows[:1])
-        expect_equal(replaced, 1)
+        ctx.gateway.con.execute("DELETE FROM analytics.test_profile")
+        validated_subset = validate_contract_rows(
+            test_contract.table_key, test_rows[:1], gateway=ctx.gateway
+        )
+        inserted_subset = insert_analytics_rows(ctx.gateway, test_contract, validated_subset)
+        expect_equal(inserted_subset, 1)
         remaining = ctx.gateway.con.execute(
             "SELECT COUNT(*) FROM analytics.test_profile"
         ).fetchone()
@@ -585,8 +591,14 @@ def test_test_and_behavioral_profile_writers(
 
         ctx.gateway.con.execute("DELETE FROM analytics.behavioral_coverage")
         behavior_rows = _behavior_rows(ctx.repo, ctx.commit)
-        inserted_behavior = profile_rows.write_behavioral_coverage_rows(
-            ctx.gateway, snapshot, behavior_rows
+        behavior_contract = get_analytics_dataset_contract(
+            ctx.gateway, "analytics.behavioral_coverage"
+        )
+        validated_behavior = validate_contract_rows(
+            behavior_contract.table_key, behavior_rows, gateway=ctx.gateway
+        )
+        inserted_behavior = insert_analytics_rows(
+            ctx.gateway, behavior_contract, validated_behavior
         )
         expect_equal(inserted_behavior, len(behavior_rows))
         behavior_count = ctx.gateway.con.execute(
@@ -595,8 +607,6 @@ def test_test_and_behavioral_profile_writers(
         if behavior_count is None:
             pytest.fail("behavioral_coverage rows missing after insert")
         expect_equal(int(behavior_count[0]), len(behavior_rows))
-        warnings = [record for record in caplog.records if record.levelno >= logging.WARNING]
-        expect_equal(warnings, [])
     finally:
         ctx.close()
 

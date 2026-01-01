@@ -45,7 +45,6 @@ from codeintel.build.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     get_function_ast_features_contract,
     insert_analytics_rows,
-    write_analytics_rows,
 )
 from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.build.analytics.utilities.type_coercion import (
@@ -77,5 +76,4 @@ __all__ = [
     "safe_unparse",
     "snippet_from_lines",
     "to_records",
-    "write_analytics_rows",
 ]

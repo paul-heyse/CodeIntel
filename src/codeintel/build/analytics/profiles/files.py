@@ -12,10 +12,6 @@ from codeintel.build.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
 )
-from codeintel.build.analytics.profiles.writer_guard import (
-    PolicyWriterConfig,
-    write_rows_via_policy_backend,
-)
 from codeintel.build.analytics.utilities.type_coercion import (
     optional_float,
     optional_int,
@@ -362,38 +358,3 @@ def _row_to_file_profile_model(
             else inputs.created_at
         ),
     )
-
-
-def build_file_profile(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    module_table: str = DEFAULT_MODULE_TABLE,
-) -> int:
-    """Compute and persist analytics.file_profile rows.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    snapshot
-        Repository and commit identifiers.
-    module_table
-        Name of the module table to use.
-
-    Returns
-    -------
-    int
-        Number of rows inserted.
-    """
-    inputs = compute_file_profile_inputs(gateway, snapshot)
-    rows = list(build_file_profile_rows(inputs, module_table=module_table))
-    if not rows:
-        return 0
-
-    config = PolicyWriterConfig(
-        table_key="analytics.file_profile",
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-    return write_rows_via_policy_backend(gateway, rows=rows, config=config)

@@ -38,15 +38,17 @@ def summarize_graph_for_function_profile(
             .set_alias("edges")
         )
         cg_out = edges.aggregate(
-            "count(*) as call_edge_out_count, "
-            "count(distinct callee_goid_h128) as call_fan_out",
+            "count(*) as call_edge_out_count, count(distinct callee_goid_h128) as call_fan_out",
             "caller_goid_h128",
         ).set_alias("cg_out")
-        cg_in = edges.filter(~ColumnExpression("callee_goid_h128").isnull()).aggregate(
-            "count(*) as call_edge_in_count, "
-            "count(distinct caller_goid_h128) as call_fan_in",
-            "callee_goid_h128",
-        ).set_alias("cg_in")
+        cg_in = (
+            edges.filter(~ColumnExpression("callee_goid_h128").isnull())
+            .aggregate(
+                "count(*) as call_edge_in_count, count(distinct caller_goid_h128) as call_fan_in",
+                "callee_goid_h128",
+            )
+            .set_alias("cg_in")
+        )
         combined = cg_out.join(
             cg_in,
             "cg_out.caller_goid_h128 = cg_in.callee_goid_h128",

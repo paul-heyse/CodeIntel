@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -26,6 +26,7 @@ from codeintel.storage.datasets.contracts import (
 )
 from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.datasets.parquet_metadata import metadata_from_schema
+from codeintel.storage.datasets.scanning import DatasetScanOptions, build_scanner
 from codeintel.storage.tracking.schema_catalog_models import DerivedSettingsPayload
 
 if TYPE_CHECKING:
@@ -117,16 +118,7 @@ class DatasetManifestIndex:
         return tuple(self.by_table_key.keys())
 
 
-@dataclass(frozen=True, slots=True)
-class DatasetScannerOptions:
-    """Options for streaming dataset scans."""
-
-    batch_size: int
-    fragment_readahead: int | None = None
-    filter_expression: ds.Expression | None = None
-    metrics_enabled: bool = False
-    schema: pa.Schema | None = None
-    columns: Sequence[str] | None = None
+DatasetScannerOptions = DatasetScanOptions
 
 
 def dataset_for_entry(entry: DatasetManifestEntry) -> ds.Dataset:
@@ -232,17 +224,7 @@ def dataset_scanner_for_entry(
             duration_ms=(perf_counter() - start) * 1000,
             memory_bytes=_total_allocated_bytes(),
         )
-    scan_kwargs: dict[str, object] = {"batch_size": tuned_options.batch_size}
-    if tuned_options.fragment_readahead is not None:
-        scan_kwargs["fragment_readahead"] = tuned_options.fragment_readahead
-    if tuned_options.columns is not None:
-        scan_kwargs["columns"] = list(tuned_options.columns)
-    return _build_scanner(
-        dataset,
-        filter_expression=tuned_options.filter_expression,
-        scan_kwargs=scan_kwargs,
-        schema=tuned_options.schema,
-    )
+    return build_scanner(dataset, options=tuned_options)
 
 
 def apply_tuning_options(
@@ -267,11 +249,15 @@ def apply_tuning_options(
     batch_size = _tuned_batch_size(entry, default=options.batch_size)
     return DatasetScannerOptions(
         batch_size=batch_size,
+        batch_readahead=options.batch_readahead,
         fragment_readahead=options.fragment_readahead,
         filter_expression=options.filter_expression,
+        use_threads=options.use_threads,
+        memory_pool=options.memory_pool,
         metrics_enabled=options.metrics_enabled,
         schema=options.schema,
         columns=options.columns,
+        unify_schemas=options.unify_schemas,
     )
 
 
@@ -430,54 +416,6 @@ def _coerce_int_from_intlike(value: object) -> int | None:
     if isinstance(converted, int):
         return converted
     return None
-
-
-def _build_scanner(
-    dataset: ds.Dataset,
-    *,
-    filter_expression: ds.Expression | None,
-    scan_kwargs: Mapping[str, object],
-    schema: pa.Schema | None,
-) -> ds.Scanner:
-    resolved_schema = schema or dataset.schema
-    scan_kwargs = dict(scan_kwargs)
-    if schema is not None:
-        scan_kwargs["schema"] = resolved_schema
-    if filter_expression is None:
-        return _scanner_with_schema(dataset, scan_kwargs)
-    fragments = _fragments_for_filter(dataset, filter_expression)
-    from_fragments = getattr(ds.Scanner, "from_fragments", None)
-    if fragments is not None and callable(from_fragments):
-        try:
-            return from_fragments(fragments, schema=resolved_schema, **scan_kwargs)
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            pass
-    scan_kwargs["filter"] = filter_expression
-    return _scanner_with_schema(dataset, scan_kwargs)
-
-
-def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> ds.Scanner:
-    try:
-        return dataset.scanner(**scan_kwargs)
-    except TypeError:
-        scan_kwargs.pop("schema", None)
-        return dataset.scanner(**scan_kwargs)
-
-
-def _fragments_for_filter(
-    dataset: ds.Dataset,
-    filter_expression: ds.Expression,
-) -> tuple[ds.Fragment, ...] | None:
-    get_fragments = getattr(dataset, "get_fragments", None)
-    if not callable(get_fragments):
-        return None
-    try:
-        fragments = get_fragments(filter=filter_expression)
-        if not isinstance(fragments, Iterable):
-            return None
-        return tuple(fragments)
-    except (TypeError, ValueError, pa.ArrowInvalid):
-        return None
 
 
 __all__ = [

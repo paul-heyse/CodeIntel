@@ -70,9 +70,7 @@ class TestComputeHierarchy:
     @staticmethod
     def test_analytics_centrality_delegates_to_core() -> None:
         """Verify analytics centrality wrapper imports from core.compute."""
-        centrality_file = (
-            SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "centrality.py"
-        )
+        centrality_file = SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "centrality.py"
         text = centrality_file.read_text(encoding="utf-8")
 
         if "from codeintel.core.compute.centrality import" not in text:
@@ -88,9 +86,7 @@ class TestComputeHierarchy:
     @staticmethod
     def test_analytics_components_delegates_to_graphs() -> None:
         """Verify analytics components wrapper imports from graphs.compute."""
-        components_file = (
-            SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "components.py"
-        )
+        components_file = SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "components.py"
         text = components_file.read_text(encoding="utf-8")
         if "from codeintel.build.graphs.compute.metrics" not in text:
             pytest.fail(f"{_relative_path(components_file)} missing graphs.compute.metrics import")
@@ -98,9 +94,7 @@ class TestComputeHierarchy:
     @staticmethod
     def test_analytics_structural_delegates_to_graphs() -> None:
         """Verify analytics structural wrapper imports from graphs.compute."""
-        structural_file = (
-            SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "structural.py"
-        )
+        structural_file = SRC_ROOT / "build" / "analytics" / "compute" / "graphs" / "structural.py"
         text = structural_file.read_text(encoding="utf-8")
         if "from codeintel.build.graphs.compute.metrics" not in text:
             pytest.fail(f"{_relative_path(structural_file)} missing graphs.compute.metrics import")

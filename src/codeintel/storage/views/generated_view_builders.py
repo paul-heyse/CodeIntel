@@ -1,4 +1,4 @@
-"""Compiled view registry data for Hamilton view materialization.
+"""Generated view builders for Hamilton view materialization.
 
 This module is generated from Hamilton view metadata and should not be edited
 by hand. Regenerate via the view registry compiler when view definitions change.
@@ -9,7 +9,15 @@ from __future__ import annotations
 import base64
 import json
 import zlib
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
+
+from sqlglot import exp
+from sqlglot import serde as sqlglot_serde
+
+from codeintel.core.hamilton.tagging_helpers import apply_raw_tags
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class ViewAstSpec(TypedDict):
@@ -1596,19 +1604,7 @@ def _decode_registry() -> object:
     return json.loads(decompressed)
 
 
-def load_view_registry() -> dict[str, ViewAstSpec]:
-    """Return the view registry mapping.
-
-    Returns
-    -------
-    dict[str, ViewAstSpec]
-        Mapping of view table keys to AST specifications.
-
-    Raises
-    ------
-    TypeError
-        If the decoded registry payload is not a mapping.
-    """
+def _load_view_specs() -> dict[str, ViewAstSpec]:
     raw = _decode_registry()
     if not isinstance(raw, dict):
         msg = "view registry must contain a mapping"
@@ -1635,4 +1631,134 @@ def load_view_registry() -> dict[str, ViewAstSpec]:
     return view_map
 
 
-__all__ = ["ViewAstSpec", "load_view_registry"]
+def _build_builder(
+    *,
+    table_key: str,
+    node_name: str,
+    ast_payload: list[dict[str, object]],
+    tags: dict[str, str],
+) -> Callable[[], exp.Expression]:
+    def builder() -> exp.Expression:
+        expr = sqlglot_serde.load(ast_payload)
+        if expr is None:
+            msg = f"View builder {node_name} returned empty AST for {table_key}"
+            raise ValueError(msg)
+        if not isinstance(expr, exp.Expression):
+            msg = f"View builder {node_name} returned non-expression AST for {table_key}"
+            raise TypeError(msg)
+        return expr
+
+    builder.__name__ = node_name
+    builder.__module__ = __name__
+    builder.__doc__ = f"Build SQLGlot AST for {table_key}."
+    decorated = apply_raw_tags(builder, tags=tags)
+    decorated.__name__ = node_name
+    decorated.__module__ = __name__
+    decorated.__doc__ = builder.__doc__
+    return decorated
+
+
+def _install_view_builders() -> dict[str, Callable[[], exp.Expression]]:
+    specs = _load_view_specs()
+    builders: dict[str, Callable[[], exp.Expression]] = {}
+    for table_key, spec in specs.items():
+        builder = _build_builder(
+            table_key=table_key,
+            node_name=spec["node_name"],
+            ast_payload=spec["ast"],
+            tags=spec["tags"],
+        )
+        globals()[spec["node_name"]] = builder
+        builders[table_key] = builder
+    return builders
+
+
+_VIEW_BUILDERS = _install_view_builders()
+
+_VIEW_BUILDERS_BY_NAME = {builder.__name__: builder for builder in _VIEW_BUILDERS.values()}
+
+build_call_graph_enriched = _VIEW_BUILDERS_BY_NAME["build_call_graph_enriched"]
+build_callgraph_degree = _VIEW_BUILDERS_BY_NAME["build_callgraph_degree"]
+build_docs_behavioral_classification_input = _VIEW_BUILDERS_BY_NAME[
+    "build_docs_behavioral_classification_input"
+]
+build_docs_cfg_block_architecture = _VIEW_BUILDERS_BY_NAME["build_docs_cfg_block_architecture"]
+build_docs_config_data_flow = _VIEW_BUILDERS_BY_NAME["build_docs_config_data_flow"]
+build_docs_data_model_fields = _VIEW_BUILDERS_BY_NAME["build_docs_data_model_fields"]
+build_docs_data_model_relationships = _VIEW_BUILDERS_BY_NAME["build_docs_data_model_relationships"]
+build_docs_data_model_usage = _VIEW_BUILDERS_BY_NAME["build_docs_data_model_usage"]
+build_docs_data_models = _VIEW_BUILDERS_BY_NAME["build_docs_data_models"]
+build_docs_data_models_normalized = _VIEW_BUILDERS_BY_NAME["build_docs_data_models_normalized"]
+build_docs_dfg_block_architecture = _VIEW_BUILDERS_BY_NAME["build_docs_dfg_block_architecture"]
+build_docs_entrypoints = _VIEW_BUILDERS_BY_NAME["build_docs_entrypoints"]
+build_docs_external_dependencies = _VIEW_BUILDERS_BY_NAME["build_docs_external_dependencies"]
+build_docs_external_dependency_calls = _VIEW_BUILDERS_BY_NAME[
+    "build_docs_external_dependency_calls"
+]
+build_docs_file_summary = _VIEW_BUILDERS_BY_NAME["build_docs_file_summary"]
+build_docs_function_architecture = _VIEW_BUILDERS_BY_NAME["build_docs_function_architecture"]
+build_docs_function_history = _VIEW_BUILDERS_BY_NAME["build_docs_function_history"]
+build_docs_function_history_timeseries = _VIEW_BUILDERS_BY_NAME[
+    "build_docs_function_history_timeseries"
+]
+build_docs_function_summary = _VIEW_BUILDERS_BY_NAME["build_docs_function_summary"]
+build_docs_ide_hints = _VIEW_BUILDERS_BY_NAME["build_docs_ide_hints"]
+build_docs_module_architecture = _VIEW_BUILDERS_BY_NAME["build_docs_module_architecture"]
+build_docs_module_architecture_full = _VIEW_BUILDERS_BY_NAME["build_docs_module_architecture_full"]
+build_docs_module_history_timeseries = _VIEW_BUILDERS_BY_NAME[
+    "build_docs_module_history_timeseries"
+]
+build_docs_module_with_subsystem = _VIEW_BUILDERS_BY_NAME["build_docs_module_with_subsystem"]
+build_docs_subsystem_agreement = _VIEW_BUILDERS_BY_NAME["build_docs_subsystem_agreement"]
+build_docs_subsystem_coverage = _VIEW_BUILDERS_BY_NAME["build_docs_subsystem_coverage"]
+build_docs_subsystem_profile = _VIEW_BUILDERS_BY_NAME["build_docs_subsystem_profile"]
+build_docs_subsystem_summary = _VIEW_BUILDERS_BY_NAME["build_docs_subsystem_summary"]
+build_docs_symbol_module_graph = _VIEW_BUILDERS_BY_NAME["build_docs_symbol_module_graph"]
+build_docs_test_architecture = _VIEW_BUILDERS_BY_NAME["build_docs_test_architecture"]
+build_docs_test_to_function = _VIEW_BUILDERS_BY_NAME["build_docs_test_to_function"]
+build_docs_validation_summary = _VIEW_BUILDERS_BY_NAME["build_docs_validation_summary"]
+build_function_hotspots = _VIEW_BUILDERS_BY_NAME["build_function_hotspots"]
+build_function_summary = _VIEW_BUILDERS_BY_NAME["build_function_summary"]
+build_goid_crosswalk_join = _VIEW_BUILDERS_BY_NAME["build_goid_crosswalk_join"]
+build_goid_crosswalk_mismatches = _VIEW_BUILDERS_BY_NAME["build_goid_crosswalk_mismatches"]
+build_import_graph_degree = _VIEW_BUILDERS_BY_NAME["build_import_graph_degree"]
+
+__all__ = [
+    "build_call_graph_enriched",
+    "build_callgraph_degree",
+    "build_docs_behavioral_classification_input",
+    "build_docs_cfg_block_architecture",
+    "build_docs_config_data_flow",
+    "build_docs_data_model_fields",
+    "build_docs_data_model_relationships",
+    "build_docs_data_model_usage",
+    "build_docs_data_models",
+    "build_docs_data_models_normalized",
+    "build_docs_dfg_block_architecture",
+    "build_docs_entrypoints",
+    "build_docs_external_dependencies",
+    "build_docs_external_dependency_calls",
+    "build_docs_file_summary",
+    "build_docs_function_architecture",
+    "build_docs_function_history",
+    "build_docs_function_history_timeseries",
+    "build_docs_function_summary",
+    "build_docs_ide_hints",
+    "build_docs_module_architecture",
+    "build_docs_module_architecture_full",
+    "build_docs_module_history_timeseries",
+    "build_docs_module_with_subsystem",
+    "build_docs_subsystem_agreement",
+    "build_docs_subsystem_coverage",
+    "build_docs_subsystem_profile",
+    "build_docs_subsystem_summary",
+    "build_docs_symbol_module_graph",
+    "build_docs_test_architecture",
+    "build_docs_test_to_function",
+    "build_docs_validation_summary",
+    "build_function_hotspots",
+    "build_function_summary",
+    "build_goid_crosswalk_join",
+    "build_goid_crosswalk_mismatches",
+    "build_import_graph_degree",
+]
