@@ -854,6 +854,8 @@ def _maybe_persist_schema_manifest(
         include_views=True,
         include_artifacts=True,
         include_provenance=True,
+        infer_native=False,
+        batch_infer_native=False,
     )
     schema_index = runtime.schema_index
     if schema_index is None:

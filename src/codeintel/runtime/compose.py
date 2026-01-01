@@ -40,8 +40,8 @@ from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.schemas.declared import source_declared_schema_provider
-from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
+from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 from codeintel.runtime.module_resolver import ResolvedModuleSet, resolve_module_set
 from codeintel.runtime.plugins.config import (
     PluginConfig,
@@ -659,7 +659,7 @@ def _build_runtime_bundle(
 
     schema_index = _build_schema_index(driver=driver, catalog=catalog, env=identity.env)
     semantic_registry = compile_semantic_registry_from_tag_query(
-        schema_provider=schema_index.schema_provider(),
+        schema_provider=schema_index.schema_provider(allow_inference=False),
         tag_query=tag_query,
         version="v1",
     )
@@ -807,7 +807,7 @@ def _seed_dataset_config(env: BuildEnv) -> SeedDatasetConfig:
 
 
 def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:
-    override_schemas = dict(OUTPUT_TABLE_SCHEMAS)
+    override_schemas = dict(TABLE_SCHEMAS)
     try:
         override_schemas.update(env.gateway.schemas.load_override_registry())
     except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:

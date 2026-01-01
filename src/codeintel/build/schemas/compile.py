@@ -27,7 +27,9 @@ from codeintel.build.schemas.provider_unified import (
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.tag_filters import tf_schema_tables
 from codeintel.core.schemas.contract_service import iter_contracts
+from codeintel.core.schemas.declared import declared_schema_provider
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.resolution import ResolvedSchemaProvider
 from codeintel.core.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -419,6 +421,7 @@ def _collect_view_schemas(
         Inferred view schemas.
     """
     views: list[TableSchema] = []
+    provider = _non_inferable_provider(provider)
     for view_key in discover_derived_docs_views(tag_query=tag_query):
         view_schema = provider.get_table_schema(view_key)
         if view_schema is None:
@@ -429,6 +432,28 @@ def _collect_view_schemas(
     if stable:
         views = sorted(views, key=lambda v: v.table_key)
     return tuple(views)
+
+
+def _non_inferable_provider(provider: SchemaProvider) -> SchemaProvider:
+    if isinstance(provider, ResolvedSchemaProvider):
+        fallback = _non_inferable_provider(provider.fallback_provider)
+        if fallback is provider.fallback_provider:
+            return provider
+        return ResolvedSchemaProvider(
+            observation_provider=provider.observation_provider,
+            fallback_provider=fallback,
+        )
+    if isinstance(provider, UnifiedSchemaProvider):
+        return UnifiedSchemaProvider(
+            declared=declared_schema_provider(),
+            schema_index=provider.schema_index,
+            allow_inference=False,
+            fallback_to_override_on_error=provider.fallback_to_override_on_error,
+        )
+    with_inference = getattr(provider, "with_inference", None)
+    if callable(with_inference):
+        return with_inference(allow_inference=False)
+    return provider
 
 
 def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:

@@ -25,11 +25,13 @@ from hamilton.node import DependencyType
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.materializers.path_templates import validate_path_template
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.provider_unified import UnifiedSchemaProvider
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.schemas.declared import declared_schema_provider
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.primitives import TableSchema
-from codeintel.core.schemas.provider import MappingSchemaProvider
-from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
+from codeintel.core.schemas.resolution import ResolvedSchemaProvider, resolve_table_schema
 
 _TAG_ONLY_KWARGS = {
     "output_role",
@@ -570,8 +572,31 @@ def _resolve_table_schema(table_key: str) -> TableSchema | None:
         provider = get_schema_provider()
     except RuntimeError:
         provider = MappingSchemaProvider(OUTPUT_TABLE_SCHEMAS)
+    provider = _disable_inference(provider)
     result = resolve_table_schema(table_key, schema_provider=provider)
     return result.table_schema
+
+
+def _disable_inference(provider: SchemaProvider) -> SchemaProvider:
+    if isinstance(provider, ResolvedSchemaProvider):
+        fallback = _disable_inference(provider.fallback_provider)
+        if fallback is provider.fallback_provider:
+            return provider
+        return ResolvedSchemaProvider(
+            observation_provider=provider.observation_provider,
+            fallback_provider=fallback,
+        )
+    if isinstance(provider, UnifiedSchemaProvider):
+        return UnifiedSchemaProvider(
+            declared=declared_schema_provider(),
+            schema_index=provider.schema_index,
+            allow_inference=False,
+            fallback_to_override_on_error=provider.fallback_to_override_on_error,
+        )
+    with_inference = getattr(provider, "with_inference", None)
+    if callable(with_inference):
+        return with_inference(allow_inference=False)
+    return provider
 
 
 def _resolve_metadata_tags(

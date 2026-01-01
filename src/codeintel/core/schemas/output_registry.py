@@ -2408,6 +2408,7 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
 
 NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
     {
+        "analytics.behavioral_coverage",
         "analytics.static_diagnostics",
         "analytics.typedness",
         "ci.plan_entries",
@@ -2445,8 +2446,6 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
 def _build_output_table_schemas() -> dict[str, TableSchema]:
     table_map: dict[str, TableSchema] = {}
     for table in _all_output_tables():
-        if table.table_key not in NON_INFERABLE_OUTPUT_KEYS:
-            continue
         if table.table_key in table_map:
             msg = f"Duplicate output TableSchema: {table.table_key}"
             raise ValueError(msg)

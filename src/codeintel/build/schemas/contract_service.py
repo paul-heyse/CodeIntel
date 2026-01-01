@@ -17,6 +17,8 @@ from codeintel.core.schemas.contract_factory import (
     is_docs_view,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.declared import declared_schema_provider
+from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.schemas.service import SchemaService
 from codeintel.core.views.inventory import discover_derived_docs_views
 
@@ -100,6 +102,15 @@ def _optional_tag(tags: Mapping[str, object], key: str) -> str | None:
     return value
 
 
+def _non_inferable_schema_service(schema_service: SchemaService) -> SchemaService:
+    provider = _non_inferable_provider(schema_service.table_provider)
+    return SchemaService(table_provider=provider)
+
+
+def _non_inferable_provider(_provider: SchemaProvider) -> SchemaProvider:
+    return declared_schema_provider()
+
+
 def overrides_from_output_descriptor(output: OutputDescriptor) -> DatasetContractOverrides:
     """Build dataset contract overrides from saver output tags.
 
@@ -180,7 +191,12 @@ class ContractService:
     target_metadata: TargetMetadataProvider
     tag_query: TagQuery | None = None
 
-    def get_dataset_contract(self, table_key: str) -> DatasetContract:
+    def get_dataset_contract(
+        self,
+        table_key: str,
+        *,
+        schema_service: SchemaService | None = None,
+    ) -> DatasetContract:
         """Return the DatasetContract for a table key.
 
         Returns
@@ -194,7 +210,8 @@ class ContractService:
             Raised when the table key is unknown.
         """
         is_view = is_docs_view(table_key)
-        schema = self.schema_service.table_provider.get_table_schema(table_key)
+        active_schema_service = schema_service or self.schema_service
+        schema = active_schema_service.table_provider.get_table_schema(table_key)
         output = self.target_metadata.output_for_table_key(table_key)
         if schema is None and output is None and not is_view:
             msg = f"Unknown table key: {table_key}"
@@ -203,7 +220,7 @@ class ContractService:
         composition = _get_composition_for_table_key(table_key)
         return build_dataset_contract(
             table_key=table_key,
-            schema_service=self.schema_service,
+            schema_service=active_schema_service,
             overrides=overrides,
             composition=composition,
             is_view_override=is_view,
@@ -217,14 +234,15 @@ class ContractService:
         DatasetContract
             Dataset contract entries known to the schema provider.
         """
+        active_schema_service = _non_inferable_schema_service(self.schema_service)
         seen: set[str] = set()
-        for schema in self.schema_service.table_provider.iter_table_schemas():
+        for schema in active_schema_service.table_provider.iter_table_schemas():
             table_key = schema.table_key
             if table_key in seen:
                 continue
             seen.add(table_key)
             try:
-                yield self.get_dataset_contract(table_key)
+                yield self.get_dataset_contract(table_key, schema_service=active_schema_service)
             except KeyError:
                 continue
 
@@ -235,7 +253,7 @@ class ContractService:
                 continue
             seen.add(view_key)
             try:
-                yield self.get_dataset_contract(view_key)
+                yield self.get_dataset_contract(view_key, schema_service=active_schema_service)
             except KeyError:
                 continue
 

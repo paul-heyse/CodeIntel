@@ -279,6 +279,8 @@ class SchemaIndex:
         cached = self._cache.get(table_key)
         if cached is not None:
             return cached
+        if self.is_inference_active(table_key):
+            return derivation.override_schema
         if not allow_inference or not perform_inference:
             return derivation.override_schema
         return self._infer_and_cache_schema(table_key, derivation=derivation)
@@ -334,15 +336,20 @@ class SchemaIndex:
     def _clear_inference_error(self, table_key: str) -> None:
         self._inference_errors.pop(table_key, None)
 
-    def schema_provider(self) -> SchemaProvider:
+    def schema_provider(self, *, allow_inference: bool = True) -> SchemaProvider:
         """Return a SchemaProvider view for this index.
+
+        Parameters
+        ----------
+        allow_inference
+            When False, disable on-demand inference and return overrides only.
 
         Returns
         -------
         SchemaProvider
-            Provider that resolves schemas with inference support.
+            Provider that resolves schemas with optional inference.
         """
-        return self._schema_seed_provider()
+        return _SchemaIndexProvider(schema_index=self, allow_inference=allow_inference)
 
     def _schema_seed_provider(self) -> SchemaProvider:
         if self._seed_provider is None:
@@ -366,7 +373,7 @@ class _SchemaIndexSeedProvider:
             override_schema = self.schema_index.override_schema_for(table_key)
             if override_schema is not None:
                 return override_schema
-            self.schema_index.raise_if_inference_recursive(table_key)
+            return self.declared_provider.get_table_schema(table_key)
         schema = self.declared_provider.get_table_schema(table_key)
         if schema is not None:
             return schema
@@ -385,6 +392,28 @@ class _SchemaIndexSeedProvider:
 
     def iter_table_schemas(self) -> Iterable[TableSchema]:
         return self.schema_index.iter_table_schemas(allow_inference=True)
+
+
+@dataclass(frozen=True, slots=True)
+class _SchemaIndexProvider:
+    schema_index: SchemaIndex
+    allow_inference: bool = True
+
+    def get_table_schema(self, table_key: str) -> TableSchema | None:
+        return self.schema_index.get_table_schema(
+            table_key,
+            allow_inference=self.allow_inference,
+        )
+
+    def require_table_schema(self, table_key: str) -> TableSchema:
+        schema = self.get_table_schema(table_key)
+        if schema is None:
+            msg = f"Unknown table schema: {table_key}"
+            raise KeyError(msg)
+        return schema
+
+    def iter_table_schemas(self) -> Iterable[TableSchema]:
+        return self.schema_index.iter_table_schemas(allow_inference=self.allow_inference)
 
 
 def build_schema_index(
@@ -444,6 +473,7 @@ def build_schema_index(
         inferable_table_keys=inferable,
         declared_provider=declared_provider,
         inference_service=inference_service,
+        fallback_to_override_on_error=True,
     )
 
 
