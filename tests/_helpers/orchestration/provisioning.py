@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,7 @@ from codeintel.build.analytics.compute.row_builders import (
     build_symbol_module_edges,
     component_metadata_from_import_rows,
 )
+from codeintel.build.analytics.graphs.config_graph_metrics import build_config_module_bipartite
 from codeintel.build.analytics.graphs.graph_metrics import (
     GraphMetricsInputs,
     SymbolModuleEdges,
@@ -33,6 +35,10 @@ from codeintel.build.analytics.graphs.graph_metrics_ext import (
 from codeintel.build.analytics.graphs.graph_stats import build_graph_stats_rows
 from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
+)
+from codeintel.build.analytics.graphs.symbol_graph_metrics import (
+    build_symbol_function_graph,
+    build_symbol_module_graph,
 )
 from codeintel.build.config import BuildConfig
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
@@ -316,26 +322,56 @@ def _import_graph_for_graph_metrics(
     return import_graph, component_meta
 
 
-def _symbol_module_edges_for_graph_metrics(
+def _symbol_graph_inputs_for_graph_metrics(
     gateway: StorageGateway,
     module_by_path: Mapping[str, str],
-) -> SymbolModuleEdges:
+) -> tuple[SymbolModuleEdges, nx.Graph, nx.Graph]:
     symbol_rows = _fetch_rows(
         gateway,
         "SELECT def_path, use_path, def_goid_h128, use_goid_h128 FROM graph.symbol_use_edges",
         ("def_path", "use_path", "def_goid_h128", "use_goid_h128"),
         [],
     )
-    return build_symbol_module_edges(symbol_rows, module_by_path)
+    return (
+        build_symbol_module_edges(symbol_rows, module_by_path),
+        build_symbol_module_graph(symbol_rows, module_by_path),
+        build_symbol_function_graph(symbol_rows),
+    )
 
 
-def _run_graph_metrics_for_gateway(
+def _config_bipartite_for_graph_metrics(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    module_names: set[str],
+) -> nx.Graph:
+    config_rows = _fetch_rows(
+        gateway,
+        "SELECT repo, commit, key, reference_modules "
+        "FROM analytics.config_values WHERE repo = ? AND commit = ?",
+        ("repo", "commit", "key", "reference_modules"),
+        [snapshot.repo, snapshot.commit],
+    )
+    return build_config_module_bipartite(
+        config_rows,
+        allowed_modules=module_names,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+
+
+@dataclass(frozen=True)
+class _GraphMetricArtifacts:
+    graph_inputs: GraphMetricsInputs
+    symbol_module_graph: nx.Graph
+    symbol_function_graph: nx.Graph
+
+
+def _graph_metrics_artifacts_for_gateway(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     metric_options: GraphMetricsOptions,
-    runtime_options: GraphRuntimeOptions,
-) -> None:
+) -> _GraphMetricArtifacts:
     module_by_path, module_names = _module_inputs_for_graph_metrics(gateway, snapshot)
     function_goids = _function_goids_for_graph_metrics(gateway, snapshot)
     subsystem_ids = _subsystem_ids_for_graph_metrics(gateway, snapshot)
@@ -346,25 +382,39 @@ def _run_graph_metrics_for_gateway(
     )
     call_graph = _call_graph_for_graph_metrics(gateway, snapshot)
     import_graph, component_meta = _import_graph_for_graph_metrics(gateway, snapshot)
-    symbol_module_edges = _symbol_module_edges_for_graph_metrics(gateway, module_by_path)
-    metrics_rows = build_graph_metrics_rows(
-        GraphMetricsInputs(
-            snapshot=snapshot,
-            call_graph=call_graph,
-            import_graph=import_graph,
-            symbol_module_edges=symbol_module_edges,
-            module_names=module_names,
-            component_meta=component_meta,
-            filters=filters,
-            options=metric_options,
-        )
+    (
+        symbol_module_edges,
+        symbol_module_graph,
+        symbol_function_graph,
+    ) = _symbol_graph_inputs_for_graph_metrics(gateway, module_by_path)
+    graph_inputs = GraphMetricsInputs(
+        snapshot=snapshot,
+        call_graph=call_graph,
+        import_graph=import_graph,
+        symbol_module_edges=symbol_module_edges,
+        module_names=module_names,
+        component_meta=component_meta,
+        filters=filters,
+        options=metric_options,
     )
+    return _GraphMetricArtifacts(
+        graph_inputs=graph_inputs,
+        symbol_module_graph=symbol_module_graph,
+        symbol_function_graph=symbol_function_graph,
+    )
+
+
+def _write_graph_metrics_base(
+    gateway: StorageGateway,
+    graph_inputs: GraphMetricsInputs,
+) -> None:
+    metrics_rows = build_graph_metrics_rows(graph_inputs)
     backend = gateway.policy
     if metrics_rows.function_rows:
         backend.delete_for_snapshot(
             "analytics.graph_metrics_functions",
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            repo=graph_inputs.snapshot.repo,
+            commit=graph_inputs.snapshot.commit,
         )
         backend.bulk_insert_mappings(
             "analytics.graph_metrics_functions",
@@ -373,26 +423,33 @@ def _run_graph_metrics_for_gateway(
     if metrics_rows.module_rows:
         backend.delete_for_snapshot(
             "analytics.graph_metrics_modules",
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            repo=graph_inputs.snapshot.repo,
+            commit=graph_inputs.snapshot.commit,
         )
         backend.bulk_insert_mappings(
             "analytics.graph_metrics_modules",
             metrics_rows.module_rows,
         )
 
+
+def _write_graph_metrics_ext(
+    gateway: StorageGateway,
+    graph_inputs: GraphMetricsInputs,
+    runtime_options: GraphRuntimeOptions,
+) -> None:
+    backend = gateway.policy
     functions_ext_rows = build_graph_metrics_functions_ext_rows(
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        call_graph=call_graph,
+        repo=graph_inputs.snapshot.repo,
+        commit=graph_inputs.snapshot.commit,
+        call_graph=graph_inputs.call_graph,
         runtime=runtime_options,
-        filters=filters,
+        filters=graph_inputs.filters,
     )
     if functions_ext_rows:
         backend.delete_for_snapshot(
             "analytics.graph_metrics_functions_ext",
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            repo=graph_inputs.snapshot.repo,
+            commit=graph_inputs.snapshot.commit,
         )
         backend.bulk_insert_mappings(
             "analytics.graph_metrics_functions_ext",
@@ -400,35 +457,69 @@ def _run_graph_metrics_for_gateway(
         )
 
     modules_ext_rows = build_graph_metrics_modules_ext_rows(
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        import_graph=import_graph,
+        repo=graph_inputs.snapshot.repo,
+        commit=graph_inputs.snapshot.commit,
+        import_graph=graph_inputs.import_graph,
         runtime=runtime_options,
-        filters=filters,
+        filters=graph_inputs.filters,
     )
     if modules_ext_rows:
         backend.delete_for_snapshot(
             "analytics.graph_metrics_modules_ext",
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            repo=graph_inputs.snapshot.repo,
+            commit=graph_inputs.snapshot.commit,
         )
         backend.bulk_insert_mappings(
             "analytics.graph_metrics_modules_ext",
             modules_ext_rows,
         )
 
-    graph_stats_rows = build_graph_stats_rows(
+
+def _write_graph_stats(
+    gateway: StorageGateway,
+    artifacts: _GraphMetricArtifacts,
+    runtime_options: GraphRuntimeOptions,
+) -> None:
+    module_names = {str(name) for name in artifacts.graph_inputs.module_names}
+    config_bipartite = _config_bipartite_for_graph_metrics(
         gateway,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+        artifacts.graph_inputs.snapshot,
+        module_names,
+    )
+    graph_stats_rows = build_graph_stats_rows(
+        repo=artifacts.graph_inputs.snapshot.repo,
+        commit=artifacts.graph_inputs.snapshot.commit,
+        call_graph=artifacts.graph_inputs.call_graph,
+        import_graph=artifacts.graph_inputs.import_graph,
+        symbol_module_graph=artifacts.symbol_module_graph,
+        symbol_function_graph=artifacts.symbol_function_graph,
+        config_module_bipartite=config_bipartite,
+        use_gpu=runtime_options.use_gpu,
     )
     if graph_stats_rows:
-        backend.delete_for_snapshot(
+        gateway.policy.delete_for_snapshot(
             "analytics.graph_stats",
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            repo=artifacts.graph_inputs.snapshot.repo,
+            commit=artifacts.graph_inputs.snapshot.commit,
         )
-        backend.bulk_insert("analytics.graph_stats", graph_stats_rows)
+        gateway.policy.bulk_insert("analytics.graph_stats", graph_stats_rows)
+
+
+def _run_graph_metrics_for_gateway(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    metric_options: GraphMetricsOptions,
+    runtime_options: GraphRuntimeOptions,
+) -> None:
+    artifacts = _graph_metrics_artifacts_for_gateway(
+        gateway,
+        snapshot,
+        metric_options=metric_options,
+    )
+    _write_graph_metrics_base(gateway, artifacts.graph_inputs)
+    _write_graph_metrics_ext(gateway, artifacts.graph_inputs, runtime_options)
+    _write_graph_stats(gateway, artifacts, runtime_options)
 
 
 def make_repo_context(

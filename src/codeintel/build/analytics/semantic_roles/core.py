@@ -14,6 +14,7 @@ from codeintel.build.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, FunctionExpression
+from codeintel.storage.query_results import iter_tuples_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -320,9 +321,8 @@ def _load_function_rows(
         .filter(predicate)
         .select("function_goid_h128", "rel_path", "qualname", "loc")
     )
-    rows = relation.fetchall()
     result: list[tuple[int, str, str, int | None]] = []
-    for goid_raw, rel_path, qualname, loc in rows:
+    for goid_raw, rel_path, qualname, loc in iter_tuples_from_relation(relation):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -350,7 +350,6 @@ def _load_effects(
             "spawns_threads_or_tasks",
         )
     )
-    rows = relation.fetchall()
     mapping: dict[int, dict[str, object]] = {}
     for (
         goid_raw,
@@ -361,7 +360,7 @@ def _load_effects(
         modifies_globals,
         modifies_closure,
         spawns_threads_or_tasks,
-    ) in rows:
+    ) in iter_tuples_from_relation(relation):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -388,9 +387,10 @@ def _load_contracts(
         .filter(predicate)
         .select("function_goid_h128", "preconditions_json", "raises_json", "param_nullability_json")
     )
-    rows = relation.fetchall()
     mapping: dict[int, dict[str, object]] = {}
-    for goid_raw, preconditions, raises_json, param_nullability in rows:
+    for goid_raw, preconditions, raises_json, param_nullability in iter_tuples_from_relation(
+        relation
+    ):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -413,9 +413,8 @@ def _load_graph_metrics(
         .filter(predicate)
         .select("function_goid_h128", "call_fan_in", "call_fan_out")
     )
-    rows = relation.fetchall()
     mapping: dict[int, dict[str, int]] = {}
-    for goid_raw, call_fan_in, call_fan_out in rows:
+    for goid_raw, call_fan_in, call_fan_out in iter_tuples_from_relation(relation):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -441,9 +440,8 @@ def _load_module_meta(
         .filter(predicate)
         .select("module", "path", "tags")
     )
-    rows = relation.fetchall()
     meta: dict[str, ModuleRecord] = {}
-    for module, path, tags in rows:
+    for module, path, tags in iter_tuples_from_relation(relation):
         normalized_path = normalize_path(path) if path is not None else ""
         normalized_tags = _normalize_tags(tags)
         meta[str(module)] = ModuleRecord(path=normalized_path, tags=normalized_tags)

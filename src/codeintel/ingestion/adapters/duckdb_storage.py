@@ -30,6 +30,8 @@ from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -260,7 +262,8 @@ class DuckDBStorageAdapter:
         """
         param_list = list(params) if params else []
         result = self._gateway.execute(sql, param_list)
-        rows = result.fetchall()
+        reader = result.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        rows = list(iter_tuples_from_arrow_reader(reader))
         columns = tuple(desc[0] for desc in result.description) if result.description else ()
         return QueryResult.from_rows([tuple(row) for row in rows], columns=columns)
 

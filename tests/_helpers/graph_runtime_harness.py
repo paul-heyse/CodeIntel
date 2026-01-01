@@ -638,23 +638,59 @@ def _write_mapping_rows(
     ctx.gateway.policy.bulk_insert_mappings(table_key, rows)
 
 
-def _write_config_metrics(ctx: GraphRuntimeHarness) -> None:
-    config_value_rows = records_from_relation(
+def _config_value_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
+    return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.config_values").select(
             "repo",
             "commit",
             "config_path",
             "key",
             "reference_paths",
+            "reference_modules",
         )
     )
-    entrypoint_rows = records_from_relation(
+
+
+def _entrypoint_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
+    return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.entrypoints").select(
             "repo",
             "commit",
             "handler_goid_h128",
         )
     )
+
+
+def _subsystem_rows(ctx: GraphRuntimeHarness) -> list[Mapping[str, object]]:
+    return records_from_relation(
+        ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
+            "repo",
+            "commit",
+            "subsystem_id",
+            "module",
+        )
+    )
+
+
+def _graph_metric_filters(
+    ctx: GraphRuntimeHarness,
+    module_names: set[str],
+    filters: GraphMetricFilters | None,
+) -> GraphMetricFilters:
+    return filters or build_graph_metric_filters_from_sets(
+        function_goids=set(ctx.goids.values()),
+        modules=module_names,
+        subsystems=None,
+    )
+
+
+def _write_config_metrics(
+    ctx: GraphRuntimeHarness,
+    *,
+    config_value_rows: list[Mapping[str, object]],
+    entrypoint_rows: list[Mapping[str, object]],
+    module_names: set[str],
+) -> None:
     data_flow_result = compute_config_data_flow_result(
         ctx.snapshot,
         config_value_rows=config_value_rows,
@@ -687,17 +723,12 @@ def _write_config_metrics(ctx: GraphRuntimeHarness) -> None:
     )
 
 
-def _run_graph_metrics_compute(
+def _write_graph_metrics(
     ctx: GraphRuntimeHarness,
     *,
-    filters: GraphMetricFilters | None,
-) -> None:
-    module_names = set(ctx.module_map.values())
-    active_filters = filters or build_graph_metric_filters_from_sets(
-        function_goids=set(ctx.goids.values()),
-        modules=module_names,
-        subsystems=None,
-    )
+    module_names: set[str],
+    active_filters: GraphMetricFilters,
+) -> list[Mapping[str, object]]:
     import_module_rows = records_from_relation(
         ctx.gateway.relation_from_table_key("graph.import_modules").select(
             "module",
@@ -746,7 +777,15 @@ def _run_graph_metrics_compute(
         filters=active_filters,
     )
     _write_mapping_rows(ctx, "analytics.graph_metrics_modules_ext", modules_ext_rows)
+    return modules_ext_rows
 
+
+def _write_graph_stats(
+    ctx: GraphRuntimeHarness,
+    *,
+    config_value_rows: list[Mapping[str, object]],
+    module_names: set[str],
+) -> None:
     config_bipartite = build_config_module_bipartite(
         config_value_rows,
         allowed_modules=module_names,
@@ -765,14 +804,13 @@ def _run_graph_metrics_compute(
     )
     _write_tuple_rows(ctx, "analytics.graph_stats", graph_stats_rows)
 
-    subsystem_rows = records_from_relation(
-        ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
-            "repo",
-            "commit",
-            "subsystem_id",
-            "module",
-        )
-    )
+
+def _write_subsystem_metrics(
+    ctx: GraphRuntimeHarness,
+    *,
+    subsystem_rows: list[Mapping[str, object]],
+    active_filters: GraphMetricFilters,
+) -> None:
     subsystem_graph_metrics_rows = build_subsystem_graph_metrics_rows(
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
@@ -783,22 +821,27 @@ def _run_graph_metrics_compute(
     )
     _write_tuple_rows(ctx, "analytics.subsystem_graph_metrics", subsystem_graph_metrics_rows)
 
-    graph_metrics_ext_rows = records_from_relation(
-        ctx.gateway.relation_from_table_key("analytics.graph_metrics_modules_ext").select(
-            "repo",
-            "commit",
-            "module",
-            "import_community_id",
-        )
-    )
+
+def _write_subsystem_agreement(
+    ctx: GraphRuntimeHarness,
+    *,
+    subsystem_rows: list[Mapping[str, object]],
+    modules_ext_rows: list[Mapping[str, object]],
+) -> None:
     subsystem_agreement_rows = build_subsystem_agreement_rows(
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         subsystem_module_rows=subsystem_rows,
-        graph_metrics_module_rows=graph_metrics_ext_rows,
+        graph_metrics_module_rows=modules_ext_rows,
     )
     _write_tuple_rows(ctx, "analytics.subsystem_agreement", subsystem_agreement_rows)
 
+
+def _write_symbol_graph_metrics(
+    ctx: GraphRuntimeHarness,
+    *,
+    module_names: set[str],
+) -> None:
     symbol_module_rows = build_symbol_graph_metrics_module_rows(
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
@@ -824,8 +867,38 @@ def run_graph_metrics_pipeline(
     filters: GraphMetricFilters | None = None,
 ) -> None:
     """Run the full analytics graph metrics pipeline for a harness."""
-    _write_config_metrics(ctx)
-    _run_graph_metrics_compute(ctx, filters=filters)
+    module_names = set(ctx.module_map.values())
+    config_value_rows = _config_value_rows(ctx)
+    entrypoint_rows = _entrypoint_rows(ctx)
+    subsystem_rows = _subsystem_rows(ctx)
+    active_filters = _graph_metric_filters(ctx, module_names, filters)
+    _write_config_metrics(
+        ctx,
+        config_value_rows=config_value_rows,
+        entrypoint_rows=entrypoint_rows,
+        module_names=module_names,
+    )
+    modules_ext_rows = _write_graph_metrics(
+        ctx,
+        module_names=module_names,
+        active_filters=active_filters,
+    )
+    _write_graph_stats(
+        ctx,
+        config_value_rows=config_value_rows,
+        module_names=module_names,
+    )
+    _write_subsystem_metrics(
+        ctx,
+        subsystem_rows=subsystem_rows,
+        active_filters=active_filters,
+    )
+    _write_subsystem_agreement(
+        ctx,
+        subsystem_rows=subsystem_rows,
+        modules_ext_rows=modules_ext_rows,
+    )
+    _write_symbol_graph_metrics(ctx, module_names=module_names)
 
 
 __all__ = [

@@ -93,6 +93,8 @@ from codeintel.observability.teardown import (
     emit_teardown_telemetry,
 )
 from codeintel.runtime.compose import compose_runtime
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 from codeintel.storage.validation import ContractValidationMode
 
@@ -2125,7 +2127,7 @@ def _build_assets_result(
     commit = runtime.snapshot.commit
 
     if asset is None:
-        rows = gateway.execute(
+        reader = gateway.execute(
             """
             SELECT DISTINCT asset_kind, asset_key
             FROM build.asset_version_events
@@ -2133,13 +2135,15 @@ def _build_assets_result(
             ORDER BY asset_kind, asset_key
             """,
             [repo, commit],
-        ).fetchall()
-        assets_to_show = [(str(r[0]), str(r[1])) for r in rows]
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        assets_to_show = [
+            (str(row[0]), str(row[1])) for row in iter_tuples_from_arrow_reader(reader)
+        ]
     else:
         assets_to_show = [(_infer_asset_kind(asset), asset)]
 
     if target is not None:
-        rows = gateway.execute(
+        reader = gateway.execute(
             """
             SELECT DISTINCT asset_kind, asset_key
             FROM build.asset_version_events
@@ -2147,8 +2151,10 @@ def _build_assets_result(
             ORDER BY asset_kind, asset_key
             """,
             [repo, commit, target],
-        ).fetchall()
-        allowed = {(str(r[0]), str(r[1])) for r in rows}
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        allowed = {
+            (str(row[0]), str(row[1])) for row in iter_tuples_from_arrow_reader(reader)
+        }
         assets_to_show = [pair for pair in assets_to_show if pair in allowed]
 
     if asset_type is not None:
@@ -2299,7 +2305,7 @@ def _expand_frontier(
     next_frontier: set[tuple[str, str, str]] = set()
     for kind, key, version_hash in sorted(frontier):
         if direction == "up":
-            rows = gateway.execute(
+            reader = gateway.execute(
                 """
                 SELECT upstream_kind, upstream_key, upstream_version, edge_kind
                 FROM build.asset_lineage
@@ -2307,8 +2313,8 @@ def _expand_frontier(
                 ORDER BY upstream_kind, upstream_key, upstream_version, edge_kind
                 """,
                 [kind, key, version_hash],
-            ).fetchall()
-            for r in rows:
+            ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+            for r in iter_tuples_from_arrow_reader(reader):
                 upstream = (str(r[0]), str(r[1]), str(r[2]))
                 edge_kind = str(r[3])
                 nodes.setdefault(
@@ -2323,7 +2329,7 @@ def _expand_frontier(
                 next_frontier.add(upstream)
             continue
 
-        rows = gateway.execute(
+        reader = gateway.execute(
             """
             SELECT downstream_kind, downstream_key, downstream_version, edge_kind
             FROM build.asset_lineage
@@ -2331,8 +2337,8 @@ def _expand_frontier(
             ORDER BY downstream_kind, downstream_key, downstream_version, edge_kind
             """,
             [kind, key, version_hash],
-        ).fetchall()
-        for r in rows:
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        for r in iter_tuples_from_arrow_reader(reader):
             downstream = (str(r[0]), str(r[1]), str(r[2]))
             edge_kind = str(r[3])
             nodes.setdefault(

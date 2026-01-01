@@ -42,7 +42,9 @@ from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.validation import ContractValidationMode
 from codeintel.storage.warehouse import Warehouse
 
@@ -169,14 +171,16 @@ def validate_macros_handler(
 
 def _load_table_schema_registry_keys(connection: DuckDBConnection) -> set[str]:
     table_ref = meta_table_ref("metadata.table_schema_registry")
-    rows = connection.execute(f"SELECT table_key FROM {table_ref}").fetchall()
-    return {str(row[0]) for row in rows}
+    reader = connection.execute(
+        f"SELECT table_key FROM {table_ref}"
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return {str(row[0]) for row in iter_tuples_from_arrow_reader(reader)}
 
 
 def _load_missing_schema_versions(connection: DuckDBConnection) -> list[str]:
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
-    rows = connection.execute(
+    reader = connection.execute(
         f"""
         SELECT r.table_key
         FROM {registry_ref} AS r
@@ -184,8 +188,8 @@ def _load_missing_schema_versions(connection: DuckDBConnection) -> list[str]:
           ON r.schema_digest = v.schema_digest
         WHERE v.schema_digest IS NULL
         """
-    ).fetchall()
-    return [str(row[0]) for row in rows]
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return [str(row[0]) for row in iter_tuples_from_arrow_reader(reader)]
 
 
 def _validate_macros(

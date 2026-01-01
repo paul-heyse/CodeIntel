@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 MEDIUM_RISK_THRESHOLD = 0.4
 
@@ -63,7 +65,7 @@ def aggregate_risk(
     con = gateway.con
     risk_by_label: dict[str, SubsystemRisk] = {}
     stats: dict[str, RiskTally] = defaultdict(RiskTally)
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT rf.risk_score, rf.risk_level, m.module
         FROM analytics.goid_risk_factors rf
@@ -74,8 +76,8 @@ def aggregate_risk(
         WHERE rf.repo = ? AND rf.commit = ?
         """,
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
-    for risk_score, risk_level, module in rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for risk_score, risk_level, module in iter_tuples_from_arrow_reader(reader):
         if module is None:
             continue
         label = labels.get(str(module))

@@ -6,10 +6,13 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
+from itertools import chain
 from typing import TYPE_CHECKING
 
 import networkx as nx
 
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -43,16 +46,23 @@ def load_modules(
         Modules present and tags keyed by module.
     """
     con = gateway.con
-    rows = con.execute(
+    reader = con.execute(
         "SELECT module, tags FROM core.modules WHERE repo = ? AND commit = ?",
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
-    if not rows:
-        rows = con.execute("SELECT module, tags FROM core.modules").fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    rows_iter = iter_tuples_from_arrow_reader(reader)
+    first_row = next(rows_iter, None)
+    if first_row is None:
+        fallback_reader = con.execute(
+            "SELECT module, tags FROM core.modules"
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        rows_iter = iter_tuples_from_arrow_reader(fallback_reader)
+    else:
+        rows_iter = chain([first_row], rows_iter)
 
     modules: set[str] = set()
     tags_by_module: dict[str, list[str]] = {}
-    for module, tags in rows:
+    for module, tags in rows_iter:
         if module is None:
             continue
         module_name = str(module)
@@ -124,11 +134,11 @@ def build_weighted_graph(
     graph = nx.Graph()
     graph.add_nodes_from(modules)
 
-    rows = con.execute(
+    reader = con.execute(
         "SELECT src_module, dst_module FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
-    for src, dst in rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for src, dst in iter_tuples_from_arrow_reader(reader):
         if src is None or dst is None:
             continue
         src_mod = str(src)
@@ -136,7 +146,7 @@ def build_weighted_graph(
         if src_mod in modules and dst_mod in modules:
             add_graph_weight(graph, src_mod, dst_mod, w.import_weight)
 
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT m_use.module, m_def.module
         FROM graph.symbol_use_edges su
@@ -144,22 +154,22 @@ def build_weighted_graph(
         LEFT JOIN core.modules m_use ON m_use.path = su.use_path
         WHERE m_def.module IS NOT NULL AND m_use.module IS NOT NULL
         """
-    ).fetchall()
-    for use_module, def_module in rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for use_module, def_module in iter_tuples_from_arrow_reader(reader):
         src_mod = str(use_module)
         dst_mod = str(def_module)
         if src_mod in modules and dst_mod in modules:
             add_graph_weight(graph, src_mod, dst_mod, w.symbol_weight)
 
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT reference_modules
         FROM analytics.config_values
         WHERE repo = ? AND commit = ?
         """,
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
-    for (mods_raw,) in rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for (mods_raw,) in iter_tuples_from_arrow_reader(reader):
         modules_list = parse_tags(mods_raw)
         filtered = [m for m in modules_list if m in modules]
         if len(filtered) < MIN_SHARED_MODULES:

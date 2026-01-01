@@ -15,10 +15,11 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
-from codeintel.storage.constants import SCHEMAS
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, SCHEMAS
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
@@ -162,11 +163,11 @@ def assert_schema_alignment(
             )
             .order_by(exp.Ordered(this=exp.column("ordinal_position")))
         )
-        rows = con.execute(
+        reader = con.execute(
             render_sql_duckdb(query),
             [table.schema, table.name],
-        ).fetchall()
-        actual = [row[0] for row in rows]
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        actual = [row[0] for row in iter_tuples_from_arrow_reader(reader)]
         expected = table.column_names()
         if actual != expected:
             issues.append(f"{table.fq_name}: expected {expected} got {actual}")

@@ -16,7 +16,9 @@ from codeintel.build.analytics.compute.graphs import (
     cfg_reachable_nodes,
     dfg_component_stats,
 )
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
@@ -98,27 +100,27 @@ def load_cfg_blocks(
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = defaultdict(list)
 
     try:
-        block_rows: Iterable[tuple[int, int, str, int, int]] = gateway.execute(
+        reader = gateway.execute(
             """
             SELECT function_goid_h128, block_idx, kind, in_degree, out_degree
             FROM graph.cfg_blocks
             """
-        ).fetchall()
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     except DuckDBError:
         return blocks_by_fn, edges_by_fn
-    for fn, idx, kind, in_deg, out_deg in block_rows:
+    for fn, idx, kind, in_deg, out_deg in iter_tuples_from_arrow_reader(reader):
         blocks_by_fn[int(fn)].append((int(idx), str(kind), int(in_deg), int(out_deg)))
 
     try:
-        edge_rows: Iterable[tuple[int, int, int, str]] = gateway.execute(
+        edge_reader = gateway.execute(
             """
             SELECT function_goid_h128, src_block_id, dst_block_id, edge_kind
             FROM graph.cfg_edges
             """
-        ).fetchall()
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     except DuckDBError:
         return blocks_by_fn, edges_by_fn
-    for fn, src_id, dst_id, edge_type in edge_rows:
+    for fn, src_id, dst_id, edge_type in iter_tuples_from_arrow_reader(edge_reader):
         src_idx = parse_block_idx(src_id) if src_id is not None else None
         dst_idx = parse_block_idx(dst_id) if dst_id is not None else None
         if src_idx is None or dst_idx is None:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Final
 
 from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
+from codeintel.storage.query_results import iter_tuples_from_relation
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -49,8 +50,11 @@ def load_module_map(
     )
     if language is not None:
         predicate &= ColumnExpression("language") == ConstantExpression(language)
-    rows = relation.filter(predicate).select("path", "module").fetchall()
-    module_map = {normalize_path(str(path)): str(module) for path, module in rows}
+    filtered = relation.filter(predicate).select("path", "module")
+    module_map = {
+        normalize_path(str(path)): str(module)
+        for path, module in iter_tuples_from_relation(filtered)
+    }
     if not module_map:
         (logger or LOG).warning("No modules found in core.modules for %s@%s", repo, commit)
     return module_map

@@ -10,8 +10,12 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsSubsystemProfileCacheRow as SubsystemProfileCacheRow,
 )
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -162,7 +166,7 @@ COVERAGE_CACHE_SQL = """
 
 def _rows_to_dicts(
     columns: tuple[str, ...],
-    rows: list[tuple[object, ...]],
+    rows: Iterable[tuple[object, ...]],
 ) -> list[dict[str, object]]:
     return [dict(zip(columns, row, strict=True)) for row in rows]
 
@@ -185,10 +189,11 @@ def build_subsystem_profile_cache_rows(
     list[SubsystemProfileCacheRow]
         Cache rows for subsystem profiles.
     """
-    rows = gateway.execute(
+    reader = gateway.execute(
         PROFILE_CACHE_SQL,
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    rows = iter_tuples_from_arrow_reader(reader)
     return [
         cast("SubsystemProfileCacheRow", row) for row in _rows_to_dicts(PROFILE_CACHE_COLUMNS, rows)
     ]
@@ -212,7 +217,7 @@ def build_subsystem_coverage_cache_rows(
     list[SubsystemCoverageCacheRow]
         Cache rows for subsystem coverage.
     """
-    rows = gateway.execute(
+    reader = gateway.execute(
         COVERAGE_CACHE_SQL,
         [
             snapshot.repo,
@@ -220,7 +225,8 @@ def build_subsystem_coverage_cache_rows(
             snapshot.repo,
             snapshot.commit,
         ],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    rows = iter_tuples_from_arrow_reader(reader)
     return [
         cast("SubsystemCoverageCacheRow", row)
         for row in _rows_to_dicts(COVERAGE_CACHE_COLUMNS, rows)

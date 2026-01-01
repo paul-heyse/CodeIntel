@@ -16,12 +16,13 @@ from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
-from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.tracking.schema_catalog_compile import (
     arrow_contract_renderer_cache,
@@ -299,8 +300,8 @@ def _load_latest_observed_schema_rows(
             )
         )
     )
-    rows = con.execute(render_sql_duckdb(query)).fetchall()
-    return list(rows)
+    reader = con.execute(render_sql_duckdb(query)).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return list(iter_tuples_from_arrow_reader(reader))
 
 
 def load_table_schema_from_connection(
@@ -395,14 +396,16 @@ def iter_table_schemas_from_connection(
         .join(versions, on=join_versions)
         .where(_inferred_registry_condition("registry"))
     )
-    inferred_rows = con.execute(render_sql_duckdb(inferred_query)).fetchall()
+    inferred_reader = con.execute(
+        render_sql_duckdb(inferred_query)
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     schemas_by_key: dict[str, TableSchema] = {}
     for table_key, schema_json_raw in observed_rows:
         schema_json = decode_json_dict(schema_json_raw)
         if not schema_json:
             continue
         schemas_by_key[str(table_key)] = table_schema_from_json_obj(schema_json)
-    for table_key, schema_json_raw in inferred_rows:
+    for table_key, schema_json_raw in iter_tuples_from_arrow_reader(inferred_reader):
         schema_json = decode_json_dict(schema_json_raw)
         if not schema_json:
             continue
@@ -416,8 +419,10 @@ def iter_table_schemas_from_connection(
         .join(versions, on=join_versions)
         .order_by(exp.Ordered(this=exp.column("table_key", table="registry")))
     )
-    fallback_rows = con.execute(render_sql_duckdb(fallback_query)).fetchall()
-    for table_key, schema_json_raw in fallback_rows:
+    fallback_reader = con.execute(
+        render_sql_duckdb(fallback_query)
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for table_key, schema_json_raw in iter_tuples_from_arrow_reader(fallback_reader):
         if str(table_key) in schemas_by_key:
             continue
         schema_json = decode_json_dict(schema_json_raw)
@@ -952,11 +957,12 @@ class SchemaCatalogTracking:
             )
             .limit(exp.Placeholder())
         )
-        rows = self._con.execute(render_sql_duckdb(query), [table_key, limit]).fetchall()
-        if not rows:
-            return ()
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            [table_key, limit],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         summaries: list[dict[str, object] | None] = []
-        for (summary_raw,) in rows:
+        for (summary_raw,) in iter_tuples_from_arrow_reader(reader):
             summaries.append(_decode_optional_json_dict(summary_raw))
         return tuple(summaries)
 
@@ -1033,7 +1039,11 @@ class SchemaCatalogTracking:
             )
             .limit(exp.Placeholder())
         )
-        return self._con.execute(render_sql_duckdb(query), [limit]).fetchall()
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            [limit],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        return list(iter_tuples_from_arrow_reader(reader))
 
     @staticmethod
     def _summarize_drift_rows(
@@ -1127,12 +1137,11 @@ class SchemaCatalogTracking:
             .join(versions, on=join_versions)
             .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
         )
-        rows = self._con.execute(render_sql_duckdb(query)).fetchall()
-        if not rows:
-            return {}
-
         schemas: dict[str, TableSchema] = {}
-        for table_key, schema_json_raw in rows:
+        reader = self._con.execute(
+            render_sql_duckdb(query)
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        for table_key, schema_json_raw in iter_tuples_from_arrow_reader(reader):
             schema_json = decode_json_dict(schema_json_raw)
             if not schema_json:
                 continue
@@ -1266,12 +1275,12 @@ class SchemaCatalogTracking:
             .where(where_expr)
         )
         params: list[object] = ["inferred_relation", "inferred", "override", *allowed_keys]
-        rows = self._con.execute(render_sql_duckdb(query), params).fetchall()
-        if not rows:
-            return 0
-
         schemas: dict[str, TableSchema] = {}
-        for table_key, schema_json_raw in rows:
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            params,
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        for table_key, schema_json_raw in iter_tuples_from_arrow_reader(reader):
             schema_json = decode_json_dict(schema_json_raw)
             if not schema_json:
                 continue
@@ -1321,7 +1330,10 @@ class SchemaCatalogTracking:
             .join(versions, on=join_versions)
             .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
         )
-        return self._con.execute(render_sql_duckdb(query)).fetchall()
+        reader = self._con.execute(render_sql_duckdb(query)).fetch_record_batch(
+            DEFAULT_ARROW_BATCH_SIZE
+        )
+        return list(iter_tuples_from_arrow_reader(reader))
 
     @staticmethod
     def _build_contract_drift_report(
@@ -1413,12 +1425,12 @@ class SchemaCatalogTracking:
                 )
             )
         )
-        rows = self._con.execute(render_sql_duckdb(query), list(digests)).fetchall()
-        if not rows:
-            return 0
-
         updates: list[tuple[object, str]] = []
-        for schema_digest, renderer_cache_raw in rows:
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            list(digests),
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        for schema_digest, renderer_cache_raw in iter_tuples_from_arrow_reader(reader):
             digest = str(schema_digest)
             payload = payloads.get(digest)
             if payload is None:

@@ -22,7 +22,7 @@ Open a gateway and access tables through typed accessors:
     config = StorageConfig(path="catalog.duckdb")
     with open_gateway(config) as gw:
 
-        modules = gw.core.modules().fetchall()
+        reader = gw.core.modules().fetch_record_batch(1024)
 
 Writes are routed through `codeintel.storage.warehouse.Warehouse` to keep a single
 I/O boundary.

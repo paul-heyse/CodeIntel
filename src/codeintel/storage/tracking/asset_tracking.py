@@ -12,7 +12,9 @@ from typing import TYPE_CHECKING, Any
 from sqlglot import exp
 
 from codeintel.core.time import utc_now
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.helpers.json import decode_json_dict
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.upsert import UpsertSpec
 
@@ -592,11 +594,14 @@ class AssetTracking:
             )
             .limit(exp.Placeholder())
         )
-        rows = self._con.execute(
+        reader = self._con.execute(
             render_sql_duckdb(query),
             [repo, commit, asset_kind, asset_key, limit],
-        ).fetchall()
-        return [self._parse_asset_version_history_row(row) for row in rows]
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        return [
+            self._parse_asset_version_history_row(row)
+            for row in iter_tuples_from_arrow_reader(reader)
+        ]
 
     def get_latest_version_hash(
         self,
@@ -684,7 +689,10 @@ class AssetTracking:
                 exp.Ordered(this=exp.Column(this=exp.to_identifier("asset_key"))),
             )
         )
-        rows = self._con.execute(render_sql_duckdb(query), [run_id]).fetchall()
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            [run_id],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         return [
             RunAssetVersionRecord(
                 run_id=str(row[0]),
@@ -698,7 +706,7 @@ class AssetTracking:
                 recorded_at=row[8],
                 meta=decode_json_dict(row[9]) if row[9] else None,
             )
-            for row in rows
+            for row in iter_tuples_from_arrow_reader(reader)
         ]
 
     def get_cached_diff(
@@ -894,7 +902,10 @@ class AssetTracking:
             .from_(table_expr_from_ref("build.asset_lineage"))
             .where(self._combine_conditions(conditions))
         )
-        rows = self._con.execute(render_sql_duckdb(query), params).fetchall()
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            params,
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         return [
             AssetLineageEdgeRecord(
                 downstream_kind=str(row[0]),
@@ -907,7 +918,7 @@ class AssetTracking:
                 created_at=row[7],
                 meta=decode_json_dict(row[8]) if row[8] else None,
             )
-            for row in rows
+            for row in iter_tuples_from_arrow_reader(reader)
         ]
 
     def get_asset_target(

@@ -19,7 +19,9 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
@@ -92,16 +94,18 @@ def load_dfg_edges(
     """
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = defaultdict(list)
     try:
-        rows: Iterable[tuple[int, int, int, str, str, bool, str]] = gateway.execute(
+        reader = gateway.execute(
             """
             SELECT function_goid_h128, src_block_id, dst_block_id,
                    src_var, dst_var, via_phi, use_kind
             FROM graph.dfg_edges
             """
-        ).fetchall()
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     except DuckDBError:
         return edges_by_fn
-    for fn, src_id, dst_id, src_sym, dst_sym, via_phi, use_kind in rows:
+    for fn, src_id, dst_id, src_sym, dst_sym, via_phi, use_kind in iter_tuples_from_arrow_reader(
+        reader
+    ):
         src_idx = parse_block_idx(src_id)
         dst_idx = parse_block_idx(dst_id)
         if src_idx is None or dst_idx is None:

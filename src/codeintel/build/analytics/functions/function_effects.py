@@ -21,7 +21,7 @@ from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import coerce_int
+from codeintel.storage.query_results import coerce_int, iter_tuples_from_relation
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -405,10 +405,9 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
             "count(*) as unresolved_count",
             "caller_goid_h128",
         )
-        rows = relation.fetchall()
     except DuckDBError:
         return counts
-    for caller_goid_h128, unresolved_count in rows:
+    for caller_goid_h128, unresolved_count in iter_tuples_from_relation(relation):
         goid = normalize_decimal_id(caller_goid_h128)
         if goid is None:
             continue

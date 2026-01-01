@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -90,7 +92,7 @@ def load_function_metadata(
     dict[int, tuple[str, str | None, str | None]]
         Mapping of GOID -> (rel_path, module, qualname).
     """
-    rows: Iterable[tuple[object, str, str | None, str | None]] = gateway.execute(
+    reader = gateway.execute(
         """
         SELECT g.goid_h128,
                g.rel_path,
@@ -103,9 +105,9 @@ def load_function_metadata(
           AND g.kind IN ('function', 'method')
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     result: dict[int, tuple[str, str | None, str | None]] = {}
-    for goid_raw, rel_path, module, qualname in rows:
+    for goid_raw, rel_path, module, qualname in iter_tuples_from_arrow_reader(reader):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue

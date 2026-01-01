@@ -6,6 +6,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
@@ -17,6 +18,8 @@ from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTestCoverageEdgesRow as TestCoverageEdgeRow,
 )
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
@@ -193,38 +196,42 @@ def _backfill_test_goids(
         Mappings from test_id to GOID h128 and URN.
     """
     con = gateway.con
-    tests_rows = con.execute(
+    tests_reader = con.execute(
         """
         SELECT test_id, rel_path, qualname
         FROM analytics.test_catalog
         WHERE repo = ? AND commit = ?
         """,
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
-    if not tests_rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    tests_iter = iter_tuples_from_arrow_reader(tests_reader)
+    first_test = next(tests_iter, None)
+    if first_test is None:
         return {}, {}
 
-    goid_rows = gateway.execute(
+    goid_reader = gateway.execute(
         """
         SELECT goid_h128, urn, rel_path, qualname
         FROM core.goids
         WHERE repo = ? AND commit = ?
         """,
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
-    if not goid_rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    goid_iter = iter_tuples_from_arrow_reader(goid_reader)
+    first_goid = next(goid_iter, None)
+    if first_goid is None:
         return {}, {}
 
     goid_index: dict[tuple[str, str], tuple[int, str]] = {
         (str(rel_path).replace("\\", "/"), str(qualname)): (int(goid_h128), str(urn))
-        for goid_h128, urn, rel_path, qualname in goid_rows
+        for goid_h128, urn, rel_path, qualname in chain([first_goid], goid_iter)
     }
 
     goid_by_id: dict[str, int] = {}
     urn_by_id: dict[str, str] = {}
     updates: list[tuple[int, str, str, str]] = []
 
-    for test_id_raw, rel_path_raw, qualname in tests_rows:
+    for test_id_raw, rel_path_raw, qualname in chain([first_test], tests_iter):
         normalized = None if qualname is None else str(qualname).replace("::", ".")
         if normalized is None:
             continue
@@ -436,16 +443,16 @@ def _test_status_and_meta(
     tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]
         Status by test ID and metadata (goid, urn) by test ID.
     """
+    status_reader = gateway.execute(
+        """
+        SELECT test_id, status
+        FROM analytics.test_catalog
+        WHERE repo = ? AND commit = ?
+        """,
+        [snapshot.repo, snapshot.commit],
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     status_by_test = {
-        row[0]: row[1]
-        for row in gateway.execute(
-            """
-            SELECT test_id, status
-            FROM analytics.test_catalog
-            WHERE repo = ? AND commit = ?
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetchall()
+        row[0]: row[1] for row in iter_tuples_from_arrow_reader(status_reader)
     }
     test_goid_by_id, test_urn_by_id = _backfill_test_goids(gateway, snapshot)
     test_meta_by_id = {

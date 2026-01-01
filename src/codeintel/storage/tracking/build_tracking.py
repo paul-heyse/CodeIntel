@@ -17,12 +17,14 @@ from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.time import utc_now
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.helpers.json import (
     decode_json_dict,
     deserialize_str_tuple,
     serialize_str_sequence,
 )
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.upsert import UpsertSpec
 
@@ -239,8 +241,11 @@ class BuildTracking:
                 )
             )
         )
-        rows = self._con.execute(render_sql_duckdb(query), [schema, table]).fetchall()
-        columns = {str(row[0]) for row in rows}
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            [schema, table],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        columns = {str(row[0]) for row in iter_tuples_from_arrow_reader(reader)}
         if "impl_kind" in columns:
             column = "impl_kind"
         elif "plugin" in columns:
@@ -390,12 +395,12 @@ class BuildTracking:
             .where(where_expr)
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("target"))))
         )
-        results = self._con.execute(
+        reader = self._con.execute(
             render_sql_duckdb(query),
             [repo, commit],
-        ).fetchall()
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
-        return tuple(_parse_manifest_row(row) for row in results)
+        return tuple(_parse_manifest_row(row) for row in iter_tuples_from_arrow_reader(reader))
 
     def delete_manifests(self, repo: str, commit: str) -> None:
         """Delete all manifests for a repo/commit.
@@ -622,9 +627,12 @@ class BuildTracking:
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True))
             .limit(exp.Placeholder())
         )
-        results = self._con.execute(render_sql_duckdb(query), [repo, limit]).fetchall()
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            [repo, limit],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
-        return tuple(_parse_run_row(row) for row in results)
+        return tuple(_parse_run_row(row) for row in iter_tuples_from_arrow_reader(reader))
 
     def save_run_targets(
         self,
@@ -737,7 +745,10 @@ class BuildTracking:
             )
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("target"))))
         )
-        results = self._con.execute(render_sql_duckdb(query), [run_id]).fetchall()
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            [run_id],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
         return [
             {
@@ -752,7 +763,7 @@ class BuildTracking:
                 "error": row[8],
                 "recorded_at": row[9],
             }
-            for row in results
+            for row in iter_tuples_from_arrow_reader(reader)
         ]
 
     def save_run_nodes(
@@ -969,7 +980,10 @@ class BuildTracking:
             .where(_combine_conditions(conditions))
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at"))))
         )
-        results = self._con.execute(render_sql_duckdb(query), params).fetchall()
+        reader = self._con.execute(
+            render_sql_duckdb(query),
+            params,
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
         return [
             {
@@ -983,7 +997,7 @@ class BuildTracking:
                 "error": row[7],
                 "tags": decode_json_dict(row[8]) if row[8] else {},
             }
-            for row in results
+            for row in iter_tuples_from_arrow_reader(reader)
         ]
 
 

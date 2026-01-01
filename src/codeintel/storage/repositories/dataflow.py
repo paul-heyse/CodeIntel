@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
@@ -27,12 +29,13 @@ class DataflowRepository(BaseRepository):
         params: Sequence[object] | None = None,
     ) -> list[RowDict]:
         cursor = self.con.execute(render_sql_duckdb(expr), list(params) if params else [])
-        rows = cursor.fetchall()
-        if not rows:
-            return []
         description = cursor.description or ()
         columns = [str(col[0]) for col in description]
-        return [dict(zip(columns, row, strict=True)) for row in rows]
+        reader = cursor.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        return [
+            dict(zip(columns, row, strict=True))
+            for row in iter_tuples_from_arrow_reader(reader, columns=columns)
+        ]
 
     def list_nodes(self) -> list[RowDict]:
         """

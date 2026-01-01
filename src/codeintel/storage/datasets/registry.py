@@ -8,13 +8,15 @@ from typing import TYPE_CHECKING, cast
 from sqlglot import exp
 
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import get_contract_for_table_key
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
     from duckdb import DuckDBPyConnection
@@ -243,11 +245,11 @@ def load_dataset_registry(
         .from_(table_expr)
         .order_by(exp.Ordered(this=exp.column("table_key")))
     )
-    rows = con.execute(render_sql_duckdb(query)).fetchall()
+    reader = con.execute(render_sql_duckdb(query)).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     try:
         return _registry_from_rows(
-            rows,
+            iter_tuples_from_arrow_reader(reader),
             dataset_root_dir=dataset_root_dir,
             dataset_manifests=dataset_manifests,
         )
@@ -257,7 +259,7 @@ def load_dataset_registry(
 
 
 def _registry_from_rows(
-    rows: Sequence[tuple[object, ...]],
+    rows: Iterable[tuple[object, ...]],
     *,
     dataset_root_dir: Path | None,
     dataset_manifests: Mapping[str, ArrowDatasetManifest] | None,

@@ -96,5 +96,5 @@ def attach_meta_database(con: DuckDBPyConnection, *, config: StorageConfig) -> N
 
 
 def _catalog_attached(con: DuckDBPyConnection, catalog: str) -> bool:
-    rows = con.execute("PRAGMA database_list").fetchall()
+    rows = con.execute("PRAGMA database_list").fetchmany(128)
     return any(row[1] == catalog for row in rows)

@@ -21,6 +21,7 @@ from codeintel.ingestion.ports.change_detection import (
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
+from codeintel.storage.query_results import iter_tuples_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -186,7 +187,9 @@ class HashChangeDetectionAdapter:
                     "mtime_ns": mtime_ns,
                     "content_hash": content_hash,
                 }
-                for rel_path, size_bytes, mtime_ns, content_hash in relation.fetchall()
+                for rel_path, size_bytes, mtime_ns, content_hash in iter_tuples_from_relation(
+                    relation
+                )
             ]
         else:
             self._storage.ensure_schema("core.file_state")

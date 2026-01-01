@@ -15,13 +15,14 @@ from typing import TYPE_CHECKING, Any, Literal
 from sqlglot import exp
 
 from codeintel.core.time import utc_now
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.helpers.json import (
     decode_json_dict,
     deserialize_str_tuple,
     serialize_str_sequence,
 )
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
-from codeintel.storage.query_results import coerce_int
+from codeintel.storage.query_results import coerce_int, iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
@@ -527,9 +528,10 @@ class PipelineRunTracking:
                 exp.Ordered(this=exp.Column(this=exp.to_identifier("name"))),
             )
         )
-        cur = self.con.execute(render_sql_duckdb(query), [run_id])
-
-        rows = cur.fetchall()
+        reader = self.con.execute(
+            render_sql_duckdb(query),
+            [run_id],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         results: list[PipelineStepRecord] = []
         for (
             run_id_val,
@@ -541,7 +543,7 @@ class PipelineRunTracking:
             status,
             row_counts_raw,
             extra_raw,
-        ) in rows:
+        ) in iter_tuples_from_arrow_reader(reader):
             row_counts = (
                 _coerce_row_counts(decode_json_dict(row_counts_raw)) if row_counts_raw else None
             )
@@ -635,8 +637,10 @@ class PipelineRunTracking:
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True))
             .limit(exp.Placeholder())
         )
-        cur = self.con.execute(render_sql_duckdb(query), [limit])
-        rows = cur.fetchall()
+        reader = self.con.execute(
+            render_sql_duckdb(query),
+            [limit],
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         results: list[PipelineRunRecord] = []
         for (
             run_id_val,
@@ -651,7 +655,7 @@ class PipelineRunTracking:
             status,
             error_summary,
             pipeline_name,
-        ) in rows:
+        ) in iter_tuples_from_arrow_reader(reader):
             results.append(
                 PipelineRunRecord(
                     run_id=str(run_id_val),

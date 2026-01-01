@@ -17,7 +17,7 @@ from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
-from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
@@ -31,6 +31,7 @@ from codeintel.storage.metadata.bootstrap import (
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 
@@ -265,9 +266,12 @@ def load_derived_lineage_columns(
             exp.Ordered(this=exp.column("upstream_column")),
         )
     )
-    rows = con.execute(render_sql_duckdb(query), [repo, commit, downstream_table]).fetchall()
     out: dict[str, list[tuple[str, str]]] = {}
-    for downstream_column, upstream_table, upstream_column in rows:
+    reader = con.execute(
+        render_sql_duckdb(query),
+        [repo, commit, downstream_table],
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for downstream_column, upstream_table, upstream_column in iter_tuples_from_arrow_reader(reader):
         out.setdefault(str(downstream_column), []).append(
             (str(upstream_table), str(upstream_column))
         )

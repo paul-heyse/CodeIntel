@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.analytics.profiles.types import FunctionGraphFeatures
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import iter_tuples_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -93,7 +94,7 @@ def summarize_graph_for_function_profile(
         call_is_leaf,
         call_is_entrypoint,
         call_is_public,
-    ) in relation.fetchall():
+    ) in iter_tuples_from_relation(relation):
         goid = int(function_goid_h128)
         features[goid] = FunctionGraphFeatures(
             function_goid_h128=goid,

@@ -26,6 +26,8 @@ from codeintel.build.analytics.testing.graph_metrics import (
 )
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -124,16 +126,17 @@ def compute_test_graph_metrics_pure(
         funcs,
         weight=graph_ctx.pagerank_weight,
     )
+    reader = con.execute(
+        """
+        SELECT function_goid_h128, risk_score
+        FROM analytics.goid_risk_factors
+        WHERE repo = ? AND commit = ?
+        """,
+        [snapshot.repo, snapshot.commit],
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     risk_by_goid = {
         int(goid): float(score)
-        for goid, score in con.execute(
-            """
-            SELECT function_goid_h128, risk_score
-            FROM analytics.goid_risk_factors
-            WHERE repo = ? AND commit = ?
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetchall()
+        for goid, score in iter_tuples_from_arrow_reader(reader)
     }
     ctx = TestMetricsContext(
         repo=snapshot.repo,

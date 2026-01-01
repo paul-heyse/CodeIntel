@@ -33,6 +33,8 @@ from codeintel.build.analytics.testing.profiles.types import (
 from codeintel.build.analytics.utilities.ast import resolve_call_target
 from codeintel.core.paths import path_to_module
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -272,7 +274,7 @@ def _load_test_records(
     repo: str,
     commit: str,
 ) -> list[TestRecord]:
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT
             t.test_id,
@@ -301,7 +303,7 @@ def _load_test_records(
         WHERE t.repo = ? AND t.commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     records: list[TestRecord] = []
     for (
         test_id,
@@ -318,7 +320,7 @@ def _load_test_records(
         flaky,
         start_line,
         end_line,
-    ) in rows:
+    ) in iter_tuples_from_arrow_reader(reader):
         module_name = str(module) if module is not None else path_to_module(str(rel_path))
         records.append(
             TestRecord(
@@ -406,7 +408,7 @@ def _load_functions_covered(
     repo: str,
     commit: str,
 ) -> dict[str, FunctionCoverageEntry]:
-    rows = con.execute(
+    reader = con.execute(
         """
         WITH per_edge AS (
             SELECT
@@ -446,7 +448,7 @@ def _load_functions_covered(
          AND m.path = g.rel_path
         """,
         [repo, commit, repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     result: dict[str, FunctionCoverageEntry] = {}
     for (
@@ -458,7 +460,7 @@ def _load_functions_covered(
         module,
         qualname,
         rel_path,
-    ) in rows:
+    ) in iter_tuples_from_arrow_reader(reader):
         module_name = module if module is not None else path_to_module(str(rel_path))
         test_key = str(test_id)
         entry = result.get(test_key)
@@ -499,7 +501,7 @@ def _load_subsystems_covered(
     repo: str,
     commit: str,
 ) -> dict[str, SubsystemCoverageEntry]:
-    rows = con.execute(
+    reader = con.execute(
         """
         WITH per_edge AS (
             SELECT
@@ -544,10 +546,12 @@ def _load_subsystems_covered(
          AND s.commit = ?
         """,
         [repo, commit, repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
     result: dict[str, SubsystemCoverageEntry] = {}
-    for test_id, subsystem_id, coverage_share, name, max_risk_score in rows:
+    for test_id, subsystem_id, coverage_share, name, max_risk_score in iter_tuples_from_arrow_reader(
+        reader
+    ):
         test_key = str(test_id)
         entry = result.get(test_key) or SubsystemCoverageEntry(
             subsystems=[],
@@ -576,7 +580,7 @@ def _load_test_graph_metrics(
     repo: str,
     commit: str,
 ) -> dict[str, TestGraphMetrics]:
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT
             test_id,
@@ -590,7 +594,7 @@ def _load_test_graph_metrics(
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     metrics: dict[str, TestGraphMetrics] = {}
     for (
         test_id,
@@ -600,7 +604,7 @@ def _load_test_graph_metrics(
         proj_weight,
         proj_clustering,
         proj_betweenness,
-    ) in rows:
+    ) in iter_tuples_from_arrow_reader(reader):
         metrics[str(test_id)] = TestGraphMetrics(
             degree=int(degree) if degree is not None else None,
             weighted_degree=float(weighted_degree) if weighted_degree is not None else None,
@@ -624,7 +628,7 @@ def load_test_profile_context(
     dict[str, dict[str, object]]
         Profile context keyed by ``test_id``.
     """
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT
             test_id,
@@ -638,7 +642,7 @@ def load_test_profile_context(
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     ctx: dict[str, dict[str, object]] = {}
     for (
         test_id,
@@ -648,7 +652,7 @@ def load_test_profile_context(
         assert_count,
         raise_count,
         status,
-    ) in rows:
+    ) in iter_tuples_from_arrow_reader(reader):
         ctx[str(test_id)] = {
             "markers": markers,
             "functions_covered": functions_covered or [],

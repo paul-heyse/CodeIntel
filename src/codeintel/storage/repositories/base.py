@@ -23,6 +23,7 @@ Existence check:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -36,7 +37,10 @@ from codeintel.storage.duckdb_types import (
     ConstantExpression,
     Expression,
 )
-from codeintel.storage.query_results import records_from_arrow_reader
+from codeintel.storage.query_results import (
+    iter_records_from_arrow_reader,
+    records_from_arrow_reader,
+)
 from codeintel.storage.validation.columnar import validate_record_batch_reader
 
 if TYPE_CHECKING:
@@ -113,6 +117,20 @@ class BaseRepository:
     ) -> list[RowDict]:
         reader = self._relation_to_reader(relation, table_key=table_key)
         return records_from_arrow_reader(reader)
+
+    def _relation_to_iter(
+        self,
+        relation: DuckDBRelation,
+        table_key: str | None = None,
+        *,
+        batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+    ) -> Iterator[RowDict]:
+        reader = self._relation_to_reader(
+            relation,
+            table_key=table_key,
+            batch_size=batch_size,
+        )
+        return iter_records_from_arrow_reader(reader)
 
     def _relation_to_one(
         self,

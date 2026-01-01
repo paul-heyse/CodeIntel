@@ -38,6 +38,8 @@ from codeintel.build.analytics.utilities.ast import (
 )
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
     "repo",
@@ -76,7 +78,7 @@ EXTERNAL_DEPENDENCIES_COLS = [
 ]
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
     from pathlib import Path
 
     from codeintel.build.analytics.ast_features.model import FunctionAstFeatures
@@ -253,8 +255,8 @@ def _function_call_rows(
 
 def _fetch_dependency_call_rows(
     con: DuckDBConnection, snapshot: SnapshotRef
-) -> list[tuple[object, ...]]:
-    return con.execute(
+) -> Iterable[tuple[object, ...]]:
+    reader = con.execute(
         """
         SELECT dep_id, library, function_goid_h128, module,
                callsite_count, modes, severity, criticality, risk_score
@@ -262,11 +264,12 @@ def _fetch_dependency_call_rows(
         WHERE repo = ? AND commit = ?
         """,
         [snapshot.repo, snapshot.commit],
-    ).fetchall()
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return iter_tuples_from_arrow_reader(reader)
 
 
 def _aggregate_dependency_calls(
-    rows: list[tuple[object, ...]], patterns: dict[str, LibraryPattern]
+    rows: Iterable[tuple[object, ...]], patterns: dict[str, LibraryPattern]
 ) -> dict[str, DependencyAggregate]:
     aggregates: dict[str, DependencyAggregate] = {}
     for (
@@ -499,15 +502,15 @@ def _classify_modes(
 
 def _load_config_keys(con: DuckDBConnection, repo: str, commit: str) -> dict[str, set[str]]:
     mapping: dict[str, set[str]] = defaultdict(set)
-    rows = con.execute(
+    reader = con.execute(
         """
         SELECT reference_modules, key
         FROM analytics.config_values
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
-    ).fetchall()
-    for ref_modules, key in rows:
+    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    for ref_modules, key in iter_tuples_from_arrow_reader(reader):
         if key is None or ref_modules is None:
             continue
         modules = _ensure_str_list(ref_modules)

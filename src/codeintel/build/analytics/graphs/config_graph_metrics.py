@@ -317,7 +317,7 @@ def compute_config_graph_metrics_result(
     allowed_modules
         Optional module allowlist for reference modules.
     runtime
-        Optional runtime supplying cached graphs and backend selection.
+        Optional runtime options used to set graph execution preferences.
 
     Returns
     -------

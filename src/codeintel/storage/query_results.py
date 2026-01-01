@@ -29,6 +29,9 @@ __all__ = [
     "coerce_optional_float",
     "coerce_optional_int",
     "iter_records_from_arrow_reader",
+    "iter_records_from_relation",
+    "iter_tuples_from_arrow_reader",
+    "iter_tuples_from_relation",
     "records_from_arrow_batch",
     "records_from_arrow_reader",
     "records_from_arrow_table",
@@ -252,6 +255,90 @@ def iter_records_from_arrow_reader(
     batches: Iterable[pa.RecordBatch] = reader
     for batch in batches:
         yield from records_from_arrow_batch(batch, columns=columns)
+
+
+def iter_records_from_relation(
+    relation: DuckDBRelation,
+    *,
+    columns: Sequence[str] | None = None,
+) -> Iterator[dict[str, object]]:
+    """Yield row dictionaries from a DuckDB relation.
+
+    Parameters
+    ----------
+    relation
+        DuckDB relation to stream.
+    columns
+        Optional column subset/order to apply before conversion.
+
+    Yields
+    ------
+    dict[str, object]
+        Normalized row dictionaries with missing values set to None.
+    """
+    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    yield from iter_records_from_arrow_reader(reader, columns=columns)
+
+
+def iter_tuples_from_arrow_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    columns: Sequence[str] | None = None,
+) -> Iterator[tuple[object, ...]]:
+    """Yield tuple rows from a RecordBatchReader.
+
+    Parameters
+    ----------
+    reader
+        Arrow record batch reader to normalize.
+    columns
+        Optional column subset/order to apply before conversion.
+
+    Yields
+    ------
+    tuple[object, ...]
+        Row tuples in column order.
+
+    Raises
+    ------
+    ValueError
+        If requested columns are missing from the Arrow batch.
+    """
+    batches: Iterable[pa.RecordBatch] = reader
+    for batch in batches:
+        if batch.num_rows == 0:
+            continue
+        column_names = list(batch.schema.names) if columns is None else list(columns)
+        data_by_name = batch.to_pydict()
+        missing = [name for name in column_names if name not in data_by_name]
+        if missing:
+            msg = f"Missing columns in Arrow batch: {', '.join(missing)}"
+            raise ValueError(msg)
+        column_values = [data_by_name[name] for name in column_names]
+        yield from zip(*column_values, strict=True)
+
+
+def iter_tuples_from_relation(
+    relation: DuckDBRelation,
+    *,
+    columns: Sequence[str] | None = None,
+) -> Iterator[tuple[object, ...]]:
+    """Yield tuple rows from a DuckDB relation.
+
+    Parameters
+    ----------
+    relation
+        DuckDB relation to stream.
+    columns
+        Optional column subset/order to apply before conversion.
+
+    Yields
+    ------
+    tuple[object, ...]
+        Row tuples in column order.
+    """
+    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    yield from iter_tuples_from_arrow_reader(reader, columns=columns)
 
 
 def records_from_arrow_reader(

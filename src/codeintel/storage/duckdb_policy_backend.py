@@ -44,7 +44,7 @@ import sqlglot.expressions as exp
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
-from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.contracts.provider import is_view as is_view_contract
 from codeintel.storage.duckdb.catalog import (
     duckdb_default_catalog,
@@ -58,6 +58,7 @@ from codeintel.storage.helpers.table_key import (
     split_table_key_or_default,
 )
 from codeintel.storage.metadata.schema import EXPORT_AUDIT_TABLE
+from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
@@ -1071,14 +1072,14 @@ class DuckDBPolicyBackend:
         frozenset[str]
             Column names present in the table, or empty when missing.
         """
-        rows = self.con.execute(
+        reader = self.con.execute(
             (
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_schema = ? AND table_name = ?"
             ),
             (schema, table),
-        ).fetchall()
-        return frozenset(str(row[0]) for row in rows)
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        return frozenset(str(row[0]) for row in iter_tuples_from_arrow_reader(reader))
 
     def _clear_cfg_metrics(self, repo: str, commit: str) -> None:
         """Clear CFG metrics for a snapshot.
@@ -1298,11 +1299,11 @@ class DuckDBPolicyBackend:
         raise RuntimeError(message)
 
     def _fetch_table_columns(self, qualified_name: str) -> list[str]:
-        info = self.con.execute(
+        reader = self.con.execute(
             "SELECT * FROM pragma_table_info(?)",
             [qualified_name],
-        ).fetchall()
-        return [row[1] for row in info]
+        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        return [row[1] for row in iter_tuples_from_arrow_reader(reader)]
 
     def _add_missing_columns(self, table_schema: TableSchema, *, start_index: int) -> None:
         qualified_name = self._quoted_table_ref(table_schema.schema, table_schema.name)
@@ -1377,11 +1378,11 @@ class DuckDBPolicyBackend:
                     table,
                     catalog=resolved_catalog,
                 )
-                info = self.con.execute(
+                reader = self.con.execute(
                     "SELECT * FROM pragma_table_info(?)",
                     [qualified_name],
-                ).fetchall()
-                columns = [row[1] for row in info]
+                ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+                columns = [row[1] for row in iter_tuples_from_arrow_reader(reader)]
             else:
                 message = f"Missing table {table_key}"
                 raise RuntimeError(message)
