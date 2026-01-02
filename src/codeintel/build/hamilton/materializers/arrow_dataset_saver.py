@@ -11,6 +11,7 @@ import typing
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, TypeAliasType, cast, get_args, get_origin
 
@@ -20,8 +21,8 @@ import pyarrow.dataset as ds
 from hamilton.io.data_adapters import DataSaver
 from polars.exceptions import PolarsError
 
-from codeintel.build.hamilton.build_log import record_build_event
 from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.build_log import record_build_event
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import (
@@ -65,8 +66,8 @@ from codeintel.core.datasets.manifests import (
 )
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
-from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.hamilton import tags as hamilton_tags
+from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.arrow_gen import (
     EXTRAS_POLICIES,
     ArrowSchemaMetadata,
@@ -83,8 +84,6 @@ from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.resolution import resolve_table_schema
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from pyarrow import RecordBatchReader
 
     from codeintel.build.schemas.observations import SchemaHints
@@ -119,7 +118,6 @@ _COLLECT_GROUP_TAG = "ci.collect_group"
 _COLLECT_ALL_WAIT_S = 0.5
 _PROFILE_RESULT_TUPLE_LENGTH = 2
 _SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
-_DEFAULT_SCHEMA_DRIFT_MODE = "warn"
 _ALLOWED_SCHEMA_DRIFT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
 
 LOG = logging.getLogger(__name__)
@@ -216,6 +214,43 @@ class _MaterializationPlan:
     options: ArrowDatasetWriteOptions
     snapshot_id: str
     dataset_root: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _MaterializationInputs:
+    table_schema: TableSchema
+    drift_summary: Mapping[str, object] | None
+    settings_fingerprint: str
+    arrow_schema: pa.Schema
+    observation: SchemaObservationAccumulator
+    resolved_partitions: tuple[str, ...]
+    schema_hash_value: str
+    schema_digest_value: str
+    inferred_settings: dict[str, object] | None
+    provenance: Mapping[str, str] | None
+    contract_schema: pa.Schema
+    write_settings: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class _ManifestExtrasInputs:
+    table_schema: TableSchema
+    table_key: str
+    inferred_settings: dict[str, object] | None
+    write_settings: dict[str, object]
+    drift_summary: Mapping[str, object] | None
+    settings_fingerprint: str
+    provenance: Mapping[str, str] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ParquetMetadataInputs:
+    ctx: _MaterializeContext
+    table_schema: TableSchema
+    schema_hash_value: str
+    schema_digest_value: str
+    partition_columns: tuple[str, ...]
+    settings_fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -456,6 +491,50 @@ def _build_materialization_plan(
     ctx: _MaterializeContext,
     data: TabularData,
 ) -> _MaterializationPlan:
+    inputs = _resolve_materialization_inputs(ctx=ctx, data=data)
+    extras = _manifest_extras(
+        _ManifestExtrasInputs(
+            table_schema=inputs.table_schema,
+            table_key=ctx.table_key,
+            inferred_settings=inputs.inferred_settings,
+            write_settings=inputs.write_settings,
+            drift_summary=inputs.drift_summary,
+            settings_fingerprint=inputs.settings_fingerprint,
+            provenance=inputs.provenance,
+        )
+    )
+    parquet_metadata = _parquet_metadata_payload(
+        _ParquetMetadataInputs(
+            ctx=ctx,
+            table_schema=inputs.table_schema,
+            schema_hash_value=inputs.schema_hash_value,
+            schema_digest_value=inputs.schema_digest_value,
+            partition_columns=inputs.resolved_partitions,
+            settings_fingerprint=inputs.settings_fingerprint,
+        )
+    )
+    options = _build_write_options(
+        partition_columns=inputs.resolved_partitions,
+        schema_hash_value=inputs.schema_hash_value,
+        extras=extras,
+        write_settings=inputs.write_settings,
+        parquet_metadata=parquet_metadata,
+    )
+    return _MaterializationPlan(
+        arrow_schema=inputs.arrow_schema,
+        observation=inputs.observation,
+        contract_schema=inputs.contract_schema,
+        options=options,
+        snapshot_id=_snapshot_id(ctx.env),
+        dataset_root=ctx.env.paths.dataset_root_dir,
+    )
+
+
+def _resolve_materialization_inputs(
+    *,
+    ctx: _MaterializeContext,
+    data: TabularData,
+) -> _MaterializationInputs:
     tag_sets = _schema_tag_sets_for_table(catalog=ctx.catalog, table_key=ctx.table_key)
     setup = build_observation_setup(
         table_key=ctx.table_key,
@@ -467,6 +546,18 @@ def _build_materialization_plan(
         data=data,
         declared_schema=setup.declared_schema,
         schema_hints=setup.schema_hints,
+    )
+    drift_summary = _handle_schema_drift(
+        ctx=ctx,
+        inferred=table_schema,
+        baseline=setup.declared_schema,
+    )
+    settings_fingerprint = _settings_fingerprint(ctx.env)
+    record_build_event(
+        "build.dataset.settings_fingerprint",
+        table_key=ctx.table_key,
+        target=ctx.target_name,
+        settings_fingerprint=settings_fingerprint,
     )
     arrow_schema = _arrow_schema_for_data(data=data)
     observation = setup.accumulator
@@ -489,34 +580,19 @@ def _build_materialization_plan(
         ctx=ctx,
         inferred_settings=inferred_settings,
     )
-    extras = _manifest_extras(
+    return _MaterializationInputs(
         table_schema=table_schema,
-        table_key=ctx.table_key,
-        inferred_settings=inferred_settings,
-        write_settings=write_settings,
-        provenance=provenance,
-    )
-    parquet_metadata = _parquet_metadata_payload(
-        ctx=ctx,
-        table_schema=table_schema,
-        schema_hash_value=schema_hash_value,
-        schema_digest_value=schema_digest_value,
-        partition_columns=resolved_partitions,
-    )
-    options = _build_write_options(
-        partition_columns=resolved_partitions,
-        schema_hash_value=schema_hash_value,
-        extras=extras,
-        write_settings=write_settings,
-        parquet_metadata=parquet_metadata,
-    )
-    return _MaterializationPlan(
+        drift_summary=drift_summary,
+        settings_fingerprint=settings_fingerprint,
         arrow_schema=arrow_schema,
         observation=observation,
+        resolved_partitions=resolved_partitions,
+        schema_hash_value=schema_hash_value,
+        schema_digest_value=schema_digest_value,
+        inferred_settings=inferred_settings,
+        provenance=provenance,
         contract_schema=contract_schema,
-        options=options,
-        snapshot_id=_snapshot_id(ctx.env),
-        dataset_root=ctx.env.paths.dataset_root_dir,
+        write_settings=write_settings,
     )
 
 
@@ -1204,8 +1280,7 @@ def _handle_schema_drift(
             type_changes=type_changes,
         )
         LOG.warning(
-            "build.schema.drift.detected table_key=%s mode=%s missing=%d extra=%d "
-            "type_changes=%d",
+            "build.schema.drift.detected table_key=%s mode=%s missing=%d extra=%d type_changes=%d",
             ctx.table_key,
             mode,
             missing_count,
@@ -1214,8 +1289,7 @@ def _handle_schema_drift(
         )
     else:
         LOG.info(
-            "build.schema.drift.detected table_key=%s mode=off missing=%d extra=%d "
-            "type_changes=%d",
+            "build.schema.drift.detected table_key=%s mode=off missing=%d extra=%d type_changes=%d",
             ctx.table_key,
             missing_count,
             extra_count,
@@ -1236,63 +1310,50 @@ def _handle_schema_drift(
     return drift_summary
 
 
-def _manifest_extras(
-    *,
-    table_schema: TableSchema,
-    table_key: str,
-    inferred_settings: dict[str, object] | None,
-    write_settings: dict[str, object],
-    drift_summary: Mapping[str, object] | None,
-    settings_fingerprint: str,
-    provenance: Mapping[str, str] | None = None,
-) -> dict[str, object]:
-    extras: dict[str, object] = {"table_schema": table_schema.to_json_obj()}
-    resolved_provenance = provenance or _schema_provenance(table_key)
+def _manifest_extras(inputs: _ManifestExtrasInputs) -> dict[str, object]:
+    extras: dict[str, object] = {"table_schema": inputs.table_schema.to_json_obj()}
+    resolved_provenance = inputs.provenance or _schema_provenance(inputs.table_key)
     if resolved_provenance:
         extras["provenance"] = resolved_provenance
-    if drift_summary is not None:
-        extras["schema_drift_summary"] = dict(drift_summary)
-    extras["settings_fingerprint"] = settings_fingerprint
-    if inferred_settings:
-        extras["inferred_settings"] = dict(inferred_settings)
-    settings_payload = _write_settings_payload(write_settings)
+    if inputs.drift_summary is not None:
+        extras["schema_drift_summary"] = dict(inputs.drift_summary)
+    extras["settings_fingerprint"] = inputs.settings_fingerprint
+    if inputs.inferred_settings:
+        extras["inferred_settings"] = dict(inputs.inferred_settings)
+    settings_payload = _write_settings_payload(inputs.write_settings)
     if settings_payload:
         extras["write_settings"] = settings_payload
     return extras
 
 
-def _parquet_metadata_payload(
-    *,
-    ctx: _MaterializeContext,
-    table_schema: TableSchema,
-    schema_hash_value: str,
-    schema_digest_value: str,
-    partition_columns: tuple[str, ...],
-) -> dict[str, object]:
-    columns_json = {col.name: col.type for col in table_schema.columns}
-    nullability_json = {col.name: col.nullable for col in table_schema.columns}
-    output = ctx.catalog.table_outputs.get(ctx.table_key)
-    target = ctx.catalog.get_target(ctx.target_name)
-    run_context = ctx.env.run_context
-    build_id = run_context.run_id if run_context is not None else ctx.env.commit
+def _parquet_metadata_payload(inputs: _ParquetMetadataInputs) -> dict[str, object]:
+    columns_json = {col.name: col.type for col in inputs.table_schema.columns}
+    nullability_json = {col.name: col.nullable for col in inputs.table_schema.columns}
+    output = inputs.ctx.catalog.table_outputs.get(inputs.ctx.table_key)
+    target = inputs.ctx.catalog.get_target(inputs.ctx.target_name)
+    run_context = inputs.ctx.env.run_context
+    build_id = run_context.run_id if run_context is not None else inputs.ctx.env.commit
     return {
-        "codeintel.table_key": table_schema.table_key,
-        "codeintel.domain": table_schema.schema,
-        "codeintel.target": ctx.target_name,
-        "codeintel.schema_hash": schema_hash_value,
-        "codeintel.schema_digest": schema_digest_value,
+        "codeintel.table_key": inputs.table_schema.table_key,
+        "codeintel.domain": inputs.table_schema.schema,
+        "codeintel.target": inputs.ctx.target_name,
+        "codeintel.schema_hash": inputs.schema_hash_value,
+        "codeintel.schema_digest": inputs.schema_digest_value,
+        "codeintel.settings_fingerprint": inputs.settings_fingerprint,
         "codeintel.columns_json": columns_json,
         "codeintel.nullability_json": nullability_json,
-        "codeintel.primary_keys_json": list(table_schema.primary_key),
-        "codeintel.partition_columns_json": list(partition_columns),
+        "codeintel.primary_keys_json": list(inputs.table_schema.primary_key),
+        "codeintel.partition_columns_json": list(inputs.partition_columns),
         "codeintel.build_id": build_id,
-        "codeintel.repo": ctx.env.repo,
-        "codeintel.commit": ctx.env.commit,
-        "codeintel.snapshot_id": _snapshot_id(ctx.env),
+        "codeintel.repo": inputs.ctx.env.repo,
+        "codeintel.commit": inputs.ctx.env.commit,
+        "codeintel.snapshot_id": _snapshot_id(inputs.ctx.env),
         "codeintel.generated_at": datetime.now(UTC).isoformat(),
-        "codeintel.hamilton.node": output.saver_node if output is not None else ctx.target_name,
+        "codeintel.hamilton.node": (
+            output.saver_node if output is not None else inputs.ctx.target_name
+        ),
         "codeintel.hamilton.graph_version": target.spec_version if target is not None else None,
-        "codeintel.inputs_json": _input_lineage(ctx=ctx),
+        "codeintel.inputs_json": _input_lineage(ctx=inputs.ctx),
     }
 
 

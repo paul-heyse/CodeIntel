@@ -1,0 +1,24 @@
+{
+  "pattern_group_id": "rg.python.argparse.cli",
+  "description": "argparse wiring candidates (ArgumentParser, add_argument, add_subparsers).",
+  "patterns": [
+    {
+      "pattern": "argparse.ArgumentParser(",
+      "is_regex": false,
+      "priority": 10
+    },
+    {
+      "pattern": ".add_argument(",
+      "is_regex": false,
+      "priority": 9
+    },
+    {
+      "pattern": ".add_subparsers(",
+      "is_regex": false,
+      "priority": 8
+    }
+  ],
+  "globs": [
+    "**/*.py"
+  ]
+}

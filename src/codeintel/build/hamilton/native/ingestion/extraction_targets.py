@@ -755,10 +755,6 @@ _SYNTAX_INDEX_TARGET_SPEC = ToolTargetSpec(
     spec=_INTENSIVE_SPEC,
     tables=(
         TableOutputSpec(
-            table_key=PARSE_MANIFEST_TABLE_KEY,
-            node_name="syntax_index__parse_manifest_rows",
-        ),
-        TableOutputSpec(
             table_key=SYNTAX_SPANS_TABLE_KEY,
             node_name="syntax_index__span_rows",
         ),

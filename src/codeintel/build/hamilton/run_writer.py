@@ -18,6 +18,7 @@ import logging
 import platform
 from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -30,7 +31,9 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from codeintel.build.assets.emitter import persist_asset_catalog_for_run
 from codeintel.build.hamilton.build_log import build_log_path
+from codeintel.build.hamilton.tagging import tag_schema_spec, tag_schema_summary
 from codeintel.core.build_manifest import BuildRunRecord
+from codeintel.core.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.core.errors.storage import StorageError
 from codeintel.storage.tracking.asset_tracking import RunEnvironmentRecord
 
@@ -50,6 +53,9 @@ if TYPE_CHECKING:
     from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
 
 log = logging.getLogger(__name__)
+
+_RUN_REPORT_FILENAME = "run_report_{run_id}.jsonl"
+_TAG_SCHEMA_FILENAME = "tag_schema.json"
 
 
 def _sha256_text(payload: str) -> str:
@@ -100,6 +106,66 @@ def _json_line(payload: Mapping[str, object]) -> str:
     if _orjson is not None:
         return _orjson.dumps(payload).decode("utf-8")
     return json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+
+
+def _snapshot_id(env: BuildEnv, *, run_id: str) -> str:
+    value = env.commit.strip()
+    return value if value else run_id
+
+
+def _snapshot_root(env: BuildEnv, *, run_id: str) -> Path | None:
+    dataset_root = env.paths.dataset_root_dir
+    if dataset_root is None:
+        return None
+    return dataset_root / _snapshot_id(env, run_id=run_id)
+
+
+def _spec_hash(payload: Mapping[str, object]) -> str:
+    serialized = json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return _sha256_text(serialized)
+
+
+def _normalize_tag_value(value: object) -> object:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _normalize_tags(tags: Mapping[str, object] | None) -> dict[str, object]:
+    if not tags:
+        return {}
+    return {key: _normalize_tag_value(val) for key, val in tags.items()}
+
+
+def _dataset_manifest_path_for(
+    *,
+    dataset_root: Path | None,
+    snapshot_id: str,
+    table_key: str,
+    metadata: Mapping[str, object],
+) -> Path | None:
+    raw = metadata.get("dataset_manifest_path")
+    if isinstance(raw, str) and raw:
+        return Path(raw)
+    if dataset_root is None:
+        return None
+    return dataset_manifest_path(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+
+
+def _load_manifest(path: Path | None) -> tuple[str | None, int | None]:
+    if path is None or not path.is_file():
+        return None, None
+    try:
+        manifest = read_dataset_manifest(path)
+    except (OSError, TypeError, ValueError, KeyError):
+        return None, None
+    return manifest.schema_hash, manifest.row_count
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,13 +328,19 @@ class BuildRunWriter:
             log.warning("build.hamilton.writer.run_nodes_failed run_id=%s error=%s", run_id, exc)
             return 0
 
+    @staticmethod
     def write_build_log(
-        self,
         *,
         context: BuildLogContext,
         events: Sequence[Mapping[str, object]],
     ) -> Path | None:
-        """Write the consolidated JSONL build log for a run."""
+        """Write the consolidated JSONL build log for a run.
+
+        Returns
+        -------
+        Path | None
+            Path to the JSONL artifact, or None when no events were written.
+        """
         if not events:
             return None
         try:
@@ -278,7 +350,6 @@ class BuildRunWriter:
                 for event in events:
                     handle.write(_json_line(event))
                     handle.write("\n")
-            return path
         except (OSError, ValueError) as exc:
             log.warning(
                 "build.hamilton.writer.build_log_failed run_id=%s error=%s",
@@ -286,6 +357,8 @@ class BuildRunWriter:
                 exc,
             )
             return None
+        else:
+            return path
 
     def persist_asset_catalog(
         self,
@@ -323,3 +396,214 @@ class BuildRunWriter:
             log.warning(
                 "build.hamilton.writer.asset_catalog_failed run_id=%s error=%s", run_id, exc
             )
+
+    @staticmethod
+    def write_run_report(*, inputs: RunReportInputs) -> Path | None:
+        """Write the consolidated run report JSONL and tag schema artifact.
+
+        Returns
+        -------
+        Path | None
+            Path to the run report JSONL, or None when not written.
+        """
+        snapshot_root = _snapshot_root(inputs.env, run_id=inputs.run_id)
+        if snapshot_root is None:
+            log.warning(
+                "build.hamilton.writer.run_report_skipped run_id=%s reason=missing_dataset_root",
+                inputs.run_id,
+            )
+            return None
+
+        tag_spec = tag_schema_spec()
+        spec_hash = _spec_hash(tag_spec)
+        tag_spec_path = snapshot_root / _TAG_SCHEMA_FILENAME
+        tag_spec_written = _write_json_payload(tag_spec_path, tag_spec)
+        tag_summary = tag_schema_summary()
+        tag_summary.update(
+            {
+                "spec_hash": spec_hash,
+                "spec_path": str(tag_spec_path) if tag_spec_written else None,
+            }
+        )
+
+        records_payload = _run_report_records(
+            _RunReportPayloadInputs(
+                env=inputs.env,
+                run_id=inputs.run_id,
+                catalog=inputs.catalog,
+                records=inputs.records,
+                computed_targets=inputs.computed_targets,
+                skipped_targets=inputs.skipped_targets,
+                failed_targets=inputs.failed_targets,
+                started_at=inputs.started_at,
+                duration_ms=inputs.duration_ms,
+                success=inputs.success,
+                error_summary=inputs.error_summary,
+                tag_summary=tag_summary,
+                snapshot_id=_snapshot_id(inputs.env, run_id=inputs.run_id),
+            )
+        )
+        run_report_path = snapshot_root / _RUN_REPORT_FILENAME.format(run_id=inputs.run_id)
+        if _write_jsonl_payload(run_report_path, records_payload):
+            return run_report_path
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class RunReportInputs:
+    """Inputs for assembling a consolidated run report."""
+
+    env: BuildEnv
+    run_id: str
+    catalog: DagCatalog
+    records: Sequence[TargetRunRecord]
+    computed_targets: Sequence[str]
+    skipped_targets: Sequence[str]
+    failed_targets: Sequence[str]
+    started_at: datetime
+    duration_ms: float
+    success: bool
+    error_summary: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _RunReportPayloadInputs:
+    env: BuildEnv
+    run_id: str
+    catalog: DagCatalog
+    records: Sequence[TargetRunRecord]
+    computed_targets: Sequence[str]
+    skipped_targets: Sequence[str]
+    failed_targets: Sequence[str]
+    started_at: datetime
+    duration_ms: float
+    success: bool
+    error_summary: str | None
+    tag_summary: Mapping[str, object]
+    snapshot_id: str
+
+
+def _run_report_records(inputs: _RunReportPayloadInputs) -> list[dict[str, object]]:
+    run_record: dict[str, object] = {
+        "record_type": "run_metadata",
+        "run_id": inputs.run_id,
+        "repo": inputs.env.repo,
+        "commit": inputs.env.commit,
+        "snapshot_id": inputs.snapshot_id,
+        "started_at": inputs.started_at.isoformat(),
+        "duration_ms": inputs.duration_ms,
+        "success": inputs.success,
+        "computed_targets": list(inputs.computed_targets),
+        "skipped_targets": list(inputs.skipped_targets),
+        "failed_targets": list(inputs.failed_targets),
+        "error_summary": inputs.error_summary,
+    }
+    summary_record: dict[str, object] = {
+        "record_type": "tag_schema_summary",
+        "run_id": inputs.run_id,
+        "repo": inputs.env.repo,
+        "commit": inputs.env.commit,
+        "snapshot_id": inputs.snapshot_id,
+        "summary": dict(inputs.tag_summary),
+    }
+    output_records = _output_catalog_records(
+        env=inputs.env,
+        run_id=inputs.run_id,
+        catalog=inputs.catalog,
+        records=inputs.records,
+        snapshot_id=inputs.snapshot_id,
+    )
+    return [run_record, summary_record, *output_records]
+
+
+def _output_catalog_records(
+    *,
+    env: BuildEnv,
+    run_id: str,
+    catalog: DagCatalog,
+    records: Sequence[TargetRunRecord],
+    snapshot_id: str,
+) -> list[dict[str, object]]:
+    dataset_root = env.paths.dataset_root_dir
+    entries: list[dict[str, object]] = []
+    for record in sorted(records, key=lambda item: item.target):
+        for dataset in sorted(record.datasets, key=lambda item: item.table_key):
+            output = catalog.table_outputs.get(dataset.table_key)
+            tags = _normalize_tags(output.tags) if output is not None else {}
+            manifest_path = _dataset_manifest_path_for(
+                dataset_root=dataset_root,
+                snapshot_id=snapshot_id,
+                table_key=dataset.table_key,
+                metadata=dataset.metadata,
+            )
+            schema_hash, manifest_row_count = _load_manifest(manifest_path)
+            entries.append(
+                {
+                    "record_type": "output_catalog",
+                    "run_id": run_id,
+                    "repo": env.repo,
+                    "commit": env.commit,
+                    "snapshot_id": snapshot_id,
+                    "output_kind": "table",
+                    "table_key": dataset.table_key,
+                    "target": record.target,
+                    "status": record.status,
+                    "row_count": dataset.row_count,
+                    "manifest_row_count": manifest_row_count,
+                    "schema_hash": schema_hash,
+                    "dataset_manifest_path": str(manifest_path) if manifest_path else None,
+                    "output_role": output.role if output is not None else None,
+                    "saver_node": output.saver_node if output is not None else None,
+                    "sink": output.sink if output is not None else None,
+                    "tags": tags,
+                }
+            )
+        for artifact in sorted(record.artifacts, key=lambda item: item.name):
+            output = catalog.artifact_outputs.get(artifact.name)
+            tags = _normalize_tags(output.tags) if output is not None else {}
+            entries.append(
+                {
+                    "record_type": "output_catalog",
+                    "run_id": run_id,
+                    "repo": env.repo,
+                    "commit": env.commit,
+                    "snapshot_id": snapshot_id,
+                    "output_kind": "artifact",
+                    "artifact_name": artifact.name,
+                    "artifact_type": artifact.artifact_type,
+                    "artifact_path": artifact.path,
+                    "target": record.target,
+                    "status": record.status,
+                    "output_role": output.role if output is not None else None,
+                    "saver_node": output.saver_node if output is not None else None,
+                    "sink": output.sink if output is not None else None,
+                    "tags": tags,
+                }
+            )
+    return entries
+
+
+def _write_json_payload(path: Path, payload: Mapping[str, object]) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        serialized = json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+        path.write_text(serialized, encoding="utf-8")
+    except (OSError, TypeError, ValueError) as exc:
+        log.warning("build.hamilton.writer.json_write_failed path=%s error=%s", path, exc)
+        return False
+    return True
+
+
+def _write_jsonl_payload(path: Path, payloads: Sequence[Mapping[str, object]]) -> bool:
+    if not payloads:
+        return False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            for payload in payloads:
+                handle.write(_json_line(payload))
+                handle.write("\n")
+    except (OSError, TypeError, ValueError) as exc:
+        log.warning("build.hamilton.writer.jsonl_write_failed path=%s error=%s", path, exc)
+        return False
+    return True

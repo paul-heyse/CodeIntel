@@ -1,0 +1,26 @@
+rules:
+  - rule_id: py.click.command.decorator
+    language: python
+    config:
+      rule:
+        pattern: '@click.command($$$ARGS)'
+  - rule_id: py.click.group.decorator
+    language: python
+    config:
+      rule:
+        pattern: '@click.group($$$ARGS)'
+  - rule_id: py.click.cli.command.decorator
+    language: python
+    config:
+      rule:
+        pattern: '@$CLI.command($$$ARGS)'
+  - rule_id: py.click.cli.group.decorator
+    language: python
+    config:
+      rule:
+        pattern: '@$CLI.group($$$ARGS)'
+  - rule_id: py.click.add_command.call
+    language: python
+    config:
+      rule:
+        pattern: '$CLI.add_command($HANDLER, $$$ARGS)'

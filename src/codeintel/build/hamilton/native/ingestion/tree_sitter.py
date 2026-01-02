@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     TableOutputSpec,
@@ -35,6 +36,9 @@ TREE_SITTER_TARGET_NAME = "tree_sitter_index"
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
 TS_CAPTURES_TABLE_KEY = "core.ts_captures"
 TS_PARSE_ERRORS_TABLE_KEY = "core.ts_parse_errors"
+PARSE_MANIFEST_OUTPUT_NAME = (
+    f"{materialize_node(PARSE_MANIFEST_TABLE_KEY)}__{TREE_SITTER_TARGET_NAME}"
+)
 
 TREE_SITTER_TABLE_KEYS = (
     PARSE_MANIFEST_TABLE_KEY,
@@ -243,6 +247,7 @@ _TREE_SITTER_TARGET_SPEC = ToolTargetSpec(
         TableOutputSpec(
             table_key=PARSE_MANIFEST_TABLE_KEY,
             node_name="tree_sitter_index__parse_manifest_rows",
+            output_name=PARSE_MANIFEST_OUTPUT_NAME,
         ),
         TableOutputSpec(
             table_key=TS_CAPTURES_TABLE_KEY,

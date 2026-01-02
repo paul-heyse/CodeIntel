@@ -2,30 +2,24 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import polars as pl
 
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.ingestion.frame_utils import (
     dedupe_frame_for_table,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     RelationTableSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_relation_table,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -39,15 +33,6 @@ _HAMILTON_TYPE_HINTS = (
 SCIP_RESOLUTION_TARGET_NAME = "scip_resolution"
 SCIP_SYMBOL_GOID_XREF_TABLE_KEY = "core.scip_symbol_goid_xref"
 SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY = "core.scip_occurrence_span_xref"
-SCIP_RESOLUTION_TABLE_KEYS = (
-    SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-    SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-)
-
-SCIP_RESOLUTION_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=SCIP_RESOLUTION_TARGET_NAME,
-)
 
 _ROLE_DEFINITION = 0x1
 _ROLE_IMPORT = 0x2
@@ -205,16 +190,7 @@ def scip_resolution__frames(
     )
 
 
-@save_relation_table(
-    context=SCIP_RESOLUTION_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY),
-)
-@tag_compute(
-    domain="ingestion",
-    target=SCIP_RESOLUTION_TARGET_NAME,
-    target_="scip_resolution__symbol_goid_xref",
-)
-def scip_resolution__symbol_goid_xref(
+def scip_resolution__symbol_goid_xref__base(
     scip_resolution__frames: ScipResolutionFrames,
 ) -> pl.LazyFrame:
     """Return rows for core.scip_symbol_goid_xref.
@@ -230,16 +206,7 @@ def scip_resolution__symbol_goid_xref(
     )
 
 
-@save_relation_table(
-    context=SCIP_RESOLUTION_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY),
-)
-@tag_compute(
-    domain="ingestion",
-    target=SCIP_RESOLUTION_TARGET_NAME,
-    target_="scip_resolution__occurrence_span_xref",
-)
-def scip_resolution__occurrence_span_xref(
+def scip_resolution__occurrence_span_xref__base(
     scip_resolution__frames: ScipResolutionFrames,
 ) -> pl.LazyFrame:
     """Return rows for core.scip_occurrence_span_xref.
@@ -255,37 +222,34 @@ def scip_resolution__occurrence_span_xref(
     )
 
 
-scip_resolution__table_materializations = make_table_materializations_collector(
+_MODULE = sys.modules[__name__]
+_SCIP_RESOLUTION_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="ingestion",
-    target=SCIP_RESOLUTION_TARGET_NAME,
-    table_keys=SCIP_RESOLUTION_TABLE_KEYS,
-    node_name="scip_resolution__table_materializations",
+    target_name=SCIP_RESOLUTION_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
+            base_node="scip_resolution__symbol_goid_xref__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY),
+            node_name="scip_resolution__symbol_goid_xref",
+            input_type=pl.LazyFrame,
+        ),
+        TableTargetTableSpec(
+            table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+            base_node="scip_resolution__occurrence_span_xref__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY),
+            node_name="scip_resolution__occurrence_span_xref",
+            input_type=pl.LazyFrame,
+        ),
+    ),
+    table_materializations_node="scip_resolution__table_materializations",
+    anchor_node_name="t__scip_resolution",
 )
-
-
-@codeintel_target(domain="ingestion", target=SCIP_RESOLUTION_TARGET_NAME)
-def t__scip_resolution(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    scip_resolution__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize scip_resolution target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the scip_resolution target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=SCIP_RESOLUTION_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=scip_resolution__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_SCIP_RESOLUTION_TABLE_TARGET_SPEC)
+scip_resolution__symbol_goid_xref = _MODULE.scip_resolution__symbol_goid_xref
+scip_resolution__occurrence_span_xref = _MODULE.scip_resolution__occurrence_span_xref
+scip_resolution__table_materializations = _MODULE.scip_resolution__table_materializations
+t__scip_resolution = _MODULE.t__scip_resolution
 
 
 __all__ = [

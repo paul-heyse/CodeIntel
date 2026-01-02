@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -27,23 +28,17 @@ from codeintel.build.graphs.runtime.context import (
     GraphContextSpec,
     resolve_graph_context,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -59,16 +54,6 @@ DFG_FUNCTION_METRICS_TABLE_KEY = "analytics.dfg_function_metrics"
 DFG_BLOCK_METRICS_TABLE_KEY = "analytics.dfg_block_metrics"
 DFG_FUNCTION_METRICS_EXT_TABLE_KEY = "analytics.dfg_function_metrics_ext"
 
-CFG_DFG_TABLE_KEYS = (
-    CFG_FUNCTION_METRICS_TABLE_KEY,
-    CFG_BLOCK_METRICS_TABLE_KEY,
-    CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-    DFG_FUNCTION_METRICS_TABLE_KEY,
-    DFG_BLOCK_METRICS_TABLE_KEY,
-    DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-)
-
-CFG_DFG_SAVE_CONTEXT = SaverContext(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 
 CFG_FUNCTION_METRICS_CONTRACT = TableContractSpec(
     table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
@@ -634,155 +619,84 @@ def dfg_function_metrics_ext__base(
     )
 
 
-@save_dataset(
-    context=CFG_DFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@table_contract(CFG_FUNCTION_METRICS_CONTRACT)
-def cfg_function_metrics__table(cfg_function_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched CFG function metrics frame.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Cleaned/enriched CFG function metrics frame.
-    """
-    return cfg_function_metrics__base
-
-
-@save_dataset(
-    context=CFG_DFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=CFG_BLOCK_METRICS_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@table_contract(CFG_BLOCK_METRICS_CONTRACT)
-def cfg_block_metrics__table(cfg_block_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched CFG block metrics frame.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Cleaned/enriched CFG block metrics frame.
-    """
-    return cfg_block_metrics__base
-
-
-@save_dataset(
-    context=CFG_DFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@table_contract(CFG_FUNCTION_METRICS_EXT_CONTRACT)
-def cfg_function_metrics_ext__table(
-    cfg_function_metrics_ext__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Return the cleaned/enriched CFG function metrics ext frame.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Cleaned/enriched CFG function metrics ext frame.
-    """
-    return cfg_function_metrics_ext__base
-
-
-@save_dataset(
-    context=CFG_DFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@table_contract(DFG_FUNCTION_METRICS_CONTRACT)
-def dfg_function_metrics__table(dfg_function_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched DFG function metrics frame.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Cleaned/enriched DFG function metrics frame.
-    """
-    return dfg_function_metrics__base
-
-
-@save_dataset(
-    context=CFG_DFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=DFG_BLOCK_METRICS_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@table_contract(DFG_BLOCK_METRICS_CONTRACT)
-def dfg_block_metrics__table(dfg_block_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched DFG block metrics frame.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Cleaned/enriched DFG block metrics frame.
-    """
-    return dfg_block_metrics__base
-
-
-@save_dataset(
-    context=CFG_DFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@table_contract(DFG_FUNCTION_METRICS_EXT_CONTRACT)
-def dfg_function_metrics_ext__table(
-    dfg_function_metrics_ext__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Return the cleaned/enriched DFG function metrics ext frame.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Cleaned/enriched DFG function metrics ext frame.
-    """
-    return dfg_function_metrics_ext__base
-
-
-cfg_dfg_metrics__table_materializations = make_table_materializations_collector(
+_MODULE = sys.modules[__name__]
+_CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=CFG_DFG_METRICS_TARGET_NAME,
-    table_keys=CFG_DFG_TABLE_KEYS,
-    node_name="cfg_dfg_metrics__table_materializations",
+    target_name=CFG_DFG_METRICS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
+            base_node="cfg_function_metrics__base",
+            contract=CFG_FUNCTION_METRICS_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="cfg_function_metrics__table",
+        ),
+        TableTargetTableSpec(
+            table_key=CFG_BLOCK_METRICS_TABLE_KEY,
+            base_node="cfg_block_metrics__base",
+            contract=CFG_BLOCK_METRICS_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=CFG_BLOCK_METRICS_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="cfg_block_metrics__table",
+        ),
+        TableTargetTableSpec(
+            table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+            base_node="cfg_function_metrics_ext__base",
+            contract=CFG_FUNCTION_METRICS_EXT_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="cfg_function_metrics_ext__table",
+        ),
+        TableTargetTableSpec(
+            table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
+            base_node="dfg_function_metrics__base",
+            contract=DFG_FUNCTION_METRICS_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="dfg_function_metrics__table",
+        ),
+        TableTargetTableSpec(
+            table_key=DFG_BLOCK_METRICS_TABLE_KEY,
+            base_node="dfg_block_metrics__base",
+            contract=DFG_BLOCK_METRICS_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=DFG_BLOCK_METRICS_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="dfg_block_metrics__table",
+        ),
+        TableTargetTableSpec(
+            table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+            base_node="dfg_function_metrics_ext__base",
+            contract=DFG_FUNCTION_METRICS_EXT_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="dfg_function_metrics_ext__table",
+        ),
+    ),
+    table_materializations_node="cfg_dfg_metrics__table_materializations",
+    anchor_node_name="t__cfg_dfg_metrics",
 )
-
-
-@codeintel_target(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
-def t__cfg_dfg_metrics(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    cfg_dfg_metrics__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize cfg_dfg_metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the cfg_dfg_metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=CFG_DFG_METRICS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=cfg_dfg_metrics__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_CFG_DFG_TABLE_TARGET_SPEC)
+cfg_function_metrics__table = _MODULE.cfg_function_metrics__table
+cfg_block_metrics__table = _MODULE.cfg_block_metrics__table
+cfg_function_metrics_ext__table = _MODULE.cfg_function_metrics_ext__table
+dfg_function_metrics__table = _MODULE.dfg_function_metrics__table
+dfg_block_metrics__table = _MODULE.dfg_block_metrics__table
+dfg_function_metrics_ext__table = _MODULE.dfg_function_metrics_ext__table
+cfg_dfg_metrics__table_materializations = _MODULE.cfg_dfg_metrics__table_materializations
+t__cfg_dfg_metrics = _MODULE.t__cfg_dfg_metrics
 
 
 __all__ = [

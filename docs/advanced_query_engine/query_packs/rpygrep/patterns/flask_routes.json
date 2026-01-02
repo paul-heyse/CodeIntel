@@ -1,0 +1,29 @@
+{
+  "pattern_group_id": "rg.python.flask.routes",
+  "description": "Flask route decorator / add_url_rule candidates.",
+  "patterns": [
+    {
+      "pattern": "@\\s*[A-Za-z_]\\w*\\.route\\s*\\(",
+      "is_regex": true,
+      "priority": 10
+    },
+    {
+      "pattern": "\\.add_url_rule\\s*\\(",
+      "is_regex": true,
+      "priority": 8
+    },
+    {
+      "pattern": "Flask\\s*\\(",
+      "is_regex": true,
+      "priority": 5
+    }
+  ],
+  "globs": [
+    "**/*.py"
+  ],
+  "exclude_globs": [
+    "**/site-packages/**",
+    "**/.venv/**",
+    "**/venv/**"
+  ]
+}

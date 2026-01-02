@@ -1,0 +1,34 @@
+{
+  "pack_id": "wire.python.entrypoints",
+  "entry_kind": "plugin",
+  "framework": "importlib.metadata|pkg_resources",
+  "description": "Discover plugin entrypoint enumeration calls in Python code (importlib.metadata.entry_points, pkg_resources.iter_entry_points).",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/importlib_entrypoints.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/entrypoints.yaml",
+      "rule_ids": [
+        "py.entrypoints.importlib_metadata.group",
+        "py.entrypoints.pkg_resources.iter"
+      ]
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.unquote_capture",
+      "capture_names": [
+        "GROUP"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "ENTRYPOINT_GROUP:{GROUP_unquoted}",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

@@ -10,6 +10,9 @@ import pyarrow.dataset as pa_ds
 
 from codeintel.build.tabular.types import InferableTabularInput, TabularRelation
 
+_GOID_COLUMN_MARKER = "goid_h128"
+_GOID_COLUMN_TYPE = pl.Decimal(38, 0)
+
 
 def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
     """Return a streaming Arrow reader for a DuckDB relation.
@@ -58,7 +61,7 @@ def arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> pl.LazyFrame:
         empty = pa.Table.from_batches([], schema=schema)
         _ = exc
         return table_to_lazyframe(empty)
-    return pl.scan_pyarrow_dataset(dataset)
+    return _coerce_goid_columns(pl.scan_pyarrow_dataset(dataset))
 
 
 def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:
@@ -71,8 +74,8 @@ def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:
     """
     frame = pl.from_arrow(table)
     if isinstance(frame, pl.Series):
-        return frame.to_frame().lazy()
-    return frame.lazy()
+        return _coerce_goid_columns(frame.to_frame().lazy())
+    return _coerce_goid_columns(frame.lazy())
 
 
 def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
@@ -94,9 +97,9 @@ def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
         If the input type cannot be coerced into a LazyFrame.
     """
     if isinstance(value, pl.LazyFrame):
-        return value
+        return _coerce_goid_columns(value)
     if isinstance(value, pl.DataFrame):
-        return value.lazy()
+        return _coerce_goid_columns(value.lazy())
     if isinstance(value, pa.Table):
         return table_to_lazyframe(value)
     if isinstance(value, pa.RecordBatchReader):
@@ -109,6 +112,23 @@ def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
         return arrow_reader_to_lazyframe(reader)
     msg = f"Unsupported tabular input type: {type(value).__name__}"
     raise TypeError(msg)
+
+
+def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
+    try:
+        columns = frame.collect_schema().names()
+    except (AttributeError, ValueError, pl.exceptions.PolarsError):
+        return frame
+    goid_columns = [
+        col
+        for col in columns
+        if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
+    ]
+    if not goid_columns:
+        return frame
+    return frame.with_columns(
+        [pl.col(name).cast(_GOID_COLUMN_TYPE, strict=False) for name in goid_columns]
+    )
 
 
 __all__ = [

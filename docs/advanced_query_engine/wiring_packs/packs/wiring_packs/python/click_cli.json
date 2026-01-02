@@ -1,0 +1,35 @@
+{
+  "pack_id": "wire.python.click.cli",
+  "entry_kind": "cli",
+  "framework": "click",
+  "description": "Discover Click command/group definitions and add_command registrations.",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/click_cli.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/click.yaml",
+      "rule_ids": [
+        "py.click.command.decorator",
+        "py.click.group.decorator",
+        "py.click.cli.command.decorator",
+        "py.click.cli.group.decorator",
+        "py.click.add_command.call"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "CLICK:{enclosing_name}",
+    "entry_key_by_rule": {
+      "py.click.add_command.call": "CLICK:add_command({HANDLER})"
+    },
+    "target_symbol_hint_by_rule": {
+      "py.click.add_command.call": "HANDLER"
+    },
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

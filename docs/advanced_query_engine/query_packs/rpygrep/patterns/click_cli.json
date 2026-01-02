@@ -1,0 +1,29 @@
+{
+  "pattern_group_id": "rg.python.click.cli",
+  "description": "Click CLI decorator candidates.",
+  "patterns": [
+    {
+      "pattern": "@click.command",
+      "is_regex": false,
+      "priority": 10
+    },
+    {
+      "pattern": "@click.group",
+      "is_regex": false,
+      "priority": 9
+    },
+    {
+      "pattern": "@click.option",
+      "is_regex": false,
+      "priority": 8
+    },
+    {
+      "pattern": "@click.argument",
+      "is_regex": false,
+      "priority": 7
+    }
+  ],
+  "globs": [
+    "**/*.py"
+  ]
+}

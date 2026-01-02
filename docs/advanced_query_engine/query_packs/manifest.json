@@ -1,0 +1,127 @@
+{
+  "library_id": "python_query_pack_library",
+  "version": "0.1.0",
+  "language": "python",
+  "engines": [
+    "rpygrep",
+    "ast_grep",
+    "tree_sitter"
+  ],
+  "paths": {
+    "rpygrep_presets": "rpygrep/presets",
+    "rpygrep_patterns": "rpygrep/patterns",
+    "ast_grep_rules": "ast_grep/python",
+    "tree_sitter_queries": "tree_sitter/python",
+    "wiring_packs": "wiring_packs/python"
+  },
+  "tree_sitter_packs": [
+    {
+      "pack_id": "ts.python.defs",
+      "file": "tree_sitter/python/defs_full.scm",
+      "mode": "matches"
+    },
+    {
+      "pack_id": "ts.python.imports",
+      "file": "tree_sitter/python/imports_full.scm",
+      "mode": "matches"
+    },
+    {
+      "pack_id": "ts.python.calls",
+      "file": "tree_sitter/python/calls_full.scm",
+      "mode": "matches"
+    },
+    {
+      "pack_id": "ts.python.tests",
+      "file": "tree_sitter/python/tests_py.scm",
+      "mode": "matches"
+    },
+    {
+      "pack_id": "ts.python.wiring.fastapi",
+      "file": "tree_sitter/python/wiring_fastapi.scm",
+      "mode": "matches"
+    },
+    {
+      "pack_id": "ts.python.wiring.flask",
+      "file": "tree_sitter/python/wiring_flask.scm",
+      "mode": "matches"
+    }
+  ],
+  "ast_grep_packs": [
+    {
+      "pack_id": "ag.python.fastapi",
+      "file": "ast_grep/python/fastapi.yaml"
+    },
+    {
+      "pack_id": "ag.python.flask",
+      "file": "ast_grep/python/flask.yaml"
+    },
+    {
+      "pack_id": "ag.python.click",
+      "file": "ast_grep/python/click.yaml"
+    },
+    {
+      "pack_id": "ag.python.typer",
+      "file": "ast_grep/python/typer.yaml"
+    },
+    {
+      "pack_id": "ag.python.argparse",
+      "file": "ast_grep/python/argparse.yaml"
+    },
+    {
+      "pack_id": "ag.python.env",
+      "file": "ast_grep/python/env.yaml"
+    },
+    {
+      "pack_id": "ag.python.entrypoints",
+      "file": "ast_grep/python/entrypoints.yaml"
+    },
+    {
+      "pack_id": "ag.python.policy_security",
+      "file": "ast_grep/python/policy_security.yaml"
+    }
+  ],
+  "rpygrep_presets": [
+    {
+      "preset_id": "rg.default_interactive",
+      "file": "rpygrep/presets/default_interactive.json"
+    },
+    {
+      "preset_id": "rg.audit_deterministic",
+      "file": "rpygrep/presets/audit_deterministic.json"
+    }
+  ],
+  "wiring_packs": [
+    {
+      "pack_id": "wire.python.fastapi.routes",
+      "file": "wiring_packs/python/fastapi_routes.json"
+    },
+    {
+      "pack_id": "wire.python.fastapi.depends",
+      "file": "wiring_packs/python/fastapi_depends.json"
+    },
+    {
+      "pack_id": "wire.python.flask.routes",
+      "file": "wiring_packs/python/flask_routes.json"
+    },
+    {
+      "pack_id": "wire.python.click.cli",
+      "file": "wiring_packs/python/click_cli.json"
+    },
+    {
+      "pack_id": "wire.python.typer.cli",
+      "file": "wiring_packs/python/typer_cli.json"
+    },
+    {
+      "pack_id": "wire.python.argparse.cli",
+      "file": "wiring_packs/python/argparse_cli.json"
+    },
+    {
+      "pack_id": "wire.python.env",
+      "file": "wiring_packs/python/env_vars.json"
+    },
+    {
+      "pack_id": "wire.python.entrypoints",
+      "file": "wiring_packs/python/entrypoints.json"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "pack_id": "wire.python.typer.cli",
+  "entry_kind": "cli",
+  "framework": "typer",
+  "description": "Discover Typer command registration (decorators + typer.run).",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/typer_cli.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/typer.yaml",
+      "rule_ids": [
+        "py.typer.app.command.decorator",
+        "py.typer.run.call"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "TYPER:{enclosing_name}",
+    "entry_key_by_rule": {
+      "py.typer.run.call": "typer.run({HANDLER})"
+    },
+    "target_symbol_hint_by_rule": {
+      "py.typer.run.call": "HANDLER"
+    },
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

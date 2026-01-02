@@ -37,8 +37,9 @@ from codeintel.build.hamilton.native.materialization_records import (
 )
 from codeintel.build.hamilton.native.patterns import (
     RelationTableSaveSpec,
-    SaverContext,
-    save_relation_table,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.native.views.view_outputs import view_plan_map
@@ -74,11 +75,6 @@ SERVING_ARTIFACT_BUILDSPEC = "buildspec"
 SERVING_ARTIFACT_ENVIRONMENT = "environment"
 SERVING_ARTIFACT_DATASET_MANIFEST_PATHS = "dataset_manifest_paths"
 SCHEMA_INFERENCE_ERRORS_TABLE_KEY = "core.schema_inference_errors"
-
-SERVING_ARTIFACTS_SAVE_CONTEXT = SaverContext(
-    domain="export",
-    target=SERVING_ARTIFACTS_TARGET_NAME,
-)
 
 
 def _package_version(name: str) -> str:
@@ -340,11 +336,7 @@ def serving_artifacts__dataset_manifest_paths(env: BuildEnv, catalog: DagCatalog
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-@save_relation_table(
-    context=SERVING_ARTIFACTS_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
-)
-def serving_artifacts__schema_inference_errors_rows(
+def serving_artifacts__schema_inference_errors_rows__base(
     env: BuildEnv,
     serving_artifacts__schema_manifest: str,
     schema_index: SchemaIndex,
@@ -481,18 +473,27 @@ def serving_artifacts__materializations_views(
     }
 
 
-@tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
-def serving_artifacts__table_materializations(
-    m__core__schema_inference_errors: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect saver metadata for schema inference error rows.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table key to saver metadata.
-    """
-    return {SCHEMA_INFERENCE_ERRORS_TABLE_KEY: m__core__schema_inference_errors}
+_MODULE = sys.modules[__name__]
+_SERVING_ARTIFACTS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="export",
+    target_name=SERVING_ARTIFACTS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SCHEMA_INFERENCE_ERRORS_TABLE_KEY,
+            base_node="serving_artifacts__schema_inference_errors_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
+            node_name="serving_artifacts__schema_inference_errors_rows",
+            input_type=pl.LazyFrame,
+        ),
+    ),
+    table_materializations_node="serving_artifacts__table_materializations",
+    attach_anchor=False,
+)
+attach_table_target_template(_MODULE, spec=_SERVING_ARTIFACTS_TABLE_TARGET_SPEC)
+serving_artifacts__schema_inference_errors_rows = (
+    _MODULE.serving_artifacts__schema_inference_errors_rows
+)
+serving_artifacts__table_materializations = _MODULE.serving_artifacts__table_materializations
 
 
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)

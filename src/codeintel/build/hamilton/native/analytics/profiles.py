@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 import polars as pl
@@ -28,24 +29,18 @@ from codeintel.build.analytics.profiles.types import (
     FileProfileInputs,
     FunctionProfileFrames,
     FunctionProfileInputs,
-    ModuleProfileFrames,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -53,10 +48,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_PROFILE_TARGET_NAME = "function_profile"
 FUNCTION_PROFILE_TABLE_KEY = "analytics.function_profile"
-FUNCTION_PROFILE_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=FUNCTION_PROFILE_TARGET_NAME,
-)
 FUNCTION_PROFILE_CONTRACT = TableContractSpec(
     table_key=FUNCTION_PROFILE_TABLE_KEY,
     domain="analytics",
@@ -70,10 +61,6 @@ FUNCTION_PROFILE_CONTRACT = TableContractSpec(
 
 FILE_PROFILE_TARGET_NAME = "file_profile"
 FILE_PROFILE_TABLE_KEY = "analytics.file_profile"
-FILE_PROFILE_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=FILE_PROFILE_TARGET_NAME,
-)
 FILE_PROFILE_CONTRACT = TableContractSpec(
     table_key=FILE_PROFILE_TABLE_KEY,
     domain="analytics",
@@ -87,10 +74,6 @@ FILE_PROFILE_CONTRACT = TableContractSpec(
 
 HOTSPOTS_TARGET_NAME = "hotspots"
 HOTSPOTS_TABLE_KEY = "analytics.hotspots"
-HOTSPOTS_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=HOTSPOTS_TARGET_NAME,
-)
 HOTSPOTS_CONTRACT = TableContractSpec(
     table_key=HOTSPOTS_TABLE_KEY,
     domain="analytics",
@@ -265,22 +248,6 @@ def file_profile_frames(
     )
 
 
-def module_profile_frames(
-    q__core__modules: InferableTabularInput,
-    q__analytics__function_profile: InferableTabularInput,
-    q__analytics__file_profile: InferableTabularInput,
-    q__graph__import_graph_edges: InferableTabularInput,
-    q__analytics__semantic_roles_modules: InferableTabularInput,
-) -> ModuleProfileFrames:
-    return ModuleProfileFrames(
-        modules=tabular_to_lazyframe(q__core__modules).collect(),
-        function_profile=tabular_to_lazyframe(q__analytics__function_profile).collect(),
-        file_profile=tabular_to_lazyframe(q__analytics__file_profile).collect(),
-        import_graph_edges=tabular_to_lazyframe(q__graph__import_graph_edges).collect(),
-        semantic_roles_modules=tabular_to_lazyframe(q__analytics__semantic_roles_modules).collect(),
-    )
-
-
 def function_profile_inputs(
     env: BuildEnv,
     function_profile_frames: FunctionProfileFrames,
@@ -310,49 +277,6 @@ def function_profile__base(function_profile_inputs: FunctionProfileInputs) -> pl
     return rows_to_frame(FUNCTION_PROFILE_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=FUNCTION_PROFILE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=FUNCTION_PROFILE_TABLE_KEY),
-)
-@table_contract(FUNCTION_PROFILE_CONTRACT)
-def function_profile__table(function_profile__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist function profile rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted function profile frame.
-    """
-    return function_profile__base
-
-
-@codeintel_target(domain="analytics", target=FUNCTION_PROFILE_TARGET_NAME)
-def t__function_profile(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__function_profile: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize function_profile target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the function_profile target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FUNCTION_PROFILE_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            FUNCTION_PROFILE_TABLE_KEY: m__analytics__function_profile,
-        },
-    )
-
-
 def file_profile_inputs(
     env: BuildEnv,
     file_profile_frames: FileProfileFrames,
@@ -371,49 +295,6 @@ def file_profile__base(file_profile_inputs: FileProfileInputs) -> pl.LazyFrame:
     inputs = file_profile_inputs
     rows = list(build_file_profile_rows(inputs))
     return rows_to_frame(FILE_PROFILE_TABLE_KEY, rows)
-
-
-@save_dataset(
-    context=FILE_PROFILE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=FILE_PROFILE_TABLE_KEY),
-)
-@table_contract(FILE_PROFILE_CONTRACT)
-def file_profile__table(file_profile__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist file profile rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted file profile frame.
-    """
-    return file_profile__base
-
-
-@codeintel_target(domain="analytics", target=FILE_PROFILE_TARGET_NAME)
-def t__file_profile(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__file_profile: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize file_profile target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the file_profile target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FILE_PROFILE_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            FILE_PROFILE_TABLE_KEY: m__analytics__file_profile,
-        },
-    )
 
 
 def hotspots__base(q__core__ast_metrics: InferableTabularInput) -> pl.LazyFrame:
@@ -437,47 +318,66 @@ def hotspots__base(q__core__ast_metrics: InferableTabularInput) -> pl.LazyFrame:
     return rows_to_frame(HOTSPOTS_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=HOTSPOTS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=HOTSPOTS_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_FUNCTION_PROFILE_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=FUNCTION_PROFILE_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FUNCTION_PROFILE_TABLE_KEY,
+            base_node="function_profile__base",
+            contract=FUNCTION_PROFILE_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=FUNCTION_PROFILE_TABLE_KEY),
+            node_name="function_profile__table",
+        ),
+    ),
+    table_materializations_node="function_profile__table_materializations",
+    anchor_node_name="t__function_profile",
 )
-@table_contract(HOTSPOTS_CONTRACT)
-def hotspots__table(hotspots__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist hotspot rows.
+attach_table_target_template(_MODULE, spec=_FUNCTION_PROFILE_TABLE_TARGET_SPEC)
+function_profile__table = _MODULE.function_profile__table
+function_profile__table_materializations = _MODULE.function_profile__table_materializations
+t__function_profile = _MODULE.t__function_profile
 
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted hotspots frame.
-    """
-    return hotspots__base
+_FILE_PROFILE_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=FILE_PROFILE_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FILE_PROFILE_TABLE_KEY,
+            base_node="file_profile__base",
+            contract=FILE_PROFILE_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=FILE_PROFILE_TABLE_KEY),
+            node_name="file_profile__table",
+        ),
+    ),
+    table_materializations_node="file_profile__table_materializations",
+    anchor_node_name="t__file_profile",
+)
+attach_table_target_template(_MODULE, spec=_FILE_PROFILE_TABLE_TARGET_SPEC)
+file_profile__table = _MODULE.file_profile__table
+file_profile__table_materializations = _MODULE.file_profile__table_materializations
+t__file_profile = _MODULE.t__file_profile
 
-
-@codeintel_target(domain="analytics", target=HOTSPOTS_TARGET_NAME)
-def t__hotspots(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__hotspots: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize hotspots target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the hotspots target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=HOTSPOTS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            HOTSPOTS_TABLE_KEY: m__analytics__hotspots,
-        },
-    )
+_HOTSPOTS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=HOTSPOTS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=HOTSPOTS_TABLE_KEY,
+            base_node="hotspots__base",
+            contract=HOTSPOTS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=HOTSPOTS_TABLE_KEY),
+            node_name="hotspots__table",
+        ),
+    ),
+    table_materializations_node="hotspots__table_materializations",
+    anchor_node_name="t__hotspots",
+)
+attach_table_target_template(_MODULE, spec=_HOTSPOTS_TABLE_TARGET_SPEC)
+hotspots__table = _MODULE.hotspots__table
+hotspots__table_materializations = _MODULE.hotspots__table_materializations
+t__hotspots = _MODULE.t__hotspots
 
 
 __all__ = [

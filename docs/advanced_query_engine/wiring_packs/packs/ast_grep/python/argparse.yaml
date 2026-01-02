@@ -1,0 +1,19 @@
+rules:
+  - rule_id: py.argparse.add_parser.assign
+    language: python
+    config:
+      rule:
+        pattern: '$SUB = $SUBPARSERS.add_parser($CMD, $$$ARGS)'
+      constraints:
+        CMD:
+          regex: '^["'']'
+  - rule_id: py.argparse.subparser.set_defaults
+    language: python
+    config:
+      rule:
+        pattern: '$SUB.set_defaults(func=$HANDLER, $$$ARGS)'
+  - rule_id: py.argparse.parser.set_defaults
+    language: python
+    config:
+      rule:
+        pattern: '$PARSER.set_defaults(func=$HANDLER, $$$ARGS)'

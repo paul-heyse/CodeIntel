@@ -1,0 +1,16 @@
+rules:
+- rule_id: py.argparse.parser.assign
+  language: python
+  config:
+    rule:
+      pattern: $P = argparse.ArgumentParser($$$ARGS)
+- rule_id: py.argparse.add_argument.call
+  language: python
+  config:
+    rule:
+      pattern: $P.add_argument($ARG, $$$ARGS)
+- rule_id: py.argparse.add_subparsers.call
+  language: python
+  config:
+    rule:
+      pattern: $P.add_subparsers($$$ARGS)

@@ -101,6 +101,7 @@ def make_table_materializations_collector(
     target: str,
     table_keys: Sequence[str],
     node_name: str | None = None,
+    materialization_nodes: Mapping[str, str] | None = None,
 ) -> Callable[..., dict[str, MaterializationResult]]:
     """Return a collector for table saver metadata.
 
@@ -108,8 +109,19 @@ def make_table_materializations_collector(
     -------
     Callable[..., dict[str, MaterializationResult]]
         Collector that gathers table materialization results.
+
+    Raises
+    ------
+    ValueError
+        If materialization_nodes includes an unknown table key.
     """
     mapping = {table_key: materialize_node(table_key) for table_key in table_keys}
+    if materialization_nodes:
+        for table_key, node_name_override in materialization_nodes.items():
+            if table_key not in mapping:
+                msg = f"Unknown table key for materializations: {table_key}"
+                raise ValueError(msg)
+            mapping[table_key] = node_name_override
     return _build_collector(
         domain=domain,
         target=target,

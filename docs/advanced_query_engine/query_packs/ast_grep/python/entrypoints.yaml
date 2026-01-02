@@ -1,0 +1,27 @@
+rules:
+- rule_id: py.entrypoints.importlib_metadata.entry_points
+  language: python
+  config:
+    rule:
+      pattern: importlib.metadata.entry_points($$$ARGS)
+- rule_id: py.entrypoints.importlib_metadata.entry_points.group_kw
+  language: python
+  config:
+    rule:
+      pattern: importlib.metadata.entry_points(group=$GROUP, $$$ARGS)
+    constraints:
+      GROUP:
+        regex: ^["']
+- rule_id: py.entrypoints.pkg_resources.iter_entry_points
+  language: python
+  config:
+    rule:
+      pattern: pkg_resources.iter_entry_points($$$ARGS)
+- rule_id: py.entrypoints.pkg_resources.iter_entry_points.group_pos
+  language: python
+  config:
+    rule:
+      pattern: pkg_resources.iter_entry_points($GROUP, $$$ARGS)
+    constraints:
+      GROUP:
+        regex: ^["']

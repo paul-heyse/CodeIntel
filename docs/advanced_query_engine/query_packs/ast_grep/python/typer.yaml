@@ -1,0 +1,16 @@
+rules:
+- rule_id: py.typer.app.assign
+  language: python
+  config:
+    rule:
+      pattern: $APP = typer.Typer($$$ARGS)
+- rule_id: py.typer.command.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@$APP.command($$$ARGS)'
+- rule_id: py.typer.run.call
+  language: python
+  config:
+    rule:
+      pattern: typer.run($FUNC, $$$ARGS)

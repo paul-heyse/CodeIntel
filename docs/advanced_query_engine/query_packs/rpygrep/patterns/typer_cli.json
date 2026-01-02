@@ -1,0 +1,29 @@
+{
+  "pattern_group_id": "rg.python.typer.cli",
+  "description": "Typer CLI candidates (decorators and Typer() construction).",
+  "patterns": [
+    {
+      "pattern": "typer.Typer(",
+      "is_regex": false,
+      "priority": 10
+    },
+    {
+      "pattern": ".command(",
+      "is_regex": false,
+      "priority": 7
+    },
+    {
+      "pattern": "typer.Argument",
+      "is_regex": false,
+      "priority": 6
+    },
+    {
+      "pattern": "typer.Option",
+      "is_regex": false,
+      "priority": 6
+    }
+  ],
+  "globs": [
+    "**/*.py"
+  ]
+}

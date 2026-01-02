@@ -1,0 +1,25 @@
+{
+  "pack_id": "wire.python.fastapi.depends",
+  "entry_kind": "di",
+  "framework": "fastapi",
+  "description": "Discover FastAPI dependency injection sites (Depends). Target is the consumer (enclosing function); DEP capture gives provider expression.",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/fastapi_depends.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/fastapi.yaml",
+      "rule_ids": [
+        "py.fastapi.depends.call"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "Depends({DEP})",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

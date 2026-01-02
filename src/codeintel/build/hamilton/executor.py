@@ -53,7 +53,7 @@ from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     create_run_record,
 )
-from codeintel.build.hamilton.run_writer import BuildRunWriter
+from codeintel.build.hamilton.run_writer import BuildRunWriter, RunReportInputs
 from codeintel.build.manifest.writer import CacheManifestWriter
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.compile import (
@@ -1125,12 +1125,28 @@ def _finalize_run(
         records=records,
     )
 
+    error_summary = inputs.error or (f"{len(failed)} targets failed" if failed else None)
     inputs.writer.complete_run(
         run_id=context.run_id,
         success=success,
         computed_targets=computed,
         skipped_targets=skipped,
-        error_summary=inputs.error or (f"{len(failed)} targets failed" if failed else None),
+        error_summary=error_summary,
+    )
+    inputs.writer.write_run_report(
+        inputs=RunReportInputs(
+            env=context.env,
+            run_id=context.run_id,
+            catalog=catalog,
+            records=records,
+            computed_targets=computed,
+            skipped_targets=skipped,
+            failed_targets=failed,
+            started_at=context.started_at,
+            duration_ms=duration_ms,
+            success=success,
+            error_summary=error_summary,
+        )
     )
 
     log.info(
@@ -1147,7 +1163,7 @@ def _finalize_run(
         computed_targets_count=len(computed),
         skipped_targets_count=len(skipped),
         failed_targets_count=len(failed),
-        error=inputs.error,
+        error=error_summary,
     )
 
     return HamiltonBuildResult(

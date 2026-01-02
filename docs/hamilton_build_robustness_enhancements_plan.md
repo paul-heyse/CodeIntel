@@ -21,9 +21,9 @@ This plan covers six improvements:
 Status overview (current):
 - Workstream 1: implemented
 - Workstream 2: implemented
-- Workstream 3: not implemented
+- Workstream 3: implemented
 - Workstream 4: implemented
-- Workstream 5: not implemented
+- Workstream 5: implemented
 - Workstream 6: implemented
 
 ## Success criteria
@@ -123,17 +123,13 @@ Detect and optionally enforce schema drift at the dataset boundary.
 ### Files to change
 
 - src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py
-  - Add drift comparison and optional enforcement.
-- src/codeintel/build/hamilton/native/patterns/savers.py
-  - Allow configuration of drift enforcement mode.
-- src/codeintel/core/manifests.py
-  - Add a drift event manifest type (optional).
+  - Add drift comparison, enforcement, and manifest/metadata summaries.
 
 ### Checklist
 
-- [ ] Drift detection is computed at materialization.
-- [ ] Enforcement respects configured mode.
-- [ ] Drift events include detailed column diffs.
+- [x] Drift detection is computed at materialization.
+- [x] Enforcement respects configured mode.
+- [x] Drift events include detailed column diffs.
 
 ---
 
@@ -181,17 +177,13 @@ Provide full lineage for dataset outputs so scans can detect changes in runtime 
 ### Files to change
 
 - src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py
-  - Compute and store fingerprint in metadata.
-- src/codeintel/core/manifests.py
-  - Include fingerprint fields in dataset manifest (if needed).
-- src/codeintel/build/hamilton/run_records.py
-  - Capture fingerprint in run metadata.
+  - Compute and store fingerprint in manifest extras + parquet metadata.
 
 ### Checklist
 
-- [ ] Fingerprint is stable and deterministic.
-- [ ] Fingerprint is stored in parquet metadata and manifest.
-- [ ] Fingerprint is logged at write time.
+- [x] Fingerprint is stable and deterministic.
+- [x] Fingerprint is stored in parquet metadata and manifest.
+- [x] Fingerprint is logged at write time.
 
 ---
 

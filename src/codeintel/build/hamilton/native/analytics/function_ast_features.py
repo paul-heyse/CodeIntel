@@ -292,7 +292,9 @@ _FUNCTION_AST_FEATURES_TABLE_TARGET_SPEC = TableTargetSpec(
 )
 attach_table_target_template(_MODULE, spec=_FUNCTION_AST_FEATURES_TABLE_TARGET_SPEC)
 function_ast_features__table = _MODULE.function_ast_features__table
-function_ast_features__table_materializations = _MODULE.function_ast_features__table_materializations
+function_ast_features__table_materializations = (
+    _MODULE.function_ast_features__table_materializations
+)
 t__function_ast_features = _MODULE.t__function_ast_features
 
 

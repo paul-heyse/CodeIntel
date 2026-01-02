@@ -1,0 +1,17 @@
+rules:
+- rule_id: py.flask.route.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@$APP.route($PATH, $$$ARGS)'
+    constraints:
+      PATH:
+        regex: ^["']
+- rule_id: py.flask.add_url_rule.call
+  language: python
+  config:
+    rule:
+      pattern: $APP.add_url_rule($PATH, $$$ARGS)
+    constraints:
+      PATH:
+        regex: ^["']

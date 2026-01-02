@@ -17,27 +17,21 @@ from codeintel.build.analytics.testing.profiles.builder import (
     TestProfileFrameInputs,
     build_test_profile_result,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -46,9 +40,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 TEST_GRAPH_TARGET_NAME = "test_graph_metrics"
 TEST_GRAPH_TESTS_TABLE_KEY = "analytics.test_graph_metrics_tests"
 TEST_GRAPH_FUNCTIONS_TABLE_KEY = "analytics.test_graph_metrics_functions"
-TEST_GRAPH_TABLE_KEYS = (TEST_GRAPH_TESTS_TABLE_KEY, TEST_GRAPH_FUNCTIONS_TABLE_KEY)
 TEST_GRAPH_COLLECT_GROUP = "test_graph_metrics_core"
-TEST_GRAPH_SAVE_CONTEXT = SaverContext(domain="analytics", target=TEST_GRAPH_TARGET_NAME)
 TEST_GRAPH_TESTS_CONTRACT = TableContractSpec(
     table_key=TEST_GRAPH_TESTS_TABLE_KEY,
     domain="analytics",
@@ -72,7 +64,6 @@ TEST_GRAPH_FUNCTIONS_CONTRACT = TableContractSpec(
 
 TEST_PROFILE_TARGET_NAME = "test_profile"
 TEST_PROFILE_TABLE_KEY = "analytics.test_profile"
-TEST_PROFILE_SAVE_CONTEXT = SaverContext(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 TEST_PROFILE_CONTRACT = TableContractSpec(
     table_key=TEST_PROFILE_TABLE_KEY,
     domain="analytics",
@@ -130,32 +121,6 @@ test_graph_metrics_tests__base = _MODULE.test_graph_metrics_tests__base
 del _graph_metrics_tests__base
 
 
-@save_dataset(
-    context=TEST_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=TEST_GRAPH_TESTS_TABLE_KEY,
-        collect_group=TEST_GRAPH_COLLECT_GROUP,
-    ),
-)
-@table_contract(TEST_GRAPH_TESTS_CONTRACT)
-def _graph_metrics_tests__table(
-    test_graph_metrics_tests__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist test graph metrics rows for tests.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted test graph metrics frame for tests.
-    """
-    return test_graph_metrics_tests__base
-
-
-attach_node(_MODULE, node_name="test_graph_metrics_tests__table", fn=_graph_metrics_tests__table)
-test_graph_metrics_tests__table = _MODULE.test_graph_metrics_tests__table
-del _graph_metrics_tests__table
-
-
 def _graph_metrics_functions__base(
     test_graph_metrics_result: TestGraphMetricsResult,
 ) -> pl.LazyFrame:
@@ -182,67 +147,39 @@ test_graph_metrics_functions__base = _MODULE.test_graph_metrics_functions__base
 del _graph_metrics_functions__base
 
 
-@save_dataset(
-    context=TEST_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY,
-        collect_group=TEST_GRAPH_COLLECT_GROUP,
-    ),
-)
-@table_contract(TEST_GRAPH_FUNCTIONS_CONTRACT)
-def _graph_metrics_functions__table(
-    test_graph_metrics_functions__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist test graph metrics rows for functions.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted test graph metrics frame for functions.
-    """
-    return test_graph_metrics_functions__base
-
-
-attach_node(
-    _MODULE,
-    node_name="test_graph_metrics_functions__table",
-    fn=_graph_metrics_functions__table,
-)
-test_graph_metrics_functions__table = _MODULE.test_graph_metrics_functions__table
-del _graph_metrics_functions__table
-
-
-test_graph_metrics__table_materializations = make_table_materializations_collector(
+_TEST_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=TEST_GRAPH_TARGET_NAME,
-    table_keys=TEST_GRAPH_TABLE_KEYS,
-    node_name="test_graph_metrics__table_materializations",
+    target_name=TEST_GRAPH_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=TEST_GRAPH_TESTS_TABLE_KEY,
+            base_node="test_graph_metrics_tests__base",
+            contract=TEST_GRAPH_TESTS_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=TEST_GRAPH_TESTS_TABLE_KEY,
+                collect_group=TEST_GRAPH_COLLECT_GROUP,
+            ),
+            node_name="test_graph_metrics_tests__table",
+        ),
+        TableTargetTableSpec(
+            table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY,
+            base_node="test_graph_metrics_functions__base",
+            contract=TEST_GRAPH_FUNCTIONS_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY,
+                collect_group=TEST_GRAPH_COLLECT_GROUP,
+            ),
+            node_name="test_graph_metrics_functions__table",
+        ),
+    ),
+    table_materializations_node="test_graph_metrics__table_materializations",
+    anchor_node_name="t__test_graph_metrics",
 )
-
-
-@codeintel_target(domain="analytics", target=TEST_GRAPH_TARGET_NAME)
-def t__test_graph_metrics(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    test_graph_metrics__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize test_graph_metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the test_graph_metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=TEST_GRAPH_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=test_graph_metrics__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_TEST_GRAPH_METRICS_TABLE_TARGET_SPEC)
+test_graph_metrics_tests__table = _MODULE.test_graph_metrics_tests__table
+test_graph_metrics_functions__table = _MODULE.test_graph_metrics_functions__table
+test_graph_metrics__table_materializations = _MODULE.test_graph_metrics__table_materializations
+t__test_graph_metrics = _MODULE.t__test_graph_metrics
 
 
 @dataclass(frozen=True)
@@ -335,52 +272,25 @@ test_profile__base = _MODULE.test_profile__base
 del _profile__base
 
 
-@save_dataset(
-    context=TEST_PROFILE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=TEST_PROFILE_TABLE_KEY),
+_TEST_PROFILE_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=TEST_PROFILE_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=TEST_PROFILE_TABLE_KEY,
+            base_node="test_profile__base",
+            contract=TEST_PROFILE_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=TEST_PROFILE_TABLE_KEY),
+            node_name="test_profile__table",
+        ),
+    ),
+    table_materializations_node="test_profile__table_materializations",
+    anchor_node_name="t__test_profile",
 )
-@table_contract(TEST_PROFILE_CONTRACT)
-def _profile__table(test_profile__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist test profile rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted test profile frame.
-    """
-    return test_profile__base
-
-
-attach_node(_MODULE, node_name="test_profile__table", fn=_profile__table)
+attach_table_target_template(_MODULE, spec=_TEST_PROFILE_TABLE_TARGET_SPEC)
 test_profile__table = _MODULE.test_profile__table
-del _profile__table
-
-
-@codeintel_target(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
-def t__test_profile(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__test_profile: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize test_profile target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the test_profile target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=TEST_PROFILE_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            TEST_PROFILE_TABLE_KEY: m__analytics__test_profile,
-        },
-    )
+test_profile__table_materializations = _MODULE.test_profile__table_materializations
+t__test_profile = _MODULE.t__test_profile
 
 
 __all__ = [

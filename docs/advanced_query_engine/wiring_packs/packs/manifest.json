@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "description": "Python wiring packs + rpygrep presets/patterns + ast-grep rules",
+  "wiring_packs": [
+    "wiring_packs/python/fastapi_routes.json",
+    "wiring_packs/python/fastapi_depends.json",
+    "wiring_packs/python/flask_routes.json",
+    "wiring_packs/python/click_cli.json",
+    "wiring_packs/python/typer_cli.json",
+    "wiring_packs/python/argparse_cli.json",
+    "wiring_packs/python/env_vars.json",
+    "wiring_packs/python/entrypoints.json"
+  ],
+  "rpygrep_presets": [
+    "rpygrep/presets/default_interactive.json",
+    "rpygrep/presets/audit_deterministic.json"
+  ],
+  "ast_grep_rule_files": [
+    "ast_grep/python/fastapi.yaml",
+    "ast_grep/python/flask.yaml",
+    "ast_grep/python/click.yaml",
+    "ast_grep/python/typer.yaml",
+    "ast_grep/python/argparse.yaml",
+    "ast_grep/python/env.yaml",
+    "ast_grep/python/entrypoints.yaml",
+    "ast_grep/python/policy_security.yaml"
+  ]
+}

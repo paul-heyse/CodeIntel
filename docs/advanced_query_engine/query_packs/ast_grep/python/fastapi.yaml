@@ -1,0 +1,32 @@
+rules:
+- rule_id: py.fastapi.route.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@$ROUTER.$METHOD($PATH, $$$ARGS)'
+    constraints:
+      METHOD:
+        regex: ^(get|post|put|patch|delete|options|head|websocket)$
+      PATH:
+        regex: ^["']
+- rule_id: py.fastapi.api_route.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@$ROUTER.api_route($PATH, $$$ARGS)'
+    constraints:
+      PATH:
+        regex: ^["']
+- rule_id: py.fastapi.add_api_route.call
+  language: python
+  config:
+    rule:
+      pattern: $APP.add_api_route($PATH, $HANDLER, $$$ARGS)
+    constraints:
+      PATH:
+        regex: ^["']
+- rule_id: py.fastapi.depends.call
+  language: python
+  config:
+    rule:
+      pattern: Depends($DEP, $$$ARGS)

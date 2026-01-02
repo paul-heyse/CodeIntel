@@ -34,6 +34,8 @@ CALL_GRAPH_TARGET_NAME = "call_graph"
 IMPORT_GRAPH_TARGET_NAME = "import_graph"
 CFG_TARGET_NAME = "cfg"
 DFG_TARGET_NAME = "dfg"
+CALL_GRAPH_TABLE_KEYS = (CALL_GRAPH_NODES_TABLE_KEY, CALL_GRAPH_EDGES_TABLE_KEY)
+IMPORT_GRAPH_TABLE_KEYS = (IMPORT_MODULES_TABLE_KEY, IMPORT_GRAPH_EDGES_TABLE_KEY)
 
 
 _MODULE = sys.modules[__name__]
@@ -145,9 +147,11 @@ t__dfg = _MODULE.t__dfg
 
 
 __all__ = [
+    "CALL_GRAPH_TABLE_KEYS",
     "CALL_GRAPH_TARGET_NAME",
     "CFG_TARGET_NAME",
     "DFG_TARGET_NAME",
+    "IMPORT_GRAPH_TABLE_KEYS",
     "IMPORT_GRAPH_TARGET_NAME",
     "call_graph__edges_table",
     "call_graph__nodes_table",

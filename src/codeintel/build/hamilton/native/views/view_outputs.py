@@ -212,7 +212,7 @@ def _view_node_name(table_key: str) -> str:
 
 
 def _source_node_name(table_key: str) -> str:
-    return to_node_name(table_key, prefix="src")
+    return to_node_name(f"{VIEWS_TARGET_NAME}.source.{table_key}", prefix="l")
 
 
 def _loader_signature(dataset_param: str) -> inspect.Signature:
@@ -380,6 +380,8 @@ def _build_ast_view_node(
     return _decorate_view_node(view_fn, plan=plan)
 
 
+# Views are discovered from plugin modules at import time, so we keep dynamic node
+# construction here (instead of TableTargetSpec) to preserve per-view tags/signatures.
 _VIEW_BUILDERS = _discover_registered_views()
 _VIEW_PLANS: dict[str, ViewPlan] = {}
 for builder in _VIEW_BUILDERS:
@@ -416,26 +418,36 @@ def view_plan_map() -> dict[str, ViewPlan]:
     return dict(_VIEW_PLANS)
 
 
-_SOURCE_LOADERS: dict[str, Callable[..., pl.LazyFrame]] = {}
-for table_key in _BASE_TABLE_KEYS:
-    node_name = _source_node_name(table_key)
-    loader = _build_source_loader(table_key=table_key, node_name=node_name)
-    globals()[node_name] = loader
-    _SOURCE_LOADERS[table_key] = loader
+def _install_source_loaders(
+    table_keys: Iterable[str],
+) -> dict[str, Callable[..., pl.LazyFrame]]:
+    loaders: dict[str, Callable[..., pl.LazyFrame]] = {}
+    for table_key in table_keys:
+        node_name = _source_node_name(table_key)
+        source_loader = _build_source_loader(table_key=table_key, node_name=node_name)
+        globals()[node_name] = source_loader
+        loaders[table_key] = source_loader
+    return loaders
 
 
-_VIEW_NODES: dict[str, Callable[..., pl.LazyFrame]] = {}
-for view_key, plan in _VIEW_PLANS.items():
-    param_by_table = {
-        dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
-        for dep in plan.dependencies
-    }
-    view_fn = _build_ast_view_node(
-        plan=plan,
-        param_by_table=param_by_table,
-    )
-    globals()[plan.node_name] = view_fn
-    _VIEW_NODES[view_key] = view_fn
+def _install_view_nodes(plans: Mapping[str, ViewPlan]) -> dict[str, Callable[..., pl.LazyFrame]]:
+    nodes: dict[str, Callable[..., pl.LazyFrame]] = {}
+    for view_key, plan in plans.items():
+        param_by_table = {
+            dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
+            for dep in plan.dependencies
+        }
+        view_node = _build_ast_view_node(
+            plan=plan,
+            param_by_table=param_by_table,
+        )
+        globals()[plan.node_name] = view_node
+        nodes[view_key] = view_node
+    return nodes
+
+
+_SOURCE_LOADERS = _install_source_loaders(_BASE_TABLE_KEYS)
+_VIEW_NODES = _install_view_nodes(_VIEW_PLANS)
 
 
 VIEW_TABLE_KEYS = tuple(sorted(_VIEW_PLANS))

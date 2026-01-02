@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -54,6 +55,16 @@ class _VersionState:
     env: BuildEnv
     run_id: str
     policy: FingerprintPolicy
+
+
+@dataclass(frozen=True, slots=True)
+class RunArtifactSpec:
+    """Spec for registering a run-scoped artifact."""
+
+    artifact_name: str
+    artifact_type: str
+    path: Path | None
+    meta: Mapping[str, object] | None = None
 
 
 def _resolve_schema_provider(env: BuildEnv) -> SchemaProvider:
@@ -443,16 +454,13 @@ def record_run_artifact(
     *,
     env: BuildEnv,
     run_id: str,
-    artifact_name: str,
-    artifact_type: str,
-    path: Path | None,
-    meta: dict[str, object] | None = None,
+    spec: RunArtifactSpec,
 ) -> None:
     """Persist a run-scoped artifact in the asset catalog."""
-    bytes_value = _try_artifact_size_from_path(path)
+    bytes_value = _try_artifact_size_from_path(spec.path)
     version_input = ArtifactVersionInput(
-        artifact_name=artifact_name,
-        artifact_type=artifact_type,
+        artifact_name=spec.artifact_name,
+        artifact_type=spec.artifact_type,
         size_bytes=bytes_value,
         upstream_versions=(),
         options_hash=None,
@@ -460,17 +468,17 @@ def record_run_artifact(
     policy = env.fingerprint_policy
     version_hash = policy.compute_artifact_version(version_input)
     created_at = datetime.now(tz=UTC)
-    resolved_meta = {
+    resolved_meta: dict[str, object] = {
         "fingerprint": policy.mode.value,
-        "artifact_type": artifact_type,
+        "artifact_type": spec.artifact_type,
         "bytes": bytes_value,
     }
-    if meta:
-        resolved_meta.update(meta)
-    location = str(path) if path is not None else None
+    if spec.meta:
+        resolved_meta.update(spec.meta)
+    location = str(spec.path) if spec.path is not None else None
     version = AssetVersionRecord(
         asset_kind="artifact",
-        asset_key=artifact_name,
+        asset_key=spec.artifact_name,
         version_hash=version_hash,
         schema_hash=None,
         row_count=None,
@@ -483,7 +491,7 @@ def record_run_artifact(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
         asset_kind="artifact",
-        asset_key=artifact_name,
+        asset_key=spec.artifact_name,
         version_hash=version_hash,
         status="materialized",
         target=None,
@@ -499,7 +507,7 @@ def record_run_artifact(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
         asset_kind="artifact",
-        asset_key=artifact_name,
+        asset_key=spec.artifact_name,
         version_hash=version_hash,
         target=None,
         resolution_kind="materialized",
@@ -514,7 +522,7 @@ def record_run_artifact(
         log.warning(
             "build.asset_catalog.run_artifact_failed run_id=%s artifact=%s error=%s",
             run_id,
-            artifact_name,
+            spec.artifact_name,
             exc,
         )
 

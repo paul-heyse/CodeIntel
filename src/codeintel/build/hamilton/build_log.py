@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.env import BuildEnv
 
+
 @dataclass(frozen=True, slots=True)
 class BuildLogContext:
     """Metadata for a single build log stream."""
@@ -38,8 +39,15 @@ _BUFFER_VAR: ContextVar[BuildLogBuffer | None] = ContextVar(
     "codeintel_build_log_buffer",
     default=None,
 )
-_GLOBAL_BUFFER: BuildLogBuffer | None = None
-_GLOBAL_LOCK = threading.Lock()
+
+
+@dataclass(slots=True)
+class _GlobalBufferState:
+    buffer: BuildLogBuffer | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+_GLOBAL_STATE = _GlobalBufferState()
 
 
 def _snapshot_id_from_commit(commit: str, *, run_id: str) -> str:
@@ -53,12 +61,18 @@ def _get_buffer() -> BuildLogBuffer | None:
     buffer = _BUFFER_VAR.get()
     if buffer is not None:
         return buffer
-    with _GLOBAL_LOCK:
-        return _GLOBAL_BUFFER
+    with _GLOBAL_STATE.lock:
+        return _GLOBAL_STATE.buffer
 
 
 def start_build_log(*, env: BuildEnv, run_id: str) -> BuildLogContext:
-    """Initialize the build log buffer for a run."""
+    """Initialize the build log buffer for a run.
+
+    Returns
+    -------
+    BuildLogContext
+        Context metadata for the build log stream.
+    """
     context = BuildLogContext(
         run_id=run_id,
         repo=env.repo,
@@ -68,9 +82,8 @@ def start_build_log(*, env: BuildEnv, run_id: str) -> BuildLogContext:
     )
     buffer = BuildLogBuffer(context=context)
     _BUFFER_VAR.set(buffer)
-    global _GLOBAL_BUFFER
-    with _GLOBAL_LOCK:
-        _GLOBAL_BUFFER = buffer
+    with _GLOBAL_STATE.lock:
+        _GLOBAL_STATE.buffer = buffer
     return context
 
 
@@ -85,7 +98,13 @@ def record_build_event(event: str, **fields: object) -> None:
 
 
 def drain_build_log() -> tuple[BuildLogContext, list[dict[str, object]]] | None:
-    """Return buffered events and clear the active buffer."""
+    """Return buffered events and clear the active buffer.
+
+    Returns
+    -------
+    tuple[BuildLogContext, list[dict[str, object]]] | None
+        Context and drained events, or None if no buffer is active.
+    """
     buffer = _get_buffer()
     if buffer is None:
         return None
@@ -93,21 +112,21 @@ def drain_build_log() -> tuple[BuildLogContext, list[dict[str, object]]] | None:
         events = list(buffer.events)
         buffer.events.clear()
     _BUFFER_VAR.set(None)
-    global _GLOBAL_BUFFER
-    with _GLOBAL_LOCK:
-        _GLOBAL_BUFFER = None
+    with _GLOBAL_STATE.lock:
+        _GLOBAL_STATE.buffer = None
     return buffer.context, events
 
 
 def build_log_path(*, context: BuildLogContext) -> Path:
-    """Return the consolidated build log path for a run."""
+    """Return the consolidated build log path for a run.
+
+    Returns
+    -------
+    Path
+        Path for the run's JSONL build log artifact.
+    """
     snapshot_id = _sanitize_snapshot_id(context.snapshot_id)
-    return (
-        context.dataset_root
-        / snapshot_id
-        / "build_logs"
-        / f"build_{context.run_id}.jsonl"
-    )
+    return context.dataset_root / snapshot_id / "build_logs" / f"build_{context.run_id}.jsonl"
 
 
 def _event_payload(

@@ -1,0 +1,42 @@
+{
+  "pack_id": "wire.python.argparse.cli",
+  "entry_kind": "cli",
+  "framework": "argparse",
+  "description": "Discover argparse wiring: parser construction and add_argument/add_subparsers calls.",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/argparse_cli.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/argparse.yaml",
+      "rule_ids": [
+        "py.argparse.parser.assign",
+        "py.argparse.add_argument.call",
+        "py.argparse.add_subparsers.call"
+      ],
+      "run_on": "candidate_files"
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.unquote_capture",
+      "capture_names": [
+        "ARG"
+      ]
+    },
+    {
+      "op": "python.normalize_cli_flag",
+      "capture_name": "ARG",
+      "output_field": "cli_flag"
+    }
+  ],
+  "emit": {
+    "entry_key_template": "ARG:{cli_flag}",
+    "target_symbol_hint_capture": "P",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

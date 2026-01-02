@@ -160,7 +160,9 @@ _SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
 )
 attach_table_target_template(_MODULE, spec=_SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC)
 subsystem_graph_metrics__table = _MODULE.subsystem_graph_metrics__table
-subsystem_graph_metrics__table_materializations = _MODULE.subsystem_graph_metrics__table_materializations
+subsystem_graph_metrics__table_materializations = (
+    _MODULE.subsystem_graph_metrics__table_materializations
+)
 t__subsystem_graph_metrics = _MODULE.t__subsystem_graph_metrics
 
 

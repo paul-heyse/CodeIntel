@@ -73,6 +73,69 @@ _REQUIRED_DATASET_NODE_TAGS: frozenset[TagKey] = frozenset(
     }
 )
 
+TAG_SCHEMA_VERSION = "v1"
+
+_TAG_SCHEMA_KEYS: tuple[str, ...] = (
+    ht.TAG_DOMAIN,
+    ht.TAG_TARGET,
+    ht.TAG_TABLE_KEY,
+    ht.TAG_ARTIFACT,
+    ht.TAG_ARTIFACT_PATH_TEMPLATE,
+    ht.TAG_NODE_TYPE,
+    ht.TAG_OUTPUT_KIND,
+    ht.TAG_LAYER,
+    ht.TAG_SEMANTIC_ID,
+    ht.TAG_KIND,
+    ht.TAG_VERSION,
+    ht.TAG_SCHEMA_REF,
+    ht.TAG_ENTITY_KEYS,
+    ht.TAG_JOIN_KEYS,
+    ht.TAG_DTYPE,
+    ht.TAG_STABILITY,
+    ht.TAG_OWNER,
+    ht.TAG_DESCRIPTION,
+    ht.TAG_UNIT,
+    ht.TAG_PII,
+    ht.TAG_SOURCE_SYSTEM,
+    ht.TAG_MATERIALIZATION,
+    ht.TAG_MATERIALIZED_NAME,
+    ht.TAG_ENTITY,
+    ht.TAG_GRAIN,
+    ht.TAG_MCP_VISIBLE,
+    ht.TAG_TOOLS,
+    ht.TAG_TARGET_RESOURCES,
+    ht.TAG_TARGET_EXECUTION,
+    ht.TAG_TARGET_PARAMETERS,
+    ht.TAG_TARGET_ESTIMATED_DURATION_MS,
+    ht.TAG_TARGET_SPEC_VERSION,
+    "ci.data_node",
+)
+
+_PRIMARY_TAG_KEYS: tuple[str, ...] = (
+    ht.TAG_DOMAIN,
+    ht.TAG_TARGET,
+    ht.TAG_TABLE_KEY,
+    ht.TAG_ARTIFACT,
+    ht.TAG_NODE_TYPE,
+)
+
+_LIST_TAG_KEYS: frozenset[str] = frozenset(
+    {
+        ht.TAG_ENTITY_KEYS,
+        ht.TAG_JOIN_KEYS,
+        ht.TAG_TOOLS,
+    }
+)
+
+_ALLOWED_TAG_VALUES: dict[str, tuple[str, ...]] = {
+    ht.TAG_NODE_TYPE: tuple(node.value for node in NodeType),
+    ht.TAG_OUTPUT_KIND: (
+        ht.OUTPUT_KIND_TABLE,
+        ht.OUTPUT_KIND_VIEW,
+        ht.OUTPUT_KIND_SEMANTIC_VIEW,
+    ),
+}
+
 
 def required_table_output_tags() -> frozenset[TagKey]:
     """Return required tags for contract table output saver nodes.
@@ -94,6 +157,62 @@ def required_dataset_node_tags() -> frozenset[TagKey]:
         Required tag keys for dataset nodes.
     """
     return _REQUIRED_DATASET_NODE_TAGS
+
+
+def tag_schema_spec() -> dict[str, object]:
+    """Return the canonical tag schema specification.
+
+    Returns
+    -------
+    dict[str, object]
+        Tag schema specification payload.
+    """
+    tag_entries: list[dict[str, object]] = []
+    for key in sorted(_TAG_SCHEMA_KEYS):
+        entry: dict[str, object] = {"key": key, "value_type": _tag_value_type(key)}
+        allowed = _ALLOWED_TAG_VALUES.get(key)
+        if allowed:
+            entry["allowed_values"] = list(allowed)
+        tag_entries.append(entry)
+    return {
+        "version": TAG_SCHEMA_VERSION,
+        "primary_tags": list(_PRIMARY_TAG_KEYS),
+        "tag_keys": tag_entries,
+        "required_tags": {
+            "table_output_nodes": sorted(required_table_output_tags()),
+            "dataset_nodes": sorted(required_dataset_node_tags()),
+            "node_type_requirements": {
+                NodeType.DATASET.value: [ht.TAG_TABLE_KEY],
+                NodeType.LOADER_QUERY.value: [ht.TAG_TABLE_KEY],
+                NodeType.ARTIFACT.value: [ht.TAG_ARTIFACT],
+            },
+        },
+        "allowed_values": {key: list(values) for key, values in _ALLOWED_TAG_VALUES.items()},
+    }
+
+
+def tag_schema_summary() -> dict[str, object]:
+    """Return a summary of the canonical tag schema.
+
+    Returns
+    -------
+    dict[str, object]
+        Tag schema summary payload.
+    """
+    spec = tag_schema_spec()
+    return {
+        "version": spec["version"],
+        "primary_tags": spec["primary_tags"],
+        "required_tags": spec["required_tags"],
+        "tag_keys": spec["tag_keys"],
+        "allowed_values": spec["allowed_values"],
+    }
+
+
+def _tag_value_type(tag_key: str) -> str:
+    if tag_key in _LIST_TAG_KEYS:
+        return "list[string]"
+    return "string"
 
 
 def apply_tags[TCallable](
@@ -337,6 +456,8 @@ __all__ = [
     "tag_helper",
     "tag_loader_query",
     "tag_materialize",
+    "tag_schema_spec",
+    "tag_schema_summary",
     "tag_spec_from_tags",
     "tag_tool",
     "validate_tag_spec",

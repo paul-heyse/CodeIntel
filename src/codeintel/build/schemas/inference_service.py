@@ -26,7 +26,7 @@ try:
 except ImportError:
     _DulwichRepo = None
 
-from codeintel.build.assets.emitter import record_run_artifact
+from codeintel.build.assets.emitter import RunArtifactSpec, record_run_artifact
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.build_log import record_build_event
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
@@ -989,7 +989,7 @@ def infer_schema_for_table_key(
 
 Inferer = Callable[[str], TableSchema]
 _INFERENCE_ERRORS = (KeyError, TypeError, ValueError, RuntimeError)
-_INFERENCE_JOB_ERRORS = _INFERENCE_ERRORS + (OSError, PolarsError, pa.ArrowInvalid)
+_INFERENCE_JOB_ERRORS = (*_INFERENCE_ERRORS, OSError, PolarsError, pa.ArrowInvalid)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1091,6 +1091,189 @@ class HamiltonSchemaProvider(SchemaProvider):
         self._cache.update(schemas)
 
 
+@dataclass(frozen=True, slots=True)
+class _InferenceSession:
+    env: BuildEnv
+    context: _InferenceContext
+    jobs: tuple[_ComputeInferenceJob, ...]
+    union_qparams: frozenset[str]
+    harness: DatasetSeedHarness
+    base_overrides: dict[str, object]
+    run_id: str
+    table_keys: tuple[str, ...]
+
+
+def _prepare_inference_session(
+    *,
+    table_keys: tuple[str, ...],
+    schema_inputs: SchemaInferenceInputs,
+    env: BuildEnv | None,
+    gateway: BuildGateway,
+) -> _InferenceSession:
+    context = _InferenceContext(
+        driver=schema_inputs.driver,
+        catalog=schema_inputs.catalog,
+    )
+    jobs = _build_inference_jobs(context=context, table_keys=table_keys)
+    union_qparams = _union_qparams(jobs)
+    harness = _seed_harness(
+        declared_provider=schema_inputs.declared_provider,
+        observation_provider=gateway.schemas,
+        seed_dataset=schema_inputs.seed_dataset,
+    )
+    base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
+    resolved_env = env
+    if resolved_env is None:
+        resolved_env = _inference_env(
+            gateway=gateway,
+            force_targets=frozenset({job.target_name for job in jobs}),
+        )
+    return _InferenceSession(
+        env=resolved_env,
+        context=context,
+        jobs=jobs,
+        union_qparams=union_qparams,
+        harness=harness,
+        base_overrides=base_overrides,
+        run_id=_inference_run_id(resolved_env),
+        table_keys=table_keys,
+    )
+
+
+def _emit_inference_plan_for_session(
+    *,
+    session: _InferenceSession,
+    seed_dataset: SeedDatasetConfig | None,
+) -> None:
+    try:
+        manifest_path, _ = _emit_inference_plan_manifest(
+            env=session.env,
+            jobs=session.jobs,
+            union_qparams=session.union_qparams,
+            seed_dataset=seed_dataset,
+            run_id=session.run_id,
+        )
+        record_run_artifact(
+            env=session.env,
+            run_id=session.run_id,
+            spec=RunArtifactSpec(
+                artifact_name=_INFERENCE_PLAN_ARTIFACT_NAME,
+                artifact_type="json",
+                path=manifest_path,
+                meta={
+                    "table_keys_count": len(session.table_keys),
+                    "qparams_count": len(session.union_qparams),
+                },
+            ),
+        )
+        LOG.info(
+            "build.inference.plan.emit run_id=%s repo=%s commit=%s table_keys_count=%d "
+            "qparams_count=%d manifest_path=%s",
+            session.run_id,
+            session.env.repo,
+            session.env.commit,
+            len(session.table_keys),
+            len(session.union_qparams),
+            manifest_path,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        LOG.exception(
+            "build.inference.plan.fail run_id=%s repo=%s commit=%s",
+            session.run_id,
+            session.env.repo,
+            session.env.commit,
+        )
+        raise
+
+
+def _run_inference_jobs(
+    *,
+    session: _InferenceSession,
+    schema_inputs: SchemaInferenceInputs,
+) -> dict[str, TableSchema]:
+    inferred: dict[str, TableSchema] = {}
+    for job in session.jobs:
+        job_started = time.perf_counter()
+        qparams_count = len(job.qparams)
+        loader_overrides_count = len(job.loader_nodes)
+        LOG.info(
+            "build.inference.job.start run_id=%s repo=%s commit=%s table_key=%s target=%s "
+            "qparams_count=%d loader_overrides_count=%d",
+            session.run_id,
+            session.env.repo,
+            session.env.commit,
+            job.table_key,
+            job.target_name,
+            qparams_count,
+            loader_overrides_count,
+        )
+        record_build_event(
+            "build.inference.job.start",
+            table_key=job.table_key,
+            target=job.target_name,
+            qparams_count=qparams_count,
+            loader_overrides_count=loader_overrides_count,
+        )
+        observation_context = _schema_observation_context(
+            catalog=schema_inputs.catalog,
+            table_key=job.table_key,
+            declared_provider=schema_inputs.declared_provider,
+            target_name=job.target_name,
+        )
+        try:
+            inferred_schema = _infer_job_schema(
+                _InferenceJobRunInputs(
+                    context=session.context,
+                    job=job,
+                    base_overrides=session.base_overrides,
+                    harness=session.harness,
+                    env=session.env,
+                    observation_context=observation_context,
+                )
+            )
+        except _INFERENCE_JOB_ERRORS as exc:
+            record_build_event(
+                "build.inference.job.fail",
+                table_key=job.table_key,
+                target=job.target_name,
+                exception_type=type(exc).__name__,
+                error=str(exc),
+            )
+            LOG.exception(
+                "build.inference.job.fail run_id=%s repo=%s commit=%s table_key=%s target=%s",
+                session.run_id,
+                session.env.repo,
+                session.env.commit,
+                job.table_key,
+                job.target_name,
+            )
+            raise
+        duration_ms = (time.perf_counter() - job_started) * 1000
+        record_build_event(
+            "build.inference.job.ok",
+            table_key=job.table_key,
+            target=job.target_name,
+            duration_ms=duration_ms,
+        )
+        LOG.info(
+            "build.inference.job.ok run_id=%s repo=%s commit=%s table_key=%s target=%s "
+            "duration_ms=%.1f",
+            session.run_id,
+            session.env.repo,
+            session.env.commit,
+            job.table_key,
+            job.target_name,
+            duration_ms,
+        )
+        inferred[job.table_key] = merge_table_schema_hints(
+            inferred_schema,
+            observation_context.declared_schema,
+            schema_hints=observation_context.schema_hints,
+        )
+
+    return inferred
+
+
 def inferable_native_table_keys(*, driver: h_driver.Driver, catalog: DagCatalog) -> frozenset[str]:
     """Return output table keys that appear inferable from native compute nodes.
 
@@ -1175,11 +1358,11 @@ def inferability_inventory(
 def _build_inference_jobs(
     *,
     context: _InferenceContext,
-    table_keys: list[str],
-) -> list[_ComputeInferenceJob]:
-    return [
+    table_keys: Sequence[str],
+) -> tuple[_ComputeInferenceJob, ...]:
+    return tuple(
         _resolve_inference_job(context=context, table_key=table_key) for table_key in table_keys
-    ]
+    )
 
 
 def _union_qparams(jobs: Iterable[_ComputeInferenceJob]) -> frozenset[str]:
@@ -1379,166 +1562,26 @@ def infer_table_schemas(
     dict[str, TableSchema]
         Mapping of table_key to inferred TableSchema.
 
-    Raises
-    ------
-    OSError
-        If the inference plan manifest cannot be written.
-    RuntimeError
-        If inference plan materialization fails unexpectedly.
-    TypeError
-        If inference inputs cannot be serialized into the manifest.
-    ValueError
-        If inference inputs are invalid for plan generation.
     """
-    unique_keys = sorted(set(table_keys))
+    unique_keys = tuple(sorted(set(table_keys)))
     if not unique_keys:
         return {}
-
-    context = _InferenceContext(
-        driver=schema_inputs.driver,
-        catalog=schema_inputs.catalog,
-    )
-    jobs = _build_inference_jobs(context=context, table_keys=unique_keys)
-    union_qparams = _union_qparams(jobs)
 
     with _schema_inference_gateway(
         schema_provider=schema_inputs.declared_provider,
         gateway_factory=schema_inputs.gateway_factory,
     ) as gateway:
-        harness = _seed_harness(
-            declared_provider=schema_inputs.declared_provider,
-            observation_provider=gateway.schemas,
+        session = _prepare_inference_session(
+            table_keys=unique_keys,
+            schema_inputs=schema_inputs,
+            env=env,
+            gateway=gateway,
+        )
+        _emit_inference_plan_for_session(
+            session=session,
             seed_dataset=schema_inputs.seed_dataset,
         )
-        base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
-        resolved_env = env
-        if resolved_env is None:
-            resolved_env = _inference_env(
-                gateway=gateway,
-                force_targets=frozenset({job.target_name for job in jobs}),
-            )
-
-        run_id = "unknown"
-        try:
-            run_id = _inference_run_id(resolved_env)
-            manifest_path, run_id = _emit_inference_plan_manifest(
-                env=resolved_env,
-                jobs=jobs,
-                union_qparams=union_qparams,
-                seed_dataset=schema_inputs.seed_dataset,
-                run_id=run_id,
-            )
-            record_run_artifact(
-                env=resolved_env,
-                run_id=run_id,
-                artifact_name=_INFERENCE_PLAN_ARTIFACT_NAME,
-                artifact_type="json",
-                path=manifest_path,
-                meta={
-                    "table_keys_count": len(unique_keys),
-                    "qparams_count": len(union_qparams),
-                },
-            )
-            LOG.info(
-                "build.inference.plan.emit run_id=%s repo=%s commit=%s table_keys_count=%d "
-                "qparams_count=%d manifest_path=%s",
-                run_id,
-                resolved_env.repo,
-                resolved_env.commit,
-                len(unique_keys),
-                len(union_qparams),
-                manifest_path,
-            )
-        except (OSError, RuntimeError, TypeError, ValueError):
-            LOG.exception(
-                "build.inference.plan.fail run_id=%s repo=%s commit=%s",
-                run_id,
-                resolved_env.repo,
-                resolved_env.commit,
-            )
-            raise
-
-        inferred: dict[str, TableSchema] = {}
-        for job in jobs:
-            job_started = time.perf_counter()
-            qparams_count = len(job.qparams)
-            loader_overrides_count = len(job.loader_nodes)
-            LOG.info(
-                "build.inference.job.start run_id=%s repo=%s commit=%s table_key=%s target=%s "
-                "qparams_count=%d loader_overrides_count=%d",
-                run_id,
-                resolved_env.repo,
-                resolved_env.commit,
-                job.table_key,
-                job.target_name,
-                qparams_count,
-                loader_overrides_count,
-            )
-            record_build_event(
-                "build.inference.job.start",
-                table_key=job.table_key,
-                target=job.target_name,
-                qparams_count=qparams_count,
-                loader_overrides_count=loader_overrides_count,
-            )
-            observation_context = _schema_observation_context(
-                catalog=schema_inputs.catalog,
-                table_key=job.table_key,
-                declared_provider=schema_inputs.declared_provider,
-                target_name=job.target_name,
-            )
-            try:
-                inferred_schema = _infer_job_schema(
-                    _InferenceJobRunInputs(
-                        context=context,
-                        job=job,
-                        base_overrides=base_overrides,
-                        harness=harness,
-                        env=resolved_env,
-                        observation_context=observation_context,
-                    )
-                )
-            except _INFERENCE_JOB_ERRORS as exc:
-                record_build_event(
-                    "build.inference.job.fail",
-                    table_key=job.table_key,
-                    target=job.target_name,
-                    exception_type=type(exc).__name__,
-                    error=str(exc),
-                )
-                LOG.exception(
-                    "build.inference.job.fail run_id=%s repo=%s commit=%s table_key=%s target=%s",
-                    run_id,
-                    resolved_env.repo,
-                    resolved_env.commit,
-                    job.table_key,
-                    job.target_name,
-                )
-                raise
-            duration_ms = (time.perf_counter() - job_started) * 1000
-            record_build_event(
-                "build.inference.job.ok",
-                table_key=job.table_key,
-                target=job.target_name,
-                duration_ms=duration_ms,
-            )
-            LOG.info(
-                "build.inference.job.ok run_id=%s repo=%s commit=%s table_key=%s target=%s "
-                "duration_ms=%.1f",
-                run_id,
-                resolved_env.repo,
-                resolved_env.commit,
-                job.table_key,
-                job.target_name,
-                duration_ms,
-            )
-            inferred[job.table_key] = merge_table_schema_hints(
-                inferred_schema,
-                observation_context.declared_schema,
-                schema_hints=observation_context.schema_hints,
-            )
-
-    return inferred
+        return _run_inference_jobs(session=session, schema_inputs=schema_inputs)
 
 
 def _dataset_ref_overrides(

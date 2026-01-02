@@ -1,0 +1,21 @@
+rules:
+- rule_id: py.click.command.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@click.command($$$ARGS)'
+- rule_id: py.click.group.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@click.group($$$ARGS)'
+- rule_id: py.click.option.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@click.option($OPT, $$$ARGS)'
+- rule_id: py.click.argument.decorator
+  language: python
+  config:
+    rule:
+      pattern: '@click.argument($ARG, $$$ARGS)'

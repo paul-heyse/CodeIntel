@@ -1,0 +1,34 @@
+{
+  "pack_id": "wire.python.fastapi.depends",
+  "entry_kind": "di",
+  "framework": "fastapi",
+  "description": "Discover FastAPI dependency injection edges via Depends(...).",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/fastapi_depends.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/fastapi.yaml",
+      "rule_ids": [
+        "py.fastapi.depends.call"
+      ],
+      "run_on": "candidate_files"
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.capture_text",
+      "capture_name": "DEP",
+      "output_field": "dependency_expr"
+    }
+  ],
+  "emit": {
+    "entry_key_template": "Depends:{dependency_expr}",
+    "target_symbol_hint_capture": "dependency_expr",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

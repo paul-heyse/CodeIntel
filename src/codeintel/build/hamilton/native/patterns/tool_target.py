@@ -338,11 +338,15 @@ def attach_tool_target_template(
         tag_spec=TagSpec.for_helper(domain=spec.domain, target=spec.target_name),
     )
 
+    table_materialization_nodes = {
+        table.table_key: table.output_name for table in spec.tables if table.output_name is not None
+    }
     table_collector = make_table_materializations_collector(
         domain=spec.domain,
         target=spec.target_name,
         table_keys=[table.table_key for table in spec.tables],
         node_name=table_collector_node,
+        materialization_nodes=table_materialization_nodes or None,
     )
     tagged_attach_node(
         module,
@@ -457,6 +461,7 @@ def _attach_table_rows_node(
         spec=RelationTableSaveSpec(
             table_key=table_spec.table_key,
             output_role=table_spec.output_role,
+            output_name=table_spec.output_name,
         ),
     )
     tagged_attach_node(

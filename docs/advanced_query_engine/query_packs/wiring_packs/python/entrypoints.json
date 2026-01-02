@@ -1,0 +1,38 @@
+{
+  "pack_id": "wire.python.entrypoints",
+  "entry_kind": "plugin",
+  "framework": "importlib.metadata/pkg_resources",
+  "description": "Discover runtime plugin entry point loading calls in Python source (and candidate config files via rpygrep).",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/importlib_entrypoints.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/entrypoints.yaml",
+      "rule_ids": [
+        "py.entrypoints.importlib_metadata.entry_points.group_kw",
+        "py.entrypoints.pkg_resources.iter_entry_points.group_pos",
+        "py.entrypoints.importlib_metadata.entry_points",
+        "py.entrypoints.pkg_resources.iter_entry_points"
+      ],
+      "run_on": "candidate_files_py_only"
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.unquote_capture",
+      "capture_names": [
+        "GROUP"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "ENTRYPOINT_GROUP:{GROUP_unquoted}",
+    "target_symbol_hint_capture": "GROUP_unquoted",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

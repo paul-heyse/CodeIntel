@@ -308,6 +308,13 @@ class BuildConfig:
         -------
         str
             Normalized drift mode ("off", "warn", or "strict").
+
+        Raises
+        ------
+        TypeError
+            If the configuration value is not a string.
+        ValueError
+            If the value is not an allowed schema drift mode.
         """
         raw = self.get("hamilton.schema_drift_mode")
         if raw is None:

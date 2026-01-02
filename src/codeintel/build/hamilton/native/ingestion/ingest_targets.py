@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,12 +53,13 @@ from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOption
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     RelationTableSaveSpec,
-    SaverContext,
+    TableTargetSpec,
+    TableTargetTableSpec,
     ToolFinalizeContext,
     ToolRunContext,
+    attach_table_target_template,
     finalize_target_from_materializations,
     run_tool_step,
-    save_relation_table,
 )
 from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
@@ -115,22 +117,7 @@ TYPEDNESS_TABLE_KEY = "analytics.typedness"
 STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
 
-MODULES_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=MODULES_TARGET_NAME,
-)
-CONFIG_INGEST_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=CONFIG_INGEST_TARGET_NAME,
-)
-TESTS_INGEST_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=TESTS_INGEST_TARGET_NAME,
-)
-TYPING_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=TYPING_TARGET_NAME,
-)
+_MODULE = sys.modules[__name__]
 
 
 @dataclass(frozen=True)
@@ -475,12 +462,7 @@ def t__modules__ingest(
     )
 
 
-@save_relation_table(
-    context=MODULES_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=MODULES_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__module_rows")
-def modules__module_rows(
+def modules__module_rows__base(
     t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
 ) -> pl.LazyFrame | None:
     """Extract rows for core.modules.
@@ -509,12 +491,7 @@ def modules__module_rows(
     return frame
 
 
-@save_relation_table(
-    context=MODULES_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=FILE_STATE_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__file_state_rows")
-def modules__file_state_rows(
+def modules__file_state_rows__base(
     t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
 ) -> pl.LazyFrame | None:
     """Extract rows for core.file_state.
@@ -543,12 +520,7 @@ def modules__file_state_rows(
     return frame
 
 
-@save_relation_table(
-    context=MODULES_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=REPO_MAP_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__repo_map_rows")
-def modules__repo_map_rows(
+def modules__repo_map_rows__base(
     t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
 ) -> pl.LazyFrame | None:
     """Extract rows for core.repo_map.
@@ -577,24 +549,40 @@ def modules__repo_map_rows(
     return frame
 
 
-@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
-def modules__table_materializations(
-    m__core__modules: MaterializationResult,
-    m__core__file_state: MaterializationResult,
-    m__core__repo_map: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect materialization results for modules target tables.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping from table key to saver metadata.
-    """
-    return {
-        MODULES_TABLE_KEY: m__core__modules,
-        FILE_STATE_TABLE_KEY: m__core__file_state,
-        REPO_MAP_TABLE_KEY: m__core__repo_map,
-    }
+_MODULES_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="ingestion",
+    target_name=MODULES_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=MODULES_TABLE_KEY,
+            base_node="modules__module_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=MODULES_TABLE_KEY),
+            node_name="modules__module_rows",
+            input_type=pl.LazyFrame | None,
+        ),
+        TableTargetTableSpec(
+            table_key=FILE_STATE_TABLE_KEY,
+            base_node="modules__file_state_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=FILE_STATE_TABLE_KEY),
+            node_name="modules__file_state_rows",
+            input_type=pl.LazyFrame | None,
+        ),
+        TableTargetTableSpec(
+            table_key=REPO_MAP_TABLE_KEY,
+            base_node="modules__repo_map_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=REPO_MAP_TABLE_KEY),
+            node_name="modules__repo_map_rows",
+            input_type=pl.LazyFrame | None,
+        ),
+    ),
+    table_materializations_node="modules__table_materializations",
+    attach_anchor=False,
+)
+attach_table_target_template(_MODULE, spec=_MODULES_TABLE_TARGET_SPEC)
+modules__module_rows = _MODULE.modules__module_rows
+modules__file_state_rows = _MODULE.modules__file_state_rows
+modules__repo_map_rows = _MODULE.modules__repo_map_rows
+modules__table_materializations = _MODULE.modules__table_materializations
 
 
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
@@ -911,16 +899,11 @@ def _extract_ingest_rows(
     return frame
 
 
-@save_relation_table(
-    context=CONFIG_INGEST_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
-)
 @pipe_ingest_rows(
     required_cols=("repo", "commit", "config_path", "format", "key"),
     input_name="config_ingest__raw_rows",
 )
-@tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__rows")
-def config_ingest__rows(
+def config_ingest__rows__base(
     config_ingest__raw_rows: pl.LazyFrame | None,
 ) -> pl.LazyFrame | None:
     """Return cleaned rows for analytics.config_values.
@@ -933,18 +916,24 @@ def config_ingest__rows(
     return config_ingest__raw_rows
 
 
-@tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
-def config_ingest__table_materializations(
-    m__analytics__config_values: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect config ingest table materializations.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table keys to materialization results.
-    """
-    return {CONFIG_VALUES_TABLE_KEY: m__analytics__config_values}
+_CONFIG_INGEST_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="ingestion",
+    target_name=CONFIG_INGEST_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=CONFIG_VALUES_TABLE_KEY,
+            base_node="config_ingest__rows__base",
+            save_spec=RelationTableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
+            node_name="config_ingest__rows",
+            input_type=pl.LazyFrame | None,
+        ),
+    ),
+    table_materializations_node="config_ingest__table_materializations",
+    attach_anchor=False,
+)
+attach_table_target_template(_MODULE, spec=_CONFIG_INGEST_TABLE_TARGET_SPEC)
+config_ingest__rows = _MODULE.config_ingest__rows
+config_ingest__table_materializations = _MODULE.config_ingest__table_materializations
 
 
 @tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
@@ -1143,12 +1132,7 @@ def t__tests_ingest__ingest(
     )
 
 
-@save_relation_table(
-    context=TESTS_INGEST_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=TEST_CATALOG_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, target_="tests__rows")
-def tests__rows(
+def tests__rows__base(
     tests__raw_rows: pl.LazyFrame | None,
 ) -> pl.LazyFrame | None:
     """Extract rows for analytics.test_catalog.
@@ -1161,18 +1145,24 @@ def tests__rows(
     return tests__raw_rows
 
 
-@tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
-def tests_ingest__table_materializations(
-    m__analytics__test_catalog: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect tests ingest table materializations.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table keys to materialization results.
-    """
-    return {TEST_CATALOG_TABLE_KEY: m__analytics__test_catalog}
+_TESTS_INGEST_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="ingestion",
+    target_name=TESTS_INGEST_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=TEST_CATALOG_TABLE_KEY,
+            base_node="tests__rows__base",
+            save_spec=RelationTableSaveSpec(table_key=TEST_CATALOG_TABLE_KEY),
+            node_name="tests__rows",
+            input_type=pl.LazyFrame | None,
+        ),
+    ),
+    table_materializations_node="tests_ingest__table_materializations",
+    attach_anchor=False,
+)
+attach_table_target_template(_MODULE, spec=_TESTS_INGEST_TABLE_TARGET_SPEC)
+tests__rows = _MODULE.tests__rows
+tests_ingest__table_materializations = _MODULE.tests_ingest__table_materializations
 
 
 @tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
@@ -1354,12 +1344,7 @@ def t__typing__ingest(
     )
 
 
-@save_relation_table(
-    context=TYPING_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=TYPEDNESS_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=TYPING_TARGET_NAME, target_="typing__typedness_rows")
-def typing__typedness_rows(
+def typing__typedness_rows__base(
     t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
 ) -> pl.LazyFrame | None:
     """Extract rows for analytics.typedness.
@@ -1388,12 +1373,7 @@ def typing__typedness_rows(
     return frame
 
 
-@save_relation_table(
-    context=TYPING_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=TYPING_TARGET_NAME, target_="typing__diagnostic_rows")
-def typing__diagnostic_rows(
+def typing__diagnostic_rows__base(
     t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
 ) -> pl.LazyFrame | None:
     """Extract rows for analytics.static_diagnostics.
@@ -1422,22 +1402,32 @@ def typing__diagnostic_rows(
     return frame
 
 
-@tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
-def typing__table_materializations(
-    m__analytics__typedness: MaterializationResult,
-    m__analytics__static_diagnostics: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect typing table materializations.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table keys to materialization results.
-    """
-    return {
-        TYPEDNESS_TABLE_KEY: m__analytics__typedness,
-        STATIC_DIAGNOSTICS_TABLE_KEY: m__analytics__static_diagnostics,
-    }
+_TYPING_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="ingestion",
+    target_name=TYPING_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=TYPEDNESS_TABLE_KEY,
+            base_node="typing__typedness_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=TYPEDNESS_TABLE_KEY),
+            node_name="typing__typedness_rows",
+            input_type=pl.LazyFrame | None,
+        ),
+        TableTargetTableSpec(
+            table_key=STATIC_DIAGNOSTICS_TABLE_KEY,
+            base_node="typing__diagnostic_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
+            node_name="typing__diagnostic_rows",
+            input_type=pl.LazyFrame | None,
+        ),
+    ),
+    table_materializations_node="typing__table_materializations",
+    attach_anchor=False,
+)
+attach_table_target_template(_MODULE, spec=_TYPING_TABLE_TARGET_SPEC)
+typing__typedness_rows = _MODULE.typing__typedness_rows
+typing__diagnostic_rows = _MODULE.typing__diagnostic_rows
+typing__table_materializations = _MODULE.typing__table_materializations
 
 
 @tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)

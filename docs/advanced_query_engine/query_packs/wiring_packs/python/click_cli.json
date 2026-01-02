@@ -1,0 +1,43 @@
+{
+  "pack_id": "wire.python.click.cli",
+  "entry_kind": "cli",
+  "framework": "click",
+  "description": "Discover Click command/group decorators and CLI options/arguments.",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/click_cli.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/click.yaml",
+      "rule_ids": [
+        "py.click.command.decorator",
+        "py.click.group.decorator",
+        "py.click.option.decorator",
+        "py.click.argument.decorator"
+      ],
+      "run_on": "candidate_files"
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.derive_handler_from_enclosing_def",
+      "when_rule_ids": [
+        "py.click.command.decorator",
+        "py.click.group.decorator"
+      ],
+      "strategies": [
+        "tree_sitter_enclosing_decorated_definition",
+        "heuristic_next_def"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "CLICK:{rule_id}",
+    "target_symbol_hint_capture": "HANDLER_DERIVED",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

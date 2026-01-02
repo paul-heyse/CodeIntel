@@ -1,0 +1,64 @@
+{
+  "pack_id": "wire.python.fastapi.routes",
+  "entry_kind": "route",
+  "framework": "fastapi",
+  "description": "Discover FastAPI/APIRouter route registrations (decorators + add_api_route).",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/fastapi_routes.json",
+      "purpose": "candidate_files_and_spans"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/fastapi.yaml",
+      "rule_ids": [
+        "py.fastapi.route.decorator",
+        "py.fastapi.api_route.decorator",
+        "py.fastapi.add_api_route.call"
+      ],
+      "run_on": "candidate_files"
+    },
+    {
+      "engine": "tree_sitter",
+      "query_file": "tree_sitter/python/wiring_fastapi.scm",
+      "mode": "matches",
+      "fallback": true
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.unquote_capture",
+      "capture_names": [
+        "PATH",
+        "path",
+        "path2"
+      ]
+    },
+    {
+      "op": "python.derive_handler_from_enclosing_def",
+      "when_rule_ids": [
+        "py.fastapi.route.decorator",
+        "py.fastapi.api_route.decorator"
+      ],
+      "strategies": [
+        "tree_sitter_enclosing_decorated_definition",
+        "heuristic_next_def"
+      ]
+    },
+    {
+      "op": "python.normalize_http_method",
+      "capture_name": "METHOD",
+      "output_field": "http_method"
+    }
+  ],
+  "emit": {
+    "entry_key_template": "{http_method} {PATH_unquoted}",
+    "target_symbol_hint_capture": "HANDLER_DERIVED",
+    "hook_span_capture": "MATCH_NODE",
+    "extra_fields": {
+      "registrar_capture": "ROUTER"
+    }
+  }
+}

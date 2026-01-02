@@ -1,0 +1,29 @@
+{
+  "pattern_group_id": "rg.python.fastapi.routes",
+  "description": "FastAPI/APIRouter route decorator and registration call candidates.",
+  "patterns": [
+    {
+      "pattern": "@\\s*[A-Za-z_]\\w*\\.(get|post|put|patch|delete|options|head|websocket)\\s*\\(",
+      "is_regex": true,
+      "priority": 10
+    },
+    {
+      "pattern": "\\.add_api_route\\s*\\(",
+      "is_regex": true,
+      "priority": 8
+    },
+    {
+      "pattern": "\\.api_route\\s*\\(",
+      "is_regex": true,
+      "priority": 7
+    }
+  ],
+  "globs": [
+    "**/*.py"
+  ],
+  "exclude_globs": [
+    "**/site-packages/**",
+    "**/.venv/**",
+    "**/venv/**"
+  ]
+}

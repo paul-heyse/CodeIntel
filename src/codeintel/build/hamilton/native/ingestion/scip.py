@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -35,12 +36,14 @@ from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     RelationTableSaveSpec,
     SaverContext,
+    TableTargetSpec,
+    TableTargetTableSpec,
     ToolFinalizeContext,
     ToolRunContext,
+    attach_table_target_template,
     finalize_target_from_materializations,
     run_tool_step,
     save_artifact,
-    save_relation_table,
 )
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
 from codeintel.build.hamilton.native.target_decorators import (
@@ -141,10 +144,9 @@ SCIP_TABLE_KEYS = (
 FILE_STATE_TABLE_KEY = "core.file_state"
 FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
 
-SCIP_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=SCIP_TARGET_NAME,
-)
+_MODULE = sys.modules[__name__]
+SCIP_SAVE_CONTEXT = SaverContext(domain="ingestion", target=SCIP_TARGET_NAME)
+
 
 _POSITION_ENCODING_UTF8 = 1
 _POSITION_ENCODING_UTF16 = 2
@@ -205,25 +207,6 @@ class ScipIngestInputs:
     run: ScipRunResult
     proto_module_path: Path | None
     options: ScipIngestOptions
-
-
-@dataclass(frozen=True)
-class ScipSymbolTableMaterializations:
-    """Materialization results for symbol-related tables."""
-
-    symbols: MaterializationResult
-    occurrences: MaterializationResult
-    symbol_information: MaterializationResult
-
-
-@dataclass(frozen=True)
-class ScipAuxTableMaterializations:
-    """Materialization results for auxiliary SCIP tables."""
-
-    relationships: MaterializationResult
-    diagnostics: MaterializationResult
-    external_symbols: MaterializationResult
-    module_state: MaterializationResult
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -1210,12 +1193,7 @@ def _scip_payload_frame(
     return frame
 
 
-@save_relation_table(
-    context=SCIP_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_SYMBOLS_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_rows")
-def scip__symbol_rows(
+def scip__symbol_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput | None:
     """Return rows for core.scip_symbols.
@@ -1228,12 +1206,7 @@ def scip__symbol_rows(
     return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
 
 
-@save_relation_table(
-    context=SCIP_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCES_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__occurrence_rows")
-def scip__occurrence_rows(
+def scip__occurrence_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput | None:
     """Return rows for core.scip_occurrences.
@@ -1246,12 +1219,7 @@ def scip__occurrence_rows(
     return _scip_payload_frame(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
 
 
-@save_relation_table(
-    context=SCIP_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_INFO_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_info_rows")
-def scip__symbol_info_rows(
+def scip__symbol_info_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput | None:
     """Return rows for core.scip_symbol_information.
@@ -1264,12 +1232,7 @@ def scip__symbol_info_rows(
     return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
 
 
-@save_relation_table(
-    context=SCIP_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_RELATIONSHIPS_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__relationship_rows")
-def scip__relationship_rows(
+def scip__relationship_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput | None:
     """Return rows for core.scip_symbol_relationships.
@@ -1282,12 +1245,7 @@ def scip__relationship_rows(
     return _scip_payload_frame(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
 
 
-@save_relation_table(
-    context=SCIP_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_DIAGNOSTICS_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__diagnostic_rows")
-def scip__diagnostic_rows(
+def scip__diagnostic_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput | None:
     """Return rows for core.scip_diagnostics.
@@ -1300,12 +1258,7 @@ def scip__diagnostic_rows(
     return _scip_payload_frame(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
 
 
-@save_relation_table(
-    context=SCIP_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__external_symbol_rows")
-def scip__external_symbol_rows(
+def scip__external_symbol_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput | None:
     """Return rows for core.scip_external_symbols.
@@ -1318,12 +1271,7 @@ def scip__external_symbol_rows(
     return _scip_payload_frame(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
 
 
-@save_relation_table(
-    context=SCIP_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=SCIP_MODULE_STATE_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__module_state_rows")
-def scip__module_state_rows(
+def scip__module_state_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput | None:
     """Return rows for core.scip_module_state.
@@ -1352,70 +1300,72 @@ def scip__materializations(
     }
 
 
-@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
-def scip__symbol_table_materializations(
-    m__core__scip_symbols: MaterializationResult,
-    m__core__scip_occurrences: MaterializationResult,
-    m__core__scip_symbol_information: MaterializationResult,
-) -> ScipSymbolTableMaterializations:
-    """Collect symbol-related table materializations.
-
-    Returns
-    -------
-    ScipSymbolTableMaterializations
-        Materialization results for symbols, occurrences, and symbol information.
-    """
-    return ScipSymbolTableMaterializations(
-        symbols=m__core__scip_symbols,
-        occurrences=m__core__scip_occurrences,
-        symbol_information=m__core__scip_symbol_information,
-    )
-
-
-@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
-def scip__aux_table_materializations(
-    m__core__scip_symbol_relationships: MaterializationResult,
-    m__core__scip_diagnostics: MaterializationResult,
-    m__core__scip_external_symbols: MaterializationResult,
-    m__core__scip_module_state: MaterializationResult,
-) -> ScipAuxTableMaterializations:
-    """Collect auxiliary table materializations.
-
-    Returns
-    -------
-    ScipAuxTableMaterializations
-        Materialization results for relationships, diagnostics, external symbols, and
-        module state.
-    """
-    return ScipAuxTableMaterializations(
-        relationships=m__core__scip_symbol_relationships,
-        diagnostics=m__core__scip_diagnostics,
-        external_symbols=m__core__scip_external_symbols,
-        module_state=m__core__scip_module_state,
-    )
-
-
-@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
-def scip__table_materializations(
-    scip__symbol_table_materializations: ScipSymbolTableMaterializations,
-    scip__aux_table_materializations: ScipAuxTableMaterializations,
-) -> dict[str, MaterializationResult]:
-    """Collect scip table materialization payloads into a single mapping.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping from table key to saver metadata.
-    """
-    return {
-        SCIP_SYMBOLS_TABLE_KEY: scip__symbol_table_materializations.symbols,
-        SCIP_OCCURRENCES_TABLE_KEY: scip__symbol_table_materializations.occurrences,
-        SCIP_SYMBOL_INFO_TABLE_KEY: scip__symbol_table_materializations.symbol_information,
-        SCIP_RELATIONSHIPS_TABLE_KEY: scip__aux_table_materializations.relationships,
-        SCIP_DIAGNOSTICS_TABLE_KEY: scip__aux_table_materializations.diagnostics,
-        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: scip__aux_table_materializations.external_symbols,
-        SCIP_MODULE_STATE_TABLE_KEY: scip__aux_table_materializations.module_state,
-    }
+_SCIP_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="ingestion",
+    target_name=SCIP_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SCIP_SYMBOLS_TABLE_KEY,
+            base_node="scip__symbol_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOLS_TABLE_KEY),
+            node_name="scip__symbol_rows",
+            input_type=InferableTabularInput | None,
+        ),
+        TableTargetTableSpec(
+            table_key=SCIP_OCCURRENCES_TABLE_KEY,
+            base_node="scip__occurrence_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCES_TABLE_KEY),
+            node_name="scip__occurrence_rows",
+            input_type=InferableTabularInput | None,
+        ),
+        TableTargetTableSpec(
+            table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
+            base_node="scip__symbol_info_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_INFO_TABLE_KEY),
+            node_name="scip__symbol_info_rows",
+            input_type=InferableTabularInput | None,
+        ),
+        TableTargetTableSpec(
+            table_key=SCIP_RELATIONSHIPS_TABLE_KEY,
+            base_node="scip__relationship_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_RELATIONSHIPS_TABLE_KEY),
+            node_name="scip__relationship_rows",
+            input_type=InferableTabularInput | None,
+        ),
+        TableTargetTableSpec(
+            table_key=SCIP_DIAGNOSTICS_TABLE_KEY,
+            base_node="scip__diagnostic_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_DIAGNOSTICS_TABLE_KEY),
+            node_name="scip__diagnostic_rows",
+            input_type=InferableTabularInput | None,
+        ),
+        TableTargetTableSpec(
+            table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+            base_node="scip__external_symbol_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
+            node_name="scip__external_symbol_rows",
+            input_type=InferableTabularInput | None,
+        ),
+        TableTargetTableSpec(
+            table_key=SCIP_MODULE_STATE_TABLE_KEY,
+            base_node="scip__module_state_rows__base",
+            save_spec=RelationTableSaveSpec(table_key=SCIP_MODULE_STATE_TABLE_KEY),
+            node_name="scip__module_state_rows",
+            input_type=InferableTabularInput | None,
+        ),
+    ),
+    table_materializations_node="scip__table_materializations",
+    attach_anchor=False,
+)
+attach_table_target_template(_MODULE, spec=_SCIP_TABLE_TARGET_SPEC)
+scip__symbol_rows = _MODULE.scip__symbol_rows
+scip__occurrence_rows = _MODULE.scip__occurrence_rows
+scip__symbol_info_rows = _MODULE.scip__symbol_info_rows
+scip__relationship_rows = _MODULE.scip__relationship_rows
+scip__diagnostic_rows = _MODULE.scip__diagnostic_rows
+scip__external_symbol_rows = _MODULE.scip__external_symbol_rows
+scip__module_state_rows = _MODULE.scip__module_state_rows
+scip__table_materializations = _MODULE.scip__table_materializations
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -1533,7 +1483,7 @@ def _emit_scip_teardown_safe(
 def t__scip(
     scip__finalize_context: ToolFinalizeContext,
     t__scip__run: ScipRunResult,
-    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+    t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
     scip__materializations: dict[str, MaterializationResult],
     scip__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:

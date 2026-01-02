@@ -1,0 +1,51 @@
+{
+  "pack_id": "wire.python.argparse.cli",
+  "entry_kind": "cli",
+  "framework": "argparse",
+  "description": "Discover argparse subcommand registration via add_parser + set_defaults(func=...). Includes a join step to map subcommand name -> handler when possible.",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/argparse_cli.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/argparse.yaml",
+      "rule_ids": [
+        "py.argparse.add_parser.assign",
+        "py.argparse.subparser.set_defaults",
+        "py.argparse.parser.set_defaults"
+      ]
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.unquote_capture",
+      "capture_names": [
+        "CMD"
+      ]
+    },
+    {
+      "op": "python.join_argparse_subcommands",
+      "add_parser_rule_id": "py.argparse.add_parser.assign",
+      "set_defaults_rule_id": "py.argparse.subparser.set_defaults",
+      "subparser_var_capture": "SUB",
+      "command_capture": "CMD",
+      "handler_capture": "HANDLER"
+    }
+  ],
+  "emit": {
+    "entry_key_template": "ARGPARSE:{enclosing_name}",
+    "entry_key_by_rule": {
+      "py.argparse.subparser.set_defaults": "ARGPARSE:{ARGPARSE_CMD}",
+      "py.argparse.parser.set_defaults": "ARGPARSE:default"
+    },
+    "target_symbol_hint_by_rule": {
+      "py.argparse.subparser.set_defaults": "HANDLER",
+      "py.argparse.parser.set_defaults": "HANDLER"
+    },
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

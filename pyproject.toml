@@ -127,8 +127,8 @@ dependencies = [
     "orjson>=3.11.5",
     "structlog>=25.5.0",
     "dulwich>=0.25.0",
-    "ripgrep>=15.0.0",
     "rpygrep>=0.2.1",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
@@ -163,6 +163,7 @@ extend-exclude = [
     "build/tmp_docs_views/**",
     "tmp_docs_view_check/**",
     "tmp_docs_view_check_rel/**",
+    "docs/**",
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -1,0 +1,27 @@
+{
+  "pattern_group_id": "rg.python.entrypoints",
+  "description": "Plugin/entrypoint discovery candidates.",
+  "patterns": [
+    {
+      "pattern": "importlib.metadata.entry_points(",
+      "is_regex": false,
+      "priority": 10
+    },
+    {
+      "pattern": "entry_points(",
+      "is_regex": false,
+      "priority": 7
+    },
+    {
+      "pattern": "pkg_resources.iter_entry_points(",
+      "is_regex": false,
+      "priority": 8
+    }
+  ],
+  "globs": [
+    "**/*.py",
+    "**/pyproject.toml",
+    "**/setup.cfg",
+    "**/setup.py"
+  ]
+}

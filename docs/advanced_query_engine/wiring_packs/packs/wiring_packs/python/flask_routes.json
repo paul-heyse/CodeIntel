@@ -1,0 +1,35 @@
+{
+  "pack_id": "wire.python.flask.routes",
+  "entry_kind": "route",
+  "framework": "flask",
+  "description": "Discover Flask route registrations (decorators + add_url_rule).",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/flask_routes.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/flask.yaml",
+      "rule_ids": [
+        "py.flask.route.decorator",
+        "py.flask.blueprint.route.decorator",
+        "py.flask.add_url_rule.call"
+      ]
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.unquote_capture",
+      "capture_names": [
+        "PATH"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "ROUTE {PATH_unquoted}",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

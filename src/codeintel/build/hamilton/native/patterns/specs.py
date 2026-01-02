@@ -34,6 +34,7 @@ class TableOutputSpec:
     node_name: str | None = None
     columns: tuple[str, ...] | DeferredColumns | None = None
     output_role: OutputRole | None = None
+    output_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

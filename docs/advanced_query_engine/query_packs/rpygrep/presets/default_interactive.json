@@ -1,0 +1,25 @@
+{
+  "preset_id": "rg.default_interactive",
+  "description": "Tight caps for agent-interactive searches (fast feedback, bounded output).",
+  "options": {
+    "case_sensitive": false,
+    "patterns_are_not_regex": false,
+    "auto_hybrid_regex": true,
+    "before_context": 1,
+    "after_context": 1,
+    "max_count": 50,
+    "max_file_size_bytes": 2097152,
+    "exclude_globs": [
+      "**/.git/**",
+      "**/node_modules/**",
+      "**/.venv/**",
+      "**/dist/**",
+      "**/build/**"
+    ],
+    "extra_args": [
+      "--line-buffered",
+      "--no-config"
+    ],
+    "as_json": true
+  }
+}

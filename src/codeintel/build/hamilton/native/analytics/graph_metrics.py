@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -43,26 +44,20 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_module_graph,
 )
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -72,12 +67,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 GRAPH_METRICS_TARGET_NAME = "graph_metrics"
 GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.graph_metrics_functions"
 GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.graph_metrics_modules"
-GRAPH_METRICS_TABLE_KEYS = (
-    GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-    GRAPH_METRICS_MODULES_TABLE_KEY,
-)
 GRAPH_METRICS_COLLECT_GROUP = "graph_metrics_core"
-GRAPH_METRICS_SAVE_CONTEXT = SaverContext(domain="analytics", target=GRAPH_METRICS_TARGET_NAME)
 GRAPH_METRICS_FUNCTIONS_CONTRACT = TableContractSpec(
     table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
     domain="analytics",
@@ -102,14 +92,6 @@ GRAPH_METRICS_MODULES_CONTRACT = TableContractSpec(
 GRAPH_METRICS_EXT_TARGET_NAME = "graph_metrics_ext"
 GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY = "analytics.graph_metrics_functions_ext"
 GRAPH_METRICS_MODULES_EXT_TABLE_KEY = "analytics.graph_metrics_modules_ext"
-GRAPH_METRICS_EXT_TABLE_KEYS = (
-    GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
-    GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
-)
-GRAPH_METRICS_EXT_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=GRAPH_METRICS_EXT_TARGET_NAME,
-)
 GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT = TableContractSpec(
     table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
     domain="analytics",
@@ -134,14 +116,6 @@ GRAPH_METRICS_MODULES_EXT_CONTRACT = TableContractSpec(
 SYMBOL_GRAPH_METRICS_TARGET_NAME = "symbol_graph_metrics"
 SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY = "analytics.symbol_graph_metrics_functions"
 SYMBOL_GRAPH_MODULES_TABLE_KEY = "analytics.symbol_graph_metrics_modules"
-SYMBOL_GRAPH_TABLE_KEYS = (
-    SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY,
-    SYMBOL_GRAPH_MODULES_TABLE_KEY,
-)
-SYMBOL_GRAPH_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-)
 SYMBOL_GRAPH_FUNCTIONS_CONTRACT = TableContractSpec(
     table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY,
     domain="analytics",
@@ -165,7 +139,6 @@ SYMBOL_GRAPH_MODULES_CONTRACT = TableContractSpec(
 
 GRAPH_STATS_TARGET_NAME = "graph_stats"
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
-GRAPH_STATS_SAVE_CONTEXT = SaverContext(domain="analytics", target=GRAPH_STATS_TARGET_NAME)
 GRAPH_STATS_CONTRACT = TableContractSpec(
     table_key=GRAPH_STATS_TABLE_KEY,
     domain="analytics",
@@ -523,27 +496,6 @@ def graph_metrics_functions__base(graph_metrics_result: GraphMetricsRows) -> pl.
     return rows_to_frame(GRAPH_METRICS_FUNCTIONS_TABLE_KEY, graph_metrics_result.function_rows)
 
 
-@save_dataset(
-    context=GRAPH_METRICS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-        collect_group=GRAPH_METRICS_COLLECT_GROUP,
-    ),
-)
-@table_contract(GRAPH_METRICS_FUNCTIONS_CONTRACT)
-def graph_metrics_functions__table(
-    graph_metrics_functions__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist function graph metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted function graph metrics frame.
-    """
-    return graph_metrics_functions__base
-
-
 def graph_metrics_modules__base(graph_metrics_result: GraphMetricsRows) -> pl.LazyFrame:
     """Build base graph metrics rows for modules.
 
@@ -555,60 +507,6 @@ def graph_metrics_modules__base(graph_metrics_result: GraphMetricsRows) -> pl.La
     if not graph_metrics_result.module_rows:
         return empty_frame_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
     return rows_to_frame(GRAPH_METRICS_MODULES_TABLE_KEY, graph_metrics_result.module_rows)
-
-
-@save_dataset(
-    context=GRAPH_METRICS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
-        collect_group=GRAPH_METRICS_COLLECT_GROUP,
-    ),
-)
-@table_contract(GRAPH_METRICS_MODULES_CONTRACT)
-def graph_metrics_modules__table(
-    graph_metrics_modules__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist module graph metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted module graph metrics frame.
-    """
-    return graph_metrics_modules__base
-
-
-graph_metrics__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=GRAPH_METRICS_TARGET_NAME,
-    table_keys=GRAPH_METRICS_TABLE_KEYS,
-    node_name="graph_metrics__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=GRAPH_METRICS_TARGET_NAME)
-def t__graph_metrics(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    graph_metrics__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize graph metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the graph metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=GRAPH_METRICS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=graph_metrics__table_materializations,
-    )
 
 
 def graph_metrics_functions_ext__base(
@@ -632,24 +530,6 @@ def graph_metrics_functions_ext__base(
     return rows_to_frame(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=GRAPH_METRICS_EXT_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
-)
-@table_contract(GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT)
-def graph_metrics_functions_ext__table(
-    graph_metrics_functions_ext__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist extended function graph metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted extended function metrics frame.
-    """
-    return graph_metrics_functions_ext__base
-
-
 def graph_metrics_modules_ext__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
@@ -669,57 +549,6 @@ def graph_metrics_modules_ext__base(
         filters=graph_metric_inputs.filters,
     )
     return rows_to_frame(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
-
-
-@save_dataset(
-    context=GRAPH_METRICS_EXT_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
-)
-@table_contract(GRAPH_METRICS_MODULES_EXT_CONTRACT)
-def graph_metrics_modules_ext__table(
-    graph_metrics_modules_ext__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist extended module graph metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted extended module metrics frame.
-    """
-    return graph_metrics_modules_ext__base
-
-
-graph_metrics_ext__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=GRAPH_METRICS_EXT_TARGET_NAME,
-    table_keys=GRAPH_METRICS_EXT_TABLE_KEYS,
-    node_name="graph_metrics_ext__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=GRAPH_METRICS_EXT_TARGET_NAME)
-def t__graph_metrics_ext(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    graph_metrics_ext__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize extended graph metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the extended graph metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=GRAPH_METRICS_EXT_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=graph_metrics_ext__table_materializations,
-    )
 
 
 def symbol_graph_metrics_functions__base(
@@ -743,24 +572,6 @@ def symbol_graph_metrics_functions__base(
     return rows_to_frame(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=SYMBOL_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY),
-)
-@table_contract(SYMBOL_GRAPH_FUNCTIONS_CONTRACT)
-def symbol_graph_metrics_functions__table(
-    symbol_graph_metrics_functions__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist symbol function graph metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted symbol function metrics frame.
-    """
-    return symbol_graph_metrics_functions__base
-
-
 def symbol_graph_metrics_modules__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
@@ -780,57 +591,6 @@ def symbol_graph_metrics_modules__base(
         runtime=graph_metric_inputs.runtime_options,
     )
     return rows_to_frame(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
-
-
-@save_dataset(
-    context=SYMBOL_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY),
-)
-@table_contract(SYMBOL_GRAPH_MODULES_CONTRACT)
-def symbol_graph_metrics_modules__table(
-    symbol_graph_metrics_modules__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist symbol module graph metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted symbol module metrics frame.
-    """
-    return symbol_graph_metrics_modules__base
-
-
-symbol_graph_metrics__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-    table_keys=SYMBOL_GRAPH_TABLE_KEYS,
-    node_name="symbol_graph_metrics__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
-def t__symbol_graph_metrics(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    symbol_graph_metrics__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize symbol graph metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the symbol graph metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=symbol_graph_metrics__table_materializations,
-    )
 
 
 def graph_stats__base(
@@ -886,47 +646,116 @@ def graph_stats__base(
     return rows_to_frame(GRAPH_STATS_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=GRAPH_STATS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=GRAPH_STATS_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=GRAPH_METRICS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+            base_node="graph_metrics_functions__base",
+            contract=GRAPH_METRICS_FUNCTIONS_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+                collect_group=GRAPH_METRICS_COLLECT_GROUP,
+            ),
+            node_name="graph_metrics_functions__table",
+        ),
+        TableTargetTableSpec(
+            table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
+            base_node="graph_metrics_modules__base",
+            contract=GRAPH_METRICS_MODULES_CONTRACT,
+            save_spec=DatasetSaveSpec(
+                table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
+                collect_group=GRAPH_METRICS_COLLECT_GROUP,
+            ),
+            node_name="graph_metrics_modules__table",
+        ),
+    ),
+    table_materializations_node="graph_metrics__table_materializations",
+    anchor_node_name="t__graph_metrics",
 )
-@table_contract(GRAPH_STATS_CONTRACT)
-def graph_stats__table(graph_stats__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist graph stats rows.
+attach_table_target_template(_MODULE, spec=_GRAPH_METRICS_TABLE_TARGET_SPEC)
+graph_metrics_functions__table = _MODULE.graph_metrics_functions__table
+graph_metrics_modules__table = _MODULE.graph_metrics_modules__table
+graph_metrics__table_materializations = _MODULE.graph_metrics__table_materializations
+t__graph_metrics = _MODULE.t__graph_metrics
 
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted graph stats frame.
-    """
-    return graph_stats__base
+_GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=GRAPH_METRICS_EXT_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
+            base_node="graph_metrics_functions_ext__base",
+            contract=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
+            node_name="graph_metrics_functions_ext__table",
+        ),
+        TableTargetTableSpec(
+            table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
+            base_node="graph_metrics_modules_ext__base",
+            contract=GRAPH_METRICS_MODULES_EXT_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
+            node_name="graph_metrics_modules_ext__table",
+        ),
+    ),
+    table_materializations_node="graph_metrics_ext__table_materializations",
+    anchor_node_name="t__graph_metrics_ext",
+)
+attach_table_target_template(_MODULE, spec=_GRAPH_METRICS_EXT_TABLE_TARGET_SPEC)
+graph_metrics_functions_ext__table = _MODULE.graph_metrics_functions_ext__table
+graph_metrics_modules_ext__table = _MODULE.graph_metrics_modules_ext__table
+graph_metrics_ext__table_materializations = _MODULE.graph_metrics_ext__table_materializations
+t__graph_metrics_ext = _MODULE.t__graph_metrics_ext
 
+_SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY,
+            base_node="symbol_graph_metrics_functions__base",
+            contract=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY),
+            node_name="symbol_graph_metrics_functions__table",
+        ),
+        TableTargetTableSpec(
+            table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY,
+            base_node="symbol_graph_metrics_modules__base",
+            contract=SYMBOL_GRAPH_MODULES_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY),
+            node_name="symbol_graph_metrics_modules__table",
+        ),
+    ),
+    table_materializations_node="symbol_graph_metrics__table_materializations",
+    anchor_node_name="t__symbol_graph_metrics",
+)
+attach_table_target_template(_MODULE, spec=_SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC)
+symbol_graph_metrics_functions__table = _MODULE.symbol_graph_metrics_functions__table
+symbol_graph_metrics_modules__table = _MODULE.symbol_graph_metrics_modules__table
+symbol_graph_metrics__table_materializations = _MODULE.symbol_graph_metrics__table_materializations
+t__symbol_graph_metrics = _MODULE.t__symbol_graph_metrics
 
-@codeintel_target(domain="analytics", target=GRAPH_STATS_TARGET_NAME)
-def t__graph_stats(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__graph_stats: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize graph stats target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the graph stats target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=GRAPH_STATS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            GRAPH_STATS_TABLE_KEY: m__analytics__graph_stats,
-        },
-    )
+_GRAPH_STATS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=GRAPH_STATS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=GRAPH_STATS_TABLE_KEY,
+            base_node="graph_stats__base",
+            contract=GRAPH_STATS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=GRAPH_STATS_TABLE_KEY),
+            node_name="graph_stats__table",
+        ),
+    ),
+    table_materializations_node="graph_stats__table_materializations",
+    anchor_node_name="t__graph_stats",
+)
+attach_table_target_template(_MODULE, spec=_GRAPH_STATS_TABLE_TARGET_SPEC)
+graph_stats__table = _MODULE.graph_stats__table
+graph_stats__table_materializations = _MODULE.graph_stats__table_materializations
+t__graph_stats = _MODULE.t__graph_stats
 
 
 __all__ = [

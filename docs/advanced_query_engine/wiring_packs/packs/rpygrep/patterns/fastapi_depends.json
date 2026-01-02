@@ -1,0 +1,14 @@
+{
+  "pattern_group_id": "rg.python.fastapi.depends",
+  "description": "FastAPI dependency injection candidates (Depends).",
+  "patterns": [
+    {
+      "pattern": "Depends(",
+      "is_regex": false,
+      "priority": 10
+    }
+  ],
+  "globs": [
+    "**/*.py"
+  ]
+}

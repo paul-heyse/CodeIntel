@@ -1,0 +1,10 @@
+rules:
+  - rule_id: py.policy.subprocess_shell_true
+    language: python
+    config:
+      rule:
+        pattern: 'subprocess.$F($$$ARGS)'
+      constraints:
+        ARGS:
+          # This is a placeholder: real policy would need transform/constraints that inspect kwargs.
+          regex: 'shell\\s*=\\s*True'

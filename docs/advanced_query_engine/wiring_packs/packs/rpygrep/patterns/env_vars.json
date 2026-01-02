@@ -1,0 +1,24 @@
+{
+  "pattern_group_id": "rg.python.env",
+  "description": "Environment variable access candidates.",
+  "patterns": [
+    {
+      "pattern": "os.environ[",
+      "is_regex": false,
+      "priority": 10
+    },
+    {
+      "pattern": "os.environ.get(",
+      "is_regex": false,
+      "priority": 9
+    },
+    {
+      "pattern": "os.getenv(",
+      "is_regex": false,
+      "priority": 9
+    }
+  ],
+  "globs": [
+    "**/*.py"
+  ]
+}

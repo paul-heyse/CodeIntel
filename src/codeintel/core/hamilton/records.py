@@ -29,6 +29,9 @@ class DatasetRefProtocol(Protocol):
     @property
     def row_count(self) -> int | None: ...
 
+    @property
+    def metadata(self) -> Mapping[str, object]: ...
+
 
 class ArtifactRefProtocol(Protocol):
     """Minimal protocol for artifact references used in telemetry records."""

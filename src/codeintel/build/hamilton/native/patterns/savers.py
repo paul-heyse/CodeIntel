@@ -251,18 +251,21 @@ def save_dataset(
     Callable[[Callable[P, R]], Callable[P, R]]
         Decorator that tags and materializes the dataset output.
     """
-    decorator = SaveToObjectMetadataDecorator(
-        [ArrowDatasetSaver],
-        output_name_=spec.output_name or materialize_node(spec.table_key),
-        env=_dep(source("env")),
-        catalog=_dep(source("catalog")),
-        target_name=_dep(value(context.target)),
-        table_key=_dep(value(spec.table_key)),
-        partition_columns=_dep(value(spec.partition_columns)),
-        collect_group=_dep(value(spec.collect_group)),
-        validation_profile=_dep(value(spec.validation_profile)),
-        output_role=_dep(value(spec.output_role)),
-    )
+    def _materialize() -> NodeTransformLifecycle:
+        return SaveToObjectMetadataDecorator(
+            [ArrowDatasetSaver],
+            output_name_=spec.output_name or materialize_node(spec.table_key),
+            env=_dep(source("env")),
+            catalog=_dep(source("catalog")),
+            target_name=_dep(value(context.target)),
+            table_key=_dep(value(spec.table_key)),
+            partition_columns=_dep(value(spec.partition_columns)),
+            collect_group=_dep(value(spec.collect_group)),
+            validation_profile=_dep(value(spec.validation_profile)),
+            output_role=_dep(value(spec.output_role)),
+        )
+
+    materializer = resolve_from_config(decorate_with=_materialize)
     validator = _validation_from_config(
         table_key=spec.table_key,
         default_profile=spec.validation_profile,
@@ -277,7 +280,7 @@ def save_dataset(
         )(fn)
         coerced = _coerce_none_output(tagged, table_key=spec.table_key)
         validated = validator(coerced)
-        return decorator(validated)
+        return materializer(validated)
 
     return apply
 
@@ -301,16 +304,19 @@ def save_relation_table(
     Callable[[Callable[P, R]], Callable[P, R]]
         Decorator that tags and materializes the relation table output.
     """
-    decorator = SaveToObjectMetadataDecorator(
-        [ArrowDatasetSaver],
-        output_name_=spec.output_name or materialize_node(spec.table_key),
-        env=_dep(source("env")),
-        catalog=_dep(source("catalog")),
-        target_name=_dep(value(context.target)),
-        table_key=_dep(value(spec.table_key)),
-        validation_profile=_dep(value(spec.validation_profile)),
-        output_role=_dep(value(spec.output_role)),
-    )
+    def _materialize() -> NodeTransformLifecycle:
+        return SaveToObjectMetadataDecorator(
+            [ArrowDatasetSaver],
+            output_name_=spec.output_name or materialize_node(spec.table_key),
+            env=_dep(source("env")),
+            catalog=_dep(source("catalog")),
+            target_name=_dep(value(context.target)),
+            table_key=_dep(value(spec.table_key)),
+            validation_profile=_dep(value(spec.validation_profile)),
+            output_role=_dep(value(spec.output_role)),
+        )
+
+    materializer = resolve_from_config(decorate_with=_materialize)
     validator = _validation_from_config(
         table_key=spec.table_key,
         default_profile=spec.validation_profile,
@@ -325,7 +331,7 @@ def save_relation_table(
         )(fn)
         coerced = _coerce_none_output(tagged, table_key=spec.table_key)
         validated = validator(coerced)
-        return decorator(validated)
+        return materializer(validated)
 
     return apply
 

@@ -1,0 +1,37 @@
+{
+  "pack_id": "wire.python.env",
+  "entry_kind": "envflag",
+  "framework": "stdlib",
+  "description": "Discover environment variable accesses via os.getenv/os.environ.",
+  "stages": [
+    {
+      "engine": "rpygrep",
+      "preset": "rg.default_interactive",
+      "pattern_group_file": "rpygrep/patterns/env_vars.json",
+      "purpose": "candidate_files"
+    },
+    {
+      "engine": "ast_grep",
+      "rules_file": "ast_grep/python/env.yaml",
+      "rule_ids": [
+        "py.env.getenv",
+        "py.env.environ_get",
+        "py.env.environ_subscript"
+      ],
+      "run_on": "candidate_files"
+    }
+  ],
+  "postprocess": [
+    {
+      "op": "python.unquote_capture",
+      "capture_names": [
+        "KEY"
+      ]
+    }
+  ],
+  "emit": {
+    "entry_key_template": "ENV:{KEY_unquoted}",
+    "target_symbol_hint_capture": "KEY_unquoted",
+    "hook_span_capture": "MATCH_NODE"
+  }
+}

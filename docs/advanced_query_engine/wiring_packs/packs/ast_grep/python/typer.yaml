@@ -1,0 +1,11 @@
+rules:
+  - rule_id: py.typer.app.command.decorator
+    language: python
+    config:
+      rule:
+        pattern: '@$APP.command($$$ARGS)'
+  - rule_id: py.typer.run.call
+    language: python
+    config:
+      rule:
+        pattern: 'typer.run($HANDLER, $$$ARGS)'

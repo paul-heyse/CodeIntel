@@ -23,28 +23,20 @@ from codeintel.build.analytics.data_models.core import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
     TableTargetSpec,
     TableTargetTableSpec,
     attach_table_target_template,
-    save_dataset,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -86,9 +78,6 @@ DATA_MODEL_RELATIONSHIPS_CONTRACT = TableContractSpec(
     input_name="data_model_relationships__base",
 )
 DATA_MODEL_USAGE_TARGET_NAME = "data_model_usage"
-DATA_MODEL_USAGE_SAVE_CONTEXT = SaverContext(
-    domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME
-)
 DATA_MODEL_USAGE_CONTRACT = TableContractSpec(
     table_key=DATA_MODEL_USAGE_TABLE_KEY,
     domain="analytics",
@@ -315,47 +304,25 @@ def data_model_usage__base(
     )
 
 
-@save_dataset(
-    context=DATA_MODEL_USAGE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=DATA_MODEL_USAGE_TABLE_KEY),
+_DATA_MODEL_USAGE_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=DATA_MODEL_USAGE_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=DATA_MODEL_USAGE_TABLE_KEY,
+            base_node="data_model_usage__base",
+            contract=DATA_MODEL_USAGE_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=DATA_MODEL_USAGE_TABLE_KEY),
+            node_name="data_model_usage__table",
+        ),
+    ),
+    table_materializations_node="data_model_usage__table_materializations",
+    anchor_node_name="t__data_model_usage",
 )
-@table_contract(DATA_MODEL_USAGE_CONTRACT)
-def data_model_usage__table(data_model_usage__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist data model usage rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted data model usage frame.
-    """
-    return data_model_usage__base
-
-
-@codeintel_target(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
-def t__data_model_usage(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__data_model_usage: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize data model usage target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the data model usage target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=DATA_MODEL_USAGE_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            DATA_MODEL_USAGE_TABLE_KEY: m__analytics__data_model_usage,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_DATA_MODEL_USAGE_TABLE_TARGET_SPEC)
+data_model_usage__table = _MODULE.data_model_usage__table
+data_model_usage__table_materializations = _MODULE.data_model_usage__table_materializations
+t__data_model_usage = _MODULE.t__data_model_usage
 
 
 __all__ = [

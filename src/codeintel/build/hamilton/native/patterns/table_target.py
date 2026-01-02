@@ -22,8 +22,10 @@ from codeintel.build.hamilton.native.patterns.materialization_collectors import 
 )
 from codeintel.build.hamilton.native.patterns.savers import (
     DatasetSaveSpec,
+    RelationTableSaveSpec,
     SaverContext,
     save_dataset,
+    save_relation_table,
 )
 from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
@@ -44,7 +46,7 @@ class TableTargetTableSpec:
     table_key: str
     base_node: str
     contract: TableContractSpec | None = None
-    save_spec: DatasetSaveSpec | None = None
+    save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None
     node_name: str | None = None
     input_type: object | None = None
     extra_tags: Mapping[TagKey, TagValue] | None = None
@@ -61,6 +63,7 @@ class TableTargetSpec:
     extra_tags: Mapping[TagKey, TagValue] | None = None
     table_materializations_node: str | None = None
     anchor_node_name: str | None = None
+    attach_anchor: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +98,7 @@ def attach_table_target_template(module: ModuleType, *, spec: TableTargetSpec) -
 
     table_keys: list[str] = []
     table_nodes: set[str] = set()
+    table_materialization_nodes: dict[str, str] = {}
     for table_spec in spec.tables:
         _validate_table_spec(table_spec)
         table_key = table_spec.table_key
@@ -109,18 +113,25 @@ def attach_table_target_template(module: ModuleType, *, spec: TableTargetSpec) -
             raise ValueError(msg)
         table_nodes.add(node_name)
 
+        save_spec = table_spec.save_spec
+        if save_spec is not None and save_spec.output_name is not None:
+            table_materialization_nodes[table_key] = save_spec.output_name
+
         _attach_table_node(
             context=context,
             table_spec=table_spec,
             node_name=node_name,
         )
 
-    collector_node = spec.table_materializations_node or f"{spec.target_name}__table_materializations"
+    collector_node = (
+        spec.table_materializations_node or f"{spec.target_name}__table_materializations"
+    )
     table_collector = make_table_materializations_collector(
         domain=spec.domain,
         target=spec.target_name,
         table_keys=table_keys,
         node_name=collector_node,
+        materialization_nodes=table_materialization_nodes or None,
     )
     tagged_attach_node(
         module,
@@ -129,14 +140,19 @@ def attach_table_target_template(module: ModuleType, *, spec: TableTargetSpec) -
         tag_spec=TagSpec.for_helper(domain=spec.domain, target=spec.target_name),
     )
 
-    anchor_node = spec.anchor_node_name or f"t__{spec.target_name}"
-    anchor_fn = _build_anchor(spec=spec, table_collector_node=collector_node, node_name=anchor_node)
-    tagged_attach_node(
-        module,
-        node_name=anchor_node,
-        fn=anchor_fn,
-        tag_spec=TagSpec.for_materialize(domain=spec.domain, target=spec.target_name),
-    )
+    if spec.attach_anchor:
+        anchor_node = spec.anchor_node_name or f"t__{spec.target_name}"
+        anchor_fn = _build_anchor(
+            spec=spec,
+            table_collector_node=collector_node,
+            node_name=anchor_node,
+        )
+        tagged_attach_node(
+            module,
+            node_name=anchor_node,
+            fn=anchor_fn,
+            tag_spec=TagSpec.for_materialize(domain=spec.domain, target=spec.target_name),
+        )
 
 
 def _attach_table_node(
@@ -180,7 +196,10 @@ def _attach_table_node(
     decorated = table_fn
     if table_spec.contract is not None:
         decorated = table_contract(table_spec.contract)(decorated)
-    decorated = save_dataset(context=saver_context, spec=save_spec)(decorated)
+    if isinstance(save_spec, RelationTableSaveSpec):
+        decorated = save_relation_table(context=saver_context, spec=save_spec)(decorated)
+    else:
+        decorated = save_dataset(context=saver_context, spec=save_spec)(decorated)
 
     tagged_attach_node(
         context.module,
@@ -267,12 +286,14 @@ def _resolve_table_node_name(table_spec: TableTargetTableSpec) -> str:
     return f"{base_node}__table"
 
 
-def _resolve_save_spec(table_spec: TableTargetTableSpec) -> DatasetSaveSpec:
+def _resolve_save_spec(
+    table_spec: TableTargetTableSpec,
+) -> DatasetSaveSpec | RelationTableSaveSpec:
     if table_spec.save_spec is None:
         return DatasetSaveSpec(table_key=table_spec.table_key)
     if table_spec.save_spec.table_key != table_spec.table_key:
         msg = (
-            "DatasetSaveSpec table_key mismatch: "
+            "SaveSpec table_key mismatch: "
             f"{table_spec.save_spec.table_key} != {table_spec.table_key}"
         )
         raise ValueError(msg)

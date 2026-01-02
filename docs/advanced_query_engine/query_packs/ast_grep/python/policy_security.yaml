@@ -1,0 +1,16 @@
+rules:
+- rule_id: py.security.eval
+  language: python
+  config:
+    rule:
+      pattern: eval($X)
+- rule_id: py.security.exec
+  language: python
+  config:
+    rule:
+      pattern: exec($X)
+- rule_id: py.security.subprocess_shell_true
+  language: python
+  config:
+    rule:
+      pattern: subprocess.run($$$ARGS, shell=True)

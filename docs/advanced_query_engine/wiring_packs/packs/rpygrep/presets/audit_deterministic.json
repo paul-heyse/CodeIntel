@@ -1,0 +1,25 @@
+{
+  "preset_id": "rg.audit_deterministic",
+  "description": "Higher caps + stable path sorting for audits/snapshots; slower but reproducible.",
+  "options": {
+    "case_sensitive": true,
+    "patterns_are_not_regex": false,
+    "auto_hybrid_regex": true,
+    "before_context": 0,
+    "after_context": 0,
+    "max_count": 10000,
+    "max_file_size_bytes": 52428800,
+    "exclude_globs": [
+      "**/.git/**",
+      "**/node_modules/**",
+      "**/.venv/**",
+      "**/dist/**",
+      "**/build/**"
+    ],
+    "extra_args": [
+      "--no-config",
+      "--sort=path"
+    ],
+    "as_json": true
+  }
+}
