@@ -521,19 +521,19 @@ class TestParityWithHandMaintained:
             / "schemas"
             / "export"
         )
-        function_profile_path = schema_root / "function_profile.json"
+        function_types_path = schema_root / "function_types.json"
 
-        if not function_profile_path.exists():
+        if not function_types_path.exists():
             pytest.skip("Hand-maintained schema not found")
 
-        with function_profile_path.open("r", encoding="utf-8") as f:
+        with function_types_path.open("r", encoding="utf-8") as f:
             hand_maintained = json_module.load(f)
 
         # Get generated schema
-        generated = get_json_schema("analytics.function_profile")
+        generated = get_json_schema("analytics.function_types")
 
         if generated is None:
-            pytest.skip("Generated schema not available for function_profile")
+            pytest.skip("Generated schema not available for function_types")
 
         # Check that generated schema has same properties
         hand_props = set(hand_maintained.get("properties", {}).keys())

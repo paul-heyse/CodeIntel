@@ -17,11 +17,11 @@ def test_buildspec_compiler_outputs_match_dag(hamilton_runtime: RuntimeBundle) -
     )
     by_name = {t.name: t for t in spec.targets}
 
-    risk = by_name.get("risk_factors")
-    if risk is None:
-        pytest.fail("Expected BuildSpec to include risk_factors target")
-    if "analytics.goid_risk_factors" not in set(risk.outputs):
-        pytest.fail("Expected risk_factors outputs to include analytics.goid_risk_factors")
+    types = by_name.get("function_types")
+    if types is None:
+        pytest.fail("Expected BuildSpec to include function_types target")
+    if "analytics.function_types" not in set(types.outputs):
+        pytest.fail("Expected function_types outputs to include analytics.function_types")
 
     export = by_name.get("export_jsonl")
     if export is None:

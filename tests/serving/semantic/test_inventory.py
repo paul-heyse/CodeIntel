@@ -48,8 +48,8 @@ def test_inventory_summary_counts_docs_views(tmp_path: Path) -> None:
         "tables": [
             {
                 "schema": "analytics",
-                "name": "function_metrics",
-                "table_key": "analytics.function_metrics",
+                "name": "function_types",
+                "table_key": "analytics.function_types",
                 "primary_key": [],
                 "indexes": [],
                 "columns": [{"name": "id", "type": "INTEGER", "nullable": False}],

@@ -50,16 +50,16 @@ def _sample_registry() -> DatasetRegistry:
         Registry augmented with a docs view dataset for tests.
     """
     registry = sample_dataset_registry()
-    view_key = "docs.v_function_summary"
+    view_key = "docs.v_function_architecture"
     view_dataset = DatasetContract(
         table_key=view_key,
-        name="v_function_summary",
+        name="v_function_architecture",
         schema=None,
         is_view=True,
         family="docs",
     )
     return DatasetRegistry(
-        by_name={**registry.by_name, "v_function_summary": view_dataset},
+        by_name={**registry.by_name, "v_function_architecture": view_dataset},
         by_table_key={**registry.by_table_key, view_key: view_dataset},
         jsonl_datasets=registry.jsonl_datasets,
         parquet_datasets=registry.parquet_datasets,
@@ -84,7 +84,7 @@ def test_dataset_registry_datasets_with_json_schema() -> None:
 
     expect_is_instance(with_schema, tuple)
     expect_in("ast_nodes", with_schema)
-    expect_not_in("v_function_summary", with_schema)
+    expect_not_in("v_function_architecture", with_schema)
 
 
 def test_dataset_registry_dataset_dependencies() -> None:
@@ -105,7 +105,7 @@ def test_dataset_registry_docs_dataset_names() -> None:
     docs_names = registry.docs_dataset_names()
 
     expect_is_instance(docs_names, tuple)
-    expect_in("v_function_summary", docs_names)
+    expect_in("v_function_architecture", docs_names)
     expect_not_in("ast_nodes", docs_names)
 
 
@@ -225,7 +225,7 @@ def test_dataset_registry_tables_property() -> None:
 
     expect_is_instance(tables, tuple)
     expect_in("ast_nodes", tables)
-    expect_not_in("v_function_summary", tables)
+    expect_not_in("v_function_architecture", tables)
 
 
 def test_dataset_registry_views_property() -> None:
@@ -235,7 +235,7 @@ def test_dataset_registry_views_property() -> None:
     views = registry.views
 
     expect_is_instance(views, tuple)
-    expect_in("v_function_summary", views)
+    expect_in("v_function_architecture", views)
     expect_not_in("ast_nodes", views)
 
 
@@ -334,25 +334,25 @@ def test_require_row_binding_behavior() -> None:
 def test_describe_dataset_shape_with_json_schema() -> None:
     """describe_dataset should emit a JSON-friendly summary."""
     dataset = DatasetContract(
-        table_key="analytics.function_profile",
-        name="function_profile",
+        table_key="analytics.function_types",
+        name="function_types",
         schema=None,
-        jsonl_filename="function_profile.jsonl",
-        parquet_filename="function_profile.parquet",
-        json_schema_id="function_profile",
-        description="Function-level profile dataset.",
+        jsonl_filename="function_types.jsonl",
+        parquet_filename="function_types.parquet",
+        json_schema_id="function_types",
+        description="Function typing dataset.",
     )
     description = describe_dataset(dataset)
     _require(
-        condition=description["name"] == "function_profile",
+        condition=description["name"] == "function_types",
         message="Name mismatch in description",
     )
     _require(
-        condition=description["table_key"] == "analytics.function_profile",
+        condition=description["table_key"] == "analytics.function_types",
         message="Table key mismatch in description",
     )
     _require(
-        condition=description["json_schema_id"] == "function_profile",
+        condition=description["json_schema_id"] == "function_types",
         message="json_schema_id mismatch in description",
     )
     _require(
@@ -372,7 +372,6 @@ def test_json_schema_datasets_have_row_bindings() -> None:
         "data_model_fields",
         "data_model_relationships",
         "v_subsystem_profile",
-        "v_subsystem_coverage",
     }
     gateway = GatewayFactory().without_validation().open()
     try:

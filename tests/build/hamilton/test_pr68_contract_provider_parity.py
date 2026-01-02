@@ -48,9 +48,9 @@ class TestIsViewFunction:
     @staticmethod
     def test_docs_view_prefix_returns_true() -> None:
         """Verify docs.v_* keys are identified as views."""
-        expect_true(is_view("docs.v_function_profile"))
-        expect_true(is_view("docs.v_module_profile"))
-        expect_true(is_view("docs.v_test_profile"))
+        expect_true(is_view("docs.v_function_architecture"))
+        expect_true(is_view("docs.v_module_architecture"))
+        expect_true(is_view("docs.v_test_architecture"))
 
     @staticmethod
     def test_derived_docs_views_returns_true() -> None:
@@ -62,15 +62,15 @@ class TestIsViewFunction:
     def test_analytics_tables_return_false() -> None:
         """Verify analytics.* tables are not views."""
         expect_false(is_view("analytics.function_types"))
-        expect_false(is_view("analytics.file_metrics"))
-        expect_false(is_view("analytics.module_metrics"))
+        expect_false(is_view("analytics.graph_metrics_functions"))
+        expect_false(is_view("analytics.graph_metrics_modules"))
 
     @staticmethod
     def test_core_tables_return_false() -> None:
         """Verify core.* tables are not views."""
         expect_false(is_view("core.goids"))
         expect_false(is_view("core.modules"))
-        expect_false(is_view("core.files"))
+        expect_false(is_view("core.repo_map"))
 
     @staticmethod
     def test_graph_tables_return_false() -> None:

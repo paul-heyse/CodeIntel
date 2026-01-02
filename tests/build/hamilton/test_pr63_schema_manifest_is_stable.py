@@ -19,7 +19,7 @@ def test_pr63_schema_manifest_is_stable(hamilton_runtime: RuntimeBundle) -> None
     """Compiling the same manifest twice should yield identical JSON."""
     provider = unified_schema_provider(runtime=hamilton_runtime)
     request = SchemaManifestRequest(
-        targets=("risk_factors",),
+        targets=("function_types",),
         infer_native=True,
         stable=True,
     )

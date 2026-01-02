@@ -15,17 +15,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.analytics.cfg_dfg.cfg_core import (
-    CfgInputs,
-    cfg_rows_for_fn,
-    load_cfg_blocks,
-)
+from codeintel.build.analytics.cfg_dfg.cfg_core import CfgInputs, cfg_rows_for_fn, load_cfg_blocks
 from codeintel.build.analytics.cfg_dfg.dfg_core import (
     DfgInputs,
     build_dfg_context,
     dfg_block_rows,
-    dfg_ext_row,
-    dfg_fn_row,
     load_dfg_edges,
 )
 from codeintel.build.analytics.cfg_dfg.helpers import load_function_metadata
@@ -38,53 +32,40 @@ from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_gra
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 
 if TYPE_CHECKING:
-    from codeintel.build.analytics.cfg_dfg.cfg_core import CfgFnRows
     from codeintel.build.tabular.types import InferableTabularInput
     from codeintel.config.primitives import SnapshotRef
 
 
 @dataclass(frozen=True)
 class CfgMetricsResult:
-    """Result container for CFG metrics computation.
+    """Result container for CFG block metrics computation.
 
-    Contains row data for all three CFG tables without performing writes.
+    Contains row data for the CFG block metrics table without performing writes.
     The rows are tuples matching the column specifications in the schema.
 
     Attributes
     ----------
-    fn_rows
-        Rows for analytics.cfg_function_metrics table.
     block_rows
         Rows for analytics.cfg_block_metrics table.
-    ext_rows
-        Rows for analytics.cfg_function_metrics_ext table.
     """
 
-    fn_rows: tuple[tuple[object, ...], ...]
     block_rows: tuple[tuple[object, ...], ...]
-    ext_rows: tuple[tuple[object, ...], ...]
 
 
 @dataclass(frozen=True)
 class DfgMetricsResult:
-    """Result container for DFG metrics computation.
+    """Result container for DFG block metrics computation.
 
-    Contains row data for all three DFG tables without performing writes.
+    Contains row data for the DFG block metrics table without performing writes.
     The rows are tuples matching the column specifications in the schema.
 
     Attributes
     ----------
-    fn_rows
-        Rows for analytics.dfg_function_metrics table.
     block_rows
         Rows for analytics.dfg_block_metrics table.
-    ext_rows
-        Rows for analytics.dfg_function_metrics_ext table.
     """
 
-    fn_rows: tuple[tuple[object, ...], ...]
     block_rows: tuple[tuple[object, ...], ...]
-    ext_rows: tuple[tuple[object, ...], ...]
 
 
 def compute_cfg_metrics_pure(

@@ -4,7 +4,7 @@ Explain the structural plan entry for a target.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ *  TARGET --target              Target name to explain (e.g.,                │
-│                                 function_metrics). [env var:                 │
+│                                 function_types). [env var:                 │
 │                                 CODEINTEL_BUILD_EXPLAIN_TARGET,              │
 │                                 CODEINTEL_BUILD_EXPLAIN_TARGET] [required]   │
 │    FORCE --force --empty-force  Mark specific targets as forced              │

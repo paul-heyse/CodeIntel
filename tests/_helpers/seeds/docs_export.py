@@ -2,7 +2,7 @@
 
 This module provides the DocsExportPack which seeds comprehensive data needed
 for docs export smoke tests and validation, including modules, GOIDs, graphs,
-docstrings, metrics, types, and risk factors.
+docstrings, and function types.
 """
 
 from __future__ import annotations
@@ -17,14 +17,12 @@ from tests._helpers.fixtures.rows import (
     CallGraphNodeRow,
     CFGBlockRow,
     DocstringRow,
-    FunctionMetricsRow,
     FunctionTypesRow,
     GoidCrosswalkRow,
     GoidRow,
     ImportGraphEdgeRow,
     ModuleRow,
     RepoMapRow,
-    RiskFactorRow,
     SymbolEdgeOptions,
     TestCatalogRow,
     dataclass_row,
@@ -57,8 +55,7 @@ class DocsExportPack:
     - Import graph edges
     - Symbol use edges
     - Docstrings
-    - Function metrics and types
-    - Risk factors
+    - Function types
     - Test catalog
     - GOID crosswalk
 
@@ -118,9 +115,7 @@ class DocsExportPack:
         self._seed_import_graph_edges(ctx, repo, commit)
         self._seed_symbol_use_edges(ctx, goid)
         self._seed_docstrings(ctx, repo, commit, now)
-        self._seed_function_metrics(ctx, repo, commit, goid, now)
         self._seed_function_types(ctx, repo, commit, goid, now)
-        self._seed_risk_factors(ctx, repo, commit, goid)
         self._seed_test_catalog(ctx, repo, commit, now)
 
     @staticmethod
@@ -145,6 +140,9 @@ class DocsExportPack:
             "DELETE FROM graph.import_graph_edges WHERE repo = ? AND commit = ?", [repo, commit]
         )
         con.execute("DELETE FROM graph.symbol_use_edges WHERE symbol = 'sym'")
+        con.execute(
+            "DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?", [repo, commit]
+        )
         con.execute(
             "DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit]
         )
@@ -358,47 +356,6 @@ class DocsExportPack:
         insert_rows(ctx.gateway, rows)
 
     @staticmethod
-    def _seed_function_metrics(
-        ctx: TestContext, repo: str, commit: str, goid: int, now: datetime
-    ) -> None:
-        """Seed the analytics.function_metrics table."""
-        rows = [
-            dataclass_row(
-                FunctionMetricsRow,
-                function_goid_h128=goid,
-                urn=DEFAULT_URN,
-                repo=repo,
-                commit=commit,
-                rel_path=DEFAULT_PATH,
-                language="python",
-                kind="function",
-                qualname=DEFAULT_QUALNAME,
-                start_line=1,
-                end_line=10,
-                loc=10,
-                logical_loc=10,
-                param_count=1,
-                positional_params=1,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=1,
-                max_nesting_depth=1,
-                stmt_count=1,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
-                created_at=now,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
     def _seed_function_types(
         ctx: TestContext, repo: str, commit: str, goid: int, now: datetime
     ) -> None:
@@ -418,38 +375,12 @@ class DocsExportPack:
                 end_line=10,
                 total_params=1,
                 annotated_params=1,
-                unannotated_params=0,
-                param_typed_ratio=1.0,
                 has_return_annotation=True,
                 return_type="str",
                 return_type_source="annotation",
                 type_comment=None,
-                param_types_json={},
-                fully_typed=True,
-                partial_typed=False,
-                untyped=False,
-                typedness_bucket="typed",
-                typedness_source="pyright",
+                param_types={},
                 created_at=now,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_risk_factors(ctx: TestContext, repo: str, commit: str, goid: int) -> None:
-        """Seed the analytics.goid_risk_factors table."""
-        rows = [
-            dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=goid,
-                repo=repo,
-                commit=commit,
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=1,
-                fan_in_count=0,
-                fan_out_count=0,
-                has_tests=True,
             )
         ]
         insert_rows(ctx.gateway, rows)

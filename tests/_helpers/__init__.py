@@ -135,7 +135,7 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "get_repo_fixture",
         "list_repo_fixtures",
     ),
-    "tests._helpers.fixtures.rows": ("function_meta", "function_metrics_row", "module_row"),
+    "tests._helpers.fixtures.rows": ("function_meta", "module_row"),
     "tests._helpers.scenarios": (
         "ScenarioConfig",
         "TestScenario",
@@ -228,7 +228,7 @@ if TYPE_CHECKING:
         write_scoped_paths_fixture,
         write_tree,
     )
-    from tests._helpers.fixtures.rows import function_meta, function_metrics_row, module_row
+    from tests._helpers.fixtures.rows import function_meta, module_row
     from tests._helpers.fixtures.snapshots import (
         DEFAULT_VARIANT,
         SNAPSHOT_VARIANTS,
@@ -372,7 +372,6 @@ if TYPE_CHECKING:
         ensure_catalog_with_goids,
         full_context,
         function_meta,
-        function_metrics_row,
         graph_context,
         graph_metrics_ready_gateway,
         make_build_config,

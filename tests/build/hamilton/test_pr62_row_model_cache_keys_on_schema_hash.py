@@ -12,19 +12,19 @@ def test_pr62_row_model_cache_keys_on_schema_signature() -> None:
     """Row model generation should cache by schema signature and table identity."""
     schema_v1 = TableSchema(
         schema="analytics",
-        name="risk_factors",
+        name="function_types",
         columns=[
+            Column(name="function_goid_h128", type="BIGINT"),
             Column(name="repo", type="VARCHAR"),
-            Column(name="risk_score", type="DOUBLE"),
         ],
     )
     schema_v2 = TableSchema(
         schema="analytics",
-        name="risk_factors",
+        name="function_types",
         columns=[
+            Column(name="function_goid_h128", type="BIGINT"),
             Column(name="repo", type="VARCHAR"),
-            Column(name="risk_score", type="DOUBLE"),
-            Column(name="risk_level", type="VARCHAR"),
+            Column(name="commit", type="VARCHAR"),
         ],
     )
 

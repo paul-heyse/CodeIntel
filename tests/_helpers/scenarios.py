@@ -16,7 +16,6 @@ from tests._helpers.seeds import CORE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK
 from tests._helpers.seeds.config import CONFIG_PACK
 from tests._helpers.seeds.function_types import FunctionTypesPack
-from tests._helpers.seeds.profile import ProfilePack
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -117,19 +116,6 @@ class TestScenario:
         """
         scenario = cls()
         scenario.config.seed_packs.extend([CORE_PACK, AST_METRICS_PACK])
-        return scenario
-
-    @classmethod
-    def with_profiles(cls) -> TestScenario:
-        """Create scenario with comprehensive profile seeds.
-
-        Returns
-        -------
-        TestScenario
-            Scenario configured with ProfilePack.
-        """
-        scenario = cls()
-        scenario.config.seed_packs.extend([ProfilePack()])
         return scenario
 
     @classmethod

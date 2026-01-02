@@ -100,12 +100,12 @@ def test_registry_compiler_emits_view() -> None:
         tags={
             ht.TAG_LAYER: "semantic",
             ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
-            ht.TAG_SEMANTIC_ID: "function.summary",
+            ht.TAG_SEMANTIC_ID: "function.architecture",
             ht.TAG_KIND: "view",
             ht.TAG_ENTITY: "function",
             ht.TAG_GRAIN: "per_function",
             ht.TAG_VERSION: "1",
-            ht.TAG_TABLE_KEY: "analytics.function_summary",
+            ht.TAG_TABLE_KEY: "docs.v_function_architecture",
             ht.TAG_MCP_VISIBLE: "1",
         },
     )
@@ -115,7 +115,7 @@ def test_registry_compiler_emits_view() -> None:
         version="v1",
     )
     assert registry.version == "v1"
-    assert registry.views[0]["id"] == "function.summary"
+    assert registry.views[0]["id"] == "function.architecture"
 
 
 def test_registry_compiler_rejects_missing_tags() -> None:
@@ -125,11 +125,11 @@ def test_registry_compiler_rejects_missing_tags() -> None:
         tags={
             ht.TAG_LAYER: "semantic",
             ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
-            ht.TAG_SEMANTIC_ID: "function.summary",
+            ht.TAG_SEMANTIC_ID: "function.architecture",
             ht.TAG_KIND: "view",
             ht.TAG_ENTITY: "function",
             ht.TAG_GRAIN: "per_function",
-            ht.TAG_TABLE_KEY: "analytics.function_summary",
+            ht.TAG_TABLE_KEY: "docs.v_function_architecture",
         },
     )
     with pytest.raises(SemanticTagValidationError):

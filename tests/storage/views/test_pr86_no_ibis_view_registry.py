@@ -18,5 +18,5 @@ def test_view_builders_discoverable_via_tags() -> None:
     """Both semantic and non-semantic views should be discoverable from tags."""
     builders = discover_view_builders(modules=(view_outputs,))
     table_keys = {b.table_key for b in builders}
-    expect_true("docs.v_function_summary" in table_keys)
-    expect_true("analytics.v_function_summary" in table_keys)
+    expect_true("docs.v_function_architecture" in table_keys)
+    expect_true("graph.v_call_graph_degree" in table_keys)

@@ -24,17 +24,17 @@ def _definition_patterns(name: str) -> dict[str, object]:
         "pattern_group_id": f"rg.symbol.resolve.{name}",
         "patterns": [
             {
-                "pattern": rf"\\bdef\\s+{escaped}\\b",
+                "pattern": rf"\bdef\s+{escaped}\b",
                 "is_regex": True,
                 "priority": 10,
             },
             {
-                "pattern": rf"\\bclass\\s+{escaped}\\b",
+                "pattern": rf"\bclass\s+{escaped}\b",
                 "is_regex": True,
                 "priority": 9,
             },
             {
-                "pattern": rf"\\b{escaped}\\s*=",
+                "pattern": rf"\b{escaped}\s*=",
                 "is_regex": True,
                 "priority": 5,
             },

@@ -1,9 +1,8 @@
 """MCP seed pack for MCP backend tests.
 
 This module provides the McpPack which seeds minimal data needed for
-MCP (Model Context Protocol) backend tests including risk factors,
-function metrics, validation issues, call graph edges, test catalog,
-and test catalog rows.
+MCP (Model Context Protocol) backend tests including function types,
+validation issues, call graph edges, and test catalog rows.
 """
 
 from __future__ import annotations
@@ -14,9 +13,8 @@ from typing import TYPE_CHECKING
 
 from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
-    FunctionMetricsRow,
+    FunctionTypesRow,
     FunctionValidationRow,
-    RiskFactorRow,
     TestCatalogRow,
     dataclass_row,
     insert_rows,
@@ -39,8 +37,7 @@ class McpPack:
     """Seed pack for MCP backend tests.
 
     Seeds minimal data needed for MCP backend tests:
-    - Risk factors
-    - Function metrics
+    - Function types
     - Function validation issues
     - Call graph edges
     - Test catalog
@@ -87,8 +84,7 @@ class McpPack:
 
         self._cleanup_existing_data(ctx, repo, commit)
 
-        self._seed_risk_factors(ctx, repo, commit)
-        self._seed_function_metrics(ctx, repo, commit, now)
+        self._seed_function_types(ctx, repo, commit, now)
         self._seed_function_validation(ctx, repo, commit, now)
         self._seed_call_graph_edges(ctx, repo, commit)
         self._seed_test_catalog(ctx, repo, commit, now)
@@ -98,11 +94,7 @@ class McpPack:
         """Remove existing data to ensure clean state."""
         con = ctx.gateway.con
         con.execute(
-            "DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        )
-        con.execute(
-            "DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
+            "DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?",
             [repo, commit],
         )
         con.execute(
@@ -119,30 +111,11 @@ class McpPack:
         )
 
     @staticmethod
-    def _seed_risk_factors(ctx: TestContext, repo: str, commit: str) -> None:
-        """Seed the analytics.goid_risk_factors table."""
+    def _seed_function_types(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
+        """Seed the analytics.function_types table."""
         rows = [
             dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=DEFAULT_GOID,
-                repo=repo,
-                commit=commit,
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=1,
-                fan_in_count=0,
-                fan_out_count=0,
-                has_tests=True,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_function_metrics(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
-        """Seed the analytics.function_metrics table."""
-        rows = [
-            dataclass_row(
-                FunctionMetricsRow,
+                FunctionTypesRow,
                 function_goid_h128=DEFAULT_GOID,
                 urn=DEFAULT_URN,
                 repo=repo,
@@ -153,24 +126,13 @@ class McpPack:
                 qualname="foo",
                 start_line=1,
                 end_line=1,
-                loc=1,
-                logical_loc=1,
-                param_count=0,
-                positional_params=0,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=1,
-                max_nesting_depth=1,
-                stmt_count=1,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
+                total_params=0,
+                annotated_params=0,
+                has_return_annotation=False,
+                return_type=None,
+                return_type_source=None,
+                type_comment=None,
+                param_types=None,
                 created_at=now,
             )
         ]

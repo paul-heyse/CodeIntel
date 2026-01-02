@@ -3,7 +3,7 @@ Usage: codeintel build graph [ARGS]
 Export Hamilton DAG for specified targets.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
-│ TARGETS --targets     Target names to show DAG for (e.g., function_metrics,  │
+│ TARGETS --targets     Target names to show DAG for (e.g., function_types,  │
 │   --empty-targets     call_graph). [env var: CODEINTEL_BUILD_GRAPH_TARGETS,  │
 │                       CODEINTEL_BUILD_GRAPH_TARGETS] [default: (none)]       │
 │ MODULE --module -m    Show DAG for all targets in a module (ingestion,       │

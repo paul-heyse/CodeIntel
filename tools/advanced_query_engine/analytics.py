@@ -20,9 +20,12 @@ class MatchRecordModel(pa.DataFrameModel):
     path: Series[str]
     start_byte: Series[int]
     end_byte: Series[int]
-    rule_id: Series[str] | None = None
-    pattern_id: Series[str] | None = None
-    snippet: Series[str] | None = None
+    start_line: Series[int] = pa.Field(nullable=True)
+    end_line: Series[int] = pa.Field(nullable=True)
+    rule_id: Series[str] = pa.Field(nullable=True)
+    pattern_id: Series[str] = pa.Field(nullable=True)
+    snippet: Series[str] = pa.Field(nullable=True)
+    captures: Series[object] = pa.Field(nullable=True)
 
     class Config:
         """Pandera configuration for match record validation."""
@@ -36,14 +39,17 @@ class WiringEdgeModel(pa.DataFrameModel):
 
     edge_id: Series[str]
     pack_id: Series[str]
+    framework: Series[str] = pa.Field(nullable=True)
     entry_kind: Series[str]
     entry_key: Series[str]
     path: Series[str]
     start_byte: Series[int]
     end_byte: Series[int]
-    rule_id: Series[str] | None = None
-    target_name: Series[str] | None = None
-    target_qname: Series[str] | None = None
+    rule_id: Series[str] = pa.Field(nullable=True)
+    target_name: Series[str] = pa.Field(nullable=True)
+    target_qname: Series[str] = pa.Field(nullable=True)
+    evidence: Series[str] = pa.Field(nullable=True)
+    captures: Series[object] = pa.Field(nullable=True)
 
     class Config:
         """Pandera configuration for wiring edge validation."""

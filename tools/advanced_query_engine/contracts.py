@@ -214,7 +214,7 @@ class QueryBudget(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
 
     max_files: int = 300
     max_matches: int = 2000
-    max_depth: int = 2
+    max_depth: int = 0
     max_seconds: float | None = None
     context_lines: int = 1
 

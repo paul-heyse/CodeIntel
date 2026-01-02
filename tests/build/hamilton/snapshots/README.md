@@ -54,7 +54,7 @@ Edit `manifest.yaml` and add a new case:
 cases:
   - name: "my_new_case"
     tags: ["pr15", "explain", "json", "tiny"]
-    args: ["build", "explain", "function_metrics", "--format", "json"]
+    args: ["build", "explain", "function_types", "--format", "json"]
     snapshot: "my_new_case.json"
 ```
 

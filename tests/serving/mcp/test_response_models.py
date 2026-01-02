@@ -304,16 +304,16 @@ def test_export_uris_optional_fields() -> None:
 def test_export_query_spec_creation() -> None:
     """Verify ExportQuerySpec model creation."""
     spec = ExportQuerySpec(
-        view_id="function_metrics",
-        select=("repo", "commit", "loc"),
-        order_by=("-loc",),
-        filters=({"column": "loc", "op": "gt", "value": 100},),
+        view_id="function_types",
+        select=("repo", "commit", "total_params"),
+        order_by=("-total_params",),
+        filters=({"column": "total_params", "op": "gt", "value": 3},),
         limit=1000,
         offset=0,
         query_hash="q_abc123",
     )
-    expect_equal(spec.view_id, "function_metrics")
-    expect_equal(spec.select, ("repo", "commit", "loc"))
+    expect_equal(spec.view_id, "function_types")
+    expect_equal(spec.select, ("repo", "commit", "total_params"))
     expect_equal(len(spec.filters), 1)
 
 
@@ -353,7 +353,7 @@ def test_export_handle_response_creation(sample_export_snapshot: ExportSnapshot)
         export_id="exp123456789",
         format="jsonl",
         mime_type="application/x-ndjson",
-        filename="function_metrics.jsonl",
+        filename="function_types.jsonl",
         uri="codeintel://exports/exp123456789",
         meta_uri="codeintel://exports/exp123456789/meta",
         created_at=datetime.now(UTC),
@@ -473,14 +473,14 @@ def test_query_preview_defaults() -> None:
 def test_semantic_query_tool_response_creation() -> None:
     """Verify SemanticQueryToolResponse model creation."""
     result = SemanticQueryResponse(
-        view_id="function_metrics",
-        columns=["repo", "commit", "loc"],
-        rows=[{"repo": "org/repo", "commit": "abc123", "loc": 100}],
+        view_id="function_types",
+        columns=["repo", "commit", "total_params"],
+        rows=[{"repo": "org/repo", "commit": "abc123", "total_params": 3}],
         truncated=False,
         snapshot=ServingSnapshotIdentity(repo="org/repo", commit="abc123", run_id="run-001"),
     )
     response = SemanticQueryToolResponse(result=result)
-    expect_equal(response.result.view_id, "function_metrics")
+    expect_equal(response.result.view_id, "function_types")
     expect_false(response.result.truncated)
     expect_equal(response.export, None)
 
@@ -488,9 +488,9 @@ def test_semantic_query_tool_response_creation() -> None:
 def test_semantic_query_tool_response_with_export(sample_export_snapshot: ExportSnapshot) -> None:
     """Verify SemanticQueryToolResponse handles export spillover."""
     result = SemanticQueryResponse(
-        view_id="function_metrics",
-        columns=["repo", "commit", "loc"],
-        rows=[{"repo": "org/repo", "commit": "abc123", "loc": 100}],
+        view_id="function_types",
+        columns=["repo", "commit", "total_params"],
+        rows=[{"repo": "org/repo", "commit": "abc123", "total_params": 3}],
         truncated=True,
         snapshot=ServingSnapshotIdentity(repo="org/repo", commit="abc123", run_id="run-001"),
     )
@@ -498,15 +498,15 @@ def test_semantic_query_tool_response_with_export(sample_export_snapshot: Export
         export_id="exp123456789",
         format="jsonl",
         mime_type="application/x-ndjson",
-        filename="function_metrics.jsonl",
+        filename="function_types.jsonl",
         uri="codeintel://exports/exp123456789",
         meta_uri="codeintel://exports/exp123456789/meta",
         created_at=datetime.now(UTC),
         snapshot=sample_export_snapshot,
     )
     preview = QueryPreview(
-        columns=("repo", "commit", "loc"),
-        rows=({"repo": "org/repo", "commit": "abc123", "loc": 100},),
+        columns=("repo", "commit", "total_params"),
+        rows=({"repo": "org/repo", "commit": "abc123", "total_params": 3},),
         truncated=True,
     )
     response = SemanticQueryToolResponse(

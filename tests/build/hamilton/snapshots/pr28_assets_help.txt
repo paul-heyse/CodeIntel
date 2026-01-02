@@ -4,7 +4,7 @@ List materialized assets for the current snapshot.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ ASSET --asset         Filter to a specific asset key (e.g.,                  │
-│                       analytics.function_metrics). [env var:                 │
+│                       analytics.function_types). [env var:                 │
 │                       CODEINTEL_BUILD_ASSETS_ASSET,                          │
 │                       CODEINTEL_BUILD_ASSETS_ASSET] [default: (none)]        │
 │ TARGET --target -t    Filter to assets produced by a specific target. [env   │

@@ -21,7 +21,7 @@ def _call_candidates(name: str) -> dict[str, object]:
         "pattern_group_id": f"rg.symbol.calls.{name}",
         "patterns": [
             {
-                "pattern": rf"\\b{escaped}\\b",
+                "pattern": rf"\b{escaped}\b",
                 "is_regex": True,
                 "priority": 10,
             }

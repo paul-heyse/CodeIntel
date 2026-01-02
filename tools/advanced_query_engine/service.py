@@ -7,7 +7,12 @@ from pathlib import Path
 
 import tools.advanced_query_engine.analytics as aqe_analytics
 from tools.advanced_query_engine.context import SearchContext
-from tools.advanced_query_engine.contracts import JSONValue, QueryBudget, QueryRequest, QueryResponse
+from tools.advanced_query_engine.contracts import (
+    JSONValue,
+    QueryBudget,
+    QueryRequest,
+    QueryResponse,
+)
 from tools.advanced_query_engine.handlers.registry import HANDLERS
 from tools.advanced_query_engine.packs.catalog import build_pack_catalog
 from tools.advanced_query_engine.storage.arrow_store import (
@@ -122,10 +127,12 @@ class SearchService:
         response = handler(request, context)
         options = request.options or {}
         analytics_enabled = _option_bool(
-            options.get("analytics"), self._config.enable_analytics
+            options.get("analytics"),
+            default=self._config.enable_analytics,
         )
         validation_enabled = _option_bool(
-            options.get("validate_persisted"), self._config.enable_validation
+            options.get("validate_persisted"),
+            default=self._config.enable_validation,
         )
         persist_result = self._persist_if_requested(request, response)
         if persist_result is None:
@@ -188,8 +195,8 @@ class SearchService:
             return self._config.persist_root
         return self._config.repo_root / "build" / "advanced_query_engine"
 
+    @staticmethod
     def _analyze_if_requested(
-        self,
         request: QueryRequest,
         persist_result: PersistResult,
         budget: QueryBudget,
@@ -236,7 +243,7 @@ class SearchService:
             "batch_count": len(stream_result.batches),
             "budget_exhausted": stream_result.budget_exhausted,
         }
-        profile_enabled = _option_bool(options.get("analytics_profile"), False)
+        profile_enabled = _option_bool(options.get("analytics_profile"), default=False)
         if analytics_enabled and profile_enabled:
             _, profile_df = aqe_analytics.profile_query(lf)
             summary["profile"] = _sanitize_rows(profile_df.to_dicts())
@@ -259,7 +266,7 @@ def _partition_list(value: object) -> list[str] | None:
     return None
 
 
-def _option_bool(value: object, default: bool) -> bool:
+def _option_bool(value: object, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     return default
@@ -278,10 +285,7 @@ def _optional_int(value: object) -> int | None:
 
 
 def _sanitize_rows(rows: list[dict[str, object]]) -> list[dict[str, JSONValue]]:
-    sanitized: list[dict[str, JSONValue]] = []
-    for row in rows:
-        sanitized.append(_json_sanitize(row))
-    return sanitized
+    return [_json_sanitize(row) for row in rows]
 
 
 def _json_sanitize(value: object) -> JSONValue:

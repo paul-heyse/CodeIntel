@@ -246,7 +246,7 @@ _DEFAULT_TABLE_KEYS_BY_TARGET: Mapping[str, Sequence[str]] = {
     "modules": ("core.modules",),
     "ast": ("core.ast_nodes",),
     "goids": ("core.goids",),
-    "function_metrics": ("analytics.function_metrics",),
+    "function_types": ("analytics.function_types",),
 }
 
 
@@ -268,13 +268,13 @@ def _default_targets() -> tuple[TargetDescriptor, ...]:
         dependencies=("ast",),
         description="GOID construction",
     )
-    metrics_target = make_target_descriptor(
-        name="function_metrics",
+    types_target = make_target_descriptor(
+        name="function_types",
         module="analytics",
         dependencies=("goids",),
-        description="Function metrics",
+        description="Function typing metadata",
     )
-    return (ingestion_modules, ast_target, goids_target, metrics_target)
+    return (ingestion_modules, ast_target, goids_target, types_target)
 
 
 __all__ = [

@@ -115,20 +115,12 @@ def _require_function_goid(functions: FunctionRepository) -> int:
     return goid
 
 
-def _assert_function_summary(functions: FunctionRepository, goid: int) -> None:
-    summary = functions.get_function_summary_by_goid(goid)
-    if summary is None:
-        message = "function summary exists"
+def _assert_function_architecture(functions: FunctionRepository, goid: int) -> None:
+    architecture = functions.get_function_architecture(goid)
+    if architecture is None:
+        message = "function architecture exists"
         raise AssertionError(message)
-    _expect_equal(summary["qualname"], "pkg.foo:func", "qualname mismatch")
-
-    per_file = functions.list_function_summaries_for_file("foo.py")
-    _expect_true(bool(per_file), "file summaries should be present")
-    _expect_in("pkg.foo:func", [row["qualname"] for row in per_file], "missing qualname")
-
-    high_risk = functions.list_high_risk_functions(min_risk=0.0, limit=5, tested_only=False)
-    _expect_true(bool(high_risk), "high risk list should not be empty")
-    _expect_in(goid, [row["function_goid_h128"] for row in high_risk], "goid missing")
+    _expect_equal(architecture["qualname"], "pkg.foo:func", "qualname mismatch")
     _expect_in(goid, functions.list_function_goids(), "goid missing from list_function_goids")
 
 
@@ -149,12 +141,12 @@ def _assert_graph_neighbors(graphs: GraphRepository, goid: int) -> None:
 
 
 def _assert_dataset_reads(datasets: DatasetReadRepository, goid: int) -> None:
-    dataset_rows = datasets.read_dataset_rows("analytics.function_metrics", limit=10, offset=0)
+    dataset_rows = datasets.read_dataset_rows("analytics.function_types", limit=10, offset=0)
     if not dataset_rows:
         message = "dataset rows should be readable"
         raise AssertionError(message)
     _expect_equal(dataset_rows[0]["function_goid_h128"], goid, "dataset goid mismatch")
-    dataset_df = datasets.read_dataset_dataframe("analytics.function_metrics", limit=10, offset=0)
+    dataset_df = datasets.read_dataset_dataframe("analytics.function_types", limit=10, offset=0)
     _expect_true(not dataset_df.is_empty(), "dataset dataframe should not be empty")
     first_row = dataset_df.row(0, named=True)
     _expect_equal(int(first_row["function_goid_h128"]), goid, "dataframe goid mismatch")
@@ -178,7 +170,7 @@ def test_function_repository_reads(docs_export_gateway: TestContext) -> None:
     functions, _, tests_repo, graphs, _, datasets = _repos(docs_export_gateway)
 
     goid = _require_function_goid(functions)
-    _assert_function_summary(functions, goid)
+    _assert_function_architecture(functions, goid)
     _assert_tests_for_function(tests_repo, goid)
     _assert_graph_neighbors(graphs, goid)
     _assert_dataset_reads(datasets, goid)

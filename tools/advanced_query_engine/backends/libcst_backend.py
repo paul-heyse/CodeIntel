@@ -179,7 +179,11 @@ class _DefCollector(cst.CSTVisitor):
 
     def _span_for(self, node: cst.CSTNode) -> Span:
         span = self.get_metadata(ByteSpanPositionProvider, node)
-        return Span(path=self._path, start_byte=int(span.start), end_byte=int(span.end))
+        return Span(
+            path=self._path,
+            start_byte=int(span.start),
+            end_byte=int(span.start + span.length),
+        )
 
     def _add_class(self, node: cst.ClassDef) -> None:
         span = self._span_for(node)

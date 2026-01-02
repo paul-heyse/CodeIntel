@@ -43,14 +43,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-def test_test_profile_has_primary_subsystem_index(docs_views_gateway: StorageGateway) -> None:
-    """analytics.test_profile should be indexed for primary_subsystem_id scans."""
-    index_names = list_indexes(docs_views_gateway.con, schema="analytics", table="test_profile")
-    expected = "idx_analytics_test_profile_primary_subsystem"
-    if expected not in index_names:
-        pytest.fail(f"Missing index {expected} on analytics.test_profile")
-
-
 def test_subsystems_has_repo_commit_index(docs_views_gateway: StorageGateway) -> None:
     """analytics.subsystems should be indexed for repo/commit/subsystem lookups."""
     index_names = list_indexes(docs_views_gateway.con, schema="analytics", table="subsystems")
@@ -78,7 +70,7 @@ def test_docs_view_readable_via_dataset_rows(docs_views_gateway: StorageGateway)
     """Docs views remain readable through DatasetReadRepository slices."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
     repo = DatasetReadRepository(gateway=docs_views_gateway, repo="demo/repo", commit="deadbeef")
-    rows = repo.read_dataset_rows("docs.v_function_summary", limit=5, offset=0)
+    rows = repo.read_dataset_rows("docs.v_function_architecture", limit=5, offset=0)
     if not isinstance(rows, list):
         pytest.fail("Expected list from dataset_rows")
 

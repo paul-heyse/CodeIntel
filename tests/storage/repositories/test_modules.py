@@ -96,28 +96,6 @@ def test_get_module_architecture_returns_none_when_not_found(
     expect_is_none(result, label="missing module architecture")
 
 
-def test_get_module_profile_returns_none_when_not_found(
-    test_ctx: TestContext,
-) -> None:
-    """Verify get_module_profile returns None when module not found."""
-    repo = _repo(test_ctx)
-
-    result = repo.get_module_profile("nonexistent_module")
-
-    expect_is_none(result, label="missing module profile")
-
-
-def test_get_file_profile_returns_none_when_not_found(
-    test_ctx: TestContext,
-) -> None:
-    """Verify get_file_profile returns None when file not found."""
-    repo = _repo(test_ctx)
-
-    result = repo.get_file_profile("nonexistent.py")
-
-    expect_is_none(result, label="missing file profile")
-
-
 def test_get_file_hints_returns_empty_when_not_found(
     test_ctx: TestContext,
 ) -> None:

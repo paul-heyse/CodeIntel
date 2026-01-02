@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,22 +67,44 @@ def _span_from_match(match: RpygrepMatch, context: SearchContext) -> Span | None
 
 
 def _iter_python_files(root: Path, scope_paths: list[str] | None, budget: QueryBudget) -> list[str]:
-    paths: list[str] = []
-    roots = [root] if not scope_paths else [root / p for p in scope_paths]
-    for base in roots:
-        if not base.exists():
-            continue
-        if base.is_file():
-            if base.suffix == ".py":
-                paths.append(str(base.relative_to(root)))
-            continue
-        for path in base.rglob("*.py"):
-            if ".venv" in path.parts or "site-packages" in path.parts:
-                continue
-            paths.append(str(path.relative_to(root)))
-            if budget.max_files and len(paths) >= budget.max_files:
-                break
+    paths = _rg_python_files(root, scope_paths, budget.max_depth)
+    if budget.max_files:
+        return paths[: budget.max_files]
+    return paths
+
+
+def _rg_python_files(root: Path, scope_paths: list[str] | None, max_depth: int) -> list[str]:
+    if not root.exists():
+        return []
+    targets = _rg_targets(root, scope_paths)
+    cmd = ["rg", "--files", "-g", "*.py"]
+    if max_depth:
+        cmd.extend(["--max-depth", str(max_depth)])
+    cmd.extend(targets)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=root, check=False)
+    if result.returncode not in {0, 1}:
+        stderr = result.stderr.strip()
+        msg = "rg --files failed." if not stderr else f"rg --files failed: {stderr}"
+        raise RuntimeError(msg)
+    paths = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     return sorted(set(paths))
+
+
+def _rg_targets(root: Path, scope_paths: list[str] | None) -> list[str]:
+    if not scope_paths:
+        return ["."]
+    targets: list[str] = []
+    for value in scope_paths:
+        if not value:
+            continue
+        path = Path(value)
+        if path.is_absolute():
+            try:
+                path = path.relative_to(root)
+            except ValueError:
+                continue
+        targets.append(str(path))
+    return targets or ["."]
 
 
 @dataclass(frozen=True)

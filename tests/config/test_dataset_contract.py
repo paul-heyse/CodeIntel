@@ -56,8 +56,8 @@ def test_json_schema_map_matches_contracts() -> None:
 def test_capabilities_shape() -> None:
     """Capability flags should include read-only and view indicators."""
     contracts = {c.name: c for c in iter_contracts()}
-    contract = contracts.get("function_profile")
-    _require(condition=contract is not None, message="function_profile contract missing")
+    contract = contracts.get("function_types")
+    _require(condition=contract is not None, message="function_types contract missing")
     if contract is None:
         return
     caps = contract.capabilities()
@@ -71,19 +71,19 @@ def test_capabilities_shape() -> None:
         "read_only",
     }
     _require(condition=expected_keys.issubset(set(caps)), message="Capability keys missing")
-    _require(condition=caps["is_view"] is False, message="function_profile marked as view")
-    _require(condition=caps["read_only"] is False, message="function_profile marked read-only")
+    _require(condition=caps["is_view"] is False, message="function_types marked as view")
+    _require(condition=caps["read_only"] is False, message="function_types marked read-only")
 
 
 def test_column_names_method() -> None:
     """Column names method should return schema columns in order."""
     contracts = {c.name: c for c in iter_contracts()}
-    contract = contracts.get("function_profile")
-    _require(condition=contract is not None, message="function_profile contract missing")
+    contract = contracts.get("function_types")
+    _require(condition=contract is not None, message="function_types contract missing")
     if contract is None:
         return
     columns = contract.column_names()
-    _require(condition=len(columns) > 0, message="function_profile has no columns")
+    _require(condition=len(columns) > 0, message="function_types has no columns")
     _require(condition=columns[0] == "function_goid_h128", message="First column mismatch")
     _require(condition="repo" in columns, message="repo column missing")
     _require(condition="commit" in columns, message="commit column missing")

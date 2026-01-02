@@ -43,7 +43,7 @@ def test_query_metrics_dataclass() -> None:
     """Verify QueryMetrics dataclass holds expected fields."""
     metrics = QueryMetrics(
         endpoint="mcp:semantic_query",
-        view_id="analytics.function_metrics",
+        view_id="analytics.function_types",
         query=None,
         row_count=42,
         truncated=False,
@@ -51,7 +51,7 @@ def test_query_metrics_dataclass() -> None:
         correlation_id="session-12345",
     )
     expect_equal(metrics.endpoint, "mcp:semantic_query")
-    expect_equal(metrics.view_id, "analytics.function_metrics")
+    expect_equal(metrics.view_id, "analytics.function_types")
     expect_is_none(metrics.query)
     expect_equal(metrics.row_count, 42)
     expect_false(metrics.truncated)

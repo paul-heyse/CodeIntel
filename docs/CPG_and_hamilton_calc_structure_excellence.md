@@ -3793,5 +3793,5 @@ Use `--comment-syntax="#"` so Python files remain visually sane.
 
 ---
 
-If you want, I can also provide a **third** micro‑fixture that specifically targets *dynamic-ish but still statically tractable* Python call patterns (classmethod/staticmethod, bound vs unbound method calls, and descriptor access), which is usually the next big jump in “CPG usefulness for LLMs” after Stage‑F basics.
+
 

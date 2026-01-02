@@ -18,10 +18,6 @@ from tests._helpers.fixtures.rows import (
 )
 from tests._helpers.seeds.core import (
     CORE_PACK,
-    GOID_FUNC_A,
-    GOID_FUNC_B,
-    GOID_FUNC_C,
-    GOID_HELPER,
     MOD_A_FQN,
     MOD_A_PATH,
     MOD_B_FQN,

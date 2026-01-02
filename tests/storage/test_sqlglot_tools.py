@@ -54,9 +54,9 @@ def test_extract_table_keys_is_cte_safe() -> None:
 
 def test_extract_table_keys_handles_nested_subqueries() -> None:
     """extract_table_keys_duckdb finds tables in nested subqueries."""
-    sql = "SELECT * FROM (SELECT * FROM analytics.function_metrics) sub"
+    sql = "SELECT * FROM (SELECT * FROM analytics.function_types) sub"
     keys = extract_table_keys_duckdb(sql)
-    expect_equal(keys, frozenset({"analytics.function_metrics"}))
+    expect_equal(keys, frozenset({"analytics.function_types"}))
 
 
 def test_fingerprint_is_stable_for_equivalent_sql() -> None:
@@ -103,14 +103,14 @@ def test_summarize_sql_duckdb_ignores_cte_aliases() -> None:
     )
     SELECT *
     FROM t
-    JOIN analytics.function_metrics fm ON 1 = 1
+    JOIN analytics.function_types fm ON 1 = 1
     """
     summary = summarize_sql_duckdb(sql)
     expect_is_instance(summary, str)
     summary_text = cast("str", summary)
     expect_true(" t" not in summary_text.lower(), message="cte alias not included")
     expect_true("core.modules" in summary_text, message="physical table included")
-    expect_true("analytics.function_metrics" in summary_text, message="physical table included")
+    expect_true("analytics.function_types" in summary_text, message="physical table included")
 
 
 def test_summarize_sql_duckdb_handles_insert_select() -> None:
@@ -139,7 +139,7 @@ def test_summarize_sql_duckdb_hashes_suspicious_targets() -> None:
 def test_summarize_sql_duckdb_appends_ellipsis_for_target_cap() -> None:
     """summarize_sql_duckdb adds ellipsis when max_targets is exceeded."""
     config = QuerySummaryConfig(max_targets=1, emit_ellipsis=True)
-    sql = "SELECT * FROM core.symbols JOIN analytics.function_metrics ON 1 = 1"
+    sql = "SELECT * FROM core.symbols JOIN analytics.function_types ON 1 = 1"
     summary = summarize_sql_duckdb(sql, config=config)
     expect_is_instance(summary, str)
     summary_text = cast("str", summary)

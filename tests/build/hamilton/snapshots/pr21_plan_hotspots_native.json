@@ -3,7 +3,7 @@ Usage: codeintel build plan [ARGS]
 Show build plan with status and reason for each target.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
-│ TARGETS --targets            Target names to plan (e.g., function_metrics,   │
+│ TARGETS --targets            Target names to plan (e.g., function_types,   │
 │   --empty-targets            call_graph). [env var:                          │
 │                              CODEINTEL_BUILD_PLAN_TARGETS,                   │
 │                              CODEINTEL_BUILD_PLAN_TARGETS] [default: (none)] │

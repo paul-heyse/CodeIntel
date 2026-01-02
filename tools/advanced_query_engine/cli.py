@@ -29,14 +29,24 @@ def _load_options(
     -------
     dict[str, object] | None
         Parsed options payload.
+
+    Raises
+    ------
+    ValueError
+        If the decoded payload is not a JSON object.
     """
     if options_path:
-        return msgspec.json.decode(
-            Path(options_path).read_bytes(),
-            type=dict[str, JSONValue],
-        )
+        payload = orjson.loads(Path(options_path).read_bytes())
+        if not isinstance(payload, dict):
+            msg = "Options payload must be a JSON object."
+            raise ValueError(msg)
+        return payload
     if options_json:
-        return msgspec.json.decode(options_json.encode("utf-8"), type=dict[str, JSONValue])
+        payload = orjson.loads(options_json)
+        if not isinstance(payload, dict):
+            msg = "Options payload must be a JSON object."
+            raise ValueError(msg)
+        return payload
     return None
 
 

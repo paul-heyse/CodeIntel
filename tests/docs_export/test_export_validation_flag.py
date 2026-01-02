@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
+def _seed_invalid_function_types(db_path: Path, repo_root: Path) -> None:
     """Create a schema drift scenario for docs export validation.
 
     The docs export validation path runs contract/schema alignment checks. To
@@ -38,7 +38,7 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
         ),
     )
     con = ctx.gateway.con
-    con.execute("ALTER TABLE analytics.function_profile ADD COLUMN schema_drift_probe INTEGER")
+    con.execute("ALTER TABLE analytics.function_types ADD COLUMN schema_drift_probe INTEGER")
     ctx.close()
 
 
@@ -46,7 +46,7 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
 def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> None:
     """Verify docs export honors validation toggle and surfaces failures."""
     db_path = tmp_path / "db.duckdb"
-    _seed_invalid_function_profile(db_path, tmp_path)
+    _seed_invalid_function_types(db_path, tmp_path)
 
     output_dir = tmp_path / "out_validate"
     args_validate = [

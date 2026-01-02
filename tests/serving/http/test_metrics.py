@@ -56,7 +56,7 @@ def test_log_query_metrics_logs_structured_data(caplog: LogCaptureFixture) -> No
     """log_query_metrics should emit structured log with expected fields."""
     metrics = QueryMetrics(
         endpoint="/v1/semantic/query",
-        view_id="function.summary",
+        view_id="function.architecture",
         query=None,
         row_count=100,
         truncated=True,
@@ -75,7 +75,7 @@ def test_log_query_metrics_logs_structured_data(caplog: LogCaptureFixture) -> No
     expect_in("query_executed", record.message)
 
     expect_equal(getattr(record, "endpoint", None), "/v1/semantic/query")
-    expect_equal(getattr(record, "view_id", None), "function.summary")
+    expect_equal(getattr(record, "view_id", None), "function.architecture")
     expect_equal(getattr(record, "query", None), None)
     expect_equal(getattr(record, "row_count", None), 100)
     expect_true(getattr(record, "truncated", False))

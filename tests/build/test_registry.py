@@ -29,11 +29,11 @@ class TestTargetRegistry:
         expect_equal(modules_target.module, "ingestion")
 
     @staticmethod
-    def test_profiles_target_has_dependencies(catalog: DagCatalog) -> None:
-        """Profiles target depends on multiple other targets."""
-        profiles_target = catalog.get("profiles")
-        expect_true(len(profiles_target.dependencies) > 0)
-        expect_equal(profiles_target.module, "analytics")
+    def test_function_types_target_has_dependencies(catalog: DagCatalog) -> None:
+        """function_types target depends on multiple other targets."""
+        types_target = catalog.get("function_types")
+        expect_true(len(types_target.dependencies) > 0)
+        expect_equal(types_target.module, "analytics")
 
     @staticmethod
     def test_get_target_graph_succeeds(catalog: DagCatalog) -> None:
@@ -74,8 +74,8 @@ class TestTargetRegistry:
     @staticmethod
     def test_topological_order_includes_all_deps(catalog: DagCatalog) -> None:
         """Topological sort includes all transitive dependencies."""
-        order = catalog.closure(("profiles",))
-        trans_deps = _transitive_deps(catalog, "profiles")
+        order = catalog.closure(("function_types",))
+        trans_deps = _transitive_deps(catalog, "function_types")
         for dep in trans_deps:
             expect_in(dep, order)
 

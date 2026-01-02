@@ -7,13 +7,11 @@ SeedPack system for cases where direct function calls are needed.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.schema import apply_all_schemas
-from codeintel.storage.warehouse import Warehouse
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.fakes import utcnow
 from tests._helpers.fixtures.rows import (
@@ -22,21 +20,16 @@ from tests._helpers.fixtures.rows import (
     CallGraphNodeRow,
     CFGBlockRow,
     DocstringRow,
-    FunctionMetricsRow,
     FunctionTypesRow,
     FunctionValidationRow,
     GoidCrosswalkRow,
     GoidRow,
-    HotspotRow,
     ImportGraphEdgeRow,
     ModuleRow,
     RepoMapRow,
-    RiskFactorRow,
     StaticDiagnosticsRow,
     SymbolUseEdgeRow,
     TestCatalogRow,
-    TypednessRow,
-    function_profile_row,
     insert_rows,
 )
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
@@ -236,42 +229,6 @@ def seed_docs_export_minimal(
     insert_rows(
         gateway,
         [
-            FunctionMetricsRow(
-                function_goid_h128=goid,
-                urn="urn:foo",
-                repo=repo,
-                commit=commit,
-                rel_path="foo.py",
-                language="python",
-                kind="function",
-                qualname="pkg.foo:func",
-                start_line=1,
-                end_line=10,
-                loc=10,
-                logical_loc=10,
-                param_count=1,
-                positional_params=1,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=1,
-                max_nesting_depth=1,
-                stmt_count=1,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
-                created_at=now,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
             FunctionTypesRow(
                 function_goid_h128=goid,
                 urn="urn:foo",
@@ -285,50 +242,12 @@ def seed_docs_export_minimal(
                 end_line=10,
                 total_params=1,
                 annotated_params=1,
-                unannotated_params=0,
-                param_typed_ratio=1.0,
                 has_return_annotation=True,
                 return_type="str",
                 return_type_source="annotation",
                 type_comment=None,
-                param_types_json={},
-                fully_typed=True,
-                partial_typed=False,
-                untyped=False,
-                typedness_bucket="typed",
-                typedness_source="pyright",
+                param_types={},
                 created_at=now,
-            )
-        ],
-    )
-    warehouse = Warehouse(gateway)
-    warehouse.materialize_mappings(
-        "analytics.function_profile",
-        [
-            function_profile_row(
-                goid=Decimal(goid),
-                repo=repo,
-                commit=commit,
-                rel_path="foo.py",
-                qualname="pkg.foo:func",
-                urn="urn:foo",
-                module="pkg.foo",
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            RiskFactorRow(
-                function_goid_h128=goid,
-                repo=repo,
-                commit=commit,
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=1,
-                fan_in_count=0,
-                fan_out_count=0,
-                has_tests=True,
             )
         ],
     )
@@ -375,10 +294,6 @@ def seed_profile_data(
     now = utcnow()
 
     con.execute(
-        "DELETE FROM analytics.typedness WHERE path = ? AND repo = ? AND commit = ?",
-        [rel_path, repo, commit],
-    )
-    con.execute(
         "DELETE FROM analytics.static_diagnostics WHERE rel_path = ? AND repo = ? AND commit = ?",
         [rel_path, repo, commit],
     )
@@ -409,34 +324,6 @@ def seed_profile_data(
                 max_depth=1,
                 complexity=2.0,
                 generated_at=now,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            HotspotRow(
-                rel_path=rel_path,
-                commit_count=1,
-                author_count=1,
-                lines_added=5,
-                lines_deleted=1,
-                complexity=2.0,
-                score=0.5,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            TypednessRow(
-                repo=repo,
-                commit=commit,
-                path=rel_path,
-                type_error_count=1,
-                annotation_ratio='{"params": 0.5}',
-                untyped_defs=0,
-                overlay_needed=False,
             )
         ],
     )
@@ -482,58 +369,6 @@ def seed_profile_data(
     insert_rows(
         gateway,
         [
-            RiskFactorRow(
-                function_goid_h128=1,
-                repo=repo,
-                commit=commit,
-                risk_score=9,
-                risk_level="high",
-                cyclomatic_complexity=2,
-                fan_in_count=1,
-                fan_out_count=1,
-                has_tests=True,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            FunctionMetricsRow(
-                function_goid_h128=1,
-                urn="goid:demo/repo#python:function:pkg.mod.func",
-                repo=repo,
-                commit=commit,
-                rel_path=rel_path,
-                language="python",
-                kind="function",
-                qualname="pkg.mod.func",
-                start_line=1,
-                end_line=2,
-                loc=4,
-                logical_loc=3,
-                param_count=2,
-                positional_params=1,
-                keyword_only_params=1,
-                has_varargs=True,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=2,
-                max_nesting_depth=1,
-                stmt_count=2,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="medium",
-                created_at=now,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
             FunctionTypesRow(
                 function_goid_h128=1,
                 urn="goid:demo/repo#python:function:pkg.mod.func",
@@ -547,18 +382,11 @@ def seed_profile_data(
                 end_line=2,
                 total_params=2,
                 annotated_params=2,
-                unannotated_params=0,
-                param_typed_ratio=1.0,
                 has_return_annotation=True,
                 return_type="int",
                 return_type_source="annotation",
                 type_comment=None,
-                param_types_json=[],
-                fully_typed=True,
-                partial_typed=False,
-                untyped=False,
-                typedness_bucket="typed",
-                typedness_source="analysis",
+                param_types=[],
                 created_at=now,
             )
         ],
@@ -680,11 +508,7 @@ def seed_mcp_backend(
     con = gateway.con
     now = utcnow()
     con.execute(
-        "DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
+        "DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?",
         [repo, commit],
     )
     con.execute(
@@ -703,23 +527,7 @@ def seed_mcp_backend(
     insert_rows(
         gateway,
         [
-            RiskFactorRow(
-                function_goid_h128=1,
-                repo=repo,
-                commit=commit,
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=1,
-                fan_in_count=0,
-                fan_out_count=0,
-                has_tests=True,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            FunctionMetricsRow(
+            FunctionTypesRow(
                 function_goid_h128=1,
                 urn="urn:foo",
                 repo=repo,
@@ -730,24 +538,13 @@ def seed_mcp_backend(
                 qualname="foo",
                 start_line=1,
                 end_line=1,
-                loc=1,
-                logical_loc=1,
-                param_count=0,
-                positional_params=0,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=1,
-                max_nesting_depth=1,
-                stmt_count=1,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
+                total_params=0,
+                annotated_params=0,
+                has_return_annotation=False,
+                return_type=None,
+                return_type_source=None,
+                type_comment=None,
+                param_types=None,
                 created_at=now,
             )
         ],

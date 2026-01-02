@@ -36,10 +36,13 @@ def test_semantic_view_decorator_applies_hamilton_tags() -> None:
     expect_true(len(nodes) > 0)
 
     # Assert at least one known semantic view is tagged as expected.
-    match = next((n for n in nodes if n.tags.get(ht.TAG_SEMANTIC_ID) == "function.summary"), None)
+    match = next(
+        (n for n in nodes if n.tags.get(ht.TAG_SEMANTIC_ID) == "function.architecture"),
+        None,
+    )
     expect_true(match is not None)
     match_node = cast("HamiltonNode", match)
-    expect_equal(match_node.tags.get(ht.TAG_TABLE_KEY), "docs.v_function_summary")
+    expect_equal(match_node.tags.get(ht.TAG_TABLE_KEY), "docs.v_function_architecture")
 
 
 def test_serving_harness_emits_semantic_artifacts(

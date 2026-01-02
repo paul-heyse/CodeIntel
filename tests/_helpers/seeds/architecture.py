@@ -71,8 +71,7 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
         ),
         ("DELETE FROM core.goids WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM graph.call_graph_edges WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?", [repo, commit]),
         (
             "DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
             [repo, commit],
@@ -116,12 +115,8 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
         ("DELETE FROM analytics.subsystems WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.typedness WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.static_diagnostics WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.hotspots WHERE rel_path LIKE ?", ["%"]),
         ("DELETE FROM core.ast_metrics WHERE rel_path LIKE ?", ["%"]),
         ("DELETE FROM analytics.function_validation WHERE repo = ? AND commit = ?", [repo, commit]),
     ]
@@ -219,7 +214,7 @@ def seed_architecture(
         module_map=module_map,
     )
     _seed_core_tables(context)
-    _seed_function_metrics(context)
+    _seed_function_types(context)
     _seed_graph_metrics(context)
     _seed_additional_analytics(context)
     _seed_graph_tables(context)
@@ -297,71 +292,31 @@ def _seed_core_tables(context: _ArchitectureSeedContext) -> None:
     ModulesAssertions(context.gateway, snapshot).inventory_consistent()
 
 
-def _seed_function_metrics(context: _ArchitectureSeedContext) -> None:
-    function_metrics_columns = _table_columns(context.gateway, "analytics.function_metrics")
-    materialize_table_from_rows(
-        context.warehouse,
-        "analytics.function_metrics",
+def _seed_function_types(context: _ArchitectureSeedContext) -> None:
+    context.warehouse.materialize_mappings(
+        "analytics.function_types",
         [
-            _row_mapping(
-                function_metrics_columns,
-                (
-                    1,
-                    "goid:demo/repo#python:function:pkg.mod.func",
-                    context.repo,
-                    context.commit,
-                    "pkg/mod.py",
-                    "python",
-                    "function",
-                    "pkg.mod.func",
-                    1,
-                    2,
-                    2,
-                    2,
-                    0,
-                    0,
-                    0,
-                    False,
-                    False,
-                    False,
-                    False,
-                    0,
-                    0,
-                    0,
-                    1,
-                    1,
-                    0,
-                    0,
-                    False,
-                    "low",
-                    context.now,
-                ),
-            )
+            {
+                "function_goid_h128": 1,
+                "urn": "goid:demo/repo#python:function:pkg.mod.func",
+                "repo": context.repo,
+                "commit": context.commit,
+                "rel_path": "pkg/mod.py",
+                "language": "python",
+                "kind": "function",
+                "qualname": "pkg.mod.func",
+                "start_line": 1,
+                "end_line": 2,
+                "total_params": 0,
+                "annotated_params": 0,
+                "has_return_annotation": False,
+                "return_type": None,
+                "return_type_source": None,
+                "type_comment": None,
+                "param_types": None,
+                "created_at": context.now,
+            }
         ],
-        columns=function_metrics_columns,
-        options=context.append,
-    )
-    goid_risk_columns = _table_columns(context.gateway, "analytics.goid_risk_factors")
-    materialize_table_from_rows(
-        context.warehouse,
-        "analytics.goid_risk_factors",
-        [
-            _row_mapping(
-                goid_risk_columns,
-                (
-                    1,
-                    context.repo,
-                    context.commit,
-                    1,
-                    "low",
-                    1,
-                    0,
-                    0,
-                    False,
-                ),
-            )
-        ],
-        columns=goid_risk_columns,
         options=context.append,
     )
     call_graph_columns = _table_columns(context.gateway, "graph.call_graph_edges")
@@ -591,43 +546,6 @@ def _seed_additional_analytics(context: _ArchitectureSeedContext) -> None:
         """,
         [repo, commit, "pkg.mod", now],
     )
-    context.warehouse.materialize_mappings(
-        "analytics.function_profile",
-        [
-            RowFactory.row_for(
-                "analytics.function_profile",
-                function_goid_h128=1,
-                repo=repo,
-                commit=commit,
-                urn="goid:demo/repo#python:function:pkg.mod.func",
-                rel_path="pkg/mod.py",
-                module="pkg.mod",
-                language="python",
-                kind="function",
-                qualname="pkg.mod.func",
-                loc=2,
-                logical_loc=2,
-                cyclomatic_complexity=1,
-                param_count=0,
-                total_params=0,
-                annotated_params=0,
-                return_type="int",
-                typedness_bucket="typed",
-                file_typed_ratio=1.0,
-                coverage_ratio=1.0,
-                tested=True,
-                tests_touching=1,
-                failing_tests=0,
-                slow_tests=0,
-                risk_score=0.1,
-                risk_level="low",
-                tags=[],
-                owners=[],
-                created_at=now,
-            )
-        ],
-        options=context.append,
-    )
 
 
 def _seed_graph_tables(context: _ArchitectureSeedContext) -> None:
@@ -662,16 +580,6 @@ def _seed_graph_tables(context: _ArchitectureSeedContext) -> None:
         ],
         columns=subsystem_modules_columns,
         options=context.append,
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.module_profile (
-            repo, commit, module, avg_risk_score, max_risk_score, module_coverage_ratio,
-            tested_function_count, untested_function_count, import_fan_in, import_fan_out,
-            in_cycle, cycle_group, created_at
-        ) VALUES (?, ?, ?, 0.1, 0.2, 1.0, 1, 0, 1, 1, FALSE, 0, ?)
-        """,
-        [repo, commit, "pkg.mod", now],
     )
     subsystem_columns = _table_columns(context.gateway, "analytics.subsystems")
     materialize_table_from_rows(
@@ -740,19 +648,6 @@ def _seed_graph_tables(context: _ArchitectureSeedContext) -> None:
         columns=test_catalog_columns,
         options=context.append,
     )
-    typedness_columns = _table_columns(context.gateway, "analytics.typedness")
-    materialize_table_from_rows(
-        context.warehouse,
-        "analytics.typedness",
-        [
-            _row_mapping(
-                typedness_columns,
-                (repo, commit, "pkg/mod.py", 0, {"params": 1.0}, 0, False),
-            )
-        ],
-        columns=typedness_columns,
-        options=context.append,
-    )
     diagnostics_columns = _table_columns(context.gateway, "analytics.static_diagnostics")
     materialize_table_from_rows(
         context.warehouse,
@@ -760,12 +655,6 @@ def _seed_graph_tables(context: _ArchitectureSeedContext) -> None:
         [_row_mapping(diagnostics_columns, (repo, commit, "pkg/mod.py", 0, 0, 0, 0, False))],
         columns=diagnostics_columns,
         options=context.append,
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.hotspots VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        ("pkg/mod.py", 1, 1, 1, 1, 1.0, 0.1),
     )
     con.execute(
         """

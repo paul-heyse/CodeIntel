@@ -107,7 +107,7 @@ def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
                 settings=EXPORT_SETTINGS,
                 options=ExportCallOptions(
                     validate_exports=True,
-                    schemas=["analytics.function_profile"],
+                    schemas=["analytics.function_types"],
                 ),
             )
 
@@ -142,7 +142,7 @@ def test_export_logs_problem_detail_on_validation_failure(
                 settings=EXPORT_SETTINGS,
                 options=ExportCallOptions(
                     validate_exports=True,
-                    schemas=["analytics.function_profile"],
+                    schemas=["analytics.function_types"],
                 ),
             )
         error_logs = [

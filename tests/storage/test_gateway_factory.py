@@ -187,14 +187,14 @@ def test_open_memory_gateway_with_views() -> None:
             "WHERE table_schema = 'docs' AND table_type = 'VIEW'"
         ).fetchone()
         expect_is_not_none(result, label="docs views count")
-        analytics_view = gateway.con.execute(
+        docs_view = gateway.con.execute(
             """
             SELECT table_name
             FROM information_schema.tables
-            WHERE table_schema = 'analytics' AND table_name = 'v_function_summary'
+            WHERE table_schema = 'docs' AND table_name = 'v_function_architecture'
             """
         ).fetchone()
-        expect_is_not_none(analytics_view, label="analytics view exists")
+        expect_is_not_none(docs_view, label="docs view exists")
     finally:
         gateway.close()
 

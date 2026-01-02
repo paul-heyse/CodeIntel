@@ -45,11 +45,9 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
         "graph.cfg_blocks": _count("SELECT COUNT(*) FROM graph.cfg_blocks"),
         "graph.cfg_edges": _count("SELECT COUNT(*) FROM graph.cfg_edges"),
         "graph.dfg_edges": _count("SELECT COUNT(*) FROM graph.dfg_edges"),
-        "analytics.function_metrics": _count("SELECT COUNT(*) FROM analytics.function_metrics"),
+        "analytics.function_types": _count("SELECT COUNT(*) FROM analytics.function_types"),
         "analytics.test_catalog": _count("SELECT COUNT(*) FROM analytics.test_catalog"),
-        "analytics.goid_risk_factors": _count("SELECT COUNT(*) FROM analytics.goid_risk_factors"),
         "analytics.config_values": _count("SELECT COUNT(*) FROM analytics.config_values"),
-        "analytics.typedness": _count("SELECT COUNT(*) FROM analytics.typedness"),
         "analytics.static_diagnostics": _count("SELECT COUNT(*) FROM analytics.static_diagnostics"),
         "analytics.graph_metrics_functions": _count(
             "SELECT COUNT(*) FROM analytics.graph_metrics_functions"
@@ -61,7 +59,6 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
         "analytics.subsystem_modules": _count("SELECT COUNT(*) FROM analytics.subsystem_modules"),
     }
     expected_min = {
-        "analytics.goid_risk_factors": 0,
         "analytics.graph_metrics_functions": 0,
         "analytics.graph_metrics_modules": 0,
     }

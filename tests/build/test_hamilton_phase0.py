@@ -118,9 +118,7 @@ class TestDriverFactory:
         """Verify target names map to node names."""
         if target_to_node_name("modules", runtime=hamilton_runtime) != "t__modules":
             pytest.fail("modules did not map to t__modules")
-        if target_to_node_name("function_types", runtime=hamilton_runtime) != (
-            "t__function_types"
-        ):
+        if target_to_node_name("function_types", runtime=hamilton_runtime) != ("t__function_types"):
             pytest.fail("function_types did not map to t__function_types")
         if target_to_node_name("unknown", runtime=hamilton_runtime) is not None:
             pytest.fail("unknown target should map to None")

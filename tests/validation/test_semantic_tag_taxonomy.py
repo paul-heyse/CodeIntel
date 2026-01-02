@@ -27,14 +27,14 @@ def test_semantic_tag_taxonomy_requires_layer_and_version() -> None:
         name="semantic_view_node",
         tags={
             ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
-            ht.TAG_SEMANTIC_ID: "function.summary",
+            ht.TAG_SEMANTIC_ID: "function.architecture",
             ht.TAG_KIND: "table",
             ht.TAG_ENTITY: "function",
             ht.TAG_GRAIN: "per_function",
-            ht.TAG_SCHEMA_REF: "semantic.function_summary",
+            ht.TAG_SCHEMA_REF: "semantic.function_architecture",
             ht.TAG_ENTITY_KEYS: "repo,commit,goid_h128",
             ht.TAG_JOIN_KEYS: "repo,commit,goid_h128",
-            ht.TAG_TABLE_KEY: "analytics.function_summary",
+            ht.TAG_TABLE_KEY: "docs.v_function_architecture",
         },
     )
     result = validate_nodes({node.name: node}, validate_schema=False)

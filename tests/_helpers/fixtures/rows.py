@@ -14,21 +14,6 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsFileProfileRow as FileProfileRowModel,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsFunctionProfileRow as FunctionProfileRowModel,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsModuleProfileRow as ModuleProfileRowModel,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsTestProfileRow as ProfileRowModel,
-)
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from tests._helpers.builders import (
@@ -43,17 +28,14 @@ from tests._helpers.builders import (
     DFGEdgeRow,
     DocstringRow,
     FunctionContextBuilder,
-    FunctionMetricsRow,
     FunctionTypesRow,
     FunctionValidationRow,
     GoidCrosswalkRow,
     GoidRow,
     GraphMetricsModulesExtRow,
-    HotspotRow,
     ImportGraphEdgeRow,
     ModuleRow,
     RepoMapRow,
-    RiskFactorRow,
     StaticDiagnosticsRow,
     SubsystemModuleRow,
     SubsystemRow,
@@ -61,7 +43,6 @@ from tests._helpers.builders import (
     SymbolGraphMetricsModulesRow,
     SymbolUseEdgeRow,
     TestCatalogRow,
-    TypednessRow,
     insert_rows,
     insert_symbol_use_edges,
     make_symbol_use_edge_row,
@@ -458,254 +439,6 @@ def dataclass_row[RowType: InsertableRow](
     return row_type(**row_values)
 
 
-def blank_file_profile_row() -> FileProfileRowModel:
-    """Return a blank analytics.file_profile row.
-
-    Returns
-    -------
-    FileProfileRowModel
-        Blank row payload.
-    """
-    return cast("FileProfileRowModel", RowFactory.blank_row("analytics.file_profile"))
-
-
-def blank_module_profile_row() -> ModuleProfileRowModel:
-    """Return a blank analytics.module_profile row.
-
-    Returns
-    -------
-    ModuleProfileRowModel
-        Blank row payload.
-    """
-    return cast("ModuleProfileRowModel", RowFactory.blank_row("analytics.module_profile"))
-
-
-def blank_test_profile_row() -> ProfileRowModel:
-    """Return a blank analytics.test_profile row.
-
-    Returns
-    -------
-    ProfileRowModel
-        Blank row payload.
-    """
-    return cast("ProfileRowModel", RowFactory.blank_row("analytics.test_profile"))
-
-
-def blank_behavioral_coverage_row() -> BehavioralCoverageRowModel:
-    """Return a blank analytics.behavioral_coverage row.
-
-    Returns
-    -------
-    BehavioralCoverageRowModel
-        Blank row payload.
-    """
-    return cast(
-        "BehavioralCoverageRowModel",
-        RowFactory.blank_row("analytics.behavioral_coverage"),
-    )
-
-
-def blank_function_profile_row() -> FunctionProfileRowModel:
-    """Return a blank analytics.function_profile row.
-
-    Returns
-    -------
-    FunctionProfileRowModel
-        Blank row payload.
-    """
-    return cast("FunctionProfileRowModel", RowFactory.blank_row("analytics.function_profile"))
-
-
-def sample_function_profile_rows(repo: str, commit: str) -> list[FunctionProfileRowModel]:
-    """Return sample analytics.function_profile rows.
-
-    Returns
-    -------
-    list[FunctionProfileRowModel]
-        Sample row payloads.
-    """
-    return [
-        cast(
-            "FunctionProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "function_goid_h128": 101,
-                "urn": "urn:fn:alpha::helper",
-                "rel_path": "pkg/alpha.py",
-                "language": "python",
-                "kind": "function",
-                "qualname": "pkg.alpha.helper",
-                "tags": ["io", "auth"],
-                "owners": ["team-data"],
-                "created_at": None,
-            },
-        ),
-        cast(
-            "FunctionProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "function_goid_h128": 202,
-                "urn": "urn:fn:beta::process",
-                "rel_path": "pkg/beta.py",
-                "language": "python",
-                "kind": "method",
-                "qualname": "pkg.beta.B.process",
-                "tags": [],
-                "owners": None,
-                "created_at": None,
-            },
-        ),
-        cast(
-            "FunctionProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "function_goid_h128": 303,
-                "urn": "urn:fn:unicode::delta",
-                "rel_path": "pkg/unicode/delta.py",
-                "language": "python",
-                "kind": "function",
-                "qualname": "pkg.unicode.delta.fn",
-                "tags": ["unicode", "core"],
-                "owners": ["team-delta"],
-                "created_at": None,
-            },
-        ),
-    ]
-
-
-def sample_file_profile_rows(repo: str, commit: str) -> list[FileProfileRowModel]:
-    """Return sample analytics.file_profile rows.
-
-    Returns
-    -------
-    list[FileProfileRowModel]
-        Sample row payloads.
-    """
-    return [
-        cast(
-            "FileProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "rel_path": "pkg/alpha.py",
-                "module": "pkg.alpha_mod",
-                "tags": ["core", "io"],
-                "owners": ["team-analytics"],
-                "created_at": None,
-            },
-        ),
-        cast(
-            "FileProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "rel_path": "pkg/beta.py",
-                "module": "pkg.beta",
-                "tags": [],
-                "owners": None,
-                "created_at": None,
-            },
-        ),
-        cast(
-            "FileProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "rel_path": "pkg/unicode/delta.py",
-                "module": "pkg.unicode.delta",
-                "tags": ["unicode"],
-                "owners": None,
-                "created_at": None,
-            },
-        ),
-    ]
-
-
-def sample_module_profile_rows(repo: str, commit: str) -> list[ModuleProfileRowModel]:
-    """Return sample analytics.module_profile rows.
-
-    Returns
-    -------
-    list[ModuleProfileRowModel]
-        Sample row payloads.
-    """
-    return [
-        cast(
-            "ModuleProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "module": "pkg.alpha_mod",
-                "rel_path": "pkg/alpha.py",
-                "language": "python",
-                "loc": 120,
-                "created_at": None,
-            },
-        ),
-        cast(
-            "ModuleProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "module": "pkg.beta",
-                "rel_path": "pkg/beta.py",
-                "language": "python",
-                "loc": 75,
-                "created_at": None,
-            },
-        ),
-    ]
-
-
-def sample_test_profile_rows(repo: str, commit: str) -> list[ProfileRowModel]:
-    """Return sample analytics.test_profile rows.
-
-    Returns
-    -------
-    list[ProfileRowModel]
-        Sample row payloads.
-    """
-    return [
-        cast(
-            "ProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "test_id": "tests/test_mod_a.py::test_func_a",
-                "rel_path": "tests/test_mod_a.py",
-                "qualname": "test_func_a",
-                "status": "passed",
-                "kind": "unit",
-                "duration_ms": 150,
-                "markers": [],
-                "uses_parametrize": False,
-                "flaky": False,
-                "created_at": None,
-            },
-        ),
-        cast(
-            "ProfileRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "test_id": "tests/test_mod_b.py::test_func_b",
-                "rel_path": "tests/test_mod_b.py",
-                "qualname": "test_func_b",
-                "status": "passed",
-                "kind": "unit",
-                "duration_ms": 200,
-                "markers": ["slow"],
-                "uses_parametrize": False,
-                "flaky": False,
-                "created_at": None,
-            },
-        ),
-    ]
-
-
 def function_meta(
     *,
     goid: int,
@@ -749,100 +482,6 @@ def module_row(
     """
     repo, commit = snapshot
     return ModuleRow(module=module, path=path, repo=repo, commit=commit)
-
-
-def function_metrics_row(
-    *,
-    goid: int,
-    rel_path: str,
-    qualname: str,
-    snapshot: tuple[str, str] = (DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit),
-    metrics: Mapping[str, int | str | bool | datetime | float | None] | None = None,
-) -> FunctionMetricsRow:
-    """Create a FunctionMetricsRow with sensible defaults and override support.
-
-    Returns
-    -------
-    FunctionMetricsRow
-        Row with defaulted metrics for analytics.function_metrics.
-    """
-    repo, commit = snapshot
-    urn = f"urn:{repo}:{commit}:{rel_path}#{qualname}"
-    defaults: dict[str, object] = {
-        "language": "python",
-        "kind": "function",
-        "start_line": 1,
-        "end_line": 1,
-        "loc": 2,
-        "logical_loc": 2,
-        "param_count": 0,
-        "positional_params": 0,
-        "keyword_only_params": 0,
-        "has_varargs": False,
-        "has_varkw": False,
-        "is_async": False,
-        "is_generator": False,
-        "return_count": 0,
-        "yield_count": 0,
-        "raise_count": 0,
-        "cyclomatic_complexity": 1,
-        "max_nesting_depth": 1,
-        "stmt_count": 2,
-        "decorator_count": 0,
-        "has_docstring": False,
-        "complexity_bucket": "low",
-        "created_at": datetime.now(tz=UTC),
-    }
-    if metrics:
-        defaults.update(metrics)
-
-    def _as_int(key: str) -> int:
-        return RowCoercions.to_int(defaults.get(key, 0))
-
-    def _as_bool(key: str) -> bool:
-        return RowCoercions.to_bool(defaults.get(key, False))
-
-    def _as_str(key: str) -> str:
-        value = defaults.get(key)
-        if value is None:
-            return str(defaults[key])
-        return value if isinstance(value, str) else str(value)
-
-    created_at_value = defaults.get("created_at")
-    created_at = (
-        created_at_value if isinstance(created_at_value, datetime) else datetime.now(tz=UTC)
-    )
-    return FunctionMetricsRow(
-        function_goid_h128=goid,
-        urn=urn,
-        repo=repo,
-        commit=commit,
-        rel_path=rel_path,
-        language=_as_str("language"),
-        kind=_as_str("kind"),
-        qualname=qualname,
-        start_line=_as_int("start_line"),
-        end_line=_as_int("end_line"),
-        loc=_as_int("loc"),
-        logical_loc=_as_int("logical_loc"),
-        param_count=_as_int("param_count"),
-        positional_params=_as_int("positional_params"),
-        keyword_only_params=_as_int("keyword_only_params"),
-        has_varargs=_as_bool("has_varargs"),
-        has_varkw=_as_bool("has_varkw"),
-        is_async=_as_bool("is_async"),
-        is_generator=_as_bool("is_generator"),
-        return_count=_as_int("return_count"),
-        yield_count=_as_int("yield_count"),
-        raise_count=_as_int("raise_count"),
-        cyclomatic_complexity=_as_int("cyclomatic_complexity"),
-        max_nesting_depth=_as_int("max_nesting_depth"),
-        stmt_count=_as_int("stmt_count"),
-        decorator_count=_as_int("decorator_count"),
-        has_docstring=_as_bool("has_docstring"),
-        complexity_bucket=_as_str("complexity_bucket"),
-        created_at=created_at,
-    )
 
 
 @dataclass
@@ -1220,7 +859,6 @@ class EntrypointPayloadSeed:
     failing_tests: int = 0
     slow_tests: int = 0
     flaky_tests: int = 0
-    entrypoint_coverage_ratio: float = 0.0
     last_test_status: str = "unknown"
     created_at: datetime | None = None
 
@@ -1262,7 +900,6 @@ def entrypoint_payload(seed: EntrypointPayloadSeed) -> dict[str, object]:
         "failing_tests": seed.failing_tests,
         "slow_tests": seed.slow_tests,
         "flaky_tests": seed.flaky_tests,
-        "entrypoint_coverage_ratio": seed.entrypoint_coverage_ratio,
         "last_test_status": seed.last_test_status,
         "created_at": created_at,
     }
@@ -1275,7 +912,6 @@ class EntrypointTestPayloadSeed:
     test_goid_h128: Decimal | int
     repo: str = DEFAULT_VARIANT.repo
     commit: str = DEFAULT_VARIANT.commit
-    coverage_ratio: float = 0.0
     status: str = "passed"
     duration_ms: float = 0.0
     created_at: datetime | None = None
@@ -1296,7 +932,6 @@ def entrypoint_test_payload(seed: EntrypointTestPayloadSeed) -> dict[str, object
         "entrypoint_id": seed.entrypoint_id,
         "test_id": seed.test_id,
         "test_goid_h128": Decimal(seed.test_goid_h128),
-        "coverage_ratio": seed.coverage_ratio,
         "status": seed.status,
         "duration_ms": seed.duration_ms,
         "created_at": created_at,
@@ -1308,7 +943,6 @@ class EntrypointTestSeed:
     entrypoint_id: str
     test_qualname: str
     status: str
-    coverage_ratio: float
     repo: str = DEFAULT_VARIANT.repo
     commit: str = DEFAULT_VARIANT.commit
 
@@ -1327,7 +961,6 @@ def entrypoint_test_row(seed: EntrypointTestSeed) -> tuple[object, ...]:
         seed.entrypoint_id,
         seed.test_qualname,
         seed.status,
-        seed.coverage_ratio,
     )
 
 
@@ -1820,36 +1453,6 @@ def test_catalog_row(
 
 
 @dataclass
-class TypednessSeed:
-    repo: str
-    commit: str
-    path: str
-    type_error_count: int
-    annotation_ratio_json: dict[str, float]
-    untyped_defs: int
-    overlay_needed: bool
-
-
-def typedness_row(seed: TypednessSeed) -> tuple[str, str, str, int, dict[str, float], int, bool]:
-    """Row for analytics.typedness.
-
-    Returns
-    -------
-    tuple[str, str, str, int, str, int, bool]
-        Row values in schema order.
-    """
-    return (
-        seed.repo,
-        seed.commit,
-        seed.path,
-        seed.type_error_count,
-        seed.annotation_ratio_json,
-        seed.untyped_defs,
-        seed.overlay_needed,
-    )
-
-
-@dataclass
 class StaticDiagnosticsSeed:
     repo: str
     commit: str
@@ -1881,240 +1484,6 @@ def static_diagnostics_row(
         seed.total_errors,
         seed.has_errors,
     )
-
-
-# =============================================================================
-# Profile adapter row helpers
-# =============================================================================
-
-
-def function_profile_row(
-    *,
-    goid: Decimal = Decimal(12345),
-    qualname: str = "module.function_name",
-    rel_path: str = "src/module.py",
-    repo: str = DEFAULT_VARIANT.repo,
-    commit: str = DEFAULT_VARIANT.commit,
-    **overrides: object,
-) -> dict[str, Any]:
-    """Build a function_profile row mapping with sensible defaults.
-
-    Returns
-    -------
-    dict[str, Any]
-        Row mapping aligned with analytics.function_profile schema.
-    """
-    base: dict[str, Any] = {
-        "function_goid_h128": goid,
-        "urn": f"urn:{repo}::{qualname}",
-        "repo": repo,
-        "commit": commit,
-        "rel_path": rel_path,
-        "module": rel_path.replace("/", ".").replace(".py", ""),
-        "language": "python",
-        "kind": "function",
-        "qualname": qualname,
-        "start_line": 10,
-        "end_line": 30,
-        "loc": 50,
-        "logical_loc": 40,
-        "cyclomatic_complexity": 5,
-        "complexity_bucket": "low",
-        "param_count": 3,
-        "positional_params": 2,
-        "keyword_params": 1,
-        "vararg": False,
-        "kwarg": False,
-        "max_nesting_depth": 2,
-        "stmt_count": 15,
-        "decorator_count": 1,
-        "has_docstring": True,
-        "total_params": 3,
-        "annotated_params": 3,
-        "return_type": "str",
-        "param_types": ["int", "str", "bool"],
-        "fully_typed": True,
-        "partial_typed": False,
-        "untyped": False,
-        "typedness_bucket": "fully_typed",
-        "typedness_source": "annotations",
-        "file_typed_ratio": 0.95,
-        "static_error_count": 0,
-        "has_static_errors": False,
-        "executable_lines": 40,
-        "covered_lines": 35,
-        "coverage_ratio": 0.875,
-        "tested": True,
-        "untested_reason": None,
-        "tests_touching": 5,
-        "failing_tests": 0,
-        "slow_tests": 0,
-        "flaky_tests": 0,
-        "last_test_status": "passed",
-        "dominant_test_status": "passed",
-        "slow_test_threshold_ms": 1000.0,
-        "created_in_commit": commit,
-        "created_at_history": datetime.now(tz=UTC),
-        "last_modified_commit": commit,
-        "last_modified_at": datetime.now(tz=UTC),
-        "age_days": 30,
-        "commit_count": 10,
-        "author_count": 3,
-        "lines_added": 100,
-        "lines_deleted": 20,
-        "churn_score": 0.5,
-        "stability_bucket": "stable",
-        "call_fan_in": 5,
-        "call_fan_out": 3,
-        "call_edge_in_count": 5,
-        "call_edge_out_count": 3,
-        "call_is_leaf": False,
-        "call_is_entrypoint": False,
-        "call_is_public": True,
-        "risk_score": 0.25,
-        "risk_level": "low",
-        "risk_component_coverage": 0.1,
-        "risk_component_complexity": 0.05,
-        "risk_component_static": 0.0,
-        "risk_component_hotspot": 0.1,
-        "is_pure": True,
-        "uses_io": False,
-        "touches_db": False,
-        "uses_time": False,
-        "uses_randomness": False,
-        "modifies_globals": False,
-        "modifies_closure": False,
-        "spawns_threads_or_tasks": False,
-        "has_transitive_effects": False,
-        "purity_confidence": 0.95,
-        "param_nullability_json": [],
-        "return_nullability": "non_null",
-        "has_preconditions": False,
-        "has_postconditions": False,
-        "has_raises": False,
-        "contract_confidence": 0.9,
-        "role": "helper",
-        "framework": None,
-        "role_confidence": 0.85,
-        "role_sources_json": ["path_hint"],
-        "tags": [],
-        "owners": [],
-        "doc_short": "Test function.",
-        "doc_long": "A test function for unit tests.",
-        "doc_params": {"param1": "int", "param2": "str"},
-        "doc_returns": {"type": "str", "description": "A string result"},
-        "created_at": datetime.now(tz=UTC),
-    }
-    base.update(overrides)
-    return base
-
-
-def file_profile_row(
-    *,
-    rel_path: str = "src/services/api.py",
-    repo: str = DEFAULT_VARIANT.repo,
-    commit: str = DEFAULT_VARIANT.commit,
-    **overrides: object,
-) -> dict[str, Any]:
-    """Build a file_profile row mapping with sensible defaults.
-
-    Returns
-    -------
-    dict[str, Any]
-        Row mapping aligned with analytics.file_profile schema.
-    """
-    base: dict[str, Any] = {
-        "repo": repo,
-        "commit": commit,
-        "rel_path": rel_path,
-        "module": rel_path.replace("/", ".").replace(".py", ""),
-        "language": "python",
-        "node_count": 100,
-        "function_count": 10,
-        "class_count": 2,
-        "avg_depth": 2.5,
-        "max_depth": 5,
-        "ast_complexity": 15.0,
-        "hotspot_score": 0.75,
-        "commit_count": 50,
-        "author_count": 5,
-        "lines_added": 500,
-        "lines_deleted": 200,
-        "annotation_ratio": 0.85,
-        "untyped_defs": 2,
-        "overlay_needed": False,
-        "type_error_count": 0,
-        "static_error_count": 0,
-        "has_static_errors": False,
-        "total_functions": 10,
-        "public_functions": 8,
-        "avg_loc": 25.0,
-        "max_loc": 100,
-        "avg_cyclomatic_complexity": 3.5,
-        "max_cyclomatic_complexity": 8,
-        "high_risk_function_count": 1,
-        "medium_risk_function_count": 3,
-        "max_risk_score": 0.65,
-        "file_coverage_ratio": 0.85,
-        "tested_function_count": 8,
-        "untested_function_count": 2,
-        "tests_touching": 15,
-        "tags": [],
-        "owners": [],
-        "created_at": datetime.now(tz=UTC),
-    }
-    base.update(overrides)
-    return base
-
-
-def module_profile_row(
-    *,
-    module: str = "services.api",
-    repo: str = DEFAULT_VARIANT.repo,
-    commit: str = DEFAULT_VARIANT.commit,
-    **overrides: object,
-) -> dict[str, Any]:
-    """Build a module_profile row mapping with sensible defaults.
-
-    Returns
-    -------
-    dict[str, Any]
-        Row mapping aligned with analytics.module_profile schema.
-    """
-    base: dict[str, Any] = {
-        "repo": repo,
-        "commit": commit,
-        "module": module,
-        "path": module.replace(".", "/"),
-        "language": "python",
-        "file_count": 5,
-        "total_loc": 500,
-        "total_logical_loc": 400,
-        "function_count": 25,
-        "class_count": 5,
-        "avg_file_complexity": 10.0,
-        "max_file_complexity": 25.0,
-        "high_risk_function_count": 2,
-        "medium_risk_function_count": 5,
-        "low_risk_function_count": 18,
-        "max_risk_score": 0.85,
-        "avg_risk_score": 0.35,
-        "module_coverage_ratio": 0.75,
-        "tested_function_count": 20,
-        "untested_function_count": 5,
-        "import_fan_in": 10,
-        "import_fan_out": 15,
-        "cycle_group": None,
-        "in_cycle": False,
-        "role": "service",
-        "role_confidence": 0.9,
-        "role_sources_json": ["path_hint", "decorator"],
-        "tags": [],
-        "owners": [],
-        "created_at": datetime.now(tz=UTC),
-    }
-    base.update(overrides)
-    return base
 
 
 @dataclass
@@ -2154,7 +1523,6 @@ def config_value_row(
 __all__ = [
     "AstMetricSeed",
     "AstMetricsRow",
-    "BehavioralCoverageRowModel",
     "CFGBlockRow",
     "CFGEdgeRow",
     "CallGraphEdgeRow",
@@ -2180,22 +1548,15 @@ __all__ = [
     "EntrypointSeed",
     "EntrypointTestPayloadSeed",
     "EntrypointTestSeed",
-    "FileProfileRowModel",
     "FunctionContextBuilder",
-    "FunctionMetricsRow",
-    "FunctionProfileRowModel",
     "FunctionTypesRow",
     "FunctionValidationRow",
     "GoidCrosswalkRow",
     "GoidRow",
     "GraphMetricsModulesExtRow",
-    "HotspotRow",
     "ImportGraphEdgeRow",
-    "ModuleProfileRowModel",
     "ModuleRow",
-    "ProfileRowModel",
     "RepoMapRow",
-    "RiskFactorRow",
     "RowCoercions",
     "RowFactory",
     "SemanticRoleFunctionSeed",
@@ -2213,15 +1574,8 @@ __all__ = [
     "SymbolUseEdgeRow",
     "TestCatalogRow",
     "TestCatalogSeed",
-    "TypednessRow",
-    "TypednessSeed",
     "ast_metric_row",
-    "blank_behavioral_coverage_row",
-    "blank_file_profile_row",
-    "blank_function_profile_row",
-    "blank_module_profile_row",
     "blank_row",
-    "blank_test_profile_row",
     "columnar_rows_for",
     "compute_dep_id",
     "config_value_row",
@@ -2241,22 +1595,14 @@ __all__ = [
     "entrypoint_row",
     "entrypoint_test_payload",
     "entrypoint_test_row",
-    "file_profile_row",
     "function_meta",
-    "function_metrics_row",
-    "function_profile_row",
     "insert_rows",
     "insert_symbol_use_edges",
     "list_public_exports",
     "make_symbol_use_edge_row",
-    "module_profile_row",
     "module_row",
     "row_for",
     "row_list_for",
-    "sample_file_profile_rows",
-    "sample_function_profile_rows",
-    "sample_module_profile_rows",
-    "sample_test_profile_rows",
     "semantic_role_function_row",
     "semantic_role_module_row",
     "static_diagnostics_row",
@@ -2265,5 +1611,4 @@ __all__ = [
     "subsystem_payload",
     "subsystem_row",
     "test_catalog_row",
-    "typedness_row",
 ]

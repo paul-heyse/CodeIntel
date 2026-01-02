@@ -725,12 +725,6 @@ def _run_ingestion_steps(
             snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=setup.ctx.repo_root)
             materialize_rows_for_snapshot(
                 setup.gateway,
-                "analytics.typedness",
-                typing_result.typedness_rows,
-                snapshot=snapshot,
-            )
-            materialize_rows_for_snapshot(
-                setup.gateway,
                 "analytics.static_diagnostics",
                 typing_result.diagnostic_rows,
                 snapshot=snapshot,

@@ -57,36 +57,6 @@ def test_resolve_function_goid_returns_none_when_no_identifiers(
     expect_is_none(result)
 
 
-def test_get_function_summary_by_goid_returns_none_when_not_found(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Verify get_function_summary_by_goid returns None when no match."""
-    repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
-
-    result = repo.get_function_summary_by_goid(99999)
-
-    expect_is_none(result)
-
-
-def test_list_function_summaries_for_file_returns_empty_when_no_match(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Verify list_function_summaries_for_file returns empty list when no match."""
-    repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
-
-    result = repo.list_function_summaries_for_file("nonexistent.py")
-
-    expect_empty(result)
-
-
 def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> None:
     """Verify list_function_validation filters by GOID and orders by newest first."""
     rows = [
@@ -181,10 +151,10 @@ def test_function_repository_with_docs_export(
 
     goid = expect_is_not_none(repo.resolve_function_goid(urn="urn:foo"))
 
-    summary = repo.get_function_summary_by_goid(goid)
-    expect_is_not_none(summary)
-    if summary is not None:
-        expect_equal(summary["qualname"], "pkg.foo:func")
+    architecture = repo.get_function_architecture(goid)
+    expect_is_not_none(architecture)
+    if architecture is not None:
+        expect_equal(architecture["qualname"], "pkg.foo:func")
 
     goids = repo.list_function_goids()
     if goid is not None:

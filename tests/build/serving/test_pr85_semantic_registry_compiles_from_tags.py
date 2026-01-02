@@ -17,9 +17,9 @@ def test_semantic_registry_compiles_from_hamilton_tags() -> None:
     driver = h_driver.Builder().with_modules(view_outputs).allow_module_overrides().build()
     provider = MappingSchemaProvider(
         schemas={
-            "docs.v_function_summary": TableSchema(
+            "docs.v_function_architecture": TableSchema(
                 schema="docs",
-                name="v_function_summary",
+                name="v_function_architecture",
                 columns=[
                     Column(name="repo", type="VARCHAR", nullable=False),
                     Column(name="commit", type="VARCHAR", nullable=False),
@@ -33,4 +33,4 @@ def test_semantic_registry_compiles_from_hamilton_tags() -> None:
         schema_provider=provider,
         tag_query=TagQuery(driver),
     )
-    expect_true(any(v.get("id") == "function.summary" for v in compiled.views))
+    expect_true(any(v.get("id") == "function.architecture" for v in compiled.views))

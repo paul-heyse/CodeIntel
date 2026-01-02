@@ -54,10 +54,10 @@ def load_analytics_samples(gateway: StorageGateway) -> AnalyticsSamples:
     goid_h128 = _pick("SELECT goid_h128 FROM core.goids LIMIT 1", "goid")
     urn = _pick("SELECT urn FROM core.goids WHERE urn IS NOT NULL LIMIT 1", "URN")
     rel_path, qualname = gateway.con.execute(
-        "SELECT rel_path, qualname FROM analytics.function_metrics LIMIT 1"
+        "SELECT rel_path, qualname FROM analytics.function_types LIMIT 1"
     ).fetchone() or (None, None)
     if rel_path is None or qualname is None:
-        pytest.skip("No function metrics available in seeded analytics data")
+        pytest.skip("No function types available in seeded analytics data")
     subsystem_id = _pick(
         "SELECT DISTINCT subsystem_id FROM analytics.subsystems LIMIT 1",
         "subsystem_id",

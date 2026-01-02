@@ -482,8 +482,6 @@ def seed_call_graph_scoping(
     con.execute("DELETE FROM graph.call_graph_edges WHERE repo IN ('r1', 'r2')")
     con.execute("DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1, 2)")
     con.execute(
-        "DELETE FROM analytics.goid_risk_factors WHERE (repo, commit) IN (('r1','c1'),('r2','c2'))"
-    )
     con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1, 2)")
     insert_rows(
         gateway,
@@ -612,23 +610,25 @@ def seed_docs_export_invalid_profile(
         repo_root=resolved_options.repo_root,
     )
     con = gateway.con
-    con.execute("DROP TABLE IF EXISTS analytics.function_profile")
+    con.execute("DROP TABLE IF EXISTS analytics.function_types")
     commit_value = None if resolved_options.null_commit else commit
     if resolved_options.drop_commit_column:
         con.execute(
             """
-            CREATE TABLE analytics.function_profile (
+            CREATE TABLE analytics.function_types (
                 function_goid_h128 BIGINT,
                 urn TEXT,
                 repo TEXT,
                 rel_path TEXT,
-                module TEXT
+                qualname TEXT
             )
             """
         )
         con.execute(
             """
-            INSERT INTO analytics.function_profile (function_goid_h128, urn, repo, rel_path, module)
+            INSERT INTO analytics.function_types (
+                function_goid_h128, urn, repo, rel_path, qualname
+            )
             VALUES (1, 'urn:foo', ?, 'foo.py', 'pkg.foo')
             """,
             [repo],
@@ -636,20 +636,20 @@ def seed_docs_export_invalid_profile(
     else:
         con.execute(
             """
-            CREATE TABLE analytics.function_profile (
+            CREATE TABLE analytics.function_types (
                 function_goid_h128 BIGINT,
                 urn TEXT,
                 repo TEXT,
                 commit TEXT,
                 rel_path TEXT,
-                module TEXT
+                qualname TEXT
             )
             """
         )
         con.execute(
             """
-            INSERT INTO analytics.function_profile (
-                function_goid_h128, urn, repo, commit, rel_path, module
+            INSERT INTO analytics.function_types (
+                function_goid_h128, urn, repo, commit, rel_path, qualname
             )
             VALUES (1, 'urn:foo', ?, ?, 'foo.py', 'pkg.foo')
             """,

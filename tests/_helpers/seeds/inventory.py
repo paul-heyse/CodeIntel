@@ -45,7 +45,6 @@ SEED_INVENTORY: Final[list[SeedInventoryEntry]] = [
             "graph.cfg_blocks",
             "graph.cfg_edges",
             "graph.dfg_edges",
-            "analytics.function_metrics",
             "analytics.function_types",
             "analytics.function_validation",
         ],
@@ -81,8 +80,7 @@ SEED_INVENTORY: Final[list[SeedInventoryEntry]] = [
         name="seed_mcp_backend",
         kind="seeder",
         tables=[
-            "analytics.goid_risk_factors",
-            "analytics.function_metrics",
+            "analytics.function_types",
             "analytics.function_validation",
             "graph.call_graph_edges",
             "analytics.test_catalog",

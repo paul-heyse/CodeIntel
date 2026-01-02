@@ -59,7 +59,7 @@ class ParityTestResult:
     Examples
     --------
     >>> result = ParityTestResult(
-    ...     target="risk_factors",
+    ...     target="function_types",
     ...     tables_match=True,
     ...     row_counts_match=True,
     ...     schema_match=True,
@@ -129,7 +129,7 @@ class SkipTestResult:
     Examples
     --------
     >>> result = SkipTestResult(
-    ...     target="risk_factors",
+    ...     target="function_types",
     ...     first_run_computed=True,
     ...     second_run_skipped=True,
     ...     third_run_forced=True,
@@ -375,7 +375,7 @@ class MigrationTestHarness:
         ...     if force or not executor.should_skip():
         ...         return executor.execute(compute)
         ...     return executor.skip()
-        >>> result = harness.test_skip_logic("risk_factors", run_target_fn=run_fn)
+        >>> result = harness.test_skip_logic("function_types", run_target_fn=run_fn)
         >>> assert result.is_valid
         """
         errors: list[str] = []

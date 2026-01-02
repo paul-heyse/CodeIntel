@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import msgspec
 import pytest
-
 from tools.advanced_query_engine.contracts import QueryRequest
 
 

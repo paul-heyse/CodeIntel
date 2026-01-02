@@ -23,13 +23,13 @@ def test_load_build_config_merges_module_and_target(tmp_path: Path) -> None:
         project_root,
         {
             "analytics": {"threshold": 1, "shared": "module"},
-            "analytics.hotspots": {"threshold": 3, "enabled": True},
+            "analytics.function_types": {"threshold": 3, "enabled": True},
             "graphs": {"sampling_rate": 0.2},
         },
     )
 
     config = load_build_config(project_root)
-    params = config.parameters_for("hotspots")
+    params = config.parameters_for("function_types")
 
     expect_equal(params.get_typed("threshold", int), 3)
     expect_true(params.get_typed("enabled", bool) is True)
@@ -58,7 +58,7 @@ def test_build_config_get_nested_with_defaults() -> None:
     cfg = make_build_config(
         {
             "analytics": {
-                "hotspots": {"max_commits": 5},
+                "function_types": {"max_commits": 5},
                 "enabled": True,
             },
             "value": None,
@@ -66,8 +66,8 @@ def test_build_config_get_nested_with_defaults() -> None:
         }
     )
 
-    expect_equal(cfg.get("analytics.hotspots.max_commits"), 5)
-    expect_equal(cfg.get("analytics.hotspots.missing", default="fallback"), "fallback")
+    expect_equal(cfg.get("analytics.function_types.max_commits"), 5)
+    expect_equal(cfg.get("analytics.function_types.missing", default="fallback"), "fallback")
 
     expect_equal(cfg.get("value", default="default"), "default")
 
