@@ -54,6 +54,7 @@ from codeintel.build.hamilton.native.analytics.entrypoints import (
     entrypoints__table_materializations,
     t__entrypoints,
 )
+from codeintel.build.hamilton.native.analytics.function_analysis import function_analytics_result
 from codeintel.build.hamilton.native.analytics.function_ast_features import (
     function_ast_features__base,
     function_ast_features__table,
@@ -107,17 +108,6 @@ from codeintel.build.hamilton.native.analytics.graph_validation import (
     graph_validation__table,
     t__graph_validation,
 )
-from codeintel.build.hamilton.native.analytics.profiles import (
-    file_profile__base,
-    file_profile__table,
-    function_profile__base,
-    function_profile__table,
-    hotspots__base,
-    hotspots__table,
-    t__file_profile,
-    t__function_profile,
-    t__hotspots,
-)
 from codeintel.build.hamilton.native.analytics.semantic_roles import (
     semantic_roles__table_materializations,
     semantic_roles_functions__base,
@@ -158,33 +148,6 @@ from codeintel.build.hamilton.native.analytics.tables_dependencies import (
     external_dependency_calls__table,
     external_deps__table_materializations,
     t__external_deps,
-)
-from codeintel.build.hamilton.native.analytics.tables_functions import (
-    function_analytics_result,
-    function_metrics__base,
-    function_metrics__table,
-    t__function_metrics,
-)
-from codeintel.build.hamilton.native.analytics.tables_modules import (
-    module_profile__base,
-    module_profile__table,
-    t__module_profile,
-)
-from codeintel.build.hamilton.native.analytics.tables_risk import (
-    risk_factors__base,
-    risk_factors__table,
-    t__risk_factors,
-)
-from codeintel.build.hamilton.native.analytics.testing import (
-    t__test_graph_metrics,
-    t__test_profile,
-    test_graph_metrics__table_materializations,
-    test_graph_metrics_functions__base,
-    test_graph_metrics_functions__table,
-    test_graph_metrics_tests__base,
-    test_graph_metrics_tests__table,
-    test_profile__base,
-    test_profile__table,
 )
 
 __all__ = [
@@ -231,8 +194,6 @@ __all__ = [
     "external_dependency_calls__base",
     "external_dependency_calls__table",
     "external_deps__table_materializations",
-    "file_profile__base",
-    "file_profile__table",
     "function_analytics_result",
     "function_ast_features__base",
     "function_ast_features__table",
@@ -240,10 +201,6 @@ __all__ = [
     "function_contracts__table",
     "function_effects__base",
     "function_effects__table",
-    "function_metrics__base",
-    "function_metrics__table",
-    "function_profile__base",
-    "function_profile__table",
     "function_types__base",
     "function_types__table",
     "function_validation__base",
@@ -262,12 +219,6 @@ __all__ = [
     "graph_stats__table",
     "graph_validation__base",
     "graph_validation__table",
-    "hotspots__base",
-    "hotspots__table",
-    "module_profile__base",
-    "module_profile__table",
-    "risk_factors__base",
-    "risk_factors__table",
     "semantic_roles__table_materializations",
     "semantic_roles_functions__base",
     "semantic_roles_functions__table",
@@ -298,34 +249,19 @@ __all__ = [
     "t__data_models",
     "t__entrypoints",
     "t__external_deps",
-    "t__file_profile",
     "t__function_ast_features",
     "t__function_contracts",
     "t__function_effects",
-    "t__function_metrics",
-    "t__function_profile",
     "t__function_types",
     "t__function_validation",
     "t__graph_metrics",
     "t__graph_metrics_ext",
     "t__graph_stats",
     "t__graph_validation",
-    "t__hotspots",
-    "t__module_profile",
-    "t__risk_factors",
     "t__semantic_roles",
     "t__subsystem_agreement",
     "t__subsystem_caches",
     "t__subsystem_graph_metrics",
     "t__subsystems",
     "t__symbol_graph_metrics",
-    "t__test_graph_metrics",
-    "t__test_profile",
-    "test_graph_metrics__table_materializations",
-    "test_graph_metrics_functions__base",
-    "test_graph_metrics_functions__table",
-    "test_graph_metrics_tests__base",
-    "test_graph_metrics_tests__table",
-    "test_profile__base",
-    "test_profile__table",
 ]

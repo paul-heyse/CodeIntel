@@ -14,9 +14,9 @@ Examples
 --------
 >>> from codeintel.build.schemas import get_schema_provider
 >>> provider = get_schema_provider()
->>> schema = provider.require_table_schema("analytics.function_metrics")
+>>> schema = provider.require_table_schema("core.modules")
 >>> schema.table_key
-'analytics.function_metrics'
+'core.modules'
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def get_schema_provider() -> SchemaProvider:
     Examples
     --------
     >>> provider = get_schema_provider()
-    >>> schema = provider.get_table_schema("analytics.function_metrics")
+    >>> schema = provider.get_table_schema("core.modules")
     >>> schema is not None
     True
     """
@@ -92,9 +92,9 @@ def require_table_schema(table_key: str) -> TableSchema:
 
     Examples
     --------
-    >>> schema = require_table_schema("analytics.function_metrics")
+    >>> schema = require_table_schema("core.modules")
     >>> schema.table_key
-    'analytics.function_metrics'
+    'core.modules'
     """
     return _schema_service().require_table_schema(table_key)
 

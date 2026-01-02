@@ -1,4 +1,4 @@
-"""Analytics utilities that turn ingestion outputs into hotspots and profiles."""
+"""Analytics utilities for derived tables and graph metrics."""
 
 from __future__ import annotations
 

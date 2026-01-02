@@ -44,7 +44,7 @@ def list_execution_order(
     Examples
     --------
     >>> runtime = compose_runtime(env=env, config={}).bundle
-    >>> order = list_execution_order(runtime, ["risk_factors"])
+    >>> order = list_execution_order(runtime, ["function_types"])
     >>> "t__modules" in order
     True
     """
@@ -78,7 +78,7 @@ def list_execution_targets(
     Examples
     --------
     >>> runtime = compose_runtime(env=env, config={}).bundle
-    >>> order = list_execution_targets(runtime, ["risk_factors"])
+    >>> order = list_execution_targets(runtime, ["function_types"])
     >>> "modules" in order
     True
     """
@@ -106,7 +106,7 @@ def get_dag_info(
     Examples
     --------
     >>> runtime = compose_runtime(env=env, config={}).bundle
-    >>> info = get_dag_info(runtime, ["risk_factors"])
+    >>> info = get_dag_info(runtime, ["function_types"])
     >>> "nodes" in info
     True
     """
@@ -187,7 +187,7 @@ def export_dag_json(
     Examples
     --------
     >>> runtime = compose_runtime(env=env, config={}).bundle
-    >>> json_str = export_dag_json(runtime, ["risk_factors"])
+    >>> json_str = export_dag_json(runtime, ["function_types"])
     >>> import json
     >>> data = json.loads(json_str)
     >>> "nodes" in data
@@ -273,7 +273,7 @@ def export_dag_mermaid(
     Examples
     --------
     >>> runtime = compose_runtime(env=env, config={}).bundle
-    >>> mermaid = export_dag_mermaid(runtime, ["risk_factors"])
+    >>> mermaid = export_dag_mermaid(runtime, ["function_types"])
     >>> mermaid.startswith("graph TD")
     True
     """
@@ -319,7 +319,7 @@ def export_dag_dot(
     Examples
     --------
     >>> runtime = compose_runtime(env=env, config={}).bundle
-    >>> dot = export_dag_dot(runtime, ["risk_factors"])
+    >>> dot = export_dag_dot(runtime, ["function_types"])
     >>> dot.startswith("digraph G {")
     True
     """

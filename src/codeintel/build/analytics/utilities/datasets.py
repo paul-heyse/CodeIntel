@@ -38,7 +38,7 @@ def _table_supports_snapshot_delete(table_key: str) -> bool:
     Parameters
     ----------
     table_key
-        Fully qualified table key (e.g., 'analytics.function_metrics').
+        Fully qualified table key (e.g., 'analytics.function_types').
 
     Returns
     -------

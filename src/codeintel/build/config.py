@@ -8,11 +8,7 @@ per-target overrides.
 
 Example config file (codeintel.build.toml):
 ```toml
-[analytics.hotspots]
-max_commits = 2000
-
-[analytics.profiles]
-include_ownership = true
+[analytics]
 max_parallel_workers = 4
 
 [ingestion]
@@ -23,8 +19,8 @@ Example
 -------
 >>> from codeintel.build.config import load_build_config
 >>> config = load_build_config(Path("/path/to/project"))
->>> hotspot_params = config.parameters_for("hotspots")
->>> max_commits = hotspot_params.get_typed("max_commits", int, default=2000)
+>>> entrypoint_params = config.parameters_for("entrypoints")
+>>> max_entries = entrypoint_params.get_typed("max_entries", int, default=2000)
 """
 
 from __future__ import annotations
@@ -93,7 +89,7 @@ class ConfigSection:
     Attributes
     ----------
     name
-        Section name (e.g., "analytics", "analytics.hotspots").
+        Section name (e.g., "analytics", "analytics.function_types").
     values
         Key-value pairs in this section.
     """
@@ -347,7 +343,7 @@ class BuildConfig:
         Parameters
         ----------
         name
-            Section name (e.g., "analytics.hotspots").
+            Section name (e.g., "analytics.function_types").
 
         Returns
         -------
@@ -418,7 +414,7 @@ class BuildConfig:
 
         Looks up configuration in this order:
         1. Module-level section (e.g., "analytics")
-        2. Target-level section (e.g., "analytics.hotspots")
+        2. Target-level section (e.g., "analytics.function_types")
 
         Target-level values override module-level.
 
@@ -664,13 +660,6 @@ def _validate_seed_suite_manifest(raw: object) -> None:
 
 
 DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {
-    "hotspots": {
-        "max_commits": 2000,
-    },
-    "profiles": {
-        "include_ownership": True,
-        "compute_trends": True,
-    },
     "subsystems": {
         "min_modules_per_subsystem": 2,
         "max_subsystems": 50,
@@ -683,14 +672,6 @@ DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {
     },
     "graph_metrics": {
         "enable_extended_metrics": True,
-    },
-    "risk_factors": {
-        "weights": {
-            "complexity": 0.4,
-            "churn": 0.25,
-            "coupling": 0.2,
-            "age": 0.15,
-        },
     },
     "external_deps": {
         "include_stdlib": False,

@@ -47,18 +47,11 @@ FUNCTION_TYPES_COLUMNS = (
     "end_line",
     "total_params",
     "annotated_params",
-    "unannotated_params",
-    "param_typed_ratio",
     "has_return_annotation",
     "return_type",
     "return_type_source",
     "type_comment",
     "param_types",
-    "fully_typed",
-    "partial_typed",
-    "untyped",
-    "typedness_bucket",
-    "typedness_source",
     "created_at",
 )
 
@@ -69,7 +62,7 @@ def function_types__base(function_analytics_result: FunctionAnalyticsResult) -> 
     Returns
     -------
     pl.LazyFrame
-        Lazy frame with function typing coverage columns.
+        Lazy frame with function typing columns.
     """
     return rows_to_frame(
         FUNCTION_TYPES_TABLE_KEY,

@@ -192,7 +192,7 @@ class SemanticRoleInputs:
     module_by_path: dict[str, str]
     ast_map: dict[int, FunctionAst]
     features_map: dict[int, FunctionAstFeatures]
-    function_metrics_frame: pl.DataFrame | None = None
+    goids_frame: pl.DataFrame | None = None
     function_effects_frame: pl.DataFrame | None = None
     function_contracts_frame: pl.DataFrame | None = None
     graph_metrics_frame: pl.DataFrame | None = None
@@ -227,7 +227,7 @@ def build_semantic_roles_rows(
         commit=snapshot.commit,
     )
     function_rows = _function_rows_from_frame(
-        inputs.function_metrics_frame,
+        inputs.goids_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
@@ -348,12 +348,15 @@ def _function_rows_from_frame(
         goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
+        start_line = coerce_optional_int(row.get("start_line"), ctx="core.goids.start_line")
+        end_line = coerce_optional_int(row.get("end_line"), ctx="core.goids.end_line")
+        loc = end_line - start_line + 1 if start_line is not None and end_line is not None else None
         result.append(
             (
                 goid,
-                coerce_str(row.get("rel_path"), ctx="function_metrics.rel_path"),
-                coerce_str(row.get("qualname"), ctx="function_metrics.qualname"),
-                coerce_optional_int(row.get("loc"), ctx="function_metrics.loc"),
+                coerce_str(row.get("rel_path"), ctx="core.goids.rel_path"),
+                coerce_str(row.get("qualname"), ctx="core.goids.qualname"),
+                loc,
             )
         )
     return result

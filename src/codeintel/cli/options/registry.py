@@ -53,7 +53,7 @@ SHARED_FLAGS = OptionGroup(
 
 BUILD_RUN_TARGETS = OptionSpec(
     arg_name="targets",
-    help="Target names to build (e.g., function_metrics, call_graph).",
+    help="Target names to build (e.g., function_types, call_graph).",
 )
 BUILD_RUN_MODULE = OptionSpec(
     arg_name="module",
@@ -205,7 +205,7 @@ BUILD_VALIDATE_FORMAT = OptionSpec(
 
 BUILD_PLAN_TARGETS = OptionSpec(
     arg_name="targets",
-    help="Target names to plan (e.g., function_metrics, call_graph).",
+    help="Target names to plan (e.g., function_types, call_graph).",
 )
 BUILD_PLAN_MODULE = OptionSpec(
     arg_name="module",
@@ -234,7 +234,7 @@ BUILD_PLAN_OUTPUT = OptionSpec(
 
 BUILD_EXPLAIN_TARGET = OptionSpec(
     arg_name="target",
-    help="Target name to explain (e.g., function_metrics).",
+    help="Target name to explain (e.g., function_types).",
 )
 BUILD_EXPLAIN_FORCE = OptionSpec(
     arg_name="force",
@@ -252,7 +252,7 @@ BUILD_EXPLAIN_IO_SURFACE = OptionSpec(
 
 BUILD_GRAPH_TARGETS = OptionSpec(
     arg_name="targets",
-    help="Target names to show DAG for (e.g., function_metrics, call_graph).",
+    help="Target names to show DAG for (e.g., function_types, call_graph).",
 )
 BUILD_GRAPH_MODULE = OptionSpec(
     arg_name="module",
@@ -283,7 +283,7 @@ BUILD_GRAPH_OUTPUT = OptionSpec(
 BUILD_ASSETS_ASSET = OptionSpec(
     arg_name="asset",
     names=("--asset",),
-    help="Filter to a specific asset key (e.g., analytics.function_metrics).",
+    help="Filter to a specific asset key (e.g., analytics.function_types).",
 )
 BUILD_ASSETS_TARGET = OptionSpec(
     arg_name="target",
@@ -306,7 +306,7 @@ BUILD_ASSETS_FORMAT = OptionSpec(
 BUILD_LINEAGE_ASSET = OptionSpec(
     arg_name="asset",
     names=("--asset",),
-    help="Asset key to traverse (e.g., analytics.goid_risk_factors).",
+    help="Asset key to traverse (e.g., analytics.function_types).",
 )
 BUILD_LINEAGE_DIRECTION = OptionSpec(
     arg_name="direction",
@@ -407,7 +407,7 @@ BUILD_IMPACT_ASSET_KIND = OptionSpec(
 BUILD_IMPACT_ASSET_KEY = OptionSpec(
     arg_name="asset_key",
     names=("--asset-key",),
-    help="Key of source asset (e.g., analytics.function_metrics).",
+    help="Key of source asset (e.g., analytics.function_types).",
 )
 BUILD_IMPACT_VERSION_HASH = OptionSpec(
     arg_name="version_hash",

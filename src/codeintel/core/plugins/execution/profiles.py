@@ -48,13 +48,6 @@ FAST_PROFILE = ExecutionProfile(
     name="fast",
     description="Quick iteration profile for local development.",
     plugin_options={
-        "analytics.function_metrics": {
-            "include_graph_metrics": False,
-            "include_coverage_metrics": False,
-        },
-        "analytics.type_coverage": {
-            "include_private": False,
-        },
         "graphs.callgraph": {
             "use_libcst": False,
             "resolve_imports": False,
@@ -80,10 +73,6 @@ FULL_PROFILE = ExecutionProfile(
     name="full",
     description="Comprehensive analysis profile for thorough code intelligence.",
     plugin_options={
-        "analytics.function_metrics": {
-            "include_graph_metrics": True,
-            "include_coverage_metrics": True,
-        },
         "graphs.callgraph": {
             "use_libcst": True,
             "resolve_imports": True,
@@ -108,13 +97,6 @@ CI_PROFILE = ExecutionProfile(
     name="ci",
     description="CI/CD profile optimized for automated pipelines.",
     plugin_options={
-        "analytics.function_metrics": {
-            "include_graph_metrics": True,
-            "include_coverage_metrics": True,
-        },
-        "analytics.type_coverage": {
-            "include_private": True,
-        },
         "graphs.callgraph": {
             "use_libcst": True,
             "resolve_imports": True,

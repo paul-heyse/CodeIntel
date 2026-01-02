@@ -100,7 +100,7 @@ class PyrightPlugin(DiagnosticToolPlugin):
             name="pyright",
             produces_artifacts=(),
             consumes_configs=("pyright_bin",),
-            datasets=("analytics.typedness", "analytics.static_diagnostics"),
+            datasets=("analytics.static_diagnostics",),
         )
     )
 

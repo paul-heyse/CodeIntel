@@ -18,7 +18,10 @@ CodeIntelURI = Annotated[
     Field(
         pattern=r"^codeintel://.+",
         description="CodeIntel resource URI (codeintel://...).",
-        examples=[META_SERVING_URI, SEMANTIC_VIEW_URI_TEMPLATE.format(view_id="function_metrics")],
+        examples=[
+            META_SERVING_URI,
+            SEMANTIC_VIEW_URI_TEMPLATE.format(view_id="call_graph_enriched"),
+        ],
     ),
 ]
 
@@ -40,7 +43,7 @@ ViewId = Annotated[
         max_length=128,
         pattern=r"^[a-zA-Z0-9_.-]+$",
         description="Semantic view identifier (stable).",
-        examples=["function_metrics", "risk_factors", "module_profile"],
+        examples=["call_graph_enriched", "data_models", "symbol_graph_metrics"],
     ),
 ]
 

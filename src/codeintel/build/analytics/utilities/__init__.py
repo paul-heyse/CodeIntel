@@ -21,7 +21,7 @@ from codeintel.build.analytics.utilities.datasets import (
 name = call_name(node)
 
 
-contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
+contract = get_analytics_dataset_contract(gateway, "analytics.function_types")
 insert_analytics_rows(gateway, contract, rows)
 ```
 """

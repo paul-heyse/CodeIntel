@@ -99,9 +99,9 @@ class BuildEnv:
     ...     providers=providers,
     ...     config=config,
     ...     profile="full",
-    ...     force_targets=frozenset(["function_metrics"]),
+    ...     force_targets=frozenset(["function_types"]),
     ... )
-    >>> driver.execute(["t__risk_factors"], inputs={"env": env})
+    >>> driver.execute(["t__function_types"], inputs={"env": env})
     """
 
     gateway: BuildGateway

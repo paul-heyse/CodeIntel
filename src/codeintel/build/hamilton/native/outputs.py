@@ -115,13 +115,13 @@ def expected_datasets(
     --------
     >>> from codeintel.config.primitives import SnapshotRef
     >>> catalog = runtime.catalog
-    >>> target = catalog.get("function_metrics")
+    >>> target = catalog.get("function_types")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_datasets(target, snapshot, outputs=catalog)
     >>> len(refs) > 0
     True
     >>> refs[0].table_key
-    'analytics.function_metrics'
+    'analytics.function_types'
     """
     table_keys = expected_table_keys_for_target(target.name, outputs=outputs)
     if not table_keys:

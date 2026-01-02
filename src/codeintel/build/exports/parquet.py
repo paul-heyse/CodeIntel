@@ -62,7 +62,7 @@ def export_dataset_to_parquet(
     gateway
         BuildGateway providing the DuckDB connection.
     dataset_name
-        Logical dataset name to export (e.g., ``function_profile``).
+        Logical dataset name to export (e.g., ``function_types``).
     output_dir
         Destination directory for the Parquet file.
     settings

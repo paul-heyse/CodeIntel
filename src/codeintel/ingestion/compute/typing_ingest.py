@@ -1,15 +1,12 @@
-"""Typing and diagnostics ingestion step with port injection.
+"""Typing diagnostics ingestion step with port injection.
 
-This module provides a pure domain logic implementation for computing
-typedness ratios and collecting static diagnostics, using ports for
-all I/O operations.
+This module provides a pure domain logic implementation for collecting
+static diagnostics, using ports for all I/O operations.
 """
 
 from __future__ import annotations
 
-import ast
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,41 +21,17 @@ from codeintel.core.columnar.rows import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsStaticDiagnosticsRow as StaticDiagnosticRow,
 )
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsTypednessRow as TypednessRow,
-)
 from codeintel.ingestion.ports.tools import ToolStatus
 
-_ANNOTATION_OVERLAY_THRESHOLD = 0.5
-TYPEDNESS_TABLE_KEY = "analytics.typedness"
 DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.ingestion.ports.tools import IngestToolPort
 
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class AnnotationInfo:
-    """Ratio and count statistics summarizing annotations in a file.
-
-    Attributes
-    ----------
-    params_ratio
-        Fraction of parameters (excluding self/cls) with annotations.
-    returns_ratio
-        Fraction of functions with return annotations.
-    untyped_defs
-        Count of function definitions missing full annotations.
-    """
-
-    params_ratio: float
-    returns_ratio: float
-    untyped_defs: int
 
 
 @dataclass
@@ -78,97 +51,6 @@ class DiagnosticCounts:
     pyright: dict[str, int]
     pyrefly: dict[str, int]
     ruff: dict[str, int]
-
-
-def _compute_annotation_info(source: str) -> AnnotationInfo | None:
-    """Compute annotation statistics from source code.
-
-    Parameters
-    ----------
-    source
-        Python source code.
-
-    Returns
-    -------
-    AnnotationInfo | None
-        Annotation statistics or None on parse failure.
-    """
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return None
-
-    total_params, annotated_params, func_count = 0, 0, 0
-    return_annotated, untyped_defs = 0, 0
-
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            func_count += 1
-            params = _collect_function_params(node)
-
-            for arg in params:
-                if arg.arg not in {"self", "cls"}:
-                    total_params += 1
-                    if arg.annotation is not None:
-                        annotated_params += 1
-
-            has_return = node.returns is not None
-            if has_return:
-                return_annotated += 1
-
-            if not _is_fully_typed(params, has_return=has_return):
-                untyped_defs += 1
-
-    params_ratio = annotated_params / total_params if total_params else 1.0
-    returns_ratio = return_annotated / func_count if func_count else 1.0
-
-    return AnnotationInfo(
-        params_ratio=params_ratio,
-        returns_ratio=returns_ratio,
-        untyped_defs=untyped_defs,
-    )
-
-
-def _collect_function_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:
-    """Collect all parameters from a function definition.
-
-    Parameters
-    ----------
-    node
-        Function definition node.
-
-    Returns
-    -------
-    list[ast.arg]
-        All parameter arguments.
-    """
-    params: list[ast.arg] = []
-    posonly = getattr(node.args, "posonlyargs", [])
-    params.extend(posonly)
-    params.extend(node.args.args)
-    params.extend(node.args.kwonlyargs)
-    return params
-
-
-def _is_fully_typed(params: list[ast.arg], *, has_return: bool) -> bool:
-    """Check if a function is fully typed.
-
-    Parameters
-    ----------
-    params
-        Function parameters.
-    has_return
-        Whether function has return annotation.
-
-    Returns
-    -------
-    bool
-        True if fully typed.
-    """
-    return (
-        all(arg.annotation is not None for arg in params if arg.arg not in {"self", "cls"})
-        and has_return
-    )
 
 
 async def _collect_diagnostic_counts(
@@ -201,34 +83,27 @@ async def _collect_diagnostic_counts(
 
 
 class TypingIngestStep:
-    """Typing and diagnostics ingestion step with port injection.
+    """Typing diagnostics ingestion step with port injection.
 
-    This step computes typedness ratios and collects static diagnostics,
-    using ports for all I/O operations.
+    This step collects static diagnostics using the tool ports.
 
     Parameters
     ----------
-    discovery
-        Discovery port for reading module source.
     tools
         Optional tool port for running diagnostics.
     """
 
     def __init__(
         self,
-        discovery: ModuleDiscoveryPort,
         tools: IngestToolPort | None = None,
     ) -> None:
         """Initialize the step.
 
         Parameters
         ----------
-        discovery
-            Discovery port for reading module source.
         tools
             Optional tool port for running diagnostics.
         """
-        self._discovery = discovery
         self._tools = tools
 
     async def execute_async(
@@ -264,23 +139,18 @@ class TypingIngestStep:
         if run_diagnostics and self._tools is not None:
             diag_counts = await _collect_diagnostic_counts(Path(repo_root), self._tools)
 
-        typedness_buffer, diagnostic_buffer = self._process_modules(
-            modules, repo, commit, diag_counts
-        )
+        diagnostic_buffer = self._process_modules(modules, repo, commit, diag_counts)
 
         log.info(
-            "Typing ingest: repo=%s commit=%s typedness=%d diagnostics=%d",
+            "Typing ingest: repo=%s commit=%s diagnostics=%d",
             repo,
             commit,
-            typedness_buffer.row_count,
             diagnostic_buffer.row_count,
         )
 
         return TypingIngestResult(
             result=ExecutionResult.ok(),
-            typedness_rows=typedness_buffer.data,
             diagnostic_rows=diagnostic_buffer.data,
-            typedness_row_count=typedness_buffer.row_count,
             diagnostic_row_count=diagnostic_buffer.row_count,
         )
 
@@ -290,8 +160,8 @@ class TypingIngestStep:
         repo: str,
         commit: str,
         diag_counts: DiagnosticCounts,
-    ) -> tuple[ColumnarRowBuffer, ColumnarRowBuffer]:
-        """Process modules and build rows.
+    ) -> ColumnarRowBuffer:
+        """Process modules and build diagnostic rows.
 
         Parameters
         ----------
@@ -306,46 +176,19 @@ class TypingIngestStep:
 
         Returns
         -------
-        tuple[list[tuple[object, ...]], list[tuple[object, ...]]]
-            Typedness rows and diagnostic rows.
+        ColumnarRowBuffer
+            Diagnostic rows.
         """
-        typedness_buffer = columnar_buffer_for_table_key(TYPEDNESS_TABLE_KEY)
         diagnostic_buffer = columnar_buffer_for_table_key(DIAGNOSTICS_TABLE_KEY)
 
         for module in modules:
             if not module.rel_path.endswith(".py"):
                 continue
 
-            source = self._discovery.read_module_source(module)
-            if source is None:
-                continue
-
-            info = _compute_annotation_info(source)
-            if info is None:
-                continue
-
             pyright_errors = diag_counts.pyright.get(module.rel_path, 0)
             pyrefly_errors = diag_counts.pyrefly.get(module.rel_path, 0)
             ruff_errors = diag_counts.ruff.get(module.rel_path, 0)
             type_error_count = pyright_errors + pyrefly_errors + ruff_errors
-
-            overlay_needed = type_error_count > 0 and (
-                info.params_ratio < _ANNOTATION_OVERLAY_THRESHOLD
-                or info.returns_ratio < _ANNOTATION_OVERLAY_THRESHOLD
-            )
-
-            row = TypednessRow(
-                repo=repo,
-                commit=commit,
-                path=module.rel_path,
-                type_error_count=type_error_count,
-                annotation_ratio=json.dumps(
-                    {"params": info.params_ratio, "returns": info.returns_ratio}
-                ),
-                untyped_defs=info.untyped_defs,
-                overlay_needed=overlay_needed,
-            )
-            typedness_buffer.append(row)
 
             diagnostic_buffer.append(
                 StaticDiagnosticRow(
@@ -360,7 +203,7 @@ class TypingIngestStep:
                 )
             )
 
-        return typedness_buffer, diagnostic_buffer
+        return diagnostic_buffer
 
     def execute(
         self,
@@ -400,63 +243,9 @@ class TypingIngestResult:
     """Result bundle for typing ingestion."""
 
     result: ExecutionResult
-    typedness_rows: ColumnarRows = field(default_factory=dict)
     diagnostic_rows: ColumnarRows = field(default_factory=dict)
-    typedness_row_count: int = 0
     diagnostic_row_count: int = 0
-
-
-def collect_function_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:
-    """Public wrapper for collecting function parameters.
-
-    Returns
-    -------
-    list[ast.arg]
-        Parameter nodes for the given function.
-    """
-    return _collect_function_params(node)
-
-
-def compute_annotation_info(tree: ast.AST) -> AnnotationInfo | None:
-    """Compute annotation statistics from an AST.
-
-    Parameters
-    ----------
-    tree
-        Parsed AST node (typically a Module).
-
-    Returns
-    -------
-    AnnotationInfo | None
-        Aggregated annotation information, or None on failure.
-    """
-    source = ast.unparse(tree)
-    return _compute_annotation_info(source)
-
-
-def is_fully_typed(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Check if a function is fully typed.
-
-    Parameters
-    ----------
-    func
-        Function or async function definition node.
-
-    Returns
-    -------
-    bool
-        True if all parameters are annotated and return type is present.
-    """
-    params = _collect_function_params(func)
-    has_return = func.returns is not None
-    return _is_fully_typed(params, has_return=has_return)
-
-
 __all__ = [
-    "AnnotationInfo",
     "TypingIngestResult",
     "TypingIngestStep",
-    "collect_function_params",
-    "compute_annotation_info",
-    "is_fully_typed",
 ]

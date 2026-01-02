@@ -9,11 +9,11 @@ so that metadata remains stable while Hamilton nodes are valid.
 
 Examples
 --------
->>> to_node_name("analytics.function_metrics", prefix="t")
-'t__analytics__function_metrics'
+>>> to_node_name("analytics.function_types", prefix="t")
+'t__analytics__function_types'
 
->>> target_node("risk_factors")
-'t__risk_factors'
+>>> target_node("function_types")
+'t__function_types'
 
 >>> dataset_node("graph.call_graph_edges")
 'd__graph__call_graph_edges'
@@ -27,9 +27,9 @@ import re
 def to_node_name(logical_name: str, *, prefix: str) -> str:
     """Convert a logical identifier to a valid Hamilton node name.
 
-    Transform stable logical IDs like ``analytics.function_metrics`` or
+    Transform stable logical IDs like ``analytics.function_types`` or
     ``graph/call_graph_edges`` into Hamilton-compatible Python identifiers
-    like ``t__analytics__function_metrics``.
+    like ``t__analytics__function_types``.
 
     Parameters
     ----------
@@ -46,8 +46,8 @@ def to_node_name(logical_name: str, *, prefix: str) -> str:
 
     Examples
     --------
-    >>> to_node_name("analytics.function_metrics", prefix="t")
-    't__analytics__function_metrics'
+    >>> to_node_name("analytics.function_types", prefix="t")
+    't__analytics__function_types'
 
     >>> to_node_name("graph-call-edges", prefix="d")
     'd__graph_call_edges'
@@ -126,7 +126,7 @@ def target_node(target_name: str) -> str:
     Parameters
     ----------
     target_name
-        The target name (e.g., "risk_factors", "call_graph").
+        The target name (e.g., "function_types", "call_graph").
 
     Returns
     -------
@@ -135,11 +135,11 @@ def target_node(target_name: str) -> str:
 
     Examples
     --------
-    >>> target_node("risk_factors")
-    't__risk_factors'
+    >>> target_node("function_types")
+    't__function_types'
 
-    >>> target_node("function_metrics")
-    't__function_metrics'
+    >>> target_node("function_types")
+    't__function_types'
     """
     return to_node_name(target_name, prefix="t")
 
@@ -153,7 +153,7 @@ def compute_node(target_name: str) -> str:
     Parameters
     ----------
     target_name
-        Target name (e.g., "risk_factors").
+        Target name (e.g., "function_types").
 
     Returns
     -------
@@ -184,8 +184,8 @@ def dataset_node(dataset_key: str) -> str:
     >>> dataset_node("graph.call_graph_edges")
     'd__graph__call_graph_edges'
 
-    >>> dataset_node("analytics.function_metrics")
-    'd__analytics__function_metrics'
+    >>> dataset_node("analytics.function_types")
+    'd__analytics__function_types'
     """
     return to_node_name(dataset_key, prefix="d")
 
@@ -242,7 +242,7 @@ def query_node(table_key: str) -> str:
     Parameters
     ----------
     table_key
-        The table key (e.g., "analytics.function_metrics").
+        The table key (e.g., "analytics.function_types").
 
     Returns
     -------
@@ -251,8 +251,8 @@ def query_node(table_key: str) -> str:
 
     Examples
     --------
-    >>> query_node("analytics.function_metrics")
-    'q__analytics__function_metrics'
+    >>> query_node("analytics.function_types")
+    'q__analytics__function_types'
     """
     return to_node_name(table_key, prefix="q")
 
@@ -266,7 +266,7 @@ def materialize_node(table_key: str) -> str:
     Parameters
     ----------
     table_key
-        The table key (e.g., "analytics.function_metrics").
+        The table key (e.g., "analytics.function_types").
 
     Returns
     -------
@@ -275,8 +275,8 @@ def materialize_node(table_key: str) -> str:
 
     Examples
     --------
-    >>> materialize_node("analytics.function_metrics")
-    'm__analytics__function_metrics'
+    >>> materialize_node("analytics.function_types")
+    'm__analytics__function_types'
     """
     return to_node_name(table_key, prefix="m")
 
@@ -299,8 +299,8 @@ def node_to_target(node_name: str) -> str | None:
 
     Examples
     --------
-    >>> node_to_target("t__risk_factors")
-    'risk_factors'
+    >>> node_to_target("t__function_types")
+    'function_types'
 
     >>> node_to_target("d__some_dataset")
     """

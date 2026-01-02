@@ -64,42 +64,6 @@ class ModuleRepository(BaseRepository):
         relation = relation.filter(self._predicate_eq("module", module)).limit(1)
         return self._relation_to_one(relation)
 
-    def get_module_profile(self, module: str) -> RowDict | None:
-        """
-        Return module profile row.
-
-        Parameters
-        ----------
-        module
-            Module name to look up.
-
-        Returns
-        -------
-        RowDict | None
-            Module profile when found.
-        """
-        relation = self._relation("analytics.module_profile")
-        relation = relation.filter(self._predicate_eq("module", module)).limit(1)
-        return self._relation_to_one(relation, table_key="analytics.module_profile")
-
-    def get_file_profile(self, rel_path: str) -> RowDict | None:
-        """
-        Return file profile row.
-
-        Parameters
-        ----------
-        rel_path
-            Relative file path.
-
-        Returns
-        -------
-        RowDict | None
-            File profile when present.
-        """
-        relation = self._relation("analytics.file_profile")
-        relation = relation.filter(self._predicate_eq("rel_path", rel_path)).limit(1)
-        return self._relation_to_one(relation, table_key="analytics.file_profile")
-
     def get_file_hints(self, rel_path: str) -> list[RowDict]:
         """
         Return IDE hints for a given file path.

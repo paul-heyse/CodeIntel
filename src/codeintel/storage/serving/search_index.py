@@ -53,10 +53,6 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
     catalog = duckdb_default_catalog(con)
     modules_ref = fully_qualified_table_ref("core.modules", catalog=catalog)
     docstrings_ref = fully_qualified_table_ref("core.docstrings", catalog=catalog)
-    function_metrics_ref = fully_qualified_table_ref(
-        "analytics.function_metrics",
-        catalog=catalog,
-    )
     scip_symbols_ref = fully_qualified_table_ref("core.scip_symbols", catalog=catalog)
 
     backend = MinimalStorageGateway(con).policy
@@ -75,13 +71,6 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
             "docs.search_documents",
             columns=_search_document_columns(),
             select_sql=_docstrings_select(docstrings_ref),
-        )
-
-    if backend.table_exists(schema="analytics", table="function_metrics"):
-        backend.insert_select(
-            "docs.search_documents",
-            columns=_search_document_columns(),
-            select_sql=_function_metrics_select(function_metrics_ref),
         )
 
     if backend.table_exists(schema="core", table="scip_symbols"):
@@ -262,41 +251,6 @@ def _docstrings_select(docstrings_ref: str) -> exp.Select:
         exp.column("rel_path"),
         exp.alias_(text, "text"),
         exp.alias_(exp.null(), "ref_goid_h128"),
-        exp.column("repo"),
-        exp.column("commit"),
-    ).from_(table_expr)
-
-
-def _function_metrics_select(function_metrics_ref: str) -> exp.Select:
-    table_expr = table_expr_from_ref(function_metrics_ref)
-    goid = _coalesce_text(_varchar_cast(exp.column("function_goid_h128")))
-    doc_id = _concat(
-        [
-            exp.Literal.string("function:"),
-            goid,
-            exp.Literal.string(":"),
-            _coalesce_text(exp.column("repo")),
-            exp.Literal.string(":"),
-            _coalesce_text(exp.column("commit")),
-        ]
-    )
-    text = _concat(
-        [
-            _coalesce_text(exp.column("qualname")),
-            exp.Literal.string(" "),
-            _coalesce_text(exp.column("urn")),
-            exp.Literal.string(" "),
-            _coalesce_text(exp.column("rel_path")),
-        ]
-    )
-    return exp.select(
-        exp.alias_(doc_id, "doc_id"),
-        exp.alias_(exp.Literal.string("function"), "kind"),
-        exp.alias_(_coalesce_text(exp.column("qualname")), "name"),
-        exp.alias_(exp.null(), "module"),
-        exp.column("rel_path"),
-        exp.alias_(text, "text"),
-        exp.alias_(_varchar_cast(exp.column("function_goid_h128")), "ref_goid_h128"),
         exp.column("repo"),
         exp.column("commit"),
     ).from_(table_expr)

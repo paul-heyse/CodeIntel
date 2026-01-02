@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class TestRepository(BaseRepository):
-    """Read test catalog and profile data."""
+    """Read test catalog and linkage data."""
 
     __test__ = False
 
@@ -72,21 +72,3 @@ class TestRepository(BaseRepository):
             relation = relation.filter(self._predicate_eq("status", status))
         relation = relation.order("test_id").limit(limit)
         return self._relation_to_dicts(relation, table_key="analytics.test_catalog")
-
-    def get_test_profile(self, test_id: str) -> RowDict | None:
-        """
-        Return test profile for a specific test.
-
-        Parameters
-        ----------
-        test_id
-            Test identifier to look up.
-
-        Returns
-        -------
-        RowDict | None
-            Test profile row when found.
-        """
-        relation = self._relation("analytics.test_profile")
-        relation = relation.filter(self._predicate_eq("test_id", test_id)).limit(1)
-        return self._relation_to_one(relation, table_key="analytics.test_profile")

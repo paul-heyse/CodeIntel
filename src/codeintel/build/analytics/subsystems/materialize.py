@@ -25,7 +25,6 @@ from codeintel.build.analytics.subsystems.affinity import (
 from codeintel.build.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
-from codeintel.build.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.subsystems.affinity import (
@@ -83,6 +82,24 @@ class SubsystemBuildContext:
 
 
 @dataclass(frozen=True)
+class SubsystemRisk:
+    """Aggregated risk signals for a subsystem."""
+
+    function_count: int
+    total_risk: float
+    max_risk: float | None
+    high_risk: int
+    level: str
+
+    @property
+    def avg_risk(self) -> float | None:
+        """Average risk score across subsystem functions."""
+        if self.function_count == 0:
+            return None
+        return self.total_risk / self.function_count
+
+
+@dataclass(frozen=True)
 class SubsystemRows:
     """Container for subsystem and membership rows."""
 
@@ -98,8 +115,6 @@ class SubsystemBuildInputs:
     import_graph_edges_frame: pl.DataFrame | None = None
     symbol_use_edges_frame: pl.DataFrame | None = None
     config_values_frame: pl.DataFrame | None = None
-    risk_factors_frame: pl.DataFrame | None = None
-    function_metrics_frame: pl.DataFrame | None = None
     options: SubsystemOptions | None = None
 
 
@@ -158,13 +173,7 @@ def build_subsystem_rows(
             repo=snapshot.repo,
             commit=snapshot.commit,
         ),
-        risk_stats=aggregate_risk(
-            snapshot,
-            labels,
-            risk_factors_frame=inputs.risk_factors_frame,
-            function_metrics_frame=inputs.function_metrics_frame,
-            modules_frame=inputs.modules_frame,
-        ),
+        risk_stats={},
         now=datetime.now(UTC),
     )
     subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)

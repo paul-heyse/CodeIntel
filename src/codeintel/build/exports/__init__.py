@@ -6,7 +6,7 @@ build targets integrated with the Hamilton DAG.
 Usage
 -----
 >>> from codeintel.build.exports import ExportCallOptions, export_all_jsonl
->>> options = ExportCallOptions(validate_exports=True, datasets=["function_metrics"])
+>>> options = ExportCallOptions(validate_exports=True, datasets=["modules"])
 >>> export_all_jsonl(gateway, output_dir, settings=export_settings, options=options)
 """
 

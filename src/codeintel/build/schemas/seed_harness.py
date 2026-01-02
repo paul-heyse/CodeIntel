@@ -83,7 +83,7 @@ def extract_qparams_for_target_module(target: str, module: ModuleType) -> set[st
     Parameters
     ----------
     target
-        Target name (e.g., "risk_factors").
+        Target name (e.g., "function_types").
     module
         Python module containing target node functions.
 

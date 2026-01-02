@@ -192,16 +192,6 @@ class GraphTables(BaseTableAccessor):
 class DocsViews(BaseTableAccessor):
     """Accessors for docs schema views."""
 
-    def function_summary(self) -> DuckDBRelation:
-        """Return the ``docs.v_function_summary`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``docs.v_function_summary``.
-        """
-        return self._table("docs.v_function_summary")
-
     def call_graph_enriched(self) -> DuckDBRelation:
         """Return the ``docs.v_call_graph_enriched`` relation.
 
@@ -212,30 +202,10 @@ class DocsViews(BaseTableAccessor):
         """
         return self._table("docs.v_call_graph_enriched")
 
-    def function_profile(self) -> DuckDBRelation:
-        """Return the ``analytics.function_profile`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.function_profile``.
-        """
-        return self._table("analytics.function_profile")
-
 
 @dataclass(frozen=True)
 class AnalyticsTables(BaseTableAccessor):
     """Read accessors for analytics schema tables."""
-
-    def function_metrics(self) -> DuckDBRelation:
-        """Return the ``analytics.function_metrics`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.function_metrics``.
-        """
-        return self._table("analytics.function_metrics")
 
     def function_types(self) -> DuckDBRelation:
         """Return the ``analytics.function_types`` relation.
@@ -267,26 +237,6 @@ class AnalyticsTables(BaseTableAccessor):
         """
         return self._table("analytics.test_catalog")
 
-    def function_profile(self) -> DuckDBRelation:
-        """Return the ``analytics.function_profile`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.function_profile``.
-        """
-        return self._table("analytics.function_profile")
-
-    def goid_risk_factors(self) -> DuckDBRelation:
-        """Return the ``analytics.goid_risk_factors`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.goid_risk_factors``.
-        """
-        return self._table("analytics.goid_risk_factors")
-
     def config_values(self) -> DuckDBRelation:
         """Return the ``analytics.config_values`` relation.
 
@@ -296,16 +246,6 @@ class AnalyticsTables(BaseTableAccessor):
             Relation for ``analytics.config_values``.
         """
         return self._table("analytics.config_values")
-
-    def typedness(self) -> DuckDBRelation:
-        """Return the ``analytics.typedness`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.typedness``.
-        """
-        return self._table("analytics.typedness")
 
     def static_diagnostics(self) -> DuckDBRelation:
         """Return the ``analytics.static_diagnostics`` relation.

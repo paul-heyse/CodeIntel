@@ -1,10 +1,8 @@
-"""Pure computation of type annotation coverage metrics.
+"""Pure computation of parameter annotation statistics.
 
 This module provides functions to analyze type annotations on Python
 function parameters and return values. All functions are pure.
-
-The module re-exports and extends the existing typedness utilities
-from the functions package for backward compatibility.
+The module name is retained for backward compatibility.
 
 Examples
 --------
@@ -44,7 +42,7 @@ class ParamStats:
     has_varkw
         Whether the function accepts **kwargs.
     total_params
-        Parameters counted for typedness (excludes self/cls).
+        Parameters counted for annotation stats (excludes self/cls).
     annotated_params
         Number of parameters with type annotations.
     param_types
@@ -68,36 +66,6 @@ class ParamStats:
 
 
 @dataclass(frozen=True)
-class TypednessFlags:
-    """Typedness summary flags derived from annotation coverage.
-
-    Attributes
-    ----------
-    param_typed_ratio
-        Ratio of annotated parameters to total (0.0 to 1.0).
-    unannotated_params
-        Count of parameters missing annotations.
-    fully_typed
-        True if all parameters and return are annotated.
-    partial_typed
-        True if some but not all annotations are present.
-    untyped
-        True if no annotations are present.
-    typedness_bucket
-        Categorical: "typed", "partial", or "untyped".
-    typedness_source
-        Source of type info: "annotations" or "unknown".
-    """
-
-    param_typed_ratio: float
-    unannotated_params: int
-    fully_typed: bool
-    partial_typed: bool
-    untyped: bool
-    typedness_bucket: str
-    typedness_source: str
-
-
 def _annotation_to_str(node: ast.AST | None) -> str | None:
     """Convert an annotation AST node to a string representation.
 
@@ -124,7 +92,7 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
 
     Analyze a function definition to extract counts and type annotations
     for all parameters. Parameters named 'self' or 'cls' are excluded
-    from typedness calculations.
+    from annotation statistics.
 
     Parameters
     ----------
@@ -135,7 +103,7 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
     Returns
     -------
     ParamStats
-        Parameter counts, annotation coverage, and return annotation details.
+        Parameter counts, annotation completeness, and return annotation details.
 
     Examples
     --------
@@ -206,68 +174,8 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
     )
 
 
-def compute_typedness_flags(
-    *,
-    total_params: int,
-    annotated_params: int,
-    has_return_annotation: bool,
-) -> TypednessFlags:
-    """Compute typedness flags from parameter and return annotation counts.
-
-    Classify the typedness level of a function based on how many of its
-    parameters have type annotations and whether it has a return annotation.
-
-    Parameters
-    ----------
-    total_params
-        Total number of parameters (excluding self/cls).
-    annotated_params
-        Number of parameters with type annotations.
-    has_return_annotation
-        Whether the function has a return type annotation.
-
-    Returns
-    -------
-    TypednessFlags
-        Flags capturing coverage ratios and typedness classification.
-
-    Examples
-    --------
-    >>> flags = compute_typedness_flags(
-    ...     total_params=2, annotated_params=2, has_return_annotation=True
-    ... )
-    >>> flags.fully_typed
-    True
-    >>> flags.typedness_bucket
-    'typed'
-    """
-    param_typed_ratio = annotated_params / float(total_params) if total_params else 1.0
-    unannotated_params = total_params - annotated_params
-    fully_typed = total_params > 0 and annotated_params == total_params and has_return_annotation
-    untyped = annotated_params == 0 and not has_return_annotation
-    partial_typed = (
-        not fully_typed and not untyped and (annotated_params > 0 or has_return_annotation)
-    )
-    typedness_bucket = "typed" if fully_typed else "partial" if partial_typed else "untyped"
-    typedness_source = (
-        "annotations" if (annotated_params > 0 or has_return_annotation) else "unknown"
-    )
-
-    return TypednessFlags(
-        param_typed_ratio=param_typed_ratio,
-        unannotated_params=unannotated_params,
-        fully_typed=fully_typed,
-        partial_typed=partial_typed,
-        untyped=untyped,
-        typedness_bucket=typedness_bucket,
-        typedness_source=typedness_source,
-    )
-
-
 __all__ = [
     "SKIP_PARAM_NAMES",
     "ParamStats",
-    "TypednessFlags",
     "compute_param_stats",
-    "compute_typedness_flags",
 ]

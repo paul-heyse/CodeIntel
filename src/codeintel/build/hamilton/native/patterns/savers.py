@@ -251,6 +251,7 @@ def save_dataset(
     Callable[[Callable[P, R]], Callable[P, R]]
         Decorator that tags and materializes the dataset output.
     """
+
     def _materialize() -> NodeTransformLifecycle:
         return SaveToObjectMetadataDecorator(
             [ArrowDatasetSaver],
@@ -304,6 +305,7 @@ def save_relation_table(
     Callable[[Callable[P, R]], Callable[P, R]]
         Decorator that tags and materializes the relation table output.
     """
+
     def _materialize() -> NodeTransformLifecycle:
         return SaveToObjectMetadataDecorator(
             [ArrowDatasetSaver],

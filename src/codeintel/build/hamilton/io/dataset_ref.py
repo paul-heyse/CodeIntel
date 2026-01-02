@@ -37,7 +37,7 @@ class DatasetRef(NamedTuple):
     Attributes
     ----------
     table_key
-        Fully-qualified table name (e.g., "analytics.function_metrics").
+        Fully-qualified table name (e.g., "analytics.function_types").
     repo
         Repository slug for snapshot identity (e.g., "org/repo").
     commit
@@ -54,16 +54,16 @@ class DatasetRef(NamedTuple):
     Examples
     --------
     >>> ref = DatasetRef(
-    ...     table_key="analytics.function_metrics",
+    ...     table_key="analytics.function_types",
     ...     repo="org/repo",
     ...     commit="abc123",
-    ...     source_target="function_metrics",
+    ...     source_target="function_types",
     ...     row_count=1500,
     ... )
     >>> ref.schema_name
     'analytics'
     >>> ref.table_name
-    'function_metrics'
+    'function_types'
     """
 
     table_key: str
@@ -209,11 +209,11 @@ def refs_from_target_result(
     Examples
     --------
     >>> refs = refs_from_target_result(
-    ...     target_name="function_metrics",
-    ...     table_keys=("analytics.function_metrics",),
-    ...     row_counts={"analytics.function_metrics": 1500},
+    ...     target_name="function_types",
+    ...     table_keys=("analytics.function_types",),
+    ...     row_counts={"analytics.function_types": 1500},
     ... )
-    >>> refs["analytics.function_metrics"].row_count
+    >>> refs["analytics.function_types"].row_count
     1500
     """
     counts = row_counts or {}

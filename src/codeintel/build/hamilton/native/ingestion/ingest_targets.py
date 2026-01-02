@@ -6,7 +6,7 @@ patterns (tool invocations + table writes) and are frequently evolved together:
 - ``modules``: Scan repository modules and write ``core.repo_map``.
 - ``config_ingest``: Discover and ingest configuration files.
 - ``tests_ingest``: Ingest pytest report data into analytics tables.
-- ``typing``: Run typing diagnostics and persist typedness + diagnostics.
+- ``typing``: Run typing diagnostics and persist diagnostics.
 """
 
 from __future__ import annotations
@@ -113,9 +113,7 @@ MODULES_TABLE_KEYS = (MODULES_TABLE_KEY, FILE_STATE_TABLE_KEY, REPO_MAP_TABLE_KE
 
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
 TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
-TYPEDNESS_TABLE_KEY = "analytics.typedness"
 STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
-TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
 
 _MODULE = sys.modules[__name__]
 
@@ -187,13 +185,9 @@ class TestsToolOutput(ToolStepOutput):
 class TypingToolOutput(ToolStepOutput):
     """Tool step output for typing ingestion."""
 
-    typedness_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(TYPEDNESS_TABLE_KEY)
-    )
     diagnostic_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY)
     )
-    typedness_row_count: int = 0
     diagnostic_row_count: int = 0
 
 
@@ -1220,18 +1214,14 @@ def _coerce_typing_output(
         if warnings:
             return TypingToolOutput(
                 result=_merge_result_warnings(output.result, warnings),
-                typedness_rows=output.typedness_rows,
                 diagnostic_rows=output.diagnostic_rows,
-                typedness_row_count=output.typedness_row_count,
                 diagnostic_row_count=output.diagnostic_row_count,
             )
         return output
     merged = _merge_result_warnings(output.result, warnings)
     return TypingToolOutput(
         result=merged,
-        typedness_rows=empty_lazyframe_for_table(TYPEDNESS_TABLE_KEY),
         diagnostic_rows=empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
-        typedness_row_count=0,
         diagnostic_row_count=0,
     )
 
@@ -1243,12 +1233,12 @@ def t__typing__run(
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
 ) -> TypingToolOutput:
-    """Execute typing analysis and persist typedness + diagnostics tables.
+    """Execute typing analysis and persist diagnostics tables.
 
     Returns
     -------
     TypingToolOutput
-        Tool output containing typedness and diagnostics rows.
+        Tool output containing diagnostics rows.
     """
     failure, warnings = _modules_precheck(t__modules, module_records)
     if failure is not None:
@@ -1265,15 +1255,12 @@ def t__typing__run(
             result = ExecutionResult.ok(warnings=warnings)
             return TypingToolOutput(
                 result=result,
-                typedness_rows=empty_lazyframe_for_table(TYPEDNESS_TABLE_KEY),
                 diagnostic_rows=empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
-                typedness_row_count=0,
                 diagnostic_row_count=0,
             )
 
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         tools = ToolRunnerAdapter(env.providers.tool_service)
-        step = TypingIngestStep(discovery=discovery, tools=tools)
+        step = TypingIngestStep(tools=tools)
         ingest_result = asyncio.run(
             step.execute_async(
                 module_records,
@@ -1283,19 +1270,13 @@ def t__typing__run(
                 run_diagnostics=True,
             )
         )
-        typedness_frame = lazyframe_for_ingest_columns(
-            TYPEDNESS_TABLE_KEY,
-            ingest_result.typedness_rows,
-        )
         diagnostic_frame = lazyframe_for_ingest_columns(
             STATIC_DIAGNOSTICS_TABLE_KEY,
             ingest_result.diagnostic_rows,
         )
         return TypingToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
-            typedness_rows=typedness_frame,
             diagnostic_rows=diagnostic_frame,
-            typedness_row_count=ingest_result.typedness_row_count,
             diagnostic_row_count=ingest_result.diagnostic_row_count,
         )
 
@@ -1331,46 +1312,15 @@ def t__typing__ingest(
         )
 
     payload = {
-        TYPEDNESS_TABLE_KEY: t__typing__run.typedness_rows,
         STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_rows,
     }
     table_counts = {
-        TYPEDNESS_TABLE_KEY: t__typing__run.typedness_row_count,
         STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
     )
-
-
-def typing__typedness_rows__base(
-    t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
-    """Extract rows for analytics.typedness.
-
-    Returns
-    -------
-    pl.LazyFrame | None
-        Lazy frame for the typedness table, or None when ingestion is skipped or failed.
-
-    Raises
-    ------
-    ValueError
-        If the ingest payload is missing expected row data.
-    """
-    if t__typing__ingest.result.skipped or not t__typing__ingest.result.success:
-        return None
-
-    payload = t__typing__ingest.payload
-    if payload is None:
-        msg = "Missing typing ingest payload"
-        raise ValueError(msg)
-    frame = payload.get(TYPEDNESS_TABLE_KEY)
-    if frame is None:
-        msg = f"Missing frame for {TYPEDNESS_TABLE_KEY}"
-        raise ValueError(msg)
-    return frame
 
 
 def typing__diagnostic_rows__base(
@@ -1407,13 +1357,6 @@ _TYPING_TABLE_TARGET_SPEC = TableTargetSpec(
     target_name=TYPING_TARGET_NAME,
     tables=(
         TableTargetTableSpec(
-            table_key=TYPEDNESS_TABLE_KEY,
-            base_node="typing__typedness_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=TYPEDNESS_TABLE_KEY),
-            node_name="typing__typedness_rows",
-            input_type=pl.LazyFrame | None,
-        ),
-        TableTargetTableSpec(
             table_key=STATIC_DIAGNOSTICS_TABLE_KEY,
             base_node="typing__diagnostic_rows__base",
             save_spec=RelationTableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
@@ -1425,7 +1368,6 @@ _TYPING_TABLE_TARGET_SPEC = TableTargetSpec(
     attach_anchor=False,
 )
 attach_table_target_template(_MODULE, spec=_TYPING_TABLE_TARGET_SPEC)
-typing__typedness_rows = _MODULE.typing__typedness_rows
 typing__diagnostic_rows = _MODULE.typing__diagnostic_rows
 typing__table_materializations = _MODULE.typing__table_materializations
 
@@ -1494,7 +1436,6 @@ def t__typing(
     apply_to(modules__repo_map_rows, table_key=value(REPO_MAP_TABLE_KEY)),
     apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
     apply_to(tests__rows, table_key=value(TEST_CATALOG_TABLE_KEY)),
-    apply_to(typing__typedness_rows, table_key=value(TYPEDNESS_TABLE_KEY)),
     apply_to(typing__diagnostic_rows, table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY)),
 )
 def _normalize_ingest_rows(

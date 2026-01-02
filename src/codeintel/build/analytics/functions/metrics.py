@@ -1,16 +1,7 @@
-"""Derive per-function complexity metrics and type hints from Python source files.
+"""Derive per-function typing metadata from Python source files.
 
-This module reads GOID metadata, walks Python ASTs to compute structural metrics,
-and emits analytics tables used by downstream scoring and documentation tools.
-
-Architecture
-------------
-This module follows the layered architecture:
-- **Compute Layer**: Pure functions in `analytics.compute.functions`
-- **GOID Loading**: `analytics.compute.functions.goids.FunctionGoidLoader`
-- **Orchestration**: This module coordinates between layers
-
-The public API is stable.
+This module reads GOID metadata, walks Python ASTs to compute type annotation
+statistics, and emits analytics rows for downstream consumption.
 """
 
 from __future__ import annotations
@@ -23,14 +14,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 import polars as pl
 
-from codeintel.build.analytics.compute.functions import (
-    compute_complexity,
-)
-from codeintel.build.analytics.compute.functions.loc import compute_loc
-from codeintel.build.analytics.compute.functions.typedness import (
-    compute_param_stats,
-    compute_typedness_flags,
-)
+from codeintel.build.analytics.compute.functions.typedness import compute_param_stats
 from codeintel.build.analytics.functions.config import (
     FunctionAnalyticsOptions,
     ProcessContext,
@@ -46,19 +30,9 @@ from codeintel.core.validation.reporters import FunctionValidationReporter
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.build.analytics.compute.functions import (
-        ComplexityMetrics,
-    )
-    from codeintel.build.analytics.compute.functions.typedness import (
-        ParamStats,
-        TypednessFlags,
-    )
     from codeintel.build.tabular.types import InferableTabularInput
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.parsing import ParsedModule
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsFunctionMetricsRow as FunctionMetricsRow,
-    )
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsFunctionTypesRow as FunctionTypesRow,
     )
@@ -68,16 +42,10 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class FunctionAnalyticsResult:
-    """Pure analysis output for function metrics/types plus validation."""
+    """Pure analysis output for function typing plus validation."""
 
-    metrics_rows: list[FunctionMetricsRow]
     types_rows: list[FunctionTypesRow]
     reporter: FunctionValidationReporter
-
-    @property
-    def metrics_count(self) -> int:
-        """Number of function_metrics rows produced."""
-        return len(self.metrics_rows)
 
     @property
     def types_count(self) -> int:
@@ -114,19 +82,6 @@ class FunctionMeta:
     rel_path: str
 
 
-@dataclass(frozen=True)
-class FunctionDerived:
-    """Derived structural flags for a function body."""
-
-    is_async: bool
-    is_generator: bool
-    complexity_bucket: str
-    stmt_count: int
-    decorator_count: int
-    has_docstring: bool
-    typedness: TypednessFlags
-
-
 class GoidRow(TypedDict):
     """Row structure for function GOIDs pulled from tabular input."""
 
@@ -142,97 +97,18 @@ class GoidRow(TypedDict):
     end_line: int | None
 
 
-def _compute_loc(lines: list[str], start_line: int, end_line: int) -> tuple[int, int]:
-    """Compute lines of code using the compute layer.
-
-    Parameters
-    ----------
-    lines
-        Source lines.
-    start_line
-        Start line (1-indexed).
-    end_line
-        End line (1-indexed).
-
-    Returns
-    -------
-    tuple[int, int]
-        Physical LOC and logical LOC.
-    """
-    loc_metrics = compute_loc(lines, start_line, end_line)
-    return loc_metrics.physical, loc_metrics.logical
-
-
-def _derive_function_flags(
-    metrics: ComplexityMetrics,
-    param_stats: ParamStats,
-) -> FunctionDerived:
-    typedness = compute_typedness_flags(
-        total_params=param_stats.total_params,
-        annotated_params=param_stats.annotated_params,
-        has_return_annotation=param_stats.has_return_annotation,
-    )
-    return FunctionDerived(
-        is_async=metrics.is_async,
-        is_generator=metrics.is_generator,
-        complexity_bucket=metrics.complexity_bucket,
-        stmt_count=metrics.stmt_count,
-        decorator_count=metrics.decorator_count,
-        has_docstring=metrics.has_docstring,
-        typedness=typedness,
-    )
-
-
-def _function_rows_from_node(
+def _type_row_from_node(
     meta: FunctionMeta,
     node: ast.AST,
-    lines: list[str],
     ctx: ProcessContext,
-) -> tuple[FunctionMetricsRow, FunctionTypesRow] | None:
+) -> FunctionTypesRow | None:
     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return None
 
-    loc, logical_loc = _compute_loc(lines, meta.start_line, meta.end_line)
-
     param_stats = compute_param_stats(node)
-    complexity = compute_complexity(node)
-    derived = _derive_function_flags(complexity, param_stats)
-    typedness = derived.typedness
     return_type_source = "annotation" if param_stats.has_return_annotation else "unknown"
 
-    metrics_row: FunctionMetricsRow = {
-        "function_goid_h128": meta.goid,
-        "urn": meta.urn,
-        "repo": ctx.snapshot.repo,
-        "commit": ctx.snapshot.commit,
-        "rel_path": meta.rel_path,
-        "language": meta.language,
-        "kind": meta.kind,
-        "qualname": meta.qualname,
-        "start_line": meta.start_line,
-        "end_line": meta.end_line,
-        "loc": loc,
-        "logical_loc": logical_loc,
-        "param_count": param_stats.param_count,
-        "positional_params": param_stats.positional_params,
-        "keyword_only_params": param_stats.keyword_only_params,
-        "has_varargs": param_stats.has_varargs,
-        "has_varkw": param_stats.has_varkw,
-        "is_async": derived.is_async,
-        "is_generator": derived.is_generator,
-        "return_count": complexity.return_count,
-        "yield_count": complexity.yield_count,
-        "raise_count": complexity.raise_count,
-        "cyclomatic_complexity": complexity.cyclomatic,
-        "max_nesting_depth": complexity.max_nesting_depth,
-        "stmt_count": derived.stmt_count,
-        "decorator_count": derived.decorator_count,
-        "has_docstring": derived.has_docstring,
-        "complexity_bucket": derived.complexity_bucket,
-        "created_at": ctx.now,
-    }
-
-    types_row: FunctionTypesRow = {
+    return {
         "function_goid_h128": meta.goid,
         "urn": meta.urn,
         "repo": ctx.snapshot.repo,
@@ -245,41 +121,32 @@ def _function_rows_from_node(
         "end_line": meta.end_line,
         "total_params": param_stats.total_params,
         "annotated_params": param_stats.annotated_params,
-        "unannotated_params": typedness.unannotated_params,
-        "param_typed_ratio": typedness.param_typed_ratio,
         "has_return_annotation": param_stats.has_return_annotation,
         "return_type": param_stats.return_type,
         "return_type_source": return_type_source,
         "type_comment": None,
         "param_types": param_stats.param_types,
-        "fully_typed": typedness.fully_typed,
-        "partial_typed": typedness.partial_typed,
-        "untyped": typedness.untyped,
-        "typedness_bucket": typedness.typedness_bucket,
-        "typedness_source": typedness.typedness_source,
         "created_at": ctx.now,
     }
-    return metrics_row, types_row
 
 
 def analyze_function(
     meta: FunctionMeta,
     parsed: ParsedModule,
     ctx: ProcessContext,
-) -> tuple[FunctionMetricsRow, FunctionTypesRow] | None:
+) -> FunctionTypesRow | None:
     """
-    Derive analytics rows for a single function span.
+    Derive a typing row for a single function span.
 
     Returns
     -------
-    tuple[FunctionMetricsRow, FunctionTypesRow] | None
-        Metrics row and types row when a matching AST node is found; otherwise
-        None when the span cannot be resolved.
+    FunctionTypesRow | None
+        Types row when a matching AST node is found; otherwise None.
     """
     node = parsed.span_index.lookup(meta.start_line, meta.end_line)
     if node is None:
         return None
-    return _function_rows_from_node(meta, node, list(parsed.lines), ctx)
+    return _type_row_from_node(meta, node, ctx)
 
 
 def _get_parsed_module(rel_path: str, *, state: ProcessState) -> ParsedModule | None:
@@ -299,8 +166,7 @@ def _process_file_functions(
     rel_path: str,
     fun_rows: list[GoidRow],
     state: ProcessState,
-) -> tuple[list[FunctionMetricsRow], list[FunctionTypesRow]]:
-    metrics_rows: list[FunctionMetricsRow] = []
+) -> list[FunctionTypesRow]:
     types_rows: list[FunctionTypesRow] = []
 
     abs_path = (state.snapshot.repo_root / rel_path).resolve()
@@ -315,8 +181,8 @@ def _process_file_functions(
                 issue="parse_failed",
                 detail=detail,
             )
-        log.warning("Skipping file for function analytics: %s", abs_path)
-        return metrics_rows, types_rows
+        log.warning("Skipping file for function typing: %s", abs_path)
+        return types_rows
 
     for info in fun_rows:
         meta = _meta_from_goid_row(info)
@@ -351,8 +217,8 @@ def _process_file_functions(
                 ),
             )
             continue
-        rows = _function_rows_from_node(meta, node, list(parsed.lines), state.ctx)
-        if rows is None:
+        row = _type_row_from_node(meta, node, state.ctx)
+        if row is None:
             state.reporter.record(
                 function_goid_h128=meta.goid,
                 rel_path=meta.rel_path,
@@ -361,11 +227,9 @@ def _process_file_functions(
                 detail="Span matched a non-function node",
             )
             continue
-        metrics_row, types_row = rows
-        metrics_rows.append(metrics_row)
-        types_rows.append(types_row)
+        types_rows.append(row)
 
-    return metrics_rows, types_rows
+    return types_rows
 
 
 def build_function_analytics(
@@ -374,7 +238,7 @@ def build_function_analytics(
     state: ProcessState,
 ) -> FunctionAnalyticsResult:
     """
-    Build analytics rows for all GOIDs using a pure orchestration path.
+    Build typing rows for all GOIDs using a pure orchestration path.
 
     Parameters
     ----------
@@ -386,22 +250,20 @@ def build_function_analytics(
     Returns
     -------
     FunctionAnalyticsResult
-        Aggregated metrics, types, and validation findings.
+        Aggregated types rows and validation findings.
     """
-    metrics_rows: list[FunctionMetricsRow] = []
     types_rows: list[FunctionTypesRow] = []
 
     for rel_path, fun_rows in goids_by_file.items():
-        file_metrics, file_types = _process_file_functions(
-            rel_path=rel_path,
-            fun_rows=fun_rows,
-            state=state,
+        types_rows.extend(
+            _process_file_functions(
+                rel_path=rel_path,
+                fun_rows=fun_rows,
+                state=state,
+            )
         )
-        metrics_rows.extend(file_metrics)
-        types_rows.extend(file_types)
 
     return FunctionAnalyticsResult(
-        metrics_rows=metrics_rows,
         types_rows=types_rows,
         reporter=state.reporter,
     )
@@ -527,7 +389,6 @@ def _compute_from_goids(
 ) -> FunctionAnalyticsResult:
     if not goids_by_file:
         return FunctionAnalyticsResult(
-            metrics_rows=[],
             types_rows=[],
             reporter=FunctionValidationReporter(snapshot.repo, snapshot.commit),
         )
@@ -582,7 +443,7 @@ def compute_function_analytics_result_from_tabular(
     Returns
     -------
     FunctionAnalyticsResult
-        Container with metrics_rows, types_rows, and validation reporter.
+        Container with types_rows and validation reporter.
     """
     goids_frame = tabular_to_lazyframe(goids_input).collect()
     goids_by_file = _load_goids_from_frame(goids_frame, snapshot)
@@ -615,9 +476,8 @@ def _build_function_analytics_from_ast_data(
     Returns
     -------
     FunctionAnalyticsResult
-        Computed analytics rows and validation reporter.
+        Computed types rows and validation reporter.
     """
-    metrics_rows: list[FunctionMetricsRow] = []
     types_rows: list[FunctionTypesRow] = []
     ast_map = ast_data.get_ast_map()
     missing_goids = ast_data.get_missing_goids()
@@ -649,8 +509,8 @@ def _build_function_analytics_from_ast_data(
                     detail=detail,
                 )
                 continue
-            rows = _function_rows_from_node(meta, ast_info.node, ast_info.lines, process_ctx)
-            if rows is None:
+            row = _type_row_from_node(meta, ast_info.node, process_ctx)
+            if row is None:
                 reporter.record(
                     function_goid_h128=meta.goid,
                     rel_path=meta.rel_path,
@@ -659,12 +519,9 @@ def _build_function_analytics_from_ast_data(
                     detail="context AST resolution failed",
                 )
                 continue
-            metrics_row, types_row = rows
-            metrics_rows.append(metrics_row)
-            types_rows.append(types_row)
+            types_rows.append(row)
 
     return FunctionAnalyticsResult(
-        metrics_rows=metrics_rows,
         types_rows=types_rows,
         reporter=reporter,
     )
@@ -695,7 +552,7 @@ def compute_function_analytics_result(
     Returns
     -------
     FunctionAnalyticsResult
-        Container with metrics_rows, types_rows, and validation reporter.
+        Container with types_rows and validation reporter.
     """
     return compute_function_analytics_result_from_tabular(
         goids_input,
@@ -715,7 +572,7 @@ def compute_function_analytics_result_from_table(
     Returns
     -------
     FunctionAnalyticsResult
-        Container with metrics_rows, types_rows, and validation reporter.
+        Container with types_rows and validation reporter.
     """
     return compute_function_analytics_result_from_tabular(
         goids_input,

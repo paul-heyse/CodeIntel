@@ -11,7 +11,7 @@ Modules
 complexity
     Cyclomatic complexity, nesting depth, statement counts.
 typedness
-    Type annotation analysis and coverage metrics.
+    Parameter annotation statistics.
 signatures
     Parameter extraction and signature analysis.
 loc
@@ -39,9 +39,7 @@ from codeintel.build.analytics.compute.functions.signatures import (
 )
 from codeintel.build.analytics.compute.functions.typedness import (
     ParamStats,
-    TypednessFlags,
     compute_param_stats,
-    compute_typedness_flags,
 )
 
 __all__ = [
@@ -52,10 +50,8 @@ __all__ = [
     "GoidRow",
     "LinesOfCode",
     "ParamStats",
-    "TypednessFlags",
     "compute_complexity",
     "compute_loc",
     "compute_param_stats",
-    "compute_typedness_flags",
     "extract_signature",
 ]

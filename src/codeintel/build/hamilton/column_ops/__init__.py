@@ -6,13 +6,7 @@ import inspect
 from collections.abc import Mapping
 from types import ModuleType
 
-from codeintel.build.hamilton.column_ops import function_features, module_features, risk_features
-
-_FEATURE_MODULES: Mapping[str, ModuleType] = {
-    "analytics.function_metrics": function_features,
-    "analytics.goid_risk_factors": risk_features,
-    "analytics.module_profile": module_features,
-}
+_FEATURE_MODULES: Mapping[str, ModuleType] = {}
 
 
 def allowed_ops_by_table() -> dict[str, set[str]]:
@@ -36,7 +30,4 @@ def allowed_ops_by_table() -> dict[str, set[str]]:
 
 __all__ = [
     "allowed_ops_by_table",
-    "function_features",
-    "module_features",
-    "risk_features",
 ]

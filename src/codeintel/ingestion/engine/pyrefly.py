@@ -96,7 +96,7 @@ class PyreflyPlugin(DiagnosticToolPlugin):
             name="pyrefly",
             produces_artifacts=("pyrefly_json",),
             consumes_configs=("pyrefly_bin",),
-            datasets=("analytics.static_diagnostics", "analytics.typedness"),
+            datasets=("analytics.static_diagnostics",),
             spec=ToolSpec(required_kwargs=("output_path",)),
         )
     )

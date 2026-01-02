@@ -33,7 +33,7 @@ class DatasetReadRepository(BaseRepository):
         Parameters
         ----------
         table_key
-            Fully qualified table name (e.g., "analytics.function_metrics").
+            Fully qualified table name (e.g., "core.modules").
         limit
             Maximum number of rows to return.
         offset

@@ -8,15 +8,15 @@ Examples
 --------
 >>> from codeintel.build.schemas import get_schema_provider
 >>> provider = get_schema_provider()
->>> schema = provider.require_table_schema("analytics.function_metrics")
+>>> schema = provider.require_table_schema("core.modules")
 
 For dataset contracts, use `get_contract_for_table_key()`:
 
 >>> from codeintel.build.schemas import get_contract_for_table_key, is_view
->>> contract = get_contract_for_table_key("analytics.function_metrics")
+>>> contract = get_contract_for_table_key("core.modules")
 >>> contract.table_key
-'analytics.function_metrics'
->>> is_view("docs.v_function_profile")
+'core.modules'
+>>> is_view("docs.v_call_graph_enriched")
 True
 """
 

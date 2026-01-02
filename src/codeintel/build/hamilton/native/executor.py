@@ -8,7 +8,7 @@ patterns found across native Hamilton targets:
 
 Example
 -------
->>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
+>>> executor = NativeTargetExecutor.for_target(env, catalog, "function_types")
 >>> return executor.execute(lambda: compute_and_materialize())
 
 For async targets:
@@ -73,7 +73,7 @@ class NativeTargetExecutor:
     --------
     Synchronous execution:
 
-    >>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
+    >>> executor = NativeTargetExecutor.for_target(env, catalog, "function_types")
     >>> return executor.execute(lambda: {"analytics.table": 100})
 
     Asynchronous execution:
@@ -124,9 +124,9 @@ class NativeTargetExecutor:
 
         Examples
         --------
-        >>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
+        >>> executor = NativeTargetExecutor.for_target(env, catalog, "function_types")
         >>> executor.target.name
-        'risk_factors'
+        'function_types'
         """
         target = catalog.get_target(target_name)
         if target is None:

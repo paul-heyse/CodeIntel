@@ -45,7 +45,7 @@ def get_json_schema(table_key: str) -> dict[str, Any]:
 
     Examples
     --------
-    >>> schema = get_json_schema("analytics.function_metrics")
+    >>> schema = get_json_schema("core.modules")
     >>> schema["$schema"]
     'https://json-schema.org/draft/2020-12/schema'
     """

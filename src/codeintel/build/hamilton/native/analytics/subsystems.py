@@ -96,8 +96,6 @@ class SubsystemAnalyticsFrames:
     """Analytics inputs sourced from derived tables."""
 
     config_values: InferableTabularInput
-    risk_factors: InferableTabularInput
-    function_metrics: InferableTabularInput
 
 
 def subsystem_core_frames(
@@ -121,8 +119,6 @@ def subsystem_core_frames(
 
 def subsystem_analytics_frames(
     q__analytics__config_values: InferableTabularInput,
-    q__analytics__goid_risk_factors: InferableTabularInput,
-    q__analytics__function_metrics: InferableTabularInput,
 ) -> SubsystemAnalyticsFrames:
     """Bundle analytics inputs for subsystem inference.
 
@@ -133,8 +129,6 @@ def subsystem_analytics_frames(
     """
     return SubsystemAnalyticsFrames(
         config_values=q__analytics__config_values,
-        risk_factors=q__analytics__goid_risk_factors,
-        function_metrics=q__analytics__function_metrics,
     )
 
 
@@ -162,12 +156,6 @@ def subsystem_rows(
             ).collect(),
             config_values_frame=tabular_to_lazyframe(
                 subsystem_analytics_frames.config_values
-            ).collect(),
-            risk_factors_frame=tabular_to_lazyframe(
-                subsystem_analytics_frames.risk_factors
-            ).collect(),
-            function_metrics_frame=tabular_to_lazyframe(
-                subsystem_analytics_frames.function_metrics
             ).collect(),
         ),
     )

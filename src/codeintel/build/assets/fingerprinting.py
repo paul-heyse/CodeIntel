@@ -37,7 +37,7 @@ class TableVersionInput:
     Attributes
     ----------
     table_key
-        Fully-qualified table key (e.g., "analytics.function_metrics").
+        Fully-qualified table key (e.g., "core.modules").
     schema_hash
         Hash of the table schema, or None if not available.
     row_count
@@ -93,7 +93,7 @@ class FingerprintPolicy:
     --------
     >>> policy = FingerprintPolicy(mode=FingerprintMode.STABLE_V1)
     >>> inp = TableVersionInput(
-    ...     table_key="analytics.function_metrics",
+    ...     table_key="core.modules",
     ...     schema_hash="abc123",
     ...     row_count=100,
     ...     upstream_versions=("v1", "v2"),

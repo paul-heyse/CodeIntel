@@ -22,9 +22,9 @@ class DatasetContract:
     Parameters
     ----------
     table_key
-        Fully qualified DuckDB identifier, e.g. "analytics.function_profile".
+        Fully qualified DuckDB identifier, e.g. "analytics.function_types".
     name
-        Logical dataset name, e.g. "function_profile".
+        Logical dataset name, e.g. "function_types".
     schema
         Statically defined TableSchema when the dataset is backed by a table;
         None when the dataset is a view.

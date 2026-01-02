@@ -42,8 +42,8 @@ EXPORT_PARQUET_TARGET_NAME = "export_parquet"
 EXPORT_JSONL_ARTIFACT_NAME = "datasets_manifest_jsonl"
 EXPORT_PARQUET_ARTIFACT_NAME = "datasets_manifest_parquet"
 
-DEFAULT_JSONL_DATASETS: tuple[str, ...] = ("modules", "function_metrics")
-DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("function_metrics",)
+DEFAULT_JSONL_DATASETS: tuple[str, ...] = ("modules",)
+DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("modules",)
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,6 @@ def t__export_jsonl__compute(
     env: BuildEnv,
     catalog: DagCatalog,
     q__core__modules: InferableTabularInput,
-    q__analytics__function_metrics: InferableTabularInput,
 ) -> ArtifactWritePlan | None:
     """Compute export manifest and gather data for JSONL export.
 
@@ -108,7 +107,7 @@ def t__export_jsonl__compute(
     ArtifactWritePlan | None
         Deferred export write plan, or None when the target is skipped.
     """
-    _touch_dependencies(q__core__modules, q__analytics__function_metrics)
+    _touch_dependencies(q__core__modules)
     return _export_manifest_plan(
         env,
         catalog,
@@ -173,7 +172,7 @@ def t__export_jsonl(
 def t__export_parquet__compute(
     env: BuildEnv,
     catalog: DagCatalog,
-    q__analytics__function_metrics: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> ArtifactWritePlan | None:
     """Compute export manifest and gather data for Parquet export.
 
@@ -182,7 +181,7 @@ def t__export_parquet__compute(
     ArtifactWritePlan | None
         Deferred export write plan, or None when the target is skipped.
     """
-    _touch_dependencies(q__analytics__function_metrics)
+    _touch_dependencies(q__core__modules)
     return _export_manifest_plan(
         env,
         catalog,

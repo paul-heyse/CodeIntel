@@ -35,7 +35,7 @@ class SemanticViewSpec(BaseModel):
     kind
         Whether this is a "table" or "view" in DuckDB.
     table_key
-        Fully qualified DuckDB object name (e.g., "docs.v_function_summary").
+        Fully qualified DuckDB object name (e.g., "docs.v_function_architecture").
     entity
         Entity type this view represents (e.g., "function", "module").
     grain

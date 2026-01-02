@@ -50,7 +50,7 @@ class RepositoryFactory:
     Examples
     --------
     >>> factory = RepositoryFactory(gateway, repo="org/repo", commit="abc123")
-    >>> summary = factory.functions.get_function_summary_by_goid(goid)
+    >>> architecture = factory.functions.get_function_architecture(goid)
     """
 
     def __init__(self, gateway: StorageGateway, repo: str, commit: str) -> None:

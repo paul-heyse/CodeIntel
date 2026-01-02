@@ -7,11 +7,9 @@ making them easily testable and parallelizable.
 Subpackages
 -----------
 functions
-    Function-level analysis (complexity, typedness, signatures).
+    Function-level analysis (complexity, annotations, signatures).
 graphs
     Graph-theoretic algorithms (centrality, components).
-profiles
-    Profile aggregation logic.
 dependencies
     Dependency detection and classification.
 subsystems

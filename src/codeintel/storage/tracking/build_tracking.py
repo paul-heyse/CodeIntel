@@ -202,7 +202,7 @@ class BuildTracking:
     --------
     >>> tracking = BuildTracking(gateway)
     >>> tracking.save_manifest(manifest)
-    >>> loaded = tracking.load_manifest("risk_factors", "org/repo", "abc123")
+    >>> loaded = tracking.load_manifest("function_types", "org/repo", "abc123")
     """
 
     def __init__(self, gateway: StorageGateway) -> None:

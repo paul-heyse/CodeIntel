@@ -2,7 +2,7 @@
 Compute graph-theoretic metrics for functions and modules.
 
 This module derives call-graph and import-graph metrics that help surface
-architectural hotspots and coupling signals.
+architectural bottlenecks and coupling signals.
 """
 
 from __future__ import annotations

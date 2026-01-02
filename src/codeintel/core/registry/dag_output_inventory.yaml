@@ -1,26 +1,34 @@
 version: 1
 generated_at: "2025-12-31"
 outputs:
-  - target: "function_metrics"
+  - target: "function_types"
     domain: "analytics"
-    anchor: "t__function_metrics"
+    anchor: "t__function_types"
     materialization: "table"
     table_keys:
-      - "analytics.function_metrics"
       - "analytics.function_types"
-      - "analytics.function_validation"
     contracts:
-      - "analytics.function_metrics"
       - "analytics.function_types"
-      - "analytics.function_validation"
     downstream_consumers:
-      - "core.views"
-      - "serving.search_index"
+      - "analytics.function_contracts"
+      - "analytics.data_model_usage"
       - "cli.datasets"
     upstream_targets:
       - "core.goids"
-    pilot: true
-    notes: "Core analytics metric set used across storage views, serving, and CLI."
+    notes: "Function typing metadata derived from GOID catalog."
+  - target: "function_validation"
+    domain: "analytics"
+    anchor: "t__function_validation"
+    materialization: "table"
+    table_keys:
+      - "analytics.function_validation"
+    contracts:
+      - "analytics.function_validation"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "core.goids"
+    notes: "Validation findings for function analytics gaps."
   - target: "function_ast_features"
     domain: "analytics"
     anchor: "t__function_ast_features"
@@ -71,31 +79,6 @@ outputs:
       - "core.modules"
       - "core.goids"
     notes: "Usage edges between data model definitions and call sites."
-  - target: "profiles"
-    domain: "analytics"
-    anchor: "t__profiles"
-    materialization: "table"
-    table_keys:
-      - "analytics.function_profile"
-      - "analytics.file_profile"
-      - "analytics.module_profile"
-    contracts:
-      - "analytics.function_profile"
-      - "analytics.file_profile"
-      - "analytics.module_profile"
-    downstream_consumers:
-      - "core.views"
-      - "serving.search_index"
-      - "cli.datasets"
-    upstream_targets:
-      - "analytics.function_metrics"
-      - "analytics.function_contracts"
-      - "analytics.function_effects"
-      - "analytics.goid_risk_factors"
-      - "analytics.semantic_roles_functions"
-      - "graph.v_function_call_counts"
-      - "graph.v_call_depth_stats"
-    notes: "Aggregated function/file/module profiles for serving and CLI."
   - target: "semantic_roles"
     domain: "analytics"
     anchor: "t__semantic_roles"
@@ -114,20 +97,6 @@ outputs:
       - "core.modules"
       - "analytics.function_ast_features"
     notes: "Function/module role classification based on AST features."
-  - target: "test_profile"
-    domain: "analytics"
-    anchor: "t__test_profile"
-    materialization: "table"
-    table_keys:
-      - "analytics.test_profile"
-    contracts:
-      - "analytics.test_profile"
-    downstream_consumers:
-      - "analytics.entrypoints"
-      - "analytics.test_graph_metrics"
-      - "analytics.subsystem_caches"
-    upstream_targets:
-    notes: "Per-test profiles derived from catalog and graph metrics."
   - target: "function_contracts"
     domain: "analytics"
     anchor: "t__function_contracts"
@@ -137,7 +106,6 @@ outputs:
     contracts:
       - "analytics.function_contracts"
     downstream_consumers:
-      - "analytics.profiles"
       - "cli.datasets"
     upstream_targets:
       - "core.goids"
@@ -153,7 +121,6 @@ outputs:
     contracts:
       - "analytics.function_effects"
     downstream_consumers:
-      - "analytics.profiles"
       - "cli.datasets"
     upstream_targets:
       - "graph.call_graph_edges"
@@ -190,22 +157,8 @@ outputs:
     upstream_targets:
       - "core.goids"
       - "analytics.semantic_roles_functions"
-      - "analytics.test_profile"
+      - "analytics.test_catalog"
     notes: "Entrypoint identification and test associations."
-  - target: "hotspots"
-    domain: "analytics"
-    anchor: "t__hotspots"
-    materialization: "table"
-    table_keys:
-      - "analytics.hotspots"
-    contracts:
-      - "analytics.hotspots"
-    downstream_consumers:
-      - "cli.datasets"
-    upstream_targets:
-      - "core.ast_metrics"
-      - "core.modules"
-    notes: "Hotspot scoring from AST metrics and module metadata."
   - target: "config_data_flow"
     domain: "analytics"
     anchor: "t__config_data_flow"
@@ -295,54 +248,21 @@ outputs:
     upstream_targets:
       - "analytics.subsystems"
     notes: "Agreement between inferred subsystems and import communities."
-  - target: "test_graph_metrics"
-    domain: "analytics"
-    anchor: "t__test_graph_metrics"
-    materialization: "table"
-    table_keys:
-      - "analytics.test_graph_metrics_tests"
-      - "analytics.test_graph_metrics_functions"
-    contracts:
-      - "analytics.test_graph_metrics_tests"
-      - "analytics.test_graph_metrics_functions"
-    downstream_consumers:
-      - "cli.datasets"
-    upstream_targets:
-      - "analytics.test_catalog"
-    notes: "Graph metrics for tests and their associated functions."
   - target: "subsystem_caches"
     domain: "analytics"
     anchor: "t__subsystem_caches"
     materialization: "table"
     table_keys:
       - "analytics.subsystem_profile_cache"
-      - "analytics.subsystem_coverage_cache"
     contracts:
       - "analytics.subsystem_profile_cache"
-      - "analytics.subsystem_coverage_cache"
     downstream_consumers:
       - "serving.search_index"
       - "cli.datasets"
     upstream_targets:
       - "analytics.subsystems"
       - "analytics.subsystem_graph_metrics"
-      - "analytics.test_profile"
     notes: "Cached subsystem summaries for fast access."
-  - target: "risk_factors"
-    domain: "analytics"
-    anchor: "t__risk_factors"
-    materialization: "table"
-    table_keys:
-      - "analytics.goid_risk_factors"
-    contracts:
-      - "analytics.goid_risk_factors"
-    downstream_consumers:
-      - "analytics.profiles"
-      - "cli.datasets"
-    upstream_targets:
-      - "analytics.function_metrics"
-      - "graph.call_graph_edges"
-    notes: "Risk scoring based on complexity and graph connectivity."
   - target: "subsystems"
     domain: "analytics"
     anchor: "t__subsystems"
@@ -361,19 +281,6 @@ outputs:
       - "graph.import_graph_edges"
       - "analytics.semantic_roles_functions"
     notes: "Subsystem inference from import graph communities."
-  - target: "behavioral_coverage"
-    domain: "analytics"
-    anchor: "t__behavioral_coverage"
-    materialization: "table"
-    table_keys:
-      - "analytics.behavioral_coverage"
-    contracts:
-      - "analytics.behavioral_coverage"
-    downstream_consumers:
-      - "cli.datasets"
-    upstream_targets:
-      - "analytics.test_profile"
-    notes: "Behavioral tags derived from test profiles."
   - target: "goids"
     domain: "graphs"
     anchor: "t__goids"
@@ -460,8 +367,6 @@ outputs:
     anchor: "t__views"
     materialization: "table"
     table_keys:
-      - "analytics.v_function_hotspots"
-      - "analytics.v_function_summary"
       - "core.v_goid_crosswalk_join"
       - "core.v_goid_crosswalk_mismatches"
       - "docs.v_behavioral_classification_input"
@@ -479,13 +384,11 @@ outputs:
       - "docs.v_external_dependency_calls"
       - "docs.v_file_summary"
       - "docs.v_function_architecture"
-      - "docs.v_function_summary"
       - "docs.v_ide_hints"
       - "docs.v_module_architecture"
       - "docs.v_module_architecture_full"
       - "docs.v_module_with_subsystem"
       - "docs.v_subsystem_agreement"
-      - "docs.v_subsystem_coverage"
       - "docs.v_subsystem_profile"
       - "docs.v_subsystem_summary"
       - "docs.v_symbol_module_graph"
@@ -495,8 +398,6 @@ outputs:
       - "graph.v_call_graph_degree"
       - "graph.v_import_graph_degree"
     contracts:
-      - "analytics.v_function_hotspots"
-      - "analytics.v_function_summary"
       - "core.v_goid_crosswalk_join"
       - "core.v_goid_crosswalk_mismatches"
       - "docs.v_behavioral_classification_input"
@@ -514,13 +415,11 @@ outputs:
       - "docs.v_external_dependency_calls"
       - "docs.v_file_summary"
       - "docs.v_function_architecture"
-      - "docs.v_function_summary"
       - "docs.v_ide_hints"
       - "docs.v_module_architecture"
       - "docs.v_module_architecture_full"
       - "docs.v_module_with_subsystem"
       - "docs.v_subsystem_agreement"
-      - "docs.v_subsystem_coverage"
       - "docs.v_subsystem_profile"
       - "docs.v_subsystem_summary"
       - "docs.v_symbol_module_graph"
@@ -539,13 +438,10 @@ outputs:
       - "entrypoints"
       - "external_deps"
       - "function_effects"
-      - "function_metrics"
       - "graph_metrics"
       - "import_graph"
-      - "profiles"
       - "semantic_roles"
       - "subsystems"
-      - "test_profile"
     notes: "Hamilton-native views materialized from dataset snapshots."
   - target: "graph_metrics"
     domain: "graphs"
@@ -564,7 +460,6 @@ outputs:
       - "analytics.graph_metrics_modules_ext"
       - "analytics.graph_stats"
     downstream_consumers:
-      - "analytics.function_profile"
       - "cli.graph"
     upstream_targets:
       - "graph.call_graph_edges"
@@ -641,8 +536,7 @@ outputs:
       - "core.cst_nodes"
     contracts:
       - "core.cst_nodes"
-    downstream_consumers:
-      - "analytics.function_metrics"
+    downstream_consumers: []
     upstream_targets:
       - "core.modules"
     notes: "CST extraction for source parsing."
@@ -656,7 +550,6 @@ outputs:
       - "core.docstrings"
     downstream_consumers:
       - "analytics.data_models"
-      - "analytics.function_profile"
     upstream_targets:
       - "core.modules"
     notes: "Docstring extraction for class and function metadata."
@@ -682,8 +575,7 @@ outputs:
     contracts:
       - "analytics.test_catalog"
     downstream_consumers:
-      - "analytics.test_profile"
-      - "analytics.behavioral_coverage"
+      - "analytics.entrypoints"
     upstream_targets:
       - "core.modules"
     notes: "Test discovery and catalog ingestion."
@@ -692,16 +584,13 @@ outputs:
     anchor: "t__typing"
     materialization: "table"
     table_keys:
-      - "analytics.typedness"
       - "analytics.static_diagnostics"
     contracts:
-      - "analytics.typedness"
       - "analytics.static_diagnostics"
-    downstream_consumers:
-      - "analytics.function_metrics"
+    downstream_consumers: []
     upstream_targets:
       - "core.modules"
-    notes: "Static typing signals and diagnostics."
+    notes: "Static diagnostics for typing tools."
   - target: "scip_proto"
     domain: "ingestion"
     anchor: "t__scip_proto"

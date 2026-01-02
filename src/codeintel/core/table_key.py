@@ -154,8 +154,8 @@ def split_table_key(table_key: TableKey) -> tuple[str, str]:
 
     Examples
     --------
-    >>> split_table_key("analytics.function_metrics")
-    ('analytics', 'function_metrics')
+    >>> split_table_key("core.modules")
+    ('core', 'modules')
     >>> split_table_key("core.goids")
     ('core', 'goids')
     """

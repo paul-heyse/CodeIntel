@@ -44,7 +44,10 @@ ResourceURI = Annotated[
     Field(
         pattern=r"^codeintel://.+",
         description="CodeIntel resource URI (codeintel://...).",
-        examples=[META_SERVING_URI, SEMANTIC_VIEW_URI_TEMPLATE.format(view_id="function_metrics")],
+        examples=[
+            META_SERVING_URI,
+            SEMANTIC_VIEW_URI_TEMPLATE.format(view_id="call_graph_enriched"),
+        ],
     ),
 ]
 

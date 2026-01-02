@@ -134,6 +134,7 @@ dependencies = [
 [project.scripts]
 codeintel = "codeintel.cli:main"
 codeintel-app = "codeintel.cli:main"
+advanced-query-engine = "tools.advanced_query_engine.cli:main"
 
 # Entry points for plugin discovery
 # Third-party packages can register plugins under these groups
@@ -147,10 +148,11 @@ codeintel-app = "codeintel.cli:main"
 # Example for third-party: my_plugin = "my_package.graph:MyGraphPlugin"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "src", "tools" = "tools"}
 
 [tool.setuptools.packages.find]
-include = ["codeintel*"]
+where = ["src", "tools"]
+include = ["codeintel*", "tools*"]
 
 
 [tool.ruff]

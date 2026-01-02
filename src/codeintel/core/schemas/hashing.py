@@ -87,7 +87,7 @@ def compute_table_schema_hash(
     Parameters
     ----------
     table_key
-        Fully-qualified dataset table key (e.g., "analytics.function_metrics").
+        Fully-qualified dataset table key (e.g., "core.modules").
     schema_provider
         Schema provider used to resolve the table schema.
 

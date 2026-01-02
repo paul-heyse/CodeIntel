@@ -28,7 +28,7 @@ class DataflowNode:
     Parameters
     ----------
     id
-        Stable identifier for this node, e.g. "analytics.function_metrics".
+        Stable identifier for this node, e.g. "analytics.function_types".
     kind
         Node category: "table", "view", "operation", or "graph".
     family

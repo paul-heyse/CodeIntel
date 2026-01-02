@@ -461,7 +461,6 @@ class ToolNotAvailableError(ResourceError):
             "pyright": "Install with: pip install pyright",
             "pyrefly": "Install with: pip install pyrefly",
             "ruff": "Install with: pip install ruff",
-            "coverage": "Install with: pip install coverage",
             "pytest": "Install with: pip install pytest",
         }
         return hints.get(self.tool, f"Install '{self.tool}' and ensure it's on PATH")

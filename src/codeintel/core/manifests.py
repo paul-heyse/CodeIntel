@@ -701,7 +701,7 @@ class ExportArtifact(msgspec.Struct, ManifestBase, frozen=True):
     kind
         Type of export file: parquet, jsonl, json, or csv.
     filename
-        Default filename for the export (e.g., "function_metrics.parquet").
+        Default filename for the export (e.g., "modules.parquet").
     table_key
         Fully qualified table key (schema.table) this artifact exports from.
         None for artifacts not tied to a specific table.

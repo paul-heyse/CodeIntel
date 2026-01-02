@@ -999,13 +999,13 @@ class DuckDBPolicyBackend:
 
         This is a convenience method that accepts a table_key and routes to
         _delete_repo_commit. Supports both schema-qualified names
-        (e.g., 'analytics.function_metrics') and simple table names
+        (e.g., 'core.modules') and simple table names
         (e.g., 'sample_simple_batch') which default to the 'main' schema.
 
         Parameters
         ----------
         table_key
-            Table name, optionally schema-qualified (e.g., 'analytics.function_metrics'
+            Table name, optionally schema-qualified (e.g., 'core.modules'
             or just 'my_table' for main schema).
         repo
             Repository identifier.
@@ -1334,7 +1334,7 @@ class DuckDBPolicyBackend:
         Parameters
         ----------
         table_key
-            Fully qualified table name (e.g., 'analytics.function_metrics').
+            Fully qualified table name (e.g., 'core.modules').
         rows
             Sequence of tuples containing row values in column order.
         columns
@@ -1451,7 +1451,7 @@ class DuckDBPolicyBackend:
         Parameters
         ----------
         table_key
-            Fully qualified table name (e.g., 'analytics.function_metrics').
+            Fully qualified table name (e.g., 'core.modules').
         rows
             Iterable of mapping rows keyed by column name.
         columns
@@ -1599,7 +1599,7 @@ class DuckDBPolicyBackend:
         Parameters
         ----------
         table_key
-            Fully qualified table name (e.g., 'analytics.function_metrics').
+            Fully qualified table name (e.g., 'core.modules').
         rows
             Sequence of tuples containing row values in column order.
         columns

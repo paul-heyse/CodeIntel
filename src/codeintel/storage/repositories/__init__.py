@@ -9,7 +9,7 @@ Example
 >>> from codeintel.storage.repositories import RepositoryFactory
 >>>
 >>> factory = RepositoryFactory(gateway, repo="org/repo", commit="abc123")
->>> summary = factory.functions.get_function_summary_by_goid(goid)
+>>> architecture = factory.functions.get_function_architecture(goid)
 """
 
 from codeintel.core.repository import PagedResult

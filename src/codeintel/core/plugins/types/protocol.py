@@ -28,14 +28,11 @@ PluginStage = Literal[
     "graph",
     "function",
     "test",
-    "coverage",
     "subsystem",
     "data_model",
     "data_model_usage",
     "entrypoints",
-    "profiles",
     "semantic",
-    "hotspots",
     "risk",
     "cfg",
     "dfg",
@@ -64,14 +61,14 @@ class PluginCapability:
     """Declare what a plugin provides or requires.
 
     Capabilities enable loose coupling between plugins. A plugin declares
-    what it provides (e.g., "analytics.function_metrics") and what it
+    what it provides (e.g., "analytics.function_types") and what it
     requires (e.g., "core.goids"). The runtime resolves these dependencies
     automatically.
 
     Attributes
     ----------
     name
-        Stable identifier for the capability (e.g., "analytics.function_metrics").
+        Stable identifier for the capability (e.g., "analytics.function_types").
     kind
         Classification of the capability type.
     """

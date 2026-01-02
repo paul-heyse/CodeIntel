@@ -71,7 +71,6 @@ class SemanticRoleModuleFrames:
 
 @dataclass(frozen=True)
 class SemanticRoleEffectFrames:
-    function_metrics_frame: pl.DataFrame
     function_effects_frame: pl.DataFrame
     function_contracts_frame: pl.DataFrame
 
@@ -94,12 +93,10 @@ def semantic_role_module_frames(
 
 
 def semantic_role_effect_frames(
-    q__analytics__function_metrics: InferableTabularInput,
     q__analytics__function_effects: InferableTabularInput,
     q__analytics__function_contracts: InferableTabularInput,
 ) -> SemanticRoleEffectFrames:
     return SemanticRoleEffectFrames(
-        function_metrics_frame=tabular_to_lazyframe(q__analytics__function_metrics).collect(),
         function_effects_frame=tabular_to_lazyframe(q__analytics__function_effects).collect(),
         function_contracts_frame=tabular_to_lazyframe(q__analytics__function_contracts).collect(),
     )
@@ -209,7 +206,7 @@ def semantic_roles_result(
             module_by_path=module_map,
             ast_map=ast_map,
             features_map=_features_by_goid(semantic_role_module_frames.features_frame),
-            function_metrics_frame=semantic_role_effect_frames.function_metrics_frame,
+            goids_frame=semantic_role_module_frames.goids_frame,
             function_effects_frame=semantic_role_effect_frames.function_effects_frame,
             function_contracts_frame=semantic_role_effect_frames.function_contracts_frame,
             graph_metrics_frame=semantic_role_graph_frames.graph_metrics_frame,

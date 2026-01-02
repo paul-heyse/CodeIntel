@@ -112,7 +112,7 @@ class CompositeSchema:
     Parameters
     ----------
     composed_of
-        Tuple of source table keys (e.g., "analytics.function_metrics").
+        Tuple of source table keys (e.g., "analytics.function_types").
     shared_fragments
         Column fragments shared across all source tables (deduplicated).
     additional_columns
@@ -125,7 +125,7 @@ class CompositeSchema:
     Examples
     --------
     >>> cs = CompositeSchema(
-    ...     composed_of=("analytics.function_metrics", "analytics.function_types"),
+    ...     composed_of=("analytics.function_types",),
     ...     shared_fragments=(FUNCTION_ENTITY_COLS,),
     ...     additional_columns=(Column("risk_score", "DOUBLE"),),
     ...     column_mappings={"keyword_only_params": "keyword_params"},

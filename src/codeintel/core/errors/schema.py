@@ -14,10 +14,10 @@ The schema error taxonomy:
 Examples
 --------
 >>> from codeintel.core.errors.schema import SchemaNotFoundError
->>> raise SchemaNotFoundError("analytics.function_metrics")
+>>> raise SchemaNotFoundError("core.modules")
 Traceback (most recent call last):
     ...
-SchemaNotFoundError: No schema found for table key: analytics.function_metrics
+SchemaNotFoundError: No schema found for table key: core.modules
 """
 
 from __future__ import annotations
@@ -90,10 +90,10 @@ class SchemaError(CodeIntelError):
     >>> error = SchemaError(
     ...     error_code=SCHEMA_NOT_FOUND,
     ...     detail="Schema missing",
-    ...     table_key="analytics.function_metrics",
+    ...     table_key="core.modules",
     ... )
     >>> error.table_key
-    'analytics.function_metrics'
+    'core.modules'
     """
 
     table_key: str | None = None
@@ -110,10 +110,10 @@ class SchemaNotFoundError(SchemaError):
 
     Examples
     --------
-    >>> raise SchemaNotFoundError("analytics.function_metrics")
+    >>> raise SchemaNotFoundError("core.modules")
     Traceback (most recent call last):
         ...
-    SchemaNotFoundError: No schema found for table key: analytics.function_metrics
+    SchemaNotFoundError: No schema found for table key: core.modules
     """
 
     def __init__(self, table_key: str) -> None:
@@ -139,7 +139,7 @@ class SchemaLoadError(SchemaError):
     >>> try:
     ...     raise ValueError("file not found")
     ... except ValueError as e:
-    ...     raise SchemaLoadError("analytics.function_metrics", e) from e
+    ...     raise SchemaLoadError("core.modules", e) from e
     """
 
     def __init__(self, table_key: str, cause: Exception) -> None:
@@ -173,7 +173,7 @@ class SchemaValidationError(SchemaError):
     Examples
     --------
     >>> raise SchemaValidationError(
-    ...     "analytics.function_metrics",
+    ...     "core.modules",
     ...     ["column 'loc' missing", "type mismatch for 'name'"],
     ... )
     """
@@ -208,7 +208,7 @@ class SchemaDigestError(SchemaError):
     >>> try:
     ...     raise ValueError("invalid JSON")
     ... except ValueError as e:
-    ...     raise SchemaDigestError("analytics.function_metrics", e) from e
+    ...     raise SchemaDigestError("core.modules", e) from e
     """
 
     def __init__(self, table_key: str, cause: Exception) -> None:

@@ -398,7 +398,7 @@ class DatasetInfoResult:
     Parameters
     ----------
     name
-        Dataset table key (e.g., "analytics.function_metrics").
+        Dataset table key (e.g., "analytics.function_types").
     columns
         Tuple of column names in the schema.
     metadata
