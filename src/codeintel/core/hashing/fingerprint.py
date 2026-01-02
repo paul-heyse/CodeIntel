@@ -7,7 +7,8 @@ objects and data structures.
 from __future__ import annotations
 
 import hashlib
-import json
+
+import orjson
 
 
 def fingerprint(data: object) -> str:
@@ -116,11 +117,11 @@ def _serialize_compound(data: object) -> str:
         items = [_serialize_value(item) for item in data]
         return f"[{','.join(items)}]"
     if isinstance(data, dict):
-        return json.dumps(
+        return orjson.dumps(
             _make_serializable(data),
-            sort_keys=True,
+            option=orjson.OPT_SORT_KEYS,
             default=str,
-        )
+        ).decode("utf-8")
     return str(data)
 
 

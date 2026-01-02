@@ -15,6 +15,7 @@ from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build_schema import (
     build_schema_compile_handler,
     build_schema_diff_handler,
+    build_schema_inferability_handler,
     build_schema_migrate_handler,
 )
 from codeintel.cli.options.registry import (
@@ -46,10 +47,12 @@ _SCHEMA_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 BUILD_SCHEMA_COMPILE_PATH: CommandPath = ("build", "schema", "compile")
 BUILD_SCHEMA_DIFF_PATH: CommandPath = ("build", "schema", "diff")
 BUILD_SCHEMA_MIGRATE_PATH: CommandPath = ("build", "schema", "migrate")
+BUILD_SCHEMA_INFERABILITY_PATH: CommandPath = ("build", "schema", "inferability")
 
 _BUILD_SCHEMA_COMPILE_FLAGS_FIELD = shared_flags_field(BUILD_SCHEMA_COMPILE_PATH)
 _BUILD_SCHEMA_DIFF_FLAGS_FIELD = shared_flags_field(BUILD_SCHEMA_DIFF_PATH)
 _BUILD_SCHEMA_MIGRATE_FLAGS_FIELD = shared_flags_field(BUILD_SCHEMA_MIGRATE_PATH)
+_BUILD_SCHEMA_INFERABILITY_FLAGS_FIELD = shared_flags_field(BUILD_SCHEMA_INFERABILITY_PATH)
 
 
 @cli_command("build.schema.compile", handler=build_schema_compile_handler, config=_SCHEMA_CONFIG)
@@ -203,9 +206,35 @@ class BuildSchemaMigrateCommand:
     flags: SharedFlagsProtocol = _BUILD_SCHEMA_MIGRATE_FLAGS_FIELD
 
 
+@cli_command(
+    "build.schema.inferability",
+    handler=build_schema_inferability_handler,
+    config=_SCHEMA_CONFIG,
+)
+@build_schema_app.command(name="inferability")
+@dataclass
+class BuildSchemaInferabilityCommand:
+    """Report inferability status for schema outputs."""
+
+    targets: Annotated[
+        list[str] | None,
+        option_param(BUILD_SCHEMA_TARGETS, command_path=BUILD_SCHEMA_INFERABILITY_PATH),
+    ] = None
+    module: Annotated[
+        str | None,
+        option_param(BUILD_SCHEMA_MODULE, command_path=BUILD_SCHEMA_INFERABILITY_PATH),
+    ] = None
+    all_targets: Annotated[
+        bool,
+        option_param(BUILD_SCHEMA_ALL, command_path=BUILD_SCHEMA_INFERABILITY_PATH),
+    ] = False
+    flags: SharedFlagsProtocol = _BUILD_SCHEMA_INFERABILITY_FLAGS_FIELD
+
+
 __all__ = [
     "BuildSchemaCompileCommand",
     "BuildSchemaDiffCommand",
+    "BuildSchemaInferabilityCommand",
     "BuildSchemaMigrateCommand",
     "build_schema_app",
 ]

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -30,14 +28,12 @@ from tests._helpers.fixtures.rows import (
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
-from tests._helpers.orchestration.tooling import generate_coverage_for_function
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs.graph_config import (
         GraphEngineSeed,
     )
-    from tests._helpers.orchestration.tooling import CoverageArtifact
 
 
 REPO: Final[str] = DEFAULT_VARIANT.repo
@@ -64,7 +60,10 @@ def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) ->
         commit=seed.commit,
         repo_root=seed.repo_root or Path.cwd(),
     )
-    engine = NxGraphEngine(gateway=gateway, snapshot=snapshot)
+    engine = NxGraphEngine(
+        dataset_root_dir=gateway.datasets.dataset_root_dir,
+        snapshot=snapshot,
+    )
     if seed.call_graph is not None:
         engine.seed(GraphKind.CALL_GRAPH, seed.call_graph)
     if seed.import_graph is not None:
@@ -153,28 +152,6 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
         raise RuntimeError(message) from exc
 
 
-def generate_span_coverage(repo_root: Path) -> CoverageArtifact:
-    """Generate coverage artifact for the test caller function.
-
-    Parameters
-    ----------
-    repo_root
-        Path to the repository root.
-
-    Returns
-    -------
-    CoverageArtifact
-        Coverage artifact containing the created coverage file.
-    """
-    _load_pkg_for_coverage(repo_root)
-    return generate_coverage_for_function(
-        repo_root=repo_root,
-        module_import="pkg.b",
-        function_name="caller",
-        test_id="tests/test_sample.py::test_caller",
-    )
-
-
 def collect_span_snapshot(con: object) -> SpanSnapshot:
     """Collect span-related GOIDs and symbol uses from the gateway.
 
@@ -203,13 +180,6 @@ def collect_span_snapshot(con: object) -> SpanSnapshot:
         ).fetchall()
         if row[0] is not None
     }
-    coverage_goids = {
-        _coerce_goid(row[0])
-        for row in con.execute(
-            "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
-        ).fetchall()
-        if row[0] is not None
-    }
     symbol_use_paths = {
         row[0]
         for row in con.execute(
@@ -219,7 +189,6 @@ def collect_span_snapshot(con: object) -> SpanSnapshot:
     return SpanSnapshot(
         cfg_goids=cfg_goids,
         callgraph_goids=callgraph_goids,
-        coverage_goids=coverage_goids,
         symbol_use_paths=symbol_use_paths,
     )
 
@@ -313,17 +282,6 @@ def _seed_symbol_use_edges(gateway: StorageGateway) -> None:
     )
 
 
-def _load_pkg_for_coverage(repo_root: Path) -> None:
-    pkg_init = repo_root / "pkg" / "__init__.py"
-    pkg_spec = importlib.util.spec_from_file_location("pkg", pkg_init)
-    if pkg_spec is None or pkg_spec.loader is None:
-        message = "Unable to load pkg package for coverage"
-        raise RuntimeError(message)
-    pkg_module = importlib.util.module_from_spec(pkg_spec)
-    sys.modules["pkg"] = pkg_module
-    pkg_spec.loader.exec_module(pkg_module)
-
-
 def _as_duckdb(con: object) -> duckdb.DuckDBPyConnection:
     if isinstance(con, duckdb.DuckDBPyConnection):
         return con
@@ -336,5 +294,4 @@ __all__ = [
     "build_span_graph_components",
     "collect_span_snapshot",
     "create_span_test_env",
-    "generate_span_coverage",
 ]

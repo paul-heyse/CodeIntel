@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
@@ -13,6 +14,7 @@ from hamilton.function_modifiers.base import NodeTransformLifecycle
 from codeintel.build.hamilton.data_quality import build_table_schema_validators
 from codeintel.build.hamilton.materializers import ArrowDatasetSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.ingestion.frame_utils import empty_lazyframe_for_table
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
@@ -174,6 +176,21 @@ def _validation_from_config(
     return resolve_from_config(decorate_with=_factory)
 
 
+def _coerce_none_output[**P_coerce, R_coerce](
+    fn: Callable[P_coerce, R_coerce],
+    *,
+    table_key: str,
+) -> Callable[P_coerce, R_coerce]:
+    @functools.wraps(fn)
+    def wrapper(*args: P_coerce.args, **kwargs: P_coerce.kwargs) -> R_coerce:
+        result = fn(*args, **kwargs)
+        if result is None:
+            return cast("R_coerce", empty_lazyframe_for_table(table_key))
+        return result
+
+    return wrapper
+
+
 def save_artifact(
     *,
     context: SaverContext,
@@ -258,7 +275,8 @@ def save_dataset(
             table_key=spec.table_key,
             extra_tags=context.extra_tags,
         )(fn)
-        validated = validator(tagged)
+        coerced = _coerce_none_output(tagged, table_key=spec.table_key)
+        validated = validator(coerced)
         return decorator(validated)
 
     return apply
@@ -305,7 +323,8 @@ def save_relation_table(
             table_key=spec.table_key,
             extra_tags=context.extra_tags,
         )(fn)
-        validated = validator(tagged)
+        coerced = _coerce_none_output(tagged, table_key=spec.table_key)
+        validated = validator(coerced)
         return decorator(validated)
 
     return apply

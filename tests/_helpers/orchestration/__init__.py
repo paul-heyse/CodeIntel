@@ -1,8 +1,7 @@
 """Test environment orchestration functions.
 
 This module provides functions for creating and managing test environments,
-including file I/O, coverage generation, provisioning, database seeding,
-and gateway setup.
+including file I/O, provisioning, database seeding, and gateway setup.
 """
 
 from __future__ import annotations
@@ -11,19 +10,11 @@ from typing import TYPE_CHECKING
 
 from tests._helpers.fixtures.repos import (
     write_callgraph_alias_repo,
-    write_coverage_driver,
     write_graph_metrics_repo,
     write_sample_repo,
 )
-from tests._helpers.orchestration.coverage_orchestration import (
-    compute_coverage_edges,
-    create_coverage_edge_env,
-    generate_coverage_artifact,
-    seed_coverage_rows,
-)
 from tests._helpers.orchestration.entrypoints_orchestration import (
     AppSeeds,
-    make_coverage_seed_from_app,
     seed_app_modules_and_goids,
 )
 from tests._helpers.orchestration.gateway import (
@@ -37,7 +28,6 @@ from tests._helpers.orchestration.graph_orchestration import (
     build_span_graph_components,
     collect_span_snapshot,
     create_span_test_env,
-    generate_span_coverage,
 )
 from tests._helpers.orchestration.seeding import (
     seed_call_graph_scoping,
@@ -54,12 +44,10 @@ from tests._helpers.orchestration.seeding_docs import (
     seed_profile_data,
 )
 from tests._helpers.orchestration.tooling import (
-    CoverageArtifact,
     GitRepoContext,
     ToolingContext,
     ToolingOutputs,
     build_tooling_context,
-    generate_coverage_for_function,
     init_git_repo_with_history,
     make_tools_config,
     run_static_tooling,
@@ -67,7 +55,6 @@ from tests._helpers.orchestration.tooling import (
 
 __all__ = [
     "AppSeeds",
-    "CoverageArtifact",
     "DuckDBConnection",
     "GatewayFactory",
     "GitRepoContext",
@@ -78,16 +65,10 @@ __all__ = [
     "build_span_graph_components",
     "build_tooling_context",
     "collect_span_snapshot",
-    "compute_coverage_edges",
-    "create_coverage_edge_env",
     "create_span_test_env",
     "docs_views_ready_gateway",
-    "generate_coverage_artifact",
-    "generate_coverage_for_function",
-    "generate_span_coverage",
     "graph_metrics_ready_gateway",
     "init_git_repo_with_history",
-    "make_coverage_seed_from_app",
     "make_repo_context",
     "make_tools_config",
     "memory_con_with_macros",
@@ -103,7 +84,6 @@ __all__ = [
     "seed_call_graph_scoping",
     "seed_callgraph_goids",
     "seed_cfg_dfg_for_metrics",
-    "seed_coverage_rows",
     "seed_docs_export_invalid_profile",
     "seed_docs_export_minimal",
     "seed_function_graph_cycle",
@@ -113,7 +93,6 @@ __all__ = [
     "seed_profile_data",
     "seed_tables",
     "write_callgraph_alias_repo",
-    "write_coverage_driver",
     "write_graph_metrics_repo",
     "write_sample_repo",
 ]

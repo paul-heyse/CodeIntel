@@ -65,7 +65,6 @@ def test_build_export_smoke(tmp_path: Path) -> None:
     for fname in (
         "call_graph_edges.parquet",
         "function_metrics.parquet",
-        "coverage_functions.parquet",
     ):
         path = document_output / fname
         if not path.is_file():

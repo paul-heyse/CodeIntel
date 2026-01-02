@@ -6,14 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests._helpers.fixtures.rows import (
-    CoverageLineRow,
-    insert_rows,
-)
 from tests._helpers.seeds import (
     CORE_PACK,
-    COVERAGE_LINES_PACK,
-    COVERAGE_PACK,
     GRAPH_PACK,
     METRICS_PACK,
     SUBSYSTEM_ANALYTICS_PACK,
@@ -29,32 +23,10 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
         CORE_PACK,
         GRAPH_PACK,
         METRICS_PACK,
-        COVERAGE_PACK,
-        COVERAGE_LINES_PACK,
         SUBSYSTEM_ANALYTICS_PACK,
     )
     gateway = test_ctx.gateway
     con = gateway.con
-    initial_row = con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()
-    if initial_row is None:
-        pytest.fail("Expected count row from analytics.coverage_lines")
-    if initial_row[0] == 0:
-        insert_rows(
-            gateway,
-            [
-                CoverageLineRow(
-                    repo=test_ctx.repo,
-                    commit=test_ctx.commit,
-                    rel_path="core/mod_a.py",
-                    line=1,
-                    is_executable=True,
-                    is_covered=True,
-                    hits=1,
-                    context_count=1,
-                    created_at=None,
-                )
-            ],
-        )
 
     def _count(query: str) -> int:
         row = con.execute(query).fetchone()
@@ -74,12 +46,7 @@ def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:
         "graph.cfg_edges": _count("SELECT COUNT(*) FROM graph.cfg_edges"),
         "graph.dfg_edges": _count("SELECT COUNT(*) FROM graph.dfg_edges"),
         "analytics.function_metrics": _count("SELECT COUNT(*) FROM analytics.function_metrics"),
-        "analytics.coverage_functions": _count("SELECT COUNT(*) FROM analytics.coverage_functions"),
-        "analytics.coverage_lines": _count("SELECT COUNT(*) FROM analytics.coverage_lines"),
         "analytics.test_catalog": _count("SELECT COUNT(*) FROM analytics.test_catalog"),
-        "analytics.test_coverage_edges": _count(
-            "SELECT COUNT(*) FROM analytics.test_coverage_edges"
-        ),
         "analytics.goid_risk_factors": _count("SELECT COUNT(*) FROM analytics.goid_risk_factors"),
         "analytics.config_values": _count("SELECT COUNT(*) FROM analytics.config_values"),
         "analytics.typedness": _count("SELECT COUNT(*) FROM analytics.typedness"),

@@ -46,6 +46,7 @@ TagKey = Literal[
     "target_parameters",
     "target_estimated_duration_ms",
     "target_spec_version",
+    "ci.data_node",
 ]
 
 _PRIMARY_TAG_KEYS: set[TagKey] = {

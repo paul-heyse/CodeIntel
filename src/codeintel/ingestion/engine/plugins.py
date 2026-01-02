@@ -6,9 +6,9 @@ tool-related types including ``ToolStatus``.
 
 Architecture Note
 -----------------
-Tool plugins wrap external CLI tools (pyright, ruff, coverage, scip-python, pytest)
+Tool plugins wrap external CLI tools (pyright, ruff, scip-python, pytest)
 and return ``ToolPluginResult`` objects. These results contain a ``parsed``
-field holding a rich domain object (DiagnosticReport, CoverageReport, etc.)
+field holding a rich domain object (DiagnosticReport, TestReport, etc.)
 from ``tools/results.py``.
 
 The ``ToolService`` facade orchestrates tool plugins and extracts the data
@@ -84,7 +84,7 @@ class ToolPluginResult:
     error
         Exception captured by the plugin, if any.
     parsed
-        Parsed domain object (DiagnosticReport, CoverageReport, etc.).
+        Parsed domain object (DiagnosticReport, TestReport, etc.).
     """
 
     tool: ToolName
@@ -244,7 +244,7 @@ class ToolPlugin(Protocol):
         repo_root
             Repository root path for tool execution.
         **kwargs
-            Tool-specific arguments (e.g., coverage_file, json_output_path).
+            Tool-specific arguments (e.g., json_output_path).
 
         Returns
         -------
@@ -424,7 +424,6 @@ def build_default_registry(runner: ToolRunner, tools_config: ToolsConfig) -> Too
     pyright_plugin = import_module("codeintel.ingestion.engine.pyright").PyrightPlugin
     pyrefly_plugin = import_module("codeintel.ingestion.engine.pyrefly").PyreflyPlugin
     ruff_plugin = import_module("codeintel.ingestion.engine.ruff").RuffPlugin
-    coverage_plugin = import_module("codeintel.ingestion.engine.coverage").CoveragePlugin
     pytest_plugin = import_module("codeintel.ingestion.engine.pytest").PytestPlugin
     scip_plugin = import_module("codeintel.ingestion.engine.scip").ScipPlugin
 
@@ -433,7 +432,6 @@ def build_default_registry(runner: ToolRunner, tools_config: ToolsConfig) -> Too
     registry.register(pyright_plugin(runner=runner, tools_config=tools_config))
     registry.register(pyrefly_plugin(runner=runner, tools_config=tools_config))
     registry.register(ruff_plugin(runner=runner, tools_config=tools_config))
-    registry.register(coverage_plugin(runner=runner, tools_config=tools_config))
     registry.register(pytest_plugin(runner=runner, tools_config=tools_config))
     registry.register(scip_plugin(runner=runner, tools_config=tools_config))
 

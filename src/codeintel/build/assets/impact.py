@@ -10,8 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.core.gateway import BuildGateway
-    from codeintel.storage.tracking.asset_tracking import AssetTracking
+    from codeintel.core.gateway import BuildGateway, GatewayAssets
 
 
 @dataclass(frozen=True)
@@ -159,7 +158,7 @@ class _DownstreamEdge:
 
 
 def _get_downstream_assets(
-    tracking: AssetTracking,
+    tracking: GatewayAssets,
     upstream_kind: str,
     upstream_key: str,
     upstream_version: str | None,

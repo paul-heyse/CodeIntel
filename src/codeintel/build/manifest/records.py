@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
+
+import msgspec
 
 CacheEventStatus = Literal["hit", "miss", "store"]
 
 
-@dataclass(frozen=True, slots=True)
-class CacheManifestEntry:
+class CacheManifestEntry(msgspec.Struct, frozen=True):
     """Record a cache event for a single Hamilton node.
 
     Attributes

@@ -76,6 +76,7 @@ GRAPH_METRICS_TABLE_KEYS = (
     GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
     GRAPH_METRICS_MODULES_TABLE_KEY,
 )
+GRAPH_METRICS_COLLECT_GROUP = "graph_metrics_core"
 GRAPH_METRICS_SAVE_CONTEXT = SaverContext(domain="analytics", target=GRAPH_METRICS_TARGET_NAME)
 GRAPH_METRICS_FUNCTIONS_CONTRACT = TableContractSpec(
     table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
@@ -191,6 +192,26 @@ class GraphMetricInputs:
     filters: GraphMetricFilters
     component_meta: dict[str, dict[str, int | bool]] | None
     runtime_options: GraphRuntimeOptions
+
+
+@dataclass(frozen=True)
+class GraphMetricCoreFrames:
+    """Core graph inputs sourced from DAG tables."""
+
+    goids: InferableTabularInput
+    modules: InferableTabularInput
+    call_graph_edges: InferableTabularInput
+    call_graph_nodes: InferableTabularInput
+
+
+@dataclass(frozen=True)
+class GraphMetricSupportFrames:
+    """Secondary graph inputs sourced from DAG tables."""
+
+    import_graph_edges: InferableTabularInput
+    import_modules: InferableTabularInput
+    symbol_use_edges: InferableTabularInput
+    subsystem_modules: InferableTabularInput
 
 
 _FUNCTION_KINDS: frozenset[str] = frozenset({"function", "method"})
@@ -369,16 +390,52 @@ def _subsystem_ids_from_rows(rows: list[dict[str, object]]) -> set[str]:
     return subsystem_ids
 
 
+def graph_metric_core_frames(
+    q__core__goids: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+    q__graph__call_graph_edges: InferableTabularInput,
+    q__graph__call_graph_nodes: InferableTabularInput,
+) -> GraphMetricCoreFrames:
+    """Bundle core graph tables for metric computation.
+
+    Returns
+    -------
+    GraphMetricCoreFrames
+        Core graph inputs for metric computation.
+    """
+    return GraphMetricCoreFrames(
+        goids=q__core__goids,
+        modules=q__core__modules,
+        call_graph_edges=q__graph__call_graph_edges,
+        call_graph_nodes=q__graph__call_graph_nodes,
+    )
+
+
+def graph_metric_support_frames(
+    q__graph__import_graph_edges: InferableTabularInput,
+    q__graph__import_modules: InferableTabularInput,
+    q__graph__symbol_use_edges: InferableTabularInput,
+    q__analytics__subsystem_modules: InferableTabularInput,
+) -> GraphMetricSupportFrames:
+    """Bundle support graph tables for metric computation.
+
+    Returns
+    -------
+    GraphMetricSupportFrames
+        Support graph inputs for metric computation.
+    """
+    return GraphMetricSupportFrames(
+        import_graph_edges=q__graph__import_graph_edges,
+        import_modules=q__graph__import_modules,
+        symbol_use_edges=q__graph__symbol_use_edges,
+        subsystem_modules=q__analytics__subsystem_modules,
+    )
+
+
 def graph_metric_inputs(
     env: BuildEnv,
-    _q__core__goids: InferableTabularInput,
-    _q__core__modules: InferableTabularInput,
-    _q__graph__call_graph_edges: InferableTabularInput,
-    _q__graph__call_graph_nodes: InferableTabularInput,
-    _q__graph__import_graph_edges: InferableTabularInput,
-    _q__graph__import_modules: InferableTabularInput,
-    _q__graph__symbol_use_edges: InferableTabularInput,
-    _q__analytics__subsystem_modules: InferableTabularInput,
+    graph_metric_core_frames: GraphMetricCoreFrames,
+    graph_metric_support_frames: GraphMetricSupportFrames,
 ) -> GraphMetricInputs:
     """Assemble shared graph metric inputs from DAG-provided tables.
 
@@ -388,9 +445,9 @@ def graph_metric_inputs(
         Structured graph metric inputs for downstream nodes.
     """
     runtime_options = _graph_runtime_options(env)
-    module_by_path, module_names = _load_module_inputs(env, _q__core__modules)
-    function_goids = _load_function_goids(env, _q__core__goids)
-    subsystem_ids = _load_subsystem_ids(env, _q__analytics__subsystem_modules)
+    module_by_path, module_names = _load_module_inputs(env, graph_metric_core_frames.modules)
+    function_goids = _load_function_goids(env, graph_metric_core_frames.goids)
+    subsystem_ids = _load_subsystem_ids(env, graph_metric_support_frames.subsystem_modules)
     filters = build_graph_metric_filters_from_sets(
         function_goids=function_goids,
         modules=module_names,
@@ -398,17 +455,17 @@ def graph_metric_inputs(
     )
     call_graph = _load_call_graph(
         env,
-        _q__graph__call_graph_edges,
-        _q__graph__call_graph_nodes,
+        graph_metric_core_frames.call_graph_edges,
+        graph_metric_core_frames.call_graph_nodes,
     )
     import_graph, component_meta = _load_import_graph(
         env,
-        _q__graph__import_graph_edges,
-        _q__graph__import_modules,
+        graph_metric_support_frames.import_graph_edges,
+        graph_metric_support_frames.import_modules,
     )
     symbol_module_edges, symbol_module_graph, symbol_function_graph = _load_symbol_graphs(
         module_by_path,
-        _q__graph__symbol_use_edges,
+        graph_metric_support_frames.symbol_use_edges,
     )
     return GraphMetricInputs(
         call_graph=call_graph,
@@ -467,7 +524,10 @@ def graph_metrics_functions__base(graph_metrics_result: GraphMetricsRows) -> pl.
 
 @save_dataset(
     context=GRAPH_METRICS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
+    spec=DatasetSaveSpec(
+        table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+        collect_group=GRAPH_METRICS_COLLECT_GROUP,
+    ),
 )
 @tag_dataset(
     domain="analytics",
@@ -503,7 +563,10 @@ def graph_metrics_modules__base(graph_metrics_result: GraphMetricsRows) -> pl.La
 
 @save_dataset(
     context=GRAPH_METRICS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=GRAPH_METRICS_MODULES_TABLE_KEY),
+    spec=DatasetSaveSpec(
+        table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
+        collect_group=GRAPH_METRICS_COLLECT_GROUP,
+    ),
 )
 @tag_dataset(
     domain="analytics",
@@ -560,7 +623,6 @@ def t__graph_metrics(
 def graph_metrics_functions_ext__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-    _q__analytics__graph_metrics_functions: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build extended graph metrics rows for functions.
 
@@ -605,7 +667,6 @@ def graph_metrics_functions_ext__table(
 def graph_metrics_modules_ext__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-    _q__analytics__graph_metrics_modules: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build extended graph metrics rows for modules.
 
@@ -804,8 +865,8 @@ def t__symbol_graph_metrics(
 def graph_stats__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-    _q__analytics__config_values: InferableTabularInput,
-    _q__core__modules: InferableTabularInput,
+    q__analytics__config_values: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build base graph stats rows.
 
@@ -815,13 +876,13 @@ def graph_stats__base(
         Lazy frame containing graph stats rows.
     """
     config_value_rows = _collect_rows(
-        _q__analytics__config_values,
+        q__analytics__config_values,
         ("repo", "commit", "key", "reference_modules"),
         repo=env.repo,
         commit=env.commit,
     )
     module_rows = _collect_rows(
-        _q__core__modules,
+        q__core__modules,
         ("module", "repo", "commit"),
         repo=env.repo,
         commit=env.commit,

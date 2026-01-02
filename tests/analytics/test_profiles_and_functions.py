@@ -61,7 +61,6 @@ from codeintel.build.analytics.profiles.functions import (
     build_function_profile_rows,
     compute_function_profile_inputs,
     join_function_contracts,
-    join_function_coverage,
     join_function_docs,
     join_function_effects,
     join_function_risk,
@@ -82,41 +81,27 @@ from codeintel.build.analytics.utilities.datasets import (
 from codeintel.build.schemas import configure_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.runtime.runtime_bundle import RuntimeBundle
-from tests._helpers import METRICS_PACK, assert_frozen
+from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
-    assert_coverage_lines,
-    assert_function_loc,
-    assert_typedness_bucket,
     expect_equal,
     expect_false,
     expect_in,
     expect_is_instance,
     expect_length,
     expect_true,
-    require_row,
 )
 from tests._helpers.fixtures.rows import (
-    blank_behavioral_coverage_row,
     blank_file_profile_row,
     blank_function_profile_row,
     blank_module_profile_row,
     blank_test_profile_row,
     list_public_exports,
-    sample_behavioral_coverage_rows,
     sample_file_profile_rows,
     sample_function_profile_rows,
     sample_module_profile_rows,
     sample_test_profile_rows,
 )
 from tests._helpers.scenarios import TestScenario
-from tests._helpers.seeds.core import (
-    GOID_FUNC_A,
-    GOID_FUNC_B,
-    GOID_FUNC_C,
-    MOD_A_PATH,
-    MOD_B_PATH,
-    MOD_C_PATH,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -124,9 +109,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.analytics.profiles.types import FunctionProfileInputs
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
-    )
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsFileProfileRow as FileProfileRowModel,
     )
@@ -222,23 +204,6 @@ def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
     return serialize_row(row, columns)
 
 
-def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
-    """Serialize a behavioral coverage row using schema-derived column order.
-
-    Parameters
-    ----------
-    row
-        Row mapping keyed by column name.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Tuple of values in storage column order.
-    """
-    columns = _columns_by_table()["analytics.behavioral_coverage"]
-    return serialize_row(row, columns)
-
-
 def _build_function_profile_views(
     inputs: FunctionProfileInputs,
     module_table: str,
@@ -246,7 +211,7 @@ def _build_function_profile_views(
     return FunctionProfileViews(
         base_by_func=load_function_base_info(inputs, module_table=module_table),
         risk_by_func=join_function_risk(inputs),
-        coverage_by_func=join_function_coverage(inputs),
+        coverage_by_func={},
         graph_by_func=summarize_graph_for_function_profile(inputs),
         effects_by_func=join_function_effects(inputs),
         contracts_by_func=join_function_contracts(inputs),
@@ -323,22 +288,6 @@ def profiles_ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 
 @pytest.fixture
-def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
-    """Provide coverage context using coverage/metrics packs.
-
-    Yields
-    ------
-    Iterator[TestContext]
-        Context seeded with coverage and metrics packs.
-    """
-    ctx = TestScenario.with_coverage().with_seeds(METRICS_PACK).build(tmp_path)
-    try:
-        yield ctx
-    finally:
-        ctx.close()
-
-
-@pytest.fixture
 def function_types_ctx(tmp_path: Path) -> Iterator[TestContext]:
     """Context seeded with function types for typedness-related checks.
 
@@ -383,7 +332,7 @@ def _assert_function_profile(con: DuckDBConnection) -> None:
 def _assert_file_profile(con: DuckDBConnection) -> None:
     row = con.execute(
         """
-        SELECT file_coverage_ratio, high_risk_function_count, module
+        SELECT high_risk_function_count, module
         FROM analytics.file_profile
         WHERE rel_path = ?
         """,
@@ -391,15 +340,14 @@ def _assert_file_profile(con: DuckDBConnection) -> None:
     ).fetchone()
     if row is None:
         pytest.fail("file_profile row missing")
-    expect_true(abs(row[0] - 0.5) < EPSILON)
-    expect_equal(row[1], 1)
-    expect_equal(row[2], MODULE)
+    expect_equal(row[0], 1)
+    expect_equal(row[1], MODULE)
 
 
 def _assert_module_profile(con: DuckDBConnection) -> None:
     row = con.execute(
         """
-        SELECT module_coverage_ratio, import_fan_in, import_fan_out, in_cycle
+        SELECT import_fan_in, import_fan_out, in_cycle
         FROM analytics.module_profile
         WHERE module = ?
         """,
@@ -407,14 +355,13 @@ def _assert_module_profile(con: DuckDBConnection) -> None:
     ).fetchone()
     if row is None:
         pytest.fail("module_profile row missing")
-    expect_true(abs(row[0] - 1.0) < EPSILON)
+    expect_equal(row[0], 1)
     expect_equal(row[1], 1)
-    expect_equal(row[2], 1)
-    expect_true(row[3] is True)
+    expect_true(row[2] is True)
 
 
 def test_profile_builders_aggregate_expected_fields(profiles_ctx: TestContext) -> None:
-    """Ensure profile builders compose metrics, tests, coverage, and graph data."""
+    """Ensure profile builders compose metrics, tests, and graph data."""
     gateway = profiles_ctx.gateway
     con = gateway.con
     snapshot = profiles_ctx.to_snapshot_ref()
@@ -422,49 +369,6 @@ def test_profile_builders_aggregate_expected_fields(profiles_ctx: TestContext) -
     _assert_function_profile(con)
     _assert_file_profile(con)
     _assert_module_profile(con)
-
-
-def test_coverage_aggregates_and_function_metrics(coverage_ctx: TestContext) -> None:
-    """Coverage aggregates share seeds with function metrics and typedness helpers."""
-    con = coverage_ctx.con
-    snapshot = coverage_ctx.to_snapshot_ref()
-    assert_coverage_lines(
-        con,
-        snapshot=snapshot,
-        rel_path=MOD_A_PATH,
-        executable=10,
-        covered=8,
-    )
-    assert_coverage_lines(
-        con,
-        snapshot=snapshot,
-        rel_path=MOD_B_PATH,
-        executable=15,
-        covered=12,
-    )
-    assert_coverage_lines(
-        con,
-        snapshot=snapshot,
-        rel_path=MOD_C_PATH,
-        executable=8,
-        covered=6,
-    )
-    row = require_row(
-        con.execute(
-            """
-            SELECT COUNT(*) FROM analytics.coverage_functions
-            WHERE repo = ? AND commit = ?
-            """,
-            [snapshot.repo, snapshot.commit],
-        ).fetchone()
-    )
-    expect_equal(row[0], 4)
-    assert_function_loc(con, goid=GOID_FUNC_A, loc=10, logical_loc=8)
-    assert_function_loc(con, goid=GOID_FUNC_B, loc=15, logical_loc=12)
-    assert_function_loc(con, goid=GOID_FUNC_C, loc=8, logical_loc=6)
-    assert_typedness_bucket(con, goid=GOID_FUNC_A, bucket="fully_typed")
-    assert_typedness_bucket(con, goid=GOID_FUNC_B, bucket="partial_typed")
-    assert_typedness_bucket(con, goid=GOID_FUNC_C, bucket="untyped")
 
 
 # =============================================================================
@@ -525,17 +429,6 @@ def _test_rows(repo: str, commit: str) -> list[ProfileRowModel]:
     return rows
 
 
-def _behavior_rows(repo: str, commit: str) -> list[BehavioralCoverageRowModel]:
-    rows: list[BehavioralCoverageRowModel] = []
-    for base in sample_behavioral_coverage_rows(repo, commit):
-        row = blank_behavioral_coverage_row()
-        row.update(base)
-        if row.get("created_at") is None:
-            row["created_at"] = datetime.now(tz=UTC)
-        rows.append(row)
-    return rows
-
-
 def test_profile_tuple_alignment() -> None:
     """Serializer alignment with column constants."""
     columns = _columns_by_table()
@@ -543,7 +436,6 @@ def test_profile_tuple_alignment() -> None:
     file_row = _file_rows("r", "c")[0]
     mod_row = _module_rows("r", "c")[1]
     tst_row = _test_rows("r", "c")[0]
-    beh_row = _behavior_rows("r", "c")[0]
 
     if len(function_profile_row_to_tuple(fn_row)) != len(columns["analytics.function_profile"]):
         pytest.fail("Function profile tuple length mismatch with column constants.")
@@ -553,14 +445,10 @@ def test_profile_tuple_alignment() -> None:
         pytest.fail("Module profile tuple length mismatch with column constants.")
     if len(serialize_test_profile_row(tst_row)) != len(columns["analytics.test_profile"]):
         pytest.fail("Test profile tuple length mismatch with column constants.")
-    if len(behavioral_coverage_row_to_tuple(beh_row)) != len(
-        columns["analytics.behavioral_coverage"]
-    ):
-        pytest.fail("Behavioral coverage tuple length mismatch with column constants.")
 
 
-def test_test_and_behavioral_profile_insertion(tmp_path: Path) -> None:
-    """Insert test profile and behavioral coverage rows via dataset contracts."""
+def test_test_profile_insertion(tmp_path: Path) -> None:
+    """Insert test profile rows via dataset contracts."""
     ctx = TestScenario.minimal().build(tmp_path)
     try:
         test_rows = _test_rows(ctx.repo, ctx.commit)
@@ -589,24 +477,6 @@ def test_test_and_behavioral_profile_insertion(tmp_path: Path) -> None:
             pytest.fail("test_profile rows missing after rewrite")
         expect_equal(int(remaining[0]), 1)
 
-        ctx.gateway.con.execute("DELETE FROM analytics.behavioral_coverage")
-        behavior_rows = _behavior_rows(ctx.repo, ctx.commit)
-        behavior_contract = get_analytics_dataset_contract(
-            ctx.gateway, "analytics.behavioral_coverage"
-        )
-        validated_behavior = validate_contract_rows(
-            behavior_contract.table_key, behavior_rows, gateway=ctx.gateway
-        )
-        inserted_behavior = insert_analytics_rows(
-            ctx.gateway, behavior_contract, validated_behavior
-        )
-        expect_equal(inserted_behavior, len(behavior_rows))
-        behavior_count = ctx.gateway.con.execute(
-            "SELECT COUNT(*) FROM analytics.behavioral_coverage"
-        ).fetchone()
-        if behavior_count is None:
-            pytest.fail("behavioral_coverage rows missing after insert")
-        expect_equal(int(behavior_count[0]), len(behavior_rows))
     finally:
         ctx.close()
 

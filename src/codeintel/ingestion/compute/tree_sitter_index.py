@@ -5,17 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.columnar.rows import (
-    ColumnarRowBuffer,
-    ColumnarRows,
-    columnar_buffer_for_table_key,
+    ColumnarBatchCollector,
+    columnar_batch_collector_for_table_key,
+    empty_reader_for_table,
 )
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.generated_rows.core import (
     CoreParseManifestRow,
     CoreTsCapturesRow,
     CoreTsParseErrorsRow,
 )
+from codeintel.core.spans import normalize_byte_span
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 from codeintel.ingestion.tree_sitter.registry import language_for_path
@@ -41,9 +45,15 @@ class TreeSitterIndexResult:
     """Result bundle for tree-sitter query execution."""
 
     result: ExecutionResult
-    parse_manifest_rows: ColumnarRows = field(default_factory=dict)
-    captures_rows: ColumnarRows = field(default_factory=dict)
-    parse_errors_rows: ColumnarRows = field(default_factory=dict)
+    parse_manifest_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
+    )
+    captures_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(TS_CAPTURES_TABLE_KEY)
+    )
+    parse_errors_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(TS_PARSE_ERRORS_TABLE_KEY)
+    )
     parse_manifest_row_count: int = 0
     captures_row_count: int = 0
     parse_errors_row_count: int = 0
@@ -59,9 +69,9 @@ class _ParseManifestContext:
 
 @dataclass(slots=True)
 class _TreeSitterBuffers:
-    parse_manifest: ColumnarRowBuffer
-    captures: ColumnarRowBuffer
-    parse_errors: ColumnarRowBuffer
+    parse_manifest: ColumnarBatchCollector
+    captures: ColumnarBatchCollector
+    parse_errors: ColumnarBatchCollector
 
 
 def _parse_manifest_row(
@@ -99,9 +109,21 @@ def _parse_manifest_row(
 
 def _build_buffers() -> _TreeSitterBuffers:
     return _TreeSitterBuffers(
-        parse_manifest=columnar_buffer_for_table_key(PARSE_MANIFEST_TABLE_KEY),
-        captures=columnar_buffer_for_table_key(TS_CAPTURES_TABLE_KEY),
-        parse_errors=columnar_buffer_for_table_key(TS_PARSE_ERRORS_TABLE_KEY),
+        parse_manifest=columnar_batch_collector_for_table_key(
+            PARSE_MANIFEST_TABLE_KEY,
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            extras_policy="retain",
+        ),
+        captures=columnar_batch_collector_for_table_key(
+            TS_CAPTURES_TABLE_KEY,
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            extras_policy="retain",
+        ),
+        parse_errors=columnar_batch_collector_for_table_key(
+            TS_PARSE_ERRORS_TABLE_KEY,
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            extras_policy="retain",
+        ),
     )
 
 
@@ -113,8 +135,13 @@ def _append_tree_sitter_rows(
     repo: str,
     commit: str,
 ) -> None:
-    buffers.captures.extend(
-        [
+    capture_rows: list[CoreTsCapturesRow] = []
+    for capture in parse_result.captures:
+        normalized = normalize_byte_span(capture.start_byte, capture.end_byte)
+        if normalized is None:
+            continue
+        start_byte, end_byte = normalized
+        capture_rows.append(
             CoreTsCapturesRow(
                 repo=repo,
                 commit=commit,
@@ -122,8 +149,8 @@ def _append_tree_sitter_rows(
                 language=parse_result.language,
                 query_pack=capture.query_pack,
                 capture_name=capture.capture_name,
-                start_byte=capture.start_byte,
-                end_byte=capture.end_byte,
+                start_byte=start_byte,
+                end_byte=end_byte,
                 start_row=capture.start_row,
                 start_col=capture.start_col,
                 end_row=capture.end_row,
@@ -132,11 +159,16 @@ def _append_tree_sitter_rows(
                 text_preview=capture.text_preview,
                 extras=capture.extras,
             )
-            for capture in parse_result.captures
-        ]
-    )
-    buffers.parse_errors.extend(
-        [
+        )
+    buffers.captures.extend(capture_rows)
+
+    error_rows: list[CoreTsParseErrorsRow] = []
+    for error in parse_result.errors:
+        normalized = normalize_byte_span(error.start_byte, error.end_byte)
+        if normalized is None:
+            continue
+        start_byte, end_byte = normalized
+        error_rows.append(
             CoreTsParseErrorsRow(
                 repo=repo,
                 commit=commit,
@@ -144,17 +176,16 @@ def _append_tree_sitter_rows(
                 language=parse_result.language,
                 error_type=error.error_type,
                 message=error.message,
-                start_byte=error.start_byte,
-                end_byte=error.end_byte,
+                start_byte=start_byte,
+                end_byte=end_byte,
                 start_row=error.start_row,
                 start_col=error.start_col,
                 end_row=error.end_row,
                 end_col=error.end_col,
                 text_preview=error.text_preview,
             )
-            for error in parse_result.errors
-        ]
-    )
+        )
+    buffers.parse_errors.extend(error_rows)
 
 
 def _module_warnings(
@@ -264,9 +295,9 @@ class TreeSitterIndexStep(BaseExtractStep):
 
         return TreeSitterIndexResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            parse_manifest_rows=buffers.parse_manifest.data,
-            captures_rows=buffers.captures.data,
-            parse_errors_rows=buffers.parse_errors.data,
+            parse_manifest_rows=buffers.parse_manifest.to_reader(),
+            captures_rows=buffers.captures.to_reader(),
+            parse_errors_rows=buffers.parse_errors.to_reader(),
             parse_manifest_row_count=buffers.parse_manifest.row_count,
             captures_row_count=buffers.captures.row_count,
             parse_errors_row_count=buffers.parse_errors.row_count,

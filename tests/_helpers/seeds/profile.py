@@ -1,8 +1,8 @@
 """Profile seed pack for analytics profile tests.
 
 This module provides the ProfilePack which seeds comprehensive profile-related
-data needed for analytics tests including modules, metrics, types, coverage,
-docstrings, risk factors, hotspots, typedness, and static diagnostics.
+data needed for analytics tests including modules, metrics, types, docstrings,
+risk factors, hotspots, typedness, and static diagnostics.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from tests._helpers.fixtures.rows import (
     AstMetricsRow,
     CallGraphEdgeRow,
     CallGraphNodeRow,
-    CoverageFunctionRow,
     DocstringRow,
     FunctionMetricsRow,
     FunctionTypesRow,
@@ -27,7 +26,6 @@ from tests._helpers.fixtures.rows import (
     RiskFactorRow,
     StaticDiagnosticsRow,
     TestCatalogRow,
-    TestCoverageEdgeRow,
     TypednessRow,
     dataclass_row,
     insert_rows,
@@ -67,8 +65,7 @@ class ProfilePack:
     - Docstrings
     - Risk factors
     - Function metrics and types
-    - Coverage functions
-    - Test catalog and coverage edges
+    - Test catalog
     - Call graph nodes and edges
     - Import graph edges
 
@@ -132,9 +129,7 @@ class ProfilePack:
         self._seed_risk_factors(ctx)
         self._seed_function_metrics(ctx, now)
         self._seed_function_types(ctx, now)
-        self._seed_coverage_functions(ctx, now)
         self._seed_test_catalog(ctx, now)
-        self._seed_test_coverage_edges(ctx, now)
         self._seed_call_graph_nodes(ctx)
         self._seed_call_graph_edges(ctx)
         self._seed_import_graph_edges(ctx)
@@ -378,31 +373,6 @@ class ProfilePack:
         ]
         insert_rows(ctx.gateway, rows)
 
-    def _seed_coverage_functions(self, ctx: TestContext, now: datetime) -> None:
-        """Seed the coverage.functions table."""
-        rows = [
-            dataclass_row(
-                CoverageFunctionRow,
-                function_goid_h128=DEFAULT_GOID,
-                urn=f"{DEFAULT_URN_PREFIX}{DEFAULT_QUALNAME}",
-                repo=self.repo,
-                commit=self.commit,
-                rel_path=self.rel_path,
-                language="python",
-                kind="function",
-                qualname=DEFAULT_QUALNAME,
-                start_line=1,
-                end_line=2,
-                executable_lines=4,
-                covered_lines=2,
-                coverage_ratio=0.5,
-                tested=True,
-                untested_reason="",
-                created_at=now,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
     def _seed_test_catalog(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.test_catalog table."""
         rows = [
@@ -421,28 +391,6 @@ class ProfilePack:
                 markers=[],
                 parametrized=False,
                 flaky=True,
-                created_at=now,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    def _seed_test_coverage_edges(self, ctx: TestContext, now: datetime) -> None:
-        """Seed the analytics.test_coverage_edges table."""
-        rows = [
-            dataclass_row(
-                TestCoverageEdgeRow,
-                test_id="pkg/mod.py::test_func",
-                test_goid_h128=TEST_GOID,
-                function_goid_h128=DEFAULT_GOID,
-                urn=f"{DEFAULT_URN_PREFIX}{DEFAULT_QUALNAME}",
-                repo=self.repo,
-                commit=self.commit,
-                rel_path=self.rel_path,
-                qualname=DEFAULT_QUALNAME,
-                covered_lines=2,
-                executable_lines=4,
-                coverage_ratio=0.5,
-                last_status="failed",
                 created_at=now,
             )
         ]

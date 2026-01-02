@@ -3,7 +3,7 @@
 This module provides the McpPack which seeds minimal data needed for
 MCP (Model Context Protocol) backend tests including risk factors,
 function metrics, validation issues, call graph edges, test catalog,
-and coverage edges.
+and test catalog rows.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from tests._helpers.fixtures.rows import (
     FunctionValidationRow,
     RiskFactorRow,
     TestCatalogRow,
-    TestCoverageEdgeRow,
     dataclass_row,
     insert_rows,
 )
@@ -45,7 +44,6 @@ class McpPack:
     - Function validation issues
     - Call graph edges
     - Test catalog
-    - Test coverage edges
 
     Attributes
     ----------
@@ -94,7 +92,6 @@ class McpPack:
         self._seed_function_validation(ctx, repo, commit, now)
         self._seed_call_graph_edges(ctx, repo, commit)
         self._seed_test_catalog(ctx, repo, commit, now)
-        self._seed_test_coverage_edges(ctx, repo, commit, now)
 
     @staticmethod
     def _cleanup_existing_data(ctx: TestContext, repo: str, commit: str) -> None:
@@ -118,10 +115,6 @@ class McpPack:
         )
         con.execute(
             "DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        )
-        con.execute(
-            "DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?",
             [repo, commit],
         )
 
@@ -248,28 +241,6 @@ class McpPack:
                 rel_path="tests/t.py",
                 qualname="tests.t",
                 status="passed",
-                created_at=now,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_test_coverage_edges(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
-        """Seed the analytics.test_coverage_edges table."""
-        rows = [
-            dataclass_row(
-                TestCoverageEdgeRow,
-                test_id="t1",
-                function_goid_h128=DEFAULT_GOID,
-                urn=DEFAULT_URN,
-                repo=repo,
-                commit=commit,
-                rel_path=DEFAULT_PATH,
-                qualname="foo",
-                covered_lines=1,
-                executable_lines=1,
-                coverage_ratio=1.0,
-                last_status="passed",
                 created_at=now,
             )
         ]

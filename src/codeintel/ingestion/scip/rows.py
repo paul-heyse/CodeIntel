@@ -17,7 +17,7 @@ from codeintel.ingestion.scip.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
 _ROLE_DEFINITION = 1
 _ROLE_REFERENCE = 2
@@ -63,21 +63,7 @@ def build_symbol_rows(
         Columnar rows for storage (deduplicated).
     """
     buffer = columnar_buffer_for_table_key(SCIP_SYMBOLS_TABLE_KEY)
-    seen: dict[tuple[str, str], dict[str, object]] = {}
-    for doc in documents:
-        for sym in doc.symbols:
-            key = (doc.relative_path, sym.symbol)
-            if key not in seen:
-                seen[key] = {
-                    "repo": context.repo,
-                    "commit": context.commit,
-                    "rel_path": doc.relative_path,
-                    "symbol": sym.symbol,
-                    "documentation": sym.documentation,
-                    "created_at": context.created_at,
-                }
-
-    for payload in seen.values():
+    for payload in iter_symbol_rows(documents, context):
         buffer.append(payload)
     return buffer.data
 
@@ -104,41 +90,7 @@ def build_occurrence_rows(
         Occurrence rows for storage (deduplicated).
     """
     buffer = columnar_buffer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY)
-    seen: dict[tuple[str, str, int, int], dict[str, object]] = {}
-    for doc in documents:
-        for occ in doc.occurrences:
-            if not context.include_references and _is_reference_only(occ.symbol_roles):
-                continue
-            key = (doc.relative_path, occ.symbol, occ.range_start_line, occ.range_start_col)
-            if key not in seen:
-                position_encoding = (
-                    occ.position_encoding
-                    if occ.position_encoding is not None
-                    else doc.position_encoding
-                )
-                text_document_encoding = (
-                    occ.text_document_encoding
-                    if occ.text_document_encoding is not None
-                    else doc.text_document_encoding
-                )
-                seen[key] = {
-                    "repo": context.repo,
-                    "commit": context.commit,
-                    "rel_path": doc.relative_path,
-                    "symbol": occ.symbol,
-                    "start_line": occ.range_start_line,
-                    "start_col": occ.range_start_col,
-                    "end_line": occ.range_end_line,
-                    "end_col": occ.range_end_col,
-                    "roles": occ.symbol_roles,
-                    "position_encoding": position_encoding,
-                    "text_document_encoding": text_document_encoding,
-                    "start_byte": occ.start_byte,
-                    "end_byte": occ.end_byte,
-                    "created_at": context.created_at,
-                }
-
-    for payload in seen.values():
+    for payload in iter_occurrence_rows(documents, context):
         buffer.append(payload)
     return buffer.data
 
@@ -162,25 +114,7 @@ def build_symbol_information_rows(
         Columnar rows for symbol information.
     """
     buffer = columnar_buffer_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY)
-    seen: dict[str, ScipSymbolInfo] = {}
-    for info in symbol_infos:
-        existing = seen.get(info.symbol)
-        if existing is None:
-            seen[info.symbol] = info
-            continue
-        seen[info.symbol] = _prefer_symbol_info(existing, info)
-    for info in seen.values():
-        payload = {
-            "repo": context.repo,
-            "commit": context.commit,
-            "symbol": info.symbol,
-            "documentation": info.documentation,
-            "kind": info.kind,
-            "display_name": info.display_name,
-            "signature": info.signature,
-            "enclosing_symbol": info.enclosing_symbol,
-            "created_at": context.created_at,
-        }
+    for payload in iter_symbol_information_rows(symbol_infos, context):
         buffer.append(payload)
     return buffer.data
 
@@ -225,24 +159,7 @@ def build_symbol_relationship_rows(
         Columnar rows for symbol relationships.
     """
     buffer = columnar_buffer_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY)
-    seen: set[tuple[str, str, str]] = set()
-    for rel in relationships:
-        if not context.include_references and rel.relationship_kind == "reference":
-            continue
-        if not context.include_implementations and rel.relationship_kind == "implementation":
-            continue
-        key = (rel.symbol, rel.related_symbol, rel.relationship_kind)
-        if key in seen:
-            continue
-        seen.add(key)
-        payload = {
-            "repo": context.repo,
-            "commit": context.commit,
-            "symbol": rel.symbol,
-            "related_symbol": rel.related_symbol,
-            "relationship_kind": rel.relationship_kind,
-            "created_at": context.created_at,
-        }
+    for payload in iter_symbol_relationship_rows(relationships, context):
         buffer.append(payload)
     return buffer.data
 
@@ -272,23 +189,7 @@ def build_diagnostic_rows(
         Columnar rows for diagnostics.
     """
     buffer = columnar_buffer_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY)
-    for diag in diagnostics:
-        payload = {
-            "repo": context.repo,
-            "commit": context.commit,
-            "rel_path": diag.rel_path,
-            "start_line": diag.start_line,
-            "start_col": diag.start_col,
-            "end_line": diag.end_line,
-            "end_col": diag.end_col,
-            "position_encoding": diag.position_encoding,
-            "text_document_encoding": diag.text_document_encoding,
-            "severity": diag.severity,
-            "code": diag.code,
-            "message": diag.message,
-            "source": diag.source,
-            "created_at": context.created_at,
-        }
+    for payload in iter_diagnostic_rows(diagnostics, context):
         buffer.append(payload)
     return buffer.data
 
@@ -312,16 +213,7 @@ def build_external_symbol_rows(
         Columnar rows for external symbols.
     """
     buffer = columnar_buffer_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
-    for sym in external_symbols:
-        payload = {
-            "repo": context.repo,
-            "commit": context.commit,
-            "symbol": sym.symbol,
-            "package_manager": sym.package_manager,
-            "package_name": sym.package_name,
-            "package_version": sym.package_version,
-            "created_at": context.created_at,
-        }
+    for payload in iter_external_symbol_rows(external_symbols, context):
         buffer.append(payload)
     return buffer.data
 
@@ -339,8 +231,217 @@ def build_module_state_rows(
         Columnar rows for module state records.
     """
     buffer = columnar_buffer_for_table_key(SCIP_MODULE_STATE_TABLE_KEY)
+    for payload in iter_module_state_rows(manifest, repo, commit):
+        buffer.append(payload)
+    return buffer.data
+
+
+def iter_symbol_rows(
+    documents: Sequence[ScipDocument],
+    context: ScipRowContext,
+) -> Iterator[dict[str, object]]:
+    """Iterate symbol rows from SCIP documents.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_symbols table.
+    """
+    seen: set[tuple[str, str]] = set()
+    for doc in documents:
+        for sym in doc.symbols:
+            key = (doc.relative_path, sym.symbol)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield {
+                "repo": context.repo,
+                "commit": context.commit,
+                "rel_path": doc.relative_path,
+                "symbol": sym.symbol,
+                "documentation": sym.documentation,
+                "created_at": context.created_at,
+            }
+
+
+def iter_occurrence_rows(
+    documents: Sequence[ScipDocument],
+    context: ScipRowContext,
+) -> Iterator[dict[str, object]]:
+    """Iterate occurrence rows from SCIP documents.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_occurrences table.
+    """
+    seen: set[tuple[str, str, int, int]] = set()
+    for doc in documents:
+        for occ in doc.occurrences:
+            if not context.include_references and _is_reference_only(occ.symbol_roles):
+                continue
+            key = (doc.relative_path, occ.symbol, occ.range_start_line, occ.range_start_col)
+            if key in seen:
+                continue
+            seen.add(key)
+            position_encoding = (
+                occ.position_encoding
+                if occ.position_encoding is not None
+                else doc.position_encoding
+            )
+            text_document_encoding = (
+                occ.text_document_encoding
+                if occ.text_document_encoding is not None
+                else doc.text_document_encoding
+            )
+            yield {
+                "repo": context.repo,
+                "commit": context.commit,
+                "rel_path": doc.relative_path,
+                "symbol": occ.symbol,
+                "start_line": occ.range_start_line,
+                "start_col": occ.range_start_col,
+                "end_line": occ.range_end_line,
+                "end_col": occ.range_end_col,
+                "roles": occ.symbol_roles,
+                "position_encoding": position_encoding,
+                "text_document_encoding": text_document_encoding,
+                "start_byte": occ.start_byte,
+                "end_byte": occ.end_byte,
+                "created_at": context.created_at,
+            }
+
+
+def iter_symbol_information_rows(
+    symbol_infos: Sequence[ScipSymbolInfo],
+    context: ScipRowContext,
+) -> Iterator[dict[str, object]]:
+    """Iterate symbol information rows.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_symbol_info table.
+    """
+    seen: dict[str, ScipSymbolInfo] = {}
+    for info in symbol_infos:
+        existing = seen.get(info.symbol)
+        if existing is None:
+            seen[info.symbol] = info
+            continue
+        seen[info.symbol] = _prefer_symbol_info(existing, info)
+    for info in seen.values():
+        yield {
+            "repo": context.repo,
+            "commit": context.commit,
+            "symbol": info.symbol,
+            "documentation": info.documentation,
+            "kind": info.kind,
+            "display_name": info.display_name,
+            "signature": info.signature,
+            "enclosing_symbol": info.enclosing_symbol,
+            "created_at": context.created_at,
+        }
+
+
+def iter_symbol_relationship_rows(
+    relationships: Sequence[ScipSymbolRelationship],
+    context: ScipRowContext,
+) -> Iterator[dict[str, object]]:
+    """Iterate symbol relationship rows.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_relationships table.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    for rel in relationships:
+        if not context.include_references and rel.relationship_kind == "reference":
+            continue
+        if not context.include_implementations and rel.relationship_kind == "implementation":
+            continue
+        key = (rel.symbol, rel.related_symbol, rel.relationship_kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        yield {
+            "repo": context.repo,
+            "commit": context.commit,
+            "symbol": rel.symbol,
+            "related_symbol": rel.related_symbol,
+            "relationship_kind": rel.relationship_kind,
+            "created_at": context.created_at,
+        }
+
+
+def iter_diagnostic_rows(
+    diagnostics: Sequence[ScipDiagnostic],
+    context: ScipRowContext,
+) -> Iterator[dict[str, object]]:
+    """Iterate diagnostic rows.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_diagnostics table.
+    """
+    for diag in diagnostics:
+        yield {
+            "repo": context.repo,
+            "commit": context.commit,
+            "rel_path": diag.rel_path,
+            "start_line": diag.start_line,
+            "start_col": diag.start_col,
+            "end_line": diag.end_line,
+            "end_col": diag.end_col,
+            "position_encoding": diag.position_encoding,
+            "text_document_encoding": diag.text_document_encoding,
+            "severity": diag.severity,
+            "code": diag.code,
+            "message": diag.message,
+            "source": diag.source,
+            "created_at": context.created_at,
+        }
+
+
+def iter_external_symbol_rows(
+    external_symbols: Sequence[ScipExternalSymbol],
+    context: ScipRowContext,
+) -> Iterator[dict[str, object]]:
+    """Iterate external symbol rows.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_external_symbols table.
+    """
+    for sym in external_symbols:
+        yield {
+            "repo": context.repo,
+            "commit": context.commit,
+            "symbol": sym.symbol,
+            "package_manager": sym.package_manager,
+            "package_name": sym.package_name,
+            "package_version": sym.package_version,
+            "created_at": context.created_at,
+        }
+
+
+def iter_module_state_rows(
+    manifest: ScipShardManifest,
+    repo: str,
+    commit: str,
+) -> Iterator[dict[str, object]]:
+    """Iterate module state rows.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_module_state table.
+    """
     for rel_path, record in sorted(manifest.records.items()):
-        payload = {
+        yield {
             "repo": repo,
             "commit": commit,
             "rel_path": rel_path,
@@ -350,8 +451,6 @@ def build_module_state_rows(
             "shard_path": record.shard_path,
             "updated_at": record.updated_at,
         }
-        buffer.append(payload)
-    return buffer.data
 
 
 __all__ = [
@@ -370,4 +469,11 @@ __all__ = [
     "build_symbol_information_rows",
     "build_symbol_relationship_rows",
     "build_symbol_rows",
+    "iter_diagnostic_rows",
+    "iter_external_symbol_rows",
+    "iter_module_state_rows",
+    "iter_occurrence_rows",
+    "iter_symbol_information_rows",
+    "iter_symbol_relationship_rows",
+    "iter_symbol_rows",
 ]

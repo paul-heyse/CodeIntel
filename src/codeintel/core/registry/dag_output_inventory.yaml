@@ -709,20 +709,6 @@ outputs:
     upstream_targets:
       - "filesystem.repo"
     notes: "Configuration extraction from repo sources."
-  - target: "coverage_ingest"
-    domain: "ingestion"
-    anchor: "t__coverage_ingest"
-    materialization: "table"
-    table_keys:
-      - "analytics.coverage_lines"
-    contracts:
-      - "analytics.coverage_lines"
-    downstream_consumers:
-      - "analytics.coverage_functions"
-    upstream_targets:
-      - "core.modules"
-      - "coverage.report"
-    notes: "Coverage ingestion from coverage.py artifacts."
   - target: "tests_ingest"
     domain: "ingestion"
     anchor: "t__tests_ingest"

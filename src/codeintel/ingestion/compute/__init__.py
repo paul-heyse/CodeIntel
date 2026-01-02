@@ -16,7 +16,6 @@ Modules
 - cst_extract: LibCST concrete syntax tree extraction
 - docstrings_extract: Docstring parsing and extraction
 - typing_ingest: Type annotation analysis
-- coverage_ingest: Coverage data processing
 - tests_ingest: Test results processing
 - config_ingest: Configuration file flattening
 - repo_scan: Repository scanning and module discovery

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from tests._helpers.harnesses.analytics import (
     AnalyticsPluginHarness,
-    coverage_plugin_harness,
     data_models_plugin_harness,
     entrypoints_plugin_harness,
     graph_plugin_harness,
@@ -86,7 +85,6 @@ __all__ = [
     "compute_plan_summary",
     "compute_status_summary",
     "core_handler_harness",
-    "coverage_plugin_harness",
     "data_models_plugin_harness",
     "dataset_handler_harness",
     "docs_handler_harness",

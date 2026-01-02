@@ -133,8 +133,6 @@ from codeintel.build.hamilton.native.analytics.subsystem_agreement import (
 )
 from codeintel.build.hamilton.native.analytics.subsystem_cache import (
     subsystem_caches__table_materializations,
-    subsystem_coverage_cache__base,
-    subsystem_coverage_cache__table,
     subsystem_profile_cache__base,
     subsystem_profile_cache__table,
     t__subsystem_caches,
@@ -152,11 +150,6 @@ from codeintel.build.hamilton.native.analytics.subsystems import (
     subsystems__table,
     subsystems__table_materializations,
     t__subsystems,
-)
-from codeintel.build.hamilton.native.analytics.tables_coverage import (
-    coverage_functions__base,
-    coverage_functions__table,
-    t__coverage_functions,
 )
 from codeintel.build.hamilton.native.analytics.tables_dependencies import (
     external_dependencies__base,
@@ -183,14 +176,8 @@ from codeintel.build.hamilton.native.analytics.tables_risk import (
     t__risk_factors,
 )
 from codeintel.build.hamilton.native.analytics.testing import (
-    behavioral_coverage__base,
-    behavioral_coverage__table,
-    t__behavioral_coverage,
-    t__test_coverage_edges,
     t__test_graph_metrics,
     t__test_profile,
-    test_coverage_edges__base,
-    test_coverage_edges__table,
     test_graph_metrics__table_materializations,
     test_graph_metrics_functions__base,
     test_graph_metrics_functions__table,
@@ -201,8 +188,6 @@ from codeintel.build.hamilton.native.analytics.testing import (
 )
 
 __all__ = [
-    "behavioral_coverage__base",
-    "behavioral_coverage__table",
     "cfg_block_metrics__base",
     "cfg_block_metrics__table",
     "cfg_dfg_metrics__table_materializations",
@@ -221,8 +206,6 @@ __all__ = [
     "config_projection_key_edges__table",
     "config_projection_module_edges__base",
     "config_projection_module_edges__table",
-    "coverage_functions__base",
-    "coverage_functions__table",
     "data_model_fields__base",
     "data_model_fields__table",
     "data_model_relationships__base",
@@ -293,8 +276,6 @@ __all__ = [
     "subsystem_agreement__base",
     "subsystem_agreement__table",
     "subsystem_caches__table_materializations",
-    "subsystem_coverage_cache__base",
-    "subsystem_coverage_cache__table",
     "subsystem_graph_metrics__base",
     "subsystem_graph_metrics__table",
     "subsystem_modules__base",
@@ -310,11 +291,9 @@ __all__ = [
     "symbol_graph_metrics_functions__table",
     "symbol_graph_metrics_modules__base",
     "symbol_graph_metrics_modules__table",
-    "t__behavioral_coverage",
     "t__cfg_dfg_metrics",
     "t__config_data_flow",
     "t__config_graph_metrics",
-    "t__coverage_functions",
     "t__data_model_usage",
     "t__data_models",
     "t__entrypoints",
@@ -340,11 +319,8 @@ __all__ = [
     "t__subsystem_graph_metrics",
     "t__subsystems",
     "t__symbol_graph_metrics",
-    "t__test_coverage_edges",
     "t__test_graph_metrics",
     "t__test_profile",
-    "test_coverage_edges__base",
-    "test_coverage_edges__table",
     "test_graph_metrics__table_materializations",
     "test_graph_metrics_functions__base",
     "test_graph_metrics_functions__table",

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from codeintel.cli.context import CommandContext
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 LOG = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ def _default_runtime_builder(ctx: CommandContext) -> object:
 DEFAULT_DOCS_DEPS = DocsDependencies(runtime_builder=_default_runtime_builder)
 
 
-def _validate_dataset_contract(gateway: StorageGateway) -> None:
+def _validate_dataset_contract(gateway: BuildGateway) -> None:
     validate_contract_or_raise(gateway.con)
 
 

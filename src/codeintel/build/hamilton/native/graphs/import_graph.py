@@ -18,9 +18,10 @@ from codeintel.build.graphs.compute.imports import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
-from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
@@ -143,84 +144,74 @@ def import_modules_compute(
 def import_graph_edges_compute(
     env: BuildEnv,
     import_graph_analysis: ImportAnalysisResult,
-) -> TabularFrame:
+) -> InferableTabularInput:
     """Build import graph edges from computed import graph analysis.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for computed import graph edges.
+    InferableTabularInput
+        Tabular input for computed import graph edges.
     """
-    rows = build_import_edge_rows(env.repo, env.commit, import_graph_analysis)
-    if not rows:
-        return empty_frame_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
-    frame = pl.DataFrame([dataclasses.asdict(row) for row in rows])
-    return frame.lazy().select(
-        [
-            "repo",
-            "commit",
-            "src_module",
-            "dst_module",
-            "src_fan_out",
-            "dst_fan_in",
-            "cycle_group",
-            "module_layer",
-        ]
+    rows = (
+        dataclasses.asdict(row)
+        for row in build_import_edge_rows(env.repo, env.commit, import_graph_analysis)
     )
+    reader, _ = record_batch_reader_for_rows(IMPORT_GRAPH_EDGES_TABLE_KEY, rows)
+    return reader
 
 
-def import_modules_existing(env: BuildEnv) -> TabularFrame:
+def import_modules_existing(env: BuildEnv) -> InferableTabularInput:
     """Load import modules from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing import modules.
+    InferableTabularInput
+        Tabular input for existing import modules.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=IMPORT_MODULES_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def import_graph_edges_existing(env: BuildEnv) -> TabularFrame:
+def import_graph_edges_existing(env: BuildEnv) -> InferableTabularInput:
     """Load import graph edges from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing import graph edges.
+    InferableTabularInput
+        Tabular input for existing import graph edges.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def import_modules_empty(env: BuildEnv) -> TabularFrame:
+def import_modules_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for import modules.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for import modules.
+    InferableTabularInput
+        Empty tabular input for import modules.
     """
     _ = env
-    return empty_frame_for_table(IMPORT_MODULES_TABLE_KEY)
+    return empty_reader_for_table(IMPORT_MODULES_TABLE_KEY)
 
 
-def import_graph_edges_empty(env: BuildEnv) -> TabularFrame:
+def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for import graph edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for import graph edges.
+    InferableTabularInput
+        Empty tabular input for import graph edges.
     """
     _ = env
-    return empty_frame_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    return empty_reader_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
 
 
 __all__ = [

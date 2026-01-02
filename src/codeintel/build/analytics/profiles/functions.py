@@ -613,9 +613,7 @@ def build_function_profile_rows(
         doc = views.docs_by_func.get(goid)
 
         coverage_ratio = coverage.coverage_ratio if coverage is not None else None
-        risk_component_coverage = (
-            (1.0 - coverage_ratio) * 0.4 if coverage_ratio is not None else 0.4
-        )
+        risk_component_coverage = 0.0
         risk_component_complexity = 0.0
         if base.complexity_bucket == "high":
             risk_component_complexity = 0.4

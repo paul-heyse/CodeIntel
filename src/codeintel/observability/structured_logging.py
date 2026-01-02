@@ -8,6 +8,16 @@ from typing import Any, Protocol, runtime_checkable
 
 from opentelemetry import trace as otel_trace
 
+try:
+    import orjson
+except ImportError:  # pragma: no cover - optional dependency
+    orjson = None
+
+try:
+    import structlog
+except ImportError:  # pragma: no cover - optional dependency
+    structlog = None
+
 
 @runtime_checkable
 class TraceAdapter(Protocol):
@@ -90,6 +100,8 @@ class StructuredLogFormatter(logging.Formatter):
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
+        if orjson is not None:
+            return orjson.dumps(log_data).decode("utf-8")
         return json.dumps(log_data)
 
 
@@ -111,6 +123,7 @@ def configure_structured_logging(
     trace_adapter: TraceAdapter | None = None,
 ) -> None:
     """Configure structured JSON logging for CLI output."""
+    _configure_structlog(level=level)
     handler = logging.StreamHandler()
     handler.setFormatter(
         StructuredLogFormatter(
@@ -122,6 +135,27 @@ def configure_structured_logging(
     root = logging.getLogger("codeintel.cli")
     root.setLevel(level)
     root.addHandler(handler)
+
+
+def _configure_structlog(*, level: int) -> None:
+    if structlog is None:
+        return
+    serializer = orjson.dumps if orjson is not None else None
+    processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+    ]
+    if serializer is not None:
+        processors.append(structlog.processors.JSONRenderer(serializer=serializer))
+    else:
+        processors.append(structlog.processors.JSONRenderer())
+    structlog.configure(
+        cache_logger_on_first_use=True,
+        wrapper_class=structlog.make_filtering_bound_logger(level),
+        processors=processors,
+        logger_factory=structlog.BytesLoggerFactory(),
+    )
 
 
 __all__ = [

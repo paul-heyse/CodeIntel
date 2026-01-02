@@ -8,7 +8,11 @@ from types import ModuleType
 
 from codeintel.build.hamilton.naming import sanitize_pipeline_component
 from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.decorators import pipe_clean_df, with_features
+from codeintel.build.hamilton.transforms.decorators import (
+    pipe_canonical_output,
+    pipe_clean_df,
+    with_features,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +59,11 @@ def table_contract(
                 columns_to_pass=tuple(spec.columns_to_pass),
                 ops_module=spec.ops_module,
             )(fn)
-        return fn
+        output_namespace = f"post__{sanitize_pipeline_component(spec.table_key)}"
+        return pipe_canonical_output(
+            table_key=spec.table_key,
+            namespace=output_namespace,
+        )(fn)
 
     return _decorator
 

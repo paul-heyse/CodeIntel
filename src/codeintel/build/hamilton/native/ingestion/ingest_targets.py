@@ -5,7 +5,6 @@ patterns (tool invocations + table writes) and are frequently evolved together:
 
 - ``modules``: Scan repository modules and write ``core.repo_map``.
 - ``config_ingest``: Discover and ingest configuration files.
-- ``coverage_ingest``: Ingest coverage results into analytics tables.
 - ``tests_ingest``: Ingest pytest report data into analytics tables.
 - ``typing``: Run typing diagnostics and persist typedness + diagnostics.
 """
@@ -22,7 +21,6 @@ from typing import TYPE_CHECKING, cast
 import polars as pl
 from hamilton.function_modifiers import (
     apply_to,
-    inject,
     parameterize,
     resolve_from_config,
     source,
@@ -70,6 +68,7 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hamilton.transforms.ingestion_normalize import normalize_ingest_frame
+from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.core.columnar.rows import columnar_row_count
@@ -81,7 +80,6 @@ from codeintel.ingestion.adapters import (
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
-from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
@@ -103,7 +101,6 @@ _HAMILTON_TYPE_HINTS = (
 
 MODULES_TARGET_NAME = "modules"
 CONFIG_INGEST_TARGET_NAME = "config_ingest"
-COVERAGE_INGEST_TARGET_NAME = "coverage_ingest"
 TESTS_INGEST_TARGET_NAME = "tests_ingest"
 TYPING_TARGET_NAME = "typing"
 
@@ -113,7 +110,6 @@ REPO_MAP_TABLE_KEY = "core.repo_map"
 MODULES_TABLE_KEYS = (MODULES_TABLE_KEY, FILE_STATE_TABLE_KEY, REPO_MAP_TABLE_KEY)
 
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
-COVERAGE_LINES_TABLE_KEY = "analytics.coverage_lines"
 TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
 TYPEDNESS_TABLE_KEY = "analytics.typedness"
 STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
@@ -126,10 +122,6 @@ MODULES_SAVE_CONTEXT = SaverContext(
 CONFIG_INGEST_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=CONFIG_INGEST_TARGET_NAME,
-)
-COVERAGE_INGEST_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=COVERAGE_INGEST_TARGET_NAME,
 )
 TESTS_INGEST_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
@@ -190,16 +182,6 @@ class ConfigToolOutput(ToolStepOutput):
 
     rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(CONFIG_VALUES_TABLE_KEY)
-    )
-    row_count: int = 0
-
-
-@dataclass(frozen=True)
-class CoverageToolOutput(ToolStepOutput):
-    """Tool step output for coverage ingestion."""
-
-    rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(COVERAGE_LINES_TABLE_KEY)
     )
     row_count: int = 0
 
@@ -354,8 +336,14 @@ def _pick_module_records(
     ci_dynamic_module_records: bool = False,
 ) -> NodeTransformLifecycle:
     if ci_dynamic_module_records:
-        return inject(records=source("module_records_dynamic"))
-    return inject(records=source("module_records_static"))
+        return inject_from_registry(
+            param_name="records",
+            node_name="module_records_dynamic",
+        )
+    return inject_from_registry(
+        param_name="records",
+        node_name="module_records_static",
+    )
 
 
 @resolve_from_config(decorate_with=_pick_module_records)
@@ -877,11 +865,6 @@ def t__config_ingest__ingest(
         "table_key": value(CONFIG_VALUES_TABLE_KEY),
         "label": value("config ingest"),
     },
-    coverage__raw_rows={
-        "ingest_step": source("t__coverage_ingest__ingest"),
-        "table_key": value(COVERAGE_LINES_TABLE_KEY),
-        "label": value("coverage ingest"),
-    },
     tests__raw_rows={
         "ingest_step": source("t__tests_ingest__ingest"),
         "table_key": value(TEST_CATALOG_TABLE_KEY),
@@ -1006,227 +989,6 @@ def t__config_ingest(
         ingest_step=t__config_ingest__ingest,
         artifact_materializations=None,
         table_materializations=config_ingest__table_materializations,
-    )
-
-
-# ---------------------------------------------------------------------------
-# coverage_ingest target
-# ---------------------------------------------------------------------------
-
-
-def _resolve_coverage_file(env: BuildEnv) -> Path | None:
-    repo_root = env.snapshot.repo_root
-    build_dir = env.paths.build_dir
-
-    candidates = [
-        repo_root / ".coverage",
-        repo_root / "coverage.json",
-        build_dir / "coverage.json",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
-
-
-@tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-def coverage_ingest__file_state_hash(env: BuildEnv) -> str | None:
-    """Return a stable hash for the coverage report file.
-
-    Returns
-    -------
-    str | None
-        Hash string for the coverage file, or None when missing.
-    """
-    coverage_path = _resolve_coverage_file(env)
-    if coverage_path is None:
-        return None
-    return _state_hash_for_paths((coverage_path,), root=env.snapshot.repo_root)
-
-
-def _coerce_coverage_output(
-    output: ToolStepOutput,
-    warnings: tuple[str, ...],
-) -> CoverageToolOutput:
-    if isinstance(output, CoverageToolOutput):
-        if warnings:
-            return CoverageToolOutput(
-                result=_merge_result_warnings(output.result, warnings),
-                rows=output.rows,
-                row_count=output.row_count,
-            )
-        return output
-    merged = _merge_result_warnings(output.result, warnings)
-    return CoverageToolOutput(
-        result=merged,
-        rows=empty_lazyframe_for_table(COVERAGE_LINES_TABLE_KEY),
-        row_count=0,
-    )
-
-
-@tag_tool(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-def t__coverage_ingest__run(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    t__modules: TargetRunRecord,
-    module_records: tuple[ModuleRecord, ...],
-) -> CoverageToolOutput:
-    """Execute coverage data ingestion from coverage.py output.
-
-    Returns
-    -------
-    CoverageToolOutput
-        Tool output containing coverage rows.
-    """
-    failure, warnings = _modules_precheck(t__modules, module_records)
-    if failure is not None:
-        return CoverageToolOutput(result=failure)
-
-    context = ToolRunContext(
-        env=env,
-        catalog=catalog,
-        target_name=COVERAGE_INGEST_TARGET_NAME,
-    )
-
-    def _execute() -> CoverageToolOutput:
-        coverage_path = _resolve_coverage_file(env)
-        if coverage_path is None:
-            log.info("No coverage file found, writing empty coverage rows")
-            result = ExecutionResult.ok(warnings=warnings)
-            return CoverageToolOutput(
-                result=result,
-                rows=empty_lazyframe_for_table(COVERAGE_LINES_TABLE_KEY),
-                row_count=0,
-            )
-
-        tools = ToolRunnerAdapter(env.providers.tool_service)
-        step = CoverageIngestStep(tools=tools)
-        ingest_result = asyncio.run(
-            step.execute_async(
-                module_records,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-                repo_root=env.snapshot.repo_root,
-                coverage_file=coverage_path,
-            )
-        )
-        frame = lazyframe_for_ingest_columns(COVERAGE_LINES_TABLE_KEY, ingest_result.rows)
-        return CoverageToolOutput(
-            result=_merge_result_warnings(ingest_result.result, warnings),
-            rows=frame,
-            row_count=ingest_result.row_count,
-        )
-
-    output = run_tool_step(context=context, run=_execute)
-    return _coerce_coverage_output(output, warnings)
-
-
-@tag_compute(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-def t__coverage_ingest__ingest(
-    t__coverage_ingest__run: CoverageToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
-    """Package coverage ingestion rows for table materialization.
-
-    Returns
-    -------
-    IngestStep[dict[str, pl.LazyFrame]]
-        Ingest result with table frames.
-    """
-    result = t__coverage_ingest__run.result
-    if result.skipped:
-        return IngestStep(
-            result=ExecutionResult.skip(
-                result.skip_reason or "Coverage ingest skipped",
-                warnings=result.warnings,
-            )
-        )
-    if not result.success:
-        return IngestStep(
-            result=ExecutionResult.failed(
-                result.error or "Coverage ingest failed",
-                warnings=result.warnings,
-            )
-        )
-
-    payload = {COVERAGE_LINES_TABLE_KEY: t__coverage_ingest__run.rows}
-    table_counts = {COVERAGE_LINES_TABLE_KEY: t__coverage_ingest__run.row_count}
-    return IngestStep(
-        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
-        payload=payload,
-    )
-
-
-@save_relation_table(
-    context=COVERAGE_INGEST_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=COVERAGE_LINES_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, target_="coverage__rows")
-def coverage__rows(
-    coverage__raw_rows: pl.LazyFrame | None,
-) -> pl.LazyFrame | None:
-    """Extract rows for analytics.coverage_lines.
-
-    Returns
-    -------
-    pl.LazyFrame | None
-        Lazy frame for the coverage_lines table, or None when ingestion is skipped or failed.
-    """
-    return coverage__raw_rows
-
-
-@tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-def coverage_ingest__table_materializations(
-    m__analytics__coverage_lines: MaterializationResult,
-) -> dict[str, MaterializationResult]:
-    """Collect coverage ingest table materializations.
-
-    Returns
-    -------
-    dict[str, MaterializationResult]
-        Mapping of table keys to materialization results.
-    """
-    return {COVERAGE_LINES_TABLE_KEY: m__analytics__coverage_lines}
-
-
-@tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-def coverage_ingest__finalize_context(
-    env: BuildEnv,
-    catalog: DagCatalog,
-) -> ToolFinalizeContext:
-    """Build finalization context for coverage ingest.
-
-    Returns
-    -------
-    ToolFinalizeContext
-        Finalization context for coverage ingest.
-    """
-    return ToolFinalizeContext(
-        env=env,
-        catalog=catalog,
-        target_name=COVERAGE_INGEST_TARGET_NAME,
-    )
-
-
-@codeintel_target(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-def t__coverage_ingest(
-    coverage_ingest__finalize_context: ToolFinalizeContext,
-    t__coverage_ingest__run: CoverageToolOutput,
-    t__coverage_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
-    coverage_ingest__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Ingest line-level test coverage.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record describing the execution outcome.
-    """
-    return finalize_target_from_materializations(
-        context=coverage_ingest__finalize_context,
-        tool_step=t__coverage_ingest__run,
-        ingest_step=t__coverage_ingest__ingest,
-        artifact_materializations=None,
-        table_materializations=coverage_ingest__table_materializations,
     )
 
 
@@ -1741,7 +1503,6 @@ def t__typing(
     apply_to(modules__file_state_rows, table_key=value(FILE_STATE_TABLE_KEY)),
     apply_to(modules__repo_map_rows, table_key=value(REPO_MAP_TABLE_KEY)),
     apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
-    apply_to(coverage__rows, table_key=value(COVERAGE_LINES_TABLE_KEY)),
     apply_to(tests__rows, table_key=value(TEST_CATALOG_TABLE_KEY)),
     apply_to(typing__typedness_rows, table_key=value(TYPEDNESS_TABLE_KEY)),
     apply_to(typing__diagnostic_rows, table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY)),
@@ -1770,7 +1531,6 @@ def _normalize_ingest_rows(
 __all__: list[str] = [
     "ConfigScanResult",
     "ConfigToolOutput",
-    "CoverageToolOutput",
     "ModuleToolOutput",
     "TestsToolOutput",
     "TypingToolOutput",
@@ -1778,9 +1538,6 @@ __all__: list[str] = [
     "t__config_ingest__ingest",
     "t__config_ingest__run",
     "t__config_ingest__scan",
-    "t__coverage_ingest",
-    "t__coverage_ingest__ingest",
-    "t__coverage_ingest__run",
     "t__modules",
     "t__modules__ingest",
     "t__modules__run",

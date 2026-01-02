@@ -105,6 +105,8 @@ def _load_build_settings() -> BuildSettings:
     polars_streaming = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING")
     polars_streaming_fallback = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING_FALLBACK")
     polars_flags = split_csv(get_str("CODEINTEL_BUILD_POLARS_QUERY_OPT_FLAGS", default=None))
+    dataset_row_index_name = optional_str("CODEINTEL_BUILD_DATASET_ROW_INDEX_NAME")
+    dataset_row_index_offset = optional_int("CODEINTEL_BUILD_DATASET_ROW_INDEX_OFFSET")
     return BuildSettings(
         engine_version=_resolve_engine_version(),
         export_audit=ExportAuditSettings(
@@ -134,6 +136,10 @@ def _load_build_settings() -> BuildSettings:
         polars_streaming_fallback=polars_streaming_fallback
         if polars_streaming_fallback is not None
         else True,
+        dataset_row_index_name=dataset_row_index_name,
+        dataset_row_index_offset=dataset_row_index_offset
+        if dataset_row_index_offset is not None
+        else 0,
     )
 
 

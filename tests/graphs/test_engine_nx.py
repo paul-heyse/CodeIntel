@@ -2,99 +2,117 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from codeintel.build.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.build.graphs.engine import views as nx_views
 from codeintel.build.graphs.engine.cache import GraphCache
+from codeintel.storage.datasets.arrow_store import write_dataset
 from tests._helpers.assertions import (
-    ModulesAssertions,
     assert_target_ok,
     expect_equal,
     expect_graph_equal,
     expect_is_none,
     expect_true,
 )
-from tests._helpers.factories import make_snapshot
+from tests._helpers.columnar_tables import arrow_table_for_rows
 from tests._helpers.fixtures.graphs import chain_graph, empty_digraph
 from tests._helpers.fixtures.rows import (
+    CallGraphEdgeRow,
     CallGraphNodeRow,
     ConfigValueRow,
+    ImportGraphEdgeRow,
     ModuleRow,
-    RepoMapRow,
     SymbolUseEdgeRow,
-    insert_rows,
-    insert_symbol_use_edges,
 )
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
-from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     import networkx as nx
 
+    from tests._helpers.builders.row_protocol import InsertableRow
     from tests._helpers.context import TestContext
 
 ISOLATED_NODE: Final[int] = 3
-
-
-def _node_payload(graph: nx.Graph) -> set[tuple[object, tuple[tuple[str, object], ...]]]:
-    return {(node, tuple(sorted(data.items()))) for node, data in graph.nodes(data=True)}
-
-
-def _edge_payload(graph: nx.Graph) -> set[tuple[object, object, object]]:
-    return {(src, dst, data.get("weight", 1)) for src, dst, data in graph.edges(data=True)}
 
 
 def _assert_graph_match(name: str, expected: nx.Graph, actual: nx.Graph) -> None:
     expect_graph_equal(actual, expected, message=f"{name} differs between engine and nx_views")
 
 
-def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:
+def _write_dataset_rows(
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+    rows: Sequence[InsertableRow],
+) -> None:
+    if not rows:
+        return
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    columns = type(rows[0]).__columns__
+    table = arrow_table_for_rows(
+        table_key,
+        [row.to_tuple() for row in rows],
+        columns=columns,
+    )
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        data=table,
+    )
+
+
+def _write_dataset_tuples(
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+    rows: Sequence[tuple[object, ...]],
+    *,
+    columns: Sequence[str],
+) -> None:
+    if not rows:
+        return
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    table = arrow_table_for_rows(table_key, rows, columns=columns)
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        data=table,
+    )
+
+
+def test_engine_matches_nx_views_for_core_graphs(
+    graph_target_harness: GraphTargetHarness,
+) -> None:
     """NxGraphEngine should produce the same graphs as direct nx_views loaders."""
-    test_ctx.require(GRAPH_PACK, SYMBOL_PACK, CONFIG_PACK, COVERAGE_PACK)
+    records = graph_target_harness.run_targets()
+    assert_target_ok(records["call_graph"])
+    assert_target_ok(records["import_graph"])
 
-    repo = test_ctx.repo
-    commit = test_ctx.commit
-    gateway = test_ctx.gateway
-
+    snapshot = graph_target_harness.harness.ctx.snapshot
+    dataset_root = graph_target_harness.harness.ctx.build_paths.dataset_root_dir
     engine = NxGraphEngine(
-        gateway=gateway,
-        snapshot=make_snapshot(repo=repo, commit=commit),
+        dataset_root_dir=dataset_root,
+        snapshot=snapshot,
     )
 
     comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [
         (
             "call_graph",
-            lambda: nx_views.load_call_graph(gateway, repo, commit),
+            lambda: nx_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit),
             engine.call_graph,
         ),
         (
             "import_graph",
-            lambda: nx_views.load_import_graph(gateway, repo, commit),
+            lambda: nx_views.load_import_graph(dataset_root, snapshot.repo, snapshot.commit),
             engine.import_graph,
-        ),
-        (
-            "symbol_module_graph",
-            lambda: nx_views.load_symbol_module_graph(gateway, repo, commit),
-            engine.symbol_module_graph,
-        ),
-        (
-            "symbol_function_graph",
-            lambda: nx_views.load_symbol_function_graph(gateway),
-            engine.symbol_function_graph,
-        ),
-        (
-            "config_module_bipartite",
-            lambda: nx_views.load_config_module_bipartite(gateway, repo, commit),
-            engine.config_module_bipartite,
-        ),
-        (
-            "test_function_bipartite",
-            lambda: nx_views.load_test_function_bipartite(gateway, repo, commit),
-            engine.test_function_bipartite,
         ),
     ]
 
@@ -115,13 +133,13 @@ def test_engine_matches_harness_graph_targets(graph_target_harness: GraphTargetH
     assert_target_ok(records["import_graph"])
 
     snapshot = graph_target_harness.harness.ctx.snapshot
-    gateway = graph_target_harness.harness.ctx.gateway
+    dataset_root = graph_target_harness.harness.ctx.build_paths.dataset_root_dir
     engine = NxGraphEngine(
-        gateway=gateway,
-        snapshot=make_snapshot(repo=snapshot.repo, commit=snapshot.commit),
+        dataset_root_dir=dataset_root,
+        snapshot=snapshot,
     )
-    expected_call = nx_views.load_call_graph(gateway, snapshot.repo, snapshot.commit)
-    expected_import = nx_views.load_import_graph(gateway, snapshot.repo, snapshot.commit)
+    expected_call = nx_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit)
+    expected_import = nx_views.load_import_graph(dataset_root, snapshot.repo, snapshot.commit)
     _assert_graph_match("call_graph", expected_call, engine.call_graph())
     _assert_graph_match("import_graph", expected_import, engine.import_graph())
 
@@ -243,38 +261,62 @@ def test_load_call_graph_weights_and_isolated_nodes(test_ctx: TestContext) -> No
     """load_call_graph aggregates weights, skips malformed edges, and keeps isolated nodes."""
     repo = test_ctx.repo
     commit = test_ctx.commit
-    con = test_ctx.gateway.con
-    con.execute("DELETE FROM graph.call_graph_edges")
-    con.execute("DELETE FROM graph.call_graph_nodes")
+    dataset_root = test_ctx.build_paths.dataset_root_dir
+    edges = [
+        CallGraphEdgeRow(
+            repo=repo,
+            commit=commit,
+            caller_goid_h128=1,
+            callee_goid_h128=2,
+            callsite_path="a.py",
+            callsite_line=1,
+            callsite_col=0,
+            language="python",
+            kind="call",
+            resolved_via="static",
+            confidence=1.0,
+        ),
+        CallGraphEdgeRow(
+            repo=repo,
+            commit=commit,
+            caller_goid_h128=1,
+            callee_goid_h128=2,
+            callsite_path="a.py",
+            callsite_line=1,
+            callsite_col=0,
+            language="python",
+            kind="call",
+            resolved_via="static",
+            confidence=1.0,
+        ),
+        CallGraphEdgeRow(
+            repo=repo,
+            commit=commit,
+            caller_goid_h128=1,
+            callee_goid_h128=None,
+            callsite_path="a.py",
+            callsite_line=1,
+            callsite_col=0,
+            language="python",
+            kind="call",
+            resolved_via="static",
+            confidence=1.0,
+        ),
+    ]
+    nodes = [
+        CallGraphNodeRow(
+            goid_h128=3,
+            language="python",
+            kind="function",
+            arity=0,
+            is_public=False,
+            rel_path="b.py",
+        )
+    ]
+    _write_dataset_rows(dataset_root, "graph.call_graph_edges", commit, edges)
+    _write_dataset_rows(dataset_root, "graph.call_graph_nodes", commit, nodes)
 
-    con.executemany(
-        """
-        INSERT INTO graph.call_graph_edges
-            (repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col, language, kind, resolved_via, confidence, evidence_json)
-        VALUES (?, ?, ?, ?, 'a.py', 1, 0, 'python', 'call', 'static', 1.0, '{}')
-        """,
-        [
-            (repo, commit, 1, 2),
-            (repo, commit, 1, 2),
-            (repo, commit, 1, None),
-        ],
-    )
-
-    insert_rows(
-        test_ctx.gateway,
-        [
-            CallGraphNodeRow(
-                goid_h128=3,
-                language="python",
-                kind="function",
-                arity=0,
-                is_public=False,
-                rel_path="b.py",
-            )
-        ],
-    )
-
-    graph = nx_views.load_call_graph(test_ctx.gateway, repo, commit)
+    graph = nx_views.load_call_graph(dataset_root, repo, commit)
 
     expect_true(graph.has_edge(1, 2))
     expect_equal(graph[1][2]["weight"], 2)
@@ -285,55 +327,25 @@ def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) ->
     """load_import_graph falls back to module_layer data when import_modules missing."""
     repo = test_ctx.repo
     commit = test_ctx.commit
-    con = test_ctx.gateway.con
-    con.execute("DELETE FROM graph.import_graph_edges")
-
-    con.executemany(
-        """
-        INSERT INTO graph.import_graph_edges (repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group, module_layer)
-        VALUES (?, ?, ?, ?, 0, 0, 0, ?)
-        """,
-        [
-            (repo, commit, "a", "b", 1),
-            (repo, commit, "a", "b", 1),
-            (repo, commit, "b", "c", 2),
-        ],
+    dataset_root = test_ctx.build_paths.dataset_root_dir
+    rows = [
+        (repo, commit, "a", "b", 0, 0, 0, 1),
+        (repo, commit, "a", "b", 0, 0, 0, 1),
+        (repo, commit, "b", "c", 0, 0, 0, 2),
+    ]
+    _write_dataset_tuples(
+        dataset_root,
+        "graph.import_graph_edges",
+        commit,
+        rows,
+        columns=(*ImportGraphEdgeRow.__columns__, "module_layer"),
     )
 
-    con.execute("DROP TABLE IF EXISTS graph.import_modules")
-
-    graph = nx_views.load_import_graph(test_ctx.gateway, repo, commit)
+    graph = nx_views.load_import_graph(dataset_root, repo, commit)
 
     expect_equal(graph["a"]["b"]["weight"], 2)
     expect_true("a" in graph.nodes)
     expect_equal(graph.nodes["a"]["layer"], 1)
-
-
-def test_load_test_function_bipartite_weights(test_ctx: TestContext) -> None:
-    """load_test_function_bipartite accumulates weights and skips null IDs."""
-    repo = test_ctx.repo
-    commit = test_ctx.commit
-    con = test_ctx.gateway.con
-    con.execute("DELETE FROM analytics.test_coverage_edges")
-    con.executemany(
-        """
-        INSERT INTO analytics.test_coverage_edges (repo, commit, test_id, function_goid_h128, coverage_ratio)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        [
-            (repo, commit, "t1", 1, 0.5),
-            (repo, commit, "t1", 1, 0.25),
-            (repo, commit, None, 2, 0.5),
-        ],
-    )
-
-    graph = nx_views.load_test_function_bipartite(test_ctx.gateway, repo, commit)
-
-    test_node = ("t", "t1")
-    func_node = ("f", 1)
-    expect_true(graph.has_node(test_node))
-    expect_true(graph.has_node(func_node))
-    expect_equal(graph[test_node][func_node]["weight"], 0.75)
 
 
 def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> None:
@@ -344,57 +356,34 @@ def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> 
 
     repo = test_ctx.repo
     commit = test_ctx.commit
-    con = test_ctx.gateway.con
-    con.execute("DELETE FROM analytics.config_values")
-    con.execute("DELETE FROM core.modules")
-    con.execute("DELETE FROM core.repo_map")
+    dataset_root = test_ctx.build_paths.dataset_root_dir
+    modules = [ModuleRow(module="allowed", path="pkg/allowed.py", repo=repo, commit=commit)]
+    configs = [
+        ConfigValueRow(
+            repo=repo,
+            commit=commit,
+            config_path="cfg1",
+            format="json",
+            key="k1",
+            reference_paths=[],
+            reference_modules=["missing.mod"],
+            reference_count=1,
+        ),
+        ConfigValueRow(
+            repo=repo,
+            commit=commit,
+            config_path="cfg2",
+            format="json",
+            key="k2",
+            reference_paths=[],
+            reference_modules=["allowed"],
+            reference_count=1,
+        ),
+    ]
+    _write_dataset_rows(dataset_root, "core.modules", commit, modules)
+    _write_dataset_rows(dataset_root, "analytics.config_values", commit, configs)
 
-    insert_rows(
-        test_ctx.gateway,
-        [
-            ModuleRow(module="allowed", path="pkg/allowed.py", repo=repo, commit=commit),
-        ],
-    )
-    insert_rows(
-        test_ctx.gateway,
-        [
-            RepoMapRow(
-                repo=repo,
-                commit=commit,
-                modules={"allowed": "pkg/allowed.py"},
-            )
-        ],
-    )
-    ModulesAssertions(
-        test_ctx.gateway, make_snapshot(repo=repo, commit=commit, repo_root=test_ctx.repo_root)
-    ).inventory_consistent()
-    insert_rows(
-        test_ctx.gateway,
-        [
-            ConfigValueRow(
-                repo=repo,
-                commit=commit,
-                config_path="cfg1",
-                format="json",
-                key="k1",
-                reference_paths=[],
-                reference_modules=["missing.mod"],
-                reference_count=1,
-            ),
-            ConfigValueRow(
-                repo=repo,
-                commit=commit,
-                config_path="cfg2",
-                format="json",
-                key="k2",
-                reference_paths=[],
-                reference_modules=["allowed"],
-                reference_count=1,
-            ),
-        ],
-    )
-
-    graph = nx_views.load_config_module_bipartite(test_ctx.gateway, repo, commit)
+    graph = nx_views.load_config_module_bipartite(dataset_root, repo, commit)
 
     expect_true(("c", "k1") in graph.nodes)
     expect_true(("m", "missing.mod") in graph.nodes)
@@ -405,47 +394,26 @@ def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
     """load_symbol_module_graph skips self-edges and increments weights."""
     repo = test_ctx.repo
     commit = test_ctx.commit
-    con = test_ctx.gateway.con
-    con.execute("DELETE FROM graph.symbol_use_edges")
-    con.execute("DELETE FROM core.modules")
-    con.execute("DELETE FROM core.repo_map")
+    dataset_root = test_ctx.build_paths.dataset_root_dir
+    modules = [
+        ModuleRow(module="m_a", path="a.py", repo=repo, commit=commit),
+        ModuleRow(module="m_b", path="b.py", repo=repo, commit=commit),
+    ]
+    edges = [
+        SymbolUseEdgeRow(
+            symbol="s", def_path="a.py", use_path="b.py", same_file=False, same_module=False
+        ),
+        SymbolUseEdgeRow(
+            symbol="t", def_path="a.py", use_path="b.py", same_file=False, same_module=False
+        ),
+        SymbolUseEdgeRow(
+            symbol="self", def_path="a.py", use_path="a.py", same_file=True, same_module=True
+        ),
+    ]
+    _write_dataset_rows(dataset_root, "core.modules", commit, modules)
+    _write_dataset_rows(dataset_root, "graph.symbol_use_edges", commit, edges)
 
-    insert_rows(
-        test_ctx.gateway,
-        [
-            ModuleRow(module="m_a", path="a.py", repo=repo, commit=commit),
-            ModuleRow(module="m_b", path="b.py", repo=repo, commit=commit),
-        ],
-    )
-    insert_rows(
-        test_ctx.gateway,
-        [
-            RepoMapRow(
-                repo=repo,
-                commit=commit,
-                modules={"m_a": "a.py", "m_b": "b.py"},
-            )
-        ],
-    )
-    ModulesAssertions(
-        test_ctx.gateway, make_snapshot(repo=repo, commit=commit, repo_root=test_ctx.repo_root)
-    ).inventory_consistent()
-    insert_rows(
-        test_ctx.gateway,
-        [
-            SymbolUseEdgeRow(
-                symbol="s", def_path="a.py", use_path="b.py", same_file=False, same_module=False
-            ),
-            SymbolUseEdgeRow(
-                symbol="t", def_path="a.py", use_path="b.py", same_file=False, same_module=False
-            ),
-            SymbolUseEdgeRow(
-                symbol="self", def_path="a.py", use_path="a.py", same_file=True, same_module=True
-            ),
-        ],
-    )
-
-    graph = nx_views.load_symbol_module_graph(test_ctx.gateway, repo, commit)
+    graph = nx_views.load_symbol_module_graph(dataset_root, repo, commit)
 
     expect_true(graph.has_edge("m_b", "m_a"))
     expect_equal(graph["m_b"]["m_a"]["weight"], 2)
@@ -454,28 +422,23 @@ def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
 def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
     test_ctx: TestContext,
 ) -> None:
-    """load_symbol_function_graph returns empty on DuckDBError and normalizes decimals."""
-    con = test_ctx.gateway.con
-    con.execute("DELETE FROM graph.symbol_use_edges")
-
-    insert_symbol_use_edges(
-        test_ctx.gateway,
-        [
-            (
-                "s1",
-                "a.py",
-                "b.py",
-                False,
-                False,
-                Decimal("10"),
-                20,
-            ),
-        ],
+    """load_symbol_function_graph returns empty when dataset missing and normalizes decimals."""
+    commit = test_ctx.commit
+    dataset_root = test_ctx.build_paths.dataset_root_dir
+    rows = [
+        ("s1", "a.py", "b.py", False, False, Decimal("10"), 20),
+    ]
+    _write_dataset_tuples(
+        dataset_root,
+        "graph.symbol_use_edges",
+        commit,
+        rows,
+        columns=SymbolUseEdgeRow.__columns__,
     )
 
-    graph = nx_views.load_symbol_function_graph(test_ctx.gateway)
+    graph = nx_views.load_symbol_function_graph(dataset_root, commit)
     expect_true(graph.has_edge(10, 20))
 
-    con.execute("DROP TABLE IF EXISTS graph.symbol_use_edges")
-    empty_graph = nx_views.load_symbol_function_graph(test_ctx.gateway)
+    missing_root = dataset_root / "missing"
+    empty_graph = nx_views.load_symbol_function_graph(missing_root, commit)
     expect_equal(empty_graph.number_of_nodes(), 0)

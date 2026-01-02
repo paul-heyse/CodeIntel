@@ -172,7 +172,6 @@ class BuildPathOverrides:
     document_output_dir: Path | None = None
     dataset_root_dir: Path | None = None
     scip_dir: Path | None = None
-    coverage_json: Path | None = None
     pytest_report: Path | None = None
     tool_cache: Path | None = None
     log_db_path: Path | None = None
@@ -198,7 +197,6 @@ class BuildPathOverrides:
                 ("document_output_dir", normalized.document_output_dir),
                 ("dataset_root_dir", normalized.dataset_root_dir),
                 ("scip_dir", normalized.scip_dir),
-                ("coverage_json", normalized.coverage_json),
                 ("pytest_report", normalized.pytest_report),
                 ("tool_cache", normalized.tool_cache),
                 ("log_db_path", normalized.log_db_path),
@@ -229,7 +227,6 @@ class BuildPathOverrides:
             document_output_dir=self._resolve_optional(self.document_output_dir, resolved_build),
             dataset_root_dir=self._resolve_optional(self.dataset_root_dir, resolved_build),
             scip_dir=self._resolve_optional(self.scip_dir, resolved_build),
-            coverage_json=self._resolve_optional(self.coverage_json, resolved_build),
             pytest_report=self._resolve_optional(self.pytest_report, resolved_build),
             tool_cache=self._resolve_optional(self.tool_cache, resolved_build),
             log_db_path=self._resolve_optional(self.log_db_path, resolved_build),
@@ -263,8 +260,6 @@ class BuildPaths:
         Directory for Arrow dataset outputs.
     scip_dir : Path
         Directory for SCIP index artifacts.
-    coverage_json : Path
-        Path for coverage JSON output.
     pytest_report : Path
         Path for pytest JSON report output.
     tool_cache : Path
@@ -278,7 +273,6 @@ class BuildPaths:
     document_output_dir: Path
     dataset_root_dir: Path
     scip_dir: Path
-    coverage_json: Path
     pytest_report: Path
     tool_cache: Path
     log_db_path: Path
@@ -291,7 +285,6 @@ class BuildPaths:
             "document_output_dir",
             "dataset_root_dir",
             "scip_dir",
-            "coverage_json",
             "pytest_report",
             "tool_cache",
             "log_db_path",
@@ -329,7 +322,6 @@ class BuildPaths:
             document_output_dir=document_output_dir,
             dataset_root_dir=document_output_dir / "datasets",
             scip_dir=resolved_build / "scip",
-            coverage_json=resolved_build / "coverage" / "coverage.json",
             pytest_report=resolved_build / "test-results" / "pytest-report.json",
             tool_cache=resolved_build / ".tool_cache",
             log_db_path=resolved_build / "db" / "codeintel_logs.duckdb",
@@ -371,9 +363,6 @@ class BuildPaths:
                 normalized.dataset_root_dir or document_output_dir / "datasets"
             ).resolve(),
             scip_dir=(normalized.scip_dir or resolved_build / "scip").resolve(),
-            coverage_json=(
-                normalized.coverage_json or resolved_build / "coverage" / "coverage.json"
-            ).resolve(),
             pytest_report=(
                 normalized.pytest_report or resolved_build / "test-results" / "pytest-report.json"
             ).resolve(),
@@ -421,7 +410,6 @@ class BuildPaths:
                 layout.dataset_root_dir or document_output_dir / "datasets"
             ).resolve(),
             scip_dir=(resolved_build / "scip").resolve(),
-            coverage_json=(resolved_build / "coverage" / "coverage.json").resolve(),
             pytest_report=(resolved_build / "test-results" / "pytest-report.json").resolve(),
             tool_cache=(resolved_build / ".tool_cache").resolve(),
             log_db_path=(
@@ -435,7 +423,6 @@ class BuildPaths:
                     "document_output_dir": paths.document_output_dir,
                     "dataset_root_dir": paths.dataset_root_dir,
                     "scip_dir": paths.scip_dir,
-                    "coverage_json": paths.coverage_json,
                     "pytest_report": paths.pytest_report,
                     "tool_cache": paths.tool_cache,
                     "log_db_path": paths.log_db_path,

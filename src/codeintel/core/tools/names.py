@@ -10,7 +10,6 @@ class ToolName(StrEnum):
 
     PYRIGHT = "pyright"
     PYREFLY = "pyrefly"
-    COVERAGE = "coverage"
     RUFF = "ruff"
     PYTEST = "pytest"
     GIT = "git"

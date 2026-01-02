@@ -34,14 +34,6 @@ from tests._helpers.assertions.common import (
     assert_validation_error,
     format_assertion_message,
 )
-from tests._helpers.assertions.coverage_assertions import (
-    CoverageFunctionExpectation,
-    assert_coverage_function_row,
-    assert_coverage_lines,
-    assert_function_loc,
-    assert_single_edge,
-    assert_typedness_bucket,
-)
 from tests._helpers.assertions.dataclass_assertions import assert_cannot_setattr
 from tests._helpers.assertions.dependencies import (
     assert_cycle_count,
@@ -94,7 +86,6 @@ from tests._helpers.assertions.graphs import (
     GraphMetricsTableExpectations,
     ModuleMetricsExpectation,
     assert_component_counts,
-    assert_coverage_ratio_between,
     assert_cycle_counts,
     assert_cycle_membership,
     assert_filtered_graph,
@@ -153,7 +144,6 @@ from tests._helpers.assertions.target_record_assertions import (
 __all__ = [
     "DEFAULT_DIFF_LIMIT",
     "SUBPROCESS_ALLOWLIST",
-    "CoverageFunctionExpectation",
     "FileStateHashOptions",
     "FunctionMetricsExpectation",
     "GraphMetricsTableExpectations",
@@ -169,9 +159,6 @@ __all__ = [
     "assert_cannot_setattr",
     "assert_columns_not_null",
     "assert_component_counts",
-    "assert_coverage_function_row",
-    "assert_coverage_lines",
-    "assert_coverage_ratio_between",
     "assert_cycle_count",
     "assert_cycle_counts",
     "assert_cycle_membership",
@@ -182,7 +169,6 @@ __all__ = [
     "assert_failure",
     "assert_file_state_hash_stable",
     "assert_filtered_graph",
-    "assert_function_loc",
     "assert_graph_counts",
     "assert_graph_metrics_for_goids",
     "assert_graph_metrics_function_row",
@@ -211,14 +197,12 @@ __all__ = [
     "assert_repo_map_consistent_with_modules",
     "assert_repo_map_contains",
     "assert_row_count",
-    "assert_single_edge",
     "assert_success",
     "assert_success_meta",
     "assert_table_has_rows",
     "assert_table_matches_contract",
     "assert_table_schema_valid",
     "assert_target_ok",
-    "assert_typedness_bucket",
     "assert_valid",
     "assert_validation_error",
     "build_dependency_graph",

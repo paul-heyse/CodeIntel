@@ -136,15 +136,12 @@ def test_pr52_migrated_plugins_exist_as_native_modules() -> None:
 
     These plugins were migrated in the Hamilton-native analytics consolidation:
     - config_data_flow.py -> config_graphs.py
-    - coverage_functions.py + behavioral_coverage.py + test coverage edges
-      -> tables_coverage.py + testing.py
     - subsystem_graph_metrics.py + symbol_graph_metrics.py + test_graph_metrics.py
       + subsystem_agreement.py -> graph_metrics.py + subsystem_agreement.py
     """
     native_root = SRC_ROOT / "build" / "hamilton" / "native" / "analytics"
     should_exist = (
         "config_graphs.py",
-        "tables_coverage.py",
         "testing.py",
         "graph_metrics.py",
         "subsystem_agreement.py",

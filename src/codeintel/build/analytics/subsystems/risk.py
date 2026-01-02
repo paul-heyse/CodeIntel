@@ -111,12 +111,14 @@ def _has_required_frames(*frames: pl.DataFrame | None) -> bool:
 
 
 def _module_by_path_from_frame(
-    modules_frame: pl.DataFrame,
+    modules_frame: pl.DataFrame | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
+    if modules_frame is None or modules_frame.is_empty():
+        return module_by_path
     modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
     for row in modules_filtered.iter_rows(named=True):
         path = row.get("path")
@@ -127,13 +129,15 @@ def _module_by_path_from_frame(
 
 
 def _function_module_map(
-    function_metrics_frame: pl.DataFrame,
+    function_metrics_frame: pl.DataFrame | None,
     module_by_path: dict[str, str],
     *,
     repo: str,
     commit: str,
 ) -> dict[int, str]:
     function_module: dict[int, str] = {}
+    if function_metrics_frame is None or function_metrics_frame.is_empty():
+        return function_module
     metrics_filtered = _filter_frame_by_snapshot(
         function_metrics_frame,
         repo=repo,
@@ -151,7 +155,7 @@ def _function_module_map(
 
 
 def _risk_stats_from_frames(
-    risk_factors_frame: pl.DataFrame,
+    risk_factors_frame: pl.DataFrame | None,
     function_module: dict[int, str],
     labels: dict[str, str],
     *,
@@ -159,6 +163,8 @@ def _risk_stats_from_frames(
     commit: str,
 ) -> dict[str, RiskTally]:
     stats: dict[str, RiskTally] = defaultdict(RiskTally)
+    if risk_factors_frame is None or risk_factors_frame.is_empty():
+        return stats
     risk_filtered = _filter_frame_by_snapshot(risk_factors_frame, repo=repo, commit=commit)
     for row in risk_filtered.iter_rows(named=True):
         goid = normalize_decimal_id(row.get("function_goid_h128"))

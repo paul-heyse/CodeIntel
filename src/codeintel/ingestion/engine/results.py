@@ -6,14 +6,14 @@ clear contract between tool plugins and ingestion consumers.
 
 Architecture Note
 -----------------
-These "Report" types (DiagnosticReport, CoverageReport, TestReport, ScipIndexResult)
+These "Report" types (DiagnosticReport, TestReport, ScipIndexResult)
 are **rich domain objects** used internally by tool plugins. They include:
 - Aggregated counts (total_errors, total_warnings, definition_count, etc.)
 - Factory methods for construction from raw data (from_error_counts, from_documents)
 - Helper methods for common access patterns (errors_by_path, by_path, definitions_by_location)
 
-In contrast, the "Result" types in ``ports/tools.py`` (DiagnosticResult, CoverageResult,
-TestResult, ScipResult) are **simpler port interface types** with status/error/duration
+In contrast, the "Result" types in ``ports/tools.py`` (DiagnosticResult, TestResult,
+ScipResult) are **simpler port interface types** with status/error/duration
 fields suitable for clean architectural boundaries.
 
 The ``ToolRunnerAdapter`` converts from these rich Report types to the simpler Result
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 class ReportProtocol(Protocol):
     """Protocol for tool result report types with factory methods.
 
-    All Report types (DiagnosticReport, CoverageReport, TestReport, ScipIndexResult)
+    All Report types (DiagnosticReport, TestReport, ScipIndexResult)
     implement this protocol, providing a common interface for creating empty instances.
     """
 
@@ -184,127 +184,6 @@ class DiagnosticReport:
             Empty report with zero counts.
         """
         return DiagnosticReport(tool_name=tool_name, files={})
-
-
-@dataclass(frozen=True)
-class CoverageFileSummary:
-    """Coverage summary for a single file.
-
-    Attributes
-    ----------
-    rel_path
-        Repository-relative file path.
-    executed_lines
-        Set of line numbers that were executed.
-    missing_lines
-        Set of executable line numbers that were not executed.
-    """
-
-    rel_path: str
-    executed_lines: frozenset[int]
-    missing_lines: frozenset[int]
-
-    @property
-    def total_executable(self) -> int:
-        """Total number of executable lines."""
-        return len(self.executed_lines) + len(self.missing_lines)
-
-    @property
-    def coverage_ratio(self) -> float:
-        """Coverage ratio between 0.0 and 1.0."""
-        total = self.total_executable
-        if total == 0:
-            return 1.0
-        return len(self.executed_lines) / total
-
-
-@dataclass(frozen=True)
-class CoverageReport:
-    """Aggregated coverage report from coverage.py.
-
-    Attributes
-    ----------
-    files
-        Sequence of per-file coverage summaries.
-    total_executed
-        Total executed lines across all files.
-    total_missing
-        Total missing lines across all files.
-    json_path
-        Path to the coverage JSON file, if generated.
-    """
-
-    files: Sequence[CoverageFileSummary]
-    total_executed: int = 0
-    total_missing: int = 0
-    json_path: Path | None = None
-
-    @classmethod
-    def from_file_reports(
-        cls,
-        reports: Sequence[tuple[str, set[int], set[int]]],
-        *,
-        json_path: Path | None = None,
-    ) -> CoverageReport:
-        """
-        Build a CoverageReport from raw file data.
-
-        Parameters
-        ----------
-        reports
-            Sequence of (rel_path, executed_lines, missing_lines) tuples.
-        json_path
-            Optional path to the generated JSON file.
-
-        Returns
-        -------
-        CoverageReport
-            Constructed report with aggregated totals.
-        """
-        files: list[CoverageFileSummary] = []
-        total_executed = 0
-        total_missing = 0
-
-        for rel_path, executed, missing in reports:
-            files.append(
-                CoverageFileSummary(
-                    rel_path=rel_path,
-                    executed_lines=frozenset(executed),
-                    missing_lines=frozenset(missing),
-                )
-            )
-            total_executed += len(executed)
-            total_missing += len(missing)
-
-        return cls(
-            files=tuple(files),
-            total_executed=total_executed,
-            total_missing=total_missing,
-            json_path=json_path,
-        )
-
-    @staticmethod
-    def empty() -> CoverageReport:
-        """
-        Create an empty coverage report.
-
-        Returns
-        -------
-        CoverageReport
-            Empty report with no files.
-        """
-        return CoverageReport(files=())
-
-    def by_path(self) -> dict[str, CoverageFileSummary]:
-        """
-        Return a mapping of file path to summary.
-
-        Returns
-        -------
-        dict[str, CoverageFileSummary]
-            File path to summary mapping.
-        """
-        return {f.rel_path: f for f in self.files}
 
 
 def parse_test_duration(entry: Mapping[str, object]) -> float:
@@ -643,12 +522,10 @@ class ScipIndexResult:
         return ScipIndexResult(documents=())
 
 
-ParsedToolResult = DiagnosticReport | CoverageReport | TestReport | ScipIndexResult
+ParsedToolResult = DiagnosticReport | TestReport | ScipIndexResult
 
 
 __all__ = [
-    "CoverageFileSummary",
-    "CoverageReport",
     "DiagnosticReport",
     "FileDiagnosticCount",
     "ParsedToolResult",

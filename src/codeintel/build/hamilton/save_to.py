@@ -11,7 +11,16 @@ import types
 import typing
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeAliasType, TypeGuard, cast, get_args, get_origin
+from typing import (
+    TYPE_CHECKING,
+    Protocol,
+    TypeAliasType,
+    TypeGuard,
+    cast,
+    get_args,
+    get_origin,
+    runtime_checkable,
+)
 
 import hamilton.node as h_node
 from hamilton.function_modifiers.adapters import (
@@ -59,6 +68,15 @@ if TYPE_CHECKING:
 
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
     from hamilton.io.data_adapters import AdapterCommon, DataSaver
+
+
+@runtime_checkable
+class _SupportsInference(Protocol):
+    """Protocol for schema providers that can toggle inference."""
+
+    def with_inference(self, *, allow_inference: bool) -> SchemaProvider:
+        """Return a schema provider with inference enabled or disabled."""
+        ...
 
 
 class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
@@ -172,6 +190,7 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
                     saver_cls=resolution.saver_cls,
                     output_role=resolution.output_role,
                     target_name=resolution.target_name,
+                    data_node_name=resolution.node_to_save_str,
                     table_key=resolution.table_key,
                     artifact_name=resolution.artifact_name,
                     path_template=resolution.path_template,
@@ -520,6 +539,7 @@ class SaverTagContext:
     saver_cls: type[AdapterCommon]
     output_role: str | None
     target_name: str
+    data_node_name: str
     table_key: str | None
     artifact_name: str | None
     path_template: str | None
@@ -539,6 +559,7 @@ def _build_saver_tags(
         ht.TAG_TARGET: context.target_name,
     }
     tags.update(metadata_tags)
+    tags["ci.data_node"] = context.data_node_name
     if context.table_key is not None:
         tags[ht.TAG_TABLE_KEY] = context.table_key
         tags[ht.TAG_OUTPUT_KIND] = ht.OUTPUT_KIND_TABLE
@@ -593,9 +614,8 @@ def _disable_inference(provider: SchemaProvider) -> SchemaProvider:
             allow_inference=False,
             fallback_to_override_on_error=provider.fallback_to_override_on_error,
         )
-    with_inference = getattr(provider, "with_inference", None)
-    if callable(with_inference):
-        return with_inference(allow_inference=False)
+    if isinstance(provider, _SupportsInference):
+        return provider.with_inference(allow_inference=False)
     return provider
 
 

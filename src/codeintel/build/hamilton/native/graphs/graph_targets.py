@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import polars as pl
-
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -33,8 +31,9 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
+from codeintel.build.tabular.types import InferableTabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, pl.LazyFrame)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
 CALL_GRAPH_TARGET_NAME = "call_graph"
 IMPORT_GRAPH_TARGET_NAME = "import_graph"
@@ -57,13 +56,15 @@ DFG_SAVE_CONTEXT = SaverContext(domain="graphs", target=DFG_TARGET_NAME)
     spec=DatasetSaveSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_NODES_TABLE_KEY)
-def call_graph__nodes_table(call_graph_nodes: pl.LazyFrame) -> pl.LazyFrame:
+def call_graph__nodes_table(
+    call_graph_nodes: InferableTabularInput,
+) -> InferableTabularInput:
     """Persist call graph nodes.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for call graph nodes.
+    InferableTabularInput
+        Tabular input to materialize for call graph nodes.
     """
     return call_graph_nodes
 
@@ -76,13 +77,15 @@ def call_graph__nodes_table(call_graph_nodes: pl.LazyFrame) -> pl.LazyFrame:
     ),
 )
 @tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_EDGES_TABLE_KEY)
-def call_graph__edges_table(call_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
+def call_graph__edges_table(
+    call_graph_edges: InferableTabularInput,
+) -> InferableTabularInput:
     """Persist call graph edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for call graph edges.
+    InferableTabularInput
+        Tabular input to materialize for call graph edges.
     """
     return call_graph_edges
 
@@ -95,13 +98,15 @@ def call_graph__edges_table(call_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
     ),
 )
 @tag_dataset(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, table_key=IMPORT_MODULES_TABLE_KEY)
-def import_graph__modules_table(import_modules: pl.LazyFrame) -> pl.LazyFrame:
+def import_graph__modules_table(
+    import_modules: InferableTabularInput,
+) -> InferableTabularInput:
     """Persist import modules.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for import modules.
+    InferableTabularInput
+        Tabular input to materialize for import modules.
     """
     return import_modules
 
@@ -118,13 +123,15 @@ def import_graph__modules_table(import_modules: pl.LazyFrame) -> pl.LazyFrame:
     target=IMPORT_GRAPH_TARGET_NAME,
     table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
 )
-def import_graph__edges_table(import_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
+def import_graph__edges_table(
+    import_graph_edges: InferableTabularInput,
+) -> InferableTabularInput:
     """Persist import graph edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for import graph edges.
+    InferableTabularInput
+        Tabular input to materialize for import graph edges.
     """
     return import_graph_edges
 
@@ -134,13 +141,13 @@ def import_graph__edges_table(import_graph_edges: pl.LazyFrame) -> pl.LazyFrame:
     spec=DatasetSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_BLOCKS_TABLE_KEY)
-def cfg__blocks_table(cfg_blocks: pl.LazyFrame) -> pl.LazyFrame:
+def cfg__blocks_table(cfg_blocks: InferableTabularInput) -> InferableTabularInput:
     """Persist CFG blocks.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for CFG blocks.
+    InferableTabularInput
+        Tabular input to materialize for CFG blocks.
     """
     return cfg_blocks
 
@@ -150,13 +157,13 @@ def cfg__blocks_table(cfg_blocks: pl.LazyFrame) -> pl.LazyFrame:
     spec=DatasetSaveSpec(table_key=CFG_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_EDGES_TABLE_KEY)
-def cfg__edges_table(cfg_edges: pl.LazyFrame) -> pl.LazyFrame:
+def cfg__edges_table(cfg_edges: InferableTabularInput) -> InferableTabularInput:
     """Persist CFG edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for CFG edges.
+    InferableTabularInput
+        Tabular input to materialize for CFG edges.
     """
     return cfg_edges
 
@@ -166,13 +173,13 @@ def cfg__edges_table(cfg_edges: pl.LazyFrame) -> pl.LazyFrame:
     spec=DatasetSaveSpec(table_key=DFG_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=DFG_TARGET_NAME, table_key=DFG_EDGES_TABLE_KEY)
-def dfg__edges_table(dfg_edges: pl.LazyFrame) -> pl.LazyFrame:
+def dfg__edges_table(dfg_edges: InferableTabularInput) -> InferableTabularInput:
     """Persist DFG edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for DFG edges.
+    InferableTabularInput
+        Tabular input to materialize for DFG edges.
     """
     return dfg_edges
 

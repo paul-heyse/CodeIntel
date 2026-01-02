@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import libcst as cst
 from libcst import metadata
 
+from codeintel.core.spans import normalize_byte_span
+
 
 @dataclass(frozen=True)
 class CstCaptureConfig:
@@ -110,12 +112,14 @@ class LineIndexedSource:
         Returns
         -------
         tuple[int | None, int | None]
-            Start and end byte offsets, or None for invalid positions.
+            Start and end byte offsets (end exclusive), or None for invalid positions.
         """
-        return (
-            self.byte_offset(start_line, start_col),
-            self.byte_offset(end_line, end_col),
-        )
+        start_byte = self.byte_offset(start_line, start_col)
+        end_byte = self.byte_offset(end_line, end_col)
+        normalized = normalize_byte_span(start_byte, end_byte)
+        if normalized is None:
+            return None, None
+        return normalized
 
     def byte_offset(self, line: int, col: int) -> int | None:
         """Return UTF-8 byte offset for a 0-based line/column.

@@ -94,10 +94,9 @@ def _collect_rows(
 
 def subsystem_graph_metrics__base(
     env: BuildEnv,
-    _q__analytics__subsystem_modules: InferableTabularInput,
-    _q__analytics__graph_metrics_modules: InferableTabularInput,
-    _q__graph__import_graph_edges: InferableTabularInput,
-    _q__graph__import_modules: InferableTabularInput,
+    q__analytics__subsystem_modules: InferableTabularInput,
+    q__graph__import_graph_edges: InferableTabularInput,
+    q__graph__import_modules: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build subsystem graph metrics rows.
 
@@ -107,19 +106,19 @@ def subsystem_graph_metrics__base(
         Lazy frame containing subsystem graph metrics rows.
     """
     membership_rows = _collect_rows(
-        _q__analytics__subsystem_modules,
+        q__analytics__subsystem_modules,
         ("repo", "commit", "subsystem_id", "module"),
         repo=env.repo,
         commit=env.commit,
     )
     import_edge_rows = _collect_rows(
-        _q__graph__import_graph_edges,
+        q__graph__import_graph_edges,
         ("src_module", "dst_module", "module_layer"),
         repo=env.repo,
         commit=env.commit,
     )
     import_module_rows = _collect_rows(
-        _q__graph__import_modules,
+        q__graph__import_modules,
         ("module", "scc_id", "component_size", "layer"),
         repo=env.repo,
         commit=env.commit,

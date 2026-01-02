@@ -543,16 +543,29 @@ def _filter_frame_by_snapshot(
     return filtered
 
 
-def load_config_key_map(con: DuckDBConnection, repo: str, commit: str) -> dict[str, set[str]]:
-    """
-    Load config keys keyed by module for a repo snapshot.
+def load_config_key_map(
+    config_values_frame: pl.DataFrame | None,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, set[str]]:
+    """Load config keys keyed by module for a repo snapshot.
+
+    Parameters
+    ----------
+    config_values_frame
+        Frame for ``analytics.config_values``.
+    repo
+        Repo name for snapshot filtering.
+    commit
+        Commit hash for snapshot filtering.
 
     Returns
     -------
     dict[str, set[str]]
         Mapping of module name to referenced config keys.
     """
-    return _load_config_keys(con, repo, commit)
+    return _config_keys_from_frame(config_values_frame, repo=repo, commit=commit)
 
 
 def _risk_level(modes: set[str], callsite_count: int) -> str:

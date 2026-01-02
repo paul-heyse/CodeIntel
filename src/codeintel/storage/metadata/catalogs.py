@@ -213,7 +213,7 @@ def upsert_canonical_catalog(
         expression=exp.Values(expressions=[exp.Tuple(expressions=placeholders)]),
         conflict=exp.OnConflict(
             conflict_keys=[exp.to_identifier("catalog_kind"), exp.to_identifier("catalog_hash")],
-            action="update",
+            action=exp.Var(this="DO UPDATE"),
             expressions=[
                 exp.EQ(
                     this=exp.column("payload"),

@@ -16,7 +16,7 @@ GatewayPort
 RepoPort
     Protocol for filesystem repository operations.
 ToolingPort
-    Protocol for external tool runners (coverage, type checkers).
+    Protocol for external tool runners (type checkers, linters).
 """
 
 from __future__ import annotations

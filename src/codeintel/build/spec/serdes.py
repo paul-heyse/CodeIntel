@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codeintel.build.spec.primitives import (
@@ -74,7 +73,13 @@ def ensure_buildspec_hash(spec: BuildSpec) -> BuildSpec:
     expected = buildspec_hash(spec)
     if spec.buildspec_hash == expected:
         return spec
-    return replace(spec, buildspec_hash=expected)
+    return BuildSpec(
+        spec_version=spec.spec_version,
+        targets=spec.targets,
+        datasets=spec.datasets,
+        semantic=spec.semantic,
+        buildspec_hash=expected,
+    )
 
 
 def _sorted_unique(values: Iterable[str]) -> tuple[str, ...]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 
 import polars as pl
+from intervaltree import IntervalTree
 
 from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
@@ -16,7 +17,6 @@ from codeintel.build.graphs.compute.symbols import (
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -27,13 +27,15 @@ from codeintel.build.hamilton.native.patterns import (
     make_table_materializations_collector,
     save_dataset,
 )
-from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.spans import normalize_line_span, to_half_open_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -55,8 +57,8 @@ def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
 
 def _goid_spans_by_path(
     goids_frame: pl.DataFrame,
-) -> dict[str, list[tuple[int, int, int]]]:
-    spans_by_path: dict[str, list[tuple[int, int, int]]] = {}
+) -> dict[str, IntervalTree]:
+    spans_by_path: dict[str, IntervalTree] = {}
     for row in goids_frame.iter_rows(named=True):
         rel_path = row.get("rel_path")
         if not isinstance(rel_path, str):
@@ -68,18 +70,25 @@ def _goid_spans_by_path(
         if not isinstance(start_line, int):
             continue
         end_line = row.get("end_line")
-        resolved_end = end_line if isinstance(end_line, int) else start_line
-        spans_by_path.setdefault(rel_path, []).append((start_line, resolved_end, int(goid_value)))
-    for spans in spans_by_path.values():
-        spans.sort(key=lambda span: (span[1] - span[0], span[0], span[2]))
+        _, resolved_end = normalize_line_span(
+            start_line,
+            end_line if isinstance(end_line, int) else None,
+        )
+        span_start, span_end = to_half_open_span(start_line, resolved_end)
+        tree = spans_by_path.setdefault(rel_path, IntervalTree())
+        tree.addi(span_start, span_end, int(goid_value))
     return spans_by_path
 
 
-def _match_goid(spans: list[tuple[int, int, int]], line: int) -> int | None:
-    for start, end, goid in spans:
-        if start <= line <= end:
-            return goid
-    return None
+def _match_goid(tree: IntervalTree | None, line: int) -> int | None:
+    if tree is None:
+        return None
+    span_start, span_end = to_half_open_span(line, line)
+    matches = tree.overlap(span_start, span_end)
+    if not matches:
+        return None
+    best = min(matches, key=lambda item: (item.end - item.begin, item.begin, int(item.data)))
+    return int(best.data)
 
 
 def _symbol_occurrences(occurrences_frame: pl.DataFrame) -> list[SymbolOccurrence]:
@@ -135,18 +144,18 @@ def _attach_goids(
     edges: list[SymbolUseEdge],
     def_map: dict[str, tuple[str, int]],
     use_lines_by_symbol_path: dict[tuple[str, str], int],
-    goid_spans_by_path: dict[str, list[tuple[int, int, int]]],
+    goid_spans_by_path: dict[str, IntervalTree],
 ) -> list[SymbolUseEdge]:
     updated: list[SymbolUseEdge] = []
     for edge in edges:
         def_info = def_map.get(edge.symbol)
         def_goid: int | None = None
         if def_info is not None:
-            def_spans = goid_spans_by_path.get(def_info[0], [])
-            def_goid = _match_goid(def_spans, def_info[1])
-        use_spans = goid_spans_by_path.get(edge.use_path, [])
+            def_tree = goid_spans_by_path.get(def_info[0])
+            def_goid = _match_goid(def_tree, def_info[1])
+        use_tree = goid_spans_by_path.get(edge.use_path)
         use_line = use_lines_by_symbol_path.get((edge.symbol, edge.use_path))
-        use_goid = _match_goid(use_spans, use_line) if use_line is not None else None
+        use_goid = _match_goid(use_tree, use_line) if use_line is not None else None
         updated.append(
             SymbolUseEdge(
                 symbol=edge.symbol,
@@ -165,74 +174,64 @@ def symbol_use_edges_compute(
     q__core__scip_occurrences: InferableTabularInput,
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
-) -> TabularFrame:
+) -> InferableTabularInput:
     """Build symbol use edges from SCIP occurrences and GOID spans.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for computed symbol use edges.
+    InferableTabularInput
+        Tabular input for computed symbol use edges.
     """
     occurrences_frame = tabular_to_lazyframe(q__core__scip_occurrences).collect()
     if occurrences_frame.is_empty():
-        return empty_frame_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     modules_frame = tabular_to_lazyframe(q__core__modules).collect()
     goids_frame = tabular_to_lazyframe(q__core__goids).collect()
     occurrences = _symbol_occurrences(occurrences_frame)
     if not occurrences:
-        return empty_frame_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     module_by_path = _module_by_path(modules_frame)
     def_info_by_symbol = _definitions_by_symbol(occurrences)
     def_path_by_symbol = {symbol: info[0] for symbol, info in def_info_by_symbol.items()}
     edges = build_use_edges(occurrences, def_path_by_symbol, module_by_path)
     if not edges:
-        return empty_frame_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     use_lines_by_symbol_path = _reference_lines_by_symbol_path(occurrences)
     goid_spans_by_path = _goid_spans_by_path(goids_frame)
     edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_spans_by_path)
-    rows = edges_to_rows(edges)
-    frame = pl.DataFrame([dataclasses.asdict(row) for row in rows], orient="row")
-    return frame.lazy().select(
-        [
-            "symbol",
-            "def_path",
-            "use_path",
-            "same_file",
-            "same_module",
-            "def_goid_h128",
-            "use_goid_h128",
-        ]
-    )
+    rows = (dataclasses.asdict(row) for row in edges_to_rows(edges))
+    reader, _ = record_batch_reader_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
+    return reader
 
 
-def symbol_use_edges_existing(env: BuildEnv) -> TabularFrame:
+def symbol_use_edges_existing(env: BuildEnv) -> InferableTabularInput:
     """Load symbol use edges from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing symbol use edges.
+    InferableTabularInput
+        Tabular input for existing symbol use edges.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=SYMBOL_USE_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def symbol_use_edges_empty(env: BuildEnv) -> TabularFrame:
+def symbol_use_edges_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for symbol use edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for symbol use edges.
+    InferableTabularInput
+        Empty tabular input for symbol use edges.
     """
     _ = env
-    return empty_frame_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+    return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
 
 @save_dataset(
@@ -240,13 +239,15 @@ def symbol_use_edges_empty(env: BuildEnv) -> TabularFrame:
     spec=DatasetSaveSpec(table_key=SYMBOL_USE_EDGES_TABLE_KEY),
 )
 @tag_dataset(domain="graphs", target=SYMBOL_USES_TARGET_NAME, table_key=SYMBOL_USE_EDGES_TABLE_KEY)
-def symbol_use_edges__table(symbol_use_edges: pl.LazyFrame) -> pl.LazyFrame:
+def symbol_use_edges__table(
+    symbol_use_edges: InferableTabularInput,
+) -> InferableTabularInput:
     """Persist symbol use edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame to materialize for symbol use edges.
+    InferableTabularInput
+        Tabular input to materialize for symbol use edges.
     """
     return symbol_use_edges
 

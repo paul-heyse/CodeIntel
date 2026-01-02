@@ -1,8 +1,7 @@
-"""Test analytics: coverage edges, behavioral profiles, and graph metrics.
+"""Test analytics: behavioral profiles and graph metrics.
 
 This package consolidates test analytics functionality into a coherent structure:
 
-- ``coverage/``: Coverage edge computation and aggregation
 - ``behavioral/``: Behavioral tagging and importance scoring
 - ``profiles/``: Test profile building and types
 - ``graph_metrics``: Graph metrics over test-function bipartite graphs
@@ -14,9 +13,7 @@ For Hamilton native execution, use the targets under
 from __future__ import annotations
 
 from codeintel.build.analytics.testing.compute import TestGraphMetricsResult
-from codeintel.build.analytics.testing.coverage.edges import TestCoverageOptions
 
 __all__ = [
-    "TestCoverageOptions",
     "TestGraphMetricsResult",
 ]

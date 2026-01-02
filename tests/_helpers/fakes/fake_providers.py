@@ -21,7 +21,6 @@ from pathlib import Path
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.engine.status import ToolStatus
 from codeintel.ingestion.ports.tools import (
-    CoverageFileData,
     DiagnosticEntry,
     DiagnosticResult,
     ScipDocument,
@@ -42,7 +41,6 @@ from tests._helpers.records import (
 )
 
 __all__ = [
-    "FakeCoverageCollector",
     "FakeGitHistoryProvider",
     "FakeProviders",
     "FakeScipIndexer",
@@ -238,39 +236,6 @@ class FakeTypeChecker:
             error=error_message,
             duration_s=0.05,
         )
-
-
-@dataclass
-class FakeCoverageCollector:
-    """Fake coverage collector that returns pre-configured data.
-
-    Attributes
-    ----------
-    coverage_data
-        Coverage data by file path.
-    """
-
-    coverage_data: dict[str, CoverageFileData] = field(default_factory=dict)
-    collect_calls: CallRecorder[CollectCall] = field(default_factory=CallRecorder)
-
-    async def collect(
-        self,
-        coverage_file: Path,
-    ) -> Mapping[str, CoverageFileData]:
-        """Return pre-configured coverage data.
-
-        Parameters
-        ----------
-        coverage_file
-            Coverage file path.
-
-        Returns
-        -------
-        Mapping[str, CoverageFileData]
-            Pre-configured coverage data.
-        """
-        self.collect_calls.record(CollectCall(path=coverage_file))
-        return self.coverage_data
 
 
 @dataclass

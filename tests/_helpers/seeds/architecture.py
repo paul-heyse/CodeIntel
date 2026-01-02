@@ -18,12 +18,9 @@ from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.columnar_tables import materialize_table_from_rows
-from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.fixtures.rows import RowFactory
 from tests._helpers.gateway import GatewayFactory, seed_contract_catalog
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
-from tests._helpers.orchestration import seed_coverage_rows
-from tests._helpers.orchestration.coverage_orchestration import CoverageSeedOptions
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -41,6 +38,12 @@ def _table_columns(gateway: StorageGateway, table_key: str) -> tuple[str, ...]:
 
 def _row_mapping(columns: Sequence[str], values: Sequence[object]) -> dict[str, object]:
     return dict(zip(columns, values, strict=True))
+
+
+DEFAULT_FUNCTION_GOID: int = 1
+DEFAULT_TEST_GOID: int = 10
+DEFAULT_MODULE_IMPORT: str = "pkg.mod"
+DEFAULT_REL_PATH: str = "pkg/mod.py"
 
 
 @dataclass(frozen=True)
@@ -116,7 +119,6 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
         ("DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.typedness WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.static_diagnostics WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.hotspots WHERE rel_path LIKE ?", ["%"]),
@@ -201,9 +203,9 @@ def seed_architecture(
     apply_all_schemas(gateway.con)
     _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
     now = datetime.now(UTC)
-    seed = CoverageSeedConfig(test_goid=10)
-    rel_path = Path(seed.module_import.replace(".", "/")).with_suffix(".py").as_posix()
-    module_map = _resolve_architecture_module_map(repo_root, rel_path, seed.module_import)
+    rel_path = DEFAULT_REL_PATH
+    module_import = DEFAULT_MODULE_IMPORT
+    module_map = _resolve_architecture_module_map(repo_root, rel_path, module_import)
     context = _ArchitectureSeedContext(
         gateway=gateway,
         repo=repo,
@@ -213,10 +215,10 @@ def seed_architecture(
         append=MaterializeOptions(mode="append"),
         repo_root=repo_root,
         rel_path=rel_path,
-        module_import=seed.module_import,
+        module_import=module_import,
         module_map=module_map,
     )
-    _seed_core_tables(context, seed)
+    _seed_core_tables(context)
     _seed_function_metrics(context)
     _seed_graph_metrics(context)
     _seed_additional_analytics(context)
@@ -224,7 +226,7 @@ def seed_architecture(
     return gateway
 
 
-def _seed_core_tables(context: _ArchitectureSeedContext, seed: CoverageSeedConfig) -> None:
+def _seed_core_tables(context: _ArchitectureSeedContext) -> None:
     repo_map_columns = _table_columns(context.gateway, "core.repo_map")
     materialize_table_from_rows(
         context.warehouse,
@@ -238,17 +240,7 @@ def _seed_core_tables(context: _ArchitectureSeedContext, seed: CoverageSeedConfi
         columns=repo_map_columns,
         options=context.append,
     )
-    seed_coverage_rows(
-        gateway=context.gateway,
-        rel_path=context.rel_path,
-        seed=seed,
-        options=CoverageSeedOptions(
-            include_test_catalog=False,
-            seed_repo_map=False,
-        ),
-    )
     core_module_map = dict(context.module_map)
-    core_module_map.pop(context.module_import, None)
     context.warehouse.materialize_mappings(
         "core.modules",
         [
@@ -262,6 +254,38 @@ def _seed_core_tables(context: _ArchitectureSeedContext, seed: CoverageSeedConfi
                 "owners": [],
             }
             for module, path in sorted(core_module_map.items())
+        ],
+        options=context.append,
+    )
+    context.warehouse.materialize_mappings(
+        "core.goids",
+        [
+            {
+                "goid_h128": DEFAULT_FUNCTION_GOID,
+                "urn": "goid:demo/repo#python:function:pkg.mod.func",
+                "repo": context.repo,
+                "commit": context.commit,
+                "rel_path": context.rel_path,
+                "language": "python",
+                "kind": "function",
+                "qualname": "pkg.mod.func",
+                "start_line": 1,
+                "end_line": 2,
+                "created_at": context.now,
+            },
+            {
+                "goid_h128": DEFAULT_TEST_GOID,
+                "urn": "goid:demo/repo#python:function:pkg.mod.test_func",
+                "repo": context.repo,
+                "commit": context.commit,
+                "rel_path": context.rel_path,
+                "language": "python",
+                "kind": "function",
+                "qualname": "pkg.mod.test_func",
+                "start_line": 1,
+                "end_line": 2,
+                "created_at": context.now,
+            },
         ],
         options=context.append,
     )
@@ -697,7 +721,7 @@ def _seed_graph_tables(context: _ArchitectureSeedContext) -> None:
                 test_catalog_columns,
                 (
                     "pkg/mod.py::test_func",
-                    10,
+                    DEFAULT_TEST_GOID,
                     "goid:demo/repo#python:function:pkg.mod.test_func",
                     repo,
                     commit,
@@ -714,33 +738,6 @@ def _seed_graph_tables(context: _ArchitectureSeedContext) -> None:
             )
         ],
         columns=test_catalog_columns,
-        options=context.append,
-    )
-    test_coverage_columns = _table_columns(context.gateway, "analytics.test_coverage_edges")
-    materialize_table_from_rows(
-        context.warehouse,
-        "analytics.test_coverage_edges",
-        [
-            _row_mapping(
-                test_coverage_columns,
-                (
-                    "pkg/mod.py::test_func",
-                    10,
-                    1,
-                    "goid:demo/repo#python:function:pkg.mod.func",
-                    repo,
-                    commit,
-                    "pkg/mod.py",
-                    "pkg.mod.func",
-                    2,
-                    2,
-                    1.0,
-                    "passed",
-                    now,
-                ),
-            )
-        ],
-        columns=test_coverage_columns,
         options=context.append,
     )
     typedness_columns = _table_columns(context.gateway, "analytics.typedness")

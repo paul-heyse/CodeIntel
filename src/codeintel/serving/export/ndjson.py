@@ -12,6 +12,13 @@ if TYPE_CHECKING:
 
 
 try:
+    import orjson
+
+    _ORJSON = orjson
+except ImportError:
+    _ORJSON = None
+
+try:
     import msgspec
 
     _MSG_ENCODER: msgspec.json.Encoder | None = msgspec.json.Encoder()
@@ -31,6 +38,8 @@ def encode_ndjson_line(row: Mapping[str, object]) -> bytes:
         Serialized JSONL line with a trailing newline.
     """
     payload_row = coerce_export_row(row)
+    if _ORJSON is not None:
+        return _ORJSON.dumps(payload_row, option=_ORJSON.OPT_APPEND_NEWLINE)
     if _MSG_ENCODER is not None:
         return _MSG_ENCODER.encode(payload_row) + b"\n"
     payload = json.dumps(

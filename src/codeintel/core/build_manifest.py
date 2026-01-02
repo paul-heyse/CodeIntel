@@ -7,8 +7,9 @@ violations (storage must not import build).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
+
+import msgspec
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -17,8 +18,7 @@ BuildStatus = Literal["running", "succeeded", "failed"]
 """Status of a build run."""
 
 
-@dataclass(frozen=True)
-class OutputManifest:
+class OutputManifest(msgspec.Struct, frozen=True):
     """Record of a target's computation."""
 
     target: str
@@ -35,8 +35,7 @@ class OutputManifest:
     change_delta: dict[str, object] | None = None
 
 
-@dataclass(frozen=True)
-class BuildRunRecord:
+class BuildRunRecord(msgspec.Struct, frozen=True):
     """Record of a build system run."""
 
     run_id: str

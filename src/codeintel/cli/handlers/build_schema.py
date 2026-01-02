@@ -13,6 +13,7 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.build.schemas.diff import compute_manifest_diffs
+from codeintel.build.schemas.inference_service import inferability_inventory
 from codeintel.build.schemas.manifest import (
     ArtifactProvenance,
     ExportArtifact,
@@ -22,6 +23,7 @@ from codeintel.build.schemas.manifest import (
 )
 from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import InferabilityInfo, ListResult
 from codeintel.cli.errors.results import (
     fail_execution_failed,
     fail_file_not_found,
@@ -238,6 +240,46 @@ def _compile_manifest(ctx: CommandContext) -> _CompiledManifest:
         artifact_count=len(manifest.artifacts),
         manifest=manifest,
     )
+
+
+def build_schema_inferability_handler(
+    ctx: CommandContext,
+) -> CliResult[ListResult[InferabilityInfo]]:
+    """Return inferability inventory for DAG-produced table outputs.
+
+    Returns
+    -------
+    CliResult[ListResult[InferabilityInfo]]
+        Inferability records filtered by the requested selection.
+    """
+    selection = _parse_selection(ctx)
+    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    catalog = runtime_bundle.catalog
+    records = inferability_inventory(driver=runtime_bundle.driver, catalog=catalog)
+    filtered: list[InferabilityInfo] = []
+    target_filter = set(selection.targets or ())
+    for record in records:
+        if target_filter and record.target_name not in target_filter:
+            continue
+        if selection.module is not None:
+            target = catalog.targets.get(record.target_name)
+            if target is None or target.module != selection.module:
+                continue
+        filtered.append(
+            InferabilityInfo(
+                table_key=record.table_key,
+                status=record.status,
+                target_name=record.target_name,
+                saver_node=record.saver_node,
+                sink=record.sink,
+                compute_node=record.compute_node,
+                reason=record.reason,
+                qparams=record.qparams,
+                requires_env=record.requires_env,
+                requires_catalog=record.requires_catalog,
+            )
+        )
+    return CliResult.ok(ListResult.from_items(filtered))
 
 
 def _parse_column_from_json(col_obj: dict[str, object]) -> Column:

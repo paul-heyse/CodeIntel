@@ -733,10 +733,10 @@ This aligns with your best‑in‑class notes:
 
 ### Phase 2 — Coordinate normalization + GOID alignment
 
-- [ ] `src/codeintel/ingestion/compute/ast_extract.py`: normalize AST line base to 0-based for GOID joins.
-- [ ] `src/codeintel/build/hamilton/native/graphs/goids.py`: adjust GOID and crosswalk rows to the 0-based contract.
-- [ ] `src/codeintel/core/schemas/output_registry.py`: add `core.file_line_index` schema (if adopted).
-- [ ] `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`: add a target to materialize `core.file_line_index`.
+- [x] `src/codeintel/ingestion/compute/ast_extract.py`: normalize AST line base to 0-based for GOID joins.
+- [x] `src/codeintel/build/hamilton/native/graphs/goids.py`: adjust GOID and crosswalk rows to the 0-based contract.
+- [x] `src/codeintel/core/schemas/output_registry.py`: add `core.file_line_index` schema (if adopted).
+- [x] `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`: add a target to materialize `core.file_line_index`.
 
 ### Phase 3 — SCIP ingestion upgrades (encoding + streaming)
 

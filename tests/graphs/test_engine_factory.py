@@ -18,9 +18,9 @@ def test_build_graph_engine_uses_backend_flags(graph_gateway: StorageGateway) ->
     """Graph engine factory honors backend GPU preference."""
     env: dict[str, str] = {}
     engine = build_graph_engine(
-        graph_gateway,
-        ("demo/repo", "deadbeef"),
-        EngineBuildOptions(
+        snapshot=("demo/repo", "deadbeef"),
+        dataset_root_dir=graph_gateway.datasets.dataset_root_dir,
+        options=EngineBuildOptions(
             graph_backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
             env=env,
         ),
@@ -40,9 +40,9 @@ def test_build_graph_engine_cpu_backend_leaves_env_clean(graph_gateway: StorageG
     """CPU backend path should not set GPU env flags."""
     env: dict[str, str] = {}
     engine = build_graph_engine(
-        graph_gateway,
-        ("demo/repo", "deadbeef"),
-        EngineBuildOptions(
+        snapshot=("demo/repo", "deadbeef"),
+        dataset_root_dir=graph_gateway.datasets.dataset_root_dir,
+        options=EngineBuildOptions(
             graph_backend=GraphBackendConfig(use_gpu=False, backend="cpu", strict=False),
             env=env,
         ),

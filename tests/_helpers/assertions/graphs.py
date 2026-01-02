@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
@@ -130,19 +130,6 @@ def assert_graph_metrics_for_goids(ctx: TestContext, goids: Iterable[int]) -> No
 def assert_cycle_counts(graph: nx.DiGraph, expected: int) -> None:
     """Assert the directed graph contains the expected number of simple cycles."""
     expect_equal(len(tuple(nx.simple_cycles(graph))), expected)
-
-
-def assert_coverage_ratio_between(ctx: TestContext, goid: int, *, low: float, high: float) -> None:
-    """Assert coverage ratio for a GOID falls within bounds."""
-    row = ctx.query(
-        """
-        SELECT coverage_ratio FROM analytics.coverage_functions
-        WHERE function_goid_h128 = ?
-        """,
-        [goid],
-    )[0]
-    ratio = float(cast("float", row.coverage_ratio))
-    expect_true(low <= ratio <= high, message=f"coverage_ratio {ratio} outside [{low}, {high}]")
 
 
 def _count_for_snapshot(con: DuckDBPyConnection, snapshot: SnapshotRef, query: str) -> int:
@@ -424,7 +411,6 @@ __all__ = [
     "GraphMetricsTableExpectations",
     "ModuleMetricsExpectation",
     "assert_component_counts",
-    "assert_coverage_ratio_between",
     "assert_cycle_counts",
     "assert_cycle_membership",
     "assert_filtered_graph",

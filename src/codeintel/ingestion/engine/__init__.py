@@ -15,7 +15,6 @@ Supported Tools
 - pyright: Type checking and diagnostics
 - pyrefly: Additional type checking
 - ruff: Linting and formatting
-- coverage: Code coverage analysis
 - scip-python: Symbol indexing
 - pytest: Test execution
 
@@ -41,8 +40,6 @@ from codeintel.ingestion.engine.plugins import (
     build_default_registry,
 )
 from codeintel.ingestion.engine.results import (
-    CoverageFileSummary,
-    CoverageReport,
     DiagnosticReport,
     FileDiagnosticCount,
     ParsedToolResult,
@@ -56,8 +53,6 @@ from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.engine.status import ToolStatus
 
 __all__ = [
-    "CoverageFileSummary",
-    "CoverageReport",
     "DiagnosticReport",
     "FileDiagnosticCount",
     "ParsedToolResult",

@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from intervaltree import IntervalTree
+
+from codeintel.core.spans import to_half_open_span
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
@@ -54,8 +58,8 @@ def _qualname_matches(full: str, candidate: str) -> bool:
 class SpanIndex:
     """Lookup structure for resolving GOIDs from file spans.
 
-    This index provides efficient O(n) lookup of function GOIDs based on
-    file path and line numbers, with support for qualname disambiguation.
+    This index provides fast lookups of function GOIDs based on file
+    path and line numbers, with support for qualname disambiguation.
 
     Examples
     --------
@@ -82,14 +86,30 @@ class SpanIndex:
         """
         self._normalize = path_normalizer or normalize_path
         self._by_path: dict[str, list[FunctionSpan]] = {}
+        self._tree_by_path: dict[str, IntervalTree] = {}
 
         for span in spans:
             path = self._normalize(span.rel_path)
             self._by_path.setdefault(path, []).append(span)
 
         # Sort spans by line for consistent lookup order
-        for path_spans in self._by_path.values():
+        for path, path_spans in self._by_path.items():
             path_spans.sort(key=lambda s: (s.start_line, s.end_line))
+            tree = IntervalTree()
+            for span in path_spans:
+                start, end = to_half_open_span(span.start_line, span.end_line)
+                tree.addi(start, end, span)
+            self._tree_by_path[path] = tree
+
+    @staticmethod
+    def _sorted_spans(matches: Iterable[object]) -> list[FunctionSpan]:
+        spans: list[FunctionSpan] = []
+        for match in matches:
+            span = getattr(match, "data", None)
+            if span is not None:
+                spans.append(span)
+        spans.sort(key=lambda s: (s.start_line, s.end_line))
+        return spans
 
     def paths(self) -> list[str]:
         """Return paths with at least one function span.
@@ -220,18 +240,19 @@ class SpanIndex:
         int | None
             GOID when found; otherwise None.
         """
-        spans_list = self._by_path.get(self._normalize(rel_path))
-        if spans_list is None:
+        path = self._normalize(rel_path)
+        tree = self._tree_by_path.get(path)
+        if tree is None:
             return None
-        spans: list[FunctionSpan] = spans_list
-        if not spans:
-            return None
-
         start = int(start_line)
         end = int(end_line) if end_line is not None else start
+        query_start, query_end = to_half_open_span(start, end)
+        candidates = self._sorted_spans(tree.overlap(query_start, query_end))
+        if not candidates:
+            return None
 
         def _first_match(predicate: Callable[[FunctionSpan], bool]) -> int | None:
-            for span in spans:
+            for span in candidates:
                 if predicate(span):
                     return span.goid
             return None

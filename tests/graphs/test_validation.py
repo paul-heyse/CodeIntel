@@ -69,7 +69,7 @@ def test_run_graph_validations_emits_warnings(
             snapshot=snapshot,
             runtime=runtime_with_graphs(gateway, snapshot)[0],
         )
-        report = run_graph_validations_with_runner(gateway, request=request)
+        report = run_graph_validations_with_runner(request=request)
 
     messages = " ".join(record.message for record in caplog.records)
     expected = ["outside caller spans", "module(s) have no GOIDs"]
@@ -92,7 +92,7 @@ def test_run_graph_validations_snapshot_mismatch_raises(
         runtime=mismatched_runtime,
     )
     with pytest.raises(ValueError, match="GraphRuntime snapshot mismatch"):
-        run_graph_validations_with_runner(gateway, request=request)
+        run_graph_validations_with_runner(request=request)
 
 
 def test_run_graph_validations_hard_fail_on_error(
@@ -122,7 +122,7 @@ def test_run_graph_validations_hard_fail_on_error(
         ),
     )
     with pytest.raises(RuntimeError, match="error-level findings"):
-        run_graph_validations_with_runner(gateway, request=request)
+        run_graph_validations_with_runner(request=request)
 
 
 def test_run_graph_validations_caps_findings(
@@ -145,7 +145,7 @@ def test_run_graph_validations_caps_findings(
         runtime=runtime,
         options=GraphValidationOptions(max_findings_per_rule=1),
     )
-    run_graph_validations_with_runner(gateway, request=request)
+    run_graph_validations_with_runner(request=request)
     rows = gateway.con.execute(
         "SELECT graph_name, COUNT(*) FROM analytics.graph_validation GROUP BY graph_name"
     ).fetchall()
@@ -165,7 +165,7 @@ def test_call_graph_check_with_isolated_nodes() -> None:
     graph.nodes[4]["kind"] = "function"
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         call_graph=graph,
@@ -195,7 +195,7 @@ def test_call_graph_check_with_scc() -> None:
     graph.add_edge(4, 0)
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         call_graph=graph,
@@ -219,7 +219,7 @@ def test_call_graph_check_with_hub_nodes() -> None:
         graph.add_edge(hub_node, i)
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         call_graph=graph,
@@ -237,7 +237,7 @@ def test_call_graph_check_empty_graph() -> None:
     graph = empty_digraph()
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         call_graph=graph,
@@ -260,7 +260,7 @@ def test_import_cycle_check_detects_large_cycles() -> None:
         graph.add_edge(cycle_modules[i], cycle_modules[(i + 1) % len(cycle_modules)])
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         import_graph=graph,
@@ -281,7 +281,7 @@ def test_import_cycle_check_detects_cross_package_cycles() -> None:
     graph.add_edge("pkg2.b", "pkg1.a")
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         import_graph=graph,
@@ -308,7 +308,7 @@ def test_import_hub_check_detects_hubs() -> None:
         graph.add_edge(hub, target)
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         import_graph=graph,
@@ -329,7 +329,7 @@ def test_import_upward_check_detects_layer_violations() -> None:
     graph.add_edge("deep.module", "shallow.module")
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         import_graph=graph,
@@ -350,7 +350,7 @@ def test_import_upward_check_ignores_downward() -> None:
     graph.add_edge("shallow.module", "deep.module")
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         import_graph=graph,
@@ -376,7 +376,7 @@ def test_import_bridge_check_detects_bridges() -> None:
     graph.add_edge("b.bridge", "e.mod")
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         import_graph=graph,
@@ -396,7 +396,7 @@ def test_import_graph_check_combines_checks() -> None:
     graph.add_edge("pkg.b", "pkg.c")
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         import_graph=graph,
@@ -420,7 +420,7 @@ def test_symbol_graph_check_detects_hubs() -> None:
         graph.add_edge(hub, node)
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         symbol_graph=graph,
@@ -437,7 +437,7 @@ def test_symbol_graph_check_empty_graph() -> None:
     graph = empty_graph()
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         symbol_graph=graph,
@@ -462,7 +462,7 @@ def test_config_key_check_detects_broad_usage() -> None:
         graph.add_edge(config_key, module)
 
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         logger=logging.getLogger("test"),
@@ -479,7 +479,7 @@ def test_config_key_check_detects_broad_usage() -> None:
 def test_config_key_check_empty_graph() -> None:
     """ConfigKeyCheck returns empty for empty graph."""
     ctx = GraphValidationContext(
-        gateway=None,
+        dataset_root_dir=None,
         repo=TEST_REPO,
         commit=TEST_COMMIT,
         logger=logging.getLogger("test"),

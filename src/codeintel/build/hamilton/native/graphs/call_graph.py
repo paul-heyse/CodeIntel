@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,9 +12,10 @@ import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
-from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
@@ -203,6 +205,19 @@ def _edge_rows_for_module(
     return edge_rows
 
 
+def _edge_rows(
+    context: _CallGraphEdgeContext,
+    *,
+    module_by_path: dict[str, str],
+) -> Iterable[dict[str, object]]:
+    for rel_path, module_name in module_by_path.items():
+        yield from _edge_rows_for_module(
+            context,
+            rel_path=rel_path,
+            module_name=module_name,
+        )
+
+
 def call_graph_nodes_compute(
     env: BuildEnv,
     q__core__goids: InferableTabularInput,
@@ -276,17 +291,17 @@ def call_graph_edges_compute(
     env: BuildEnv,
     q__core__goids: InferableTabularInput,
     q__core__modules: InferableTabularInput,
-) -> TabularFrame:
+) -> InferableTabularInput:
     """Build a minimal call graph edges frame from local name resolution.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for computed call graph edges.
+    InferableTabularInput
+        Tabular input for computed call graph edges.
     """
     goids = tabular_to_lazyframe(q__core__goids).collect()
     if goids.is_empty():
-        return empty_frame_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
+        return empty_reader_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
     modules = tabular_to_lazyframe(q__core__modules).collect()
     module_by_path = _module_by_path(modules)
@@ -301,89 +316,65 @@ def call_graph_edges_compute(
         goid_language=goid_language,
     )
 
-    edge_rows: list[dict[str, object]] = []
-    for rel_path, module_name in module_by_path.items():
-        edge_rows.extend(
-            _edge_rows_for_module(
-                edge_context,
-                rel_path=rel_path,
-                module_name=module_name,
-            )
-        )
-
-    if not edge_rows:
-        return empty_frame_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
-    frame = pl.DataFrame(edge_rows)
-    return frame.lazy().select(
-        [
-            "repo",
-            "commit",
-            "caller_goid_h128",
-            "callee_goid_h128",
-            "callsite_path",
-            "callsite_line",
-            "callsite_col",
-            "language",
-            "kind",
-            "resolved_via",
-            "confidence",
-            "evidence_json",
-        ]
+    reader, _ = record_batch_reader_for_rows(
+        CALL_GRAPH_EDGES_TABLE_KEY,
+        _edge_rows(edge_context, module_by_path=module_by_path),
     )
+    return reader
 
 
-def call_graph_nodes_existing(env: BuildEnv) -> TabularFrame:
+def call_graph_nodes_existing(env: BuildEnv) -> InferableTabularInput:
     """Load call graph nodes from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing call graph nodes.
+    InferableTabularInput
+        Tabular input for existing call graph nodes.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=CALL_GRAPH_NODES_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def call_graph_edges_existing(env: BuildEnv) -> TabularFrame:
+def call_graph_edges_existing(env: BuildEnv) -> InferableTabularInput:
     """Load call graph edges from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing call graph edges.
+    InferableTabularInput
+        Tabular input for existing call graph edges.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=CALL_GRAPH_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def call_graph_nodes_empty(env: BuildEnv) -> TabularFrame:
+def call_graph_nodes_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for call graph nodes.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for call graph nodes.
+    InferableTabularInput
+        Empty tabular input for call graph nodes.
     """
     _ = env
-    return empty_frame_for_table(CALL_GRAPH_NODES_TABLE_KEY)
+    return empty_reader_for_table(CALL_GRAPH_NODES_TABLE_KEY)
 
 
-def call_graph_edges_empty(env: BuildEnv) -> TabularFrame:
+def call_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for call graph edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for call graph edges.
+    InferableTabularInput
+        Empty tabular input for call graph edges.
     """
     _ = env
-    return empty_frame_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
+    return empty_reader_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
 
 __all__ = [

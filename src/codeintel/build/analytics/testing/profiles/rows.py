@@ -1,4 +1,4 @@
-"""Row assembly helpers for test and behavioral coverage profiles."""
+"""Row assembly helpers for test profiles."""
 
 from __future__ import annotations
 
@@ -10,20 +10,14 @@ from codeintel.build.analytics.testing.behavioral.importance import (
     compute_flakiness_score,
     compute_importance_score,
 )
-from codeintel.build.analytics.testing.coverage.inputs import (
-    FunctionCoverageEntry,
-    SubsystemCoverageEntry,
-    TestGraphMetrics,
-)
 from codeintel.build.analytics.testing.profiles.types import (
+    FunctionCoverageEntry,
     ImportanceInputs,
+    SubsystemCoverageEntry,
     TestAstInfo,
+    TestGraphMetrics,
     TestProfileContext,
     TestProfileOptions,
-)
-from codeintel.build.analytics.utilities.type_coercion import optional_int
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTestProfileRow as ProfileRowModel,
@@ -214,52 +208,6 @@ def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> Prof
         tg_proj_betweenness=tg_entry.proj_betweenness,
         created_at=now,
     )
-
-
-def build_behavioral_coverage_rows(
-    rows: Iterable[tuple[object, ...]],
-) -> list[BehavioralCoverageRowModel]:
-    """Build BehavioralCoverageRowModel entries from tuples returned by the behavior helper.
-
-    Returns
-    -------
-    list[BehavioralCoverageRowModel]
-        Row models for behavioral coverage.
-    """
-    models: list[BehavioralCoverageRowModel] = []
-    for row in rows:
-        (
-            repo,
-            commit,
-            test_id,
-            test_goid_h128,
-            rel_path,
-            qualname,
-            behavior_tags,
-            tag_source,
-            heuristic_version,
-            llm_model,
-            llm_run_id,
-            created_at,
-        ) = row
-        created_at_value = created_at if isinstance(created_at, datetime) else datetime.now(tz=UTC)
-        models.append(
-            BehavioralCoverageRowModel(
-                repo=str(repo),
-                commit=str(commit),
-                test_id=str(test_id),
-                test_goid_h128=optional_int(test_goid_h128),
-                rel_path=str(rel_path),
-                qualname=str(qualname) if qualname is not None else None,
-                behavior_tags=behavior_tags,
-                tag_source=str(tag_source),
-                heuristic_version=str(heuristic_version) if heuristic_version is not None else None,
-                llm_model=str(llm_model) if llm_model is not None else None,
-                llm_run_id=str(llm_run_id) if llm_run_id is not None else None,
-                created_at=created_at_value,
-            )
-        )
-    return models
 
 
 def _normalize_markers(markers: list[str] | None) -> list[str]:

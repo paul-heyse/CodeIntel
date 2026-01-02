@@ -1,20 +1,20 @@
 """BuildSpec primitives.
 
-These dataclasses define the stable, serialized contract produced by BuildSpec
-compilation. The compiler (PR-76) is responsible for populating these from the
-Hamilton DAG and canonical schema provider.
+These immutable structs define the stable, serialized contract produced by
+BuildSpec compilation. The compiler (PR-76) is responsible for populating these
+from the Hamilton DAG and canonical schema provider.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Literal
+
+import msgspec
 
 ImplKind = Literal["native"]
 
 
-@dataclass(frozen=True)
-class DatasetSpec:
+class DatasetSpec(msgspec.Struct, frozen=True):
     """Dataset entry in a BuildSpec."""
 
     table_key: str
@@ -22,8 +22,7 @@ class DatasetSpec:
     columns: tuple[str, ...] | None = None
 
 
-@dataclass(frozen=True)
-class ArtifactOutSpec:
+class ArtifactOutSpec(msgspec.Struct, frozen=True):
     """Artifact output entry for a target."""
 
     name: str
@@ -31,32 +30,29 @@ class ArtifactOutSpec:
     path_template: str | None = None
 
 
-@dataclass(frozen=True)
-class TargetSpec:
+class TargetSpec(msgspec.Struct, frozen=True):
     """Target entry in a BuildSpec."""
 
     name: str
     domain: str
     impl_kind: ImplKind
-    deps: tuple[str, ...] = field(default_factory=tuple)
-    outputs: tuple[str, ...] = field(default_factory=tuple)
-    artifacts: tuple[ArtifactOutSpec, ...] = field(default_factory=tuple)
+    deps: tuple[str, ...] = msgspec.field(default_factory=tuple)
+    outputs: tuple[str, ...] = msgspec.field(default_factory=tuple)
+    artifacts: tuple[ArtifactOutSpec, ...] = msgspec.field(default_factory=tuple)
 
 
-@dataclass(frozen=True)
-class SemanticSpec:
+class SemanticSpec(msgspec.Struct, frozen=True):
     """Optional pointer to semantic layer metadata."""
 
     version: str | None = None
 
 
-@dataclass(frozen=True)
-class BuildSpec:
+class BuildSpec(msgspec.Struct, frozen=True):
     """Deterministic compiled contract for the build DAG."""
 
     spec_version: int
-    targets: tuple[TargetSpec, ...] = field(default_factory=tuple)
-    datasets: tuple[DatasetSpec, ...] = field(default_factory=tuple)
+    targets: tuple[TargetSpec, ...] = msgspec.field(default_factory=tuple)
+    datasets: tuple[DatasetSpec, ...] = msgspec.field(default_factory=tuple)
     semantic: SemanticSpec | None = None
     buildspec_hash: str = ""
 

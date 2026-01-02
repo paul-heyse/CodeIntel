@@ -47,21 +47,6 @@ def load_table_spec(spec: DataAccessSpec) -> Callable[..., InferableTabularInput
     )
 
 
-def load_query_spec(spec: DataAccessSpec) -> Callable[..., InferableTabularInput]:
-    """Build a loader node from a query access spec.
-
-    Raises
-    ------
-    ValueError
-        Always raised because SQL-based loaders are deprecated.
-    """
-    if spec.sql:
-        msg = "load_query_spec is deprecated; use dataset-backed loaders instead"
-        raise ValueError(msg)
-    msg = "load_query_spec requires DataAccessSpec.sql to be set"
-    raise ValueError(msg)
-
-
 def load_access(spec: DataAccessSpec) -> Callable[..., InferableTabularInput]:
     """Build a loader node from a table/query access spec.
 
@@ -69,15 +54,20 @@ def load_access(spec: DataAccessSpec) -> Callable[..., InferableTabularInput]:
     -------
     Callable[..., InferableTabularInput]
         Loader function that returns a tabular input.
+
+    Raises
+    ------
+    ValueError
+        If the spec includes a SQL query.
     """
     if spec.sql:
-        return load_query_spec(spec)
+        msg = "SQL-backed access specs are deprecated; use dataset-backed loaders instead"
+        raise ValueError(msg)
     return load_table_spec(spec)
 
 
 __all__ = [
     "DataAccessSpec",
     "load_access",
-    "load_query_spec",
     "load_table_spec",
 ]

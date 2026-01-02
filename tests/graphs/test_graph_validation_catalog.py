@@ -43,7 +43,7 @@ def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestE
         runtime=runtime_with_graphs(gateway, snapshot)[0],
         catalog_provider=provider,
     )
-    run_graph_validations_with_runner(gateway, request=request)
+    run_graph_validations_with_runner(request=request)
     rows = con.execute(
         """
         SELECT rel_path

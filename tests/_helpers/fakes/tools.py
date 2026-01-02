@@ -25,7 +25,6 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolRunResult,
 )
 from codeintel.ingestion.engine.results import (
-    CoverageReport,
     ScipDocument,
     ScipIndexResult,
     ScipOccurrence,
@@ -179,9 +178,6 @@ class FakeToolRunner(ToolRunner):
         str
             Text payload used for output files.
         """
-        if tool is ToolName.COVERAGE:
-            payload = self.payloads.get("coverage_json", self.payloads.get("json", {}))
-            return self._stringify_payload(payload)
         if tool is ToolName.PYREFLY:
             payload = self.payloads.get("pyrefly_json", self.payloads.get("json", {}))
             return self._stringify_payload(payload)
@@ -354,8 +350,6 @@ class FakeToolServiceConfig:
         Mapping of file paths to error counts for pyrefly.
     ruff_errors : dict[str, int]
         Mapping of file paths to error counts for ruff.
-    coverage_report : CoverageReport | None
-        Coverage report to return, or None for empty.
     scip_result : ScipIndexResult | None
         SCIP result to return, or None for empty.
     pytest_success : bool
@@ -366,8 +360,6 @@ class FakeToolServiceConfig:
         Exception to raise on pyrefly calls.
     raise_on_ruff : Exception | None
         Exception to raise on ruff calls.
-    raise_on_coverage : Exception | None
-        Exception to raise on coverage calls.
     raise_on_scip : Exception | None
         Exception to raise on scip calls.
     raise_on_pytest : Exception | None
@@ -377,13 +369,11 @@ class FakeToolServiceConfig:
     pyright_errors: dict[str, int] = field(default_factory=dict)
     pyrefly_errors: dict[str, int] = field(default_factory=dict)
     ruff_errors: dict[str, int] = field(default_factory=dict)
-    coverage_report: CoverageReport | None = None
     scip_result: ScipIndexResult | None = None
     pytest_success: bool = True
     raise_on_pyright: Exception | None = None
     raise_on_pyrefly: Exception | None = None
     raise_on_ruff: Exception | None = None
-    raise_on_coverage: Exception | None = None
     raise_on_scip: Exception | None = None
     raise_on_pytest: Exception | None = None
 
@@ -480,47 +470,6 @@ class FakeToolService(ToolService):
             raise self.fake_config.raise_on_ruff
         return dict(self.fake_config.ruff_errors)
 
-    async def run_coverage_report(
-        self,
-        repo_root: Path,
-        *,
-        coverage_file: Path | None = None,
-        output_path: Path | None = None,
-    ) -> CoverageReport:
-        """Run coverage and return configured report.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root (logged but not used).
-        coverage_file
-            Coverage file path (logged but not used).
-        output_path
-            Output path (logged but not used).
-
-        Returns
-        -------
-        CoverageReport
-            Configured coverage report.
-        """
-        args: list[str] = []
-        if coverage_file is not None:
-            args.append(str(coverage_file))
-        if output_path is not None:
-            args.append(str(output_path))
-        self.calls.record(
-            ToolRunCall(
-                tool="coverage",
-                args=args,
-                cwd=repo_root,
-                timeout_ms=None,
-                env=None,
-            )
-        )
-        if self.fake_config.raise_on_coverage is not None:
-            raise self.fake_config.raise_on_coverage
-        return self.fake_config.coverage_report or CoverageReport.empty()
-
     async def run_scip_full(self, request: ScipRunRequest) -> ScipIndexResult:
         """Run full SCIP indexing and return configured result.
 
@@ -597,10 +546,7 @@ class FakeToolService(ToolService):
         )
 
 
-def make_success_tool_service(
-    *,
-    coverage_report: CoverageReport | None = None,
-) -> FakeToolService:
+def make_success_tool_service() -> FakeToolService:
     """Create a FakeToolService configured for successful tool runs.
 
     Returns
@@ -613,12 +559,6 @@ def make_success_tool_service(
             pyright_errors={"mod.py": 2, "other.py": 0},
             pyrefly_errors={"mod.py": 1},
             ruff_errors={"style.py": 3},
-            coverage_report=coverage_report
-            or CoverageReport.from_file_reports(
-                [
-                    ("mod.py", {1, 2, 3}, {4, 5}),
-                ]
-            ),
             pytest_success=True,
         )
     )
@@ -636,7 +576,6 @@ def make_failing_tool_service() -> FakeToolService:
         raise_on_pyright=RuntimeError("pyright failed"),
         raise_on_pyrefly=RuntimeError("pyrefly failed"),
         raise_on_ruff=OSError("ruff failed"),
-        raise_on_coverage=ValueError("coverage failed"),
         raise_on_scip=RuntimeError("SCIP failed"),
         raise_on_pytest=RuntimeError("pytest failed"),
     )

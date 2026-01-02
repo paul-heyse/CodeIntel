@@ -181,21 +181,20 @@ def entrypoint_module_frames(
 
 
 def entrypoint_test_frames(
-    q__analytics__coverage_functions: InferableTabularInput,
     q__analytics__test_catalog: InferableTabularInput,
-    q__analytics__test_coverage_edges: InferableTabularInput,
 ) -> EntrypointTestFrames:
     """Collect test-related frames for entrypoint detection.
 
     Returns
     -------
     EntrypointTestFrames
-        Frame bundle with coverage, test catalog, and coverage edges.
+        Frame bundle with test catalog and empty coverage placeholders.
     """
+    empty_frame = pl.DataFrame()
     return EntrypointTestFrames(
-        coverage_frame=tabular_to_lazyframe(q__analytics__coverage_functions).collect(),
+        coverage_frame=empty_frame,
         test_catalog_frame=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
-        coverage_edges_frame=tabular_to_lazyframe(q__analytics__test_coverage_edges).collect(),
+        coverage_edges_frame=empty_frame,
     )
 
 

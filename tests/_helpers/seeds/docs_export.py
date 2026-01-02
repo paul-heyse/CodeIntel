@@ -2,7 +2,7 @@
 
 This module provides the DocsExportPack which seeds comprehensive data needed
 for docs export smoke tests and validation, including modules, GOIDs, graphs,
-docstrings, metrics, types, coverage, and risk factors.
+docstrings, metrics, types, and risk factors.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     CFGBlockRow,
-    CoverageFunctionRow,
     DocstringRow,
     FunctionMetricsRow,
     FunctionTypesRow,
@@ -28,7 +27,6 @@ from tests._helpers.fixtures.rows import (
     RiskFactorRow,
     SymbolEdgeOptions,
     TestCatalogRow,
-    TestCoverageEdgeRow,
     dataclass_row,
     insert_rows,
     insert_symbol_use_edges,
@@ -60,9 +58,8 @@ class DocsExportPack:
     - Symbol use edges
     - Docstrings
     - Function metrics and types
-    - Coverage functions
     - Risk factors
-    - Test catalog and coverage edges
+    - Test catalog
     - GOID crosswalk
 
     Attributes
@@ -123,10 +120,8 @@ class DocsExportPack:
         self._seed_docstrings(ctx, repo, commit, now)
         self._seed_function_metrics(ctx, repo, commit, goid, now)
         self._seed_function_types(ctx, repo, commit, goid, now)
-        self._seed_coverage_functions(ctx, repo, commit, goid, now)
         self._seed_risk_factors(ctx, repo, commit, goid)
         self._seed_test_catalog(ctx, repo, commit, now)
-        self._seed_test_coverage_edges(ctx, repo, commit, goid, now)
 
     @staticmethod
     def _cleanup_existing_data(
@@ -152,10 +147,6 @@ class DocsExportPack:
         con.execute("DELETE FROM graph.symbol_use_edges WHERE symbol = 'sym'")
         con.execute(
             "DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit]
-        )
-        con.execute(
-            "DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?",
-            [repo, commit],
         )
 
     @staticmethod
@@ -445,34 +436,6 @@ class DocsExportPack:
         insert_rows(ctx.gateway, rows)
 
     @staticmethod
-    def _seed_coverage_functions(
-        ctx: TestContext, repo: str, commit: str, goid: int, now: datetime
-    ) -> None:
-        """Seed the coverage.functions table."""
-        rows = [
-            dataclass_row(
-                CoverageFunctionRow,
-                function_goid_h128=goid,
-                urn=DEFAULT_URN,
-                repo=repo,
-                commit=commit,
-                rel_path=DEFAULT_PATH,
-                language="python",
-                kind="function",
-                qualname=DEFAULT_QUALNAME,
-                start_line=1,
-                end_line=10,
-                executable_lines=1,
-                covered_lines=1,
-                coverage_ratio=1.0,
-                tested=True,
-                untested_reason=None,
-                created_at=now,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
     def _seed_risk_factors(ctx: TestContext, repo: str, commit: str, goid: int) -> None:
         """Seed the analytics.goid_risk_factors table."""
         rows = [
@@ -504,31 +467,6 @@ class DocsExportPack:
                 qualname="pkg.foo::test_func",
                 status="passed",
                 created_at=now,
-            )
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_test_coverage_edges(
-        ctx: TestContext, repo: str, commit: str, goid: int, now: datetime
-    ) -> None:
-        """Seed the analytics.test_coverage_edges table."""
-        rows = [
-            dataclass_row(
-                TestCoverageEdgeRow,
-                test_id="t1",
-                function_goid_h128=goid,
-                urn=DEFAULT_URN,
-                repo=repo,
-                commit=commit,
-                rel_path=DEFAULT_PATH,
-                qualname=DEFAULT_QUALNAME,
-                covered_lines=1,
-                executable_lines=1,
-                coverage_ratio=1.0,
-                last_status="passed",
-                created_at=now,
-                test_goid_h128=None,
             )
         ]
         insert_rows(ctx.gateway, rows)

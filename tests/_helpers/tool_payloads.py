@@ -45,34 +45,6 @@ def pytest_report_payload(
     }
 
 
-def coverage_json_payload(
-    *,
-    files: Mapping[str, Mapping[str, list[int]]] | None = None,
-) -> dict[str, object]:
-    """Build a minimal coverage JSON payload.
-
-    Parameters
-    ----------
-    files
-        Mapping of filename to executed/missing line lists.
-
-    Returns
-    -------
-    dict[str, object]
-        Coverage JSON payload.
-    """
-    return {
-        "files": files
-        or {
-            "src/example.py": {
-                "executed_lines": [1, 2, 3],
-                "missing_lines": [4],
-            }
-        }
-    }
-
-
 __all__ = [
-    "coverage_json_payload",
     "pytest_report_payload",
 ]

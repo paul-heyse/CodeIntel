@@ -199,29 +199,5 @@ class HarnessArtifacts:
         write_scip_index(index_scip, proto_module_path=proto_dest, documents=docs)
         return index_scip, proto_dest
 
-    def touch_coverage_file(self, *, prefer: str = "repo_root") -> Path:
-        """Create a coverage artifact where ingestion searches.
-
-        Parameters
-        ----------
-        prefer
-            Location preference ("repo_root" or "build_dir").
-
-        Returns
-        -------
-        Path
-            Path to the created coverage artifact.
-        """
-        if prefer == "build_dir":
-            out = self.paths.build_dir / "coverage.json"
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text("{}", encoding="utf-8")
-            return out
-
-        out = self.repo_root / ".coverage"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"")
-        return out
-
 
 __all__ = ["HarnessArtifacts"]

@@ -1,7 +1,7 @@
 """Span seed pack for graph span alignment tests.
 
 This module provides the SpanPack which seeds data needed for span
-alignment tests across call graph, CFG/DFG, and coverage components.
+alignment tests across call graph and CFG/DFG components.
 
 The pack provides consistent module and GOID data for validating that
 different graph components agree on function spans.
@@ -55,7 +55,7 @@ class SpanPack:
 
     Seeds modules, GOIDs, and test catalog entries for span alignment
     tests. This pack provides the database rows needed to test that
-    call graph, CFG/DFG, and coverage components agree on function spans.
+    call graph and CFG/DFG components agree on function spans.
 
     Attributes
     ----------

@@ -36,7 +36,6 @@ class ProvisionedGateway:
     build_dir: Path
     db_path: Path
     document_output_dir: Path
-    coverage_file: Path
     gateway: StorageGateway
     runner: ToolRunner
 
@@ -76,7 +75,6 @@ class ProvisionOptions:
     """Options controlling ingestion seeds for provisioned gateways."""
 
     include_typing: bool = True
-    include_coverage: bool = True
     build_graph_metrics: bool = False
     file_backed: bool = True
     db_path: Path | None = None
@@ -149,7 +147,6 @@ class ProvisioningSetup:
 
     ctx: RepoContext
     build_paths: BuildPaths
-    coverage_file: Path
     tools_cfg: ToolsConfig
     runner: ToolRunner
     tool_service: ToolService

@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-import duckdb
 import pytest
 
 from codeintel.build.config import BuildConfig
@@ -44,13 +43,8 @@ from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig
 from tests._helpers.harnesses.serving_harness import ServingTargetHarness
-from tests._helpers.orchestration.coverage_orchestration import (
-    create_coverage_edge_env,
-    generate_coverage_artifact,
-)
 from tests._helpers.orchestration.graph_orchestration import (
     create_span_test_env,
-    generate_span_coverage,
 )
 from tests._helpers.orchestration.provisioning import (
     provision_docs_export_ready,
@@ -78,7 +72,7 @@ if TYPE_CHECKING:
     from codeintel.core.columnar.rows import ColumnarRows
     from codeintel.core.schemas import SchemaService
     from codeintel.storage.gateway import StorageGateway
-    from tests._helpers.configs import CoverageEdgeEnv, ProvisionedGateway, SpanTestEnv
+    from tests._helpers.configs import ProvisionedGateway, SpanTestEnv
     from tests._helpers.context import TestContext
 
 
@@ -237,22 +231,6 @@ def graph_ctx(tmp_path: Path) -> Iterator[TestContext]:
         Context seeded with the core and graph packs, then closed after the test.
     """
     ctx = TestScenario.with_graph().build(tmp_path)
-    try:
-        yield ctx
-    finally:
-        ctx.close()
-
-
-@pytest.fixture
-def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
-    """Provide a TestContext with coverage seed pack applied.
-
-    Yields
-    ------
-    TestContext
-        Context seeded with the core and coverage packs, then closed after the test.
-    """
-    ctx = TestScenario.with_coverage().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -485,34 +463,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
 
 @pytest.fixture
-def coverage_env(tmp_path: Path) -> Iterator[CoverageEdgeEnv]:
-    """Provide a coverage edge environment (repo + gateway + seeded rows).
-
-    Yields
-    ------
-    CoverageEdgeEnv
-        Environment with seeded coverage data; gateway closed after the test.
-    """
-    env = create_coverage_edge_env(tmp_path)
-    try:
-        yield env
-    finally:
-        env.gateway.close()
-
-
-@pytest.fixture
-def coverage_artifact(coverage_env: CoverageEdgeEnv) -> Path:
-    """Provide a coverage database artifact for coverage edge tests.
-
-    Returns
-    -------
-    Path
-        Filesystem path to the generated coverage artifact.
-    """
-    return generate_coverage_artifact(coverage_env).coverage_file
-
-
-@pytest.fixture
 def span_env(tmp_path: Path) -> Iterator[SpanTestEnv]:
     """Provide a span-alignment test environment backed by a real gateway.
 
@@ -526,18 +476,6 @@ def span_env(tmp_path: Path) -> Iterator[SpanTestEnv]:
         yield create_span_test_env(tmp_path, gateway)
     finally:
         gateway.close()
-
-
-@pytest.fixture
-def span_coverage_artifact(span_env: SpanTestEnv) -> Path:
-    """Provide a coverage database artifact for the span-alignment test.
-
-    Returns
-    -------
-    Path
-        Filesystem path to the generated span coverage artifact.
-    """
-    return generate_span_coverage(span_env.repo_root).coverage_file
 
 
 @pytest.fixture(scope="session")
@@ -630,19 +568,3 @@ def loose_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
     )
     with provisioned_gateway(tmp_path / "repo", config=config) as ctx:
         yield ctx
-
-
-@pytest.fixture
-def coverage_profiles_conn() -> Iterator[duckdb.DuckDBPyConnection]:
-    """Provide an isolated in-memory DuckDB connection for profile unit tests.
-
-    Yields
-    ------
-    duckdb.DuckDBPyConnection
-        In-memory DuckDB connection closed after the test.
-    """
-    con = duckdb.connect(":memory:")
-    try:
-        yield con
-    finally:
-        con.close()

@@ -268,7 +268,7 @@ def profile_storage_handler(
     include_views = ctx.params.get_bool("include_views", default=False)
     profile_gateway = _select_profile_gateway(ctx, db_path)
 
-    views = ("docs.v_subsystem_profile", "docs.v_subsystem_coverage")
+    views = ("docs.v_subsystem_profile",)
     if profile_gateway is not None:
         Warehouse(profile_gateway).profile_views(
             views=views,

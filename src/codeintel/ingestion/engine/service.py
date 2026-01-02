@@ -23,11 +23,7 @@ from codeintel.ingestion.engine.plugins import (
     ToolStatus,
     build_default_registry,
 )
-from codeintel.ingestion.engine.results import (
-    CoverageReport,
-    DiagnosticReport,
-    ScipIndexResult,
-)
+from codeintel.ingestion.engine.results import DiagnosticReport, ScipIndexResult
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -124,7 +120,7 @@ class ToolService:
         Parameters
         ----------
         name
-            Plugin registry name (for example, "pyright", "coverage", "scip-python").
+            Plugin registry name (for example, "pyright", "scip-python").
         repo_root
             Repository root passed to the plugin.
         **kwargs
@@ -287,65 +283,6 @@ class ToolService:
             message = "ruff plugin returned no run metadata"
             raise RuntimeError(message)
         return {}
-
-    async def run_coverage_report(
-        self,
-        repo_root: Path,
-        *,
-        coverage_file: Path | None = None,
-        output_path: Path | None = None,
-    ) -> CoverageReport:
-        """Run coverage JSON export and return a CoverageReport.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root directory.
-        coverage_file
-            Optional explicit coverage data file path.
-        output_path
-            Optional path for JSON output; defaults to a cache location.
-
-        Returns
-        -------
-        CoverageReport
-            Parsed coverage data for all files. Returns CoverageReport.empty()
-            when the coverage tool is missing or fails.
-        """
-        target_output = output_path or (self.runner.cache_dir / "coverage.json")
-        data_file = coverage_file or self.tools_config.coverage_file
-
-        plugin_result = await self.run_plugin(
-            "coverage",
-            repo_root=repo_root,
-            coverage_file=data_file,
-            output_path=target_output,
-        )
-
-        json_path = plugin_result.artifacts.get("coverage_json", target_output)
-        await to_thread.run_sync(_unlink_missing, json_path)
-
-        if plugin_result.status is ToolStatus.NOT_FOUND:
-            log.warning("coverage binary not found; skipping coverage ingestion")
-            return CoverageReport.empty()
-
-        if plugin_result.status is not ToolStatus.OK:
-            log.warning(
-                "coverage CLI failed or returned non-zero exit; status=%s error=%r",
-                plugin_result.status,
-                plugin_result.error,
-            )
-            return CoverageReport.empty()
-
-        parsed = plugin_result.parsed
-        if isinstance(parsed, CoverageReport):
-            return parsed
-
-        log.warning(
-            "coverage plugin returned unexpected parsed payload type: %r",
-            type(parsed),
-        )
-        return CoverageReport.empty()
 
     async def run_pytest_report(
         self,

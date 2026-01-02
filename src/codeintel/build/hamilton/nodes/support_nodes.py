@@ -18,7 +18,7 @@ from codeintel.build.hamilton.naming import (
     query_node,
     target_node,
 )
-from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
 from codeintel.build.tabular.types import TabularInput
@@ -242,7 +242,7 @@ def load_relation(env: BuildEnv, ref: DatasetRef) -> TabularInput:
     if not snapshot_id:
         msg = f"Missing snapshot_id for {ref.table_key}"
         raise ValueError(msg)
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=ref.table_key,
         snapshot_id=snapshot_id,

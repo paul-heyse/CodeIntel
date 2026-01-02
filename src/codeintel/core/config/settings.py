@@ -22,8 +22,8 @@ class ArrowDatasetSettings:
     """Arrow dataset write tuning settings for build output."""
 
     compression: str | None = None
-    row_group_size: int | None = None
-    data_page_size: int | None = None
+    row_group_size: int | None = 200_000
+    data_page_size: int | None = 1_048_576
     max_rows_per_file: int | None = None
     dictionary_encode: bool = False
     dictionary_max_cardinality: int = 256
@@ -43,6 +43,8 @@ class BuildSettings:
     polars_query_opt_flags: tuple[str, ...] = ()
     polars_streaming: bool = True
     polars_streaming_fallback: bool = True
+    dataset_row_index_name: str | None = None
+    dataset_row_index_offset: int = 0
 
 
 @dataclass(frozen=True, slots=True)

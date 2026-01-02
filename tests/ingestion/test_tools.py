@@ -4,7 +4,7 @@ This module brings together all tool-related tests:
 - ToolRunner abstraction (binary resolution, error handling)
 - Tool plugins (PyrightPlugin, PresetRunner)
 - ToolService (real tool execution via ToolingOutputs fixtures)
-- Tool port data models (CoverageResult, DiagnosticResult, etc.)
+- Tool port data models (DiagnosticResult, ScipResult, TestResult, etc.)
 """
 
 from __future__ import annotations
@@ -24,13 +24,10 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
     ToolRunner,
     ToolRunOptions,
-    ToolSpecError,
 )
 from codeintel.ingestion.engine.pyright import PyrightPlugin
 from codeintel.ingestion.engine.pytest import PytestPlugin
 from codeintel.ingestion.engine.results import (
-    CoverageFileSummary,
-    CoverageReport,
     DiagnosticReport,
     FileDiagnosticCount,
     ScipDocument,
@@ -43,8 +40,6 @@ from codeintel.ingestion.engine.results import (
 from codeintel.ingestion.engine.scip import ScipPlugin
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.ports.tools import (
-    CoverageFileData,
-    CoverageResult,
     DiagnosticEntry,
     DiagnosticResult,
     ScipResult,
@@ -75,28 +70,12 @@ from tests._helpers.fakes.tools import (
     make_tool_run_result,
 )
 from tests._helpers.ingestion import write_pytest_report
-from tests._helpers.orchestration.tooling import (
-    build_tooling_artifacts,
-)
 from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
 
 if TYPE_CHECKING:
     from tests._helpers.orchestration.tooling import (
-        ToolingArtifacts,
         ToolingOutputs,
     )
-
-
-@pytest.fixture
-def tooling_artifacts(tmp_path: Path) -> ToolingArtifacts:
-    """Run real tooling to produce coverage/pytest artifacts for integration checks.
-
-    Returns
-    -------
-    ToolingArtifacts
-        Bundle containing adapter, service, and artifact paths.
-    """
-    return build_tooling_artifacts(tmp_path)
 
 
 # =============================================================================
@@ -107,13 +86,10 @@ DURATION_1_5 = 1.5
 LINE_10 = 10
 COLUMN_5 = 5
 COLUMN_15 = 15
-EXPECTED_COUNT_2 = 2
 EXPECTED_ERROR_COUNT = 2
 EXPECTED_DIAG_COUNT = 2
-EXPECTED_FILE_COUNT = 2
 EXPECTED_TEST_COUNT = 3
-PYRIGHT_PLUGINS_COUNT = 6
-EXPECTED_COVERAGE_RATIO = 0.6
+PYRIGHT_PLUGINS_COUNT = 5
 SYMBOL_KIND_CLASS = 7
 
 
@@ -142,14 +118,6 @@ def test_tool_runner_unknown_tool_raises_value_error(tmp_path: Path) -> None:
     runner = ToolRunner(cache_dir=tmp_path)
     with pytest.raises(ValueError, match="Unknown tool"):
         runner.run("unknown-tool", ["--version"])
-
-
-def test_tool_service_validates_required_kwargs(tmp_path: Path) -> None:
-    """ToolService should validate required tool arguments before execution."""
-    runner = PresetRunner(make_tool_run_result(ToolName.COVERAGE))
-    service = ToolService(runner, tools_config=ToolsConfig.default())
-    with pytest.raises(ToolSpecError, match="coverage"):
-        asyncio.run(service.run_plugin("coverage", repo_root=tmp_path))
 
 
 def _write_sleep_script(path: Path, *, sleep_s: float) -> None:
@@ -240,7 +208,7 @@ def test_default_registry_contains_expected_plugins() -> None:
     registry = build_default_registry(runner, runner.tools_config)
     names = registry.names()
 
-    expected_plugins = ("pyright", "pyrefly", "ruff", "coverage", "pytest", "scip-python")
+    expected_plugins = ("pyright", "pyrefly", "ruff", "pytest", "scip-python")
     for plugin_name in expected_plugins:
         expect_true(
             plugin_name in names,
@@ -254,7 +222,7 @@ def test_default_registry_contains_expected_plugins() -> None:
 # =============================================================================
 
 
-@pytest.mark.requires_tools("pyright", "pyrefly", "ruff", "coverage")
+@pytest.mark.requires_tools("pyright", "pyrefly", "ruff")
 def test_tool_service_pyright_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyright diagnostics per file."""
     errors = tooling_outputs.pyright_errors
@@ -264,7 +232,7 @@ def test_tool_service_pyright_parses_errors(tooling_outputs: ToolingOutputs) -> 
     )
 
 
-@pytest.mark.requires_tools("pyright", "pyrefly", "ruff", "coverage")
+@pytest.mark.requires_tools("pyright", "pyrefly", "ruff")
 def test_tool_service_pyrefly_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyrefly diagnostics per file."""
     errors = tooling_outputs.pyrefly_errors
@@ -272,18 +240,6 @@ def test_tool_service_pyrefly_parses_errors(tooling_outputs: ToolingOutputs) -> 
         errors.get("pkg/mod.py", 0) >= 1,
         message=f"Expected pyrefly to report errors for pkg/mod.py, got {errors}",
     )
-
-
-@pytest.mark.requires_tools("pyright", "pyrefly", "ruff", "coverage")
-def test_tool_service_coverage_reports_normalization(tooling_outputs: ToolingOutputs) -> None:
-    """ToolService normalizes coverage.json payloads."""
-    reports = {report.rel_path: report for report in tooling_outputs.coverage_reports}
-    report = reports.get("pkg/mod.py")
-    expect_is_not_none(report)
-    if report is None:
-        return
-    expect_true(report.executed_lines, message="Expected executed_lines to be populated")
-    expect_is_not_none(report.missing_lines)
 
 
 # =============================================================================
@@ -342,46 +298,6 @@ def test_diagnostic_result_failed_status() -> None:
 
     expect_true(result.status == ToolStatus.FAILED)
     expect_true(result.error == "Tool crashed")
-
-
-# =============================================================================
-# CoverageResult Tests
-# =============================================================================
-
-
-def test_coverage_result_ok_status() -> None:
-    """CoverageResult should represent successful coverage run."""
-    result = CoverageResult(
-        status=ToolStatus.OK,
-        files=[],
-        duration_s=DURATION_1_5,
-    )
-
-    expect_true(result.status == ToolStatus.OK)
-    expect_true(result.files == [])
-    expect_true(result.duration_s == DURATION_1_5)
-
-
-def test_coverage_result_with_files() -> None:
-    """CoverageResult should store file coverage data."""
-    file1 = CoverageFileData(
-        rel_path="a.py",
-        executed_lines=frozenset({1, 2}),
-        missing_lines=frozenset({3}),
-    )
-    file2 = CoverageFileData(
-        rel_path="b.py",
-        executed_lines=frozenset({1}),
-        missing_lines=frozenset(),
-    )
-
-    result = CoverageResult(
-        status=ToolStatus.OK,
-        files=[file1, file2],
-    )
-
-    expect_equal(len(result.files), EXPECTED_FILE_COUNT)
-    expect_true(result.files[0].rel_path == "a.py")
 
 
 # =============================================================================
@@ -737,16 +653,6 @@ def test_tool_service_run_ruff_not_found(tmp_path: Path) -> None:
     expect_true(errors == {})
 
 
-def test_tool_service_run_coverage_not_found(tmp_path: Path) -> None:
-    """ToolService.run_coverage_report should return empty report when not found."""
-    tools_cfg = ToolsConfig.default()
-    exc = ToolNotFoundError(ToolName.COVERAGE, tools_cfg.coverage_bin)
-    runner = PresetRunner(exc)
-    service = ToolService(runner, tools_cfg)
-    report = asyncio.run(service.run_coverage_report(tmp_path))
-    expect_true(report.files == ())
-
-
 def test_tool_service_run_pytest_raises_not_found(tmp_path: Path) -> None:
     """ToolService.run_pytest_report should report NOT_FOUND when pytest is missing."""
     tools_cfg = ToolsConfig.default()
@@ -864,37 +770,6 @@ def test_diagnostic_report_empty() -> None:
     expect_true(report.tool_name == "test_tool")
     expect_true(report.files == {})
     expect_true(report.total_errors == 0)
-
-
-def test_coverage_file_summary_properties() -> None:
-    """CoverageFileSummary should compute properties correctly."""
-    summary = CoverageFileSummary(
-        rel_path="mod.py",
-        executed_lines=frozenset({1, 2, 3}),
-        missing_lines=frozenset({4, 5}),
-    )
-    expect_true(summary.total_executable == COLUMN_5)
-    expect_true(summary.coverage_ratio == EXPECTED_COVERAGE_RATIO)
-
-
-def test_coverage_report_from_file_reports() -> None:
-    """CoverageReport.from_file_reports should build report."""
-    reports = [
-        ("a.py", {1, 2}, {3}),
-        ("b.py", {1}, set()),
-    ]
-    result = CoverageReport.from_file_reports(reports)
-    expect_equal(len(result.files), EXPECTED_COUNT_2)
-    expect_true(result.total_executed == EXPECTED_TEST_COUNT)
-    expect_true(result.total_missing == 1)
-
-
-def test_coverage_report_by_path() -> None:
-    """CoverageReport.by_path should return path-keyed mapping."""
-    reports = [("mod.py", {1, 2}, set())]
-    result = CoverageReport.from_file_reports(reports)
-    by_path = result.by_path()
-    expect_true("mod.py" in by_path)
 
 
 def test_parse_test_duration_valid() -> None:
@@ -1365,63 +1240,6 @@ def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
     errors = asyncio.run(service.run_pyrefly(tmp_path))
 
     expect_true(errors == {})
-
-
-@pytest.mark.requires_tools(
-    "pyright",
-    "pyrefly",
-    "ruff",
-    "coverage",
-    "pytest",
-    "scip-python",
-)
-def test_tool_service_run_coverage_report_with_data(
-    tooling_artifacts: ToolingArtifacts,
-) -> None:
-    """ToolService.run_coverage_report should return report from parsed data."""
-    coverage_path = tooling_artifacts.coverage_file
-    run = make_tool_run_result(
-        ToolName.COVERAGE,
-        options=ToolRunResultOptions(
-            returncode=0,
-            stdout="",
-            stderr="",
-            duration_s=0.1,
-            output_path=coverage_path,
-        ),
-    )
-    service = ToolService(PresetRunner(run))
-
-    report = asyncio.run(
-        service.run_coverage_report(
-            tooling_artifacts.context.repo_root,
-            coverage_file=tooling_artifacts.context.coverage_file,
-            output_path=coverage_path,
-        )
-    )
-
-    # Should return a CoverageReport
-    expect_true(isinstance(report, CoverageReport))
-    expect_true(len(report.files) > 0)
-
-
-def test_tool_service_run_coverage_report_failure_returns_empty(tmp_path: Path) -> None:
-    """ToolService.run_coverage_report should return empty report on failure."""
-    run = make_tool_run_result(
-        ToolName.COVERAGE,
-        options=ToolRunResultOptions(
-            returncode=1,
-            stdout="",
-            stderr="coverage failed",
-            duration_s=0.1,
-        ),
-    )
-    runner = PresetRunner(run)
-    service = ToolService(runner)
-
-    report = asyncio.run(service.run_coverage_report(tmp_path, output_path=tmp_path / "cov.json"))
-
-    expect_true(report == CoverageReport.empty())
 
 
 def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:

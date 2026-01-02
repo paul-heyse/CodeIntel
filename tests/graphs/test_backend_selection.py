@@ -73,7 +73,6 @@ def test_build_graph_runtime_captures_backend_info(graph_executor_env: GraphTest
     )
 
     runtime = build_graph_runtime(
-        graph_executor_env.gateway,
         make_graph_runtime_options(
             snapshot=graph_executor_env.snapshot,
             backend=cfg,

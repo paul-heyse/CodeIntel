@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -72,6 +73,8 @@ def scan_dataset_lazyframe(
     dataset_dir: Path,
     *,
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
 ) -> pl.LazyFrame | None:
     """Return a Polars LazyFrame for a dataset directory.
 
@@ -81,6 +84,10 @@ def scan_dataset_lazyframe(
         Directory containing dataset files.
     batch_size
         Batch size for Arrow-backed scanning.
+    row_index_name
+        Optional row index column name to inject during the scan.
+    row_index_offset
+        Row index offset to apply when row_index_name is set.
 
     Returns
     -------
@@ -90,10 +97,33 @@ def scan_dataset_lazyframe(
     if not dataset_dir.is_dir():
         return None
     try:
+        if row_index_name:
+            return _scan_parquet_with_row_index(
+                dataset_dir,
+                row_index_name=row_index_name,
+                row_index_offset=row_index_offset,
+            )
         dataset = ds.dataset(str(dataset_dir), format="parquet")
         return pl.scan_pyarrow_dataset(dataset, batch_size=batch_size)
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
+
+
+def _scan_parquet_with_row_index(
+    dataset_dir: Path,
+    *,
+    row_index_name: str,
+    row_index_offset: int,
+) -> pl.LazyFrame:
+    scan_fn = pl.scan_parquet
+    try:
+        signature = inspect.signature(scan_fn)
+    except (TypeError, ValueError):
+        return scan_fn(str(dataset_dir), row_index_name=row_index_name)
+    kwargs: dict[str, object] = {"row_index_name": row_index_name}
+    if "row_index_offset" in signature.parameters:
+        kwargs["row_index_offset"] = row_index_offset
+    return scan_fn(str(dataset_dir), **kwargs)
 
 
 def sample_reader(

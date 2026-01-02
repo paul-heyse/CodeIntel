@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.analytics.subsystems.cache import (
-    build_subsystem_coverage_cache_rows,
     build_subsystem_profile_cache_rows,
 )
 from tests._helpers import TestScenario
@@ -74,15 +73,10 @@ def test_subsystem_cache_rows_build(tmp_path: Path) -> None:
     try:
         _seed_subsystem(ctx)
         profile_rows = build_subsystem_profile_cache_rows(ctx.gateway, ctx.snapshot)
-        coverage_rows = build_subsystem_coverage_cache_rows(ctx.gateway, ctx.snapshot)
     finally:
         ctx.close()
 
     if not profile_rows:
         pytest.fail("Expected subsystem profile cache rows to be built")
-    if not coverage_rows:
-        pytest.fail("Expected subsystem coverage cache rows to be built")
     if profile_rows[0]["subsystem_id"] != "subsys-1":
         pytest.fail("Expected profile cache row to reference seeded subsystem")
-    if coverage_rows[0]["subsystem_id"] != "subsys-1":
-        pytest.fail("Expected coverage cache row to reference seeded subsystem")

@@ -21,7 +21,6 @@ from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     CFGBlockRow,
-    CoverageFunctionRow,
     DocstringRow,
     FunctionMetricsRow,
     FunctionTypesRow,
@@ -36,7 +35,6 @@ from tests._helpers.fixtures.rows import (
     StaticDiagnosticsRow,
     SymbolUseEdgeRow,
     TestCatalogRow,
-    TestCoverageEdgeRow,
     TypednessRow,
     function_profile_row,
     insert_rows,
@@ -87,10 +85,6 @@ def seed_docs_export_minimal(
     )
     con.execute("DELETE FROM graph.symbol_use_edges WHERE symbol = 'sym'")
     con.execute("DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit])
-    con.execute(
-        "DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
 
     resolved_module_map = dict(module_map) if module_map is not None else None
     if resolved_module_map is None and repo_root is not None:
@@ -307,29 +301,6 @@ def seed_docs_export_minimal(
             )
         ],
     )
-    insert_rows(
-        gateway,
-        [
-            CoverageFunctionRow(
-                function_goid_h128=goid,
-                urn="urn:foo",
-                repo=repo,
-                commit=commit,
-                rel_path="foo.py",
-                language="python",
-                kind="function",
-                qualname="pkg.foo:func",
-                start_line=1,
-                end_line=10,
-                executable_lines=1,
-                covered_lines=1,
-                coverage_ratio=1.0,
-                tested=True,
-                untested_reason=None,
-                created_at=now,
-            )
-        ],
-    )
     warehouse = Warehouse(gateway)
     warehouse.materialize_mappings(
         "analytics.function_profile",
@@ -372,26 +343,6 @@ def seed_docs_export_minimal(
                 qualname="pkg.foo::test_func",
                 status="passed",
                 created_at=now,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            TestCoverageEdgeRow(
-                test_id="t1",
-                function_goid_h128=goid,
-                urn="urn:foo",
-                repo=repo,
-                commit=commit,
-                rel_path="foo.py",
-                qualname="pkg.foo:func",
-                covered_lines=1,
-                executable_lines=1,
-                coverage_ratio=1.0,
-                last_status="passed",
-                created_at=now,
-                test_goid_h128=None,
             )
         ],
     )
@@ -615,29 +566,6 @@ def seed_profile_data(
     insert_rows(
         gateway,
         [
-            CoverageFunctionRow(
-                function_goid_h128=1,
-                urn="goid:demo/repo#python:function:pkg.mod.func",
-                repo=repo,
-                commit=commit,
-                rel_path=rel_path,
-                language="python",
-                kind="function",
-                qualname="pkg.mod.func",
-                start_line=1,
-                end_line=2,
-                executable_lines=4,
-                covered_lines=2,
-                coverage_ratio=0.5,
-                tested=True,
-                untested_reason="",
-                created_at=now,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
             TestCatalogRow(
                 test_id="pkg/mod.py::test_func",
                 test_goid_h128=2,
@@ -652,26 +580,6 @@ def seed_profile_data(
                 markers=[],
                 parametrized=False,
                 flaky=True,
-                created_at=now,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            TestCoverageEdgeRow(
-                test_id="pkg/mod.py::test_func",
-                test_goid_h128=2,
-                function_goid_h128=1,
-                urn="goid:demo/repo#python:function:pkg.mod.func",
-                repo=repo,
-                commit=commit,
-                rel_path=rel_path,
-                qualname="pkg.mod.func",
-                covered_lines=2,
-                executable_lines=4,
-                coverage_ratio=0.5,
-                last_status="failed",
                 created_at=now,
             )
         ],
@@ -791,10 +699,6 @@ def seed_mcp_backend(
         "DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?",
         [repo, commit],
     )
-    con.execute(
-        "DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
 
     insert_rows(
         gateway,
@@ -904,25 +808,6 @@ def seed_mcp_backend(
                 rel_path="tests/t.py",
                 qualname="tests.t",
                 status="passed",
-                created_at=now,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            TestCoverageEdgeRow(
-                test_id="t1",
-                function_goid_h128=1,
-                urn="urn:foo",
-                repo=repo,
-                commit=commit,
-                rel_path="foo.py",
-                qualname="foo",
-                covered_lines=1,
-                executable_lines=1,
-                coverage_ratio=1.0,
-                last_status="passed",
                 created_at=now,
             )
         ],

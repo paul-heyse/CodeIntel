@@ -37,7 +37,8 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.core.duckdb_types import DuckDBConnection
+    from codeintel.core.gateway import BuildGateway
 
 log = logging.getLogger(__name__)
 SNAPSHOT_PARAM_LEN = 2
@@ -98,7 +99,7 @@ class DuckDBStorageAdapter:
 
     ADAPTER_NAME: ClassVar[str] = "duckdb_storage"
 
-    def __init__(self, gateway: StorageGateway) -> None:
+    def __init__(self, gateway: BuildGateway) -> None:
         """Initialize adapter with a storage gateway."""
         self._gateway = gateway
         self._backend = gateway.policy

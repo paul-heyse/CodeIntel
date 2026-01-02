@@ -35,7 +35,7 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from hamilton.lifecycle import base as lifecycle_base
 
@@ -44,6 +44,7 @@ from codeintel.core.hamilton import tags as ht
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.gateway.accessors import DuckDBGateway
+from codeintel.storage.gateway.config import StorageConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,9 +53,8 @@ if TYPE_CHECKING:
     from hamilton.lifecycle import ResultBuilder
     from hamilton.node import Node
 
-    from codeintel.core.datasets import DatasetRegistry
     from codeintel.core.gateway import BuildGateway
-    from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.datasets import DatasetRegistry
 
 __all__ = [
     "ExecutionBackend",
@@ -69,6 +69,14 @@ log = logging.getLogger(__name__)
 
 def _is_in_memory_gateway(env: BuildEnv) -> bool:
     return str(env.gateway.config.db_path) == ":memory:"
+
+
+def _storage_config_from_gateway(gateway: BuildGateway) -> StorageConfig:
+    config = gateway.config
+    if isinstance(config, StorageConfig):
+        return config
+    msg = f"Expected StorageConfig on gateway, got {type(config)}"
+    raise TypeError(msg)
 
 
 class ExecutionBackend(Enum):
@@ -351,8 +359,12 @@ class ThreadPoolAdapter(
             if existing is not None:
                 return existing
 
-            cfg = _thread_storage_config(env.gateway.config, read_only=effective_read_only)
-            gw = _open_thread_gateway(cfg, datasets=env.gateway.datasets)
+            cfg = _thread_storage_config(
+                _storage_config_from_gateway(env.gateway),
+                read_only=effective_read_only,
+            )
+            datasets = cast("DatasetRegistry", env.gateway.datasets)
+            gw = _open_thread_gateway(cfg, datasets=datasets)
             self._gateways[key] = gw
             return gw
 

@@ -526,9 +526,6 @@ DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {
     "semantic_roles": {
         "min_confidence": 0.7,
     },
-    "coverage_functions": {
-        "min_coverage_threshold": 0.0,
-    },
     "data_models": {
         "include_private": False,
     },
@@ -537,10 +534,9 @@ DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {
     },
     "risk_factors": {
         "weights": {
-            "complexity": 0.3,
-            "coverage": 0.2,
-            "churn": 0.2,
-            "coupling": 0.15,
+            "complexity": 0.4,
+            "churn": 0.25,
+            "coupling": 0.2,
             "age": 0.15,
         },
     },

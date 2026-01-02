@@ -35,6 +35,7 @@ from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
+from codeintel.core.spans import normalize_line_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -177,7 +178,10 @@ def _descriptor_from_row(
     if start_line is None:
         return None
     end_line = row.get("end_lineno")
-    resolved_end = end_line if isinstance(end_line, int) else start_line
+    _, resolved_end = normalize_line_span(
+        start_line,
+        end_line if isinstance(end_line, int) else None,
+    )
     qualname = _resolve_qualname(
         node_type=node_type,
         module_name=module_name,

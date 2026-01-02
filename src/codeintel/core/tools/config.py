@@ -21,7 +21,6 @@ class ToolBinaries:
     pyright_bin: str = "pyright"
     pyrefly_bin: str = "pyrefly"
     ruff_bin: str = "ruff"
-    coverage_bin: str = "coverage"
     pytest_bin: str = "pytest"
     git_bin: str = "git"
     default_timeout_s: float = 300.0
@@ -45,7 +44,6 @@ class ToolBinaries:
             "protoc": self.protoc_bin,
             "pyright": self.pyright_bin,
             "pyrefly": self.pyrefly_bin,
-            "coverage": self.coverage_bin,
             "pytest": self.pytest_bin,
             "ruff": self.ruff_bin,
             "git": self.git_bin,

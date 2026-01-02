@@ -28,6 +28,11 @@ from codeintel.core.build_manifest import BuildRunRecord
 from codeintel.core.errors.storage import StorageError
 from codeintel.storage.tracking.asset_tracking import RunEnvironmentRecord
 
+try:
+    from dulwich import porcelain as _dulwich_porcelain
+except ImportError:  # pragma: no cover - optional dependency
+    _dulwich_porcelain = None
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
@@ -68,6 +73,20 @@ def _config_hash(env: BuildEnv) -> str | None:
         return _sha256_text(payload)
     except (TypeError, ValueError):
         return None
+
+
+def _git_dirty(env: BuildEnv) -> bool:
+    if _dulwich_porcelain is None:
+        return False
+    try:
+        status = _dulwich_porcelain.status(env.snapshot.repo_root)
+    except (OSError, ValueError):
+        return False
+    for attr in ("staged", "unstaged", "untracked"):
+        value = getattr(status, attr, None)
+        if value:
+            return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +146,7 @@ class BuildRunWriter:
                     os_version=platform.release(),
                     tool_versions=_tool_versions(),
                     config_hash=_config_hash(env),
-                    git_dirty=False,
+                    git_dirty=_git_dirty(env),
                     captured_at=started_at,
                 )
             )

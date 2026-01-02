@@ -50,6 +50,7 @@ class GraphRuntimeOptionsKwargs(TypedDict, total=False):
     cache_key: str | None
     engine: GraphEngine | None
     graph_cache_dir: Path | None
+    dataset_root_dir: Path | None
     features: GraphFeatureFlags
 
 

@@ -2,31 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 from codeintel.build.exports import ExportCallOptions, ExportOptions, run_validated_exports
 from tests._helpers import provision_docs_export_ready
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
 
     from codeintel.core.config.settings import ExportAuditSettings
-    from codeintel.storage.gateway import StorageConfig, StorageGateway
-
-
-class _StubGateway(Protocol):
-    datasets: object
-    config: StorageConfig
-    con: object
-    core: object
-    graph: object
-    docs: object
-    analytics: object
-
-    def close(self) -> None: ...
-    def execute(self, sql: str, params: object | None = None) -> object: ...
-    def table(self, name: str) -> object: ...
+    from codeintel.core.gateway import BuildGateway
 
 
 def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) -> None:
@@ -41,12 +26,12 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
     calls: list[str] = []
     ctx = provision_docs_export_ready(tmp_path, db_path=tmp_path / "db.duckdb", file_backed=True)
 
-    def validator(gateway: _StubGateway) -> None:
+    def validator(gateway: BuildGateway) -> None:
         _ = gateway.datasets
         calls.append("validator")
 
     def export_parquet_fn(
-        gateway: StorageGateway,
+        gateway: BuildGateway,
         document_output_dir: Path,
         *,
         settings: ExportAuditSettings,
@@ -59,7 +44,7 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
         calls.append(f"parquet:{opts.datasets}")
 
     def export_jsonl_fn(
-        gateway: StorageGateway,
+        gateway: BuildGateway,
         document_output_dir: Path,
         *,
         settings: ExportAuditSettings,
@@ -78,7 +63,7 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
             schemas=None,
             datasets=["a"],
         ),
-        validator=cast("Callable[[StorageGateway], None]", validator),
+        validator=validator,
         export_parquet_fn=export_parquet_fn,
         export_jsonl_fn=export_jsonl_fn,
     )

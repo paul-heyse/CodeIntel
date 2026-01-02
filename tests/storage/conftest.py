@@ -67,12 +67,12 @@ def relaxed_schema_gateway() -> Iterator[StorageGateway]:
 @pytest.fixture
 def docs_views_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
     """
-    Provide a gateway provisioned with docs view seeds for profiling/coverage tests.
+    Provide a gateway provisioned with docs view seeds for profiling tests.
 
     Yields
     ------
     StorageGateway
-        Gateway configured with docs export seeds and coverage-ready views.
+        Gateway configured with docs export seeds and view materializations.
     """
     ctx = docs_views_ready_gateway(tmp_path / "docs_views")
     try:

@@ -60,8 +60,8 @@ SUBSYSTEM_AGREEMENT_COLUMNS = (
 
 def subsystem_agreement__base(
     env: BuildEnv,
-    _q__analytics__subsystem_modules: InferableTabularInput,
-    _q__analytics__graph_metrics_modules_ext: InferableTabularInput,
+    q__analytics__subsystem_modules: InferableTabularInput,
+    q__analytics__graph_metrics_modules_ext: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build subsystem agreement rows.
 
@@ -71,13 +71,13 @@ def subsystem_agreement__base(
         Lazy frame containing subsystem agreement rows.
     """
     subsystem_rows = (
-        tabular_to_lazyframe(_q__analytics__subsystem_modules)
+        tabular_to_lazyframe(q__analytics__subsystem_modules)
         .select(["repo", "commit", "module", "subsystem_id"])
         .collect()
         .to_dicts()
     )
     metrics_rows = (
-        tabular_to_lazyframe(_q__analytics__graph_metrics_modules_ext)
+        tabular_to_lazyframe(q__analytics__graph_metrics_modules_ext)
         .select(["repo", "commit", "module", "import_community_id"])
         .collect()
         .to_dicts()

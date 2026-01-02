@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import networkx as nx
-from coverage import Coverage
 
 from codeintel.build.analytics.compute.row_builders import (
     build_symbol_module_edges,
@@ -54,10 +53,8 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
-from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunOptions
-from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
+from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from codeintel.storage.gateway import StorageConfig, open_gateway
@@ -82,7 +79,6 @@ from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes import utcnow
 from tests._helpers.fixtures.repos import (
     write_callgraph_alias_repo,
-    write_coverage_driver,
     write_graph_metrics_repo,
     write_sample_repo,
 )
@@ -567,70 +563,21 @@ def make_repo_context(
     )
 
 
-def _generate_coverage_payload(
-    repo_root: Path,
-    *,
-    coverage_file: Path,
-    files: list[Path],
-    runner: ToolRunner,
-) -> None:
-    """Execute coverage run; on failure, write an empty coverage database."""
-    driver_path = write_coverage_driver(repo_root, files)
-    log = logging.getLogger(__name__)
-    try:
-        result = runner.run(
-            ToolName.COVERAGE,
-            ["run", "--data-file", str(coverage_file), str(driver_path)],
-            options=ToolRunOptions(cwd=repo_root),
-        )
-    except ToolNotFoundError as exc:
-        log.warning(
-            "coverage binary missing (%s); writing empty coverage data",
-            exc,
-        )
-        result = None
-
-    if result is not None and result.ok:
-        return
-
-    if result is not None:
-        log.warning(
-            "coverage run failed: code=%s stderr=%s; writing empty coverage data",
-            result.returncode,
-            result.stderr,
-        )
-
-    coverage_file.parent.mkdir(parents=True, exist_ok=True)
-    cov = Coverage(data_file=str(coverage_file))
-    cov.start()
-    cov.stop()
-    cov.save()
-
-
 def _make_runner(
     repo_root: Path,
-    files: list[Path],
     *,
-    coverage_file: Path,
     tools_cfg: ToolsConfig,
 ) -> ToolRunner:
-    """Build a ToolRunner seeded with real tool binaries and coverage data.
+    """Build a ToolRunner seeded with real tool binaries.
 
     Returns
     -------
     ToolRunner
-        Runner configured with real tooling and a populated coverage DB.
+        Runner configured with real tooling.
     """
     cache_dir = repo_root / "build" / ".tool_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    runner = ToolRunner(tools_config=tools_cfg, cache_dir=cache_dir)
-    _generate_coverage_payload(
-        repo_root,
-        coverage_file=coverage_file,
-        files=files,
-        runner=runner,
-    )
-    return runner
+    return ToolRunner(tools_config=tools_cfg, cache_dir=cache_dir)
 
 
 def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> StorageGateway:
@@ -678,7 +625,6 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
 
 def _build_provisioning_setup(
     repo_root: Path,
-    files: list[Path],
     opts: ProvisionOptions,
     repo: str,
     commit: str,
@@ -689,8 +635,6 @@ def _build_provisioning_setup(
     ----------
     repo_root
         Root path of the repository.
-    files
-        List of Python files discovered in the repo.
     opts
         Provisioning options.
     repo
@@ -709,17 +653,15 @@ def _build_provisioning_setup(
         overrides=BuildPathOverrides(
             db_path=ctx.db_path,
             document_output_dir=ctx.document_output_dir,
-            coverage_json=repo_root / ".coverage",
             pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
             scip_dir=ctx.build_dir / "scip",
             tool_cache=ctx.build_dir / ".tool_cache",
             log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
         ),
     )
-    coverage_file = build_paths.coverage_json
 
     tools_cfg = make_tools_config()
-    runner = _make_runner(repo_root, files, coverage_file=coverage_file, tools_cfg=tools_cfg)
+    runner = _make_runner(repo_root, tools_cfg=tools_cfg)
     tool_service = ToolService(runner, tools_cfg)
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
@@ -733,7 +675,6 @@ def _build_provisioning_setup(
     return ProvisioningSetup(
         ctx=ctx,
         build_paths=build_paths,
-        coverage_file=coverage_file,
         tools_cfg=tools_cfg,
         runner=runner,
         tool_service=tool_service,
@@ -798,30 +739,6 @@ def _run_ingestion_steps(
             log.warning(
                 "Typing ingest failed during provisioning: %s",
                 typing_result.result.error or "unknown",
-            )
-    if opts.include_coverage:
-        coverage_step = CoverageIngestStep(tools=setup.tool_adapter)
-        coverage_result = asyncio.run(
-            coverage_step.execute_async(
-                [],
-                repo=repo,
-                commit=commit,
-                repo_root=setup.ctx.repo_root,
-                coverage_file=setup.coverage_file,
-            )
-        )
-        if coverage_result.result.success:
-            snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=setup.ctx.repo_root)
-            materialize_rows_for_snapshot(
-                setup.gateway,
-                "analytics.coverage_lines",
-                coverage_result.rows,
-                snapshot=snapshot,
-            )
-        else:
-            log.warning(
-                "Coverage ingest failed during provisioning: %s",
-                coverage_result.result.error or "unknown",
             )
     if opts.build_graph_metrics:
         seed_cfg_dfg_for_metrics(setup.gateway, rel_path="pkg/mod.py")
@@ -904,17 +821,12 @@ def provision_hamilton_repo(
     """
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
-    files = repo_writer(repo_root) if repo_writer is not None else _collect_repo_files(repo_root)
+    if repo_writer is not None:
+        repo_writer(repo_root)
 
     db_path = opts.db_path or (repo_root / "build" / "db" / "codeintel.duckdb")
-    coverage_file = repo_root / ".coverage"
-    tools_cfg = make_tools_config(coverage_file=coverage_file)
-    runner = _make_runner(
-        repo_root,
-        files,
-        coverage_file=coverage_file,
-        tools_cfg=tools_cfg,
-    )
+    tools_cfg = make_tools_config()
+    runner = _make_runner(repo_root, tools_cfg=tools_cfg)
 
     env_opts = EnvOptions(
         file_backed=opts.file_backed,
@@ -943,8 +855,6 @@ def provision_hamilton_repo(
     targets = ["modules"]
     if opts.include_typing:
         targets.append("typing")
-    if opts.include_coverage:
-        targets.append("coverage_ingest")
 
     result = harness.run_targets(targets)
     for target in targets:
@@ -961,7 +871,6 @@ def provision_hamilton_repo(
         build_dir=ctx.build_paths.build_dir,
         db_path=ctx.build_paths.db_path,
         document_output_dir=ctx.build_paths.document_output_dir,
-        coverage_file=coverage_file,
         gateway=ctx.gateway,
         runner=runner,
     )
@@ -1069,15 +978,8 @@ def provision_gateway_with_repo(
     opts = options or provisioning_gateway_options()
     repo_root.mkdir(parents=True, exist_ok=True)
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
-    coverage_file = repo_root / ".coverage"
-    coverage_file.touch()
     tools_cfg = make_tools_config()
-    runner = _make_runner(
-        repo_root,
-        [],
-        coverage_file=coverage_file,
-        tools_cfg=tools_cfg,
-    )
+    runner = _make_runner(repo_root, tools_cfg=tools_cfg)
     gateway = _open_gateway_from_context(ctx, opts)
     if opts.apply_schema and (opts.ensure_views or opts.strict_schema):
         apply_all_schemas(gateway.con)
@@ -1088,7 +990,6 @@ def provision_gateway_with_repo(
         build_dir=ctx.build_dir,
         db_path=ctx.db_path,
         document_output_dir=ctx.document_output_dir,
-        coverage_file=coverage_file,
         gateway=gateway,
         runner=runner,
     )
@@ -1173,7 +1074,6 @@ def provision_graph_ready_repo(
         commit=commit,
         options=ProvisionOptions(
             include_typing=opts.include_typing,
-            include_coverage=opts.include_coverage,
             build_graph_metrics=True,
             file_backed=opts.file_backed,
             db_path=opts.db_path,
@@ -1226,7 +1126,6 @@ def graph_metrics_ready_gateway(
         commit=opts.commit,
         options=ProvisionOptions(
             include_typing=False,
-            include_coverage=False,
             build_graph_metrics=False,
             file_backed=opts.file_backed,
             db_path=opts.db_path,
@@ -1290,7 +1189,7 @@ def docs_views_ready_gateway(
     Returns
     -------
     ProvisionedGateway
-        Provisioned gateway with repo_map/modules/goids, coverage, and risk factors.
+        Provisioned gateway with repo_map/modules/goids and risk factors.
     """
     ctx = provision_ingested_repo(
         repo_root,
@@ -1298,7 +1197,6 @@ def docs_views_ready_gateway(
         commit=commit,
         options=ProvisionOptions(
             include_typing=True,
-            include_coverage=True,
             build_graph_metrics=True,
             file_backed=file_backed,
             db_path=db_path,
@@ -1409,7 +1307,6 @@ def build_callgraph_fixture_repo(
         commit=opts.commit,
         options=ProvisionOptions(
             include_typing=False,
-            include_coverage=False,
             build_graph_metrics=False,
             file_backed=opts.file_backed,
             db_path=opts.db_path,
@@ -1435,7 +1332,6 @@ def build_callgraph_fixture_repo(
         document_output_dir=build_dir / "output",
         dataset_root_dir=build_dir / "output" / "datasets",
         scip_dir=build_dir / "scip",
-        coverage_json=build_dir / "coverage" / "coverage.json",
         pytest_report=build_dir / "test-results" / "pytest-report.json",
         tool_cache=build_dir / ".tool_cache",
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
@@ -1479,7 +1375,7 @@ class ProvisioningBuilder:
 
     Example
     -------
-    >>> ctx = ProvisioningBuilder(repo_root).with_typing().with_coverage().build()
+    >>> ctx = ProvisioningBuilder(repo_root).with_typing().build()
     >>> ctx = ProvisioningBuilder(repo_root).for_docs_export().build()
     """
 
@@ -1516,24 +1412,6 @@ class ProvisioningBuilder:
         """
         self._options = ProvisionOptions(
             include_typing=True,
-            include_coverage=self._options.include_coverage,
-            build_graph_metrics=self._options.build_graph_metrics,
-            file_backed=self._options.file_backed,
-            db_path=self._options.db_path,
-        )
-        return self
-
-    def with_coverage(self) -> ProvisioningBuilder:
-        """Enable coverage ingestion.
-
-        Returns
-        -------
-        ProvisioningBuilder
-            Self for chaining.
-        """
-        self._options = ProvisionOptions(
-            include_typing=self._options.include_typing,
-            include_coverage=True,
             build_graph_metrics=self._options.build_graph_metrics,
             file_backed=self._options.file_backed,
             db_path=self._options.db_path,
@@ -1550,7 +1428,6 @@ class ProvisioningBuilder:
         """
         self._options = ProvisionOptions(
             include_typing=self._options.include_typing,
-            include_coverage=self._options.include_coverage,
             build_graph_metrics=True,
             file_backed=self._options.file_backed,
             db_path=self._options.db_path,
@@ -1572,7 +1449,6 @@ class ProvisioningBuilder:
         """
         self._options = ProvisionOptions(
             include_typing=self._options.include_typing,
-            include_coverage=self._options.include_coverage,
             build_graph_metrics=self._options.build_graph_metrics,
             file_backed=True,
             db_path=db_path,
@@ -1587,7 +1463,7 @@ class ProvisioningBuilder:
         ProvisioningBuilder
             Self for chaining.
         """
-        return self.with_typing().with_coverage()
+        return self.with_typing()
 
     def build(self) -> TestContext:
         """Build the provisioned TestContext.

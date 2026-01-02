@@ -228,6 +228,8 @@ def _row_to_module_profile_model(
     ModuleProfileRowModel
         Row model derived from the provided record.
     """
+    created_at_value = record.get("created_at")
+    created_at = created_at_value if isinstance(created_at_value, datetime) else inputs.created_at
     return ModuleProfileRowModel(
         repo=str(record.get("repo")),
         commit=str(record.get("commit")),
@@ -260,9 +262,5 @@ def _row_to_module_profile_model(
         else "[]",
         tags=record.get("tags") if record.get("tags") is not None else "[]",
         owners=record.get("owners") if record.get("owners") is not None else "[]",
-        created_at=(
-            record.get("created_at")
-            if isinstance(record.get("created_at"), datetime)
-            else inputs.created_at
-        ),
+        created_at=created_at,
     )

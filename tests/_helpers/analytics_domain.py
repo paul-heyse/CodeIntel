@@ -9,9 +9,6 @@ from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsCoverageLinesRow as CoverageLineRow,
-    )
-    from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
     )
     from codeintel.core.schemas.generated_rows.analytics import (
@@ -22,7 +19,6 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
-    "make_coverage_record",
     "make_graph_metric_function_row",
     "make_graph_metric_module_row",
     "make_profile_record",
@@ -66,20 +62,6 @@ class GraphMetricModuleOverrides(TypedDict, total=False):
     import_layer: int | None
     symbol_fan_in: int
     symbol_fan_out: int
-    created_at: datetime
-
-
-class CoverageRecordOverrides(TypedDict, total=False):
-    """Optional overrides for coverage line rows."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    line: int
-    is_executable: bool
-    is_covered: bool
-    hits: int
-    context_count: int
     created_at: datetime
 
 
@@ -193,37 +175,6 @@ def make_graph_metric_module_row(
         "import_layer": None,
         "symbol_fan_in": 0,
         "symbol_fan_out": 0,
-        "created_at": datetime.now(UTC),
-    }
-    if overrides:
-        base.update(overrides)
-    return base
-
-
-def make_coverage_record(
-    rel_path: str = "pkg/mod.py",
-    *,
-    line: int = 1,
-    repo: str = DEFAULT_VARIANT.repo,
-    commit: str = DEFAULT_VARIANT.commit,
-    overrides: CoverageRecordOverrides | None = None,
-) -> CoverageLineRow:
-    """Build a CoverageLineRow for analytics.coverage_lines inserts.
-
-    Returns
-    -------
-    CoverageLineRow
-        Populated coverage line row.
-    """
-    base: CoverageLineRow = {
-        "repo": repo,
-        "commit": commit,
-        "rel_path": rel_path,
-        "line": line,
-        "is_executable": True,
-        "is_covered": False,
-        "hits": 0,
-        "context_count": 0,
         "created_at": datetime.now(UTC),
     }
     if overrides:

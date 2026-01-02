@@ -116,8 +116,8 @@ class FunctionProfileCoreFrames:
 @dataclass(frozen=True)
 class FunctionProfileRiskFrames:
     goid_risk_factors: pl.DataFrame
-    coverage_functions: pl.DataFrame
     hotspots: pl.DataFrame
+    coverage_functions: pl.DataFrame
     test_coverage_edges: pl.DataFrame
     test_catalog: pl.DataFrame
 
@@ -155,17 +155,15 @@ def function_profile_core_frames(
 
 def function_profile_risk_frames(
     q__analytics__goid_risk_factors: InferableTabularInput,
-    q__analytics__coverage_functions: InferableTabularInput,
     q__analytics__hotspots: InferableTabularInput,
-    q__analytics__test_coverage_edges: InferableTabularInput,
-    q__analytics__test_catalog: InferableTabularInput,
 ) -> FunctionProfileRiskFrames:
+    empty_frame = pl.DataFrame()
     return FunctionProfileRiskFrames(
         goid_risk_factors=tabular_to_lazyframe(q__analytics__goid_risk_factors).collect(),
-        coverage_functions=tabular_to_lazyframe(q__analytics__coverage_functions).collect(),
         hotspots=tabular_to_lazyframe(q__analytics__hotspots).collect(),
-        test_coverage_edges=tabular_to_lazyframe(q__analytics__test_coverage_edges).collect(),
-        test_catalog=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
+        coverage_functions=empty_frame,
+        test_coverage_edges=empty_frame,
+        test_catalog=empty_frame,
     )
 
 
@@ -290,9 +288,7 @@ def module_profile_frames(
         function_profile=tabular_to_lazyframe(q__analytics__function_profile).collect(),
         file_profile=tabular_to_lazyframe(q__analytics__file_profile).collect(),
         import_graph_edges=tabular_to_lazyframe(q__graph__import_graph_edges).collect(),
-        semantic_roles_modules=tabular_to_lazyframe(
-            q__analytics__semantic_roles_modules
-        ).collect(),
+        semantic_roles_modules=tabular_to_lazyframe(q__analytics__semantic_roles_modules).collect(),
     )
 
 

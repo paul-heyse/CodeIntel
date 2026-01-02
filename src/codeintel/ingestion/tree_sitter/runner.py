@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from tree_sitter import Query, QueryCursor
 
+from codeintel.core.spans import normalize_byte_span
 from codeintel.ingestion.tree_sitter.registry import load_language, load_parser, load_query_packs
 
 if TYPE_CHECKING:
@@ -187,8 +188,10 @@ def _slice_preview(
     end_byte: int,
     preview_limit: int,
 ) -> str | None:
-    if start_byte < 0 or end_byte <= start_byte:
+    normalized = normalize_byte_span(start_byte, end_byte)
+    if normalized is None:
         return None
+    start_byte, end_byte = normalized
     if start_byte >= len(source_bytes):
         return None
     clipped_end = min(end_byte, len(source_bytes))

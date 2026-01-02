@@ -5,11 +5,12 @@ Decision trace payloads are audit artifacts and must not drive control flow.
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
+
+import msgspec
+import orjson
 
 from codeintel.build.manifest.records import CacheEventStatus, CacheManifestEntry
 
@@ -37,8 +38,7 @@ class DecisionTracePayload(TypedDict):
     recorded_at: str
 
 
-@dataclass(frozen=True, slots=True)
-class DecisionTraceRecord:
+class DecisionTraceRecord(msgspec.Struct, frozen=True):
     """Serializable decision record for a cache event.
 
     cache_version represents the cache data version for the event.
@@ -133,8 +133,8 @@ def write_decision_trace(path: Path, entries: Sequence[CacheManifestEntry]) -> N
     """Write decision trace JSON to the provided path."""
     payload = build_decision_trace_payload(entries)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload_text = json.dumps(payload, indent=2)
-    path.write_text(f"{payload_text}\n", encoding="utf-8")
+    payload_bytes = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2)
+    path.write_bytes(payload_bytes + b"\n")
 
 
 def read_decision_trace(path: Path) -> list[DecisionTracePayload]:
@@ -150,7 +150,7 @@ def read_decision_trace(path: Path) -> list[DecisionTracePayload]:
     TypeError
         If the payload is not a list.
     """
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = orjson.loads(path.read_bytes())
     if not isinstance(data, list):
         msg = f"Decision trace payload must be a list, got {type(data)}"
         raise TypeError(msg)

@@ -151,6 +151,47 @@ class ExportResult:
 
 @result_type
 @dataclass(frozen=True)
+class InferabilityInfo:
+    """Result type for schema inferability inventory records.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    status
+        Inferability status ("inferable" or "non_inferable").
+    target_name
+        Target name that produces the table output.
+    saver_node
+        Saver node name attached to the output.
+    sink
+        Materialization sink name.
+    compute_node
+        Compute node name driving the table output.
+    reason
+        Optional explanation when non-inferable.
+    qparams
+        Sorted list of q__ inputs referenced by the compute node.
+    requires_env
+        Whether inference requires BuildEnv inputs.
+    requires_catalog
+        Whether inference requires catalog inputs.
+    """
+
+    table_key: str
+    status: str
+    target_name: str
+    saver_node: str
+    sink: str
+    compute_node: str | None = None
+    reason: str | None = None
+    qparams: tuple[str, ...] | None = None
+    requires_env: bool | None = None
+    requires_catalog: bool | None = None
+
+
+@result_type
+@dataclass(frozen=True)
 class StorageDatabaseExportResult:
     """Result type for storage database export.
 

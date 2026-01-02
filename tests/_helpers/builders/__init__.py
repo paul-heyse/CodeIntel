@@ -6,15 +6,13 @@ Use the generic insert_rows() function from row_protocol.py to insert these rows
 The package is organized by database schema domain:
 - core: Core entity tables (modules, goids, docstrings, etc.)
 - graph: Graph structure tables (call graph, import graph, CFG/DFG)
-- analytics: Analytics and metrics tables (function metrics, coverage, risk, etc.)
+- analytics: Analytics and metrics tables (function metrics, risk, etc.)
 """
 
 from __future__ import annotations
 
 from tests._helpers.builders.analytics import (
     ConfigValueRow,
-    CoverageFunctionRow,
-    CoverageLineRow,
     FunctionMetricsRow,
     FunctionTypesRow,
     FunctionValidationRow,
@@ -26,7 +24,6 @@ from tests._helpers.builders.analytics import (
     SubsystemRow,
     SymbolGraphMetricsModulesRow,
     TestCatalogRow,
-    TestCoverageEdgeRow,
     TypednessRow,
 )
 from tests._helpers.builders.core import (
@@ -61,8 +58,6 @@ __all__ = [
     "CallGraphEdgeRow",
     "CallGraphNodeRow",
     "ConfigValueRow",
-    "CoverageFunctionRow",
-    "CoverageLineRow",
     "DFGEdgeRow",
     "DatasetDataflowEdgeRow",
     "DatasetDataflowNodeRow",
@@ -88,7 +83,6 @@ __all__ = [
     "SymbolUseEdgeInput",
     "SymbolUseEdgeRow",
     "TestCatalogRow",
-    "TestCoverageEdgeRow",
     "TypednessRow",
     "insert_rows",
     "insert_symbol_use_edges",

@@ -21,7 +21,6 @@ from codeintel.core.runtime.loader import load_runtime_settings
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
-    FakeCoverageCollector,
     FakeGitHistoryProvider,
     FakeScipIndexer,
     FakeTestReporter,
@@ -210,7 +209,6 @@ class RecordingProviders:
     tool_runner: FakeToolRunner = field(default_factory=FakeToolRunner)
     scip_indexer: FakeScipIndexer = field(default_factory=FakeScipIndexer)
     type_checker: FakeTypeChecker = field(default_factory=FakeTypeChecker)
-    coverage_collector: FakeCoverageCollector = field(default_factory=FakeCoverageCollector)
     test_reporter: FakeTestReporter = field(default_factory=FakeTestReporter)
     git_history: FakeGitHistoryProvider = field(default_factory=FakeGitHistoryProvider)
 
@@ -226,7 +224,6 @@ class RecordingProviders:
             "tool_runner": self.tool_runner,
             "scip_indexer": self.scip_indexer,
             "type_checker": self.type_checker,
-            "coverage_collector": self.coverage_collector,
             "test_reporter": self.test_reporter,
             "git_history": self.git_history,
         }

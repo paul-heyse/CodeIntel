@@ -18,7 +18,6 @@ Example (legacy tool fakes)
 """
 
 from tests._helpers.fakes.fake_providers import (
-    FakeCoverageCollector,
     FakeGitHistoryProvider,
     FakeTestReporter,
     FakeTypeChecker,
@@ -40,7 +39,6 @@ from tests._helpers.fakes.tools import (
 from tests._helpers.fakes.utilities import utcnow
 
 __all__ = [
-    "FakeCoverageCollector",
     "FakeGitHistoryProvider",
     "FakeTestReporter",
     "FakeToolRunner",

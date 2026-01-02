@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.helpers import paths_to_modules
@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
+    from codeintel.core.gateway import BuildGateway
     from codeintel.ingestion.compute.repo_scan import RepoScanResult
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
@@ -113,7 +114,6 @@ __all__ = [
     "seed_modules_and_repo_map",
     "seed_numeric_table",
     "seed_varchar_table",
-    "write_coverage_file",
     "write_dummy_scip_files",
     "write_pytest_report",
     "write_scip_index",
@@ -248,7 +248,6 @@ def build_target_context_for_target(
             document_output_dir=build_dir / "document_output",
             dataset_root_dir=build_dir / "document_output" / "datasets",
             scip_dir=build_dir / "scip",
-            coverage_json=build_dir / "coverage" / "coverage.json",
             pytest_report=build_dir / "test-results" / "pytest-report.json",
             tool_cache=build_dir / ".tool_cache",
             log_db_path=build_dir / "logs" / "logs.duckdb",
@@ -457,26 +456,6 @@ def materialize_repo_scan_result(
         scan_result.repo_map_rows,
         snapshot=snapshot,
     )
-
-
-def write_coverage_file(
-    build_dir: Path,
-    *,
-    filename: str = "coverage.json",
-    content: str | Mapping[str, object] | None = None,
-) -> Path:
-    """Write a coverage artifact into the build directory.
-
-    Returns
-    -------
-    Path
-        Path to the written coverage file.
-    """
-    coverage_path = build_dir / filename
-    coverage_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(content) if isinstance(content, Mapping) else content or "{}"
-    coverage_path.write_text(payload, encoding="utf-8")
-    return coverage_path
 
 
 def write_pytest_report(
@@ -901,7 +880,7 @@ def seed_modules_and_repo_map(
         """,
         [ctx.snapshot.repo, ctx.snapshot.commit, modules_json, {}],
     )
-    ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
+    ModulesAssertions(cast("StorageGateway", ctx.gateway), ctx.snapshot).inventory_consistent()
 
 
 def seed_inventory_from_paths(
@@ -1029,7 +1008,7 @@ def seed_ingestion_tables(
 
 
 def seed_foreign_key_tables(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     *,
     parent_table: str,
     child_table: str,
@@ -1108,7 +1087,7 @@ def seed_foreign_key_tables(
         )
 
 
-def seed_numeric_table(gateway: StorageGateway, table: str, values: Sequence[float]) -> None:
+def seed_numeric_table(gateway: BuildGateway, table: str, values: Sequence[float]) -> None:
     """
     Create or truncate a numeric table and insert provided values.
 
@@ -1163,7 +1142,7 @@ def seed_numeric_table(gateway: StorageGateway, table: str, values: Sequence[flo
 
 
 def seed_varchar_table(
-    gateway: StorageGateway,
+    gateway: BuildGateway,
     table: str,
     values: Sequence[tuple[int, str | None]],
 ) -> None:

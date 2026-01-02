@@ -6,34 +6,26 @@ registry guards, and snapshot validation.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path as PathLib
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.build.analytics.testing.behavioral import importance
-from codeintel.build.analytics.testing.behavioral import tags as behavioral_tags
 from codeintel.build.analytics.testing.behavioral.importance import (
     compute_flakiness_score,
     compute_importance_score,
 )
 from codeintel.build.analytics.testing.behavioral.tags import infer_behavior_tags
-from codeintel.build.analytics.testing.coverage import inputs as coverage_inputs
-from codeintel.build.analytics.testing.coverage.inputs import (
-    aggregate_test_coverage_by_function,
-    aggregate_test_coverage_by_subsystem,
-    load_test_graph_metrics,
-)
 from codeintel.build.analytics.testing.profiles import rows
 from codeintel.build.analytics.testing.profiles.types import (
-    BehavioralCoverageOptions,
-    BehavioralLLMResult,
+    FunctionCoverageEntry,
     ImportanceInputs,
     IoFlags,
+    SubsystemCoverageEntry,
     TestAstInfo,
+    TestGraphMetrics,
     TestProfileContext,
     TestProfileOptions,
     TestRecord,
@@ -42,21 +34,11 @@ from codeintel.build.schemas import configure_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.config.primitives import SnapshotRef
 from codeintel.runtime.runtime_bundle import RuntimeBundle
-from tests._helpers.factories import (
-    blank_behavioral_coverage_row,
-    blank_test_profile_row,
-)
+from tests._helpers.factories import blank_test_profile_row
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Mapping
     from pathlib import Path
-
-    import duckdb
-
-    from codeintel.build.analytics.testing.profiles.types import (
-        BehavioralLLMRequest,
-    )
-    from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture(autouse=True)
@@ -81,63 +63,6 @@ def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
     return serialize_row(row, columns)
 
 
-def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
-    """Serialize a behavioral coverage mapping using schema-derived column order.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Tuple of values in storage column order.
-    """
-    columns = _columns_by_table()["analytics.behavioral_coverage"]
-    return serialize_row(row, columns)
-
-
-@contextmanager
-def _override(obj: object, name: str, value: object) -> Iterator[None]:
-    """Context manager to temporarily override an attribute."""
-    original = getattr(obj, name)
-    setattr(obj, name, value)
-    try:
-        yield
-    finally:
-        setattr(obj, name, original)
-
-
-class _FakeCon:
-    """Fake database connection for testing without real DB."""
-
-    def __init__(self) -> None:
-        self.executed: list[tuple[str, list[object] | None]] = []
-        self.executemany_calls: list[tuple[str, list[list[object]]]] = []
-
-    def execute(self, sql: str, params: list[object] | None = None) -> _FakeCon:
-        """Record execute call and return self for chaining.
-
-        Returns
-        -------
-        _FakeCon
-            Self for method chaining.
-        """
-        self.executed.append((sql, params))
-        return self
-
-    def executemany(self, sql: str, params_list: list[list[object]]) -> None:
-        """Record executemany call."""
-        self.executemany_calls.append((sql, params_list))
-
-
-def _default_options() -> tuple[TestProfileOptions, BehavioralCoverageOptions]:
-    """Create default test and behavioral coverage options.
-
-    Returns
-    -------
-    tuple[TestProfileOptions, BehavioralCoverageOptions]
-        Tuple of test profile and behavioral coverage options.
-    """
-    return TestProfileOptions(), BehavioralCoverageOptions()
-
-
 def _make_snapshot(repo_root: Path | None = None) -> SnapshotRef:
     """Create a standard test snapshot reference.
 
@@ -158,31 +83,15 @@ def _make_snapshot(repo_root: Path | None = None) -> SnapshotRef:
     )
 
 
-def _snapshot_cfg() -> tuple[SnapshotRef, TestProfileOptions, BehavioralCoverageOptions]:
+def _snapshot_cfg() -> tuple[SnapshotRef, TestProfileOptions]:
     """Create snapshot and options for tests without file I/O.
 
     Returns
     -------
-    tuple[SnapshotRef, TestProfileOptions, BehavioralCoverageOptions]
-        Snapshot reference, test profile options, and behavioral coverage options.
+    tuple[SnapshotRef, TestProfileOptions]
+        Snapshot reference and test profile options.
     """
-    return _make_snapshot(), TestProfileOptions(), BehavioralCoverageOptions()
-
-
-def _configs(tmp_path: Path) -> SnapshotRef:
-    """Create snapshot reference for integration-style tests.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary directory path for repo root.
-
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference with tmp_path as repo root.
-    """
-    return _make_snapshot(repo_root=tmp_path)
+    return _make_snapshot(), TestProfileOptions()
 
 
 def test_importance_guardrails_and_monotonicity() -> None:
@@ -279,7 +188,7 @@ def test_importance_and_flakiness_scoring() -> None:
 def test_build_test_profile_rows_round_trip() -> None:
     """Tuple-to-model mapping should align with schema constants for new helpers."""
     created_at = datetime(2024, 1, 1, tzinfo=UTC)
-    snapshot, test_options, _ = _snapshot_cfg()
+    snapshot, test_options = _snapshot_cfg()
     test_record = TestRecord(
         test_id="test-id",
         test_goid_h128=1,
@@ -297,14 +206,14 @@ def test_build_test_profile_rows_round_trip() -> None:
         end_line=2,
     )
     functions_covered = {
-        "test-id": coverage_inputs.FunctionCoverageEntry(
+        "test-id": FunctionCoverageEntry(
             functions=[{"function_goid_h128": 1}],
             count=1,
             primary=[1],
         )
     }
     subsystems_covered = {
-        "test-id": coverage_inputs.SubsystemCoverageEntry(
+        "test-id": SubsystemCoverageEntry(
             subsystems=[{"subsystem_id": "sub"}],
             count=1,
             primary_subsystem_id="sub",
@@ -312,7 +221,7 @@ def test_build_test_profile_rows_round_trip() -> None:
         )
     }
     tg_metrics = {
-        "test-id": coverage_inputs.TestGraphMetrics(
+        "test-id": TestGraphMetrics(
             degree=1,
             weighted_degree=2.0,
             proj_degree=1,
@@ -359,33 +268,6 @@ def test_build_test_profile_rows_round_trip() -> None:
         pytest.fail(msg)
 
 
-def test_build_behavioral_coverage_rows_normalization() -> None:
-    """Behavioral coverage rows should align with schema constants."""
-    created_at = datetime(2024, 1, 1, tzinfo=UTC)
-    tuple_row = (
-        "repo",
-        "commit",
-        "test-id",
-        1,
-        "rel.py",
-        "qual",
-        ["network_interaction"],
-        "heuristic",
-        "v1",
-        "gpt",
-        "run-id",
-        created_at,
-    )
-    models = rows.build_behavioral_coverage_rows([tuple_row])
-    if len(models) != 1:
-        msg = "Expected exactly one behavioral coverage model."
-        pytest.fail(msg)
-    serialized = behavioral_coverage_row_to_tuple(models[0])
-    if len(serialized) != len(_columns_by_table()["analytics.behavioral_coverage"]):
-        msg = "Serialized tuple length mismatch for behavioral_coverage."
-        pytest.fail(msg)
-
-
 def test_infer_behavior_tags_basic() -> None:
     """Ensure behavior tag inference captures core markers.
 
@@ -416,137 +298,9 @@ def test_infer_behavior_tags_basic() -> None:
         raise AssertionError(message)
 
 
-def test_build_behavior_rows_mixed_sources() -> None:
-    """Behavior rows should preserve mixed heuristic/LLM metadata without legacy hooks."""
-    fake_con = _FakeCon()
-    gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
-    snapshot, _, beh_options = _snapshot_cfg()
-
-    sample_tests = [
-        TestRecord(
-            test_id="t1",
-            test_goid_h128=None,
-            urn=None,
-            rel_path="a.py",
-            module=None,
-            qualname="A::test",
-            language="python",
-            kind="function",
-            status="passed",
-            duration_ms=10.0,
-            markers=["network"],
-            flaky=False,
-            start_line=1,
-            end_line=5,
-        ),
-        TestRecord(
-            test_id="t2",
-            test_goid_h128=None,
-            urn=None,
-            rel_path="b.py",
-            module=None,
-            qualname="B::test",
-            language="python",
-            kind="function",
-            status="failed",
-            duration_ms=20.0,
-            markers=["db", "io"],
-            flaky=False,
-            start_line=1,
-            end_line=5,
-        ),
-    ]
-
-    profile_ctx: Mapping[str, dict[str, object]] = {
-        "t1": {"markers": ["network"], "functions_covered": [], "subsystems_covered": []},
-        "t2": {"markers": ["db"], "functions_covered": [], "subsystems_covered": []},
-    }
-    ast_info = {"t1": TestAstInfo(), "t2": TestAstInfo(io_flags=IoFlags(uses_db=True))}
-    ctx_seen: dict[str, object] = {}
-
-    def _fake_build_behavior_row(
-        test: TestRecord, ctx: behavioral_tags.BehavioralContext
-    ) -> tuple[object, ...]:
-        ctx_seen.setdefault("llm_runner", getattr(ctx, "llm_runner", None))
-        tag_source = "llm" if test.test_id == "t2" else "heuristic"
-        llm_model = "gpt" if test.test_id == "t2" else None
-        llm_run_id = "run-123" if test.test_id == "t2" else None
-        tags = ["db"] if test.test_id == "t2" else ["network"]
-        return (
-            snapshot.repo,
-            snapshot.commit,
-            test.test_id,
-            None,
-            test.rel_path,
-            test.qualname or test.test_id,
-            tags,
-            tag_source,
-            beh_options.heuristic_version,
-            llm_model,
-            llm_run_id,
-            getattr(ctx, "now", datetime.now(tz=UTC)),
-        )
-
-    def _fake_llm_runner(_request: BehavioralLLMRequest) -> BehavioralLLMResult:
-        return BehavioralLLMResult(tags=["db"])
-
-    hooks = behavioral_tags.BehaviorRowHooks(
-        load_tests=lambda _con, _cfg: sample_tests,
-        build_ast=lambda _root, _tests, _patterns: ast_info,
-        load_profile_ctx=lambda _con, _cfg: profile_ctx,
-        row_builder=_fake_build_behavior_row,
-    )
-    tuples = behavioral_tags.build_behavior_rows(
-        gateway,
-        snapshot,
-        options=beh_options,
-        llm_runner=_fake_llm_runner,
-        hooks=hooks,
-    )
-    models = rows.build_behavioral_coverage_rows(tuples)
-    if {model["test_id"] for model in models} != {"t1", "t2"}:
-        msg = "Behavioral coverage rows missing expected tests."
-        pytest.fail(msg)
-    tag_sources = {model["test_id"]: model["tag_source"] for model in models}
-    if tag_sources["t1"] != "heuristic" or tag_sources["t2"] != "llm":
-        msg = "Tag sources were not preserved per test."
-        pytest.fail(msg)
-    if ctx_seen.get("llm_runner") is not _fake_llm_runner:
-        msg = "LLM runner was not threaded through behavioral context."
-        pytest.fail(msg)
-
-
-def test_coverage_wrappers_empty(
-    tmp_path: Path, coverage_profiles_conn: duckdb.DuckDBPyConnection
-) -> None:
-    """Ensure coverage aggregation wrappers handle empty tables.
-
-    Raises
-    ------
-    AssertionError
-        If any aggregation returns a non-empty result.
-    """
-    snapshot = _configs(tmp_path)
-    if (
-        aggregate_test_coverage_by_function(coverage_profiles_conn, snapshot, loader=lambda *_: {})
-        != {}
-    ):
-        message = "Expected empty function coverage aggregation."
-        raise AssertionError(message)
-    if (
-        aggregate_test_coverage_by_subsystem(coverage_profiles_conn, snapshot, loader=lambda *_: {})
-        != {}
-    ):
-        message = "Expected empty subsystem coverage aggregation."
-        raise AssertionError(message)
-    if load_test_graph_metrics(coverage_profiles_conn, snapshot, loader=lambda *_: {}) != {}:
-        message = "Expected empty test graph metrics aggregation."
-        raise AssertionError(message)
-
-
 def test_test_profile_model_snapshot() -> None:
     """Deterministic snapshot of test_profile row model to catch drift."""
-    snapshot, test_options, _ = _snapshot_cfg()
+    snapshot, test_options = _snapshot_cfg()
     created_at = datetime(2024, 1, 1, tzinfo=UTC)
     test_record = TestRecord(
         test_id="t1",
@@ -565,14 +319,14 @@ def test_test_profile_model_snapshot() -> None:
         end_line=5,
     )
     functions = {
-        "t1": coverage_inputs.FunctionCoverageEntry(
+        "t1": FunctionCoverageEntry(
             functions=[{"function_goid_h128": 1}],
             count=1,
             primary=[1],
         )
     }
     subsystems = {
-        "t1": coverage_inputs.SubsystemCoverageEntry(
+        "t1": SubsystemCoverageEntry(
             subsystems=[{"subsystem_id": "s1"}],
             count=1,
             primary_subsystem_id="s1",
@@ -580,7 +334,7 @@ def test_test_profile_model_snapshot() -> None:
         )
     }
     tg_metrics = {
-        "t1": coverage_inputs.TestGraphMetrics(
+        "t1": TestGraphMetrics(
             degree=2,
             weighted_degree=3.0,
             proj_degree=1,
@@ -662,23 +416,6 @@ def test_test_profile_model_snapshot() -> None:
     serialized = serialize_test_profile_row(model)
     if len(serialized) != len(_columns_by_table()["analytics.test_profile"]):
         pytest.fail("Serialized tuple length mismatch for test_profile.")
-
-
-def test_behavioral_coverage_serialization() -> None:
-    """Ensure behavioral coverage row serialization produces correct tuple length."""
-    row = blank_behavioral_coverage_row()
-    row["repo"] = "r"
-    row["commit"] = "c"
-    row["test_id"] = "t1"
-    row["rel_path"] = "p"
-    row["qualname"] = "q"
-    row["behavior_tags"] = []
-    row["tag_source"] = "heuristic"
-    row["created_at"] = datetime.now(tz=UTC)
-
-    serialized = behavioral_coverage_row_to_tuple(row)
-    if len(serialized) != len(_columns_by_table()["analytics.behavioral_coverage"]):
-        pytest.fail("Serialized tuple length mismatch for behavioral_coverage.")
 
 
 def test_test_profile_serialization() -> None:

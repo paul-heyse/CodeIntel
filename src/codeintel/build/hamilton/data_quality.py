@@ -12,9 +12,18 @@ import pyarrow.compute as pc
 from hamilton.data_quality.base import DataValidationLevel, DataValidator, ValidationResult
 from polars.exceptions import PolarsError
 
+try:
+    import pandera.polars as pandera_polars
+    from pandera.errors import SchemaError, SchemaErrors
+except ImportError:  # pragma: no cover - optional dependency
+    pandera_polars = None
+    SchemaError = None
+    SchemaErrors = None
+
 from codeintel.build.schemas import get_schema_provider
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.core.schemas.type_mappings import polars_type_from_column_type
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -126,6 +135,105 @@ class TableSchemaColumnsValidator(DataValidator):
         return ValidationResult(
             passes=True,
             message=f"Schema columns validated for {self.table_key}",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PanderaSchemaValidator(DataValidator):
+    """Validate table outputs with a Pandera schema derived from the contract."""
+
+    table_key: str
+
+    def __init__(self, *, table_key: str, importance: str) -> None:
+        object.__setattr__(self, "_importance", DataValidationLevel(importance))
+        object.__setattr__(self, "table_key", table_key)
+
+    @classmethod
+    def name(cls) -> str:
+        """Return the canonical validator name.
+
+        Returns
+        -------
+        str
+            Validator name identifier.
+        """
+        return "pandera_schema"
+
+    @staticmethod
+    def applies_to(datatype: type[object]) -> bool:
+        """Return whether the validator applies to the provided type.
+
+        Parameters
+        ----------
+        datatype
+            Dataset type being validated.
+
+        Returns
+        -------
+        bool
+            True when the validator applies.
+        """
+        _ = datatype
+        return True
+
+    def description(self) -> str:
+        """Return a human-readable validator description.
+
+        Returns
+        -------
+        str
+            Validator description for diagnostics.
+        """
+        return f"Validate Pandera contract for {self.table_key}"
+
+    def validate(self, dataset: object) -> ValidationResult:
+        """Validate the dataset using a Pandera schema derived from TableSchema.
+
+        Parameters
+        ----------
+        dataset
+            Dataset to validate.
+
+        Returns
+        -------
+        ValidationResult
+            Validation outcome for the dataset.
+        """
+        if not _pandera_available():
+            return ValidationResult(
+                passes=True,
+                message=f"Pandera unavailable for {self.table_key}",
+            )
+        schema = _pandera_schema_for_table(self.table_key)
+        if schema is None:
+            return ValidationResult(
+                passes=True,
+                message=f"No Pandera schema for {self.table_key}",
+            )
+        frame = _pandera_frame(dataset)
+        if frame is None:
+            return ValidationResult(
+                passes=True,
+                message=f"Skipping Pandera validation for {type(dataset).__name__}",
+            )
+        error_types = _pandera_error_types()
+        if not error_types:
+            return ValidationResult(
+                passes=True,
+                message=f"Pandera error types unavailable for {self.table_key}",
+            )
+        try:
+            schema.validate(frame, lazy=True)
+        except error_types as exc:
+            diagnostics = _pandera_error_diagnostics(exc, table_key=self.table_key)
+            return ValidationResult(
+                passes=False,
+                message=f"Pandera validation failed for {self.table_key}",
+                diagnostics=diagnostics,
+            )
+        return ValidationResult(
+            passes=True,
+            message=f"Pandera validation passed for {self.table_key}",
         )
 
 
@@ -377,6 +485,13 @@ def build_table_schema_validators(
             enforce_non_nullable=enforce_non_nullable,
         ),
     ]
+    if _pandera_available():
+        validators.append(
+            PanderaSchemaValidator(
+                table_key=table_key,
+                importance=importance,
+            )
+        )
     if isinstance(min_rows, int) and min_rows > 0:
         validators.append(
             TableRowCountValidator(
@@ -425,6 +540,66 @@ def _column_names(dataset: object) -> list[str] | None:
             if isinstance(columns, Sequence):
                 names = [str(name) for name in columns]
     return names
+
+
+def _pandera_available() -> bool:
+    return pandera_polars is not None and SchemaErrors is not None and SchemaError is not None
+
+
+def _pandera_error_types() -> tuple[type[BaseException], ...]:
+    types: list[type[BaseException]] = []
+    if SchemaErrors is not None:
+        types.append(SchemaErrors)
+    if SchemaError is not None:
+        types.append(SchemaError)
+    return tuple(types)
+
+
+def _pandera_error_diagnostics(exc: BaseException, *, table_key: str) -> dict[str, object]:
+    diagnostics: dict[str, object] = {"table_key": table_key, "error": str(exc)}
+    failure_cases = getattr(exc, "failure_cases", None)
+    if isinstance(failure_cases, pl.DataFrame):
+        diagnostics["failure_cases"] = failure_cases.head(50).to_dicts()
+    elif failure_cases is not None:
+        diagnostics["failure_cases"] = str(failure_cases)
+    return diagnostics
+
+
+def _pandera_schema_for_table(table_key: str) -> object | None:
+    if pandera_polars is None:
+        return None
+    schema = _resolve_table_schema(table_key)
+    if schema is None:
+        return None
+    columns: dict[str, object] = {}
+    for column in schema.columns:
+        polars_type = polars_type_from_column_type(column.type) or pl.Object
+        columns[column.name] = pandera_polars.Column(
+            dtype=polars_type,
+            nullable=column.nullable,
+            required=True,
+        )
+    return pandera_polars.DataFrameSchema(
+        columns,
+        strict="filter",
+        coerce=False,
+    )
+
+
+def _pandera_frame(dataset: object) -> pl.LazyFrame | pl.DataFrame | None:
+    if isinstance(dataset, (pl.LazyFrame, pl.DataFrame)):
+        return dataset
+    if isinstance(dataset, pa.Table):
+        return pl.from_arrow(dataset)
+    if isinstance(dataset, pa.RecordBatch):
+        return pl.from_arrow(pa.Table.from_batches([dataset]))
+    if isinstance(dataset, pa.RecordBatchReader):
+        try:
+            table = pa.Table.from_batches(list(dataset))
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            return None
+        return pl.from_arrow(table)
+    return None
 
 
 def _row_count(dataset: object) -> int | None:
@@ -584,6 +759,7 @@ def _non_nullable_violations_frame(dataset: pl.DataFrame, columns: Sequence[str]
 
 
 __all__ = [
+    "PanderaSchemaValidator",
     "TablePrimaryKeyValidator",
     "TableRowCountValidator",
     "TableSchemaColumnsValidator",

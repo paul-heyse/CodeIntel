@@ -45,7 +45,6 @@ SEED_INVENTORY: Final[list[SeedInventoryEntry]] = [
             "graph.cfg_blocks",
             "graph.cfg_edges",
             "graph.dfg_edges",
-            "analytics.coverage_functions",
             "analytics.function_metrics",
             "analytics.function_types",
             "analytics.function_validation",
@@ -72,12 +71,11 @@ SEED_INVENTORY: Final[list[SeedInventoryEntry]] = [
             "graph.import_graph_edges",
             "graph.symbol_use_edges",
             "analytics.test_catalog",
-            "analytics.test_coverage_edges",
         ],
         consumers=[
             "tests/docs_export/*",
         ],
-        notes="Docs-export smoke/validation seeds with minimal GOID and coverage rows.",
+        notes="Docs-export smoke/validation seeds with minimal GOID rows.",
     ),
     SeedInventoryEntry(
         name="seed_mcp_backend",
@@ -88,7 +86,6 @@ SEED_INVENTORY: Final[list[SeedInventoryEntry]] = [
             "analytics.function_validation",
             "graph.call_graph_edges",
             "analytics.test_catalog",
-            "analytics.test_coverage_edges",
         ],
         consumers=[
             "tests/mcp/test_backend.py",

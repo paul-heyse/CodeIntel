@@ -1,13 +1,13 @@
 """Tool port protocol for external analysis tool execution.
 
 This module defines the port protocol for executing external analysis tools
-like pyright, ruff, coverage, and scip-python. The protocol abstracts
+like pyright, ruff, and scip-python. The protocol abstracts
 tool invocation details to enable testing without real tool installations.
 
 Architecture Note
 -----------------
-This module defines **port interface types** (DiagnosticResult, CoverageResult,
-ScipResult, TestResult) that represent the contract between ingestion steps
+This module defines **port interface types** (DiagnosticResult, ScipResult,
+TestResult) that represent the contract between ingestion steps
 and tool adapters. These are intentionally simpler than the richer "Report"
 types in ``tools/results.py`` which are used internally by tool plugins.
 
@@ -98,49 +98,6 @@ class DiagnosticResult:
 
 
 @dataclass(frozen=True)
-class CoverageFileData:
-    """Coverage data for a single file.
-
-    Attributes
-    ----------
-    rel_path
-        Relative file path.
-    executed_lines
-        Set of executed line numbers.
-    missing_lines
-        Set of missing (not executed) line numbers.
-    excluded_lines
-        Set of excluded line numbers.
-    """
-
-    rel_path: str
-    executed_lines: frozenset[int]
-    missing_lines: frozenset[int]
-    excluded_lines: frozenset[int] = frozenset()
-
-
-@dataclass
-class CoverageResult:
-    """Result from running coverage tool.
-
-    Attributes
-    ----------
-    status
-        Execution status.
-    files
-        Coverage data per file.
-    error
-        Error message if status is FAILED.
-    duration_s
-        Execution duration in seconds.
-    """
-
-    status: ToolStatus
-    files: list[CoverageFileData] = field(default_factory=list)
-    error: str | None = None
-    duration_s: float = 0.0
-
-
 @dataclass(frozen=True)
 class ScipSymbol:
     """A symbol from SCIP index.
@@ -381,28 +338,6 @@ class IngestToolPort(Protocol):
         """
         ...
 
-    async def run_coverage(
-        self,
-        repo_root: Path,
-        *,
-        coverage_file: Path | None = None,
-    ) -> CoverageResult:
-        """Run coverage tool to export coverage data.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root directory.
-        coverage_file
-            Optional explicit coverage data file path.
-
-        Returns
-        -------
-        CoverageResult
-            Coverage data for all files.
-        """
-        ...
-
     async def run_scip(self, request: ScipRunRequest) -> ScipResult:
         """Run SCIP indexing.
 
@@ -420,8 +355,6 @@ class IngestToolPort(Protocol):
 
 
 __all__ = [
-    "CoverageFileData",
-    "CoverageResult",
     "DiagnosticEntry",
     "DiagnosticResult",
     "IngestToolPort",

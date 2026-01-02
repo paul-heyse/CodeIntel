@@ -22,7 +22,6 @@ class SpanSnapshot:
 
     cfg_goids: set[int]
     callgraph_goids: set[int]
-    coverage_goids: set[int]
     symbol_use_paths: set[str]
 
 

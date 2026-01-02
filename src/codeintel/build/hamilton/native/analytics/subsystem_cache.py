@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.build.analytics.subsystems.cache import (
-    build_subsystem_coverage_cache_rows,
-    build_subsystem_profile_cache_rows,
-)
+from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_cache_rows
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -33,11 +30,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SUBSYSTEM_CACHES_TARGET_NAME = "subsystem_caches"
 SUBSYSTEM_PROFILE_CACHE_TABLE_KEY = "analytics.subsystem_profile_cache"
-SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY = "analytics.subsystem_coverage_cache"
-SUBSYSTEM_CACHE_TABLE_KEYS = (
-    SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
-    SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY,
-)
+SUBSYSTEM_CACHE_TABLE_KEYS = (SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,)
 SUBSYSTEM_CACHE_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=SUBSYSTEM_CACHES_TARGET_NAME,
@@ -52,24 +45,12 @@ SUBSYSTEM_PROFILE_CACHE_CONTRACT = TableContractSpec(
     clip_column=None,
     input_name="subsystem_profile_cache__base",
 )
-SUBSYSTEM_COVERAGE_CACHE_CONTRACT = TableContractSpec(
-    table_key=SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY,
-    domain="analytics",
-    target=SUBSYSTEM_CACHES_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="subsystem_coverage_cache__base",
-)
 
 
 def subsystem_profile_cache__base(
     env: BuildEnv,
-    _q__analytics__subsystems: InferableTabularInput,
-    _q__analytics__subsystem_graph_metrics: InferableTabularInput,
-    _q__analytics__module_profile: InferableTabularInput,
-    _q__analytics__entrypoints: InferableTabularInput,
+    q__analytics__subsystems: InferableTabularInput,
+    q__analytics__subsystem_graph_metrics: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build cached subsystem profile rows.
 
@@ -78,8 +59,8 @@ def subsystem_profile_cache__base(
     pl.LazyFrame
         Lazy frame containing subsystem profile cache rows.
     """
-    subsystems_frame = tabular_to_lazyframe(_q__analytics__subsystems)
-    metrics_frame = tabular_to_lazyframe(_q__analytics__subsystem_graph_metrics)
+    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems)
+    metrics_frame = tabular_to_lazyframe(q__analytics__subsystem_graph_metrics)
     rows = build_subsystem_profile_cache_rows(env.snapshot, subsystems_frame, metrics_frame)
     return rows_to_frame(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY, rows)
 
@@ -105,49 +86,6 @@ def subsystem_profile_cache__table(
         Persisted subsystem profile cache frame.
     """
     return subsystem_profile_cache__base
-
-
-def subsystem_coverage_cache__base(
-    env: BuildEnv,
-    _q__analytics__subsystems: InferableTabularInput,
-    _q__analytics__subsystem_modules: InferableTabularInput,
-    _q__analytics__test_profile: InferableTabularInput,
-    _q__analytics__coverage_functions: InferableTabularInput,
-) -> pl.LazyFrame:
-    """Build cached subsystem coverage rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Lazy frame containing subsystem coverage cache rows.
-    """
-    subsystems_frame = tabular_to_lazyframe(_q__analytics__subsystems)
-    test_profile_frame = tabular_to_lazyframe(_q__analytics__test_profile)
-    rows = build_subsystem_coverage_cache_rows(env.snapshot, subsystems_frame, test_profile_frame)
-    return rows_to_frame(SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY, rows)
-
-
-@save_dataset(
-    context=SUBSYSTEM_CACHE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=SUBSYSTEM_CACHES_TARGET_NAME,
-    table_key=SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY,
-)
-@table_contract(SUBSYSTEM_COVERAGE_CACHE_CONTRACT)
-def subsystem_coverage_cache__table(
-    subsystem_coverage_cache__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist subsystem coverage cache rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted subsystem coverage cache frame.
-    """
-    return subsystem_coverage_cache__base
 
 
 subsystem_caches__table_materializations = make_table_materializations_collector(
@@ -185,8 +123,6 @@ def t__subsystem_caches(
 
 __all__ = [
     "subsystem_caches__table_materializations",
-    "subsystem_coverage_cache__base",
-    "subsystem_coverage_cache__table",
     "subsystem_profile_cache__base",
     "subsystem_profile_cache__table",
     "t__subsystem_caches",

@@ -191,11 +191,7 @@ def _subsystem_disagreement_findings_impl(
                 ctx="subsystem_agreement.import_community_id",
             ),
         )
-        for row in (
-            frame.filter(pl.col("agrees") == pl.lit(value=False))
-            .collect()
-            .to_dicts()
-        )
+        for row in (frame.filter(pl.col("agrees") == pl.lit(value=False)).collect().to_dicts())
     ]
     if not disagreements:
         return []

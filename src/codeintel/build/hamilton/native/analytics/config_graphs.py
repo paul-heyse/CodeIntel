@@ -51,6 +51,7 @@ from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
+from codeintel.core.spans import normalize_line_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -135,6 +136,17 @@ class _GoidSpan:
     end_line: int
 
 
+@dataclass(frozen=True)
+class ConfigDataFlowFrames:
+    """Tabular inputs needed for config data flow computation."""
+
+    config_values: InferableTabularInput
+    entrypoints: InferableTabularInput
+    call_graph_edges: InferableTabularInput
+    call_graph_nodes: InferableTabularInput
+    goids: InferableTabularInput
+
+
 def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
     if env.execution_context is None:
         return GraphRuntimeOptions(snapshot=env.snapshot)
@@ -208,10 +220,11 @@ def _group_goids_by_path(
             continue
         rel_path = row.get("rel_path")
         start_line = _coerce_int(row.get("start_line"))
-        end_line = _coerce_int(row.get("end_line")) or start_line
-        if rel_path is None or start_line is None or end_line is None:
+        end_line = _coerce_int(row.get("end_line"))
+        if rel_path is None or start_line is None:
             missing.add(goid)
             continue
+        start_line, end_line = normalize_line_span(start_line, end_line)
         qualname = row.get("qualname")
         span = _GoidSpan(
             goid=goid,
@@ -256,13 +269,32 @@ def _function_asts_from_goids(
     return ast_by_goid, missing
 
 
+def config_data_flow_frames(
+    q__analytics__config_values: InferableTabularInput,
+    q__analytics__entrypoints: InferableTabularInput,
+    q__graph__call_graph_edges: InferableTabularInput,
+    q__graph__call_graph_nodes: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+) -> ConfigDataFlowFrames:
+    """Bundle DAG-provided tables for config data flow computation.
+
+    Returns
+    -------
+    ConfigDataFlowFrames
+        Bundled frame inputs for config data flow computation.
+    """
+    return ConfigDataFlowFrames(
+        config_values=q__analytics__config_values,
+        entrypoints=q__analytics__entrypoints,
+        call_graph_edges=q__graph__call_graph_edges,
+        call_graph_nodes=q__graph__call_graph_nodes,
+        goids=q__core__goids,
+    )
+
+
 def config_data_flow__base(
     env: BuildEnv,
-    _q__analytics__config_values: InferableTabularInput,
-    _q__analytics__entrypoints: InferableTabularInput,
-    _q__graph__call_graph_edges: InferableTabularInput,
-    _q__graph__call_graph_nodes: InferableTabularInput,
-    _q__core__goids: InferableTabularInput,
+    config_data_flow_frames: ConfigDataFlowFrames,
 ) -> pl.LazyFrame:
     """Build config data flow rows.
 
@@ -270,16 +302,8 @@ def config_data_flow__base(
     ----------
     env
         Build environment with gateway access.
-    _q__analytics__config_values
-        Config values input (unused, required for dependency ordering).
-    _q__analytics__entrypoints
-        Entrypoint rows input (unused, required for dependency ordering).
-    _q__graph__call_graph_edges
-        Call graph edges input (unused, required for dependency ordering).
-    _q__graph__call_graph_nodes
-        Call graph nodes input (unused, required for dependency ordering).
-    _q__core__goids
-        GOID rows for AST lookup (unused, required for dependency ordering).
+    config_data_flow_frames
+        Bundled tabular inputs required for dependency ordering.
 
     Returns
     -------
@@ -287,32 +311,32 @@ def config_data_flow__base(
         Lazy frame containing config data flow rows.
     """
     config_value_rows = _collect_rows(
-        _q__analytics__config_values,
+        config_data_flow_frames.config_values,
         ("repo", "commit", "config_path", "key", "reference_paths"),
         repo=env.repo,
         commit=env.commit,
     )
     entrypoint_rows = _collect_rows(
-        _q__analytics__entrypoints,
+        config_data_flow_frames.entrypoints,
         ("repo", "commit", "handler_goid_h128"),
         repo=env.repo,
         commit=env.commit,
     )
     call_edge_rows = _collect_rows(
-        _q__graph__call_graph_edges,
+        config_data_flow_frames.call_graph_edges,
         ("caller_goid_h128", "callee_goid_h128"),
         repo=env.repo,
         commit=env.commit,
     )
     call_node_rows = _collect_rows(
-        _q__graph__call_graph_nodes,
+        config_data_flow_frames.call_graph_nodes,
         ("goid_h128", "kind"),
         repo=None,
         commit=None,
     )
     call_graph = build_call_graph_from_rows(call_edge_rows, call_node_rows)
     goid_rows = _collect_rows(
-        _q__core__goids,
+        config_data_flow_frames.goids,
         ("goid_h128", "rel_path", "qualname", "kind", "start_line", "end_line", "repo", "commit"),
         repo=env.repo,
         commit=env.commit,
@@ -392,8 +416,8 @@ def t__config_data_flow(
 
 def config_graph_metrics_result(
     env: BuildEnv,
-    _q__analytics__config_values: InferableTabularInput,
-    _q__core__modules: InferableTabularInput,
+    q__analytics__config_values: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> ConfigGraphMetricsResult:
     """Compute config graph metrics result rows.
 
@@ -403,13 +427,13 @@ def config_graph_metrics_result(
         Computed config graph metrics container.
     """
     config_value_rows = _collect_rows(
-        _q__analytics__config_values,
+        q__analytics__config_values,
         ("repo", "commit", "key", "reference_modules"),
         repo=env.repo,
         commit=env.commit,
     )
     module_rows = _collect_rows(
-        _q__core__modules,
+        q__core__modules,
         ("module", "repo", "commit"),
         repo=env.repo,
         commit=env.commit,

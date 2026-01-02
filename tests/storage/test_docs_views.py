@@ -35,8 +35,6 @@ if TYPE_CHECKING:
 
 EXPECTED_MODULE_COUNT_42 = 42
 EXPECTED_FUNCTION_COUNT_4 = 4
-EXPECTED_TEST_COUNT_99 = 99
-EXPECTED_FUNCTIONS_COVERED_50 = 50
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -165,44 +163,6 @@ def test_subsystem_profile_columns(docs_views_gateway: StorageGateway) -> None:
     )
 
 
-def test_subsystem_coverage_columns(docs_views_gateway: StorageGateway) -> None:
-    """Subsystem coverage view exposes expected columns for typed contracts."""
-    bootstrap_metadata_datasets(docs_views_gateway.con)
-    rel_df = docs_views_gateway.con.execute(
-        "SELECT * FROM docs.v_subsystem_coverage LIMIT 0"
-    ).fetchdf()
-    cols = [c.lower() for c in rel_df.columns]
-    expected = {
-        "repo",
-        "commit",
-        "subsystem_id",
-        "name",
-        "description",
-        "module_count",
-        "function_count",
-        "risk_level",
-        "avg_risk_score",
-        "max_risk_score",
-        "test_count",
-        "passed_test_count",
-        "failed_test_count",
-        "skipped_test_count",
-        "xfail_test_count",
-        "flaky_test_count",
-        "total_functions_covered",
-        "avg_functions_covered",
-        "max_functions_covered",
-        "min_functions_covered",
-        "function_coverage_ratio",
-        "created_at",
-    }
-    missing = expected - set(cols)
-    _require(
-        condition=not missing,
-        message=f"Missing columns in v_subsystem_coverage: {sorted(missing)}",
-    )
-
-
 def test_subsystem_profile_view_prefers_cache(docs_views_gateway: StorageGateway) -> None:
     """Cached subsystem profile rows should override computed values."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
@@ -245,47 +205,3 @@ def test_subsystem_profile_view_prefers_cache(docs_views_gateway: StorageGateway
         message="Expected cached function_count to be used",
     )
     _require(condition=risk_level == "medium", message="Expected cached risk_level to be used")
-
-
-def test_subsystem_coverage_view_prefers_cache(docs_views_gateway: StorageGateway) -> None:
-    """Cached subsystem coverage rows should override computed values."""
-    bootstrap_metadata_datasets(docs_views_gateway.con)
-    seed_subsystem(docs_views_gateway.con, overrides={"module_count": 1, "function_count": 2})
-    docs_views_gateway.con.execute(
-        """
-        INSERT INTO analytics.subsystem_coverage_cache (
-            repo, commit, subsystem_id, name, description, module_count,
-            function_count, risk_level, avg_risk_score, max_risk_score,
-            test_count, passed_test_count, failed_test_count,
-            skipped_test_count, xfail_test_count, flaky_test_count,
-            total_functions_covered, avg_functions_covered,
-            max_functions_covered, min_functions_covered,
-            function_coverage_ratio, created_at
-        )
-        VALUES (
-            'demo/repo', 'deadbeef', 'subsysdemo', 'Cached Name', 'cached',
-            3, 10, 'high', 0.7, 0.9, ?, 90, 9, 0, 0, 5,
-            ?, 5.0, 10.0, 1.0, 0.5, CURRENT_TIMESTAMP
-        )
-        """,
-        [EXPECTED_TEST_COUNT_99, EXPECTED_FUNCTIONS_COVERED_50],
-    )
-    row = docs_views_gateway.con.execute(
-        """
-        SELECT test_count, total_functions_covered, risk_level
-        FROM docs.v_subsystem_coverage
-        WHERE subsystem_id = 'subsysdemo'
-        """
-    ).fetchone()
-    if row is None:
-        pytest.fail("No subsystem coverage row returned")
-    test_count, total_functions_covered, risk_level = row
-    _require(
-        condition=test_count == EXPECTED_TEST_COUNT_99,
-        message="Expected cached test_count to be used",
-    )
-    _require(
-        condition=total_functions_covered == EXPECTED_FUNCTIONS_COVERED_50,
-        message="Expected cached total_functions_covered to be used",
-    )
-    _require(condition=risk_level == "high", message="Expected cached risk_level to be used")

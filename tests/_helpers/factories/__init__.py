@@ -13,12 +13,10 @@ from tests._helpers.factories.config_factories import (
 )
 from tests._helpers.factories.step_config_factories import make_snapshot
 from tests._helpers.fixtures.rows import (
-    blank_behavioral_coverage_row,
     blank_file_profile_row,
     blank_function_profile_row,
     blank_module_profile_row,
     blank_test_profile_row,
-    sample_behavioral_coverage_rows,
     sample_file_profile_rows,
     sample_function_profile_rows,
     sample_module_profile_rows,
@@ -27,14 +25,12 @@ from tests._helpers.fixtures.rows import (
 
 __all__ = [
     "GraphRuntimeOptionsKwargs",
-    "blank_behavioral_coverage_row",
     "blank_file_profile_row",
     "blank_function_profile_row",
     "blank_module_profile_row",
     "blank_test_profile_row",
     "make_graph_runtime_options",
     "make_snapshot",
-    "sample_behavioral_coverage_rows",
     "sample_file_profile_rows",
     "sample_function_profile_rows",
     "sample_module_profile_rows",

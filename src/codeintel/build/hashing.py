@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Mapping
+
+import orjson
 
 from codeintel.build.parameters import TargetParameters
 
@@ -37,12 +38,12 @@ def compute_options_hash(options: object | None) -> str | None:
         return None
 
     try:
-        serialized = json.dumps(options, sort_keys=True, default=str)
-    except (TypeError, ValueError):
-        serialized = str(options)
+        serialized = orjson.dumps(options, option=orjson.OPT_SORT_KEYS, default=str)
+    except TypeError:
+        serialized = str(options).encode("utf-8")
 
     hasher = hashlib.sha256()
-    hasher.update(serialized.encode("utf-8"))
+    hasher.update(serialized)
     return hasher.hexdigest()[:16]
 
 

@@ -34,7 +34,7 @@ class ToolResult:
     exit_code : int
         Tool exit code.
     artifacts : dict[str, Path]
-        Paths to generated artifacts (e.g., coverage.json).
+        Paths to generated artifacts (e.g., reports).
     """
 
     success: bool
@@ -42,25 +42,6 @@ class ToolResult:
     stderr: str
     exit_code: int
     artifacts: dict[str, Path]
-
-
-@dataclass(frozen=True)
-class CoverageResult:
-    """Result from running coverage collection.
-
-    Attributes
-    ----------
-    success : bool
-        Whether coverage collection succeeded.
-    coverage_file : Path | None
-        Path to coverage data file if successful.
-    report : dict[str, object]
-        Parsed coverage report data.
-    """
-
-    success: bool
-    coverage_file: Path | None
-    report: dict[str, object]
 
 
 @runtime_checkable
@@ -73,31 +54,6 @@ class ToolingPort(Protocol):
     See tests/_helpers/tooling.py for the real implementation using
     ToolRunner and ToolService.
     """
-
-    def run_coverage(
-        self,
-        target: Path,
-        source_dirs: list[Path],
-        *,
-        parallel: bool = False,
-    ) -> CoverageResult:
-        """Run coverage collection on a target.
-
-        Parameters
-        ----------
-        target
-            Script or test file to run with coverage.
-        source_dirs
-            Directories to include in coverage measurement.
-        parallel
-            Whether to run in parallel mode.
-
-        Returns
-        -------
-        CoverageResult
-            Coverage collection result with data path.
-        """
-        ...
 
     def run_pyright(
         self,
@@ -144,7 +100,6 @@ class ToolingPort(Protocol):
 
 
 __all__ = [
-    "CoverageResult",
     "ToolResult",
     "ToolingPort",
 ]

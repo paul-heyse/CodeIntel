@@ -41,15 +41,8 @@ cases:
     kind: "text"
 
   # ========================================================================
-  # PR-21: Native Analytics Targets - coverage_functions, hotspots, subsystems
+  # PR-21: Native Analytics Targets - hotspots, subsystems
   # ========================================================================
-
-  - name: "pr21_plan_coverage_functions_native"
-    tags: ["pr21", "plan", "native", "json", "analytics", "tiny"]
-    args: ["build", "plan", "coverage_functions", "--format", "json", "--help"]
-    exit_code: 0
-    snapshot: "pr21_plan_coverage_functions_native.json"
-    kind: "text"
 
   - name: "pr21_plan_hotspots_native"
     tags: ["pr21", "plan", "native", "json", "analytics", "tiny"]

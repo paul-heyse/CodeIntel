@@ -6,7 +6,6 @@ import importlib
 from typing import TYPE_CHECKING, Final
 
 _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
-    "tests._helpers.fixtures.coverage": ("COVERAGE_PACK", "CoveragePack"),
     "tests._helpers.seeds.ast_metrics": ("AST_METRICS_PACK", "AstMetricsPack"),
     "tests._helpers.seeds.cli": (
         "CLI_CORE_PACK",
@@ -22,7 +21,6 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
     ),
     "tests._helpers.seeds.config": ("CONFIG_PACK", "ConfigPack"),
     "tests._helpers.seeds.core": ("CORE_PACK", "CorePack"),
-    "tests._helpers.seeds.coverage_lines": ("COVERAGE_LINES_PACK", "CoverageLinesPack"),
     "tests._helpers.seeds.data_models": ("DATA_MODELS_PACK", "DataModelsPack"),
     "tests._helpers.seeds.docs": (
         "DOCS_EXPORT_PACK",
@@ -54,8 +52,6 @@ __all__ = [
     "CLI_CORE_PACK",
     "CONFIG_PACK",
     "CORE_PACK",
-    "COVERAGE_LINES_PACK",
-    "COVERAGE_PACK",
     "DATA_MODELS_PACK",
     "DOCSTRING_PACK",
     "DOCS_EXPORT_PACK",
@@ -76,8 +72,6 @@ __all__ = [
     "CliCorePack",
     "ConfigPack",
     "CorePack",
-    "CoverageLinesPack",
-    "CoveragePack",
     "DataModelsPack",
     "DocsExportPack",
     "DocstringPack",
@@ -97,7 +91,6 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from tests._helpers.fixtures.coverage import COVERAGE_PACK, CoveragePack
     from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK, AstMetricsPack
     from tests._helpers.seeds.cli import (
         CLI_CORE_PACK,
@@ -113,7 +106,6 @@ if TYPE_CHECKING:
     )
     from tests._helpers.seeds.config import CONFIG_PACK, ConfigPack
     from tests._helpers.seeds.core import CORE_PACK, CorePack
-    from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK, CoverageLinesPack
     from tests._helpers.seeds.data_models import DATA_MODELS_PACK, DataModelsPack
     from tests._helpers.seeds.docs import (
         DOCS_EXPORT_PACK,
@@ -140,8 +132,6 @@ if TYPE_CHECKING:
         CLI_CORE_PACK,
         CONFIG_PACK,
         CORE_PACK,
-        COVERAGE_LINES_PACK,
-        COVERAGE_PACK,
         DATA_MODELS_PACK,
         DOCSTRING_PACK,
         DOCS_EXPORT_PACK,
@@ -162,8 +152,6 @@ if TYPE_CHECKING:
         CliCorePack,
         ConfigPack,
         CorePack,
-        CoverageLinesPack,
-        CoveragePack,
         DataModelsPack,
         DocsExportPack,
         DocstringPack,

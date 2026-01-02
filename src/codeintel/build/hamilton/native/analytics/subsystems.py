@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import polars as pl
 
 from codeintel.build.analytics.subsystems.materialize import (
@@ -88,14 +90,66 @@ SUBSYSTEM_MODULES_COLUMNS = (
 )
 
 
+@dataclass(frozen=True)
+class SubsystemCoreFrames:
+    """Core subsystem inputs sourced from graph tables."""
+
+    modules: InferableTabularInput
+    import_graph_edges: InferableTabularInput
+    symbol_use_edges: InferableTabularInput
+
+
+@dataclass(frozen=True)
+class SubsystemAnalyticsFrames:
+    """Analytics inputs sourced from derived tables."""
+
+    config_values: InferableTabularInput
+    risk_factors: InferableTabularInput
+    function_metrics: InferableTabularInput
+
+
+def subsystem_core_frames(
+    q__core__modules: InferableTabularInput,
+    q__graph__import_graph_edges: InferableTabularInput,
+    q__graph__symbol_use_edges: InferableTabularInput,
+) -> SubsystemCoreFrames:
+    """Bundle core graph inputs for subsystem inference.
+
+    Returns
+    -------
+    SubsystemCoreFrames
+        Core graph inputs for subsystem inference.
+    """
+    return SubsystemCoreFrames(
+        modules=q__core__modules,
+        import_graph_edges=q__graph__import_graph_edges,
+        symbol_use_edges=q__graph__symbol_use_edges,
+    )
+
+
+def subsystem_analytics_frames(
+    q__analytics__config_values: InferableTabularInput,
+    q__analytics__goid_risk_factors: InferableTabularInput,
+    q__analytics__function_metrics: InferableTabularInput,
+) -> SubsystemAnalyticsFrames:
+    """Bundle analytics inputs for subsystem inference.
+
+    Returns
+    -------
+    SubsystemAnalyticsFrames
+        Analytics inputs for subsystem inference.
+    """
+    return SubsystemAnalyticsFrames(
+        config_values=q__analytics__config_values,
+        risk_factors=q__analytics__goid_risk_factors,
+        function_metrics=q__analytics__function_metrics,
+    )
+
+
 def subsystem_rows(
     env: BuildEnv,
-    _q__core__modules: InferableTabularInput,
-    _q__graph__import_graph_edges: InferableTabularInput,
-    _q__graph__symbol_use_edges: InferableTabularInput,
-    _q__analytics__config_values: InferableTabularInput,
-    _q__analytics__goid_risk_factors: InferableTabularInput,
-    _q__analytics__function_metrics: InferableTabularInput,
+    subsystem_core_frames: SubsystemCoreFrames,
+    subsystem_analytics_frames: SubsystemAnalyticsFrames,
 ) -> SubsystemRows:
     """Compute subsystem inference rows for subsystems and memberships.
 
@@ -107,13 +161,21 @@ def subsystem_rows(
     return build_subsystem_rows(
         env.snapshot,
         SubsystemBuildInputs(
-            modules_frame=tabular_to_lazyframe(_q__core__modules).collect(),
-            import_graph_edges_frame=tabular_to_lazyframe(_q__graph__import_graph_edges).collect(),
-            symbol_use_edges_frame=tabular_to_lazyframe(_q__graph__symbol_use_edges).collect(),
-            config_values_frame=tabular_to_lazyframe(_q__analytics__config_values).collect(),
-            risk_factors_frame=tabular_to_lazyframe(_q__analytics__goid_risk_factors).collect(),
+            modules_frame=tabular_to_lazyframe(subsystem_core_frames.modules).collect(),
+            import_graph_edges_frame=tabular_to_lazyframe(
+                subsystem_core_frames.import_graph_edges
+            ).collect(),
+            symbol_use_edges_frame=tabular_to_lazyframe(
+                subsystem_core_frames.symbol_use_edges
+            ).collect(),
+            config_values_frame=tabular_to_lazyframe(
+                subsystem_analytics_frames.config_values
+            ).collect(),
+            risk_factors_frame=tabular_to_lazyframe(
+                subsystem_analytics_frames.risk_factors
+            ).collect(),
             function_metrics_frame=tabular_to_lazyframe(
-                _q__analytics__function_metrics
+                subsystem_analytics_frames.function_metrics
             ).collect(),
         ),
     )

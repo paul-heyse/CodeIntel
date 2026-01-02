@@ -212,7 +212,7 @@ def build_behavior_rows(
     if profile_loader is None:
         profile_loader = load_behavioral_context
     profile_ctx = profile_loader(inputs.test_profile_frame, snapshot)
-    llm_runner = inputs.llm_runner or BehavioralLLMRunner()
+    llm_runner = inputs.llm_runner
     behavior_ctx = BehavioralContext(
         snapshot=snapshot,
         options=opts,

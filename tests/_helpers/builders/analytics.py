@@ -14,8 +14,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ConfigValueRow",
-    "CoverageFunctionRow",
-    "CoverageLineRow",
     "FunctionMetricsRow",
     "FunctionTypesRow",
     "FunctionValidationRow",
@@ -27,7 +25,6 @@ __all__ = [
     "SubsystemRow",
     "SymbolGraphMetricsModulesRow",
     "TestCatalogRow",
-    "TestCoverageEdgeRow",
     "TypednessRow",
 ]
 
@@ -297,144 +294,6 @@ class FunctionTypesRow:
 
 
 @dataclass(frozen=True)
-class CoverageFunctionRow:
-    """Row for analytics.coverage_functions."""
-
-    __table__: ClassVar[str] = "analytics.coverage_functions"
-    __columns__: ClassVar[tuple[str, ...]] = (
-        "function_goid_h128",
-        "urn",
-        "repo",
-        "commit",
-        "rel_path",
-        "language",
-        "kind",
-        "qualname",
-        "start_line",
-        "end_line",
-        "executable_lines",
-        "covered_lines",
-        "coverage_ratio",
-        "tested",
-        "untested_reason",
-        "created_at",
-    )
-
-    function_goid_h128: int
-    urn: str
-    repo: str
-    commit: str
-    rel_path: str
-    language: str
-    kind: str
-    qualname: str
-    start_line: int
-    end_line: int
-    executable_lines: int
-    covered_lines: int
-    coverage_ratio: float
-    tested: bool
-    untested_reason: str | None
-    created_at: datetime
-
-    def to_tuple(
-        self,
-    ) -> tuple[
-        int,
-        str,
-        str,
-        str,
-        str,
-        str,
-        str,
-        str,
-        int,
-        int,
-        int,
-        int,
-        float,
-        bool,
-        str | None,
-        str,
-    ]:
-        """Serialize row to database insert order.
-
-        Returns
-        -------
-        tuple
-            Values in column order for INSERT.
-        """
-        return (
-            self.function_goid_h128,
-            self.urn,
-            self.repo,
-            self.commit,
-            self.rel_path,
-            self.language,
-            self.kind,
-            self.qualname,
-            self.start_line,
-            self.end_line,
-            self.executable_lines,
-            self.covered_lines,
-            self.coverage_ratio,
-            self.tested,
-            self.untested_reason,
-            _iso(self.created_at),
-        )
-
-
-@dataclass(frozen=True)
-class CoverageLineRow:
-    """Row for analytics.coverage_lines."""
-
-    __table__: ClassVar[str] = "analytics.coverage_lines"
-    __columns__: ClassVar[tuple[str, ...]] = (
-        "repo",
-        "commit",
-        "rel_path",
-        "line",
-        "is_executable",
-        "is_covered",
-        "hits",
-        "context_count",
-        "created_at",
-    )
-
-    repo: str
-    commit: str
-    rel_path: str
-    line: int
-    is_executable: bool
-    is_covered: bool
-    hits: int
-    context_count: int
-    created_at: datetime | None = None
-
-    def to_tuple(
-        self,
-    ) -> tuple[str, str, str, int, bool, bool, int, int, str]:
-        """Serialize row to database insert order.
-
-        Returns
-        -------
-        tuple
-            Values in column order for INSERT.
-        """
-        return (
-            self.repo,
-            self.commit,
-            self.rel_path,
-            self.line,
-            self.is_executable,
-            self.is_covered,
-            self.hits,
-            self.context_count,
-            _iso(self.created_at),
-        )
-
-
-@dataclass(frozen=True)
 class RiskFactorRow:
     """Row for analytics.goid_risk_factors."""
 
@@ -571,83 +430,6 @@ class TestCatalogRow:
             self.markers,
             self.parametrized,
             self.flaky,
-            _iso(self.created_at),
-        )
-
-
-@dataclass(frozen=True)
-class TestCoverageEdgeRow:
-    """Row for analytics.test_coverage_edges."""
-
-    __test__ = False
-    __table__: ClassVar[str] = "analytics.test_coverage_edges"
-    __columns__: ClassVar[tuple[str, ...]] = (
-        "test_id",
-        "test_goid_h128",
-        "function_goid_h128",
-        "urn",
-        "repo",
-        "commit",
-        "rel_path",
-        "qualname",
-        "covered_lines",
-        "executable_lines",
-        "coverage_ratio",
-        "last_status",
-        "created_at",
-    )
-
-    test_id: str
-    function_goid_h128: int
-    urn: str
-    repo: str
-    commit: str
-    rel_path: str
-    qualname: str
-    covered_lines: int
-    executable_lines: int
-    coverage_ratio: float
-    last_status: str
-    created_at: datetime
-    test_goid_h128: int | None = None
-
-    def to_tuple(
-        self,
-    ) -> tuple[
-        str,
-        int | None,
-        int,
-        str,
-        str,
-        str,
-        str,
-        str,
-        int,
-        int,
-        float,
-        str,
-        str,
-    ]:
-        """Serialize row to database insert order.
-
-        Returns
-        -------
-        tuple
-            Values in column order for INSERT.
-        """
-        return (
-            self.test_id,
-            self.test_goid_h128,
-            self.function_goid_h128,
-            self.urn,
-            self.repo,
-            self.commit,
-            self.rel_path,
-            self.qualname,
-            self.covered_lines,
-            self.executable_lines,
-            self.coverage_ratio,
-            self.last_status,
             _iso(self.created_at),
         )
 

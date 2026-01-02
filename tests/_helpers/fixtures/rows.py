@@ -15,9 +15,6 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows
 from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFileProfileRow as FileProfileRowModel,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -38,8 +35,6 @@ from tests._helpers.builders import (
     CFGBlockRow,
     CFGEdgeRow,
     ConfigValueRow,
-    CoverageFunctionRow,
-    CoverageLineRow,
     DatasetDataflowEdgeRow,
     DatasetDataflowNodeRow,
     DFGEdgeRow,
@@ -63,7 +58,6 @@ from tests._helpers.builders import (
     SymbolGraphMetricsModulesRow,
     SymbolUseEdgeRow,
     TestCatalogRow,
-    TestCoverageEdgeRow,
     TypednessRow,
     insert_rows,
     insert_symbol_use_edges,
@@ -494,20 +488,6 @@ def blank_test_profile_row() -> ProfileRowModel:
     return cast("ProfileRowModel", RowFactory.blank_row("analytics.test_profile"))
 
 
-def blank_behavioral_coverage_row() -> BehavioralCoverageRowModel:
-    """Return a blank analytics.behavioral_coverage row.
-
-    Returns
-    -------
-    BehavioralCoverageRowModel
-        Blank row payload.
-    """
-    return cast(
-        "BehavioralCoverageRowModel",
-        RowFactory.blank_row("analytics.behavioral_coverage"),
-    )
-
-
 def blank_function_profile_row() -> FunctionProfileRowModel:
     """Return a blank analytics.function_profile row.
 
@@ -706,36 +686,6 @@ def sample_test_profile_rows(repo: str, commit: str) -> list[ProfileRowModel]:
                 "created_at": None,
             },
         ),
-    ]
-
-
-def sample_behavioral_coverage_rows(repo: str, commit: str) -> list[BehavioralCoverageRowModel]:
-    """Return sample analytics.behavioral_coverage rows.
-
-    Returns
-    -------
-    list[BehavioralCoverageRowModel]
-        Sample row payloads.
-    """
-    return [
-        cast(
-            "BehavioralCoverageRowModel",
-            RowFactory.row_for(
-                "analytics.behavioral_coverage",
-                repo=repo,
-                commit=commit,
-                test_id="tests/test_mod_a.py::test_func_a",
-                test_goid_h128=101,
-                rel_path="tests/test_mod_a.py",
-                qualname="test_func_a",
-                behavior_tags=["unit", "fast"],
-                tag_source="heuristic",
-                heuristic_version="v1",
-                llm_model=None,
-                llm_run_id=None,
-                created_at=None,
-            ),
-        )
     ]
 
 
@@ -1790,42 +1740,6 @@ def ast_metric_row(seed: AstMetricSeed) -> tuple[str, int, int, int, float, int,
 
 
 @dataclass
-class CoverageLineSeed:
-    repo: str
-    commit: str
-    rel_path: str
-    line: int
-    is_executable: bool
-    is_covered: bool
-    hits: int
-    context_count: int
-    created_at: str
-
-
-def coverage_line_row(
-    seed: CoverageLineSeed,
-) -> tuple[str, str, str, int, bool, bool, int, int, str]:
-    """Row for analytics.coverage_lines.
-
-    Returns
-    -------
-    tuple[str, str, str, int, bool, bool, int, int, str]
-        Row values in schema order.
-    """
-    return (
-        seed.repo,
-        seed.commit,
-        seed.rel_path,
-        seed.line,
-        seed.is_executable,
-        seed.is_covered,
-        seed.hits,
-        seed.context_count,
-        seed.created_at,
-    )
-
-
-@dataclass
 class TestCatalogSeed:
     test_id: str
     test_goid_h128: int
@@ -2223,16 +2137,12 @@ def config_value_row(
 __all__ = [
     "AstMetricSeed",
     "AstMetricsRow",
-    "BehavioralCoverageRowModel",
     "CFGBlockRow",
     "CFGEdgeRow",
     "CallGraphEdgeRow",
     "CallGraphNodeRow",
     "ConfigValueRow",
     "ConfigValueSeed",
-    "CoverageFunctionRow",
-    "CoverageLineRow",
-    "CoverageLineSeed",
     "DFGEdgeRow",
     "DataModelFieldSeed",
     "DataModelRelationshipSeed",
@@ -2285,11 +2195,9 @@ __all__ = [
     "SymbolUseEdgeRow",
     "TestCatalogRow",
     "TestCatalogSeed",
-    "TestCoverageEdgeRow",
     "TypednessRow",
     "TypednessSeed",
     "ast_metric_row",
-    "blank_behavioral_coverage_row",
     "blank_file_profile_row",
     "blank_function_profile_row",
     "blank_module_profile_row",
@@ -2298,7 +2206,6 @@ __all__ = [
     "columnar_rows_for",
     "compute_dep_id",
     "config_value_row",
-    "coverage_line_row",
     "data_model_field_row",
     "data_model_relationship_row",
     "data_model_row",
@@ -2327,7 +2234,6 @@ __all__ = [
     "module_row",
     "row_for",
     "row_list_for",
-    "sample_behavioral_coverage_rows",
     "sample_file_profile_rows",
     "sample_function_profile_rows",
     "sample_module_profile_rows",

@@ -426,41 +426,6 @@ def write_graph_metrics_repo(repo_root: Path) -> list[Path]:
     return list(_write_graph_metrics_repo(repo_root).files)
 
 
-def write_coverage_driver(repo_root: Path, files: list[Path]) -> Path:
-    """Write a driver that imports repo modules to generate real coverage data.
-
-    Returns
-    -------
-    Path
-        Driver file path.
-    """
-    driver_path = repo_root / "_coverage_driver.py"
-    module_names: list[str] = []
-    for path in files:
-        try:
-            rel = path.relative_to(repo_root)
-        except ValueError:
-            continue
-        module = rel.with_suffix("").as_posix().replace("/", ".")
-        if module.endswith(".__init__"):
-            module = module.rsplit(".", 1)[0]
-        if module:
-            module_names.append(module)
-    module_names = sorted(set(module_names))
-
-    lines: list[str] = ["import importlib", "from contextlib import suppress"]
-    if module_names:
-        lines.append(f"MODULES = {module_names!r}")
-        lines.append("for name in MODULES:")
-        lines.append("    with suppress(Exception):")
-        lines.append("        importlib.import_module(name)")
-    else:
-        lines.append("pass")
-
-    driver_path.write_text("\n".join(lines), encoding="utf-8")
-    return driver_path
-
-
 def write_monorepo_fixture(
     repo_root: Path,
     *,
@@ -697,7 +662,6 @@ __all__ = [
     "RepoFixtureWriter",
     "write_callgraph_alias_repo",
     "write_canonical_repo",
-    "write_coverage_driver",
     "write_generated_noise_fixture",
     "write_graph_metrics_repo",
     "write_large_file_fixture",

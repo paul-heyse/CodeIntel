@@ -7,19 +7,24 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
+import structlog
+
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.schemas.inference_service import SchemaInferenceService
     from codeintel.build.target_metadata import TargetSystem
 
 
 SchemaDerivationKind = Literal["explicit_override", "inferred_relation"]
 InferenceStatus = Literal["inferred", "override", "disabled", "error", "pending"]
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +47,7 @@ class SchemaIndex:
     inferable_table_keys: frozenset[str]
     declared_provider: SchemaProvider
     inference_service: SchemaInferenceService
+    env_provider: Callable[[], BuildEnv] | None = None
     fallback_to_override_on_error: bool = False
     _cache: dict[str, TableSchema] = field(default_factory=dict, repr=False)
     _inference_errors: dict[str, str] = field(default_factory=dict, repr=False)
@@ -190,6 +196,19 @@ class SchemaIndex:
 
         timestamp = occurred_at or datetime.now(tz=UTC)
         for table_key, error in self.iter_inference_errors():
+            derivation = self.derivations.get(table_key)
+            target_name = derivation.source if derivation is not None else None
+            data_node = self.inference_service.output_data_node(table_key)
+            log.error(
+                "schema.infer.fail",
+                table_key=table_key,
+                data_node=data_node,
+                target=target_name,
+                repo=repo,
+                commit=commit,
+                run_id=run_id,
+                error=error,
+            )
             yield {
                 "table_key": table_key,
                 "repo": repo,
@@ -301,9 +320,13 @@ class SchemaIndex:
         derivation: SchemaDerivation,
     ) -> TableSchema | None:
         try:
+            env = None
+            if self.env_provider is not None:
+                env = self.env_provider()
             inferred = self.inference_service.infer_table_schema(
                 table_key,
                 declared_provider=self._schema_seed_provider(),
+                env=env,
             )
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             self._record_inference_error(table_key, exc)
@@ -422,6 +445,7 @@ def build_schema_index(
     declared_provider: SchemaProvider,
     override_provider: SchemaProvider,
     inference_service: SchemaInferenceService,
+    env_provider: Callable[[], BuildEnv] | None = None,
 ) -> SchemaIndex:
     """Build a SchemaIndex from the global target system.
 
@@ -473,6 +497,7 @@ def build_schema_index(
         inferable_table_keys=inferable,
         declared_provider=declared_provider,
         inference_service=inference_service,
+        env_provider=env_provider,
         fallback_to_override_on_error=True,
     )
 

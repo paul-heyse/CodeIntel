@@ -7,22 +7,16 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from codeintel.build.analytics.testing.behavioral.tags import (
-    BehavioralRowInputs,
-    build_behavior_rows,
-)
 from codeintel.build.analytics.testing.compute import (
     TEST_GRAPH_METRICS_FUNCTIONS_COLS,
     TEST_GRAPH_METRICS_TESTS_COLS,
     TestGraphMetricsResult,
     compute_test_graph_metrics_pure,
 )
-from codeintel.build.analytics.testing.coverage.edges import build_test_coverage_edges_rows
 from codeintel.build.analytics.testing.profiles.builder import (
     TestProfileFrameInputs,
     build_test_profile_result,
 )
-from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -50,24 +44,11 @@ from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
-TEST_COVERAGE_TARGET_NAME = "test_coverage_edges"
-TEST_COVERAGE_TABLE_KEY = "analytics.test_coverage_edges"
-TEST_COVERAGE_SAVE_CONTEXT = SaverContext(domain="analytics", target=TEST_COVERAGE_TARGET_NAME)
-TEST_COVERAGE_CONTRACT = TableContractSpec(
-    table_key=TEST_COVERAGE_TABLE_KEY,
-    domain="analytics",
-    target=TEST_COVERAGE_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="test_coverage_edges__base",
-)
-
 TEST_GRAPH_TARGET_NAME = "test_graph_metrics"
 TEST_GRAPH_TESTS_TABLE_KEY = "analytics.test_graph_metrics_tests"
 TEST_GRAPH_FUNCTIONS_TABLE_KEY = "analytics.test_graph_metrics_functions"
 TEST_GRAPH_TABLE_KEYS = (TEST_GRAPH_TESTS_TABLE_KEY, TEST_GRAPH_FUNCTIONS_TABLE_KEY)
+TEST_GRAPH_COLLECT_GROUP = "test_graph_metrics_core"
 TEST_GRAPH_SAVE_CONTEXT = SaverContext(domain="analytics", target=TEST_GRAPH_TARGET_NAME)
 TEST_GRAPH_TESTS_CONTRACT = TableContractSpec(
     table_key=TEST_GRAPH_TESTS_TABLE_KEY,
@@ -104,115 +85,11 @@ TEST_PROFILE_CONTRACT = TableContractSpec(
     input_name="test_profile__base",
 )
 
-BEHAVIORAL_COVERAGE_TARGET_NAME = "behavioral_coverage"
-BEHAVIORAL_COVERAGE_TABLE_KEY = "analytics.behavioral_coverage"
-BEHAVIORAL_COVERAGE_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=BEHAVIORAL_COVERAGE_TARGET_NAME,
-)
-BEHAVIORAL_COVERAGE_CONTRACT = TableContractSpec(
-    table_key=BEHAVIORAL_COVERAGE_TABLE_KEY,
-    domain="analytics",
-    target=BEHAVIORAL_COVERAGE_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="behavioral_coverage__base",
-)
-
 _MODULE = sys.modules[__name__]
-
-
-def _coverage_edges__base(
-    env: BuildEnv,
-    _q__analytics__coverage_lines: InferableTabularInput,
-    q__analytics__test_catalog: InferableTabularInput,
-    q__core__goids: InferableTabularInput,
-    q__core__modules: InferableTabularInput,
-) -> pl.LazyFrame:
-    """Build test coverage edges rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Lazy frame containing test coverage edges rows.
-    """
-    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
-    rows = build_test_coverage_edges_rows(
-        env.snapshot,
-        catalog_provider=catalog,
-        test_catalog_frame=test_catalog_frame,
-        goids_frame=goids_frame,
-    )
-    return rows_to_frame(TEST_COVERAGE_TABLE_KEY, rows)
-
-
-attach_node(_MODULE, node_name="test_coverage_edges__base", fn=_coverage_edges__base)
-test_coverage_edges__base = _MODULE.test_coverage_edges__base
-del _coverage_edges__base
-
-
-@save_dataset(
-    context=TEST_COVERAGE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=TEST_COVERAGE_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=TEST_COVERAGE_TARGET_NAME,
-    table_key=TEST_COVERAGE_TABLE_KEY,
-)
-@table_contract(TEST_COVERAGE_CONTRACT)
-def _coverage_edges__table(test_coverage_edges__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist test coverage edges.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted test coverage edges frame.
-    """
-    return test_coverage_edges__base
-
-
-attach_node(_MODULE, node_name="test_coverage_edges__table", fn=_coverage_edges__table)
-test_coverage_edges__table = _MODULE.test_coverage_edges__table
-del _coverage_edges__table
-
-
-@codeintel_target(domain="analytics", target=TEST_COVERAGE_TARGET_NAME)
-def t__test_coverage_edges(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__test_coverage_edges: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize test_coverage_edges target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the test_coverage_edges target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=TEST_COVERAGE_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            TEST_COVERAGE_TABLE_KEY: m__analytics__test_coverage_edges,
-        },
-    )
 
 
 def _graph_metrics_result(
     env: BuildEnv,
-    q__analytics__test_coverage_edges: InferableTabularInput,
-    q__analytics__goid_risk_factors: InferableTabularInput,
 ) -> TestGraphMetricsResult:
     """Compute test graph metrics rows.
 
@@ -221,12 +98,10 @@ def _graph_metrics_result(
     TestGraphMetricsResult
         Computed test graph metrics result.
     """
-    coverage_edges_frame = tabular_to_lazyframe(q__analytics__test_coverage_edges).collect()
-    risk_factors_frame = tabular_to_lazyframe(q__analytics__goid_risk_factors).collect()
     return compute_test_graph_metrics_pure(
         env.snapshot,
-        test_coverage_edges_frame=coverage_edges_frame,
-        goid_risk_factors_frame=risk_factors_frame,
+        test_coverage_edges_frame=None,
+        goid_risk_factors_frame=None,
     )
 
 
@@ -259,7 +134,10 @@ del _graph_metrics_tests__base
 
 @save_dataset(
     context=TEST_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=TEST_GRAPH_TESTS_TABLE_KEY),
+    spec=DatasetSaveSpec(
+        table_key=TEST_GRAPH_TESTS_TABLE_KEY,
+        collect_group=TEST_GRAPH_COLLECT_GROUP,
+    ),
 )
 @tag_dataset(
     domain="analytics",
@@ -313,7 +191,10 @@ del _graph_metrics_functions__base
 
 @save_dataset(
     context=TEST_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY),
+    spec=DatasetSaveSpec(
+        table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY,
+        collect_group=TEST_GRAPH_COLLECT_GROUP,
+    ),
 )
 @tag_dataset(
     domain="analytics",
@@ -379,7 +260,6 @@ def t__test_graph_metrics(
 @dataclass(frozen=True)
 class TestProfileCoreFrames:
     test_catalog_frame: pl.DataFrame
-    test_coverage_edges_frame: pl.DataFrame
     goids_frame: pl.DataFrame
     modules_frame: pl.DataFrame
 
@@ -397,22 +277,17 @@ class TestProfileGraphFrames:
 
 def test_profile_core_frames(
     q__analytics__test_catalog: InferableTabularInput,
-    q__analytics__test_coverage_edges: InferableTabularInput,
     q__core__goids: InferableTabularInput,
     q__core__modules: InferableTabularInput,
 ) -> TestProfileCoreFrames:
     return TestProfileCoreFrames(
         test_catalog_frame=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
-        test_coverage_edges_frame=tabular_to_lazyframe(
-            q__analytics__test_coverage_edges
-        ).collect(),
         goids_frame=tabular_to_lazyframe(q__core__goids).collect(),
         modules_frame=tabular_to_lazyframe(q__core__modules).collect(),
     )
 
 
 def test_profile_subsystem_frames(
-    _q__analytics__subsystem_coverage_cache: InferableTabularInput,
     q__analytics__subsystem_modules: InferableTabularInput,
     q__analytics__subsystems: InferableTabularInput,
 ) -> TestProfileSubsystemFrames:
@@ -439,7 +314,7 @@ def test_profile_inputs(
 ) -> TestProfileFrameInputs:
     return TestProfileFrameInputs(
         test_catalog_frame=test_profile_core_frames.test_catalog_frame,
-        test_coverage_edges_frame=test_profile_core_frames.test_coverage_edges_frame,
+        test_coverage_edges_frame=pl.DataFrame(),
         goids_frame=test_profile_core_frames.goids_frame,
         modules_frame=test_profile_core_frames.modules_frame,
         subsystem_modules_frame=test_profile_subsystem_frames.subsystem_modules_frame,
@@ -521,88 +396,9 @@ def t__test_profile(
     )
 
 
-def behavioral_coverage__base(
-    env: BuildEnv,
-    q__analytics__test_profile: InferableTabularInput,
-    q__analytics__test_catalog: InferableTabularInput,
-    q__core__goids: InferableTabularInput,
-    q__core__modules: InferableTabularInput,
-) -> pl.LazyFrame:
-    """Build behavioral coverage rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Lazy frame containing behavioral coverage rows.
-    """
-    test_profile_frame = tabular_to_lazyframe(q__analytics__test_profile).collect()
-    test_catalog_frame = tabular_to_lazyframe(q__analytics__test_catalog).collect()
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    rows = build_behavior_rows(
-        env.snapshot,
-        BehavioralRowInputs(
-            test_catalog_frame=test_catalog_frame,
-            goids_frame=goids_frame,
-            modules_frame=modules_frame,
-            test_profile_frame=test_profile_frame,
-        ),
-    )
-    return rows_to_frame(BEHAVIORAL_COVERAGE_TABLE_KEY, rows)
-
-
-@save_dataset(
-    context=BEHAVIORAL_COVERAGE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=BEHAVIORAL_COVERAGE_TABLE_KEY),
-)
-@table_contract(BEHAVIORAL_COVERAGE_CONTRACT)
-def behavioral_coverage__table(behavioral_coverage__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist behavioral coverage rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted behavioral coverage frame.
-    """
-    return behavioral_coverage__base
-
-
-@codeintel_target(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
-def t__behavioral_coverage(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__behavioral_coverage: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize behavioral_coverage target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the behavioral_coverage target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=BEHAVIORAL_COVERAGE_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            BEHAVIORAL_COVERAGE_TABLE_KEY: m__analytics__behavioral_coverage,
-        },
-    )
-
-
 __all__ = [
-    "behavioral_coverage__base",
-    "behavioral_coverage__table",
-    "t__behavioral_coverage",
-    "t__test_coverage_edges",
     "t__test_graph_metrics",
     "t__test_profile",
-    "test_coverage_edges__base",
-    "test_coverage_edges__table",
     "test_graph_metrics__table_materializations",
     "test_graph_metrics_functions__base",
     "test_graph_metrics_functions__table",

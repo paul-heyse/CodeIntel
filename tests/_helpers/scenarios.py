@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Self
 from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
-from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
+from tests._helpers.seeds import CORE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK
 from tests._helpers.seeds.config import CONFIG_PACK
 from tests._helpers.seeds.function_types import FunctionTypesPack
@@ -78,19 +78,6 @@ class TestScenario:
         """
         scenario = cls()
         scenario.config.seed_packs.extend([CORE_PACK, GRAPH_PACK])
-        return scenario
-
-    @classmethod
-    def with_coverage(cls) -> TestScenario:
-        """Create scenario with core and coverage data.
-
-        Returns
-        -------
-        TestScenario
-            Scenario configured with CORE_PACK and COVERAGE_PACK.
-        """
-        scenario = cls()
-        scenario.config.seed_packs.extend([CORE_PACK, COVERAGE_PACK])
         return scenario
 
     @classmethod
@@ -165,10 +152,10 @@ class TestScenario:
         Returns
         -------
         TestScenario
-            Scenario with CORE, GRAPH, COVERAGE, and METRICS packs.
+            Scenario with CORE, GRAPH, and METRICS packs.
         """
         scenario = cls()
-        scenario.config.seed_packs.extend([CORE_PACK, GRAPH_PACK, COVERAGE_PACK, METRICS_PACK])
+        scenario.config.seed_packs.extend([CORE_PACK, GRAPH_PACK, METRICS_PACK])
         return scenario
 
     def with_snapshot_variant(self, variant: SnapshotVariant) -> Self:
@@ -275,17 +262,6 @@ def graph_context(tmp_path: Path) -> TestContext:
     return TestScenario.with_graph().build(tmp_path)
 
 
-def coverage_context(tmp_path: Path) -> TestContext:
-    """Create test context with coverage seeds.
-
-    Returns
-    -------
-    TestContext
-        Context with CORE_PACK and COVERAGE_PACK applied.
-    """
-    return TestScenario.with_coverage().build(tmp_path)
-
-
 def full_context(tmp_path: Path) -> TestContext:
     """Create test context with all seed packs.
 
@@ -300,7 +276,6 @@ def full_context(tmp_path: Path) -> TestContext:
 __all__ = [
     "ScenarioConfig",
     "TestScenario",
-    "coverage_context",
     "full_context",
     "graph_context",
     "minimal_context",

@@ -15,6 +15,37 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
 
+@dataclass(frozen=True)
+class FunctionCoverageEntry:
+    """Concrete test → function coverage entry."""
+
+    functions: list[dict[str, object]]
+    count: int
+    primary: list[int]
+
+
+@dataclass(frozen=True)
+class SubsystemCoverageEntry:
+    """Concrete test → subsystem coverage entry."""
+
+    subsystems: list[dict[str, object]]
+    count: int
+    primary_subsystem_id: str | None
+    max_risk_score: float | None
+
+
+@dataclass(frozen=True)
+class TestGraphMetrics:
+    """Concrete test graph metrics entry."""
+
+    degree: int | None
+    weighted_degree: float | None
+    proj_degree: int | None
+    proj_weight: float | None
+    proj_clustering: float | None
+    proj_betweenness: float | None
+
+
 class FunctionCoverageEntryProtocol(Protocol):
     """Structural type for test→function coverage entries."""
 
@@ -241,11 +272,14 @@ __all__ = [
     "BehavioralLLMRequest",
     "BehavioralLLMResult",
     "BehavioralLLMRunner",
+    "FunctionCoverageEntry",
     "FunctionCoverageEntryProtocol",
     "ImportanceInputs",
     "IoFlags",
+    "SubsystemCoverageEntry",
     "SubsystemCoverageEntryProtocol",
     "TestAstInfo",
+    "TestGraphMetrics",
     "TestGraphMetricsProtocol",
     "TestProfileContext",
     "TestProfileOptions",

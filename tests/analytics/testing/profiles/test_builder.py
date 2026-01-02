@@ -7,8 +7,8 @@ Testing Charter Compliance:
 - No monkeypatching or test-only code paths
 
 This module tests the public API for building test profiles and
-behavioral coverage, including the infer_behavior_tags function
-and related dataclasses.
+behavior tags, including the infer_behavior_tags function and
+related dataclasses.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from codeintel.build.analytics.testing.profiles.builder import (
 )
 from codeintel.build.analytics.testing.profiles.types import IoFlags, TestAstInfo
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers import TestScenario
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -30,6 +31,8 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests._helpers import TestContext
 
 
@@ -340,19 +343,22 @@ class TestBuildTestProfile:
         expect_equal(count, EXPECTED_EMPTY_LIST_LENGTH)
 
     @staticmethod
-    def test_builds_profiles_with_seeded_tests(coverage_ctx: TestContext) -> None:
+    def test_builds_profiles_with_seeded_tests(tmp_path: Path) -> None:
         """Verify build_test_profile_result creates rows when test catalog exists."""
+        profile_ctx = TestScenario.with_profiles().build(tmp_path)
         snapshot = SnapshotRef(
-            repo=coverage_ctx.repo,
-            commit=coverage_ctx.commit,
-            repo_root=coverage_ctx.repo_root,
+            repo=profile_ctx.repo,
+            commit=profile_ctx.commit,
+            repo_root=profile_ctx.repo_root,
         )
 
-        TestBuildTestProfile._build_and_write_test_profile(coverage_ctx, snapshot)
+        TestBuildTestProfile._build_and_write_test_profile(profile_ctx, snapshot)
 
-        count = coverage_ctx.query_count(
-            "analytics.test_profile",
-            f"repo = '{coverage_ctx.repo}' AND commit = '{coverage_ctx.commit}'",
-        )
-
-        expect_equal(count, 4)
+        try:
+            count = profile_ctx.query_count(
+                "analytics.test_profile",
+                f"repo = '{profile_ctx.repo}' AND commit = '{profile_ctx.commit}'",
+            )
+            expect_equal(count, 4)
+        finally:
+            profile_ctx.close()

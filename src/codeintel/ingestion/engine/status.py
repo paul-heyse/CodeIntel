@@ -9,7 +9,7 @@ class ToolStatus(StrEnum):
     """Normalized status for external tool invocations.
 
     This enum represents the possible outcomes of running an external tool
-    (pyright, ruff, coverage, scip-python, pytest, etc.) via the tool plugin
+    (pyright, ruff, scip-python, pytest, etc.) via the tool plugin
     system.
 
     Members

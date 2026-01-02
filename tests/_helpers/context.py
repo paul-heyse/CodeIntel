@@ -20,13 +20,11 @@ from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.env_options import EnvOptions, GatewayOptions
-from tests._helpers.fixtures.coverage import COVERAGE_PACK
 from tests._helpers.fixtures.repos import write_canonical_repo
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.schemas import ensure_schema_service
 from tests._helpers.seeds.core import CORE_PACK
-from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
 from tests._helpers.seeds.graph import GRAPH_PACK
 
 if TYPE_CHECKING:
@@ -171,7 +169,6 @@ class TestContext:
     build_paths: BuildPaths
     seeds_applied: set[str] = field(default_factory=set)
     extra: dict[str, object] = field(default_factory=dict)
-    coverage_file: Path | None = None
     runner: object | None = None
     _canonical_repo: CanonicalRepo | None = field(default=None, init=False, repr=False)
 
@@ -260,11 +257,6 @@ class TestContext:
         """Expose document_output_dir for compatibility with ProvisionedGateway."""
         return self.build_paths.document_output_dir
 
-    @property
-    def coverage_path(self) -> Path | None:
-        """Return coverage file path if provisioned, else None."""
-        return self.coverage_file
-
     @classmethod
     def from_provisioned(cls, provisioned: ProvisionedGateway) -> TestContext:
         """Create a TestContext from a ProvisionedGateway.
@@ -292,17 +284,14 @@ class TestContext:
             overrides=BuildPathOverrides(
                 db_path=provisioned.db_path,
                 document_output_dir=provisioned.document_output_dir,
-                coverage_json=provisioned.coverage_file,
             ),
         )
         return cls(
             snapshot=snapshot,
             gateway=provisioned.gateway,
             build_paths=build_paths,
-            coverage_file=provisioned.coverage_file,
             runner=getattr(provisioned, "runner", None),
             extra={
-                "coverage_file": provisioned.coverage_file,
                 "runner": getattr(provisioned, "runner", None),
                 "document_output_dir": provisioned.document_output_dir,
             },
@@ -497,20 +486,6 @@ def create_test_context(
     )
 
 
-def coverage_ready_context(tmp_path: Path) -> TestContext:
-    """Create a TestContext seeded with core + coverage packs and sample files.
-
-    Returns
-    -------
-    TestContext
-        Context with coverage seeds and canonical sample repository.
-    """
-    ctx = create_test_context(tmp_path)
-    ctx.ensure_canonical_repo()
-    ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK)
-    return ctx
-
-
 def graph_ready_context(tmp_path: Path) -> TestContext:
     """Create a TestContext seeded with core + graph packs and sample files.
 
@@ -522,20 +497,6 @@ def graph_ready_context(tmp_path: Path) -> TestContext:
     ctx = create_test_context(tmp_path)
     ctx.ensure_canonical_repo()
     ctx.require(CORE_PACK, GRAPH_PACK)
-    return ctx
-
-
-def coverage_and_graph_context(tmp_path: Path) -> TestContext:
-    """Create a TestContext with both coverage and graph packs pre-applied.
-
-    Returns
-    -------
-    TestContext
-        Context populated with both coverage and graph seed packs.
-    """
-    ctx = create_test_context(tmp_path)
-    ctx.ensure_canonical_repo()
-    ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK, GRAPH_PACK)
     return ctx
 
 
@@ -605,7 +566,5 @@ __all__ = [
     "SeedPack",
     "TestContext",
     "build_test_gateway",
-    "coverage_and_graph_context",
-    "coverage_ready_context",
     "graph_ready_context",
 ]

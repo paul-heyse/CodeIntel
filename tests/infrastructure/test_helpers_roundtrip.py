@@ -18,7 +18,6 @@ from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     ConfigValueRow,
-    CoverageFunctionRow,
     GoidRow,
     GraphMetricsModulesExtRow,
     SymbolGraphMetricsModulesRow,
@@ -115,36 +114,12 @@ def test_docs_export_ready_has_non_nulls(tmp_path: Path) -> None:
     """Docs export provisioning should populate required columns without NULLs."""
     ctx = provision_docs_export_ready(tmp_path, file_backed=False)
     try:
-        assert_table_has_rows(ctx.gateway, "analytics.coverage_functions")
+        assert_table_has_rows(ctx.gateway, "analytics.test_catalog")
         assert_columns_not_null(
             ctx.gateway,
-            "analytics.coverage_functions",
-            ["function_goid_h128", "urn", "repo", "commit", "coverage_ratio"],
+            "analytics.test_catalog",
+            ["test_id", "repo", "commit"],
         )
-        insert_rows(
-            ctx.gateway,
-            [
-                CoverageFunctionRow(
-                    function_goid_h128=2,
-                    urn="urn:demo",
-                    repo=ctx.repo,
-                    commit=ctx.commit,
-                    rel_path="foo.py",
-                    language="python",
-                    kind="function",
-                    qualname="pkg.foo:extra",
-                    start_line=1,
-                    end_line=2,
-                    executable_lines=2,
-                    covered_lines=2,
-                    coverage_ratio=1.0,
-                    tested=True,
-                    untested_reason=None,
-                    created_at=datetime.now(tz=UTC),
-                )
-            ],
-        )
-        assert_table_has_rows(ctx.gateway, "analytics.coverage_functions", min_rows=2)
     finally:
         ctx.close()
 

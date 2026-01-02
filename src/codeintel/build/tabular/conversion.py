@@ -40,6 +40,13 @@ def arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> pl.LazyFrame:
     -------
     pl.LazyFrame
         LazyFrame constructed from the Arrow reader.
+
+    Raises
+    ------
+    ValueError
+        If the Arrow reader fails to materialize and provides no schema.
+    ArrowInvalid
+        If the Arrow reader cannot be materialized and provides no schema.
     """
     try:
         table = reader.read_all()

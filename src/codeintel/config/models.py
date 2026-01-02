@@ -80,7 +80,7 @@ class RepoConfig(BaseModel):
     Repository identity used across the pipeline.
 
     These values are embedded into GOIDs and exported into the Document Output
-    datasets (goids.*, coverage_lines.*, etc.).
+    datasets (goids.*, graph.*, etc.).
     """
 
     repo: str = Field(..., description="Repository slug, e.g. 'my-org/my-repo'")
@@ -250,7 +250,6 @@ class CliPathsInput(BaseModel):
             document_output_dir=doc_dir,
             dataset_root_dir=dataset_root_dir,
             scip_dir=self.scip_dir,
-            coverage_json=self.build_dir / "coverage" / "coverage.json",
             pytest_report=self.build_dir / "test-results" / "pytest-report.json",
             tool_cache=self.build_dir / ".tool_cache",
             log_db_path=self.build_dir / "db" / "codeintel_logs.duckdb",
@@ -266,7 +265,7 @@ class ToolsConfig(BaseModel):
     External tool configuration used by ingestion and analytics pipelines.
 
     The fields capture executable paths and report locations for SCIP index
-    generation, static typing diagnostics, and coverage/test ingestion.
+    generation and static typing diagnostics.
     """
 
     scip_project_name: str = Field(
@@ -284,7 +283,6 @@ class ToolsConfig(BaseModel):
     pyright_bin: str = Field("pyright", description="Path to pyright binary")
     pyrefly_bin: str = Field("pyrefly", description="Path to pyrefly binary")
     ruff_bin: str = Field("ruff", description="Path to ruff binary")
-    coverage_bin: str = Field("coverage", description="Path to coverage.py CLI")
     pytest_bin: str = Field("pytest", description="Path to pytest binary")
     git_bin: str = Field("git", description="Path to git binary")
     default_timeout_s: float = Field(
@@ -292,16 +290,12 @@ class ToolsConfig(BaseModel):
         description="Default timeout (seconds) for external tool invocations",
     )
 
-    coverage_file: Path | None = Field(
-        default=None,
-        description="Path to .coverage database (defaults to repo_root/.coverage at call site)",
-    )
     pytest_report_path: Path | None = Field(
         default=None,
         description="Path to pytest JSON report (default: repo_root/build/pytest-report.json)",
     )
 
-    @field_validator("coverage_file", "pytest_report_path", mode="before")
+    @field_validator("pytest_report_path", mode="before")
     @classmethod
     def _normalize_optional_path(cls, v: Path | str | None) -> Path | None:
         if v is None:
@@ -369,7 +363,6 @@ class ToolsConfig(BaseModel):
             pyright_bin=self.pyright_bin,
             pyrefly_bin=self.pyrefly_bin,
             ruff_bin=self.ruff_bin,
-            coverage_bin=self.coverage_bin,
             pytest_bin=self.pytest_bin,
             git_bin=self.git_bin,
             default_timeout_s=self.default_timeout_s,

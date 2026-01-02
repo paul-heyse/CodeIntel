@@ -78,9 +78,6 @@ def _report_findings(reporter: GraphValidationReporter, findings: list[dict[str,
 
 def graph_validation__base(
     env: BuildEnv,
-    _q__graph__call_graph_edges: InferableTabularInput,
-    _q__graph__import_graph_edges: InferableTabularInput,
-    _q__graph__symbol_use_edges: InferableTabularInput,
 ) -> pl.LazyFrame:
     """Build graph validation rows from validation findings.
 

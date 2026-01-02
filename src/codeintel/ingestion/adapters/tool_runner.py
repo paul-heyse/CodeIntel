@@ -9,12 +9,12 @@ This adapter bridges two type systems:
 
 **Input (ToolService side):**
     Rich "Report" types from ``tools/results.py`` with aggregated counts,
-    factory methods, and helper functions (DiagnosticReport, CoverageReport,
-    TestReport, ScipIndexResult).
+    factory methods, and helper functions (DiagnosticReport, TestReport,
+    ScipIndexResult).
 
 **Output (Port side):**
     Simpler "Result" types from ``ports/tools.py`` with status/error/duration
-    fields (DiagnosticResult, CoverageResult, TestResult, ScipResult).
+    fields (DiagnosticResult, TestResult, ScipResult).
 
 The adapter calls ``ToolService`` methods, receives rich Report objects,
 and converts them to the simpler Result types expected by the port interface.
@@ -34,8 +34,6 @@ import time
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.ports.tools import (
-    CoverageFileData,
-    CoverageResult,
     DiagnosticEntry,
     DiagnosticResult,
     ScipDocument,
@@ -220,57 +218,6 @@ class ToolRunnerAdapter:
             Linting results with diagnostics.
         """
         return await self._run_diagnostic_tool("ruff", repo_root)
-
-    async def run_coverage(
-        self,
-        repo_root: Path,
-        *,
-        coverage_file: Path | None = None,
-    ) -> CoverageResult:
-        """Run coverage tool to export coverage data.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root directory.
-        coverage_file
-            Optional explicit coverage data file path.
-
-        Returns
-        -------
-        CoverageResult
-            Coverage data for all files.
-        """
-        start = time.perf_counter()
-        try:
-            report = await self._service.run_coverage_report(
-                repo_root,
-                coverage_file=coverage_file,
-            )
-            duration = time.perf_counter() - start
-
-            files = [
-                CoverageFileData(
-                    rel_path=summary.rel_path,
-                    executed_lines=summary.executed_lines,
-                    missing_lines=summary.missing_lines,
-                )
-                for summary in report.files
-            ]
-
-            return CoverageResult(
-                status=ToolStatus.OK,
-                files=files,
-                duration_s=duration,
-            )
-        except (OSError, RuntimeError, ValueError) as exc:
-            duration = time.perf_counter() - start
-            log.warning("coverage execution failed: %s", exc)
-            return CoverageResult(
-                status=ToolStatus.FAILED,
-                error=str(exc),
-                duration_s=duration,
-            )
 
     async def run_scip(self, request: ScipRunRequest) -> ScipResult:
         """Run SCIP indexing.

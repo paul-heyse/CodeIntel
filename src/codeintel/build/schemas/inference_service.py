@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import types
 import typing
 from collections.abc import Callable, Iterable, Iterator
@@ -16,6 +17,12 @@ from typing import TYPE_CHECKING, Literal, NoReturn, Protocol, TypeGuard, cast, 
 import hamilton.driver as h_driver
 import polars as pl
 import pyarrow as pa
+from polars.exceptions import PolarsError
+
+try:
+    from dulwich.repo import Repo as _DulwichRepo
+except ImportError:
+    _DulwichRepo = None
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
@@ -32,6 +39,7 @@ from codeintel.build.schemas.observations import (
     table_schema_from_tag_sets,
 )
 from codeintel.build.schemas.seed_harness import DatasetSeedHarness, SeedDatasetConfig
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularInput
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -41,6 +49,7 @@ from codeintel.core.config.settings import (
     HamiltonExecutionSettings,
 )
 from codeintel.core.duckdb_types import DuckDBConnection, DuckDBRelation
+from codeintel.core.env import get_bool
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
@@ -62,6 +71,8 @@ if TYPE_CHECKING:
     from codeintel.build.schemas.seed_harness import SchemaObservationProvider
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.arrow_gen import ExtrasPolicy
+
+LOG = logging.getLogger(__name__)
 
 __all__ = [
     "HamiltonSchemaProvider",
@@ -231,6 +242,7 @@ class _ComputeInferenceJob:
     table_key: str
     qparams: frozenset[str]
     dataset_refs: tuple[tuple[str, str], ...]
+    loader_nodes: tuple[tuple[str, str], ...]
     requires_env: bool
     requires_catalog: bool
 
@@ -258,6 +270,17 @@ class _InferenceComputeInputs:
     job: _ComputeInferenceJob
     observation_context: SchemaObservationContext | None
     schema_inputs: SchemaInferenceInputs
+    env: BuildEnv | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _InferenceJobRunInputs:
+    context: _InferenceContext
+    job: _ComputeInferenceJob
+    base_overrides: Mapping[str, object]
+    harness: DatasetSeedHarness
+    env: BuildEnv
+    observation_context: SchemaObservationContext | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,7 +289,32 @@ class _InferenceRequirementUpdate:
     requires_catalog: bool = False
     qparam: str | None = None
     dataset_ref: tuple[str, str] | None = None
+    loader_node: tuple[str, str] | None = None
     skip_children: bool = False
+
+
+@dataclass(slots=True)
+class _InferenceRequirementState:
+    qparams: set[str] = field(default_factory=set)
+    dataset_refs: dict[str, str] = field(default_factory=dict)
+    loader_nodes: dict[str, str] = field(default_factory=dict)
+    requires_env: bool = False
+    requires_catalog: bool = False
+    visited: set[str] = field(default_factory=set)
+
+    def apply(self, update: _InferenceRequirementUpdate) -> None:
+        if update.requires_env:
+            self.requires_env = True
+        if update.requires_catalog:
+            self.requires_catalog = True
+        if update.qparam is not None:
+            self.qparams.add(update.qparam)
+        if update.dataset_ref is not None:
+            ref_name, table_key = update.dataset_ref
+            self.dataset_refs[ref_name] = table_key
+        if update.loader_node is not None:
+            node_name, table_key = update.loader_node
+            self.loader_nodes[node_name] = table_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -445,38 +493,64 @@ def _schema_inference_providers() -> Providers:
     return create_default_providers(ToolsConfig.default())
 
 
-def _output_data_node(
+def _saver_node_for_table(
     *,
     context: _InferenceContext,
     table_key: str,
-) -> str | None:
+) -> Node | None:
     output = context.catalog.table_outputs.get(table_key)
     if output is None:
         return None
-    saver_node = context.driver.graph.nodes.get(output.saver_node)
-    if saver_node is None:
+    return context.driver.graph.nodes.get(output.saver_node)
+
+
+def _data_node_from_tags(saver_node: Node) -> str | None:
+    saver_tags = getattr(saver_node, "tags", None)
+    if not isinstance(saver_tags, dict):
         return None
+    data_node = saver_tags.get("ci.data_node")
+    if isinstance(data_node, str) and data_node:
+        return data_node
+    return None
+
+
+def _data_node_from_tagged_deps(saver_node: Node, *, table_key: str) -> str | None:
     tagged_deps: list[str] = []
     dataset_tagged_deps: list[str] = []
     for dep in saver_node.dependencies:
-        tags = getattr(dep, "tags", None)
-        if not isinstance(tags, dict):
-            continue
+        tags = dep.tags if isinstance(dep.tags, dict) else {}
         if tags.get(hamilton_tags.TAG_TABLE_KEY) != table_key:
             continue
         tagged_deps.append(dep.name)
         if tags.get(hamilton_tags.TAG_NODE_TYPE) == hamilton_tags.NODE_TYPE_DATASET:
             dataset_tagged_deps.append(dep.name)
-
     if len(dataset_tagged_deps) == 1:
         return dataset_tagged_deps[0]
     if len(tagged_deps) == 1:
         return tagged_deps[0]
+    return None
 
+
+def _data_node_from_tabular_deps(saver_node: Node) -> str | None:
     tabular_deps = [dep.name for dep in saver_node.dependencies if _is_tabular_annotation(dep.type)]
     if len(tabular_deps) != 1:
         return None
     return tabular_deps[0]
+
+
+def _output_data_node(
+    *,
+    context: _InferenceContext,
+    table_key: str,
+) -> str | None:
+    saver_node = _saver_node_for_table(context=context, table_key=table_key)
+    if saver_node is None:
+        return None
+    return (
+        _data_node_from_tags(saver_node)
+        or _data_node_from_tagged_deps(saver_node, table_key=table_key)
+        or _data_node_from_tabular_deps(saver_node)
+    )
 
 
 def _schema_hints_for_table_key(
@@ -582,7 +656,7 @@ def _resolve_inference_job(
         msg = f"Compute node {compute_name} for {table_key} is not inferable"
         raise ValueError(msg)
 
-    qparams, requires_env, requires_catalog, dataset_refs = _inference_requirements(
+    qparams, requires_env, requires_catalog, dataset_refs, loader_nodes = _inference_requirements(
         context=context,
         compute_name=compute_name,
     )
@@ -594,6 +668,7 @@ def _resolve_inference_job(
         table_key=table_key,
         qparams=frozenset(qparams),
         dataset_refs=tuple(sorted(dataset_refs.items())),
+        loader_nodes=tuple(sorted(loader_nodes.items())),
         requires_env=requires_env,
         requires_catalog=requires_catalog,
     )
@@ -608,62 +683,93 @@ def _inference_requirements(
     *,
     context: _InferenceContext,
     compute_name: str,
-) -> tuple[set[str], bool, bool, dict[str, str]]:
+) -> tuple[set[str], bool, bool, dict[str, str], dict[str, str]]:
     effective_compute_name = _compute_node_for_inference(context, compute_name=compute_name)
     node = context.driver.graph.nodes.get(effective_compute_name)
     if node is None:
         msg = f"Compute node not found in Hamilton DAG: {effective_compute_name}"
         raise ValueError(msg)
 
-    qparams: set[str] = set()
-    dataset_refs: dict[str, str] = {}
-    requires_env = False
-    requires_catalog = False
-    visited: set[str] = set()
-    stack = list(node.dependencies)
+    state = _InferenceRequirementState()
+    stack: list[tuple[Node, int]] = [(dep, 0) for dep in node.dependencies]
 
     while stack:
-        dep = stack.pop()
-        if dep.name in visited:
+        dep, depth = stack.pop()
+        if dep.name in state.visited:
             continue
-        visited.add(dep.name)
-        update = _inspect_inference_dependency(dep, compute_name=compute_name)
-        if update.requires_env:
-            requires_env = True
-        if update.requires_catalog:
-            requires_catalog = True
-        if update.qparam is not None:
-            qparams.add(update.qparam)
-        if update.dataset_ref is not None:
-            ref_name, table_key = update.dataset_ref
-            dataset_refs[ref_name] = table_key
+        state.visited.add(dep.name)
+        update = _inspect_inference_dependency(dep, compute_name=compute_name, depth=depth)
+        state.apply(update)
         if update.skip_children:
             continue
-        stack.extend(dep.dependencies)
+        stack.extend((child, depth + 1) for child in dep.dependencies)
 
-    return qparams, requires_env, requires_catalog, dataset_refs
+    return (
+        state.qparams,
+        state.requires_env,
+        state.requires_catalog,
+        state.dataset_refs,
+        state.loader_nodes,
+    )
+
+
+def _special_dependency_update(dep: Node) -> _InferenceRequirementUpdate | None:
+    if dep.name == "env":
+        return _InferenceRequirementUpdate(requires_env=True, skip_children=True)
+    if dep.name == "catalog":
+        return _InferenceRequirementUpdate(requires_catalog=True, skip_children=True)
+    return None
+
+
+def _loader_dependency_update(dep: Node) -> _InferenceRequirementUpdate | None:
+    tags = dep.tags if isinstance(dep.tags, dict) else {}
+    if tags.get(hamilton_tags.TAG_NODE_TYPE) != hamilton_tags.NODE_TYPE_LOADER_QUERY:
+        return None
+    table_key = tags.get(hamilton_tags.TAG_TABLE_KEY)
+    if not isinstance(table_key, str) or not table_key:
+        return None
+    return _InferenceRequirementUpdate(loader_node=(dep.name, table_key), skip_children=True)
+
+
+def _qparam_dependency_update(dep: Node) -> _InferenceRequirementUpdate | None:
+    if dep.name.startswith("q__"):
+        return _InferenceRequirementUpdate(qparam=dep.name, skip_children=True)
+    return None
+
+
+def _dataset_ref_dependency_update(
+    dep: Node,
+    *,
+    depth: int,
+) -> _InferenceRequirementUpdate | None:
+    if not _is_dataset_ref_annotation(dep.type):
+        return None
+    if depth > 0:
+        return _InferenceRequirementUpdate(skip_children=True)
+    table_key = _dataset_param_to_table_key(dep.name)
+    if table_key is None:
+        msg = f"DatasetRef dependency missing table key: {dep.name}"
+        raise ValueError(msg)
+    return _InferenceRequirementUpdate(dataset_ref=(dep.name, table_key), skip_children=True)
 
 
 def _inspect_inference_dependency(
     dep: Node,
     *,
     compute_name: str,
+    depth: int,
 ) -> _InferenceRequirementUpdate:
-    if dep.name == "env":
-        return _InferenceRequirementUpdate(requires_env=True, skip_children=True)
-    if dep.name == "catalog":
-        return _InferenceRequirementUpdate(requires_catalog=True, skip_children=True)
-    if dep.name.startswith("q__"):
-        return _InferenceRequirementUpdate(qparam=dep.name, skip_children=True)
-    if _is_dataset_ref_annotation(dep.type):
-        table_key = _dataset_param_to_table_key(dep.name)
-        if table_key is None:
-            msg = f"DatasetRef dependency missing table key: {dep.name}"
-            raise ValueError(msg)
-        return _InferenceRequirementUpdate(
-            dataset_ref=(dep.name, table_key),
-            skip_children=True,
-        )
+    for resolver in (
+        _special_dependency_update,
+        _loader_dependency_update,
+        _qparam_dependency_update,
+    ):
+        update = resolver(dep)
+        if update is not None:
+            return update
+    update = _dataset_ref_dependency_update(dep, depth=depth)
+    if update is not None:
+        return update
     _validate_inference_dependency(dep, compute_name=compute_name)
     return _InferenceRequirementUpdate()
 
@@ -697,18 +803,21 @@ def _default_build_settings() -> BuildSettings:
         engine_version = version("codeintel")
     except PackageNotFoundError:
         engine_version = "unknown"
+    polars_profile = bool(get_bool("CODEINTEL_BUILD_POLARS_PROFILE", default=False) or False)
+    polars_inspect = bool(get_bool("CODEINTEL_BUILD_POLARS_INSPECT", default=False) or False)
     return BuildSettings(
         engine_version=engine_version,
         export_audit=ExportAuditSettings(),
+        polars_profile=polars_profile,
+        polars_inspect=polars_inspect,
     )
 
 
 def _inference_env(*, gateway: BuildGateway, force_targets: frozenset[str]) -> BuildEnv:
-    snapshot = SnapshotRef.from_args(
-        repo="demo/repo",
-        commit="deadbeef",
-        repo_root=Path.cwd(),
-    )
+    snapshot = _dulwich_snapshot()
+    if snapshot is None:
+        msg = "Schema inference requires a valid dulwich snapshot (repo root + HEAD commit)."
+        raise RuntimeError(msg)
     settings = _default_build_settings()
     context = BuildRunContext(
         snapshot=snapshot,
@@ -724,6 +833,29 @@ def _inference_env(*, gateway: BuildGateway, force_targets: frozenset[str]) -> B
     return context.build_env(load_catalogs=False, load_schema_service=False)
 
 
+def _dulwich_snapshot() -> SnapshotRef | None:
+    if _DulwichRepo is None:
+        return None
+    try:
+        repo = _DulwichRepo.discover(Path.cwd())
+    except (OSError, ValueError):
+        return None
+    repo_root = Path(repo.path).resolve()
+    head = repo.head()
+    if isinstance(head, bytes):
+        commit = head.decode("ascii", errors="ignore").strip()
+    else:
+        commit = str(head).strip()
+    if not commit:
+        return None
+    repo_name = repo_root.name or "repo"
+    return SnapshotRef.from_args(
+        repo=repo_name,
+        commit=commit,
+        repo_root=repo_root,
+    )
+
+
 def _infer_table_schema_for_compute(inputs: _InferenceComputeInputs) -> TableSchema:
     schema_inputs = inputs.schema_inputs
     with _schema_inference_gateway(
@@ -736,13 +868,15 @@ def _infer_table_schema_for_compute(inputs: _InferenceComputeInputs) -> TableSch
             seed_dataset=schema_inputs.seed_dataset,
         )
         overrides: dict[str, object] = dict(harness.build_inputs(set(inputs.job.qparams)))
+        overrides.update(_loader_overrides(job=inputs.job, harness=harness))
         exec_inputs: dict[str, object] = {}
-        env: BuildEnv | None = None
-        if inputs.job.requires_env or inputs.job.dataset_refs:
+        env = inputs.env
+        if env is None and (inputs.job.requires_env or inputs.job.dataset_refs):
             env = _inference_env(
                 gateway=gateway,
                 force_targets=frozenset({inputs.job.target_name}),
             )
+        if env is not None:
             exec_inputs["env"] = env
         if inputs.job.requires_catalog:
             exec_inputs["catalog"] = inputs.context.catalog
@@ -772,6 +906,7 @@ def infer_schema_for_table_key(
     table_key: str,
     *,
     schema_inputs: SchemaInferenceInputs,
+    env: BuildEnv | None = None,
 ) -> TableSchema:
     """Infer schema for a single output table produced by a native compute node.
 
@@ -781,6 +916,8 @@ def infer_schema_for_table_key(
         Output table key to infer (schema.table).
     schema_inputs
         Shared inference inputs (driver, catalog, provider, optional seed dataset).
+    env
+        Optional BuildEnv to use for inference execution.
 
     Returns
     -------
@@ -815,6 +952,7 @@ def infer_schema_for_table_key(
                 job=job,
                 observation_context=observation_context,
                 schema_inputs=schema_inputs,
+                env=env,
             )
         )
         declared_schema = observation_context.declared_schema
@@ -1033,33 +1171,97 @@ def _union_qparams(jobs: Iterable[_ComputeInferenceJob]) -> frozenset[str]:
     return frozenset({name for job in jobs for name in job.qparams})
 
 
-def _infer_job_schema(
-    *,
-    context: _InferenceContext,
-    job: _ComputeInferenceJob,
-    base_overrides: Mapping[str, object],
-    env: BuildEnv,
-    observation_context: SchemaObservationContext | None,
-) -> TableSchema:
-    inputs: dict[str, object] = {}
-    overrides = dict(base_overrides)
-    if job.requires_env:
-        inputs["env"] = env
-    if job.requires_catalog:
-        inputs["catalog"] = context.catalog
-    if job.dataset_refs:
-        overrides.update(_dataset_ref_overrides(job=job, env=env))
+def _lazyframe_for_diagnostics(value: InferableTabularInput) -> pl.LazyFrame | None:
+    if isinstance(value, pl.LazyFrame):
+        return value
+    if isinstance(value, pl.DataFrame):
+        return value.lazy()
+    if isinstance(value, pa.Table):
+        return tabular_to_lazyframe(value)
+    return None
 
-    out = context.driver.execute([job.exec_name], inputs=inputs, overrides=overrides)
-    expr_obj = out[job.exec_name]
+
+def _safe_polars_explain(frame: pl.LazyFrame) -> str | None:
+    explain_fn = getattr(frame, "explain", None)
+    if not callable(explain_fn):
+        return None
+    try:
+        result = explain_fn()
+    except (PolarsError, TypeError, ValueError):
+        return None
+    return result if isinstance(result, str) else None
+
+
+def _safe_polars_profile(frame: pl.LazyFrame) -> str | None:
+    profile_fn = getattr(frame, "profile", None)
+    if not callable(profile_fn):
+        return None
+    try:
+        result = profile_fn()
+    except (PolarsError, TypeError, ValueError):
+        return None
+    to_string = getattr(result, "to_string", None)
+    if callable(to_string):
+        try:
+            return to_string()
+        except (TypeError, ValueError):
+            return None
+    if result is None:
+        return None
+    return str(result)
+
+
+def _log_inference_diagnostics(
+    value: InferableTabularInput,
+    *,
+    table_key: str,
+    settings: BuildSettings,
+) -> None:
+    if not settings.polars_inspect and not settings.polars_profile:
+        return
+    frame = _lazyframe_for_diagnostics(value)
+    if frame is None:
+        return
+    if settings.polars_inspect:
+        explain = _safe_polars_explain(frame)
+        if explain:
+            LOG.debug("polars_inference_explain table=%s plan=%s", table_key, explain)
+    if settings.polars_profile:
+        profile_repr = _safe_polars_profile(frame)
+        if profile_repr:
+            LOG.info("polars_inference_profile table=%s profile=%s", table_key, profile_repr)
+
+
+def _infer_job_schema(inputs: _InferenceJobRunInputs) -> TableSchema:
+    exec_inputs: dict[str, object] = {}
+    overrides = dict(inputs.base_overrides)
+    overrides.update(_loader_overrides(job=inputs.job, harness=inputs.harness))
+    if inputs.job.requires_env:
+        exec_inputs["env"] = inputs.env
+    if inputs.job.requires_catalog:
+        exec_inputs["catalog"] = inputs.context.catalog
+    if inputs.job.dataset_refs:
+        overrides.update(_dataset_ref_overrides(job=inputs.job, env=inputs.env))
+
+    out = inputs.context.driver.execute(
+        [inputs.job.exec_name],
+        inputs=exec_inputs,
+        overrides=overrides,
+    )
+    expr_obj = out[inputs.job.exec_name]
     if expr_obj is None:
-        msg = f"{job.exec_name} returned None; expected tabular output"
+        msg = f"{inputs.job.exec_name} returned None; expected tabular output"
         raise TypeError(msg)
 
+    _log_inference_diagnostics(
+        cast("InferableTabularInput", expr_obj),
+        table_key=inputs.job.table_key,
+        settings=inputs.env.settings,
+    )
     return _table_schema_from_tabular(
         cast("InferableTabularInput", expr_obj),
-        table_key=job.table_key,
-        observation_context=observation_context,
+        table_key=inputs.job.table_key,
+        observation_context=inputs.observation_context,
     )
 
 
@@ -1067,6 +1269,7 @@ def infer_table_schemas(
     table_keys: Iterable[str],
     *,
     schema_inputs: SchemaInferenceInputs,
+    env: BuildEnv | None = None,
 ) -> dict[str, TableSchema]:
     """Infer schemas for multiple output tables in a single session.
 
@@ -1076,6 +1279,8 @@ def infer_table_schemas(
         Output table keys to infer (schema.table).
     schema_inputs
         Shared inference inputs (driver, catalog, provider, optional seed dataset).
+    env
+        Optional BuildEnv to use for inference execution.
 
     Returns
     -------
@@ -1103,10 +1308,12 @@ def infer_table_schemas(
             seed_dataset=schema_inputs.seed_dataset,
         )
         base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
-        env = _inference_env(
-            gateway=gateway,
-            force_targets=frozenset({job.target_name for job in jobs}),
-        )
+        resolved_env = env
+        if resolved_env is None:
+            resolved_env = _inference_env(
+                gateway=gateway,
+                force_targets=frozenset({job.target_name for job in jobs}),
+            )
 
         inferred: dict[str, TableSchema] = {}
         for job in jobs:
@@ -1117,11 +1324,14 @@ def infer_table_schemas(
                 target_name=job.target_name,
             )
             inferred_schema = _infer_job_schema(
-                context=context,
-                job=job,
-                base_overrides=base_overrides,
-                env=env,
-                observation_context=observation_context,
+                _InferenceJobRunInputs(
+                    context=context,
+                    job=job,
+                    base_overrides=base_overrides,
+                    harness=harness,
+                    env=resolved_env,
+                    observation_context=observation_context,
+                )
             )
             inferred[job.table_key] = merge_table_schema_hints(
                 inferred_schema,
@@ -1146,6 +1356,18 @@ def _dataset_ref_overrides(
         )
         for param_name, table_key in job.dataset_refs
     }
+
+
+def _loader_overrides(
+    *,
+    job: _ComputeInferenceJob,
+    harness: DatasetSeedHarness,
+) -> dict[str, object]:
+    overrides: dict[str, object] = {}
+    for node_name, table_key in job.loader_nodes:
+        reader = harness.seed_table(table_key)
+        overrides[node_name] = tabular_to_lazyframe(reader)
+    return overrides
 
 
 def _normalize_record_batch_iterable(
@@ -1321,11 +1543,16 @@ class SchemaInferenceService:
 
     driver: h_driver.Driver
     catalog: DagCatalog
+    env: BuildEnv | None = None
     seed_dataset: SeedDatasetConfig | None = None
     gateway_factory: InferenceGatewayFactory | None = None
 
     def infer_table_schema(
-        self, table_key: str, *, declared_provider: SchemaProvider
+        self,
+        table_key: str,
+        *,
+        declared_provider: SchemaProvider,
+        env: BuildEnv | None = None,
     ) -> TableSchema:
         """Infer schema for a single table key.
 
@@ -1335,6 +1562,8 @@ class SchemaInferenceService:
             Output table key to infer (schema.table).
         declared_provider
             Provider used to seed upstream input tables.
+        env
+            Optional BuildEnv to use for inference execution.
 
         Returns
         -------
@@ -1350,6 +1579,7 @@ class SchemaInferenceService:
                 seed_dataset=self.seed_dataset,
                 gateway_factory=self.gateway_factory,
             ),
+            env=env or self.env,
         )
 
     def infer_table_schemas(
@@ -1357,6 +1587,7 @@ class SchemaInferenceService:
         table_keys: Iterable[str],
         *,
         declared_provider: SchemaProvider,
+        env: BuildEnv | None = None,
     ) -> dict[str, TableSchema]:
         """Infer schemas for multiple table keys.
 
@@ -1366,6 +1597,8 @@ class SchemaInferenceService:
             Output table keys to infer (schema.table).
         declared_provider
             Provider used to seed upstream input tables.
+        env
+            Optional BuildEnv to use for inference execution.
 
         Returns
         -------
@@ -1381,6 +1614,7 @@ class SchemaInferenceService:
                 seed_dataset=self.seed_dataset,
                 gateway_factory=self.gateway_factory,
             ),
+            env=env or self.env,
         )
 
     def inferable_table_keys(self) -> frozenset[str]:
@@ -1393,11 +1627,23 @@ class SchemaInferenceService:
         """
         return inferable_native_table_keys(driver=self.driver, catalog=self.catalog)
 
+    def output_data_node(self, table_key: str) -> str | None:
+        """Return the output data node name for a table key when available.
+
+        Returns
+        -------
+        str | None
+            Output data node name if resolved.
+        """
+        context = _InferenceContext(driver=self.driver, catalog=self.catalog)
+        return _output_data_node(context=context, table_key=table_key)
+
 
 def get_schema_inference_service(
     *,
     driver: h_driver.Driver,
     catalog: DagCatalog,
+    env: BuildEnv | None = None,
     seed_dataset: SeedDatasetConfig | None = None,
     gateway_factory: InferenceGatewayFactory | None = None,
 ) -> SchemaInferenceService:
@@ -1411,6 +1657,8 @@ def get_schema_inference_service(
         DAG catalog defining outputs for each build target.
     seed_dataset
         Optional dataset-backed seed configuration for q__ inputs.
+    env
+        Optional BuildEnv to use for inference execution.
     gateway_factory
         Optional factory for building an inference gateway with schema access.
 
@@ -1422,6 +1670,7 @@ def get_schema_inference_service(
     return SchemaInferenceService(
         driver=driver,
         catalog=catalog,
+        env=env,
         seed_dataset=seed_dataset,
         gateway_factory=gateway_factory,
     )

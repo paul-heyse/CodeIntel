@@ -16,19 +16,17 @@ from codeintel.build.analytics.testing.behavioral.importance import (
     compute_flakiness_score,
     compute_importance_score,
 )
-from codeintel.build.analytics.testing.coverage.inputs import (
-    FunctionCoverageEntry,
-    SubsystemCoverageEntry,
-    TestGraphMetrics,
-)
 from codeintel.build.analytics.testing.profiles.rows import (
     TestProfileInputs,
     build_test_profile_context,
     build_test_profile_rows,
 )
 from codeintel.build.analytics.testing.profiles.types import (
+    FunctionCoverageEntry,
     IoFlags,
+    SubsystemCoverageEntry,
     TestAstInfo,
+    TestGraphMetrics,
     TestProfileOptions,
     TestRecord,
 )
@@ -426,48 +424,55 @@ def _load_test_records_from_frames(
 
 
 def load_functions_covered(
-    con: DuckDBConnection,
+    frames: FunctionCoverageFrames,
+    *,
     repo: str,
     commit: str,
 ) -> dict[str, FunctionCoverageEntry]:
-    """Load per-test function coverage entries.
+    """Load per-test function coverage entries from frames.
 
     Returns
     -------
     dict[str, FunctionCoverageEntry]
         Coverage entries keyed by ``test_id``.
     """
-    return _load_functions_covered(con, repo, commit)
+    return _load_functions_covered_from_frames(frames, repo=repo, commit=commit)
 
 
 def load_subsystems_covered(
-    con: DuckDBConnection,
+    frames: SubsystemCoverageFrames,
+    *,
     repo: str,
     commit: str,
 ) -> dict[str, SubsystemCoverageEntry]:
-    """Load per-test subsystem coverage entries.
+    """Load per-test subsystem coverage entries from frames.
 
     Returns
     -------
     dict[str, SubsystemCoverageEntry]
         Subsystem coverage entries keyed by ``test_id``.
     """
-    return _load_subsystems_covered(con, repo, commit)
+    return _load_subsystems_covered_from_frames(frames, repo=repo, commit=commit)
 
 
 def load_test_graph_metrics_public(
-    con: DuckDBConnection,
+    test_graph_metrics_frame: pl.DataFrame | None,
+    *,
     repo: str,
     commit: str,
 ) -> dict[str, TestGraphMetrics]:
-    """Load test graph metrics rows.
+    """Load test graph metrics rows from frames.
 
     Returns
     -------
     dict[str, TestGraphMetrics]
         Metrics keyed by ``test_id``.
     """
-    return _load_test_graph_metrics(con, repo, commit)
+    return _load_test_graph_metrics_from_frame(
+        test_graph_metrics_frame,
+        repo=repo,
+        commit=commit,
+    )
 
 
 def load_test_records_public(
@@ -772,7 +777,9 @@ def _load_subsystems_covered_from_frames(
     commit: str,
 ) -> dict[str, SubsystemCoverageEntry]:
     module_by_path = _module_by_path_from_frame(frames.modules_frame, repo=repo, commit=commit)
-    goid_to_module = _goid_to_module_map(frames.goids_frame, module_by_path, repo=repo, commit=commit)
+    goid_to_module = _goid_to_module_map(
+        frames.goids_frame, module_by_path, repo=repo, commit=commit
+    )
     subsystem_by_module = _subsystem_by_module_from_frame(
         frames.subsystem_modules_frame,
         repo=repo,

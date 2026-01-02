@@ -30,8 +30,6 @@ from codeintel.ingestion.ports.storage import (
     QueryResult,
 )
 from codeintel.ingestion.ports.tools import (
-    CoverageFileData,
-    CoverageResult,
     DiagnosticResult,
     IngestToolPort,
     ScipResult,
@@ -43,8 +41,6 @@ __all__ = [
     "ChangeDetectionPort",
     "ChangeRequest",
     "ChangeSet",
-    "CoverageFileData",
-    "CoverageResult",
     "DiagnosticResult",
     "FileDigest",
     "IngestStoragePort",

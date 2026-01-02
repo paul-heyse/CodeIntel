@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+import msgspec
+import orjson
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
 
 
-def write_manifest_json(path: Path, payload: dict[str, Any]) -> None:
+def write_manifest_json(path: Path, payload: object) -> None:
     """Write a JSON manifest with deterministic formatting.
 
     Parameters
@@ -25,7 +25,8 @@ def write_manifest_json(path: Path, payload: dict[str, Any]) -> None:
         JSON-serializable manifest payload.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_encode_manifest_bytes(payload))
 
 
 def read_manifest_json(path: Path) -> dict[str, Any]:
@@ -41,22 +42,37 @@ def read_manifest_json(path: Path) -> dict[str, Any]:
     dict[str, Any]
         Parsed JSON payload.
     """
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast("dict[str, Any]", orjson.loads(path.read_bytes()))
 
 
-class ManifestBase(ABC):
-    """Base class for deterministic manifest serialization."""
+def _encode_manifest_bytes(payload: object) -> bytes:
+    """Encode a manifest payload to deterministic JSON bytes.
 
-    @abstractmethod
+    Returns
+    -------
+    bytes
+        JSON-encoded manifest payload with stable formatting.
+    """
+    return orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2) + b"\n"
+
+
+def _encode_manifest_text(payload: object) -> str:
+    """Encode a manifest payload to deterministic JSON text.
+
+    Returns
+    -------
+    str
+        JSON-encoded manifest payload with stable formatting.
+    """
+    return orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2).decode("utf-8")
+
+
+class ManifestBase:
+    """Mixin for deterministic manifest serialization."""
+
     def to_json_obj(self) -> dict[str, object]:
-        """Return a JSON-serializable representation.
-
-        Returns
-        -------
-        dict[str, object]
-            JSON-serializable manifest payload.
-        """
-        ...
+        """Return a JSON-serializable representation."""
+        raise NotImplementedError
 
     def to_json(self) -> str:
         """Serialize the manifest to a deterministic JSON string.
@@ -64,17 +80,12 @@ class ManifestBase(ABC):
         Returns
         -------
         str
-            JSON string representation of this manifest.
+            Deterministic JSON representation of the manifest.
         """
-        return json.dumps(self.to_json_obj(), indent=2, sort_keys=True)
+        return _encode_manifest_text(self.to_json_obj())
 
     def write_json(self, path: Path) -> Path:
         """Write the manifest to disk with deterministic formatting.
-
-        Parameters
-        ----------
-        path
-            Destination path for the manifest file.
 
         Returns
         -------
@@ -85,8 +96,7 @@ class ManifestBase(ABC):
         return path
 
 
-@dataclass(frozen=True)
-class ExportManifestData(ManifestBase):
+class ExportManifestData(msgspec.Struct, ManifestBase, frozen=True):
     """Structured manifest metadata for a single dataset export."""
 
     dataset: str
@@ -127,8 +137,7 @@ class ExportManifestData(ManifestBase):
         return payload
 
 
-@dataclass(frozen=True)
-class ArrowDatasetManifest(ManifestBase):
+class ArrowDatasetManifest(msgspec.Struct, ManifestBase, frozen=True):
     """Manifest describing an Arrow dataset snapshot."""
 
     dataset_id: str
@@ -170,8 +179,7 @@ class ArrowDatasetManifest(ManifestBase):
         return payload
 
 
-@dataclass(frozen=True)
-class DatasetSuiteManifest(ManifestBase):
+class DatasetSuiteManifest(msgspec.Struct, ManifestBase, frozen=True):
     """Manifest describing a suite of dataset snapshots."""
 
     suite_manifest_version: int
@@ -230,8 +238,7 @@ class DatasetSuiteManifest(ManifestBase):
         )
 
 
-@dataclass(frozen=True)
-class SnapshotDatasetEntry(ManifestBase):
+class SnapshotDatasetEntry(msgspec.Struct, ManifestBase, frozen=True):
     """Summary pointer to a dataset manifest within a serving snapshot."""
 
     manifest_path: str
@@ -261,8 +268,7 @@ class SnapshotDatasetEntry(ManifestBase):
         return payload
 
 
-@dataclass(frozen=True)
-class IncrementalMarker(ManifestBase):
+class IncrementalMarker(msgspec.Struct, ManifestBase, frozen=True):
     """Metadata persisted to decide if an export can be reused."""
 
     dataset: str
@@ -302,8 +308,7 @@ class IncrementalMarker(ManifestBase):
         return payload
 
 
-@dataclass(frozen=True)
-class SkipCriteria:
+class SkipCriteria(msgspec.Struct, frozen=True):
     """Inputs used to decide whether an export can be reused."""
 
     row_count: int | None
@@ -313,8 +318,7 @@ class SkipCriteria:
     force_full_export: bool
 
 
-@dataclass(frozen=True)
-class ServingSnapshotManifest(ManifestBase):
+class ServingSnapshotManifest(msgspec.Struct, ManifestBase, frozen=True):
     """Manifest describing a published serving snapshot.
 
     Parameters
@@ -350,7 +354,7 @@ class ServingSnapshotManifest(ManifestBase):
     schema_manifest_path: str
     buildspec_path: str
     semantic_layer_version: str
-    datasets: dict[str, SnapshotDatasetEntry] = field(default_factory=dict)
+    datasets: dict[str, SnapshotDatasetEntry] = msgspec.field(default_factory=dict)
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable manifest payload.
@@ -531,6 +535,17 @@ def _require_str(payload: dict[str, object], key: str) -> str:
     raise TypeError(msg)
 
 
+def manifest_json_schema(manifest_type: type[object]) -> dict[str, object]:
+    """Return a JSON Schema for a manifest type.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON Schema describing the manifest payload.
+    """
+    return cast("dict[str, object]", msgspec.json.schema(manifest_type))
+
+
 ExportArtifactKind = Literal["parquet", "jsonl", "json", "csv"]
 ManifestDerivationKind = Literal[
     "explicit_override",
@@ -541,8 +556,7 @@ ManifestDerivationKind = Literal[
 InferenceStatus = Literal["inferred", "override", "disabled", "error", "pending"]
 
 
-@dataclass(frozen=True)
-class ExportArtifact(ManifestBase):
+class ExportArtifact(msgspec.Struct, ManifestBase, frozen=True):
     """Specification for an export artifact (Parquet, JSONL, etc.).
 
     Export artifacts represent file outputs tied to table data, enabling
@@ -585,8 +599,7 @@ class ExportArtifact(ManifestBase):
         return result
 
 
-@dataclass(frozen=True)
-class TableProvenance(ManifestBase):
+class TableProvenance(msgspec.Struct, ManifestBase, frozen=True):
     """Describe schema provenance for a table or view.
 
     Parameters
@@ -644,8 +657,7 @@ class TableProvenance(ManifestBase):
         return result
 
 
-@dataclass(frozen=True)
-class ArtifactProvenance(ManifestBase):
+class ArtifactProvenance(msgspec.Struct, ManifestBase, frozen=True):
     """Describe lineage metadata for an export artifact.
 
     Parameters
@@ -673,8 +685,7 @@ class ArtifactProvenance(ManifestBase):
         }
 
 
-@dataclass(frozen=True)
-class SchemaManifest(ManifestBase):
+class SchemaManifest(msgspec.Struct, ManifestBase, frozen=True):
     """Stable manifest of schemas compiled for a build selection.
 
     The manifest captures table schemas, view schemas, and export
@@ -701,11 +712,11 @@ class SchemaManifest(ManifestBase):
 
     version: str
     tables: tuple[TableSchema, ...] = ()
-    views: tuple[TableSchema, ...] = field(default_factory=tuple)
-    artifacts: tuple[ExportArtifact, ...] = field(default_factory=tuple)
-    table_provenance: dict[str, TableProvenance] = field(default_factory=dict)
-    view_provenance: dict[str, TableProvenance] = field(default_factory=dict)
-    artifact_provenance: dict[str, ArtifactProvenance] = field(default_factory=dict)
+    views: tuple[TableSchema, ...] = msgspec.field(default_factory=tuple)
+    artifacts: tuple[ExportArtifact, ...] = msgspec.field(default_factory=tuple)
+    table_provenance: dict[str, TableProvenance] = msgspec.field(default_factory=dict)
+    view_provenance: dict[str, TableProvenance] = msgspec.field(default_factory=dict)
+    artifact_provenance: dict[str, ArtifactProvenance] = msgspec.field(default_factory=dict)
 
     @property
     def is_v2(self) -> bool:
@@ -780,6 +791,7 @@ __all__ = [
     "SkipCriteria",
     "SnapshotDatasetEntry",
     "TableProvenance",
+    "manifest_json_schema",
     "read_manifest_json",
     "write_manifest_json",
 ]

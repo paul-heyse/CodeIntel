@@ -15,9 +15,7 @@ from typing import Final, Literal
 
 ColumnType = str
 
-_DECIMAL_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"^DECIMAL\(\s*(\d+)\s*,\s*(\d+)\s*\)$"
-)
+_DECIMAL_PATTERN: Final[re.Pattern[str]] = re.compile(r"^DECIMAL\(\s*(\d+)\s*,\s*(\d+)\s*\)$")
 _ADVANCED_TYPE_PREFIXES: Final[tuple[str, ...]] = ("STRUCT", "LIST", "MAP", "UNION")
 COMPLEX_TYPE_BASES: Final[frozenset[str]] = frozenset({*_ADVANCED_TYPE_PREFIXES, "JSON"})
 _ALIAS_CANONICAL: Final[dict[str, str]] = {

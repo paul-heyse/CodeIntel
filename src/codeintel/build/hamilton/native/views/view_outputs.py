@@ -261,7 +261,12 @@ def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pl.
         if not snapshot_dir.exists():
             msg = f"Missing dataset snapshot directory: {snapshot_dir}"
             raise FileNotFoundError(msg)
-        frame = scan_dataset_lazyframe(snapshot_dir, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        frame = scan_dataset_lazyframe(
+            snapshot_dir,
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            row_index_name=env.settings.dataset_row_index_name,
+            row_index_offset=env.settings.dataset_row_index_offset,
+        )
         if frame is None:
             msg = f"Missing dataset snapshot directory: {snapshot_dir}"
             raise FileNotFoundError(msg)

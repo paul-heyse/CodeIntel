@@ -8,8 +8,12 @@ Check classes implement CheckProtocol from core/validation.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+import polars as pl
+
+from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_lazyframe
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_int, coerce_str
@@ -141,22 +145,26 @@ def _warn_missing_function_goids_impl(
     if dataset_root_dir is None:
         return []
     ast_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="core.ast_nodes",
-        snapshot_id=commit,
-        columns=("path", "node_type"),
-        repo=None,
-        commit=None,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.ast_nodes",
+            snapshot_id=commit,
+            columns=("path", "node_type"),
+            repo=None,
+            commit=None,
+        )
     )
     if ast_frame is None:
         return []
     goids_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="core.goids",
-        snapshot_id=commit,
-        columns=("rel_path", "kind", "repo", "commit"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.goids",
+            snapshot_id=commit,
+            columns=("rel_path", "kind", "repo", "commit"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if goids_frame is None:
         return []
@@ -227,12 +235,14 @@ def _warn_callsite_span_mismatches_impl(
     if dataset_root_dir is None:
         return []
     frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="graph.call_graph_edges",
-        snapshot_id=commit,
-        columns=("caller_goid_h128", "callsite_path", "callsite_line", "repo", "commit"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="graph.call_graph_edges",
+            snapshot_id=commit,
+            columns=("caller_goid_h128", "callsite_path", "callsite_line", "repo", "commit"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if frame is None:
         return []
@@ -296,20 +306,24 @@ def _warn_orphan_modules_impl(
     if dataset_root_dir is None:
         return []
     modules_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="core.modules",
-        snapshot_id=commit,
-        columns=("path", "repo", "commit"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.modules",
+            snapshot_id=commit,
+            columns=("path", "repo", "commit"),
+            repo=repo,
+            commit=commit,
+        )
     )
     goids_frame = scan_snapshot_lazyframe(
-        dataset_root=dataset_root_dir,
-        table_key="core.goids",
-        snapshot_id=commit,
-        columns=("rel_path", "kind", "repo", "commit"),
-        repo=repo,
-        commit=commit,
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.goids",
+            snapshot_id=commit,
+            columns=("rel_path", "kind", "repo", "commit"),
+            repo=repo,
+            commit=commit,
+        )
     )
     if modules_frame is None or goids_frame is None:
         if catalog.module_by_path:

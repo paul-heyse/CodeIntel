@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from hamilton.function_modifiers import inject, resolve_from_config, source
+from hamilton.function_modifiers import resolve_from_config
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
-from codeintel.build.tabular.types import TabularFrame
+from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
+from codeintel.build.tabular.types import InferableTabularInput
 
 
 def _pick_relation(
@@ -17,10 +18,10 @@ def _pick_relation(
     param_name: str,
 ) -> NodeTransformLifecycle:
     if graph_backend == "existing":
-        return inject(**{param_name: source(existing_node)})
+        return inject_from_registry(param_name=param_name, node_name=existing_node)
     if graph_backend == "compute":
-        return inject(**{param_name: source(compute_node)})
-    return inject(**{param_name: source(empty_node)})
+        return inject_from_registry(param_name=param_name, node_name=compute_node)
+    return inject_from_registry(param_name=param_name, node_name=empty_node)
 
 
 def _pick_call_graph_nodes(graph_backend: str | None = None) -> NodeTransformLifecycle:
@@ -104,97 +105,97 @@ def _pick_symbol_use_edges(graph_backend: str | None = None) -> NodeTransformLif
 
 
 @resolve_from_config(decorate_with=_pick_call_graph_nodes)
-def call_graph_nodes(nodes: TabularFrame) -> TabularFrame:
+def call_graph_nodes(nodes: InferableTabularInput) -> InferableTabularInput:
     """Return the selected call graph nodes frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected call graph nodes frame.
+    InferableTabularInput
+        Selected call graph nodes input.
     """
     return nodes
 
 
 @resolve_from_config(decorate_with=_pick_call_graph_edges)
-def call_graph_edges(edges: TabularFrame) -> TabularFrame:
+def call_graph_edges(edges: InferableTabularInput) -> InferableTabularInput:
     """Return the selected call graph edges frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected call graph edges frame.
+    InferableTabularInput
+        Selected call graph edges input.
     """
     return edges
 
 
 @resolve_from_config(decorate_with=_pick_import_modules)
-def import_modules(modules: TabularFrame) -> TabularFrame:
+def import_modules(modules: InferableTabularInput) -> InferableTabularInput:
     """Return the selected import modules frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected import modules frame.
+    InferableTabularInput
+        Selected import modules input.
     """
     return modules
 
 
 @resolve_from_config(decorate_with=_pick_import_edges)
-def import_graph_edges(edges: TabularFrame) -> TabularFrame:
+def import_graph_edges(edges: InferableTabularInput) -> InferableTabularInput:
     """Return the selected import graph edges frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected import graph edges frame.
+    InferableTabularInput
+        Selected import graph edges input.
     """
     return edges
 
 
 @resolve_from_config(decorate_with=_pick_cfg_blocks)
-def cfg_blocks(blocks: TabularFrame) -> TabularFrame:
+def cfg_blocks(blocks: InferableTabularInput) -> InferableTabularInput:
     """Return the selected CFG blocks frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected CFG blocks frame.
+    InferableTabularInput
+        Selected CFG blocks input.
     """
     return blocks
 
 
 @resolve_from_config(decorate_with=_pick_cfg_edges)
-def cfg_edges(edges: TabularFrame) -> TabularFrame:
+def cfg_edges(edges: InferableTabularInput) -> InferableTabularInput:
     """Return the selected CFG edges frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected CFG edges frame.
+    InferableTabularInput
+        Selected CFG edges input.
     """
     return edges
 
 
 @resolve_from_config(decorate_with=_pick_dfg_edges)
-def dfg_edges(edges: TabularFrame) -> TabularFrame:
+def dfg_edges(edges: InferableTabularInput) -> InferableTabularInput:
     """Return the selected DFG edges frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected DFG edges frame.
+    InferableTabularInput
+        Selected DFG edges input.
     """
     return edges
 
 
 @resolve_from_config(decorate_with=_pick_symbol_use_edges)
-def symbol_use_edges(edges: TabularFrame) -> TabularFrame:
+def symbol_use_edges(edges: InferableTabularInput) -> InferableTabularInput:
     """Return the selected symbol use edges frame.
 
     Returns
     -------
-    polars.LazyFrame
-        Selected symbol use edges frame.
+    InferableTabularInput
+        Selected symbol use edges input.
     """
     return edges
 

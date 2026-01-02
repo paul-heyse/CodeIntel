@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.build.schemas.contract_service import (
     ContractResolutionMode,
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.schemas.schema_index import SchemaIndex
     from codeintel.build.targets import TargetModule
     from codeintel.core.hamilton.tag_query import TagQuery
@@ -177,6 +178,15 @@ class NativeBatchInferer(Protocol):
         dict[str, TableSchema]
             Mapping of table key to inferred schema.
         """
+        ...
+
+
+@runtime_checkable
+class _SupportsInference(Protocol):
+    """Protocol for schema providers that can toggle inference."""
+
+    def with_inference(self, *, allow_inference: bool) -> SchemaProvider:
+        """Return a schema provider with inference enabled or disabled."""
         ...
 
 
@@ -334,6 +344,12 @@ def _apply_native_inference(
 
 
 def _schema_index_batch_inferer(schema_index: SchemaIndex) -> NativeBatchInferer:
+    def _resolve_env() -> BuildEnv | None:
+        provider = schema_index.env_provider
+        if provider is None:
+            return None
+        return provider()
+
     def _infer(
         table_keys: Iterable[str],
         *,
@@ -342,6 +358,7 @@ def _schema_index_batch_inferer(schema_index: SchemaIndex) -> NativeBatchInferer
         return schema_index.inference_service.infer_table_schemas(
             table_keys,
             declared_provider=declared_provider,
+            env=_resolve_env(),
         )
 
     return _infer
@@ -450,9 +467,8 @@ def _non_inferable_provider(provider: SchemaProvider) -> SchemaProvider:
             allow_inference=False,
             fallback_to_override_on_error=provider.fallback_to_override_on_error,
         )
-    with_inference = getattr(provider, "with_inference", None)
-    if callable(with_inference):
-        return with_inference(allow_inference=False)
+    if isinstance(provider, _SupportsInference):
+        return provider.with_inference(allow_inference=False)
     return provider
 
 

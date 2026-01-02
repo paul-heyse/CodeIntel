@@ -1,4 +1,4 @@
-"""Analytics utilities that turn ingestion outputs into hotspots and coverage reports."""
+"""Analytics utilities that turn ingestion outputs into hotspots and profiles."""
 
 from __future__ import annotations
 

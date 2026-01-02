@@ -9,9 +9,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.configs.coverage_config import CoverageSeedConfig
 from tests._helpers.fixtures.rows import GoidRow, ModuleRow, RepoMapRow, insert_rows
-from tests._helpers.fixtures.snapshots import SnapshotVariant
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
@@ -20,7 +18,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class AppSeeds:
-    """Seed data for pkg.app entrypoints and coverage."""
+    """Seed data for pkg.app entrypoints."""
 
     hello_goid: int
     cli_goid: int
@@ -135,31 +133,7 @@ def seed_app_modules_and_goids(
     )
 
 
-def make_coverage_seed_from_app(seeds: AppSeeds) -> CoverageSeedConfig:
-    """Build a CoverageSeedConfig for pkg.app.hello with a standard test id.
-
-    Parameters
-    ----------
-    seeds
-        Application seed data.
-
-    Returns
-    -------
-    CoverageSeedConfig
-        Coverage seed configuration for the hello function.
-    """
-    return CoverageSeedConfig(
-        module_import="pkg.app",
-        function_name="hello",
-        test_id="tests.test_app::test_hello",
-        snapshot_variant=SnapshotVariant(repo=seeds.repo, commit=seeds.commit),
-        function_goid=seeds.hello_goid,
-        test_goid=seeds.hello_goid + 1000,
-    )
-
-
 __all__ = [
     "AppSeeds",
-    "make_coverage_seed_from_app",
     "seed_app_modules_and_goids",
 ]

@@ -25,7 +25,7 @@ class DocsExportPack:
 
     This pack wraps the ``seed_docs_export_minimal`` function, seeding core tables
     (repo_map, modules, goids), graph tables (call_graph, cfg_blocks, import_graph,
-    symbol_use), and analytics tables (test_catalog, test_coverage_edges, etc.).
+    symbol_use), and analytics tables (test_catalog, etc.).
     """
 
     _name: str = "docs-export"

@@ -193,27 +193,3 @@ class SubsystemRepository(BaseRepository):
         relation = self._relation("docs.v_subsystem_profile")
         relation = relation.order("module_count DESC, subsystem_id").limit(limit)
         return self._relation_to_dicts(relation, "docs.v_subsystem_profile")
-
-    def list_subsystem_coverage(self, *, limit: int) -> list[RowDict]:
-        """
-        Return subsystem coverage rollups from docs views.
-
-        Parameters
-        ----------
-        limit
-            Maximum number of results.
-
-        Returns
-        -------
-        list[RowDict]
-            Coverage rows ordered by test count then subsystem_id.
-        """
-        cache_table = "analytics.subsystem_coverage_cache"
-        if self._has_cache(cache_table):
-            relation = self._relation(cache_table)
-            relation = relation.order("test_count DESC NULLS LAST, subsystem_id").limit(limit)
-            return self._relation_to_dicts(relation, cache_table)
-
-        relation = self._relation("docs.v_subsystem_coverage")
-        relation = relation.order("test_count DESC NULLS LAST, subsystem_id").limit(limit)
-        return self._relation_to_dicts(relation, "docs.v_subsystem_coverage")

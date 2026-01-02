@@ -1,10 +1,10 @@
 """Pipeline seed pack for pipeline integration tests.
 
 This module provides the PipelinePack which seeds data needed for
-pipeline graph and coverage integration tests.
+pipeline graph integration tests.
 
 The pack provides consistent module and GOID data for testing the full
-pipeline from graph building through coverage analysis.
+pipeline from graph building through analytics validation.
 """
 
 from __future__ import annotations

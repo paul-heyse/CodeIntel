@@ -257,26 +257,6 @@ class AnalyticsTables(BaseTableAccessor):
         """
         return self._table("analytics.function_validation")
 
-    def coverage_functions(self) -> DuckDBRelation:
-        """Return the ``analytics.coverage_functions`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.coverage_functions``.
-        """
-        return self._table("analytics.coverage_functions")
-
-    def coverage_lines(self) -> DuckDBRelation:
-        """Return the ``analytics.coverage_lines`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.coverage_lines``.
-        """
-        return self._table("analytics.coverage_lines")
-
     def test_catalog(self) -> DuckDBRelation:
         """Return the ``analytics.test_catalog`` relation.
 
@@ -286,16 +266,6 @@ class AnalyticsTables(BaseTableAccessor):
             Relation for ``analytics.test_catalog``.
         """
         return self._table("analytics.test_catalog")
-
-    def test_coverage_edges(self) -> DuckDBRelation:
-        """Return the ``analytics.test_coverage_edges`` relation.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation for ``analytics.test_coverage_edges``.
-        """
-        return self._table("analytics.test_coverage_edges")
 
     def function_profile(self) -> DuckDBRelation:
         """Return the ``analytics.function_profile`` relation.

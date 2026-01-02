@@ -6,15 +6,9 @@ import logging
 import sys
 from dataclasses import dataclass, field
 
-import polars as pl
-
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.native.ingestion.frame_utils import (
-    empty_lazyframe_for_table,
-    lazyframe_for_ingest_columns,
-)
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     TableOutputSpec,
@@ -29,6 +23,8 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.tree_sitter_index import TreeSitterIndexStep
 from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -51,14 +47,14 @@ TREE_SITTER_TABLE_KEYS = (
 class TreeSitterToolOutput(ToolStepOutput):
     """Tool step output for tree-sitter indexing."""
 
-    parse_manifest_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PARSE_MANIFEST_TABLE_KEY)
+    parse_manifest_rows: InferableTabularInput = field(
+        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
     )
-    captures_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(TS_CAPTURES_TABLE_KEY)
+    captures_rows: InferableTabularInput = field(
+        default_factory=lambda: empty_reader_for_table(TS_CAPTURES_TABLE_KEY)
     )
-    parse_errors_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(TS_PARSE_ERRORS_TABLE_KEY)
+    parse_errors_rows: InferableTabularInput = field(
+        default_factory=lambda: empty_reader_for_table(TS_PARSE_ERRORS_TABLE_KEY)
     )
     parse_manifest_row_count: int = 0
     captures_row_count: int = 0
@@ -135,9 +131,9 @@ def _coerce_tree_sitter_output(
     )
     return TreeSitterToolOutput(
         result=merged,
-        parse_manifest_rows=empty_lazyframe_for_table(PARSE_MANIFEST_TABLE_KEY),
-        captures_rows=empty_lazyframe_for_table(TS_CAPTURES_TABLE_KEY),
-        parse_errors_rows=empty_lazyframe_for_table(TS_PARSE_ERRORS_TABLE_KEY),
+        parse_manifest_rows=empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY),
+        captures_rows=empty_reader_for_table(TS_CAPTURES_TABLE_KEY),
+        parse_errors_rows=empty_reader_for_table(TS_PARSE_ERRORS_TABLE_KEY),
         parse_manifest_row_count=0,
         captures_row_count=0,
         parse_errors_row_count=0,
@@ -176,23 +172,11 @@ def t__tree_sitter_index__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        parse_manifest_frame = lazyframe_for_ingest_columns(
-            PARSE_MANIFEST_TABLE_KEY,
-            extract_result.parse_manifest_rows,
-        )
-        captures_frame = lazyframe_for_ingest_columns(
-            TS_CAPTURES_TABLE_KEY,
-            extract_result.captures_rows,
-        )
-        parse_errors_frame = lazyframe_for_ingest_columns(
-            TS_PARSE_ERRORS_TABLE_KEY,
-            extract_result.parse_errors_rows,
-        )
         return TreeSitterToolOutput(
             result=extract_result.result,
-            parse_manifest_rows=parse_manifest_frame,
-            captures_rows=captures_frame,
-            parse_errors_rows=parse_errors_frame,
+            parse_manifest_rows=extract_result.parse_manifest_rows,
+            captures_rows=extract_result.captures_rows,
+            parse_errors_rows=extract_result.parse_errors_rows,
             parse_manifest_row_count=extract_result.parse_manifest_row_count,
             captures_row_count=extract_result.captures_row_count,
             parse_errors_row_count=extract_result.parse_errors_row_count,

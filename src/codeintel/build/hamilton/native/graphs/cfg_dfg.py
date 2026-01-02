@@ -13,11 +13,13 @@ from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
-from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_lazyframe
+from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
+from codeintel.core.spans import normalize_line_span
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
@@ -95,7 +97,10 @@ def _collect_goids_by_path(
         if goid_value is None:
             continue
         end_line = row.get("end_line")
-        resolved_end = end_line if isinstance(end_line, int) else start_line
+        _, resolved_end = normalize_line_span(
+            start_line,
+            end_line if isinstance(end_line, int) else None,
+        )
         info = _FunctionGoidInfo(
             goid=int(goid_value),
             rel_path=rel_path,
@@ -244,131 +249,115 @@ def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> TabularFrame:
     )
 
 
-def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> TabularFrame:
+def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
     """Build CFG edges from parsed AST inputs.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of CFG edge rows.
+    InferableTabularInput
+        Tabular input of CFG edge rows.
     """
     if not cfg_dfg_analysis.cfg_edges:
-        return empty_frame_for_table(CFG_EDGES_TABLE_KEY)
-    frame = pl.DataFrame([dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_edges])
-    return frame.lazy().select(
-        [
-            "function_goid_h128",
-            "src_block_id",
-            "dst_block_id",
-            "edge_kind",
-        ]
-    )
+        return empty_reader_for_table(CFG_EDGES_TABLE_KEY)
+    rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_edges)
+    reader, _ = record_batch_reader_for_rows(CFG_EDGES_TABLE_KEY, rows)
+    return reader
 
 
-def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> TabularFrame:
+def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
     """Build DFG edges from parsed AST inputs.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of DFG edge rows.
+    InferableTabularInput
+        Tabular input of DFG edge rows.
     """
     if not cfg_dfg_analysis.dfg_edges:
-        return empty_frame_for_table(DFG_EDGES_TABLE_KEY)
-    frame = pl.DataFrame([dataclasses.asdict(row) for row in cfg_dfg_analysis.dfg_edges])
-    return frame.lazy().select(
-        [
-            "function_goid_h128",
-            "src_block_id",
-            "dst_block_id",
-            "src_var",
-            "dst_var",
-            "edge_kind",
-            "via_phi",
-            "use_kind",
-        ]
-    )
+        return empty_reader_for_table(DFG_EDGES_TABLE_KEY)
+    rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.dfg_edges)
+    reader, _ = record_batch_reader_for_rows(DFG_EDGES_TABLE_KEY, rows)
+    return reader
 
 
-def cfg_blocks_existing(env: BuildEnv) -> TabularFrame:
+def cfg_blocks_existing(env: BuildEnv) -> InferableTabularInput:
     """Load CFG blocks from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing CFG blocks.
+    InferableTabularInput
+        Tabular input for existing CFG blocks.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=CFG_BLOCKS_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def cfg_edges_existing(env: BuildEnv) -> TabularFrame:
+def cfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
     """Load CFG edges from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing CFG edges.
+    InferableTabularInput
+        Tabular input for existing CFG edges.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=CFG_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def dfg_edges_existing(env: BuildEnv) -> TabularFrame:
+def dfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
     """Load DFG edges from the dataset snapshot.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for existing DFG edges.
+    InferableTabularInput
+        Tabular input for existing DFG edges.
     """
-    return load_snapshot_lazyframe(
+    return load_snapshot_tabular(
         env=env,
         table_key=DFG_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
 
 
-def cfg_blocks_empty(env: BuildEnv) -> TabularFrame:
+def cfg_blocks_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for CFG blocks.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for CFG blocks.
+    InferableTabularInput
+        Empty tabular input for CFG blocks.
     """
     _ = env
-    return empty_frame_for_table(CFG_BLOCKS_TABLE_KEY)
+    return empty_reader_for_table(CFG_BLOCKS_TABLE_KEY)
 
 
-def cfg_edges_empty(env: BuildEnv) -> TabularFrame:
+def cfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for CFG edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for CFG edges.
+    InferableTabularInput
+        Empty tabular input for CFG edges.
     """
     _ = env
-    return empty_frame_for_table(CFG_EDGES_TABLE_KEY)
+    return empty_reader_for_table(CFG_EDGES_TABLE_KEY)
 
 
-def dfg_edges_empty(env: BuildEnv) -> TabularFrame:
+def dfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
     """Return an empty frame for DFG edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Empty LazyFrame for DFG edges.
+    InferableTabularInput
+        Empty tabular input for DFG edges.
     """
     _ = env
-    return empty_frame_for_table(DFG_EDGES_TABLE_KEY)
+    return empty_reader_for_table(DFG_EDGES_TABLE_KEY)
 
 
 __all__ = [

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class TestRepository(BaseRepository):
-    """Read test coverage and profile data."""
+    """Read test catalog and profile data."""
 
     __test__ = False
 

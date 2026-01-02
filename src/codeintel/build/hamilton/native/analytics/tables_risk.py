@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import polars as pl
+from hamilton.experimental.decorators.parameterize_frame import parameterize_frame
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import risk_features
@@ -45,13 +47,37 @@ RISK_FACTORS_CONTRACT = TableContractSpec(
 RISK_LEVEL_HIGH_THRESHOLD = 5
 RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
+_RISK_WEIGHT_SPEC = pd.DataFrame(
+    [["risk_weight_low", "risk_weight_high", 0.3, 0.7]],
+    columns=[
+        ["out_low", "out_high", "low_weight", "high_weight"],
+        ["out", "out", "value", "value"],
+    ],
+)
+
+
+@parameterize_frame(_RISK_WEIGHT_SPEC)
+def risk_weight_reference(low_weight: float, high_weight: float) -> pd.DataFrame:
+    """Provide a minimal parameterized risk-weight lookup table.
+
+    Returns
+    -------
+    pd.DataFrame
+        Single-row lookup table with low/high risk weight columns.
+    """
+    return pd.DataFrame(
+        {
+            "risk_weight_low": [low_weight],
+            "risk_weight_high": [high_weight],
+        }
+    )
+
 
 def risk_factors__base(
     q__analytics__function_metrics: InferableTabularInput,
     q__graph__call_graph_edges: InferableTabularInput,
-    q__analytics__test_coverage_edges: InferableTabularInput,
 ) -> pl.LazyFrame:
-    """Build risk factors using function metrics, call graph, and test coverage.
+    """Build risk factors using function metrics and the call graph.
 
     Returns
     -------
@@ -60,8 +86,6 @@ def risk_factors__base(
     """
     frame = tabular_to_lazyframe(q__analytics__function_metrics)
     edges = tabular_to_lazyframe(q__graph__call_graph_edges)
-    coverage = tabular_to_lazyframe(q__analytics__test_coverage_edges)
-
     fan_in = (
         edges.group_by("callee_goid_h128")
         .len()
@@ -71,12 +95,6 @@ def risk_factors__base(
         edges.group_by("caller_goid_h128")
         .len()
         .rename({"caller_goid_h128": "function_goid_h128", "len": "fan_out_count"})
-    )
-    tested = (
-        coverage.group_by("function_goid_h128")
-        .len()
-        .with_columns(pl.lit(value=True).alias("has_tests"))
-        .select(["function_goid_h128", "has_tests"])
     )
 
     risk_score = pl.col("cyclomatic_complexity").fill_null(0).cast(pl.Int64)
@@ -91,13 +109,12 @@ def risk_factors__base(
     frame = (
         frame.join(fan_in, on="function_goid_h128", how="left")
         .join(fan_out, on="function_goid_h128", how="left")
-        .join(tested, on="function_goid_h128", how="left")
         .with_columns(
             risk_score.alias("risk_score"),
             risk_level,
             pl.col("fan_in_count").fill_null(0).cast(pl.Int64),
             pl.col("fan_out_count").fill_null(0).cast(pl.Int64),
-            pl.col("has_tests").fill_null(value=False).cast(pl.Boolean),
+            pl.lit(value=False).alias("has_tests"),
         )
     )
     return frame.select(

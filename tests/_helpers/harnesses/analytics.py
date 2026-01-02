@@ -11,14 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from tests._helpers import TestScenario
-from tests._helpers.seeds import (
-    CORE_PACK,
-    COVERAGE_LINES_PACK,
-    COVERAGE_PACK,
-    DATA_MODELS_PACK,
-    ENTRYPOINTS_PACK,
-    GRAPH_PACK,
-)
+from tests._helpers.seeds import CORE_PACK, DATA_MODELS_PACK, ENTRYPOINTS_PACK, GRAPH_PACK
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -62,24 +55,6 @@ def plugin_harness_with_packs(tmp_path: Path, *packs: SeedPack) -> Iterator[Anal
 
 
 @contextmanager
-def coverage_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarness]:
-    """Plugin harness seeded with core + coverage (catalog/edges/lines).
-
-    Yields
-    ------
-    AnalyticsPluginHarness
-        Harness seeded with coverage-related packs.
-    """
-    with plugin_harness_with_packs(
-        tmp_path,
-        CORE_PACK,
-        COVERAGE_PACK,
-        COVERAGE_LINES_PACK,
-    ) as harness:
-        yield harness
-
-
-@contextmanager
 def graph_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarness]:
     """Plugin harness seeded with core + graph data.
 
@@ -120,7 +95,6 @@ def data_models_plugin_harness(tmp_path: Path) -> Iterator[AnalyticsPluginHarnes
 
 __all__ = [
     "AnalyticsPluginHarness",
-    "coverage_plugin_harness",
     "data_models_plugin_harness",
     "entrypoints_plugin_harness",
     "graph_plugin_harness",

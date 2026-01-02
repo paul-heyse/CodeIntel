@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-_DOCS_VIEWS = ("docs.v_subsystem_profile", "docs.v_subsystem_coverage")
+_DOCS_VIEWS = ("docs.v_subsystem_profile",)
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_explain_table_returns_plan_text(docs_views_gateway: StorageGateway) -> 
 def test_explain_table_analyze_returns_plan_text(docs_views_gateway: StorageGateway) -> None:
     """Verify Warehouse.explain_table returns EXPLAIN ANALYZE plan text."""
     warehouse = Warehouse(docs_views_gateway)
-    plan = warehouse.explain_table("docs.v_subsystem_coverage", analyze=True)
+    plan = warehouse.explain_table("docs.v_subsystem_profile", analyze=True)
     expect_is_instance(plan, str)
     expect_true(len(plan) > 0)
 
@@ -83,11 +83,8 @@ def test_profile_views_creates_artifacts(docs_profile_db: Path, tmp_path: Path) 
     expect_in(_DOCS_VIEWS[0], meta["views"])
 
     profile_explain = output_dir / "docs_v_subsystem_profile.explain.txt"
-    coverage_explain = output_dir / "docs_v_subsystem_coverage.explain.txt"
     expect_true(profile_explain.exists())
-    expect_true(coverage_explain.exists())
     expect_true(len(profile_explain.read_text(encoding="utf-8")) > 0)
-    expect_true(len(coverage_explain.read_text(encoding="utf-8")) > 0)
 
 
 def test_profile_views_analyze_mode_creates_artifacts(
@@ -112,6 +109,4 @@ def test_profile_views_analyze_mode_creates_artifacts(
     expect_true(meta["analyze"])
 
     profile_analyze = output_dir / "docs_v_subsystem_profile.analyze.txt"
-    coverage_analyze = output_dir / "docs_v_subsystem_coverage.analyze.txt"
     expect_true(profile_analyze.exists())
-    expect_true(coverage_analyze.exists())

@@ -781,6 +781,7 @@ def _build_schema_index(
     inference_service = get_schema_inference_service(
         driver=driver,
         catalog=catalog,
+        env=env,
         seed_dataset=_seed_dataset_config(env),
         gateway_factory=open_inference_gateway,
     )
@@ -793,6 +794,7 @@ def _build_schema_index(
         declared_provider=declared_provider,
         override_provider=override_provider,
         inference_service=inference_service,
+        env_provider=lambda: env,
     )
     _prefill_schema_index(env=env, schema_index=schema_index)
     return schema_index

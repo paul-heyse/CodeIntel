@@ -60,11 +60,6 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "SeedPack",
         "TestContext",
     ),
-    "tests._helpers.fixtures.coverage": (
-        "CoverageFixtureFactory",
-        "CoverageFixtureSpec",
-        "synthesize_coverage_edges",
-    ),
     "tests._helpers.env": ("build_test_gateway", "create_provisioned_test_env", "create_test_env"),
     "tests._helpers.evidence": ("build_entrypoint_evidence",),
     "tests._helpers.fakes.httpx_clients": ("RecordingAsyncClient",),
@@ -74,7 +69,6 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "RepoFixtureWriter",
         "write_callgraph_alias_repo",
         "write_canonical_repo",
-        "write_coverage_driver",
         "write_generated_noise_fixture",
         "write_graph_metrics_repo",
         "write_large_file_fixture",
@@ -145,7 +139,6 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
     "tests._helpers.scenarios": (
         "ScenarioConfig",
         "TestScenario",
-        "coverage_context",
         "full_context",
         "graph_context",
         "minimal_context",
@@ -153,7 +146,6 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
     "tests._helpers.seeds": (
         "CLI_CORE_PACK",
         "CORE_PACK",
-        "COVERAGE_PACK",
         "DATA_MODELS_PACK",
         "FUNCTION_TYPES_PACK",
         "GRAPH_HANDLER_PACK",
@@ -170,10 +162,7 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "assert_tool_called",
         "require_tooling",
     ),
-    "tests._helpers.tool_payloads": (
-        "coverage_json_payload",
-        "pytest_report_payload",
-    ),
+    "tests._helpers.tool_payloads": ("pytest_report_payload",),
 }
 
 _EXPORT_TO_MODULE: Final[dict[str, str]] = {
@@ -217,11 +206,6 @@ if TYPE_CHECKING:
     from tests._helpers.env import build_test_gateway, create_provisioned_test_env, create_test_env
     from tests._helpers.evidence import build_entrypoint_evidence
     from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
-    from tests._helpers.fixtures.coverage import (
-        CoverageFixtureFactory,
-        CoverageFixtureSpec,
-        synthesize_coverage_edges,
-    )
     from tests._helpers.fixtures.graphs import (
         chain_graph,
         complete_digraph,
@@ -236,7 +220,6 @@ if TYPE_CHECKING:
         RepoFixtureWriter,
         write_callgraph_alias_repo,
         write_canonical_repo,
-        write_coverage_driver,
         write_generated_noise_fixture,
         write_graph_metrics_repo,
         write_large_file_fixture,
@@ -305,7 +288,6 @@ if TYPE_CHECKING:
     from tests._helpers.scenarios import (
         ScenarioConfig,
         TestScenario,
-        coverage_context,
         full_context,
         graph_context,
         minimal_context,
@@ -313,7 +295,6 @@ if TYPE_CHECKING:
     from tests._helpers.seeds import (
         CLI_CORE_PACK,
         CORE_PACK,
-        COVERAGE_PACK,
         DATA_MODELS_PACK,
         FUNCTION_TYPES_PACK,
         GRAPH_HANDLER_PACK,
@@ -325,7 +306,6 @@ if TYPE_CHECKING:
         SUBSYSTEM_HANDLER_PACK,
     )
     from tests._helpers.tool_payloads import (
-        coverage_json_payload,
         pytest_report_payload,
     )
     from tests._helpers.tooling_audit import (
@@ -339,7 +319,6 @@ if TYPE_CHECKING:
         CallgraphFixtureOptions,
         CLI_CORE_PACK,
         CORE_PACK,
-        COVERAGE_PACK,
         DEFAULT_VARIANT,
         SnapshotVariant,
         SnapshotVariants,
@@ -376,13 +355,10 @@ if TYPE_CHECKING:
         assert_frozen,
         build_callgraph_fixture_repo,
         build_entrypoint_evidence,
-        CoverageFixtureFactory,
-        CoverageFixtureSpec,
         build_test_gateway,
         chain_graph,
         cli_test_context_with_seeds,
         complete_digraph,
-        coverage_context,
         create_cli_test_context,
         create_provisioned_test_env,
         create_test_env,
@@ -418,7 +394,6 @@ if TYPE_CHECKING:
         sample_manifest,
         sample_target_graph,
         seed_call_graph_scoping,
-        synthesize_coverage_edges,
         seed_docs_export_invalid_profile,
         seed_docs_export_minimal,
         seed_function_graph_cycle,
@@ -434,7 +409,6 @@ if TYPE_CHECKING:
         RepoFixtureWriter,
         write_callgraph_alias_repo,
         write_canonical_repo,
-        write_coverage_driver,
         write_generated_noise_fixture,
         write_graph_metrics_repo,
         write_large_file_fixture,
@@ -447,7 +421,6 @@ if TYPE_CHECKING:
         assert_tool_called,
         require_tooling,
         build_repo_fixture,
-        coverage_json_payload,
         get_repo_fixture,
         list_repo_fixtures,
         pytest_report_payload,
