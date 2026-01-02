@@ -1,4 +1,4 @@
-"""Hamilton-native view materialization using SQLGlot AST + DuckDB relations."""
+"""Hamilton-native view materialization using SQLGlot AST + Polars SQLContext."""
 
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
 from codeintel.build.schemas import get_schema_provider
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.columnar.dataset_scanner import scan_dataset_lazyframe
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
 from codeintel.core.datasets.paths import dataset_snapshot_dir
@@ -348,35 +347,41 @@ def _decorate_view_node(
     return decorated
 
 
+def _execute_view_query(
+    *,
+    plan: ViewPlan,
+    frames: Mapping[str, pl.LazyFrame],
+) -> pl.LazyFrame:
+    ctx = pl.SQLContext()
+    for table_key, frame in frames.items():
+        ctx.register(table_key, frame)
+    result = ctx.execute(plan.sql)
+    if isinstance(result, pl.LazyFrame):
+        return result
+    return result.lazy()
+
+
 def _build_ast_view_node(
     *,
     plan: ViewPlan,
     param_by_table: Mapping[str, str],
 ) -> Callable[..., pl.LazyFrame]:
     def view_fn(env: BuildEnv, **kwargs: object) -> pl.LazyFrame:
-        con = env.gateway.con
-        registered: list[str] = []
-        try:
-            for table_key, param_name in param_by_table.items():
-                value = _require_dependency(
-                    kwargs.get(param_name),
-                    param_name=param_name,
-                    table_key=plan.table_key,
-                )
-                frame = _ensure_lazyframe(value, param_name=param_name)
-                con.register(table_key, frame)
-                registered.append(table_key)
-            relation = con.sql(plan.sql)
-            reader = relation.fetch_arrow_reader()
-            return arrow_reader_to_lazyframe(reader)
-        finally:
-            for table_key in registered:
-                con.unregister(table_key)
+        _ = env
+        frames: dict[str, pl.LazyFrame] = {}
+        for table_key, param_name in param_by_table.items():
+            value = _require_dependency(
+                kwargs.get(param_name),
+                param_name=param_name,
+                table_key=plan.table_key,
+            )
+            frames[table_key] = _ensure_lazyframe(value, param_name=param_name)
+        return _execute_view_query(plan=plan, frames=frames)
 
     view_fn = set_signature(view_fn, _view_signature(tuple(param_by_table.values())))
     view_fn.__name__ = plan.node_name
     view_fn.__module__ = __name__
-    view_fn.__doc__ = f"Compute {plan.table_key} using DuckDB relations."
+    view_fn.__doc__ = f"Compute {plan.table_key} using Polars SQLContext."
     return _decorate_view_node(view_fn, plan=plan)
 
 

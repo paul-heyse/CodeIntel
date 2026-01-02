@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TypedDict
 
-__test__ = False
-
 __all__ = [
     "AnalyticsCfgBlockMetricsRow",
     "AnalyticsCfgFunctionMetricsExtRow",
@@ -39,6 +37,7 @@ __all__ = [
     "AnalyticsGraphMetricsModulesRow",
     "AnalyticsGraphStatsRow",
     "AnalyticsGraphValidationRow",
+    "AnalyticsHelloExampleRow",
     "AnalyticsSemanticRolesFunctionsRow",
     "AnalyticsSemanticRolesModulesRow",
     "AnalyticsStaticDiagnosticsRow",
@@ -509,10 +508,7 @@ class AnalyticsFunctionTypesRow(TypedDict):
     start_line: int | None
     end_line: int | None
     total_params: int | None
-    annotated_params: int | None
-    has_return_annotation: bool | None
     return_type: str | None
-    return_type_source: str | None
     type_comment: str | None
     param_types: object | None
     created_at: datetime | None
@@ -650,6 +646,13 @@ class AnalyticsGraphValidationRow(TypedDict):
     detail: str
     metadata: object | None
     created_at: datetime
+
+
+class AnalyticsHelloExampleRow(TypedDict):
+    """Row model for analytics.hello_example."""
+
+    message: str
+    value: int
 
 
 class AnalyticsSemanticRolesFunctionsRow(TypedDict):

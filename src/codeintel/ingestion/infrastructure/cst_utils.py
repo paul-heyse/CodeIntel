@@ -30,12 +30,35 @@ class NormalizedSpan:
     end_byte: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class SourceBundle:
+    """Container for decoded source text, raw bytes, and encoding."""
+
+    text: str
+    source_bytes: bytes
+    encoding: str
+
+
 class LineIndexedSource:
     """Precompute line/byte offsets for efficient span slicing."""
 
-    def __init__(self, source: str, source_bytes: bytes | None = None) -> None:
+    def __init__(
+        self,
+        source: str,
+        source_bytes: bytes | None = None,
+        *,
+        encoding: str = "utf-8",
+    ) -> None:
         self.source = source
-        self.source_bytes = source_bytes if source_bytes is not None else source.encode("utf-8")
+        self.encoding = encoding
+        self.source_bytes = (
+            source_bytes
+            if source_bytes is not None
+            else source.encode(
+                encoding,
+                errors="replace",
+            )
+        )
         self.line_offsets: list[int] = []
         self.byte_offsets: list[int] = []
         self.lines = source.splitlines(keepends=True)
@@ -45,7 +68,7 @@ class LineIndexedSource:
             self.line_offsets.append(offset)
             self.byte_offsets.append(byte_offset)
             offset += len(line)
-            byte_offset += len(line.encode("utf-8"))
+            byte_offset += len(self._encode_text(line))
 
     def slice(self, start_line: int, start_col: int, end_line: int, end_col: int) -> str:
         """
@@ -78,7 +101,11 @@ class LineIndexedSource:
         except IndexError:
             return None
 
-    def span_from_range(self, pos: metadata.CodeRange) -> NormalizedSpan:
+    def span_from_range(
+        self,
+        pos: metadata.CodeRange,
+        byte_span: metadata.CodeSpan | None = None,
+    ) -> NormalizedSpan:
         """Return normalized span data for a metadata range.
 
         Returns
@@ -90,7 +117,10 @@ class LineIndexedSource:
         end_line = max(pos.end.line - 1, 0)
         start_col = pos.start.column
         end_col = pos.end.column
-        start_byte, end_byte = self.byte_span(start_line, start_col, end_line, end_col)
+        if byte_span is None:
+            start_byte, end_byte = self.byte_span(start_line, start_col, end_line, end_col)
+        else:
+            start_byte, end_byte = self._byte_span_from_code_span(byte_span)
         return NormalizedSpan(
             start_line=start_line,
             start_col=start_col,
@@ -122,7 +152,7 @@ class LineIndexedSource:
         return normalized
 
     def byte_offset(self, line: int, col: int) -> int | None:
-        """Return UTF-8 byte offset for a 0-based line/column.
+        """Return encoded byte offset for a 0-based line/column.
 
         Returns
         -------
@@ -139,7 +169,58 @@ class LineIndexedSource:
         if col > len(line_text):
             return None
         prefix = line_text[:col]
-        return base + len(prefix.encode("utf-8"))
+        return base + len(self._encode_text(prefix))
+
+    def byte_offset_from_utf8(self, line: int, utf8_col: int) -> int | None:
+        """Return byte offset for a UTF-8 byte column (AST location semantics).
+
+        Parameters
+        ----------
+        line
+            0-based line index.
+        utf8_col
+            UTF-8 byte offset within the line (AST col_offset semantics).
+
+        Returns
+        -------
+        int | None
+            Byte offset in the file encoding, or None when indices are invalid.
+        """
+        char_col = self._char_offset_from_utf8(line, utf8_col)
+        if char_col is None:
+            return None
+        return self.byte_offset(line, char_col)
+
+    def _char_offset_from_utf8(self, line: int, utf8_col: int) -> int | None:
+        if line < 0 or utf8_col < 0:
+            return None
+        try:
+            line_text = self.lines[line]
+        except IndexError:
+            return None
+        utf8_bytes = line_text.encode("utf-8", errors="replace")
+        if utf8_col > len(utf8_bytes):
+            return None
+        try:
+            prefix_text = utf8_bytes[:utf8_col].decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        return len(prefix_text)
+
+    @staticmethod
+    def _byte_span_from_code_span(
+        byte_span: metadata.CodeSpan,
+    ) -> tuple[int | None, int | None]:
+        normalized = normalize_byte_span(byte_span.start, byte_span.start + byte_span.length)
+        if normalized is None:
+            return None, None
+        return normalized
+
+    def _encode_text(self, text: str) -> bytes:
+        try:
+            return text.encode(self.encoding, errors="replace")
+        except LookupError:
+            return text.encode("utf-8", errors="replace")
 
 
 class CstCaptureVisitor(cst.CSTVisitor):
@@ -151,13 +232,16 @@ class CstCaptureVisitor(cst.CSTVisitor):
         self,
         rel_path: str,
         module_name: str,
-        source: str,
+        source: SourceBundle,
         config: CstCaptureConfig,
-        source_bytes: bytes | None = None,
     ) -> None:
         self.rel_path = rel_path
         self.module_name = module_name
-        self.source_index = LineIndexedSource(source, source_bytes)
+        self.source_index = LineIndexedSource(
+            source.text,
+            source.source_bytes,
+            encoding=source.encoding,
+        )
         self.config = config
 
         self.rows: list[

@@ -30,7 +30,7 @@ from codeintel.build.graphs.runtime.context import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
+from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,

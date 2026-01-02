@@ -30,7 +30,7 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.ingestion.frame_utils import lazyframe_for_table_columns
+from codeintel.build.tabular.frames import lazyframe_for_table_columns
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,

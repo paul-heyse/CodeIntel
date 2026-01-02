@@ -9,12 +9,12 @@ __all__ = [
     "GraphCallGraphNodesRow",
     "GraphCfgBlocksRow",
     "GraphCfgEdgesRow",
+    "GraphCpgEdgesRow",
+    "GraphCpgNodesRow",
     "GraphDfgEdgesRow",
     "GraphImportGraphEdgesRow",
     "GraphImportModulesRow",
     "GraphSymbolUseEdgesRow",
-    "GraphVCallDepthStatsRow",
-    "GraphVFunctionCallCountsRow",
 ]
 
 
@@ -71,6 +71,35 @@ class GraphCfgEdgesRow(TypedDict):
     edge_kind: str | None
 
 
+class GraphCpgNodesRow(TypedDict):
+    """Row model for graph.cpg_nodes."""
+
+    repo: str
+    commit: str
+    cpg_node_id: int
+    node_kind: str
+    source_table_key: str
+    source_pk_json: object
+    rel_path: str | None
+    start_byte: int | None
+    end_byte: int | None
+    extras_json: object | None
+
+
+class GraphCpgEdgesRow(TypedDict):
+    """Row model for graph.cpg_edges."""
+
+    repo: str
+    commit: str
+    src_cpg_node_id: int
+    dst_cpg_node_id: int
+    edge_kind: str
+    edge_layer: str
+    rel_path: str | None
+    ordinal: int
+    extras_json: object | None
+
+
 class GraphDfgEdgesRow(TypedDict):
     """Row model for graph.dfg_edges."""
 
@@ -119,24 +148,3 @@ class GraphSymbolUseEdgesRow(TypedDict):
     same_module: bool
     def_goid_h128: int | None
     use_goid_h128: int | None
-
-
-class GraphVCallDepthStatsRow(TypedDict):
-    """Row model for graph.v_call_depth_stats."""
-
-    repo: str
-    commit: str
-    function_goid_h128: int
-    max_call_depth: int
-    is_leaf: bool
-
-
-class GraphVFunctionCallCountsRow(TypedDict):
-    """Row model for graph.v_function_call_counts."""
-
-    repo: str
-    commit: str
-    function_goid_h128: int
-    num_callees: int
-    num_unique_callees: int
-    num_callers: int

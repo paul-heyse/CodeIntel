@@ -19,8 +19,7 @@ def test_search_documents_includes_modules(
     row = module_row(
         path="pkg/mod.py",
         module="pkg.mod",
-        repo="demo/repo",
-        commit="c1",
+        snapshot=("demo/repo", "c1"),
     )
     insert_rows(fresh_gateway, [row])
 

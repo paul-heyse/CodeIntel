@@ -6,10 +6,6 @@ profile:
 shared: {}
 
 plugins:
-  analytics.function_metrics:
-    include_graph_metrics: true
-    include_coverage_metrics: true
-
   graphs.callgraph:
     use_libcst: true
     resolve_imports: true

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +32,7 @@ from tools.advanced_query_engine.contracts import (
 )
 from tools.advanced_query_engine.handlers.common import load_rpygrep_preset
 from tools.advanced_query_engine.util.snippets import SnippetRequest, build_snippet
+from tools.advanced_query_engine.util.worktree import list_python_files
 
 
 def _fallback_pattern_group(pattern: str) -> dict[str, object]:
@@ -46,7 +46,6 @@ def _fallback_pattern_group(pattern: str) -> dict[str, object]:
             }
         ],
         "globs": ["**/*"],
-        "exclude_globs": ["**/.venv/**", "**/venv/**", "**/site-packages/**"],
     }
 
 
@@ -67,44 +66,10 @@ def _span_from_match(match: RpygrepMatch, context: SearchContext) -> Span | None
 
 
 def _iter_python_files(root: Path, scope_paths: list[str] | None, budget: QueryBudget) -> list[str]:
-    paths = _rg_python_files(root, scope_paths, budget.max_depth)
+    paths = list_python_files(root, scope_paths=scope_paths, max_depth=budget.max_depth)
     if budget.max_files:
         return paths[: budget.max_files]
     return paths
-
-
-def _rg_python_files(root: Path, scope_paths: list[str] | None, max_depth: int) -> list[str]:
-    if not root.exists():
-        return []
-    targets = _rg_targets(root, scope_paths)
-    cmd = ["rg", "--files", "-g", "*.py"]
-    if max_depth:
-        cmd.extend(["--max-depth", str(max_depth)])
-    cmd.extend(targets)
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=root, check=False)
-    if result.returncode not in {0, 1}:
-        stderr = result.stderr.strip()
-        msg = "rg --files failed." if not stderr else f"rg --files failed: {stderr}"
-        raise RuntimeError(msg)
-    paths = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    return sorted(set(paths))
-
-
-def _rg_targets(root: Path, scope_paths: list[str] | None) -> list[str]:
-    if not scope_paths:
-        return ["."]
-    targets: list[str] = []
-    for value in scope_paths:
-        if not value:
-            continue
-        path = Path(value)
-        if path.is_absolute():
-            try:
-                path = path.relative_to(root)
-            except ValueError:
-                continue
-        targets.append(str(path))
-    return targets or ["."]
 
 
 @dataclass(frozen=True)

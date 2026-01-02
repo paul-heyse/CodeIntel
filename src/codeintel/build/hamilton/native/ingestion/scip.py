@@ -26,7 +26,7 @@ from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.native.ingestion.frame_utils import (
+from codeintel.build.tabular.frames import (
     lazyframe_for_ingest_columns,
 )
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput

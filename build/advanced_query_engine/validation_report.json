@@ -1,0 +1,124 @@
+{
+  "summary": {
+    "cases": 8,
+    "errors": 0,
+    "warnings": 0,
+    "ok": true
+  },
+  "cases": [
+    {
+      "case_id": "symbol_resolve",
+      "query_type": "symbol.resolve",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "expected_defs": 1,
+        "engine_defs": 1,
+        "missing_defs": 0,
+        "extra_defs": 0,
+        "rg_partial": false
+      }
+    },
+    {
+      "case_id": "find_usages",
+      "query_type": "refs.find",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "expected_usages": 0,
+        "engine_usages": 34,
+        "missing_usages": 0,
+        "ts_partial": true,
+        "rg_partial": false
+      }
+    },
+    {
+      "case_id": "call_paths",
+      "query_type": "callgraph.slice",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "expected_calls_in": 0,
+        "engine_calls_in": 8,
+        "missing_calls_in": 0,
+        "calls_out": 22,
+        "calls_out_of_bounds": 0,
+        "ts_partial": true,
+        "rg_partial": false
+      }
+    },
+    {
+      "case_id": "pattern_scan",
+      "query_type": "pattern.scan",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "expected_matches": 12822,
+        "engine_matches": 12822,
+        "missing_matches": 0,
+        "extra_matches": 0,
+        "rg_partial": false
+      }
+    },
+    {
+      "case_id": "contract_lookup",
+      "query_type": "contract.lookup",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "expected_matches": 8,
+        "engine_matches": 8,
+        "missing_matches": 0,
+        "extra_matches": 0,
+        "rg_partial": false
+      }
+    },
+    {
+      "case_id": "wiring_map",
+      "query_type": "wiring.map",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "expected_matches": 33,
+        "engine_edges": 33,
+        "missing_edges": 0,
+        "extra_matches": 0,
+        "entry_key_placeholders": 0,
+        "ast_partial": false,
+        "budget_exhausted": false
+      }
+    },
+    {
+      "case_id": "precedent_search",
+      "query_type": "precedent.search",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "expected_matches": 35,
+        "engine_matches": 35,
+        "missing_matches": 0,
+        "extra_matches": 0,
+        "rg_partial": false
+      }
+    },
+    {
+      "case_id": "impact_slice",
+      "query_type": "impact.slice",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "metrics": {
+        "references": 34,
+        "calls_in": 8,
+        "calls_out": 22
+      }
+    }
+  ]
+}

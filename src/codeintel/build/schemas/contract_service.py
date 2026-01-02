@@ -8,7 +8,6 @@ from enum import Enum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
-from codeintel.build.hamilton.dag_catalog import OutputDescriptor
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas.contract_factory import (
@@ -25,6 +24,7 @@ from codeintel.core.views.inventory import discover_derived_docs_views
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from codeintel.build.hamilton.dag_catalog import OutputDescriptor
     from codeintel.build.target_metadata import TargetMetadataProvider
     from codeintel.config.datasets.primitives import CompositeSchema
     from codeintel.core.hamilton.tag_query import TagQuery

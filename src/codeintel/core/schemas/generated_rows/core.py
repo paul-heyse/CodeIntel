@@ -18,13 +18,26 @@ __all__ = [
     "CoreModulesRow",
     "CoreParseManifestRow",
     "CoreRepoMapRow",
+    "CoreSchemaInferenceErrorsRow",
+    "CoreScipDiagnosticsRow",
+    "CoreScipExternalSymbolsRow",
+    "CoreScipModuleStateRow",
     "CoreScipOccurrenceSpanXrefRow",
+    "CoreScipOccurrenceSyntaxXrefRow",
     "CoreScipOccurrencesRow",
     "CoreScipSymbolGoidXrefRow",
+    "CoreScipSymbolInformationRow",
+    "CoreScipSymbolRelationshipsRow",
     "CoreScipSymbolsRow",
+    "CoreSyntaxCallsResolvedRow",
     "CoreSyntaxCallsRow",
+    "CoreSyntaxDefsResolvedRow",
     "CoreSyntaxDefsRow",
+    "CoreSyntaxEdgesRow",
+    "CoreSyntaxImportsResolvedRow",
     "CoreSyntaxImportsRow",
+    "CoreSyntaxNodesRow",
+    "CoreSyntaxRefsResolvedRow",
     "CoreSyntaxRefsRow",
     "CoreSyntaxScopesRow",
     "CoreSyntaxSpansRow",
@@ -75,176 +88,6 @@ class CoreCstNodesRow(TypedDict):
     text_preview: str | None
     parents: object | None
     qnames: object | None
-
-
-class CoreParseManifestRow(TypedDict):
-    """Row model for core.parse_manifest."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    producer: str
-    parse_ok: bool
-    error_kind: str | None
-    error_message: str | None
-    error_line: int | None
-    error_col: int | None
-    error_snippet: str | None
-
-
-class CoreSyntaxSpansRow(TypedDict):
-    """Row model for core.syntax_spans."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    producer: str
-    span_id: str
-    span_kind: str
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-    start_byte: int | None
-    end_byte: int | None
-
-
-class CoreSyntaxScopesRow(TypedDict):
-    """Row model for core.syntax_scopes."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    producer: str
-    scope_id: str
-    scope_kind: str
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-    parent_scope_id: str | None
-
-
-class CoreSyntaxDefsRow(TypedDict):
-    """Row model for core.syntax_defs."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    producer: str
-    def_id: str
-    scope_id: str
-    span_id: str
-    def_kind: str
-    name: str
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-    start_byte: int | None
-    end_byte: int | None
-
-
-class CoreSyntaxRefsRow(TypedDict):
-    """Row model for core.syntax_refs."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    producer: str
-    ref_id: str
-    scope_id: str
-    span_id: str
-    ref_kind: str
-    name: str
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-    start_byte: int | None
-    end_byte: int | None
-
-
-class CoreSyntaxCallsRow(TypedDict):
-    """Row model for core.syntax_calls."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    producer: str
-    call_id: str
-    scope_id: str
-    span_id: str
-    callee_span_id: str | None
-    callee_text: str | None
-    arg_count: int | None
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-    start_byte: int | None
-    end_byte: int | None
-
-
-class CoreSyntaxImportsRow(TypedDict):
-    """Row model for core.syntax_imports."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    producer: str
-    import_id: str
-    scope_id: str
-    span_id: str
-    import_kind: str
-    module: str | None
-    name: str | None
-    alias: str | None
-    level: int | None
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-    start_byte: int | None
-    end_byte: int | None
-
-
-class CoreTsCapturesRow(TypedDict):
-    """Row model for core.ts_captures."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    language: str
-    query_pack: str
-    capture_name: str
-    start_byte: int
-    end_byte: int
-    start_row: int
-    start_col: int
-    end_row: int
-    end_col: int
-    node_type: str
-    text_preview: str | None
-    extras: object | None
-
-
-class CoreTsParseErrorsRow(TypedDict):
-    """Row model for core.ts_parse_errors."""
-
-    repo: str
-    commit: str
-    rel_path: str
-    language: str
-    error_type: str
-    message: str | None
-    start_byte: int
-    end_byte: int
-    start_row: int
-    start_col: int
-    end_row: int
-    end_col: int
-    text_preview: str | None
 
 
 class CoreDocstringsRow(TypedDict):
@@ -366,6 +209,28 @@ class CoreModulesRow(TypedDict):
     row_hash: str | None
 
 
+class CoreParseManifestRow(TypedDict):
+    """Row model for core.parse_manifest."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    parse_ok: bool
+    encoding: str | None
+    default_indent: str | None
+    default_newline: str | None
+    has_trailing_newline: bool | None
+    future_imports: object | None
+    parser_backend: str | None
+    libcst_version: str | None
+    error_kind: str | None
+    error_message: str | None
+    error_line: int | None
+    error_col: int | None
+    error_snippet: str | None
+
+
 class CoreRepoMapRow(TypedDict):
     """Row model for core.repo_map."""
 
@@ -374,6 +239,107 @@ class CoreRepoMapRow(TypedDict):
     modules: object | None
     overlays: object | None
     generated_at: datetime | None
+
+
+class CoreSchemaInferenceErrorsRow(TypedDict):
+    """Row model for core.schema_inference_errors."""
+
+    table_key: str
+    repo: str
+    commit: str
+    error: str
+    occurred_at: datetime
+    run_id: str
+
+
+class CoreScipDiagnosticsRow(TypedDict):
+    """Row model for core.scip_diagnostics."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    position_encoding: int | None
+    text_document_encoding: str | None
+    severity: str
+    code: str | None
+    message: str
+    source: str | None
+    created_at: datetime
+
+
+class CoreScipExternalSymbolsRow(TypedDict):
+    """Row model for core.scip_external_symbols."""
+
+    repo: str
+    commit: str
+    symbol: str
+    package_manager: str | None
+    package_name: str | None
+    package_version: str | None
+    created_at: datetime
+
+
+class CoreScipModuleStateRow(TypedDict):
+    """Row model for core.scip_module_state."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    content_hash: str
+    options_hash: str | None
+    tool_version: str | None
+    shard_path: str
+    updated_at: datetime
+
+
+class CoreScipOccurrenceSpanXrefRow(TypedDict):
+    """Row model for core.scip_occurrence_span_xref."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    scip_symbol: str
+    roles: int
+    is_definition: bool
+    is_reference: bool
+    is_import: bool
+    is_write: bool
+    is_read: bool
+    enclosing_symbol: str | None
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    position_encoding: int | None
+    text_document_encoding: str | None
+    start_byte: int | None
+    end_byte: int | None
+    goid_h128: int | None
+    created_at: datetime
+
+
+class CoreScipOccurrenceSyntaxXrefRow(TypedDict):
+    """Row model for core.scip_occurrence_syntax_xref."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    scip_symbol: str
+    scip_occurrence_id: str
+    occ_start_byte: int | None
+    occ_end_byte: int | None
+    occ_start_line: int
+    occ_start_col: int
+    occ_end_line: int
+    occ_end_col: int
+    syntax_node_id: str | None
+    match_kind: str
+    candidate_count: int
 
 
 class CoreScipOccurrencesRow(TypedDict):
@@ -412,29 +378,28 @@ class CoreScipSymbolGoidXrefRow(TypedDict):
     created_at: datetime
 
 
-class CoreScipOccurrenceSpanXrefRow(TypedDict):
-    """Row model for core.scip_occurrence_span_xref."""
+class CoreScipSymbolInformationRow(TypedDict):
+    """Row model for core.scip_symbol_information."""
 
     repo: str
     commit: str
-    rel_path: str
-    scip_symbol: str
-    roles: int
-    is_definition: bool
-    is_reference: bool
-    is_import: bool
-    is_write: bool
-    is_read: bool
+    symbol: str
+    documentation: str | None
+    kind: int | None
+    display_name: str | None
+    signature: str | None
     enclosing_symbol: str | None
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-    position_encoding: int | None
-    text_document_encoding: str | None
-    start_byte: int | None
-    end_byte: int | None
-    goid_h128: int | None
+    created_at: datetime
+
+
+class CoreScipSymbolRelationshipsRow(TypedDict):
+    """Row model for core.scip_symbol_relationships."""
+
+    repo: str
+    commit: str
+    symbol: str
+    related_symbol: str
+    relationship_kind: str
     created_at: datetime
 
 
@@ -447,3 +412,333 @@ class CoreScipSymbolsRow(TypedDict):
     symbol: str
     documentation: str | None
     created_at: datetime
+
+
+class CoreSyntaxCallsRow(TypedDict):
+    """Row model for core.syntax_calls."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    call_id: str
+    scope_id: str
+    span_id: str
+    callee_span_id: str | None
+    callee_text: str | None
+    arg_count: int | None
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxDefsRow(TypedDict):
+    """Row model for core.syntax_defs."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    def_id: str
+    scope_id: str
+    span_id: str
+    def_kind: str
+    name: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxEdgesRow(TypedDict):
+    """Row model for core.syntax_edges."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    parent_node_id: str
+    child_node_id: str
+    edge_kind: str
+    field_name: str | None
+    child_ordinal: int
+
+
+class CoreSyntaxImportsRow(TypedDict):
+    """Row model for core.syntax_imports."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    import_id: str
+    scope_id: str
+    span_id: str
+    import_kind: str
+    module: str | None
+    name: str | None
+    alias: str | None
+    level: int | None
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxNodesRow(TypedDict):
+    """Row model for core.syntax_nodes."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    language: str
+    node_id: str
+    node_kind: str
+    raw_kind: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    text_preview: str | None
+    extras_json: object | None
+
+
+class CoreSyntaxRefsRow(TypedDict):
+    """Row model for core.syntax_refs."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    ref_id: str
+    scope_id: str
+    span_id: str
+    ref_kind: str
+    name: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxCallsResolvedRow(TypedDict):
+    """Row model for core.syntax_calls_resolved."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    call_id: str
+    scope_id: str
+    span_id: str
+    callee_span_id: str | None
+    callee_text: str | None
+    arg_count: int | None
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    scip_symbol: str | None
+    scip_occurrence_id: str | None
+    scip_roles: int | None
+    is_definition: bool | None
+    is_reference: bool | None
+    is_import: bool | None
+    is_write: bool | None
+    is_read: bool | None
+    goid_h128: int | None
+    syntax_node_id: str | None
+    match_kind: str | None
+    candidate_count: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxDefsResolvedRow(TypedDict):
+    """Row model for core.syntax_defs_resolved."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    def_id: str
+    scope_id: str
+    span_id: str
+    def_kind: str
+    name: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    scip_symbol: str | None
+    scip_occurrence_id: str | None
+    scip_roles: int | None
+    is_definition: bool | None
+    is_reference: bool | None
+    is_import: bool | None
+    is_write: bool | None
+    is_read: bool | None
+    goid_h128: int | None
+    syntax_node_id: str | None
+    match_kind: str | None
+    candidate_count: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxImportsResolvedRow(TypedDict):
+    """Row model for core.syntax_imports_resolved."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    import_id: str
+    scope_id: str
+    span_id: str
+    import_kind: str
+    module: str | None
+    name: str | None
+    alias: str | None
+    level: int | None
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    scip_symbol: str | None
+    scip_occurrence_id: str | None
+    scip_roles: int | None
+    is_definition: bool | None
+    is_reference: bool | None
+    is_import: bool | None
+    is_write: bool | None
+    is_read: bool | None
+    goid_h128: int | None
+    syntax_node_id: str | None
+    match_kind: str | None
+    candidate_count: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxRefsResolvedRow(TypedDict):
+    """Row model for core.syntax_refs_resolved."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    ref_id: str
+    scope_id: str
+    span_id: str
+    ref_kind: str
+    name: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+    scip_symbol: str | None
+    scip_occurrence_id: str | None
+    scip_roles: int | None
+    is_definition: bool | None
+    is_reference: bool | None
+    is_import: bool | None
+    is_write: bool | None
+    is_read: bool | None
+    goid_h128: int | None
+    syntax_node_id: str | None
+    match_kind: str | None
+    candidate_count: int | None
+    extras_json: object | None
+
+
+class CoreSyntaxScopesRow(TypedDict):
+    """Row model for core.syntax_scopes."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    scope_id: str
+    scope_kind: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    parent_scope_id: str | None
+
+
+class CoreSyntaxSpansRow(TypedDict):
+    """Row model for core.syntax_spans."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    span_id: str
+    span_kind: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    start_byte: int | None
+    end_byte: int | None
+
+
+class CoreTsCapturesRow(TypedDict):
+    """Row model for core.ts_captures."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    query_pack: str
+    capture_name: str
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    node_type: str
+    text_preview: str | None
+    extras: object | None
+
+
+class CoreTsParseErrorsRow(TypedDict):
+    """Row model for core.ts_parse_errors."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    error_type: str
+    message: str | None
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    text_preview: str | None

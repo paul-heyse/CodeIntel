@@ -710,7 +710,6 @@ def _run_ingestion_steps(
     """
     if opts.include_typing:
         typing_step = TypingIngestStep(
-            discovery=setup.discovery,
             tools=setup.tool_adapter,
         )
         typing_result = asyncio.run(

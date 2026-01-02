@@ -17,7 +17,7 @@ from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
+from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,

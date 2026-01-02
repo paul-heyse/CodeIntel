@@ -1556,12 +1556,6 @@
         },
         {
           "description": null,
-          "name": "coverage_ratio",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
           "name": "status",
           "nullable": true,
           "type": "VARCHAR"
@@ -1754,12 +1748,6 @@
           "name": "flaky_tests",
           "nullable": true,
           "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "entrypoint_coverage_ratio",
-          "nullable": true,
-          "type": "DOUBLE"
         },
         {
           "description": null,
@@ -2449,25 +2437,7 @@
         },
         {
           "description": null,
-          "name": "annotated_params",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "has_return_annotation",
-          "nullable": true,
-          "type": "BOOLEAN"
-        },
-        {
-          "description": null,
           "name": "return_type",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "return_type_source",
           "nullable": true,
           "type": "VARCHAR"
         },
@@ -2490,7 +2460,7 @@
           "type": "TIMESTAMP"
         }
       ],
-      "description": "Per-function annotation coverage",
+      "description": "Per-function parameter and return type annotations",
       "indexes": [
         {
           "columns": [
@@ -2576,70 +2546,6 @@
       ],
       "schema": "analytics",
       "table_key": "analytics.function_validation"
-    },
-    {
-      "columns": [
-        {
-          "description": null,
-          "name": "function_goid_h128",
-          "nullable": true,
-          "type": "DECIMAL(38,0)"
-        },
-        {
-          "description": null,
-          "name": "repo",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "commit",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "risk_score",
-          "nullable": true,
-          "type": "BIGINT"
-        },
-        {
-          "description": null,
-          "name": "risk_level",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "cyclomatic_complexity",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "fan_in_count",
-          "nullable": true,
-          "type": "BIGINT"
-        },
-        {
-          "description": null,
-          "name": "fan_out_count",
-          "nullable": true,
-          "type": "BIGINT"
-        },
-        {
-          "description": null,
-          "name": "has_tests",
-          "nullable": true,
-          "type": "BOOLEAN"
-        }
-      ],
-      "description": null,
-      "indexes": [],
-      "name": "goid_risk_factors",
-      "primary_key": [],
-      "schema": "analytics",
-      "table_key": "analytics.goid_risk_factors"
     },
     {
       "columns": [
@@ -3565,152 +3471,6 @@
       ],
       "schema": "analytics",
       "table_key": "analytics.subsystem_agreement"
-    },
-    {
-      "columns": [
-        {
-          "description": null,
-          "name": "repo",
-          "nullable": false,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "commit",
-          "nullable": false,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "subsystem_id",
-          "nullable": false,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "name",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "description",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "module_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "function_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "risk_level",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "avg_risk_score",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "max_risk_score",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "passed_test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "failed_test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "skipped_test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "xfail_test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "flaky_test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "total_functions_covered",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "avg_functions_covered",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "max_functions_covered",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "min_functions_covered",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "function_coverage_ratio",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "created_at",
-          "nullable": true,
-          "type": "TIMESTAMP"
-        }
-      ],
-      "description": "Cached subsystem test coverage aggregates.",
-      "indexes": [],
-      "name": "subsystem_coverage_cache",
-      "primary_key": [
-        "repo",
-        "commit",
-        "subsystem_id"
-      ],
-      "schema": "analytics",
-      "table_key": "analytics.subsystem_coverage_cache"
     },
     {
       "columns": [

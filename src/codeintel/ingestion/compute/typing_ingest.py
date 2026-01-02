@@ -154,8 +154,8 @@ class TypingIngestStep:
             diagnostic_row_count=diagnostic_buffer.row_count,
         )
 
+    @staticmethod
     def _process_modules(
-        self,
         modules: Sequence[ModuleRecord],
         repo: str,
         commit: str,

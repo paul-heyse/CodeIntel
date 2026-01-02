@@ -24,10 +24,11 @@ import polars as pl
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.native.ingestion.frame_utils import (
+from codeintel.build.tabular.frames import (
     empty_lazyframe_for_table,
     lazyframe_for_ingest_columns,
 )
+from codeintel.build.hamilton.native.options.ingestion import SyntaxIndexOptions
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     TableOutputSpec,
@@ -39,6 +40,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.patterns.tool_target import TabularByTable
 from codeintel.build.hamilton.native.target_decorators import TargetSpecDescriptor
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
@@ -74,6 +76,8 @@ DOCSTRINGS_TABLE_KEYS = (DOCSTRINGS_TABLE_KEY,)
 
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
 SYNTAX_SPANS_TABLE_KEY = "core.syntax_spans"
+SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
+SYNTAX_EDGES_TABLE_KEY = "core.syntax_edges"
 SYNTAX_SCOPES_TABLE_KEY = "core.syntax_scopes"
 SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
 SYNTAX_REFS_TABLE_KEY = "core.syntax_refs"
@@ -82,6 +86,8 @@ SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
 SYNTAX_INDEX_TABLE_KEYS = (
     PARSE_MANIFEST_TABLE_KEY,
     SYNTAX_SPANS_TABLE_KEY,
+    SYNTAX_NODES_TABLE_KEY,
+    SYNTAX_EDGES_TABLE_KEY,
     SYNTAX_SCOPES_TABLE_KEY,
     SYNTAX_DEFS_TABLE_KEY,
     SYNTAX_REFS_TABLE_KEY,
@@ -134,6 +140,12 @@ class SyntaxIndexToolOutput(ToolStepOutput):
     syntax_spans_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(SYNTAX_SPANS_TABLE_KEY)
     )
+    syntax_nodes_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_NODES_TABLE_KEY)
+    )
+    syntax_edges_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_EDGES_TABLE_KEY)
+    )
     syntax_scopes_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(SYNTAX_SCOPES_TABLE_KEY)
     )
@@ -151,6 +163,8 @@ class SyntaxIndexToolOutput(ToolStepOutput):
     )
     parse_manifest_row_count: int = 0
     syntax_spans_row_count: int = 0
+    syntax_nodes_row_count: int = 0
+    syntax_edges_row_count: int = 0
     syntax_scopes_row_count: int = 0
     syntax_defs_row_count: int = 0
     syntax_refs_row_count: int = 0
@@ -276,6 +290,8 @@ def _coerce_syntax_index_output(
                 ),
                 parse_manifest_rows=output.parse_manifest_rows,
                 syntax_spans_rows=output.syntax_spans_rows,
+                syntax_nodes_rows=output.syntax_nodes_rows,
+                syntax_edges_rows=output.syntax_edges_rows,
                 syntax_scopes_rows=output.syntax_scopes_rows,
                 syntax_defs_rows=output.syntax_defs_rows,
                 syntax_refs_rows=output.syntax_refs_rows,
@@ -283,6 +299,8 @@ def _coerce_syntax_index_output(
                 syntax_imports_rows=output.syntax_imports_rows,
                 parse_manifest_row_count=output.parse_manifest_row_count,
                 syntax_spans_row_count=output.syntax_spans_row_count,
+                syntax_nodes_row_count=output.syntax_nodes_row_count,
+                syntax_edges_row_count=output.syntax_edges_row_count,
                 syntax_scopes_row_count=output.syntax_scopes_row_count,
                 syntax_defs_row_count=output.syntax_defs_row_count,
                 syntax_refs_row_count=output.syntax_refs_row_count,
@@ -300,6 +318,8 @@ def _coerce_syntax_index_output(
         result=merged,
         parse_manifest_rows=empty_lazyframe_for_table(PARSE_MANIFEST_TABLE_KEY),
         syntax_spans_rows=empty_lazyframe_for_table(SYNTAX_SPANS_TABLE_KEY),
+        syntax_nodes_rows=empty_lazyframe_for_table(SYNTAX_NODES_TABLE_KEY),
+        syntax_edges_rows=empty_lazyframe_for_table(SYNTAX_EDGES_TABLE_KEY),
         syntax_scopes_rows=empty_lazyframe_for_table(SYNTAX_SCOPES_TABLE_KEY),
         syntax_defs_rows=empty_lazyframe_for_table(SYNTAX_DEFS_TABLE_KEY),
         syntax_refs_rows=empty_lazyframe_for_table(SYNTAX_REFS_TABLE_KEY),
@@ -307,6 +327,8 @@ def _coerce_syntax_index_output(
         syntax_imports_rows=empty_lazyframe_for_table(SYNTAX_IMPORTS_TABLE_KEY),
         parse_manifest_row_count=0,
         syntax_spans_row_count=0,
+        syntax_nodes_row_count=0,
+        syntax_edges_row_count=0,
         syntax_scopes_row_count=0,
         syntax_defs_row_count=0,
         syntax_refs_row_count=0,
@@ -461,7 +483,7 @@ def t__cst__run(
     def _execute() -> CstToolOutput:
         get_schema_service()
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        step = CstExtractStep(discovery=discovery)
+        step = CstExtractStep(discovery=discovery, emit_ast_nodes=False)
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
@@ -541,7 +563,15 @@ def t__syntax_index__run(
     def _execute() -> SyntaxIndexToolOutput:
         get_schema_service()
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        step = CstExtractStep(discovery=discovery)
+        options = load_target_options(
+            env,
+            target_name=SYNTAX_INDEX_TARGET_NAME,
+            options_type=SyntaxIndexOptions,
+        )
+        step = CstExtractStep(
+            discovery=discovery,
+            emit_ast_nodes=options.emit_ast_nodes,
+        )
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
@@ -554,6 +584,14 @@ def t__syntax_index__run(
         syntax_spans_frame = lazyframe_for_ingest_columns(
             SYNTAX_SPANS_TABLE_KEY,
             extract_result.syntax_spans_rows,
+        )
+        syntax_nodes_frame = lazyframe_for_ingest_columns(
+            SYNTAX_NODES_TABLE_KEY,
+            extract_result.syntax_nodes_rows,
+        )
+        syntax_edges_frame = lazyframe_for_ingest_columns(
+            SYNTAX_EDGES_TABLE_KEY,
+            extract_result.syntax_edges_rows,
         )
         syntax_scopes_frame = lazyframe_for_ingest_columns(
             SYNTAX_SCOPES_TABLE_KEY,
@@ -579,6 +617,8 @@ def t__syntax_index__run(
             result=extract_result.result,
             parse_manifest_rows=parse_manifest_frame,
             syntax_spans_rows=syntax_spans_frame,
+            syntax_nodes_rows=syntax_nodes_frame,
+            syntax_edges_rows=syntax_edges_frame,
             syntax_scopes_rows=syntax_scopes_frame,
             syntax_defs_rows=syntax_defs_frame,
             syntax_refs_rows=syntax_refs_frame,
@@ -586,6 +626,8 @@ def t__syntax_index__run(
             syntax_imports_rows=syntax_imports_frame,
             parse_manifest_row_count=extract_result.parse_manifest_row_count,
             syntax_spans_row_count=extract_result.syntax_spans_row_count,
+            syntax_nodes_row_count=extract_result.syntax_nodes_row_count,
+            syntax_edges_row_count=extract_result.syntax_edges_row_count,
             syntax_scopes_row_count=extract_result.syntax_scopes_row_count,
             syntax_defs_row_count=extract_result.syntax_defs_row_count,
             syntax_refs_row_count=extract_result.syntax_refs_row_count,
@@ -629,6 +671,8 @@ def t__syntax_index__ingest(
     payload = {
         PARSE_MANIFEST_TABLE_KEY: t__syntax_index__run.parse_manifest_rows,
         SYNTAX_SPANS_TABLE_KEY: t__syntax_index__run.syntax_spans_rows,
+        SYNTAX_NODES_TABLE_KEY: t__syntax_index__run.syntax_nodes_rows,
+        SYNTAX_EDGES_TABLE_KEY: t__syntax_index__run.syntax_edges_rows,
         SYNTAX_SCOPES_TABLE_KEY: t__syntax_index__run.syntax_scopes_rows,
         SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_rows,
         SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_rows,
@@ -638,6 +682,8 @@ def t__syntax_index__ingest(
     table_counts = {
         PARSE_MANIFEST_TABLE_KEY: t__syntax_index__run.parse_manifest_row_count,
         SYNTAX_SPANS_TABLE_KEY: t__syntax_index__run.syntax_spans_row_count,
+        SYNTAX_NODES_TABLE_KEY: t__syntax_index__run.syntax_nodes_row_count,
+        SYNTAX_EDGES_TABLE_KEY: t__syntax_index__run.syntax_edges_row_count,
         SYNTAX_SCOPES_TABLE_KEY: t__syntax_index__run.syntax_scopes_row_count,
         SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_row_count,
         SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_row_count,
@@ -754,6 +800,14 @@ _SYNTAX_INDEX_TARGET_SPEC = ToolTargetSpec(
     target_name=SYNTAX_INDEX_TARGET_NAME,
     spec=_INTENSIVE_SPEC,
     tables=(
+        TableOutputSpec(
+            table_key=SYNTAX_NODES_TABLE_KEY,
+            node_name="syntax_index__node_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_EDGES_TABLE_KEY,
+            node_name="syntax_index__edge_rows",
+        ),
         TableOutputSpec(
             table_key=SYNTAX_SPANS_TABLE_KEY,
             node_name="syntax_index__span_rows",

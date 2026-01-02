@@ -26,6 +26,13 @@ from codeintel.build.hamilton.native.graphs.cfg_dfg import (
     dfg_edges_empty,
     dfg_edges_existing,
 )
+from codeintel.build.hamilton.native.graphs.cpg import (
+    CPG_EDGES_TABLE_KEY,
+    CPG_NODES_TABLE_KEY,
+    CPG_TARGET_NAME,
+    cpg_edges,
+    cpg_nodes,
+)
 from codeintel.build.hamilton.native.graphs.graph_targets import (
     CALL_GRAPH_TARGET_NAME,
     CFG_TARGET_NAME,
@@ -33,6 +40,7 @@ from codeintel.build.hamilton.native.graphs.graph_targets import (
     IMPORT_GRAPH_TARGET_NAME,
     t__call_graph,
     t__cfg,
+    t__cpg,
     t__dfg,
     t__import_graph,
 )
@@ -74,6 +82,9 @@ __all__ = [
     "CFG_BLOCKS_TABLE_KEY",
     "CFG_EDGES_TABLE_KEY",
     "CFG_TARGET_NAME",
+    "CPG_EDGES_TABLE_KEY",
+    "CPG_NODES_TABLE_KEY",
+    "CPG_TARGET_NAME",
     "DFG_EDGES_TABLE_KEY",
     "DFG_TARGET_NAME",
     "IMPORT_GRAPH_EDGES_TABLE_KEY",
@@ -97,6 +108,8 @@ __all__ = [
     "cfg_edges_compute",
     "cfg_edges_empty",
     "cfg_edges_existing",
+    "cpg_edges",
+    "cpg_nodes",
     "dfg_edges",
     "dfg_edges_compute",
     "dfg_edges_empty",
@@ -117,6 +130,7 @@ __all__ = [
     "symbol_uses__table_materializations",
     "t__call_graph",
     "t__cfg",
+    "t__cpg",
     "t__dfg",
     "t__import_graph",
     "t__symbol_uses",

@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 import hamilton.driver as h_driver
 
-from codeintel.build.hamilton.native.analytics import tables_functions
+from codeintel.build.hamilton.native.analytics import function_types
 
 
 def _names(variables: Iterable[object]) -> set[str]:
@@ -29,7 +29,7 @@ def _build_driver(clean_mode: str) -> h_driver.Driver:
     return (
         h_driver.Builder()
         .with_config(config)
-        .with_modules(tables_functions)
+        .with_modules(function_types)
         .allow_module_overrides()
         .build()
     )
@@ -49,6 +49,6 @@ def test_pipe_input_step_gating() -> None:
     off_names = _names(off_driver.list_available_variables())
 
     assert _has_prep_step(strict_names, "nulls")
-    assert _has_prep_step(strict_names, "loc_clip")
+    assert _has_prep_step(strict_names, "with_drop_bad_rows")
     assert not _has_prep_step(off_names, "nulls")
-    assert not _has_prep_step(off_names, "loc_clip")
+    assert not _has_prep_step(off_names, "with_drop_bad_rows")

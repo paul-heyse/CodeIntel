@@ -25,7 +25,6 @@ from tests._helpers.fixtures.rows import (
     ImportGraphEdgeRow,
     ModuleRow,
     RepoMapRow,
-    RiskFactorRow,
     SymbolUseEdgeRow,
     insert_rows,
 )
@@ -481,7 +480,6 @@ def seed_call_graph_scoping(
     con = gateway.con
     con.execute("DELETE FROM graph.call_graph_edges WHERE repo IN ('r1', 'r2')")
     con.execute("DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1, 2)")
-    con.execute(
     con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1, 2)")
     insert_rows(
         gateway,
@@ -509,33 +507,6 @@ def seed_call_graph_scoping(
                 start_line=1,
                 end_line=2,
                 created_at=now,
-            ),
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            RiskFactorRow(
-                function_goid_h128=1,
-                repo="r1",
-                commit="c1",
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=0,
-                fan_in_count=0,
-                fan_out_count=0,
-                has_tests=False,
-            ),
-            RiskFactorRow(
-                function_goid_h128=2,
-                repo="r2",
-                commit="c2",
-                risk_score=9,
-                risk_level="high",
-                cyclomatic_complexity=0,
-                fan_in_count=0,
-                fan_out_count=0,
-                has_tests=False,
             ),
         ],
     )

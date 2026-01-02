@@ -14,14 +14,10 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
     )
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsTestProfileRow as ProfileRowModel,
-    )
 
 __all__ = [
     "make_graph_metric_function_row",
     "make_graph_metric_module_row",
-    "make_profile_record",
 ]
 
 
@@ -62,51 +58,6 @@ class GraphMetricModuleOverrides(TypedDict, total=False):
     import_layer: int | None
     symbol_fan_in: int
     symbol_fan_out: int
-    created_at: datetime
-
-
-class ProfileRecordOverrides(TypedDict, total=False):
-    """Optional overrides for test profile rows."""
-
-    repo: str
-    commit: str
-    test_id: str
-    test_goid_h128: int | None
-    urn: str | None
-    rel_path: str
-    module: str | None
-    qualname: str | None
-    language: str | None
-    kind: str | None
-    status: str | None
-    duration_ms: float | None
-    markers: object
-    flaky: bool | None
-    last_run_at: datetime | None
-    functions_covered: object
-    functions_covered_count: int | None
-    primary_function_goids: object
-    subsystems_covered: object
-    subsystems_covered_count: int | None
-    primary_subsystem_id: str | None
-    assert_count: int | None
-    raise_count: int | None
-    uses_parametrize: bool | None
-    uses_fixtures: bool | None
-    io_bound: bool | None
-    uses_network: bool | None
-    uses_db: bool | None
-    uses_filesystem: bool | None
-    uses_subprocess: bool | None
-    flakiness_score: float | None
-    importance_score: float | None
-    notes: str | None
-    tg_degree: int | None
-    tg_weighted_degree: float | None
-    tg_proj_degree: int | None
-    tg_proj_weight: float | None
-    tg_proj_clustering: float | None
-    tg_proj_betweenness: float | None
     created_at: datetime
 
 
@@ -175,70 +126,6 @@ def make_graph_metric_module_row(
         "import_layer": None,
         "symbol_fan_in": 0,
         "symbol_fan_out": 0,
-        "created_at": datetime.now(UTC),
-    }
-    if overrides:
-        base.update(overrides)
-    return base
-
-
-def make_profile_record(
-    *,
-    test_id: str = "test::sample",
-    rel_path: str = "tests/test_sample.py",
-    repo: str = DEFAULT_VARIANT.repo,
-    commit: str = DEFAULT_VARIANT.commit,
-    overrides: ProfileRecordOverrides | None = None,
-) -> ProfileRowModel:
-    """Build a ProfileRowModel with defaults for test profiles.
-
-    Returns
-    -------
-    ProfileRowModel
-        Populated test profile row.
-    """
-    resolved_module = rel_path.replace("/", ".").removesuffix(".py")
-    resolved_qualname = test_id.rsplit("::", maxsplit=1)[-1]
-    base: ProfileRowModel = {
-        "repo": repo,
-        "commit": commit,
-        "test_id": test_id,
-        "test_goid_h128": None,
-        "urn": f"urn:{repo}:{test_id}",
-        "rel_path": rel_path,
-        "module": resolved_module,
-        "qualname": resolved_qualname,
-        "language": "python",
-        "kind": "function",
-        "status": "passed",
-        "duration_ms": 0.1,
-        "markers": [],
-        "flaky": False,
-        "last_run_at": datetime.now(UTC),
-        "functions_covered": [],
-        "functions_covered_count": 0,
-        "primary_function_goids": [],
-        "subsystems_covered": [],
-        "subsystems_covered_count": 0,
-        "primary_subsystem_id": None,
-        "assert_count": 0,
-        "raise_count": 0,
-        "uses_parametrize": False,
-        "uses_fixtures": False,
-        "io_bound": False,
-        "uses_network": False,
-        "uses_db": False,
-        "uses_filesystem": False,
-        "uses_subprocess": False,
-        "flakiness_score": 0.0,
-        "importance_score": 0.0,
-        "notes": None,
-        "tg_degree": 0,
-        "tg_weighted_degree": 0.0,
-        "tg_proj_degree": 0,
-        "tg_proj_weight": 0.0,
-        "tg_proj_clustering": 0.0,
-        "tg_proj_betweenness": 0.0,
         "created_at": datetime.now(UTC),
     }
     if overrides:

@@ -86,6 +86,21 @@ class ModuleDiscoveryPort(Protocol):
         """
         ...
 
+    def read_module_bytes(self, record: ModuleRecord) -> bytes | None:
+        """Read the raw source bytes of a module.
+
+        Parameters
+        ----------
+        record
+            Module record with file path.
+
+        Returns
+        -------
+        bytes | None
+            Source bytes if readable, None if file is missing or unreadable.
+        """
+        ...
+
     def read_text(self, path: Path, encoding: str = "utf-8") -> str | None:
         """Read text content from a file.
 

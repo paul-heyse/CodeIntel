@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ModuleIngestOptions",
     "ScipIngestOptions",
+    "SyntaxIndexOptions",
 ]
 
 
@@ -104,3 +105,16 @@ class ScipIngestOptions:
             True when implementations should be emitted.
         """
         return self.include_implementations
+
+
+@dataclass(frozen=True)
+class SyntaxIndexOptions:
+    """Configuration options for syntax index extraction.
+
+    Attributes
+    ----------
+    emit_ast_nodes
+        Whether to merge CPython AST facts into syntax nodes.
+    """
+
+    emit_ast_nodes: bool = True

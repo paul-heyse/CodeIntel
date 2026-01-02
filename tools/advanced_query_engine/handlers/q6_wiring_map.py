@@ -209,6 +209,115 @@ def _apply_upper_capture(records: list[_WiringRecord], op: dict[str, object]) ->
             record.captures[out_field] = value.upper()
 
 
+_KNOWN_HTTP_METHODS = {
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+    "HEAD",
+    "TRACE",
+    "CONNECT",
+    "WEBSOCKET",
+}
+_METHODS_ARG_RE = re.compile(r"methods?\\s*=\\s*(?P<value>\\[[^\\]]*\\]|\\([^)]*\\)|\\{[^}]*\\})")
+
+
+def _methods_from_args(args: list[str] | None) -> list[str] | None:
+    if not args:
+        return None
+    for arg in args:
+        match = _METHODS_ARG_RE.search(arg)
+        if not match:
+            continue
+        raw = match.group("value")
+        methods = _coerce_methods(raw)
+        if methods:
+            return methods
+    return None
+
+
+def _coerce_methods(raw: str) -> list[str] | None:
+    try:
+        parsed = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        parsed = None
+    if isinstance(parsed, str):
+        return [_normalize_http_method(parsed)]
+    if isinstance(parsed, (list, tuple, set)):
+        normalized = [
+            _normalize_http_method(item) for item in parsed if isinstance(item, str)
+        ]
+        return [item for item in normalized if item]
+    tokens = [token.upper() for token in re.findall(r"\\b[A-Za-z]+\\b", raw)]
+    matches = [token for token in tokens if token in _KNOWN_HTTP_METHODS]
+    return matches or None
+
+
+def _default_from_args(args: list[str] | None) -> str | None:
+    if not args:
+        return None
+    candidate = args[0]
+    if "=" in candidate:
+        candidate = candidate.split("=", 1)[1]
+    unquoted = _unquote_literal(candidate)
+    if unquoted is not None:
+        return unquoted
+    return candidate.strip() if candidate.strip() else None
+
+
+def _args_list(record: _WiringRecord) -> list[str] | None:
+    args_value = record.captures.get("ARGS")
+    if isinstance(args_value, list):
+        return args_value
+    if isinstance(args_value, str):
+        return [args_value]
+    return None
+
+
+def _set_if(config: dict[str, object], key: str, value: str | None) -> None:
+    if value:
+        config[key] = value
+
+
+def _base_config(record: _WiringRecord, args_list: list[str] | None) -> dict[str, object]:
+    config: dict[str, object] = {}
+    captures = record.captures
+    _set_if(config, "path", _capture_text(captures.get("PATH_unquoted") or captures.get("PATH")))
+    method_value = _capture_text(captures.get("http_method") or captures.get("METHOD"))
+    if method_value:
+        config["http_method"] = _normalize_http_method(method_value)
+    methods = _methods_from_args(args_list)
+    if methods:
+        config["methods"] = methods
+    _set_if(config, "group", _capture_text(captures.get("GROUP_unquoted") or captures.get("GROUP")))
+    command_value = _capture_text(
+        captures.get("ARGPARSE_CMD") or captures.get("CMD_unquoted") or captures.get("CMD")
+    )
+    _set_if(config, "command", command_value)
+    _set_if(config, "handler_hint", _capture_text(captures.get("HANDLER")))
+    return config
+
+
+def _env_config(record: _WiringRecord, args_list: list[str] | None) -> dict[str, object]:
+    config: dict[str, object] = {}
+    captures = record.captures
+    _set_if(config, "key", _capture_text(captures.get("KEY_unquoted") or captures.get("KEY")))
+    default_value = _default_from_args(args_list)
+    if default_value is not None:
+        config["default"] = default_value
+    return config
+
+
+def _config_from_record(pack_id: str, record: _WiringRecord) -> dict[str, object] | None:
+    args_list = _args_list(record)
+    config = _base_config(record, args_list)
+    if "env" in pack_id:
+        config.update(_env_config(record, args_list))
+    return config or None
+
+
 _POSTPROCESS_HANDLERS: dict[str, Callable[[list[_WiringRecord], dict[str, object]], None]] = {
     "python.unquote_capture": _apply_unquote_capture,
     "python.normalize_http_method": _apply_normalize_http_method,
@@ -270,12 +379,13 @@ def _resolve_handler_target(
         return None
     try:
         local_index = context.def_index(record.path)
+    except (FileNotFoundError, ValueError):
+        local_index = None
+    if local_index is not None:
         local_defs = local_index.by_name(name)
         if local_defs:
             def_rec = local_defs[0]
             return {"name": def_rec.name, "qname": def_rec.qname, "kind": def_rec.kind}
-    except (FileNotFoundError, ValueError):
-        pass
     if not allow_cross_file:
         return None
 
@@ -283,10 +393,9 @@ def _resolve_handler_target(
     pattern_group = {
         "pattern_group_id": f"rg.resolve.{name}",
         "patterns": [
-            {"pattern": rf"\\bdef\\s+{re.escape(name)}\\b", "is_regex": True, "priority": 10}
+            {"pattern": rf"\bdef\s+{re.escape(name)}\b", "is_regex": True, "priority": 10}
         ],
         "globs": ["**/*.py"],
-        "exclude_globs": ["**/.venv/**", "**/venv/**", "**/site-packages/**"],
     }
     budget = context.default_budget
     candidates = run_pattern_group(
@@ -376,6 +485,7 @@ class _EdgeContext:
     entry_key: str
     hook: Span
     target: dict[str, object] | None
+    config: dict[str, object] | None
 
 
 def _build_edge(
@@ -402,7 +512,7 @@ def _build_edge(
             str((edge.target or {}).get("qname") if isinstance(edge.target, dict) else ""),
         ]
     )
-    return {
+    payload = {
         "edge_id": edge_id,
         "pack_id": edge.pack_id,
         "framework": edge.pack.get("framework"),
@@ -419,6 +529,9 @@ def _build_edge(
         },
         "evidence": evidence.to_dict(),
     }
+    if edge.config:
+        payload["config"] = edge.config
+    return payload
 
 
 def _emit_edges(
@@ -446,6 +559,7 @@ def _emit_edges(
             emit,
             allow_cross_file=allow_cross_file,
         )
+        config = _config_from_record(pack_id, record)
         entry_key = _entry_key_for_record(record, pack_id, entry_key_by_rule, entry_key_template)
         edge = _EdgeContext(
             pack=pack,
@@ -454,6 +568,7 @@ def _emit_edges(
             entry_key=entry_key,
             hook=hook,
             target=target,
+            config=config,
         )
         edges.append(_build_edge(record, context, edge))
 

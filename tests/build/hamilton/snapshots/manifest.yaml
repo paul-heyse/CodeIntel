@@ -26,31 +26,6 @@ cases:
   # PR-16: Contract Parity - Verify complete contracts for key targets
   # ========================================================================
 
-  - name: "pr16_plan_function_metrics_contract"
-    tags: ["pr16", "plan", "json", "tiny"]
-    args: ["build", "plan", "function_types", "--format", "json", "--help"]
-    exit_code: 0
-    snapshot: "pr16_plan_function_metrics_contract.json"
-    kind: "text"
-
-  - name: "pr16_plan_risk_factors_contract"
-    tags: ["pr16", "plan", "json", "tiny"]
-    args: ["build", "plan", "function_types", "--format", "json", "--help"]
-    exit_code: 0
-    snapshot: "pr16_plan_risk_factors_contract.json"
-    kind: "text"
-
-  # ========================================================================
-  # PR-21: Native Analytics Targets - subsystems
-  # ========================================================================
-
-  - name: "pr21_plan_hotspots_native"
-    tags: ["pr21", "plan", "native", "json", "analytics", "tiny"]
-    args: ["build", "plan", "subsystems", "--format", "json", "--help"]
-    exit_code: 0
-    snapshot: "pr21_plan_hotspots_native.json"
-    kind: "text"
-
   # ========================================================================
   # PR-22: Call Graph Views
   # ========================================================================

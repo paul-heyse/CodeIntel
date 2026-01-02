@@ -14,6 +14,9 @@ from textwrap import dedent
 from types import FunctionType, MethodType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
+from duckdb import Error as DuckDBError
+from polars import exceptions as polars_exceptions
+
 from codeintel.build.hamilton.naming import target_node
 from codeintel.core.hamilton.semantic_tags import (
     TAG_SEMANTIC_ENTITY,
@@ -1411,6 +1414,16 @@ def _unknown_schema_issues(
                     target=producer_target,
                 )
             )
+        except (DuckDBError, polars_exceptions.PolarsError) as exc:
+            issues.append(
+                GraphValidationIssue(
+                    severity="warning",
+                    code="schema_validation_failed",
+                    message=f"Schema validation failed for {table_key}: {exc}",
+                    table_key=table_key,
+                    target=producer_target,
+                )
+            )
     return issues
 
 
@@ -1455,6 +1468,7 @@ def validate_nodes(
         *inputs.artifact_issues,
         *inputs.saver_issues,
     ]
+    warnings: list[GraphValidationIssue] = []
     errors.extend(_tag_type_issues(nodes))
     anchor_errors, anchor_warnings = _target_anchor_tag_issues(nodes)
     errors.extend(anchor_errors)
@@ -1468,14 +1482,13 @@ def validate_nodes(
     errors.extend(_async_node_issues(nodes))
     errors.extend(_duplicate_materialize_issues(inputs.materialize_nodes_by_target))
     if validate_schema and provider is not None:
-        errors.extend(
-            _unknown_schema_issues(
-                provider=provider,
-                produced_table_to_target=inputs.saver_table_to_target,
-            )
+        schema_issues = _unknown_schema_issues(
+            provider=provider,
+            produced_table_to_target=inputs.saver_table_to_target,
         )
+        errors.extend(issue for issue in schema_issues if issue.severity == "error")
+        warnings.extend(issue for issue in schema_issues if issue.severity == "warning")
 
-    warnings: list[GraphValidationIssue] = []
     warnings.extend(anchor_warnings)
 
     derived_deps: dict[str, tuple[str, ...]] | None = None

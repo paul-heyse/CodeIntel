@@ -6,13 +6,18 @@ LibCST concrete syntax trees, using ports for all I/O operations.
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import io
 import json
 import logging
+import tokenize
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import libcst as cst
+from intervaltree import IntervalTree
 from libcst import metadata
 from libcst.helpers import get_full_name_for_node
 
@@ -28,18 +33,23 @@ from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureVisitor,
     LineIndexedSource,
     NormalizedSpan,
+    SourceBundle,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Mapping, Sequence
 
-    from codeintel.ingestion.ports.discovery import ModuleRecord
+    from libcst.metadata.scope_provider import Access, Scope
+
+    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 log = logging.getLogger(__name__)
 
 CST_NODES_TABLE_KEY = "core.cst_nodes"
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
 SYNTAX_SPANS_TABLE_KEY = "core.syntax_spans"
+SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
+SYNTAX_EDGES_TABLE_KEY = "core.syntax_edges"
 SYNTAX_SCOPES_TABLE_KEY = "core.syntax_scopes"
 SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
 SYNTAX_REFS_TABLE_KEY = "core.syntax_refs"
@@ -47,6 +57,8 @@ SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
 SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
 
 SYNTAX_PRODUCER = "libcst"
+SYNTAX_LANGUAGE = "python"
+SYNTAX_EDGE_KIND = "AST_CHILD"
 
 ASYNC_FUNC_DEF = getattr(cst, "AsyncFunctionDef", cst.FunctionDef)
 
@@ -88,6 +100,8 @@ class CstExtractResult:
     rows: ColumnarRows = field(default_factory=dict)
     parse_manifest_rows: ColumnarRows = field(default_factory=dict)
     syntax_spans_rows: ColumnarRows = field(default_factory=dict)
+    syntax_nodes_rows: ColumnarRows = field(default_factory=dict)
+    syntax_edges_rows: ColumnarRows = field(default_factory=dict)
     syntax_scopes_rows: ColumnarRows = field(default_factory=dict)
     syntax_defs_rows: ColumnarRows = field(default_factory=dict)
     syntax_refs_rows: ColumnarRows = field(default_factory=dict)
@@ -96,6 +110,8 @@ class CstExtractResult:
     row_count: int = 0
     parse_manifest_row_count: int = 0
     syntax_spans_row_count: int = 0
+    syntax_nodes_row_count: int = 0
+    syntax_edges_row_count: int = 0
     syntax_scopes_row_count: int = 0
     syntax_defs_row_count: int = 0
     syntax_refs_row_count: int = 0
@@ -118,6 +134,13 @@ class _ParseManifestContext:
     rel_path: str
     producer: str
     source_index: LineIndexedSource
+    encoding: str | None
+    default_indent: str | None
+    default_newline: str | None
+    has_trailing_newline: bool | None
+    future_imports: list[str] | None
+    parser_backend: str | None
+    libcst_version: str | None
 
 
 @dataclass(slots=True)
@@ -125,6 +148,8 @@ class _CstBuffers:
     cst: ColumnarRowBuffer
     parse_manifest: ColumnarRowBuffer
     spans: ColumnarRowBuffer
+    syntax_nodes: ColumnarRowBuffer
+    syntax_edges: ColumnarRowBuffer
     scopes: ColumnarRowBuffer
     defs: ColumnarRowBuffer
     refs: ColumnarRowBuffer
@@ -135,7 +160,12 @@ class _CstBuffers:
 class CstVisitor(CstCaptureVisitor):
     """Collect CST rows using shared capture helpers."""
 
-    def __init__(self, rel_path: str, module_name: str, source: str, source_bytes: bytes) -> None:
+    def __init__(
+        self,
+        rel_path: str,
+        module_name: str,
+        source: SourceBundle,
+    ) -> None:
         """Initialize visitor.
 
         Parameters
@@ -145,17 +175,199 @@ class CstVisitor(CstCaptureVisitor):
         module_name
             Python module name.
         source
-            Source code text.
-        source_bytes
-            UTF-8 encoded source bytes.
+            Bundle of text, raw bytes, and encoding for the module.
         """
         super().__init__(
             rel_path,
             module_name,
             source,
             config=CST_CAPTURE_CONFIG,
-            source_bytes=source_bytes,
         )
+
+
+@dataclass(slots=True)
+class _SyntaxGraphFrame:
+    node_id: str | None
+    child_ordinal: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _SyntaxContext:
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    language: str
+
+
+@dataclass(frozen=True, slots=True)
+class _DefExtrasInput:
+    container_def_id: str | None
+    is_async: bool | None = None
+    bases: Sequence[cst.Arg] | None = None
+    decorators: Sequence[cst.Decorator] | None = None
+    params: cst.Parameters | None = None
+    returns_node: cst.CSTNode | None = None
+    docstring: str | None = None
+    qualified_node: cst.CSTNode | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _AstSpan:
+    start_line: int
+    start_col_utf8: int
+    end_line: int
+    end_col_utf8: int
+    start_byte: int
+    end_byte: int
+
+
+@dataclass(frozen=True, slots=True)
+class _AstNodeRecord:
+    node_id: str
+    kind: str
+    span: _AstSpan
+    extras: dict[str, object] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _SyntaxNodeCandidate:
+    node_id: str
+    start_byte: int
+    end_byte: int
+    node_kind: str
+    order: int
+
+
+@dataclass(frozen=True, slots=True)
+class _SyntaxNodeIndex:
+    tree: IntervalTree
+    exact: dict[tuple[int, int], list[_SyntaxNodeCandidate]]
+
+
+class SyntaxGraphVisitor(cst.CSTVisitor):
+    """Collect canonical syntax nodes and edges for CPG stitching."""
+
+    METADATA_DEPENDENCIES = (
+        metadata.PositionProvider,
+        metadata.ByteSpanPositionProvider,
+    )
+
+    def __init__(
+        self,
+        *,
+        context: _SyntaxContext,
+        source_index: LineIndexedSource,
+        snippet_limit: int,
+    ) -> None:
+        self.repo = context.repo
+        self.commit = context.commit
+        self.rel_path = context.rel_path
+        self.producer = context.producer
+        self.language = context.language
+        self.source_index = source_index
+        self.snippet_limit = snippet_limit
+
+        self.node_rows: list[dict[str, object]] = []
+        self.edge_rows: list[dict[str, object]] = []
+        self._seen_node_ids: set[str] = set()
+        self._stack: list[_SyntaxGraphFrame] = []
+
+    def on_visit(self, node: cst.CSTNode) -> bool:
+        span = self._span_for_node(node)
+        node_id = None
+        if span is not None:
+            node_id = _stable_id(
+                "syntax_node",
+                self.rel_path,
+                self.producer,
+                type(node).__name__,
+                span.start_line,
+                span.start_col,
+                span.end_line,
+                span.end_col,
+                span.start_byte,
+                span.end_byte,
+            )
+            if node_id not in self._seen_node_ids:
+                self._seen_node_ids.add(node_id)
+                preview = self.source_index.slice(
+                    span.start_line,
+                    span.start_col,
+                    span.end_line,
+                    span.end_col,
+                )
+                self.node_rows.append(
+                    {
+                        "repo": self.repo,
+                        "commit": self.commit,
+                        "rel_path": self.rel_path,
+                        "producer": self.producer,
+                        "language": self.language,
+                        "node_id": node_id,
+                        "node_kind": type(node).__name__,
+                        "raw_kind": type(node).__name__,
+                        "start_line": span.start_line,
+                        "start_col": span.start_col,
+                        "end_line": span.end_line,
+                        "end_col": span.end_col,
+                        "start_byte": span.start_byte,
+                        "end_byte": span.end_byte,
+                        "text_preview": preview[: self.snippet_limit],
+                        "extras_json": None,
+                    }
+                )
+
+        parent_frame = self._last_parent_frame()
+        if node_id is not None and parent_frame is not None:
+            ordinal = parent_frame.child_ordinal
+            parent_frame.child_ordinal += 1
+            self.edge_rows.append(
+                {
+                    "repo": self.repo,
+                    "commit": self.commit,
+                    "rel_path": self.rel_path,
+                    "producer": self.producer,
+                    "parent_node_id": parent_frame.node_id,
+                    "child_node_id": node_id,
+                    "edge_kind": SYNTAX_EDGE_KIND,
+                    "field_name": None,
+                    "child_ordinal": ordinal,
+                }
+            )
+
+        self._stack.append(_SyntaxGraphFrame(node_id=node_id))
+        return True
+
+    def on_leave(self, original_node: cst.CSTNode) -> None:
+        _ = original_node
+        if self._stack:
+            self._stack.pop()
+
+    def _last_parent_frame(self) -> _SyntaxGraphFrame | None:
+        for frame in reversed(self._stack):
+            if frame.node_id is not None:
+                return frame
+        return None
+
+    def _span_for_node(self, node: cst.CSTNode) -> NormalizedSpan | None:
+        try:
+            pos = self.get_metadata(metadata.PositionProvider, node)
+        except KeyError:
+            return None
+        if not isinstance(pos, metadata.CodeRange):
+            return None
+        byte_span = self._byte_span_for_node(node)
+        return self.source_index.span_from_range(pos, byte_span)
+
+    def _byte_span_for_node(self, node: cst.CSTNode) -> metadata.CodeSpan | None:
+        try:
+            byte_span = self.get_metadata(metadata.ByteSpanPositionProvider, node)
+        except KeyError:
+            return None
+        if isinstance(byte_span, metadata.CodeSpan):
+            return byte_span
+        return None
 
 
 class SyntaxFactsVisitor(cst.CSTVisitor):
@@ -163,22 +375,24 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
 
     METADATA_DEPENDENCIES = (
         metadata.PositionProvider,
+        metadata.ByteSpanPositionProvider,
         metadata.ParentNodeProvider,
+        metadata.ExpressionContextProvider,
+        metadata.QualifiedNameProvider,
+        metadata.ScopeProvider,
     )
 
     def __init__(
         self,
         *,
-        repo: str,
-        commit: str,
-        rel_path: str,
-        producer: str,
+        context: _SyntaxContext,
         source_index: LineIndexedSource,
+        access_map: dict[int, Access] | None = None,
     ) -> None:
-        self.repo = repo
-        self.commit = commit
-        self.rel_path = rel_path
-        self.producer = producer
+        self.repo = context.repo
+        self.commit = context.commit
+        self.rel_path = context.rel_path
+        self.producer = context.producer
         self.source_index = source_index
 
         self.span_rows: list[dict[str, object]] = []
@@ -189,13 +403,27 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         self.imports: list[dict[str, object]] = []
         self._span_ids: set[str] = set()
         self._scope_stack: list[ScopeFrame] = []
+        self._access_map = access_map or {}
+        self._def_node_ids: dict[int, str] = {}
 
     def visit_Module(self, node: cst.Module) -> bool:
         self._enter_scope(node, "module")
         return True
 
     def visit_ClassDef(self, node: cst.ClassDef) -> bool:
-        self._record_named_def(node.name, node.name.value, "class")
+        container_def_id = self._container_def_id(node)
+        extras = self._def_extras(
+            _DefExtrasInput(
+                container_def_id=container_def_id,
+                bases=node.bases,
+                decorators=node.decorators,
+                docstring=self._docstring(node),
+                qualified_node=node,
+            )
+        )
+        def_id = self._record_named_def(node.name, node.name.value, "class", extras=extras)
+        if def_id is not None:
+            self._def_node_ids[id(node)] = def_id
         self._enter_scope(node, "class")
         return True
 
@@ -226,7 +454,21 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             kind = "async_function"
         name = getattr(node, "name", None)
         if isinstance(name, cst.Name):
-            self._record_named_def(name, name.value, kind)
+            container_def_id = self._container_def_id(node)
+            extras = self._def_extras(
+                _DefExtrasInput(
+                    container_def_id=container_def_id,
+                    is_async=kind == "async_function",
+                    decorators=getattr(node, "decorators", None),
+                    params=getattr(node, "params", None),
+                    returns_node=getattr(node, "returns", None),
+                    docstring=self._docstring(node),
+                    qualified_node=node,
+                )
+            )
+            def_id = self._record_named_def(name, name.value, kind, extras=extras)
+            if def_id is not None:
+                self._def_node_ids[id(node)] = def_id
         self._enter_scope(node, kind)
         params = getattr(node, "params", None)
         if isinstance(params, cst.Parameters):
@@ -289,7 +531,14 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
     def visit_Name(self, node: cst.Name) -> bool:
         if self._is_definition_name(node):
             return True
-        self._record_ref(node, node.value, ref_kind="identifier", span_kind="identifier")
+        extras = self._ref_extras(node)
+        self._record_ref(
+            node,
+            node.value,
+            ref_kind="identifier",
+            span_kind="identifier",
+            extras=extras,
+        )
         return True
 
     def visit_Attribute(self, node: cst.Attribute) -> bool:
@@ -298,7 +547,8 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         name = self._node_text(node)
         if name is None:
             return True
-        self._record_ref(node, name, ref_kind="attribute", span_kind="attribute")
+        extras = self._ref_extras(node)
+        self._record_ref(node, name, ref_kind="attribute", span_kind="attribute", extras=extras)
         return True
 
     def _current_scope_id(self) -> str | None:
@@ -345,18 +595,22 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             self._scope_stack.pop()
 
     def _record_params(self, params: cst.Parameters) -> None:
-        for param in self._iter_params(params):
-            self._record_named_def(param.name, param.name.value, "param")
+        for param, param_kind in self._iter_params(params):
+            extras = self._param_def_extras(param, param_kind)
+            self._record_named_def(param.name, param.name.value, "param", extras=extras)
 
     @staticmethod
-    def _iter_params(params: cst.Parameters) -> Iterable[cst.Param]:
-        yield from params.posonly_params
-        yield from params.params
-        yield from params.kwonly_params
+    def _iter_params(params: cst.Parameters) -> Iterable[tuple[cst.Param, str]]:
+        for param in params.posonly_params:
+            yield param, "posonly"
+        for param in params.params:
+            yield param, "positional"
+        for param in params.kwonly_params:
+            yield param, "kwonly"
         if isinstance(params.star_arg, cst.Param):
-            yield params.star_arg
+            yield params.star_arg, "varargs"
         if isinstance(params.star_kwarg, cst.Param):
-            yield params.star_kwarg
+            yield params.star_kwarg, "varkw"
 
     def _record_named_def(
         self,
@@ -365,13 +619,14 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         def_kind: str,
         *,
         span_kind: str = "identifier",
-    ) -> None:
+        extras: dict[str, object] | None = None,
+    ) -> str | None:
         scope_id = self._current_scope_id()
         if scope_id is None:
-            return
+            return None
         span = self._span_for_node(node)
         if span is None:
-            return
+            return None
         span_id = self._ensure_span(span, span_kind)
         def_id = _stable_id(
             "def",
@@ -401,8 +656,10 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
+                "extras_json": extras,
             }
         )
+        return def_id
 
     def _record_ref(
         self,
@@ -411,6 +668,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         *,
         ref_kind: str,
         span_kind: str,
+        extras: dict[str, object] | None = None,
     ) -> None:
         scope_id = self._current_scope_id()
         if scope_id is None:
@@ -447,6 +705,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
+                "extras_json": extras,
             }
         )
 
@@ -474,6 +733,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             callee_span_id,
             callee_text,
         )
+        extras = self._call_extras(node)
         self.calls.append(
             {
                 "repo": self.repo,
@@ -492,6 +752,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
+                "extras_json": extras,
             }
         )
 
@@ -535,6 +796,13 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             span_id,
             scope_id,
         )
+        extras = self._import_extras(
+            alias,
+            import_kind=import_kind,
+            module=module_value,
+            level=level,
+            is_star=False,
+        )
         self.imports.append(
             {
                 "repo": self.repo,
@@ -555,6 +823,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
+                "extras_json": extras,
             }
         )
 
@@ -586,6 +855,13 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             span_id,
             scope_id,
         )
+        extras = self._import_extras(
+            alias,
+            import_kind="from_import",
+            module=module,
+            level=level,
+            is_star=True,
+        )
         self.imports.append(
             {
                 "repo": self.repo,
@@ -606,6 +882,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
+                "extras_json": extras,
             }
         )
 
@@ -652,7 +929,17 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             return None
         if not isinstance(pos, metadata.CodeRange):
             return None
-        return self.source_index.span_from_range(pos)
+        byte_span = self._byte_span_for_node(node)
+        return self.source_index.span_from_range(pos, byte_span)
+
+    def _byte_span_for_node(self, node: cst.CSTNode) -> metadata.CodeSpan | None:
+        try:
+            byte_span = self.get_metadata(metadata.ByteSpanPositionProvider, node)
+        except KeyError:
+            return None
+        if isinstance(byte_span, metadata.CodeSpan):
+            return byte_span
+        return None
 
     def _ensure_span(self, span: NormalizedSpan, span_kind: str) -> str:
         span_id = _stable_id(
@@ -721,6 +1008,237 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             return parent.target is node
         return False
 
+    def _container_def_id(self, node: cst.CSTNode) -> str | None:
+        parent = self._parent(node)
+        while parent is not None:
+            def_id = self._def_node_ids.get(id(parent))
+            if def_id is not None:
+                return def_id
+            parent = self._parent(parent)
+        return None
+
+    def _def_extras(self, payload: _DefExtrasInput) -> dict[str, object] | None:
+        extras: dict[str, object] = {}
+        extras.update(self._optional_entry("container_def_id", payload.container_def_id))
+        extras.update(self._optional_entry("is_async", payload.is_async))
+        extras.update(
+            self._optional_entry(
+                "decorators",
+                self._decorator_payload(payload.decorators) or None,
+            )
+        )
+        extras.update(self._optional_entry("bases", self._bases_payload(payload.bases) or None))
+        extras.update(self._optional_entry("params", self._params_payload(payload.params) or None))
+        extras.update(
+            self._optional_entry(
+                "returns_code",
+                self._returns_payload(payload.returns_node),
+            )
+        )
+        extras.update(self._optional_entry("docstring", payload.docstring))
+        extras.update(
+            self._optional_entry(
+                "qnames",
+                self._qualified_name_payload(payload.qualified_node) or None,
+            )
+        )
+        return extras or None
+
+    @staticmethod
+    def _optional_entry(key: str, value: object | None) -> dict[str, object]:
+        if value is None:
+            return {}
+        return {key: value}
+
+    def _bases_payload(self, bases: Sequence[cst.Arg] | None) -> list[str]:
+        if not bases:
+            return []
+        payload: list[str] = []
+        for base in bases:
+            base_text = self._node_text(base.value)
+            if base_text:
+                payload.append(base_text)
+        return payload
+
+    def _param_def_extras(self, param: cst.Param, param_kind: str) -> dict[str, object]:
+        extras: dict[str, object] = {
+            "param_kind": param_kind,
+            "has_annotation": param.annotation is not None,
+            "has_default": param.default is not None,
+        }
+        if param.annotation is not None:
+            annotation_code = self._node_text(param.annotation)
+            if annotation_code:
+                extras["annotation_code"] = annotation_code
+        if param.default is not None:
+            default_code = self._node_text(param.default)
+            if default_code:
+                extras["default_code"] = default_code
+        return extras
+
+    def _params_payload(self, params: cst.Parameters | None) -> list[dict[str, object]]:
+        if params is None:
+            return []
+        payload: list[dict[str, object]] = []
+        for param, param_kind in self._iter_params(params):
+            entry: dict[str, object] = {
+                "name": param.name.value,
+                "kind": param_kind,
+                "has_annotation": param.annotation is not None,
+                "has_default": param.default is not None,
+            }
+            if param.annotation is not None:
+                annotation_code = self._node_text(param.annotation)
+                if annotation_code:
+                    entry["annotation_code"] = annotation_code
+            if param.default is not None:
+                default_code = self._node_text(param.default)
+                if default_code:
+                    entry["default_code"] = default_code
+            payload.append(entry)
+        return payload
+
+    def _returns_payload(self, node: cst.CSTNode | None) -> str | None:
+        if node is None:
+            return None
+        return self._node_text(node) or None
+
+    def _ref_extras(self, node: cst.CSTNode) -> dict[str, object] | None:
+        extras: dict[str, object] = {}
+        role = self._expression_context_name(node)
+        if role is not None:
+            extras["role"] = role
+        access = self._access_map.get(id(node))
+        if access is not None:
+            extras["scope_kind"] = type(access.scope).__name__
+            referents = self._referents_payload(access)
+            if referents:
+                extras["referents"] = referents
+            extras["is_annotation"] = access.is_annotation
+            extras["is_type_hint"] = access.is_type_hint
+        else:
+            scope_kind = self._current_scope_kind()
+            if scope_kind is not None:
+                extras["scope_kind"] = scope_kind
+        qnames = self._qualified_name_payload(node)
+        if qnames:
+            extras["qnames"] = qnames
+        return extras or None
+
+    def _call_extras(self, node: cst.Call) -> dict[str, object] | None:
+        kw_count = sum(1 for arg in node.args if arg.keyword is not None)
+        star_count = sum(1 for arg in node.args if arg.star == "*")
+        starstar_count = sum(1 for arg in node.args if arg.star == "**")
+        extras: dict[str, object] = {
+            "kw_arg_count": kw_count,
+            "star_arg_count": star_count,
+            "starstar_arg_count": starstar_count,
+        }
+        caller_def_id = self._container_def_id(node)
+        if caller_def_id is not None:
+            extras["caller_def_id"] = caller_def_id
+        qnames = self._qualified_name_payload(node)
+        if qnames:
+            extras["callee_qnames"] = qnames
+        return extras or None
+
+    @staticmethod
+    def _import_extras(
+        node: cst.CSTNode,
+        *,
+        import_kind: str,
+        module: str | None,
+        level: int | None,
+        is_star: bool,
+    ) -> dict[str, object] | None:
+        extras: dict[str, object] = {
+            "stmt_kind": import_kind,
+            "is_star": is_star,
+        }
+        if isinstance(node, cst.ImportAlias):
+            extras["imported"] = node.evaluated_name
+            extras["asname"] = node.evaluated_alias
+        if module is not None:
+            extras["module"] = module
+        if level is not None:
+            extras["relative_level"] = level
+        return extras or None
+
+    def _referents_payload(self, access: Access) -> list[dict[str, object]]:
+        payload: list[dict[str, object]] = []
+        for referent in access.referents:
+            entry: dict[str, object] = {
+                "assignment_name": referent.name,
+                "assignment_kind": type(referent).__name__,
+            }
+            node = getattr(referent, "node", None)
+            if isinstance(node, cst.CSTNode):
+                span = self._span_for_node(node)
+                if span is not None:
+                    entry["span_id"] = self._ensure_span(span, "referent")
+                qnames = self._qualified_name_payload(node)
+                if qnames:
+                    entry["qnames"] = qnames
+            payload.append(entry)
+        return payload
+
+    def _qualified_name_payload(self, node: cst.CSTNode | None) -> list[dict[str, str]]:
+        if node is None:
+            return []
+        try:
+            qnames = self.get_metadata(metadata.QualifiedNameProvider, node)
+        except KeyError:
+            return []
+        if not isinstance(qnames, Iterable):
+            return []
+        payload: list[dict[str, str]] = []
+        for qname in qnames:
+            name = getattr(qname, "name", None)
+            if not isinstance(name, str):
+                continue
+            entry: dict[str, str] = {"name": name}
+            source = getattr(qname, "source", None)
+            if source is not None:
+                entry["source"] = str(source)
+            payload.append(entry)
+        return payload
+
+    def _expression_context_name(self, node: cst.CSTNode) -> str | None:
+        try:
+            context = self.get_metadata(metadata.ExpressionContextProvider, node)
+        except KeyError:
+            return None
+        if context is None:
+            return None
+        name = getattr(context, "name", None)
+        if isinstance(name, str):
+            return name.lower()
+        return str(context)
+
+    def _decorator_payload(self, decorators: Sequence[cst.Decorator] | None) -> list[str]:
+        if not decorators:
+            return []
+        payload: list[str] = []
+        for decorator in decorators:
+            text = self._node_text(decorator.decorator)
+            if text:
+                payload.append(text)
+        return payload
+
+    @staticmethod
+    def _docstring(node: cst.CSTNode) -> str | None:
+        getter = getattr(node, "get_docstring", None)
+        if callable(getter):
+            docstring = getter(clean=True)
+            if isinstance(docstring, str) and docstring:
+                return docstring
+        return None
+
+    def _current_scope_kind(self) -> str | None:
+        if not self._scope_stack:
+            return None
+        return self._scope_stack[-1].scope_kind
+
     @staticmethod
     def _iter_name_targets(target: cst.CSTNode) -> Iterable[cst.Name]:
         if isinstance(target, cst.Name):
@@ -744,6 +1262,390 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
 def _stable_id(*parts: object) -> str:
     payload = json.dumps(parts, separators=(",", ":"), ensure_ascii=False)
     return hashlib.blake2b(payload.encode("utf-8"), digest_size=16).hexdigest()
+
+
+def _decode_source_bytes(source_bytes: bytes) -> tuple[str, str]:
+    try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(source_bytes).readline)
+    except (SyntaxError, LookupError):
+        encoding = "utf-8"
+    try:
+        return source_bytes.decode(encoding), encoding
+    except UnicodeDecodeError:
+        return source_bytes.decode(encoding, errors="replace"), encoding
+
+
+def _future_imports_payload(module: cst.Module) -> list[str] | None:
+    future_imports = getattr(module, "future_imports", None)
+    if not future_imports:
+        return None
+    return [str(entry) for entry in future_imports]
+
+
+def _libcst_version() -> str | None:
+    version = getattr(cst, "__version__", None)
+    if isinstance(version, str):
+        return version
+    return None
+
+
+def _build_access_map(scope_map: Mapping[cst.CSTNode, Scope | None]) -> dict[int, Access]:
+    access_map: dict[int, Access] = {}
+    for scope in {scope for scope in scope_map.values() if scope is not None}:
+        for access in scope.accesses:
+            node = access.node
+            if isinstance(node, cst.CSTNode):
+                access_map.setdefault(id(node), access)
+    return access_map
+
+
+def _ast_module_span(source_index: LineIndexedSource) -> _AstSpan:
+    end_byte = len(source_index.source_bytes)
+    if not source_index.lines:
+        return _AstSpan(
+            start_line=0,
+            start_col_utf8=0,
+            end_line=0,
+            end_col_utf8=0,
+            start_byte=0,
+            end_byte=end_byte,
+        )
+    end_line = len(source_index.lines) - 1
+    end_col_utf8 = len(
+        source_index.lines[end_line].encode("utf-8", errors="replace")
+    )
+    return _AstSpan(
+        start_line=0,
+        start_col_utf8=0,
+        end_line=end_line,
+        end_col_utf8=end_col_utf8,
+        start_byte=0,
+        end_byte=end_byte,
+    )
+
+
+def _ast_span_for_node(
+    node: ast.AST,
+    source_index: LineIndexedSource,
+) -> _AstSpan | None:
+    if isinstance(node, ast.Module):
+        return _ast_module_span(source_index)
+    lineno = getattr(node, "lineno", None)
+    col_offset = getattr(node, "col_offset", None)
+    if not isinstance(lineno, int) or not isinstance(col_offset, int):
+        return None
+    end_lineno = getattr(node, "end_lineno", None)
+    end_col_offset = getattr(node, "end_col_offset", None)
+    if not isinstance(end_lineno, int):
+        end_lineno = lineno
+    if not isinstance(end_col_offset, int):
+        end_col_offset = col_offset
+    if end_lineno < lineno:
+        end_lineno = lineno
+        end_col_offset = col_offset
+    start_line = max(lineno - 1, 0)
+    end_line = max(end_lineno - 1, 0)
+    start_byte = source_index.byte_offset_from_utf8(start_line, col_offset)
+    end_byte = source_index.byte_offset_from_utf8(end_line, end_col_offset)
+    if start_byte is None or end_byte is None:
+        return None
+    if end_byte < start_byte:
+        return None
+    return _AstSpan(
+        start_line=start_line,
+        start_col_utf8=col_offset,
+        end_line=end_line,
+        end_col_utf8=end_col_offset,
+        start_byte=start_byte,
+        end_byte=end_byte,
+    )
+
+
+def _ast_type_ignores_payload(module: ast.Module) -> list[dict[str, object]]:
+    payload: list[dict[str, object]] = []
+    for ignore in getattr(module, "type_ignores", []):
+        lineno = getattr(ignore, "lineno", None)
+        if not isinstance(lineno, int):
+            continue
+        tag = getattr(ignore, "tag", None)
+        entry: dict[str, object] = {"line": max(lineno - 1, 0)}
+        if isinstance(tag, str) and tag:
+            entry["tag"] = tag
+        payload.append(entry)
+    return payload
+
+
+def _ast_ctx_payload(node: ast.AST) -> dict[str, object]:
+    ctx = getattr(node, "ctx", None)
+    if ctx is None:
+        return {}
+    return {"ctx": type(ctx).__name__.lower()}
+
+
+def _ast_type_comment_payload(node: ast.AST) -> dict[str, object]:
+    type_comment = getattr(node, "type_comment", None)
+    if isinstance(type_comment, str) and type_comment:
+        return {"type_comment": type_comment}
+    return {}
+
+
+def _ast_module_payload(node: ast.AST) -> dict[str, object]:
+    if isinstance(node, ast.Module):
+        type_ignores = _ast_type_ignores_payload(node)
+        if type_ignores:
+            return {"type_ignores": type_ignores}
+    return {}
+
+
+def _ast_name_payload(node: ast.AST) -> dict[str, object]:
+    if isinstance(node, ast.Name):
+        return {"identifier": node.id}
+    if isinstance(node, ast.Attribute):
+        return {"attribute": node.attr}
+    if isinstance(node, ast.arg):
+        return {"name": node.arg}
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return {"name": node.name}
+    return {}
+
+
+def _ast_import_payload(node: ast.AST) -> dict[str, object]:
+    if isinstance(node, ast.alias):
+        payload: dict[str, object] = {"imported": node.name}
+        if node.asname is not None:
+            payload["asname"] = node.asname
+        return payload
+    if isinstance(node, ast.ImportFrom):
+        payload = {}
+        if node.module is not None:
+            payload["module"] = node.module
+        if node.level:
+            payload["level"] = node.level
+        return payload
+    return {}
+
+
+def _ast_constant_payload(node: ast.AST) -> dict[str, object]:
+    if isinstance(node, ast.Constant):
+        return {"constant_kind": type(node.value).__name__}
+    return {}
+
+
+def _ast_node_extras(node: ast.AST) -> dict[str, object] | None:
+    extras: dict[str, object] = {}
+    for payload in (
+        _ast_ctx_payload(node),
+        _ast_type_comment_payload(node),
+        _ast_module_payload(node),
+        _ast_name_payload(node),
+        _ast_import_payload(node),
+        _ast_constant_payload(node),
+    ):
+        if payload:
+            extras.update(payload)
+    return extras or None
+
+
+def _collect_ast_nodes(
+    source_text: str,
+    source_index: LineIndexedSource,
+    *,
+    context: _SyntaxContext,
+    warnings: list[str],
+) -> list[_AstNodeRecord]:
+    try:
+        parsed = ast.parse(source_text, type_comments=True)
+    except (SyntaxError, ValueError, TypeError) as exc:
+        message = f"AST parse failed for {context.rel_path}: {exc}"
+        warnings.append(message)
+        log.warning("%s", message)
+        return []
+    records: list[_AstNodeRecord] = []
+    for node in ast.walk(parsed):
+        span = _ast_span_for_node(node, source_index)
+        if span is None:
+            continue
+        node_id = _stable_id(
+            "ast_node",
+            context.repo,
+            context.commit,
+            context.rel_path,
+            type(node).__name__,
+            span.start_line,
+            span.start_col_utf8,
+            span.end_line,
+            span.end_col_utf8,
+            span.start_byte,
+            span.end_byte,
+        )
+        records.append(
+            _AstNodeRecord(
+                node_id=node_id,
+                kind=type(node).__name__,
+                span=span,
+                extras=_ast_node_extras(node),
+            )
+        )
+    records.sort(key=lambda record: (record.span.start_byte, record.span.end_byte, record.kind))
+    return records
+
+
+def _build_syntax_node_index(
+    node_rows: Sequence[Mapping[str, object]],
+) -> _SyntaxNodeIndex:
+    tree = IntervalTree()
+    exact: dict[tuple[int, int], list[_SyntaxNodeCandidate]] = {}
+    for order, row in enumerate(node_rows):
+        start_byte = row.get("start_byte")
+        end_byte = row.get("end_byte")
+        node_id = row.get("node_id")
+        node_kind = row.get("node_kind")
+        if not isinstance(start_byte, int) or not isinstance(end_byte, int):
+            continue
+        if not isinstance(node_id, str) or not isinstance(node_kind, str):
+            continue
+        candidate = _SyntaxNodeCandidate(
+            node_id=node_id,
+            start_byte=start_byte,
+            end_byte=end_byte,
+            node_kind=node_kind,
+            order=order,
+        )
+        exact.setdefault((start_byte, end_byte), []).append(candidate)
+        if end_byte <= start_byte:
+            continue
+        tree.addi(start_byte, end_byte, candidate)
+    return _SyntaxNodeIndex(tree=tree, exact=exact)
+
+
+def _interval_candidates(intervals: Iterable[object]) -> list[_SyntaxNodeCandidate]:
+    candidates: list[_SyntaxNodeCandidate] = []
+    for interval in intervals:
+        data = getattr(interval, "data", None)
+        if isinstance(data, _SyntaxNodeCandidate):
+            candidates.append(data)
+    return candidates
+
+
+def _pick_smallest_candidate(
+    candidates: Iterable[_SyntaxNodeCandidate],
+) -> _SyntaxNodeCandidate | None:
+    candidate_list = list(candidates)
+    if not candidate_list:
+        return None
+    return min(candidate_list, key=lambda item: (item.end_byte - item.start_byte, item.order))
+
+
+def _match_exact(
+    index: _SyntaxNodeIndex,
+    span: _AstSpan,
+) -> tuple[str, str] | None:
+    exact_matches = index.exact.get((span.start_byte, span.end_byte))
+    candidate = _pick_smallest_candidate(exact_matches or [])
+    if candidate is None:
+        return None
+    return candidate.node_id, "EXACT"
+
+
+def _match_point(
+    index: _SyntaxNodeIndex,
+    span: _AstSpan,
+) -> tuple[str, str] | None:
+    candidates = _interval_candidates(index.tree.at(span.start_byte))
+    candidate = _pick_smallest_candidate(candidates)
+    if candidate is not None:
+        return candidate.node_id, "POINT"
+    if span.start_byte > 0:
+        candidates = _interval_candidates(index.tree.at(span.start_byte - 1))
+        candidate = _pick_smallest_candidate(candidates)
+        if candidate is not None:
+            return candidate.node_id, "POINT_ADJACENT"
+    return None
+
+
+def _match_overlap(
+    index: _SyntaxNodeIndex,
+    span: _AstSpan,
+) -> tuple[str, str] | None:
+    candidates = _interval_candidates(index.tree.overlap(span.start_byte, span.end_byte))
+    containing = [
+        candidate
+        for candidate in candidates
+        if candidate.start_byte <= span.start_byte and candidate.end_byte >= span.end_byte
+    ]
+    candidate = _pick_smallest_candidate(containing)
+    if candidate is not None:
+        return candidate.node_id, "CONTAINS"
+    candidate = _pick_smallest_candidate(candidates)
+    if candidate is not None:
+        return candidate.node_id, "OVERLAP"
+    return None
+
+
+def _match_syntax_node(
+    index: _SyntaxNodeIndex,
+    span: _AstSpan,
+) -> tuple[str, str] | None:
+    match = _match_exact(index, span)
+    if match is None and span.start_byte == span.end_byte:
+        match = _match_point(index, span)
+    if match is None and span.start_byte != span.end_byte:
+        match = _match_overlap(index, span)
+    return match
+
+
+def _ast_payload(record: _AstNodeRecord, match_kind: str) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "ast_node_id": record.node_id,
+        "ast_kind": record.kind,
+        "ast_start_line": record.span.start_line,
+        "ast_start_col_utf8": record.span.start_col_utf8,
+        "ast_end_line": record.span.end_line,
+        "ast_end_col_utf8": record.span.end_col_utf8,
+        "ast_start_byte": record.span.start_byte,
+        "ast_end_byte": record.span.end_byte,
+        "match_kind": match_kind,
+    }
+    if record.extras:
+        payload.update(record.extras)
+    return payload
+
+
+def _merge_ast_into_syntax_nodes(
+    syntax_nodes: list[dict[str, object]],
+    ast_nodes: list[_AstNodeRecord],
+) -> None:
+    if not syntax_nodes or not ast_nodes:
+        return
+    index = _build_syntax_node_index(syntax_nodes)
+    by_node: dict[str, list[dict[str, object]]] = {}
+    for record in ast_nodes:
+        match = _match_syntax_node(index, record.span)
+        if match is None:
+            continue
+        node_id, match_kind = match
+        by_node.setdefault(node_id, []).append(_ast_payload(record, match_kind))
+    if not by_node:
+        return
+    for payloads in by_node.values():
+        payloads.sort(
+            key=lambda item: (
+                item["ast_start_byte"],
+                item["ast_end_byte"],
+                item["ast_kind"],
+            )
+        )
+    for row in syntax_nodes:
+        node_id = row.get("node_id")
+        if not isinstance(node_id, str):
+            continue
+        payloads = by_node.get(node_id)
+        if not payloads:
+            continue
+        extras = row.get("extras_json")
+        merged = dict(extras) if isinstance(extras, dict) else {}
+        merged["ast_nodes"] = payloads
+        row["extras_json"] = merged
 
 
 def _parse_manifest_row(
@@ -777,6 +1679,13 @@ def _parse_manifest_row(
         "rel_path": context.rel_path,
         "producer": context.producer,
         "parse_ok": parse_ok,
+        "encoding": context.encoding,
+        "default_indent": context.default_indent,
+        "default_newline": context.default_newline,
+        "has_trailing_newline": context.has_trailing_newline,
+        "future_imports": context.future_imports,
+        "parser_backend": context.parser_backend,
+        "libcst_version": context.libcst_version,
         "error_kind": error_kind,
         "error_message": error_message,
         "error_line": error_line,
@@ -790,6 +1699,8 @@ def _build_cst_buffers() -> _CstBuffers:
         cst=columnar_buffer_for_table_key(CST_NODES_TABLE_KEY),
         parse_manifest=columnar_buffer_for_table_key(PARSE_MANIFEST_TABLE_KEY),
         spans=columnar_buffer_for_table_key(SYNTAX_SPANS_TABLE_KEY),
+        syntax_nodes=columnar_buffer_for_table_key(SYNTAX_NODES_TABLE_KEY),
+        syntax_edges=columnar_buffer_for_table_key(SYNTAX_EDGES_TABLE_KEY),
         scopes=columnar_buffer_for_table_key(SYNTAX_SCOPES_TABLE_KEY),
         defs=columnar_buffer_for_table_key(SYNTAX_DEFS_TABLE_KEY),
         refs=columnar_buffer_for_table_key(SYNTAX_REFS_TABLE_KEY),
@@ -798,73 +1709,8 @@ def _build_cst_buffers() -> _CstBuffers:
     )
 
 
-def _extract_module_syntax(
-    *,
-    module: ModuleRecord,
-    source: str,
-    repo: str,
-    commit: str,
-    buffers: _CstBuffers,
-) -> list[str]:
-    warnings: list[str] = []
-    source_bytes = source.encode("utf-8")
-    source_index = LineIndexedSource(source, source_bytes)
-    context = _ParseManifestContext(
-        repo=repo,
-        commit=commit,
-        rel_path=module.rel_path,
-        producer=SYNTAX_PRODUCER,
-        source_index=source_index,
-    )
-    try:
-        wrapper = metadata.MetadataWrapper(
-            cst.parse_module(source),
-            unsafe_skip_copy=True,
-        )
-    except (cst.ParserSyntaxError, ValueError, TypeError, RuntimeError) as exc:
-        buffers.parse_manifest.append(
-            _parse_manifest_row(
-                context,
-                parse_ok=False,
-                error=exc,
-            )
-        )
-        message = f"Failed to parse {module.rel_path}: {exc}"
-        warnings.append(message)
-        log.warning("%s", message)
-        return warnings
-
-    buffers.parse_manifest.append(
-        _parse_manifest_row(
-            context,
-            parse_ok=True,
-            error=None,
-        )
-    )
-
-    cst_visitor = CstVisitor(
-        rel_path=module.rel_path,
-        module_name=module.module_name,
-        source=source,
-        source_bytes=source_bytes,
-    )
-    syntax_visitor = SyntaxFactsVisitor(
-        repo=repo,
-        commit=commit,
-        rel_path=module.rel_path,
-        producer=SYNTAX_PRODUCER,
-        source_index=source_index,
-    )
-    try:
-        wrapper.visit(cst_visitor)
-        wrapper.visit(syntax_visitor)
-    except (ValueError, TypeError, RuntimeError) as exc:
-        message = f"Failed to extract syntax for {module.rel_path}: {exc}"
-        warnings.append(message)
-        log.warning("%s", message)
-        return warnings
-
-    for rel_path, node_id, kind, span, snippet, parents, qnames in cst_visitor.rows:
+def _flush_cst_rows(buffers: _CstBuffers, rows: Iterable[CstRow]) -> None:
+    for rel_path, node_id, kind, span, snippet, parents, qnames in rows:
         buffers.cst.append(
             {
                 "path": rel_path,
@@ -877,7 +1723,130 @@ def _extract_module_syntax(
             }
         )
 
+
+def _extract_module_syntax(
+    *,
+    module: ModuleRecord,
+    context: _SyntaxContext,
+    source_bytes: bytes,
+    buffers: _CstBuffers,
+    emit_ast_nodes: bool,
+) -> list[str]:
+    warnings: list[str] = []
+    source_text, encoding = _decode_source_bytes(source_bytes)
+    source_index = LineIndexedSource(source_text, source_bytes, encoding=encoding)
+    libcst_version = _libcst_version()
+    manifest_context = _ParseManifestContext(
+        repo=context.repo,
+        commit=context.commit,
+        rel_path=context.rel_path,
+        producer=context.producer,
+        source_index=source_index,
+        encoding=encoding,
+        default_indent=None,
+        default_newline=None,
+        has_trailing_newline=None,
+        future_imports=None,
+        parser_backend=context.producer,
+        libcst_version=libcst_version,
+    )
+    try:
+        parsed_module = cst.parse_module(source_bytes)
+    except (cst.ParserSyntaxError, ValueError, TypeError, RuntimeError) as exc:
+        buffers.parse_manifest.append(
+            _parse_manifest_row(
+                manifest_context,
+                parse_ok=False,
+                error=exc,
+            )
+        )
+        message = f"Failed to parse {context.rel_path}: {exc}"
+        warnings.append(message)
+        log.warning("%s", message)
+        return warnings
+
+    source_text = parsed_module.code
+    encoding = parsed_module.encoding if isinstance(parsed_module.encoding, str) else encoding
+    source_index = LineIndexedSource(source_text, source_bytes, encoding=encoding)
+    manifest_context = _ParseManifestContext(
+        repo=context.repo,
+        commit=context.commit,
+        rel_path=context.rel_path,
+        producer=context.producer,
+        source_index=source_index,
+        encoding=encoding,
+        default_indent=parsed_module.default_indent,
+        default_newline=parsed_module.default_newline,
+        has_trailing_newline=parsed_module.has_trailing_newline,
+        future_imports=_future_imports_payload(parsed_module),
+        parser_backend=context.producer,
+        libcst_version=libcst_version,
+    )
+    wrapper = metadata.MetadataWrapper(parsed_module, unsafe_skip_copy=True)
+
+    buffers.parse_manifest.append(
+        _parse_manifest_row(
+            manifest_context,
+            parse_ok=True,
+            error=None,
+        )
+    )
+
+    cst_visitor = CstVisitor(
+        rel_path=context.rel_path,
+        module_name=module.module_name,
+        source=SourceBundle(
+            text=source_text,
+            source_bytes=source_bytes,
+            encoding=encoding,
+        ),
+    )
+    syntax_graph_visitor = SyntaxGraphVisitor(
+        context=context,
+        source_index=source_index,
+        snippet_limit=CST_CAPTURE_CONFIG.snippet_limit,
+    )
+    scope_map: Mapping[cst.CSTNode, Scope | None]
+    try:
+        scope_map = wrapper.resolve(metadata.ScopeProvider)
+    except (ValueError, TypeError, RuntimeError) as exc:
+        message = f"Scope metadata failed for {context.rel_path}: {exc}"
+        warnings.append(message)
+        log.warning("%s", message)
+        scope_map = {}
+    syntax_visitor = SyntaxFactsVisitor(
+        context=context,
+        source_index=source_index,
+        access_map=_build_access_map(scope_map) if scope_map else {},
+    )
+    ast_nodes = (
+        _collect_ast_nodes(
+            source_text,
+            source_index,
+            context=context,
+            warnings=warnings,
+        )
+        if emit_ast_nodes
+        else []
+    )
+    try:
+        wrapper.visit(cst_visitor)
+        wrapper.visit(syntax_graph_visitor)
+        wrapper.visit(syntax_visitor)
+    except (ValueError, TypeError, RuntimeError) as exc:
+        message = f"Failed to extract syntax for {context.rel_path}: {exc}"
+        warnings.append(message)
+        log.warning("%s", message)
+        return warnings
+
+    if emit_ast_nodes and ast_nodes:
+        _merge_ast_into_syntax_nodes(syntax_graph_visitor.node_rows, ast_nodes)
+
+    _flush_cst_rows(buffers, cst_visitor.rows)
+
     buffers.spans.extend(syntax_visitor.span_rows)
+    buffers.syntax_nodes.extend(syntax_graph_visitor.node_rows)
+    buffers.syntax_edges.extend(syntax_graph_visitor.edge_rows)
     buffers.scopes.extend(syntax_visitor.scopes)
     buffers.defs.extend(syntax_visitor.defs)
     buffers.refs.extend(syntax_visitor.refs)
@@ -896,7 +1865,18 @@ class CstExtractStep(BaseExtractStep):
     ----------
     discovery
         Discovery port for reading module source.
+    emit_ast_nodes
+        Whether to merge CPython AST facts into syntax nodes.
     """
+
+    def __init__(
+        self,
+        discovery: ModuleDiscoveryPort,
+        *,
+        emit_ast_nodes: bool = True,
+    ) -> None:
+        super().__init__(discovery)
+        self._emit_ast_nodes = emit_ast_nodes
 
     def execute(
         self,
@@ -928,14 +1908,21 @@ class CstExtractStep(BaseExtractStep):
 
         warnings: list[str] = []
 
-        for module, source in self._iter_python_sources(modules):
+        for module, source_bytes in self._iter_python_source_bytes(modules):
+            context = _SyntaxContext(
+                repo=repo,
+                commit=commit,
+                rel_path=module.rel_path,
+                producer=SYNTAX_PRODUCER,
+                language=SYNTAX_LANGUAGE,
+            )
             warnings.extend(
                 _extract_module_syntax(
                     module=module,
-                    source=source,
-                    repo=repo,
-                    commit=commit,
+                    context=context,
+                    source_bytes=source_bytes,
                     buffers=buffers,
+                    emit_ast_nodes=self._emit_ast_nodes,
                 )
             )
 
@@ -951,6 +1938,8 @@ class CstExtractStep(BaseExtractStep):
             rows=buffers.cst.data,
             parse_manifest_rows=buffers.parse_manifest.data,
             syntax_spans_rows=buffers.spans.data,
+            syntax_nodes_rows=buffers.syntax_nodes.data,
+            syntax_edges_rows=buffers.syntax_edges.data,
             syntax_scopes_rows=buffers.scopes.data,
             syntax_defs_rows=buffers.defs.data,
             syntax_refs_rows=buffers.refs.data,
@@ -959,12 +1948,25 @@ class CstExtractStep(BaseExtractStep):
             row_count=buffers.cst.row_count,
             parse_manifest_row_count=buffers.parse_manifest.row_count,
             syntax_spans_row_count=buffers.spans.row_count,
+            syntax_nodes_row_count=buffers.syntax_nodes.row_count,
+            syntax_edges_row_count=buffers.syntax_edges.row_count,
             syntax_scopes_row_count=buffers.scopes.row_count,
             syntax_defs_row_count=buffers.defs.row_count,
             syntax_refs_row_count=buffers.refs.row_count,
             syntax_calls_row_count=buffers.calls.row_count,
             syntax_imports_row_count=buffers.imports.row_count,
         )
+
+    def _iter_python_source_bytes(
+        self,
+        modules: Sequence[ModuleRecord],
+    ) -> Iterable[tuple[ModuleRecord, bytes]]:
+        for module in modules:
+            if not module.rel_path.endswith(".py"):
+                continue
+            source_bytes = self._discovery.read_module_bytes(module)
+            if source_bytes is not None:
+                yield module, source_bytes
 
 
 __all__ = [

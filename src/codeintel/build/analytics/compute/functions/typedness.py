@@ -10,10 +10,10 @@ Examples
 >>> source = "def greet(name: str, count: int = 1) -> str: pass"
 >>> func = ast.parse(source).body[0]
 >>> stats = compute_param_stats(func)
->>> stats.annotated_params
+>>> stats.total_params
 2
->>> stats.has_return_annotation
-True
+>>> stats.return_type
+"str"
 """
 
 from __future__ import annotations
@@ -43,12 +43,8 @@ class ParamStats:
         Whether the function accepts **kwargs.
     total_params
         Parameters counted for annotation stats (excludes self/cls).
-    annotated_params
-        Number of parameters with type annotations.
     param_types
         Mapping of parameter names to their type annotation strings.
-    has_return_annotation
-        Whether the function has a return type annotation.
     return_type
         String representation of return type annotation, if present.
     """
@@ -59,13 +55,10 @@ class ParamStats:
     has_varargs: bool
     has_varkw: bool
     total_params: int
-    annotated_params: int
     param_types: dict[str, str | None]
-    has_return_annotation: bool
     return_type: str | None
 
 
-@dataclass(frozen=True)
 def _annotation_to_str(node: ast.AST | None) -> str | None:
     """Convert an annotation AST node to a string representation.
 
@@ -113,8 +106,8 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
     >>> stats = compute_param_stats(func)
     >>> stats.total_params
     2
-    >>> stats.annotated_params
-    1
+    >>> stats.return_type
+    "str"
     """
     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return ParamStats(
@@ -124,9 +117,7 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
             has_varargs=False,
             has_varkw=False,
             total_params=0,
-            annotated_params=0,
             param_types={},
-            has_return_annotation=False,
             return_type=None,
         )
 
@@ -144,7 +135,6 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
     has_varkw = args.kwarg is not None
 
     total_params = 0
-    annotated_params = 0
     param_types: dict[str, str | None] = {}
 
     for param in all_params:
@@ -153,11 +143,8 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
             continue
         total_params += 1
         ann_str = _annotation_to_str(param.annotation)
-        if ann_str is not None:
-            annotated_params += 1
         param_types[name] = ann_str
 
-    has_return_annotation = node.returns is not None
     return_type = _annotation_to_str(node.returns) if hasattr(node, "returns") else None
 
     return ParamStats(
@@ -167,9 +154,7 @@ def compute_param_stats(node: ast.AST) -> ParamStats:
         has_varargs=has_varargs,
         has_varkw=has_varkw,
         total_params=total_params,
-        annotated_params=annotated_params,
         param_types=param_types,
-        has_return_annotation=has_return_annotation,
         return_type=return_type,
     )
 

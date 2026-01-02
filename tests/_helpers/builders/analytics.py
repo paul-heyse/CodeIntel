@@ -42,10 +42,7 @@ class FunctionTypesRow:
         "start_line",
         "end_line",
         "total_params",
-        "annotated_params",
-        "has_return_annotation",
         "return_type",
-        "return_type_source",
         "type_comment",
         "param_types",
         "created_at",
@@ -62,10 +59,7 @@ class FunctionTypesRow:
     start_line: int
     end_line: int
     total_params: int
-    annotated_params: int
-    has_return_annotation: bool
     return_type: str | None
-    return_type_source: str | None
     type_comment: str | None
     param_types: JsonValue | None
     created_at: datetime
@@ -84,9 +78,6 @@ class FunctionTypesRow:
         int,
         int,
         int,
-        int,
-        bool,
-        str | None,
         str | None,
         str | None,
         JsonValue | None,
@@ -111,10 +102,7 @@ class FunctionTypesRow:
             self.start_line,
             self.end_line,
             self.total_params,
-            self.annotated_params,
-            self.has_return_annotation,
             self.return_type,
-            self.return_type_source,
             self.type_comment,
             self.param_types,
             _iso(self.created_at),

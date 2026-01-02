@@ -20,10 +20,5 @@
   ],
   "globs": [
     "**/*.py"
-  ],
-  "exclude_globs": [
-    "**/site-packages/**",
-    "**/.venv/**",
-    "**/venv/**"
   ]
 }

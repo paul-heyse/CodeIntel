@@ -9,7 +9,7 @@ import polars as pl
 from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_cache_rows
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
+from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,

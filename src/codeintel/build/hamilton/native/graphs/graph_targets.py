@@ -15,6 +15,11 @@ from codeintel.build.hamilton.native.graphs.cfg_dfg import (
     CFG_EDGES_TABLE_KEY,
     DFG_EDGES_TABLE_KEY,
 )
+from codeintel.build.hamilton.native.graphs.cpg import (
+    CPG_EDGES_TABLE_KEY,
+    CPG_NODES_TABLE_KEY,
+    CPG_TARGET_NAME,
+)
 from codeintel.build.hamilton.native.graphs.import_graph import (
     IMPORT_GRAPH_EDGES_TABLE_KEY,
     IMPORT_MODULES_TABLE_KEY,
@@ -145,11 +150,38 @@ dfg__edges_table = _MODULE.dfg__edges_table
 dfg__table_materializations = _MODULE.dfg__table_materializations
 t__dfg = _MODULE.t__dfg
 
+_CPG_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="graphs",
+    target_name=CPG_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=CPG_NODES_TABLE_KEY,
+            base_node="cpg_nodes",
+            save_spec=DatasetSaveSpec(table_key=CPG_NODES_TABLE_KEY),
+            node_name="cpg__nodes_table",
+        ),
+        TableTargetTableSpec(
+            table_key=CPG_EDGES_TABLE_KEY,
+            base_node="cpg_edges",
+            save_spec=DatasetSaveSpec(table_key=CPG_EDGES_TABLE_KEY),
+            node_name="cpg__edges_table",
+        ),
+    ),
+    table_materializations_node="cpg__table_materializations",
+    anchor_node_name="t__cpg",
+)
+attach_table_target_template(_MODULE, spec=_CPG_TABLE_TARGET_SPEC)
+cpg__nodes_table = _MODULE.cpg__nodes_table
+cpg__edges_table = _MODULE.cpg__edges_table
+cpg__table_materializations = _MODULE.cpg__table_materializations
+t__cpg = _MODULE.t__cpg
+
 
 __all__ = [
     "CALL_GRAPH_TABLE_KEYS",
     "CALL_GRAPH_TARGET_NAME",
     "CFG_TARGET_NAME",
+    "CPG_TARGET_NAME",
     "DFG_TARGET_NAME",
     "IMPORT_GRAPH_TABLE_KEYS",
     "IMPORT_GRAPH_TARGET_NAME",
@@ -159,6 +191,9 @@ __all__ = [
     "cfg__blocks_table",
     "cfg__edges_table",
     "cfg__table_materializations",
+    "cpg__edges_table",
+    "cpg__nodes_table",
+    "cpg__table_materializations",
     "dfg__edges_table",
     "dfg__table_materializations",
     "import_graph__edges_table",
@@ -166,6 +201,7 @@ __all__ = [
     "import_graph__table_materializations",
     "t__call_graph",
     "t__cfg",
+    "t__cpg",
     "t__dfg",
     "t__import_graph",
 ]

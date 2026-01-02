@@ -208,6 +208,29 @@ class FilesystemDiscoveryAdapter:
             return None
 
     @staticmethod
+    def read_module_bytes(record: ModuleRecord) -> bytes | None:
+        """Read the raw source bytes of a module.
+
+        Parameters
+        ----------
+        record
+            Module record with file path.
+
+        Returns
+        -------
+        bytes | None
+            Source bytes if readable, None if file is missing or unreadable.
+        """
+        if not record.file_path.is_file():
+            log.warning("Module path missing on disk: %s", record.file_path)
+            return None
+        try:
+            return record.file_path.read_bytes()
+        except OSError as exc:
+            log.warning("Failed to read %s: %s", record.file_path, exc)
+            return None
+
+    @staticmethod
     def read_text(path: Path, encoding: str = "utf-8") -> str | None:
         """Read text content from a file.
 

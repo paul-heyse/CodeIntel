@@ -7,7 +7,7 @@ from collections.abc import Sequence
 import polars as pl
 from polars.exceptions import PolarsError
 
-from codeintel.build.hamilton.native.ingestion.frame_utils import dedupe_frame_for_table
+from codeintel.build.tabular.frames import dedupe_frame_for_table
 from codeintel.build.hamilton.transforms.tabular_steps import sort_columns
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema

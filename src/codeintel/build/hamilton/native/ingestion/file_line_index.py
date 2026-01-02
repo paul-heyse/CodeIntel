@@ -12,7 +12,7 @@ import polars as pl
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.table_utils import (
+from codeintel.build.tabular.frames import (
     empty_frame_for_table,
     rows_to_frame,
 )

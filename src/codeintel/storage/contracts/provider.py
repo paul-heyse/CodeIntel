@@ -7,6 +7,7 @@ storage layer. It is intentionally independent of `codeintel.build.*`.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import replace
 from functools import lru_cache
 from typing import TYPE_CHECKING
@@ -40,7 +41,9 @@ def is_view(table_key: str) -> bool:
     bool
         True when the table key maps to a docs view.
     """
-    return get_contract_for_table_key(table_key).is_view
+    with suppress(KeyError, RuntimeError):
+        return get_contract_for_table_key(table_key).is_view
+    return False
 
 
 def _attach_row_binding(contract: DatasetContract) -> DatasetContract:

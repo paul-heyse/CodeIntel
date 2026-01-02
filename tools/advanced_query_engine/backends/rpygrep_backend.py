@@ -238,7 +238,7 @@ def _handle_match_event(
     pat_id: str,
     data: dict[str, object],
 ) -> bool:
-    path_text = _event_path(data)
+    path_text = _event_path(data, query.repo_root)
     if not path_text:
         return False
     _add_file_hit(state, query.budget, path_text, pat_id)
@@ -336,10 +336,19 @@ def _parse_json_line(line: str) -> dict[str, object] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _event_path(data: dict[str, object]) -> str | None:
+def _event_path(data: dict[str, object], repo_root: Path) -> str | None:
     path_obj = data.get("path")
     if isinstance(path_obj, dict) and isinstance(path_obj.get("text"), str):
-        return path_obj.get("text")
+        text = path_obj.get("text")
+        if not text:
+            return None
+        path = Path(text)
+        if path.is_absolute():
+            try:
+                return path.relative_to(repo_root).as_posix()
+            except ValueError:
+                return None
+        return path.as_posix()
     return None
 
 

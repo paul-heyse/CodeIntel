@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -10,11 +10,18 @@ import polars as pl
 
 from codeintel.build.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
 from codeintel.build.analytics.compute.graphs import (
+    bounded_simple_path_count,
     build_cfg_graph,
+    cfg_avg_shortest_path_length,
     cfg_centralities,
+    cfg_longest_path_length,
+    cfg_reachable_nodes,
     dfg_component_stats,
 )
 from codeintel.core.data_models.ids import normalize_decimal_id
+
+MAX_SIMPLE_PATHS = 1000
+MAX_PATH_CUTOFF = 50
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -26,11 +33,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class CfgFnContext:
-    """Context bundle for computing CFG block metric rows."""
+    """Context bundle for computing CFG function and block metric rows."""
 
     repo: str
     commit: str
     fn_goid: int
+    rel_path: str
+    module: str | None
+    qualname: str | None
     graph: nx.DiGraph
     entry_idx: int
     exit_idx: int
@@ -49,6 +59,15 @@ class CfgInputs:
     edges_by_fn: dict[int, list[tuple[int, int, str]]]
     now: datetime
     graph_ctx: GraphContext
+
+
+@dataclass(frozen=True)
+class CfgFnRows:
+    """Container for per-function CFG rows."""
+
+    fn_row: tuple[object, ...]
+    ext_row: tuple[object, ...]
+    block_rows: list[tuple[object, ...]]
 
 
 @dataclass(frozen=True)
@@ -116,6 +135,46 @@ def load_cfg_blocks(
     return blocks_by_fn, edges_by_fn
 
 
+def branching_stats(graph: nx.DiGraph) -> tuple[float, int, float]:
+    """
+    Return branching mean, max, and linear fraction for a CFG.
+
+    Returns
+    -------
+    tuple[float, int, float]
+        Mean branching factor, maximum branching factor, and linear block fraction.
+    """
+    in_degrees = degree_dict(graph, direction="in")
+    out_degrees_map = degree_dict(graph, direction="out")
+    out_degrees = [deg for deg in out_degrees_map.values() if deg > 0]
+    branching_mean = (sum(out_degrees) / len(out_degrees)) if out_degrees else 0.0
+    branching_max = max(out_degrees) if out_degrees else 0
+    linear_blocks: list[int] = []
+    for node in graph.nodes:
+        node_idx = int(str(node))
+        if in_degrees.get(node_idx, 0) == 1 and out_degrees_map.get(node_idx, 0) == 1:
+            linear_blocks.append(node_idx)
+    linear_fraction = (
+        len(linear_blocks) / graph.number_of_nodes() if graph.number_of_nodes() else 0.0
+    )
+    return branching_mean, branching_max, linear_fraction
+
+
+def loop_stats(sccs: list[set[int]]) -> tuple[int, int]:
+    """
+    Return loop count and maximum loop size.
+
+    Returns
+    -------
+    tuple[int, int]
+        Loop count and maximum strongly connected component size.
+    """
+    loop_sccs = [comp for comp in sccs if len(comp) > 1]
+    loop_count = len(loop_sccs)
+    loop_max = max((len(comp) for comp in loop_sccs), default=0)
+    return loop_count, loop_max
+
+
 def loop_nodes(sccs: list[set[int]]) -> set[int]:
     """
     Return nodes participating in loops.
@@ -155,17 +214,68 @@ def _compute_centrality_data(
     )
 
 
-def cfg_block_rows(ctx: CfgFnContext) -> list[tuple[object, ...]]:
+def cfg_fn_rows(
+    ctx: CfgFnContext,
+) -> tuple[tuple[object, ...], list[tuple[object, ...]]]:
     """
-    Build block-level CFG metrics rows.
+    Build function-level and block-level CFG rows.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Block metrics rows for analytics.cfg_block_metrics.
+    tuple[tuple[object, ...], list[tuple[object, ...]]]
+        Function metrics row and block metrics rows.
     """
+    sccs = ctx.sccs
+    loops = loop_stats(sccs)
+    has_cycles = any(len(comp) > 1 for comp in sccs)
+    is_dag = not has_cycles
+    longest_path_len = cfg_longest_path_length(ctx.graph, ctx.entry_idx, is_dag=is_dag)
+    avg_spl = cfg_avg_shortest_path_length(ctx.graph, ctx.entry_idx)
+    branching = branching_stats(ctx.graph)
     centrality_data = _compute_centrality_data(ctx.graph, ctx.entry_idx, ctx.graph_ctx)
-    loop_nodes_set = loop_nodes(ctx.sccs)
+    loop_nodes_set = loop_nodes(sccs)
+    dom_frontier_mean = (
+        sum(centrality_data.dom_frontier_sizes.values()) / len(centrality_data.dom_frontier_sizes)
+        if centrality_data.dom_frontier_sizes
+        else 0.0
+    )
+    dom_frontier_max = (
+        max(centrality_data.dom_frontier_sizes.values())
+        if centrality_data.dom_frontier_sizes
+        else 0
+    )
+
+    fn_row = (
+        ctx.fn_goid,
+        ctx.repo,
+        ctx.commit,
+        ctx.rel_path,
+        ctx.module,
+        ctx.qualname,
+        ctx.graph.number_of_nodes(),
+        ctx.graph.number_of_edges(),
+        has_cycles,
+        len(sccs),
+        longest_path_len,
+        avg_spl,
+        branching[0],
+        branching[1],
+        branching[2],
+        max(centrality_data.dom_depth.values()) if centrality_data.dom_depth else None,
+        dom_frontier_mean,
+        dom_frontier_max,
+        loops[0],
+        loops[1],
+        max(centrality_data.bc.values()) if centrality_data.bc else 0.0,
+        (sum(centrality_data.bc.values()) / len(centrality_data.bc)) if centrality_data.bc else 0.0,
+        (sum(centrality_data.closeness.values()) / len(centrality_data.closeness))
+        if centrality_data.closeness
+        else 0.0,
+        max(centrality_data.eig.values()) if centrality_data.eig else 0.0,
+        ctx.now,
+        1,
+    )
+
     block_rows: list[tuple[object, ...]] = []
     for node, data in ctx.graph.nodes(data=True):
         node_idx = int(str(node))
@@ -191,21 +301,65 @@ def cfg_block_rows(ctx: CfgFnContext) -> list[tuple[object, ...]]:
                 1,
             )
         )
-    return block_rows
+    return fn_row, block_rows
+
+
+def cfg_ext_row(
+    ctx: CfgFnContext,
+    edges: list[tuple[int, int, str]],
+) -> tuple[object, ...]:
+    """
+    Build CFG extension metrics row capturing reachability and edge kinds.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row matching analytics.cfg_function_metrics_ext schema.
+    """
+    reachable = cfg_reachable_nodes(ctx.graph, ctx.entry_idx)
+    unreachable_count = max(ctx.graph.number_of_nodes() - len(reachable), 0)
+
+    back_targets = {dst for _, dst, edge_kind in edges if edge_kind == "back"}
+    edge_kinds = Counter(edge_kind for _, _, edge_kind in edges)
+    simple_paths = bounded_simple_path_count(
+        ctx.graph,
+        {ctx.entry_idx},
+        {ctx.exit_idx},
+        max_paths=MAX_SIMPLE_PATHS,
+        cutoff=MAX_PATH_CUTOFF,
+    )
+
+    return (
+        ctx.fn_goid,
+        ctx.repo,
+        ctx.commit,
+        unreachable_count,
+        len(back_targets),
+        edge_kinds.get("true", 0),
+        edge_kinds.get("false", 0),
+        edge_kinds.get("back", 0),
+        edge_kinds.get("exception", 0),
+        edge_kinds.get("fallthrough", 0),
+        edge_kinds.get("loop", 0),
+        simple_paths,
+        ctx.now,
+        1,
+    )
 
 
 def cfg_rows_for_fn(
     *,
     fn_goid: int,
+    meta: tuple[str, str | None, str | None],
     inputs: CfgInputs,
-) -> list[tuple[object, ...]] | None:
+) -> CfgFnRows | None:
     """
-    Build CFG block rows for a single function.
+    Build CFG rows for a single function.
 
     Returns
     -------
-    list[tuple[object, ...]] | None
-        Block rows when blocks are available; otherwise None.
+    CfgFnRows | None
+        Structured rows when blocks are available; otherwise None.
     """
     blocks = inputs.blocks_by_fn.get(fn_goid, [])
     edges = inputs.edges_by_fn.get(fn_goid, [])
@@ -217,6 +371,9 @@ def cfg_rows_for_fn(
         repo=inputs.repo,
         commit=inputs.commit,
         fn_goid=fn_goid,
+        rel_path=meta[0],
+        module=meta[1],
+        qualname=meta[2],
         graph=graph,
         entry_idx=entry_idx,
         exit_idx=exit_idx,
@@ -224,4 +381,6 @@ def cfg_rows_for_fn(
         now=inputs.now,
         graph_ctx=inputs.graph_ctx,
     )
-    return cfg_block_rows(ctx)
+    fn_row, block_rows = cfg_fn_rows(ctx)
+    ext_row = cfg_ext_row(ctx, edges)
+    return CfgFnRows(fn_row=fn_row, ext_row=ext_row, block_rows=block_rows)

@@ -120,9 +120,13 @@ def build_def_index(rel_path: str, source_bytes: bytes) -> LibCSTIndex:
     except cst.ParserSyntaxError as exc:
         msg = f"LibCST parse failed for {rel_path}"
         raise ValueError(msg) from exc
-    wrapper = MetadataWrapper(module)
-    collector = _DefCollector(module=module, module_qname=module_qname, path=rel_path)
-    wrapper.visit(collector)
+    try:
+        wrapper = MetadataWrapper(module)
+        collector = _DefCollector(module=module, module_qname=module_qname, path=rel_path)
+        wrapper.visit(collector)
+    except (cst.CSTValidationError, RecursionError) as exc:
+        msg = f"LibCST metadata failed for {rel_path}"
+        raise ValueError(msg) from exc
 
     name_map: dict[str, list[DefRecord]] = {}
     for record in collector.defs:

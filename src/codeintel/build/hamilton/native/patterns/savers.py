@@ -14,7 +14,7 @@ from hamilton.function_modifiers.base import NodeTransformLifecycle
 from codeintel.build.hamilton.data_quality import build_table_schema_validators
 from codeintel.build.hamilton.materializers import ArrowDatasetSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.ingestion.frame_utils import empty_lazyframe_for_table
+from codeintel.build.tabular.frames import empty_lazyframe_for_table
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset

@@ -24,14 +24,7 @@ def default_rpygrep_preset() -> dict[str, object]:
             "after_context": 1,
             "max_count": 200,
             "max_file_size_bytes": 2_097_152,
-            "exclude_globs": [
-                "**/.git/**",
-                "**/node_modules/**",
-                "**/.venv/**",
-                "**/dist/**",
-                "**/build/**",
-            ],
-            "extra_args": ["--no-config"],
+            "extra_args": ["--line-buffered", "--no-config", "--hidden", "--glob", "!.git/**"],
             "as_json": True,
         },
     }

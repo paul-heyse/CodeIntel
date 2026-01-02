@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.analytics.profiles.utils import CATALOG_MODULE_TABLE, DEFAULT_MODULE_TABLE
 from codeintel.build.analytics.utilities.type_coercion import (
     int_or_default,
     optional_bool,
@@ -304,17 +303,3 @@ class TestOptionalBool:
     def test_returns_none_for_none_input() -> None:
         """Verify None input returns None."""
         expect_is_none(optional_bool(None))
-
-
-class TestModuleTableConstants:
-    """Tests for module table constants."""
-
-    @staticmethod
-    def test_catalog_module_table_value() -> None:
-        """Verify CATALOG_MODULE_TABLE constant."""
-        expect_equal(CATALOG_MODULE_TABLE, "temp.catalog_modules")
-
-    @staticmethod
-    def test_default_module_table_value() -> None:
-        """Verify DEFAULT_MODULE_TABLE constant."""
-        expect_equal(DEFAULT_MODULE_TABLE, "core.modules")

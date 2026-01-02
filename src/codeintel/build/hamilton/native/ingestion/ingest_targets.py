@@ -40,7 +40,7 @@ from codeintel.build.hamilton.helpers import (
     get_module_paths_from_env,
     paths_to_modules,
 )
-from codeintel.build.hamilton.native.ingestion.frame_utils import (
+from codeintel.build.tabular.frames import (
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
     lazyframe_for_ingest_columns,

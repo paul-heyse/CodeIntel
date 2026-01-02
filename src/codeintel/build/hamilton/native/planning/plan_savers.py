@@ -8,7 +8,7 @@ from collections.abc import Iterable
 import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.ingestion.frame_utils import lazyframe_for_table_columns
+from codeintel.build.tabular.frames import lazyframe_for_table_columns
 from codeintel.build.hamilton.native.patterns.savers import (
     ArtifactSaveSpec,
     RelationTableSaveSpec,

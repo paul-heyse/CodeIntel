@@ -20,7 +20,7 @@ import polars as pl
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.hamilton.native.ingestion.frame_utils import (
+from codeintel.build.tabular.frames import (
     empty_lazyframe_for_table,
     lazyframe_for_table_columns,
 )

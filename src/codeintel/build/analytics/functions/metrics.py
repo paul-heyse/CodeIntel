@@ -106,7 +106,6 @@ def _type_row_from_node(
         return None
 
     param_stats = compute_param_stats(node)
-    return_type_source = "annotation" if param_stats.has_return_annotation else "unknown"
 
     return {
         "function_goid_h128": meta.goid,
@@ -120,10 +119,7 @@ def _type_row_from_node(
         "start_line": meta.start_line,
         "end_line": meta.end_line,
         "total_params": param_stats.total_params,
-        "annotated_params": param_stats.annotated_params,
-        "has_return_annotation": param_stats.has_return_annotation,
         "return_type": param_stats.return_type,
-        "return_type_source": return_type_source,
         "type_comment": None,
         "param_types": param_stats.param_types,
         "created_at": ctx.now,

@@ -232,6 +232,11 @@ class BaseRepository:
         return ColumnExpression(column) >= BaseRepository._constant_expression(value)
 
     @staticmethod
+    def _predicate_in(column: str, values: Sequence[object]) -> Expression:
+        expressions = [BaseRepository._constant_expression(value) for value in values]
+        return ColumnExpression(column).isin(*expressions)
+
+    @staticmethod
     def _constant_expression(value: object) -> Expression:
         return ConstantExpression(value)
 

@@ -362,6 +362,28 @@ outputs:
       - "graph.cfg_blocks"
       - "graph.cfg_edges"
     notes: "Data flow graph edges derived from CFG."
+  - target: "cpg"
+    domain: "graphs"
+    anchor: "t__cpg"
+    materialization: "table"
+    table_keys:
+      - "graph.cpg_nodes"
+      - "graph.cpg_edges"
+    contracts:
+      - "graph.cpg_nodes"
+      - "graph.cpg_edges"
+    downstream_consumers:
+      - "cli.graph"
+      - "cli.datasets"
+    upstream_targets:
+      - "syntax_index"
+      - "scip_resolution"
+      - "goids"
+      - "cfg"
+      - "dfg"
+      - "call_graph"
+      - "import_graph"
+    notes: "Unified CPG nodes/edges assembled from syntax, symbol, and flow layers."
   - target: "views"
     domain: "views"
     anchor: "t__views"
@@ -636,9 +658,11 @@ outputs:
     table_keys:
       - "core.scip_symbol_goid_xref"
       - "core.scip_occurrence_span_xref"
+      - "core.scip_occurrence_syntax_xref"
     contracts:
       - "core.scip_symbol_goid_xref"
       - "core.scip_occurrence_span_xref"
+      - "core.scip_occurrence_syntax_xref"
     downstream_consumers:
       - "graphs.symbol_uses"
       - "cli.datasets"
@@ -646,6 +670,27 @@ outputs:
       - "scip"
       - "goids"
     notes: "Derived xref tables connecting SCIP symbols/occurrences to GOIDs."
+  - target: "syntax_enrich"
+    domain: "ingestion"
+    anchor: "t__syntax_enrich"
+    materialization: "table"
+    table_keys:
+      - "core.syntax_defs_resolved"
+      - "core.syntax_refs_resolved"
+      - "core.syntax_calls_resolved"
+      - "core.syntax_imports_resolved"
+    contracts:
+      - "core.syntax_defs_resolved"
+      - "core.syntax_refs_resolved"
+      - "core.syntax_calls_resolved"
+      - "core.syntax_imports_resolved"
+    downstream_consumers:
+      - "graphs.cpg"
+      - "cli.datasets"
+    upstream_targets:
+      - "syntax_index"
+      - "scip_resolution"
+    notes: "Resolved syntax facts by welding syntax facts with SCIP occurrences."
   - target: "tree_sitter_index"
     domain: "ingestion"
     anchor: "t__tree_sitter_index"

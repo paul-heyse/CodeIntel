@@ -118,6 +118,12 @@ These should be **producer-agnostic** (LibCST vs tree-sitter vs “python_ast”
 
 Today your LibCST node extraction records parent *kinds*, not parent *node IDs*. To make LibCST usable for edges:
 
+* Parse from **bytes** (`cst.parse_module(bytes)`) so LibCST preserves encoding and produces byte-accurate spans.
+* Use **ByteSpanPositionProvider** for `start_byte/end_byte` and **PositionProvider** for line/col; keep both.
+* Enrich `parse_manifest` with `encoding`, `default_indent`, `default_newline`, `has_trailing_newline`,
+  `future_imports`, and (optionally) parser backend + LibCST version.
+* Use `MetadataWrapper.visit_batched` to compute spans and parent metadata in a single traversal.
+
 * Change the visitor to maintain a **stack of node_ids**, not just node kinds.
 * Emit:
 
@@ -222,6 +228,19 @@ Representative schema:
 
 Use the span semantics guidance from your doc—store bytes and 0-based line/col, and treat bytes as the authoritative join space whenever possible.
 
+#### SCIP range semantics (scip-python / Pyright)
+
+SCIP does not store an AST; it stores **occurrence ranges** plus resolved symbols. For scip-python, those ranges
+come from Pyright and are typically high fidelity. The key rules to keep in mind:
+
+* Ranges are **half-open**: `[start, end)` with 0-based line/character offsets; **empty ranges are allowed**.
+* The "character" offset depends on `Document.position_encoding`. For scip-python you should expect **UTF-32 code
+  points**. Always interpret ranges with the declared encoding.
+* If `start_byte`/`end_byte` are available (they should be after `core.file_line_index` normalization), **use bytes
+  as the canonical join key**. Only fall back to line/col when byte offsets are missing.
+* **Empty range policy (recommended):** treat `start == end` as a **point query** anchored at `start` and map to the
+  **smallest containing node**. Do not drop empty ranges; they often encode valid semantic bindings.
+
 Algorithm (per file):
 
 1. Build an interval index of syntax nodes by `(start_byte, end_byte)`
@@ -238,24 +257,42 @@ Representative weld function:
 ```python
 from intervaltree import IntervalTree
 
-def weld_occurrences_to_syntax_nodes(syntax_nodes_df: pl.DataFrame,
-                                    occ_df: pl.DataFrame) -> pl.DataFrame:
-    # Build interval tree: [start, end) -> node_id
-    tree = IntervalTree(
-        (row["start_byte"], row["end_byte"], row["node_id"])
-        for row in syntax_nodes_df.iter_rows(named=True)
-        if row["start_byte"] is not None and row["end_byte"] is not None
-    )
+def _pick_candidate(candidates: set[object]) -> object | None:
+    if not candidates:
+        return None
+    return min(candidates, key=lambda iv: (iv.end - iv.begin, str(iv.data)))
+
+def weld_occurrences_to_syntax_nodes(
+    syntax_nodes_df: pl.DataFrame,
+    occ_df: pl.DataFrame,
+) -> pl.DataFrame:
+    tree = IntervalTree()
+    exact_index: dict[tuple[int, int], list[str]] = {}
+    for row in syntax_nodes_df.iter_rows(named=True):
+        start = row.get("start_byte")
+        end = row.get("end_byte")
+        node_id = row.get("node_id")
+        if start is None or end is None or node_id is None:
+            continue
+        exact_index.setdefault((start, end), []).append(node_id)
+        tree.addi(start, end, node_id)
 
     out = []
     for occ in occ_df.iter_rows(named=True):
         s, e = occ["occ_start_byte"], occ["occ_end_byte"]
-        candidates = sorted(tree.overlap(s, e), key=lambda iv: (iv.end - iv.begin))
-        if candidates:
-            chosen = candidates[0]  # smallest containing
-            out.append({**occ, "syntax_node_id": chosen.data, "match_kind": "CONTAINS"})
-        else:
+        if s is None or e is None:
             out.append({**occ, "syntax_node_id": None, "match_kind": "NONE"})
+            continue
+        exact = exact_index.get((s, e))
+        if exact:
+            out.append({**occ, "syntax_node_id": min(exact), "match_kind": "EXACT"})
+            continue
+        candidates = tree.overlap(s, s + 1) if s == e else tree.overlap(s, e)
+        chosen = _pick_candidate(candidates)
+        if chosen is None:
+            out.append({**occ, "syntax_node_id": None, "match_kind": "NONE"})
+            continue
+        out.append({**occ, "syntax_node_id": chosen.data, "match_kind": "CONTAINS"})
     return pl.DataFrame(out)
 ```
 
@@ -271,6 +308,12 @@ Your earlier best-in-class plan explicitly calls out a P1 enrichment step produc
 
 * P0 syntax facts (defs/refs/calls/imports)
 * SCIP symbol resolution (occurrence→symbol, occurrence→syntax node)
+
+With LibCST metadata available, update the **fact extraction strategy** itself:
+
+* Use `ScopeProvider` + `ExpressionContextProvider` for defs/refs and read/write roles.
+* Add `QualifiedNameProvider` outputs as **sets** on refs/calls (module-relative names).
+* Optionally add `FullyQualifiedNameProvider` when `FullRepoManager` is enabled (repo-absolute names).
 
 #### New P1 tables (recommended)
 
@@ -646,11 +689,13 @@ Your CPG overview explicitly calls out **SyntaxNode/SyntaxEdge** as the base and
 You should explicitly persist crosswalks like:
 
 * `xref.cst_node_to_syntax_node` (if CST is used for anchors)
-* `xref.ast_node_to_syntax_node`
 * `xref.scip_occurrence_to_syntax_node`
 * `xref.syntax_node_to_symbol`
 
 The CPG doc is explicit: keep crosswalks so “the same statement/expression nodes participate in multiple edge sets” and stitching stays deterministic. 
+
+For Python AST, fold AST facts directly into `core.syntax_nodes.extras_json` (`ast_nodes[]` with `ast_node_id`);
+only add a standalone `ast_node_to_syntax_node` table if a later stage truly needs it.
 
 ---
 
@@ -658,8 +703,8 @@ The CPG doc is explicit: keep crosswalks so “the same statement/expression nod
 
 You want your pipeline to follow the concrete construction order outlined in the CPG overview (because it naturally defines Hamilton module boundaries and caching boundaries):
 
-1. Build `LineIndex` + byte spans per file
-2. Parse CST + AST → emit syntax nodes/edges
+1. Build `LineIndex` + byte spans per file (LineIndex for SCIP; ByteSpanPositionProvider for LibCST)
+2. Parse LibCST + CPython AST → emit syntax nodes/edges and merge AST facts into syntax nodes
 3. Ingest SCIP → weld occurrences → syntax nodes → emit symbol graph
 4. For each function: build CFG
 5. For each function: extract def/use + compute DDG
@@ -675,6 +720,21 @@ This is the “shape” your Hamilton DAG should reflect—i.e., **modules by st
 
 ## 3) Stage A — Syntax graph (AST/CST promoted into a node/edge inventory)
 
+### 3.0 LibCST ingestion upgrades (bytes-first + metadata providers)
+
+To fully leverage LibCST for indexing, the ingestion posture should be:
+
+* **Parse bytes, not text**: `cst.parse_module(bytes)` so PEP-263 encoding is respected and byte spans are stable.
+* **Byte spans as canonical evidence**: use `ByteSpanPositionProvider` for `start_byte/end_byte`, and keep
+  `PositionProvider` line/col for readability; byte spans are the join key.
+* **Parse manifest enrichment**: persist `encoding`, `default_indent`, `default_newline`, `has_trailing_newline`,
+  `future_imports`, plus `parser_backend` and `libcst_version` if available.
+* **Metadata identity discipline**: traverse `wrapper.module`, never the original module; avoid persisting CST nodes.
+* **Batch metadata**: use `MetadataWrapper.visit_batched` or `resolve_many` to compute Position, ByteSpan,
+  Parent, and Scope metadata in one pass.
+
+These changes increase span fidelity and determinism without changing downstream table shapes.
+
 ### 3.1 Deterministic node identity (do this once; everything else benefits)
 
 Your CPG notes already define the canonical emission shape: `SyntaxNode(node_id, file_id, kind, span, ...)` and `SyntaxEdge(src,dst,label,order)`. Make that real and make it *stable*:
@@ -683,6 +743,7 @@ Your CPG notes already define the canonical emission shape: `SyntaxNode(node_id,
 
 * Use **(repo_snapshot_id, file_id, start_byte, end_byte, kind, disambiguator)** → hash128
 * The only legitimate reason for a disambiguator is: *multiple nodes with identical spans* (rare but possible in some CST representations).
+* Prefer ByteSpanPositionProvider-derived bytes so the ID is independent of text encoding.
 
 Representative snippet (hash128 + schema-stable types):
 
@@ -705,20 +766,52 @@ def node_id_h128(repo_id: str, file_id: str, kind: str, start_b: int, end_b: int
     return h.digest()   # 16 bytes
 ```
 
-### 3.2 Node inventory source of truth (AST vs CST)
+### 3.2 AST merge (CPython AST folded into LibCST nodes)
 
-Best practice (and consistent with your CPG writeup) is:
+For Python, keep `core.syntax_nodes` as the single inventory and fold CPython AST facts into it during ingest:
 
-* **AST drives semantic structure** (CFG/DFG friendliness)
-* **CST anchors exact spans** (lossless evidence)
+* Parse `ast.parse(source_text, type_comments=True)` (no FullRepoManager/Pyre).
+* AST locations: `lineno` is 1-based; `col_offset`/`end_col_offset` are UTF-8 byte offsets.
+  Convert to byte spans via `LineIndexedSource.byte_offset_from_utf8`.
+* Build an IntervalTree over LibCST syntax node byte spans.
+* For each AST node:
+  * exact span match → use that node_id
+  * else smallest containing node (half-open spans; empty ranges are point queries)
+* Store payloads in `core.syntax_nodes.extras_json.ast_nodes[]` with:
+  `ast_node_id`, `ast_kind`, AST span (line + utf8-col + bytes), `ctx`, `type_comment`,
+  `type_ignores` (module), and `match_kind`.
+* Config toggle: `ingestion.syntax_index.emit_ast_nodes` (default true) to disable AST merge when needed.
 
-So: pick one inventory (usually AST-ish), but emit `xref.cst↔ast` to preserve evidence-grade spans.
+This avoids a parallel AST node table while preserving AST-only facts and a stable `ast_node_id`
+for later SCIP or analysis joins.
+
+### 3.3 Semantic metadata you should leverage (LibCST providers)
+
+These providers improve precision without changing your table contracts:
+
+* **ScopeProvider**: replace heuristic def/ref logic with scope-accurate assignments/accesses.
+* **ExpressionContextProvider**: emit read/write/delete roles for refs before symbol resolution.
+* **QualifiedNameProvider**: attach module-relative candidate names (store as a set, not a scalar).
+* **ParentNodeProvider**: enable container resolution without manual stacks.
+
+Optional (repo-wide, higher cost):
+
+* **FullyQualifiedNameProvider** via `FullRepoManager` for repo-absolute identifiers.
+* **TypeInferenceProvider** (Pyre-backed) for type enrichment on `Name|Attribute|Call`.
+
+Gate these behind config toggles; the rest of the pipeline should remain functional without them.
 
 ---
 
 ## 4) Stage B — SCIP weld (symbol graph bound to syntax graph)
 
 Your “critical weld” is precisely defined: for each SCIP occurrence, map its range to bytes via LineIndex+encoding, then match the smallest syntax leaf that contains it, preferring exact span matches, with deterministic tie-breaking. 
+
+Best practice with the enriched ingestion:
+
+* Use `core.scip_occurrence_span_xref` as the base occurrence table (it already carries byte offsets + roles).
+* If `start_byte/end_byte` are missing, fall back to line/col using `position_encoding`.
+* Treat empty ranges as point queries anchored at `start`.
 
 ### 4.1 The core weld algorithm (representative, deterministic)
 
@@ -1042,6 +1135,46 @@ If you want, I can also write a **single “CPG stage module template”** (stil
 * tagged dataset outputs,
 * Polars LazyFrame pipelines,
 * and a consistent “sink boundary” (write Arrow/Parquet + manifest),
+
+---
+
+## CPG contract stub (minimal, stable join surface)
+
+This stub keeps the **contract stable** while allowing per-run metadata to flow via JSON. Keep these columns fixed;
+put experiment fields in `extras_json` (or in a separate `graph.cpg_node_props`/`graph.cpg_edge_props` table).
+
+### `graph.cpg_nodes`
+
+**Primary key:** `(repo, commit, cpg_node_id)`
+
+Required columns:
+
+* `repo` (str)
+* `commit` (str)
+* `cpg_node_id` (fixed-width id; hash128 or DECIMAL(38,0) is fine)
+* `node_kind` (str; e.g., "SYNTAX_NODE", "SCIP_SYMBOL", "GOID", "CFG_BLOCK")
+* `source_table_key` (str; e.g., "core.syntax_nodes", "core.scip_symbols")
+* `source_pk_json` (json; stable pk encoding for back-joins)
+* `rel_path` (str | null; for file-scoped nodes)
+* `start_byte` (int | null)
+* `end_byte` (int | null)
+* `extras_json` (json | null)
+
+### `graph.cpg_edges`
+
+**Primary key:** `(repo, commit, src_cpg_node_id, dst_cpg_node_id, edge_kind, edge_layer, ordinal)`
+
+Required columns:
+
+* `repo` (str)
+* `commit` (str)
+* `src_cpg_node_id` (fixed-width id)
+* `dst_cpg_node_id` (fixed-width id)
+* `edge_kind` (str; e.g., "AST", "CONTAINS", "REFERS_TO", "CALLS", "CFG", "DFG")
+* `edge_layer` (str; e.g., "SYNTAX", "SYMBOL", "FLOW")
+* `rel_path` (str | null)
+* `ordinal` (int | null; for ordered edges like AST children)
+* `extras_json` (json | null)
 
 …so multiple engineers can implement different stages in parallel without diverging conventions.
 Below is the **single “CPG stage module template”** I would standardize on for your repo, **fully aligned with your current native Hamilton patterns** (tagged outputs, ArrowDatasetSaver sink boundary, TargetRunRecord finalizers), but **structured so multiple engineers can build different stages in parallel without inventing new conventions**.
@@ -1446,7 +1579,7 @@ __all__ = [
 
 ### Stage C: `stageC_cfg.py`
 
-* **Inputs**: syntax spans + scopes + (optionally) AST/CST crosswalk + function inventory
+* **Inputs**: syntax spans + scopes + (optionally) AST facts in `syntax_nodes.extras_json` + function inventory
 * **Compute**:
 
   * build statement/predicate node inventory (or reuse your syntax-span “executable unit” table)
@@ -3792,6 +3925,3 @@ If you want to make SCIP regressions reviewable, the SCIP CLI supports producing
 Use `--comment-syntax="#"` so Python files remain visually sane. 
 
 ---
-
-
-

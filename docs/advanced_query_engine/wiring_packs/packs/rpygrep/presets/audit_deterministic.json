@@ -9,16 +9,12 @@
     "after_context": 0,
     "max_count": 10000,
     "max_file_size_bytes": 52428800,
-    "exclude_globs": [
-      "**/.git/**",
-      "**/node_modules/**",
-      "**/.venv/**",
-      "**/dist/**",
-      "**/build/**"
-    ],
     "extra_args": [
       "--no-config",
-      "--sort=path"
+      "--sort=path",
+      "--hidden",
+      "--glob",
+      "!.git/**"
     ],
     "as_json": true
   }

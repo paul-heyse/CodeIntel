@@ -40,7 +40,6 @@ def _definition_patterns(name: str) -> dict[str, object]:
             },
         ],
         "globs": ["**/*.py"],
-        "exclude_globs": ["**/.venv/**", "**/venv/**", "**/site-packages/**"],
     }
 
 
