@@ -58,7 +58,7 @@ def test_pr80_schema_compile_uses_batch_inference(hamilton_runtime: RuntimeBundl
     spy = _SpyBatchInferer()
 
     request = SchemaManifestRequest(
-        targets=("risk_factors", "function_metrics"),
+        targets=("function_types",),
         infer_native=True,
         batch_infer_native=True,
         stable=True,
@@ -82,8 +82,7 @@ def test_pr80_schema_compile_uses_batch_inference(hamilton_runtime: RuntimeBundl
     if spy.calls != 1:
         pytest.fail(f"Expected batch inferer to be called once, got {spy.calls}")
 
-    risk_table_keys = set(hamilton_runtime.catalog.get("risk_factors").table_keys)
-    function_table_keys = set(hamilton_runtime.catalog.get("function_metrics").table_keys)
-    expected_keys = sorted(risk_table_keys | function_table_keys)
+    function_table_keys = set(hamilton_runtime.catalog.get("function_types").table_keys)
+    expected_keys = sorted(function_table_keys)
     if spy.seen != [tuple(expected_keys)]:
         pytest.fail(f"Expected batch inferer keys {expected_keys}, got {spy.seen}")

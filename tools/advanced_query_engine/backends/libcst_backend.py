@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 import libcst as cst
+from intervaltree import Interval, IntervalTree
 from libcst.metadata import ByteSpanPositionProvider, MetadataWrapper
 
 from tools.advanced_query_engine.contracts import Span
@@ -34,6 +35,27 @@ class LibCSTIndex:
     path: str
     defs: list[DefRecord]
     name_map: dict[str, list[DefRecord]]
+    _span_tree: IntervalTree | None = None
+
+    def span_tree(self) -> IntervalTree:
+        """Return an interval tree for definition spans.
+
+        Returns
+        -------
+        IntervalTree
+            Interval tree for definition spans.
+        """
+        if self._span_tree is None:
+            intervals = [
+                Interval(
+                    record.span.start_byte,
+                    record.span.end_byte,
+                    record,
+                )
+                for record in self.defs
+            ]
+            self._span_tree = IntervalTree(intervals)
+        return self._span_tree
 
     def enclosing_def(self, byte_offset: int) -> DefRecord | None:
         """Return the smallest enclosing definition for a byte offset.
@@ -43,17 +65,13 @@ class LibCSTIndex:
         DefRecord | None
             The smallest definition that contains the byte offset.
         """
-        best: DefRecord | None = None
-        for record in self.defs:
-            if record.span.start_byte <= byte_offset < record.span.end_byte:
-                if best is None:
-                    best = record
-                else:
-                    best_range = best.span.end_byte - best.span.start_byte
-                    current_range = record.span.end_byte - record.span.start_byte
-                    if current_range < best_range:
-                        best = record
-        return best
+        hits = self.span_tree().at(byte_offset)
+        if not hits:
+            return None
+        best = min(hits, key=lambda iv: iv.end - iv.begin)
+        if isinstance(best.data, DefRecord):
+            return best.data
+        return None
 
     def by_name(self, name: str) -> list[DefRecord]:
         """Return definitions matching a name.

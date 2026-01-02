@@ -90,18 +90,11 @@ def _sample_function_types_row() -> AnalyticsFunctionTypesRow:
         "end_line": 2,
         "total_params": 0,
         "annotated_params": 0,
-        "unannotated_params": 0,
-        "param_typed_ratio": 0.0,
         "has_return_annotation": False,
         "return_type": None,
-        "return_type_source": None,
+        "return_type_source": "unknown",
         "type_comment": None,
         "param_types": None,
-        "fully_typed": False,
-        "partial_typed": False,
-        "untyped": True,
-        "typedness_bucket": "untyped",
-        "typedness_source": "ast",
         "created_at": datetime(2024, 1, 1, tzinfo=UTC),
     }
 
@@ -110,7 +103,6 @@ def test_function_types_base_columns() -> None:
     """Ensure function types base nodes expose the expected columns."""
     reporter = FunctionValidationReporter(repo="repo", commit="commit")
     analytics_result = FunctionAnalyticsResult(
-        metrics_rows=[],
         types_rows=[_sample_function_types_row()],
         reporter=reporter,
     )
@@ -129,18 +121,11 @@ def test_function_types_base_columns() -> None:
         "end_line",
         "total_params",
         "annotated_params",
-        "unannotated_params",
-        "param_typed_ratio",
         "has_return_annotation",
         "return_type",
         "return_type_source",
         "type_comment",
         "param_types",
-        "fully_typed",
-        "partial_typed",
-        "untyped",
-        "typedness_bucket",
-        "typedness_source",
         "created_at",
     ]
 

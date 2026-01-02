@@ -11,7 +11,6 @@ FORBIDDEN_IMPORTS = (
     "function_effects",
     "functions.config",
     "functions.metrics",
-    "functions.typedness",
     "graph_metrics",
     "graph_metrics_ext",
     "module_graph_metrics_ext",

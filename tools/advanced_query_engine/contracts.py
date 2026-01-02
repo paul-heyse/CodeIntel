@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+import msgspec
+
 type JSONScalar = str | int | float | bool | None
 type JSONValue = JSONScalar | list[JSONValue] | dict[str, JSONValue]
 
@@ -19,6 +21,17 @@ type SymbolKind = Literal[
     "route",
     "config_key",
     "test",
+]
+
+type QueryType = Literal[
+    "symbol.resolve",
+    "refs.find",
+    "callgraph.slice",
+    "pattern.scan",
+    "contract.lookup",
+    "wiring.map",
+    "precedent.search",
+    "impact.slice",
 ]
 
 
@@ -196,8 +209,7 @@ class MatchRecord:
         return payload
 
 
-@dataclass(frozen=True)
-class QueryBudget:
+class QueryBudget(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     """Execution budget for search queries."""
 
     max_files: int = 300
@@ -207,11 +219,10 @@ class QueryBudget:
     context_lines: int = 1
 
 
-@dataclass(frozen=True)
-class QueryRequest:
+class QueryRequest(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     """Search request for the advanced query engine."""
 
-    type: str
+    type: QueryType
     text: str
     repo_root: str
     scope_paths: list[str] | None = None
@@ -219,8 +230,7 @@ class QueryRequest:
     options: dict[str, JSONValue] | None = None
 
 
-@dataclass(frozen=True)
-class QueryResponse:
+class QueryResponse(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     """Search response payload."""
 
     summary: str
@@ -244,6 +254,28 @@ class QueryResponse:
         }
 
 
+def query_request_schema() -> dict[str, JSONValue]:
+    """Return the JSON schema for QueryRequest.
+
+    Returns
+    -------
+    dict[str, JSONValue]
+        JSON schema payload.
+    """
+    return msgspec.json.schema(QueryRequest)
+
+
+def query_response_schema() -> dict[str, JSONValue]:
+    """Return the JSON schema for QueryResponse.
+
+    Returns
+    -------
+    dict[str, JSONValue]
+        JSON schema payload.
+    """
+    return msgspec.json.schema(QueryResponse)
+
+
 __all__ = [
     "EvidenceSnippet",
     "JSONValue",
@@ -251,8 +283,11 @@ __all__ = [
     "QueryBudget",
     "QueryRequest",
     "QueryResponse",
+    "QueryType",
     "Span",
     "SymbolId",
     "SymbolKind",
     "SymbolRecord",
+    "query_request_schema",
+    "query_response_schema",
 ]

@@ -79,12 +79,12 @@ class TestRefsFromTargetResult:
         )
 
         refs = refs_from_target_result(
-            target_name="function_metrics",
-            table_keys=("analytics.function_metrics",),
+            target_name="function_types",
+            table_keys=("analytics.function_types",),
             snapshot=snapshot,
         )
 
-        ref = refs.get("analytics.function_metrics")
+        ref = refs.get("analytics.function_types")
         if ref is None:
             pytest.fail("refs_from_target_result should return ref")
         if ref.repo != DEFAULT_VARIANT.repo:
@@ -96,11 +96,11 @@ class TestRefsFromTargetResult:
     def test_refs_from_target_result_without_snapshot() -> None:
         """Verify refs_from_target_result works without snapshot."""
         refs = refs_from_target_result(
-            target_name="function_metrics",
-            table_keys=("analytics.function_metrics",),
+            target_name="function_types",
+            table_keys=("analytics.function_types",),
         )
 
-        ref = refs.get("analytics.function_metrics")
+        ref = refs.get("analytics.function_types")
         if ref is None:
             pytest.fail("refs_from_target_result should return ref")
 
@@ -203,19 +203,19 @@ class TestSkippedTargetsDatasetRef:
     def test_skipped_target_has_datasets_field() -> None:
         """Verify TargetRunRecord for skipped targets has datasets."""
         record = TargetRunRecord(
-            target="function_metrics",
+            target="function_types",
             impl_kind="native",
             status="skipped",
             input_hash="hash123",
             datasets=(
                 DatasetRef(
-                    table_key="analytics.function_metrics",
+                    table_key="analytics.function_types",
                     repo="org/repo",
                     commit="abc123",
                 ),
             ),
         )
-        assert_record_has_datasets(record, ["analytics.function_metrics"])
+        assert_record_has_datasets(record, ["analytics.function_types"])
         if len(record.datasets) != 1:
             pytest.fail("Expected 1 dataset")
 
@@ -223,13 +223,13 @@ class TestSkippedTargetsDatasetRef:
     def test_skipped_target_datasets_have_lineage() -> None:
         """Verify skipped target DatasetRef has repo/commit for lineage."""
         record = TargetRunRecord(
-            target="function_metrics",
+            target="function_types",
             impl_kind="native",
             status="skipped",
             input_hash="hash123",
             datasets=(
                 DatasetRef(
-                    table_key="analytics.function_metrics",
+                    table_key="analytics.function_types",
                     repo="org/repo",
                     commit="abc123",
                 ),

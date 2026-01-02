@@ -31,10 +31,10 @@ class TestNamingConventions:
         ("logical_name", "prefix", "expected"),
         [
             ("modules", "t", "t__modules"),
-            ("analytics.function_metrics", "t", "t__analytics__function_metrics"),
+            ("analytics.function_types", "t", "t__analytics__function_types"),
             ("graph-call-edges", "d", "d__graph_call_edges"),
             ("some/path/name", "p", "p__some__path__name"),
-            ("analytics.risk_factors", "t", "t__analytics__risk_factors"),
+            ("analytics.static_diagnostics", "t", "t__analytics__static_diagnostics"),
         ],
         ids=[
             "simple_name",
@@ -55,8 +55,8 @@ class TestNamingConventions:
     @staticmethod
     def test_target_node_helper() -> None:
         """Verify target_node uses 't' prefix."""
-        result = target_node("function_metrics")
-        if result != "t__function_metrics":
+        result = target_node("function_types")
+        if result != "t__function_types":
             pytest.fail("target_node returned unexpected value")
         if not result.startswith("t__"):
             pytest.fail("target_node did not prepend t__")
@@ -73,9 +73,9 @@ class TestNamingConventions:
     @staticmethod
     def test_node_to_target_roundtrip() -> None:
         """Verify node_to_target extracts original name."""
-        node_name = target_node("risk_factors")
+        node_name = target_node("function_types")
         extracted = node_to_target(node_name)
-        if extracted != "risk_factors":
+        if extracted != "function_types":
             pytest.fail("node_to_target did not reverse target_node")
 
     @staticmethod
@@ -107,8 +107,7 @@ class TestDriverFactory:
             "t__ast",
             "t__goids",
             "t__call_graph",
-            "t__function_metrics",
-            "t__risk_factors",
+            "t__function_types",
         }
         missing = expected.difference(nodes)
         if missing:
@@ -119,10 +118,10 @@ class TestDriverFactory:
         """Verify target names map to node names."""
         if target_to_node_name("modules", runtime=hamilton_runtime) != "t__modules":
             pytest.fail("modules did not map to t__modules")
-        if target_to_node_name("function_metrics", runtime=hamilton_runtime) != (
-            "t__function_metrics"
+        if target_to_node_name("function_types", runtime=hamilton_runtime) != (
+            "t__function_types"
         ):
-            pytest.fail("function_metrics did not map to t__function_metrics")
+            pytest.fail("function_types did not map to t__function_types")
         if target_to_node_name("unknown", runtime=hamilton_runtime) is not None:
             pytest.fail("unknown target should map to None")
 
@@ -196,8 +195,7 @@ class TestPhase0NodeRegistry:
             "ast",
             "goids",
             "call_graph",
-            "function_metrics",
-            "risk_factors",
+            "function_types",
         ]
         for target in phase0_targets:
             node = target_to_node_name(target, runtime=hamilton_runtime)

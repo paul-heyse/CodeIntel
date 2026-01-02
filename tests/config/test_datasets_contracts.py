@@ -49,8 +49,8 @@ def test_get_table_schemas_contains_expected_keys() -> None:
 
     require(condition="core.goids" in schemas, message="core.goids table schema missing")
     require(
-        condition="analytics.function_metrics" in schemas,
-        message="analytics.function_metrics table schema missing",
+        condition="analytics.function_types" in schemas,
+        message="analytics.function_types table schema missing",
     )
     require(
         condition="graph.call_graph_edges" in schemas or "graph.call_graph_edges" in inferable,

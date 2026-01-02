@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from intervaltree import IntervalTree
+
 from tools.advanced_query_engine.backends.astgrep_backend import AstGrepRoot, parse_ast_grep_source
 from tools.advanced_query_engine.backends.libcst_backend import LibCSTIndex, build_def_index
 from tools.advanced_query_engine.backends.treesitter_backend import (
@@ -83,6 +85,16 @@ class SearchContext:
         if rel_path not in self._def_indexes:
             self._def_indexes[rel_path] = build_def_index(rel_path, self.cache.read_bytes(rel_path))
         return self._def_indexes[rel_path]
+
+    def span_tree(self, rel_path: str) -> IntervalTree:
+        """Return a cached interval tree for definition spans.
+
+        Returns
+        -------
+        IntervalTree
+            Interval tree for definition spans.
+        """
+        return self.def_index(rel_path).span_tree()
 
     def ast_grep_root(self, rel_path: str) -> AstGrepRoot:
         """Return a cached ast-grep root for a file.

@@ -152,7 +152,6 @@ def test_row_models_column_constants_match_contracts() -> None:
     """Column registry mapping should match contract-derived columns."""
     column_registry = load_columns_by_table()
     column_mappings = [
-        ("analytics.function_metrics", column_registry["analytics.function_metrics"]),
         ("analytics.function_types", column_registry["analytics.function_types"]),
         ("analytics.graph_metrics_functions", column_registry["analytics.graph_metrics_functions"]),
         ("analytics.graph_metrics_modules", column_registry["analytics.graph_metrics_modules"]),
@@ -163,16 +162,6 @@ def test_row_models_column_constants_match_contracts() -> None:
         (
             "analytics.graph_metrics_modules_ext",
             column_registry["analytics.graph_metrics_modules_ext"],
-        ),
-        ("analytics.function_profile", column_registry["analytics.function_profile"]),
-        ("analytics.file_profile", column_registry["analytics.file_profile"]),
-        ("analytics.module_profile", column_registry["analytics.module_profile"]),
-        ("analytics.test_profile", column_registry["analytics.test_profile"]),
-        ("analytics.behavioral_coverage", column_registry["analytics.behavioral_coverage"]),
-        ("analytics.subsystem_profile_cache", column_registry["analytics.subsystem_profile_cache"]),
-        (
-            "analytics.subsystem_coverage_cache",
-            column_registry["analytics.subsystem_coverage_cache"],
         ),
     ]
     contracts_by_key = dict(iter_contracts_by_table_key())

@@ -59,9 +59,7 @@ def migration_harness(
 # List of native targets that exist and can be tested
 NATIVE_ANALYTICS_TARGETS = [
     "external_deps",
-    "function_metrics",
-    "module_profile",
-    "risk_factors",
+    "function_types",
 ]
 
 NATIVE_INGESTION_TARGETS = [

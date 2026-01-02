@@ -64,7 +64,7 @@ def test_build_export_smoke(tmp_path: Path) -> None:
 
     for fname in (
         "call_graph_edges.parquet",
-        "function_metrics.parquet",
+        "function_types.parquet",
     ):
         path = document_output / fname
         if not path.is_file():
@@ -85,12 +85,6 @@ def test_build_export_smoke(tmp_path: Path) -> None:
     if goid_count <= 0:
         message = "core.goids is empty after build run"
         raise RuntimeError(message)
-    fn_row = con.execute("SELECT COUNT(*) FROM docs.v_function_summary").fetchone()
-    fn_summary_count = int(fn_row[0]) if fn_row is not None else 0
-    if fn_summary_count <= 0:
-        message = "docs.v_function_summary is empty after build run"
-        raise RuntimeError(message)
-
     goids_jsonl = document_output / "goids.jsonl"
     if not goids_jsonl.is_file():
         message = "goids.jsonl export not found"

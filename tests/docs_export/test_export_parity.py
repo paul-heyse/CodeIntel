@@ -42,14 +42,10 @@ def test_export_mappings_cover_required_tables(
         "graph.dfg_edges",
         "graph.import_graph_edges",
         "graph.symbol_use_edges",
-        "analytics.function_metrics",
         "analytics.function_types",
         "analytics.test_catalog",
-        "analytics.hotspots",
-        "analytics.typedness",
         "analytics.static_diagnostics",
         "analytics.config_values",
-        "analytics.goid_risk_factors",
     }
 
     parquet_tables = set(parquet_mapping)

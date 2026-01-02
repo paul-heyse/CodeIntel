@@ -7,8 +7,11 @@ import string
 from dataclasses import dataclass
 from pathlib import Path
 
+import msgspec
+
 from tools.advanced_query_engine.contracts import JSONValue
 from tools.advanced_query_engine.packs.catalog import PackCatalog
+from tools.advanced_query_engine.packs.wiring_schema import WiringPack
 
 _MULTI_CAPTURE_RE = re.compile(r"\$\$\$([A-Za-z_][A-Za-z0-9_]*)")
 _SINGLE_CAPTURE_RE = re.compile(r"(?<!\$)\$([A-Za-z_][A-Za-z0-9_]*)")
@@ -50,6 +53,11 @@ def validate_wiring_pack(pack: dict[str, JSONValue], catalog: PackCatalog) -> li
         Validation findings for the pack.
     """
     issues: list[PackIssue] = []
+    try:
+        msgspec.convert(pack, type=WiringPack)
+    except msgspec.ValidationError as exc:
+        issues.append(PackIssue(level="error", message=f"Wiring pack schema error: {exc}"))
+        return issues
     rule_fields, rule_ids = _collect_rule_fields(pack, catalog, issues)
     if not rule_fields:
         return issues

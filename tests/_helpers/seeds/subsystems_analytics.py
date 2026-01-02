@@ -1,11 +1,8 @@
-"""Extended subsystem seed pack with risk and clustering data.
+"""Extended subsystem seed pack with clustering data.
 
 This module provides SubsystemAnalyticsPack which seeds subsystem-related tables
-with additional data required for analytics tests including risk factors,
-import graph edges for clustering, symbol use edges, and config values.
-
-The pack is designed for tests like test_subsystems.py that need comprehensive
-subsystem analytics data beyond the basic SubsystemPack.
+with additional data required for analytics tests including import graph edges,
+symbol use edges, and config values.
 """
 
 from __future__ import annotations
@@ -16,10 +13,8 @@ from typing import TYPE_CHECKING
 
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
-    FunctionMetricsRow,
     ImportGraphEdgeRow,
     ModuleRow,
-    RiskFactorRow,
     SubsystemModuleRow,
     SubsystemRow,
     SymbolUseEdgeRow,
@@ -66,7 +61,7 @@ class SubsystemAnalyticsPack:
     """Seed pack for comprehensive subsystem analytics data.
 
     Seeds modules, import graph edges, symbol use edges, config values,
-    function metrics, risk factors, subsystem modules, and subsystems
+    subsystem modules, and subsystems
     tables with data suitable for clustering and risk aggregation tests.
 
     Attributes
@@ -79,18 +74,12 @@ class SubsystemAnalyticsPack:
         Whether to seed symbol use edges.
     include_config_values : bool
         Whether to seed config values.
-    include_function_metrics : bool
-        Whether to seed function metrics.
-    include_risk_factors : bool
-        Whether to seed risk factors.
     """
 
     name: str = "subsystems_analytics"
     include_import_edges: bool = True
     include_symbol_edges: bool = True
     include_config_values: bool = True
-    include_function_metrics: bool = True
-    include_risk_factors: bool = True
 
     @property
     def dependencies(self) -> tuple[SeedPack, ...]:
@@ -126,12 +115,6 @@ class SubsystemAnalyticsPack:
 
         if self.include_config_values:
             self._seed_config_values(ctx)
-
-        if self.include_function_metrics:
-            self._seed_function_metrics(ctx, now)
-
-        if self.include_risk_factors:
-            self._seed_risk_factors(ctx)
 
         # Seed subsystem structure
         self._seed_subsystem_modules(ctx)
@@ -247,122 +230,6 @@ class SubsystemAnalyticsPack:
                 reference_paths=[],
                 reference_modules=[MOD_API_FQN, MOD_CORE_FQN],
                 reference_count=2,
-            ),
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_function_metrics(ctx: TestContext, now: datetime) -> None:
-        """Seed function metrics for subsystem functions.
-
-        Parameters
-        ----------
-        ctx
-            Test context with gateway.
-        now
-            Timestamp for created_at fields.
-        """
-        rows = [
-            dataclass_row(
-                FunctionMetricsRow,
-                function_goid_h128=GOID_API_HANDLER,
-                urn=f"goid:{ctx.repo}#python:function:{MOD_API_FQN}.handler",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_API_PATH,
-                language="python",
-                kind="function",
-                qualname=f"{MOD_API_FQN}.handler",
-                start_line=1,
-                end_line=2,
-                loc=4,
-                logical_loc=3,
-                param_count=1,
-                positional_params=1,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=1,
-                max_nesting_depth=1,
-                stmt_count=2,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
-                created_at=now,
-            ),
-            dataclass_row(
-                FunctionMetricsRow,
-                function_goid_h128=GOID_CORE_SERVICE,
-                urn=f"goid:{ctx.repo}#python:function:{MOD_CORE_FQN}.service",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_CORE_PATH,
-                language="python",
-                kind="function",
-                qualname=f"{MOD_CORE_FQN}.service",
-                start_line=1,
-                end_line=5,
-                loc=8,
-                logical_loc=6,
-                param_count=2,
-                positional_params=2,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=3,
-                max_nesting_depth=2,
-                stmt_count=5,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
-                created_at=now,
-            ),
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_risk_factors(ctx: TestContext) -> None:
-        """Seed risk factors for subsystem functions.
-
-        Parameters
-        ----------
-        ctx
-            Test context with gateway.
-        """
-        rows = [
-            dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=GOID_API_HANDLER,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=1,
-                fan_in_count=0,
-                fan_out_count=1,
-                has_tests=True,
-            ),
-            dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=GOID_CORE_SERVICE,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                risk_score=7,
-                risk_level="high",
-                cyclomatic_complexity=3,
-                fan_in_count=2,
-                fan_out_count=2,
-                has_tests=True,
             ),
         ]
         insert_rows(ctx.gateway, rows)

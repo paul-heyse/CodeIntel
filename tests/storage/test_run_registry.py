@@ -43,7 +43,7 @@ def sample_run_context(run_tracking_harness: RunTrackingHarness) -> RunContext:
         kind="analytics",
         trigger="cli",
         requested_operation="functions.summary",
-        requested_datasets=("analytics.function_metrics",),
+        requested_datasets=("analytics.function_types",),
     )
     return run_tracking_harness.make_context(run_id="ci-123", options=options)
 
@@ -69,7 +69,7 @@ class TestStartAndFetchRun:
                 trigger="cli",
                 pipeline_name="analytics:full",
                 requested_operation="functions.summary",
-                requested_datasets=("analytics.function_metrics",),
+                requested_datasets=("analytics.function_types",),
             ),
         )
         expect_equal(rec.commit, "deadbeef" * 5)
@@ -267,7 +267,7 @@ class TestStartAndCompleteStep:
             run_id="ci-123",
             module="analytics",
             stage="function",
-            name="function_metrics",
+            name="function_types",
         )
 
         tracking.complete_step(
@@ -275,17 +275,17 @@ class TestStartAndCompleteStep:
                 run_id="ci-123",
                 module="analytics",
                 stage="function",
-                name="function_metrics",
+                name="function_types",
                 status="succeeded",
                 started_at=started_at,
-                row_counts={"analytics.function_metrics": 100},
+                row_counts={"analytics.function_types": 100},
             )
         )
 
         steps = expect_steps(tracking.fetch_steps("ci-123"), expected_count=1)
         expect_equal(steps[0].status, "succeeded")
         expect_true(steps[0].completed_at is not None, message="Expected step completion time.")
-        expect_equal(steps[0].row_counts, {"analytics.function_metrics": 100})
+        expect_equal(steps[0].row_counts, {"analytics.function_types": 100})
 
 
 class TestMultipleSteps:
@@ -331,7 +331,7 @@ class TestMultipleSteps:
                 run_id="ci-123",
                 module="analytics",
                 stage="function",
-                name="function_metrics",
+                name="function_types",
                 status="failed",
                 started_at=now,
                 completed_at=now,

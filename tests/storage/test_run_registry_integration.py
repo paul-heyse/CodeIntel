@@ -177,7 +177,7 @@ class TestNewRunContextIntegration:
             snapshot=sample_snapshot,
             kind="analytics",
             trigger="http",
-            requested_datasets=("analytics.function_metrics",),
+            requested_datasets=("analytics.function_types",),
         )
 
         if not ctx.run_id.startswith("analytics-"):
@@ -186,7 +186,7 @@ class TestNewRunContextIntegration:
             pytest.fail(f"Expected kind analytics but got {ctx.kind}")
         if ctx.trigger != "http":
             pytest.fail(f"Expected trigger http but got {ctx.trigger}")
-        if ctx.requested_datasets != ("analytics.function_metrics",):
+        if ctx.requested_datasets != ("analytics.function_types",):
             pytest.fail("Requested datasets mismatch")
 
     @staticmethod
@@ -259,11 +259,11 @@ class TestFullRunLifecycle:
                 run_id=ctx.run_id,
                 module="analytics",
                 stage="function",
-                name="function_metrics",
+                name="function_types",
                 status="succeeded",
                 started_at=now,
                 completed_at=now,
-                row_counts={"analytics.function_metrics": 10},
+                row_counts={"analytics.function_types": 10},
             ),
         )
 
@@ -300,9 +300,9 @@ class TestFullRunLifecycle:
             if step.module == "analytics":
                 expect_step(
                     step,
-                    name="function_metrics",
+                    name="function_types",
                     status="succeeded",
-                    row_counts={"analytics.function_metrics": 10},
+                    row_counts={"analytics.function_types": 10},
                 )
 
     @staticmethod
@@ -326,7 +326,7 @@ class TestFullRunLifecycle:
                 run_id=ctx.run_id,
                 module="analytics",
                 stage="function",
-                name="function_metrics",
+                name="function_types",
                 status="failed",
                 started_at=now,
                 completed_at=now,
@@ -337,12 +337,12 @@ class TestFullRunLifecycle:
         gateway.runs.complete_run(
             ctx.run_id,
             status="failed",
-            error_summary="function_metrics plugin failed",
+            error_summary="function_types plugin failed",
         )
 
         expect_run(
             gateway.runs.fetch_run(ctx.run_id),
-            ExpectedRun(status="failed", error_summary="function_metrics plugin failed"),
+            ExpectedRun(status="failed", error_summary="function_types plugin failed"),
         )
 
         steps = expect_steps(gateway.runs.fetch_steps(ctx.run_id), expected_count=1)

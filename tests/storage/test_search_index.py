@@ -2,27 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.assertions import expect_true
-from tests._helpers.fixtures.rows import function_metrics_row, insert_rows
+from tests._helpers.fixtures.rows import insert_rows, module_row
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-def test_search_documents_includes_function_metrics(
+def test_search_documents_includes_modules(
     fresh_gateway: StorageGateway,
 ) -> None:
-    """Verify search documents include function_metrics entries."""
-    row = function_metrics_row(
-        goid=123,
-        rel_path="pkg/mod.py",
-        qualname="hello",
-        snapshot=("demo/repo", "c1"),
-        metrics={"created_at": datetime(2024, 1, 1, tzinfo=UTC)},
+    """Verify search documents include module entries."""
+    row = module_row(
+        path="pkg/mod.py",
+        module="pkg.mod",
+        repo="demo/repo",
+        commit="c1",
     )
     insert_rows(fresh_gateway, [row])
 
@@ -32,12 +30,12 @@ def test_search_documents_includes_function_metrics(
         """
         SELECT ref_goid_h128, name
         FROM docs.search_documents
-        WHERE kind = 'function'
+        WHERE kind = 'module'
         """
     ).fetchall()
 
-    expect_true(rows is not None and len(rows) > 0, message="function search docs should exist")
+    expect_true(rows is not None and len(rows) > 0, message="module search docs should exist")
     expect_true(
-        any(ref == "123" and name == "hello" for ref, name in rows),
-        message="function_metrics entries should populate search documents",
+        any(ref == "pkg/mod.py" and name == "pkg.mod" for ref, name in rows),
+        message="module entries should populate search documents",
     )

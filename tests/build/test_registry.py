@@ -134,7 +134,7 @@ class TestTargetsByModule:
 
 @pytest.mark.parametrize(
     "target_name",
-    ["modules", "ast", "scip", "goids", "call_graph", "function_metrics", "profiles"],
+    ["modules", "ast", "scip", "goids", "call_graph", "function_types"],
 )
 def test_key_targets_are_registered(target_name: str, catalog: DagCatalog) -> None:
     """Key targets are available in the registry."""

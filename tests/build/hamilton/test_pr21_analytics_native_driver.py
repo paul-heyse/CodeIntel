@@ -17,9 +17,7 @@ def test_auto_driver_includes_native_analytics_nodes(hamilton_runtime: RuntimeBu
 
     native_targets = [
         "external_deps",
-        "function_metrics",
-        "module_profile",
-        "risk_factors",
+        "function_types",
     ]
     expected_target_nodes = [f"t__{target_name}" for target_name in native_targets]
 
@@ -36,9 +34,7 @@ def test_auto_driver_resolves_native_target_nodes(
 
     native_targets = [
         "external_deps",
-        "function_metrics",
-        "module_profile",
-        "risk_factors",
+        "function_types",
     ]
 
     for target_name in native_targets:
@@ -47,21 +43,3 @@ def test_auto_driver_resolves_native_target_nodes(
             pytest.fail(f"Expected target '{target_name}' to resolve to a node")
         if node_name not in all_nodes:
             pytest.fail(f"Expected node '{node_name}' not found in auto driver")
-
-
-def test_risk_factors_native_still_present_in_wave2(hamilton_runtime: RuntimeBundle) -> None:
-    """Verify Wave 1 native target (risk_factors) is still present in auto driver."""
-    all_nodes = list_available_nodes(runtime=hamilton_runtime)
-
-    # risk_factors should have its native nodes
-    expected_risk_factors_nodes = [
-        "t__risk_factors__compute",
-        "t__risk_factors",
-    ]
-
-    for node_name in expected_risk_factors_nodes:
-        if node_name not in all_nodes:
-            pytest.fail(
-                f"Expected risk_factors node '{node_name}' not found. "
-                f"Wave 1 target may have been broken by Wave 2 changes."
-            )

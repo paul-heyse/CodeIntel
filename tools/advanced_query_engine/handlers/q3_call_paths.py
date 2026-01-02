@@ -54,6 +54,7 @@ def _call_captures(
     if not query_text:
         return []
     source_bytes = context.cache.read_bytes(rel_path)
+    parsed = context.tree_sitter_parse(rel_path, "python")
     result = run_query_packs(
         TreeSitterRequest(
             language="python",
@@ -62,6 +63,7 @@ def _call_captures(
             queries=[TreeSitterQuery(pack_id="ts.python.calls", query_text=query_text)],
             match_limit=budget.max_matches,
             preview_limit=200,
+            parsed=parsed,
         )
     )
     return [cap for cap in result.captures if cap.capture_name == "call.callee"]

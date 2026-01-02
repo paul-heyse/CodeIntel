@@ -61,7 +61,7 @@ class TestIsViewFunction:
     @staticmethod
     def test_analytics_tables_return_false() -> None:
         """Verify analytics.* tables are not views."""
-        expect_false(is_view("analytics.function_metrics"))
+        expect_false(is_view("analytics.function_types"))
         expect_false(is_view("analytics.file_metrics"))
         expect_false(is_view("analytics.module_metrics"))
 
@@ -85,9 +85,9 @@ class TestGetContractForTableKey:
     @staticmethod
     def test_returns_contract_for_known_table() -> None:
         """Verify a known table key returns a DatasetContract."""
-        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_metrics"))
-        expect_equal(contract.table_key, "analytics.function_metrics")
-        expect_equal(contract.name, "function_metrics")
+        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_types"))
+        expect_equal(contract.table_key, "analytics.function_types")
+        expect_equal(contract.name, "function_types")
 
     @staticmethod
     def test_returns_contract_for_view() -> None:
@@ -102,8 +102,8 @@ class TestGetContractForTableKey:
     @staticmethod
     def test_caches_results() -> None:
         """Verify contracts are cached on repeated calls."""
-        contract1 = get_contract_for_table_key("analytics.function_metrics")
-        contract2 = get_contract_for_table_key("analytics.function_metrics")
+        contract1 = get_contract_for_table_key("analytics.function_types")
+        contract2 = get_contract_for_table_key("analytics.function_types")
         expect_true(contract1 is contract2, message="Expected cached contract instance")
 
     @staticmethod
@@ -115,7 +115,7 @@ class TestGetContractForTableKey:
     @staticmethod
     def test_contract_has_required_fields() -> None:
         """Verify derived contracts have all required fields populated."""
-        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_metrics"))
+        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_types"))
         expect_is_not_none(contract.table_key, label="table_key")
         expect_is_not_none(contract.name, label="name")
         # owner_package should be derived from schema prefix
@@ -194,13 +194,13 @@ class TestTableHandling:
     @staticmethod
     def test_tables_have_base_table_tag() -> None:
         """Verify table contracts have base_table tag."""
-        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_metrics"))
+        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_types"))
         expect_in("base_table", contract.tags)
 
     @staticmethod
     def test_tables_have_owner_package() -> None:
         """Verify tables have owner_package derived from schema prefix."""
-        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_metrics"))
+        contract = expect_is_not_none(get_contract_for_table_key("analytics.function_types"))
         expect_equal(contract.owner_package, "analytics")
 
         contract = get_contract_for_table_key("core.goids")
@@ -214,13 +214,13 @@ class TestContractCacheManagement:
     def test_clear_contract_cache_clears_all_cached_contracts() -> None:
         """Verify clear_contract_cache() removes all cached entries."""
         # Populate cache
-        contract1 = get_contract_for_table_key("analytics.function_metrics")
+        contract1 = get_contract_for_table_key("analytics.function_types")
 
         # Clear cache
         clear_contract_cache()
 
         # Get again - should be a new instance if not frozen
-        contract2 = get_contract_for_table_key("analytics.function_metrics")
+        contract2 = get_contract_for_table_key("analytics.function_types")
 
         # Both should have same values even after cache clear
         expect_equal(contract1.table_key, contract2.table_key)
@@ -234,7 +234,7 @@ class TestBuildStorageContractParity:
         """Verify build and storage contracts agree on core fields."""
         clear_storage_contract_cache()
         ensure_storage_contract_catalog()
-        table_key = "analytics.function_metrics"
+        table_key = "analytics.function_types"
 
         build_contract = get_contract_for_table_key(table_key)
         storage_contract = get_storage_contract_for_table_key(table_key)
@@ -256,7 +256,7 @@ class TestContractMetadataDerivation:
     @staticmethod
     def test_schema_description_used_when_available() -> None:
         """Verify schema description is used as contract description when available."""
-        contract = get_contract_for_table_key("analytics.function_metrics")
+        contract = get_contract_for_table_key("analytics.function_types")
         # Description should be populated from schema or target
         # The exact value depends on schema provider configuration
         expect_true(
@@ -267,7 +267,7 @@ class TestContractMetadataDerivation:
     @staticmethod
     def test_family_derived_from_schema_prefix() -> None:
         """Verify family is derived from schema prefix."""
-        contract = get_contract_for_table_key("analytics.function_metrics")
+        contract = get_contract_for_table_key("analytics.function_types")
         expect_equal(contract.family, "analytics")
 
         contract = get_contract_for_table_key("core.goids")
@@ -276,5 +276,5 @@ class TestContractMetadataDerivation:
     @staticmethod
     def test_validation_profile_defaults_to_strict() -> None:
         """Verify validation_profile defaults to 'strict'."""
-        contract = get_contract_for_table_key("analytics.function_metrics")
+        contract = get_contract_for_table_key("analytics.function_types")
         expect_equal(contract.validation_profile, "strict")

@@ -62,7 +62,7 @@ def _create_test_graph() -> DagCatalog:
             "modules": ("core.modules",),
             "ast": ("core.ast_nodes",),
             "goids": ("core.goids",),
-            "typing": ("analytics.typedness",),
+            "typing": ("analytics.static_diagnostics",),
         },
     )
 

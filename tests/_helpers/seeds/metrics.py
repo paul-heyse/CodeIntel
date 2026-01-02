@@ -1,11 +1,7 @@
-"""Metrics seed pack for function metrics and risk factors.
+"""Metrics seed pack for static diagnostics and graph metrics.
 
 This module provides the MetricsPack which seeds analytics tables:
-function_metrics, goid_risk_factors, typedness, static_diagnostics,
-and graph_metrics_modules_ext.
-
-The pack depends on CORE_PACK and uses its GOID definitions to create
-realistic metrics data for functions.
+static_diagnostics and graph_metrics_modules_ext.
 """
 
 from __future__ import annotations
@@ -15,11 +11,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from tests._helpers.fixtures.rows import (
-    FunctionMetricsRow,
     GraphMetricsModulesExtRow,
-    RiskFactorRow,
     StaticDiagnosticsRow,
-    TypednessRow,
     dataclass_row,
     insert_rows,
 )
@@ -51,22 +44,15 @@ if TYPE_CHECKING:
 
 @dataclass
 class MetricsPack:
-    """Seed pack for function metrics and analytics data.
+    """Seed pack for static diagnostics and graph metrics data.
 
-    Seeds function metrics, risk factors, typedness, static diagnostics,
-    and graph metrics tables. Creates realistic metrics using GOIDs
-    from CORE_PACK.
+    Seeds static diagnostics and graph metrics tables. Creates realistic metrics
+    using GOIDs from CORE_PACK.
 
     Attributes
     ----------
     name : str
         Unique pack identifier.
-    include_function_metrics : bool
-        Whether to seed function metrics.
-    include_risk_factors : bool
-        Whether to seed risk factors.
-    include_typedness : bool
-        Whether to seed typedness data.
     include_static_diagnostics : bool
         Whether to seed static diagnostics.
     include_graph_metrics : bool
@@ -74,9 +60,6 @@ class MetricsPack:
     """
 
     name: str = "metrics"
-    include_function_metrics: bool = True
-    include_risk_factors: bool = True
-    include_typedness: bool = True
     include_static_diagnostics: bool = True
     include_graph_metrics: bool = True
 
@@ -94,7 +77,7 @@ class MetricsPack:
     def apply(self, ctx: TestContext) -> None:
         """Apply metrics seeds to the test context.
 
-        Seeds function metrics, risk factors, and related tables.
+        Seeds static diagnostics and graph metrics tables.
 
         Parameters
         ----------
@@ -103,277 +86,11 @@ class MetricsPack:
         """
         now = datetime.now(UTC)
 
-        if self.include_function_metrics:
-            self._seed_function_metrics(ctx, now)
-
-        if self.include_risk_factors:
-            self._seed_risk_factors(ctx)
-
-        if self.include_typedness:
-            self._seed_typedness(ctx)
-
         if self.include_static_diagnostics:
             self._seed_static_diagnostics(ctx)
 
         if self.include_graph_metrics:
             self._seed_graph_metrics(ctx, now)
-
-    @staticmethod
-    def _seed_function_metrics(ctx: TestContext, now: datetime) -> None:
-        """Seed function metrics table.
-
-        Parameters
-        ----------
-        ctx
-            Test context with gateway.
-        now
-            Timestamp for created_at fields.
-        """
-        rows = [
-            dataclass_row(
-                FunctionMetricsRow,
-                function_goid_h128=GOID_FUNC_A,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_A_PATH}#func_a",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_A_PATH,
-                language="python",
-                kind="function",
-                qualname="func_a",
-                start_line=1,
-                end_line=10,
-                loc=10,
-                logical_loc=8,
-                param_count=2,
-                positional_params=2,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=3,
-                max_nesting_depth=2,
-                stmt_count=8,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
-                created_at=now,
-            ),
-            dataclass_row(
-                FunctionMetricsRow,
-                function_goid_h128=GOID_FUNC_B,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_B_PATH}#func_b",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_B_PATH,
-                language="python",
-                kind="function",
-                qualname="func_b",
-                start_line=1,
-                end_line=15,
-                loc=15,
-                logical_loc=12,
-                param_count=1,
-                positional_params=1,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=True,
-                is_generator=False,
-                return_count=2,
-                yield_count=0,
-                raise_count=1,
-                cyclomatic_complexity=5,
-                max_nesting_depth=3,
-                stmt_count=12,
-                decorator_count=1,
-                has_docstring=True,
-                complexity_bucket="medium",
-                created_at=now,
-            ),
-            dataclass_row(
-                FunctionMetricsRow,
-                function_goid_h128=GOID_FUNC_C,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_C_PATH}#func_c",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_C_PATH,
-                language="python",
-                kind="function",
-                qualname="func_c",
-                start_line=1,
-                end_line=8,
-                loc=8,
-                logical_loc=6,
-                param_count=0,
-                positional_params=0,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=True,
-                return_count=0,
-                yield_count=3,
-                raise_count=0,
-                cyclomatic_complexity=2,
-                max_nesting_depth=1,
-                stmt_count=6,
-                decorator_count=0,
-                has_docstring=False,
-                complexity_bucket="low",
-                created_at=now,
-            ),
-            dataclass_row(
-                FunctionMetricsRow,
-                function_goid_h128=GOID_HELPER,
-                urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_UTIL_PATH}#helper",
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=MOD_UTIL_PATH,
-                language="python",
-                kind="function",
-                qualname="helper",
-                start_line=1,
-                end_line=5,
-                loc=5,
-                logical_loc=4,
-                param_count=1,
-                positional_params=1,
-                keyword_only_params=0,
-                has_varargs=False,
-                has_varkw=False,
-                is_async=False,
-                is_generator=False,
-                return_count=1,
-                yield_count=0,
-                raise_count=0,
-                cyclomatic_complexity=1,
-                max_nesting_depth=0,
-                stmt_count=4,
-                decorator_count=0,
-                has_docstring=True,
-                complexity_bucket="low",
-                created_at=now,
-            ),
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_risk_factors(ctx: TestContext) -> None:
-        """Seed risk factors table.
-
-        Parameters
-        ----------
-        ctx
-            Test context with gateway.
-        """
-        rows = [
-            dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=GOID_FUNC_A,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=3,
-                fan_in_count=1,
-                fan_out_count=2,
-                has_tests=True,
-            ),
-            dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=GOID_FUNC_B,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                risk_score=4,
-                risk_level="medium",
-                cyclomatic_complexity=5,
-                fan_in_count=3,
-                fan_out_count=4,
-                has_tests=True,
-            ),
-            dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=GOID_FUNC_C,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                risk_score=2,
-                risk_level="low",
-                cyclomatic_complexity=2,
-                fan_in_count=0,
-                fan_out_count=1,
-                has_tests=True,
-            ),
-            dataclass_row(
-                RiskFactorRow,
-                function_goid_h128=GOID_HELPER,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                risk_score=1,
-                risk_level="low",
-                cyclomatic_complexity=1,
-                fan_in_count=0,
-                fan_out_count=0,
-                has_tests=True,
-            ),
-        ]
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _seed_typedness(ctx: TestContext) -> None:
-        """Seed typedness table.
-
-        Parameters
-        ----------
-        ctx
-            Test context with gateway.
-        """
-        rows = [
-            dataclass_row(
-                TypednessRow,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                path=MOD_A_PATH,
-                type_error_count=0,
-                annotation_ratio="0.9",
-                untyped_defs=1,
-                overlay_needed=False,
-            ),
-            dataclass_row(
-                TypednessRow,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                path=MOD_B_PATH,
-                type_error_count=1,
-                annotation_ratio="0.7",
-                untyped_defs=2,
-                overlay_needed=True,
-            ),
-            dataclass_row(
-                TypednessRow,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                path=MOD_C_PATH,
-                type_error_count=2,
-                annotation_ratio="0.3",
-                untyped_defs=3,
-                overlay_needed=True,
-            ),
-            dataclass_row(
-                TypednessRow,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                path=MOD_UTIL_PATH,
-                type_error_count=0,
-                annotation_ratio="0.95",
-                untyped_defs=0,
-                overlay_needed=False,
-            ),
-        ]
-        insert_rows(ctx.gateway, rows)
 
     @staticmethod
     def _seed_static_diagnostics(ctx: TestContext) -> None:

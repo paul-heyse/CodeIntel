@@ -39,9 +39,9 @@ def test_analytics_target_harness_runs(
         Analytics target harness fixture.
     """
     records = analytics_target_harness.run_targets()
-    record = records["function_metrics"]
+    record = records["function_types"]
     assert_target_ok(record)
-    analytics_target_harness.assert_function_metrics(min_rows=1)
+    analytics_target_harness.assert_function_types(min_rows=1)
 
 
 def test_serving_target_harness_publishes_snapshot(

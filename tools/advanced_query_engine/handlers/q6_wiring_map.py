@@ -467,41 +467,6 @@ def _validation_payload(issues: list[PackIssue]) -> dict[str, list[dict[str, obj
     return {"errors": errors, "warnings": warnings}
 
 
-def _pack_paths(available: dict[str, Path], pack_ids: object) -> list[Path]:
-    if pack_ids is None:
-        return list(available.values())
-    if isinstance(pack_ids, list):
-        pack_id_list = [str(item) for item in pack_ids]
-    elif isinstance(pack_ids, str):
-        pack_id_list = [pack_ids]
-    else:
-        msg = "pack_ids must be a string or list of strings."
-        raise TypeError(msg)
-    return [available[pack_id] for pack_id in pack_id_list if pack_id in available]
-
-
-def _run_packs(
-    pack_list: list[Path], exec_ctx: _WiringExecution
-) -> tuple[list[dict[str, object]], bool]:
-    results: list[dict[str, object]] = []
-    budget_exhausted = False
-    for pack_path in pack_list:
-        if _budget_exhausted(exec_ctx.budget, exec_ctx.deadline, 0):
-            budget_exhausted = True
-            break
-        pack = exec_ctx.context.wiring_catalog.load_json(pack_path)
-        results.append(_execute_pack(pack=pack, exec_ctx=exec_ctx))
-    return results, budget_exhausted
-
-
-def _edges_from_results(results: list[dict[str, object]]) -> list[dict[str, object]]:
-    edges: list[dict[str, object]] = []
-    for result in results:
-        edges.extend(result.get("edges") or [])
-    edges.sort(key=lambda item: (item.get("entry_kind"), item.get("entry_key")))
-    return edges
-
-
 def _require_stages(pack: dict[str, object]) -> list[object]:
     stages = pack.get("stages") or []
     if not stages:
@@ -677,6 +642,28 @@ def _edges_from_results(results: list[dict[str, object]]) -> list[dict[str, obje
     return edges
 
 
+def _validation_summary(results: list[dict[str, object]]) -> dict[str, int]:
+    errors = 0
+    warnings = 0
+    skipped = 0
+    partial = 0
+    for result in results:
+        validation = result.get("validation")
+        if isinstance(validation, dict):
+            errors += len(validation.get("errors") or [])
+            warnings += len(validation.get("warnings") or [])
+        if result.get("skipped"):
+            skipped += 1
+        if result.get("partial"):
+            partial += 1
+    return {
+        "errors": errors,
+        "warnings": warnings,
+        "skipped": skipped,
+        "partial": partial,
+    }
+
+
 def handle(request: QueryRequest, context: SearchContext) -> QueryResponse:
     """Execute wiring packs and emit wiring edges.
 
@@ -709,10 +696,15 @@ def handle(request: QueryRequest, context: SearchContext) -> QueryResponse:
     pack_list = _resolve_pack_paths(options.get("pack_ids"), context.wiring_catalog.wiring_packs)
     results, budget_exhausted = _run_packs(pack_list, exec_ctx)
     edges = _edges_from_results(results)
+    validation_summary = _validation_summary(results)
 
     summary = f"Emitted {len(edges)} wiring edges from {len(results)} pack(s)."
     related = {"by_pack": results}
-    debug = {"pack_count": len(results), "budget_exhausted": budget_exhausted}
+    debug = {
+        "pack_count": len(results),
+        "budget_exhausted": budget_exhausted,
+        "validation": validation_summary,
+    }
     return QueryResponse(summary=summary, primary=edges, related=related, debug=debug)
 
 

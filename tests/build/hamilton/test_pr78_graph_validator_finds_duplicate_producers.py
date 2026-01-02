@@ -28,7 +28,7 @@ class FakeNode:
 
 def test_pr78_graph_validator_finds_duplicate_producers() -> None:
     """Ensure validator detects two targets producing the same table_key."""
-    table_key = "analytics.function_metrics"
+    table_key = "analytics.function_types"
 
     materialize_a = FakeNode(
         name="t__target_a",
@@ -50,7 +50,7 @@ def test_pr78_graph_validator_finds_duplicate_producers() -> None:
     )
 
     dataset_from_a = FakeNode(
-        name="d__analytics__function_metrics__a",
+        name="d__analytics__function_types__a",
         tags={
             TAG_NODE_TYPE: NODE_TYPE_DATASET,
             TAG_DOMAIN: "analytics",
@@ -59,7 +59,7 @@ def test_pr78_graph_validator_finds_duplicate_producers() -> None:
         dependencies=(materialize_a,),
     )
     dataset_from_b = FakeNode(
-        name="d__analytics__function_metrics__b",
+        name="d__analytics__function_types__b",
         tags={
             TAG_NODE_TYPE: NODE_TYPE_DATASET,
             TAG_DOMAIN: "analytics",

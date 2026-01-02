@@ -25,7 +25,7 @@ class TestLoaderNodeNaming:
     @staticmethod
     def test_query_node_naming() -> None:
         """Verify query_node produces q__ prefix."""
-        name = query_node("analytics.function_metrics")
+        name = query_node("analytics.function_types")
         if not name.startswith("q__"):
             pytest.fail(f"query_node should start with q__, got '{name}'")
         if not name.isidentifier():
@@ -39,7 +39,7 @@ class TestDriverLoaderNodes:
     def test_generated_module_has_query_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify driver graph includes q__* nodes."""
         node_names = set(hamilton_runtime.dr.graph.nodes)
-        expected = query_node("analytics.function_metrics")
+        expected = query_node("analytics.function_types")
         if expected not in node_names:
             pytest.fail(f"Missing query node {expected}")
 
@@ -53,7 +53,7 @@ class TestDriverLoaderNodes:
         config["variant_fingerprint"] = runtime_env.variants.variant_fingerprint
         runtime = compose_runtime(env=runtime_env, config=config).bundle
         node_names = set(runtime.dr.graph.nodes)
-        query_name = query_node("analytics.function_metrics")
+        query_name = query_node("analytics.function_types")
         if query_name in node_names:
             pytest.fail("Query nodes should be disabled when include_loader_nodes=False")
 
@@ -107,7 +107,7 @@ class TestValidateOutputsBehavior:
             pytest.skip("ValidationResult class not found")
 
         result = validation_result_cls(
-            table_key="analytics.function_metrics",
+            table_key="analytics.function_types",
             valid=False,
             errors=("Column 'loc' has wrong type",),
         )
@@ -125,7 +125,7 @@ class TestValidateOutputsBehavior:
         conceptual model rather than full integration.
         """
         record = TargetRunRecord(
-            target="function_metrics",
+            target="function_types",
             impl_kind="native",
             status="failed",
             input_hash="hash123",
@@ -138,7 +138,7 @@ class TestValidateOutputsBehavior:
     def test_target_run_record_has_validation_fields() -> None:
         """Verify TargetRunRecord can capture validation state."""
         record = TargetRunRecord(
-            target="function_metrics",
+            target="function_types",
             impl_kind="native",
             status="succeeded",
             input_hash="hash123",

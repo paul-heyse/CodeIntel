@@ -138,6 +138,6 @@ def test_dataflow_graph_contains_expected_tables() -> None:
 
     require("core.goids" in node_ids, "core.goids should appear in dataflow graph")
     require(
-        "analytics.function_metrics" in node_ids,
-        "analytics.function_metrics should appear in dataflow graph",
+        "analytics.function_types" in node_ids,
+        "analytics.function_types should appear in dataflow graph",
     )

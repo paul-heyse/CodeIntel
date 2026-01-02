@@ -87,15 +87,15 @@ def test_get_schema_provider_is_cached(hamilton_runtime: RuntimeBundle) -> None:
 
 def test_require_table_schema_for_known_key() -> None:
     """Verify require_table_schema returns a schema for known keys."""
-    schema = require_table_schema("analytics.function_metrics")
+    schema = require_table_schema("analytics.function_types")
     if schema is None:
-        pytest.fail("Expected non-None schema for analytics.function_metrics")
-    if schema.table_key != "analytics.function_metrics":
-        pytest.fail(f"Expected table_key 'analytics.function_metrics', got '{schema.table_key}'")
+        pytest.fail("Expected non-None schema for analytics.function_types")
+    if schema.table_key != "analytics.function_types":
+        pytest.fail(f"Expected table_key 'analytics.function_types', got '{schema.table_key}'")
     if schema.schema != "analytics":
         pytest.fail(f"Expected schema 'analytics', got '{schema.schema}'")
-    if schema.name != "function_metrics":
-        pytest.fail(f"Expected name 'function_metrics', got '{schema.name}'")
+    if schema.name != "function_types":
+        pytest.fail(f"Expected name 'function_types', got '{schema.name}'")
 
 
 def test_require_table_schema_raises_for_unknown_key() -> None:
@@ -121,7 +121,7 @@ def test_iter_table_schemas_contains_expected_keys() -> None:
     """Verify iter_table_schemas contains known critical schemas."""
     schema_keys = {schema.table_key for schema in iter_table_schemas()}
     expected_keys = {
-        "analytics.function_metrics",
+        "analytics.function_types",
         "core.modules",
         "core.goids",
         "graph.call_graph_nodes",
@@ -184,7 +184,7 @@ def test_provider_schema_count_at_least_declared(hamilton_runtime: RuntimeBundle
 
 def test_schema_hash_is_consistent() -> None:
     """Verify schema_hash produces consistent results."""
-    schema = require_table_schema("analytics.function_metrics")
+    schema = require_table_schema("analytics.function_types")
     hash1 = schema_hash(schema)
     hash2 = schema_hash(schema)
     if hash1 != hash2:

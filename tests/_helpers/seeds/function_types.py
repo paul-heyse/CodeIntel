@@ -40,8 +40,7 @@ class FunctionTypesPack:
     """Seed pack for function type annotations.
 
     Seeds analytics.function_types with type annotation data for functions
-    from CORE_PACK. Provides realistic typing scenarios including fully typed,
-    partially typed, and untyped functions.
+    from CORE_PACK.
 
     Attributes
     ----------
@@ -113,18 +112,11 @@ class FunctionTypesPack:
                     end_line=10,
                     total_params=2,
                     annotated_params=2,
-                    unannotated_params=0,
-                    param_typed_ratio=1.0,
                     has_return_annotation=True,
                     return_type="int",
                     return_type_source="annotation",
                     type_comment=None,
-                    param_types_json={"x": "int", "y": "int"},
-                    fully_typed=True,
-                    partial_typed=False,
-                    untyped=False,
-                    typedness_bucket="fully_typed",
-                    typedness_source="annotation",
+                    param_types={"x": "int", "y": "int"},
                     created_at=now,
                 )
             )
@@ -145,18 +137,11 @@ class FunctionTypesPack:
                     end_line=5,
                     total_params=1,
                     annotated_params=1,
-                    unannotated_params=0,
-                    param_typed_ratio=1.0,
                     has_return_annotation=True,
                     return_type="int",
                     return_type_source="annotation",
                     type_comment=None,
-                    param_types_json={"value": "int"},
-                    fully_typed=True,
-                    partial_typed=False,
-                    untyped=False,
-                    typedness_bucket="fully_typed",
-                    typedness_source="annotation",
+                    param_types={"value": "int"},
                     created_at=now,
                 )
             )
@@ -178,18 +163,11 @@ class FunctionTypesPack:
                     end_line=15,
                     total_params=1,
                     annotated_params=0,
-                    unannotated_params=1,
-                    param_typed_ratio=0.0,
                     has_return_annotation=True,
                     return_type="int",
                     return_type_source="annotation",
                     type_comment=None,
-                    param_types_json={},
-                    fully_typed=False,
-                    partial_typed=True,
-                    untyped=False,
-                    typedness_bucket="partial_typed",
-                    typedness_source="annotation",
+                    param_types={},
                     created_at=now,
                 )
             )
@@ -211,18 +189,11 @@ class FunctionTypesPack:
                     end_line=8,
                     total_params=0,
                     annotated_params=0,
-                    unannotated_params=0,
-                    param_typed_ratio=0.0,
                     has_return_annotation=False,
-                    return_type="",
-                    return_type_source="none",
+                    return_type=None,
+                    return_type_source="unknown",
                     type_comment=None,
-                    param_types_json={},
-                    fully_typed=False,
-                    partial_typed=False,
-                    untyped=True,
-                    typedness_bucket="untyped",
-                    typedness_source="none",
+                    param_types={},
                     created_at=now,
                 )
             )

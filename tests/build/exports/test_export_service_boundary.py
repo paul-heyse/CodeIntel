@@ -52,7 +52,7 @@ class _RecordingGateway:
 
 def _seed_export_table(con: DuckDBPyConnection) -> None:
     ensure_production_schemas(con)
-    con.execute("INSERT INTO analytics.function_metrics (function_goid_h128) VALUES (1)")
+    con.execute("INSERT INTO analytics.function_types (function_goid_h128) VALUES (1)")
 
 
 def test_build_export_relation_uses_storage_export_service() -> None:
@@ -63,7 +63,7 @@ def test_build_export_relation_uses_storage_export_service() -> None:
 
     result = export_common.build_export_relation(
         cast("StorageGateway", gateway),
-        "analytics.function_metrics",
+        "analytics.function_types",
         10,
         0,
     )

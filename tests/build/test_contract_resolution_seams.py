@@ -62,7 +62,7 @@ def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
     clear_target_metadata_cache()
     clear_contract_cache()
 
-    table_key = "analytics.function_metrics"
+    table_key = "analytics.function_types"
     target = make_target_descriptor(
         name="unit_test_target",
         module="analytics",

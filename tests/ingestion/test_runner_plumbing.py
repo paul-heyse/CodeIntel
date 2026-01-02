@@ -106,6 +106,8 @@ def test_typing_ingest_uses_shared_runner(
         record = harness.record("typing", result=result)
         assert_target_ok(record)
 
-        row = harness.ctx.gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
+        row = harness.ctx.gateway.con.execute(
+            "SELECT COUNT(*) FROM analytics.static_diagnostics"
+        ).fetchone()
         if (row[0] if row else 0) < 1:
-            pytest.fail("Typedness ingestion wrote no rows")
+            pytest.fail("Static diagnostics ingestion wrote no rows")

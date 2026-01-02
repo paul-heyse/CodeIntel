@@ -58,14 +58,6 @@ def _get_snapshot(ctx: TestContext) -> SnapshotRef:
 def _write_function_results(ctx: TestContext, result: FunctionAnalyticsResult) -> None:
     backend = ctx.gateway.policy
     snapshot = _get_snapshot(ctx)
-    if result.metrics_rows:
-        backend.delete_for_snapshot(
-            "analytics.function_metrics",
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        backend.bulk_insert_mappings("analytics.function_metrics", result.metrics_rows)
-
     if result.types_rows:
         backend.delete_for_snapshot(
             "analytics.function_types",
@@ -112,7 +104,7 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
     result = compute_function_analytics_result(ctx.gateway, snapshot)
     _write_function_results(ctx, result)
 
-    metrics_rows = run_query(ctx.gateway, "SELECT * FROM analytics.function_metrics")
+    types_rows = run_query(ctx.gateway, "SELECT * FROM analytics.function_types")
     validation_rows = run_query(
         ctx.gateway,
         """
@@ -123,8 +115,8 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
         [ctx.repo, ctx.commit],
     )
 
-    if metrics_rows:
-        pytest.fail(f"Expected no metrics rows, found {metrics_rows}")
+    if types_rows:
+        pytest.fail(f"Expected no types rows, found {types_rows}")
     if validation_rows != [(1, "parse_failed")]:
         pytest.fail(f"Unexpected validation rows: {validation_rows}")
     if result.reporter.parse_failed != 1:

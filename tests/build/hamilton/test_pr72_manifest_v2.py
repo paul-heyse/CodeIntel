@@ -68,12 +68,12 @@ class TestExportArtifact:
         """Test creating a Parquet artifact."""
         artifact = ExportArtifact(
             kind="parquet",
-            filename="function_metrics.parquet",
-            table_key="analytics.function_metrics",
+            filename="function_types.parquet",
+            table_key="analytics.function_types",
         )
         expect_equal(artifact.kind, "parquet")
-        expect_equal(artifact.filename, "function_metrics.parquet")
-        expect_equal(artifact.table_key, "analytics.function_metrics")
+        expect_equal(artifact.filename, "function_types.parquet")
+        expect_equal(artifact.table_key, "analytics.function_types")
         expect_true(artifact.description is None)
 
     @staticmethod
@@ -139,7 +139,7 @@ def sample_table() -> TableSchema:
         Sample table schema for testing.
     """
     return _make_table(
-        "analytics.function_metrics",
+        "analytics.function_types",
         [
             ("function_goid_h128", "VARCHAR", False),
             ("loc", "INTEGER", True),
@@ -157,7 +157,7 @@ def sample_view() -> TableSchema:
         Sample view schema for testing.
     """
     return _make_table(
-        "docs.v_function_summary",
+        "docs.v_function_architecture",
         [
             ("function_name", "VARCHAR", True),
             ("total_loc", "INTEGER", True),
@@ -176,8 +176,8 @@ def sample_artifact() -> ExportArtifact:
     """
     return ExportArtifact(
         kind="parquet",
-        filename="function_metrics.parquet",
-        table_key="analytics.function_metrics",
+        filename="function_types.parquet",
+        table_key="analytics.function_types",
     )
 
 

@@ -25,13 +25,13 @@ def test_pr80_schema_manifest_identical_batch_vs_individual(
         pytest.fail("Runtime bundle missing schema_index")
 
     request_batch = SchemaManifestRequest(
-        targets=("risk_factors", "function_metrics"),
+        targets=("function_types",),
         infer_native=True,
         batch_infer_native=True,
         stable=True,
     )
     request_individual = SchemaManifestRequest(
-        targets=("risk_factors", "function_metrics"),
+        targets=("function_types",),
         infer_native=True,
         batch_infer_native=False,
         stable=True,

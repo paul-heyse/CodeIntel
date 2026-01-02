@@ -16,9 +16,6 @@ from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.data_models.rows import (
     SymbolUseRow,
 )
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
-)
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphEdgesRow as CallGraphEdgeRow,
 )
@@ -96,36 +93,6 @@ SYMBOL_USE_SAMPLES: list[SymbolUseRow] = [
         use_goid_h128=None,
     ),
 ]
-BEHAVIORAL_COVERAGE_SAMPLES: list[BehavioralCoverageRowModel] = [
-    {
-        "repo": "alpha",
-        "commit": "bravo",
-        "test_id": "test_one",
-        "test_goid_h128": 101,
-        "rel_path": "tests/test_alpha.py",
-        "qualname": "TestAlpha.test_one",
-        "behavior_tags": {"tag": "value"},
-        "tag_source": "heuristic",
-        "heuristic_version": "v1",
-        "llm_model": None,
-        "llm_run_id": None,
-        "created_at": datetime(2024, 1, 1, tzinfo=UTC),
-    },
-    {
-        "repo": "charlie",
-        "commit": "delta",
-        "test_id": "test_two",
-        "test_goid_h128": None,
-        "rel_path": "tests/test_beta.py",
-        "qualname": None,
-        "behavior_tags": {"tag": "other"},
-        "tag_source": "llm",
-        "heuristic_version": None,
-        "llm_model": "model-x",
-        "llm_run_id": "run-1",
-        "created_at": datetime(2023, 6, 15, tzinfo=UTC),
-    },
-]
 
 
 def _short_text() -> SearchStrategy[str]:
@@ -158,10 +125,6 @@ def _call_graph_edge_strategy() -> SearchStrategy[CallGraphEdgeRow]:
 
 def _symbol_use_row_strategy() -> SearchStrategy[SymbolUseRow]:
     return st.sampled_from(SYMBOL_USE_SAMPLES)
-
-
-def _behavioral_coverage_strategy() -> SearchStrategy[BehavioralCoverageRowModel]:
-    return st.sampled_from(BEHAVIORAL_COVERAGE_SAMPLES)
 
 
 @lru_cache(maxsize=1)
@@ -215,20 +178,6 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
     values = row.to_tuple()
     contract = _contracts_by_table_key()["graph.symbol_use_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
-    if len(values) != expected_len:
-        pytest.fail(f"Expected {expected_len} values, got {len(values)}")
-
-
-@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES, deadline=None)
-@given(_behavioral_coverage_strategy())
-def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None:
-    """Generate schemas should align with behavioral coverage TypedDict and serializer."""
-    schema = json_schema_from_typeddict(BehavioralCoverageRowModel)
-    validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
-    contract = _contracts_by_table_key()["analytics.behavioral_coverage"]
-    expected_len = len(contract.schema.columns) if contract.schema else 0
-    columns = [col.name for col in contract.schema.columns] if contract.schema else []
-    values = tuple(cast("dict[str, object]", row)[col] for col in columns)
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 

@@ -39,8 +39,8 @@ class TestHamiltonDriverDefaults:
 
         required = [
             "t__modules",
-            "d__analytics__function_metrics",
-            "q__analytics__function_metrics",
+            "d__analytics__function_types",
+            "q__analytics__function_types",
         ]
         missing = [name for name in required if name not in nodes]
         if missing:

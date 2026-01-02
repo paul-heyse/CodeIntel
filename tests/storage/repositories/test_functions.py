@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from codeintel.storage.repositories.functions import FunctionRepository
-from codeintel.storage.warehouse import Warehouse
 from tests._helpers.assertions import (
     expect_empty,
     expect_equal,
@@ -18,8 +16,6 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fixtures.rows import (
     FunctionValidationRow,
-    function_metrics_row,
-    function_profile_row,
     insert_rows,
 )
 
@@ -141,135 +137,6 @@ def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> N
         all(row["function_goid_h128"] == VALIDATION_GOID_ALPHA for row in results),
         message="results should include only the requested GOID",
     )
-
-
-def test_list_high_risk_functions_returns_empty_when_no_match(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Verify list_high_risk_functions returns empty list when no data."""
-    repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
-
-    result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=False)
-
-    expect_empty(result)
-
-
-def test_list_high_risk_functions_with_tested_only_filter(
-    metrics_ctx: TestContext,
-) -> None:
-    """Verify list_high_risk_functions applies tested_only filter."""
-    untested_goid = 999_001
-    insert_rows(
-        metrics_ctx.gateway,
-        [
-            function_metrics_row(
-                goid=untested_goid,
-                rel_path="test.py",
-                qualname="untested_fn",
-                snapshot=(metrics_ctx.repo, metrics_ctx.commit),
-                metrics={"complexity_bucket": "high", "cyclomatic_complexity": 5},
-            )
-        ],
-    )
-    warehouse = Warehouse(metrics_ctx.gateway)
-    warehouse.materialize_mappings(
-        table_key="analytics.function_profile",
-        rows=[
-            function_profile_row(
-                goid=Decimal(untested_goid),
-                repo=metrics_ctx.repo,
-                commit=metrics_ctx.commit,
-                rel_path="test.py",
-                qualname="untested_fn",
-                tested=False,
-                risk_score=9.0,
-                risk_level="high",
-            ),
-            function_profile_row(
-                goid=Decimal(untested_goid + 1),
-                repo=metrics_ctx.repo,
-                commit=metrics_ctx.commit,
-                rel_path="test.py",
-                qualname="tested_fn",
-                tested=True,
-                risk_score=5.0,
-                risk_level="medium",
-            ),
-        ],
-    )
-
-    repo = FunctionRepository(
-        gateway=metrics_ctx.gateway,
-        repo=metrics_ctx.repo,
-        commit=metrics_ctx.commit,
-    )
-
-    tested_only_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=True)
-    all_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=False)
-
-    expect_true(
-        any(bool(row.get("tested")) for row in tested_only_result),
-        message="tested_only should include tested functions",
-    )
-    expect_is_not_none(tested_only_result[0]["tested"])
-
-    expect_true(
-        any(row["function_goid_h128"] == untested_goid for row in all_result),
-        message="all_result should include untested_fn",
-    )
-    expect_true(
-        all(row["function_goid_h128"] != untested_goid for row in tested_only_result),
-        message="tested_only should exclude untested_fn",
-    )
-
-
-def test_get_function_profile_returns_none_when_not_found(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Verify get_function_profile returns None when no match."""
-    repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
-
-    result = repo.get_function_profile(99999)
-
-    expect_is_none(result)
-
-
-def test_get_function_profile_returns_row(metrics_ctx: TestContext) -> None:
-    """Verify get_function_profile returns row when found."""
-    warehouse = Warehouse(metrics_ctx.gateway)
-    warehouse.materialize_mappings(
-        "analytics.function_profile",
-        [
-            function_profile_row(
-                goid=Decimal(1),
-                qualname="test_fn",
-                rel_path="test.py",
-                repo=metrics_ctx.repo,
-                commit=metrics_ctx.commit,
-                doc_short="Test function",
-            )
-        ],
-    )
-
-    repo = FunctionRepository(
-        gateway=metrics_ctx.gateway,
-        repo=metrics_ctx.repo,
-        commit=metrics_ctx.commit,
-    )
-
-    result = repo.get_function_profile(1)
-
-    expect_is_not_none(result, message="Expected function profile row to exist.")
-    if result is not None:
-        expect_equal(result["qualname"], "test_fn")
 
 
 def test_get_function_architecture_returns_none_when_not_found(

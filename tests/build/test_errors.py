@@ -33,7 +33,7 @@ def test_schema_not_found_messages() -> None:
 
 def test_column_count_mismatch_hint() -> None:
     """ColumnCountMismatchError includes table, row, and expected counts."""
-    error = ColumnCountMismatchError("metrics", "analytics.function_metrics", 5, 3, row_index=2)
+    error = ColumnCountMismatchError("metrics", "analytics.function_types", 5, 3, row_index=2)
 
     expect_in("row 2", error.user_message)
     expect_in("5 columns", error.actionable_hint)
@@ -59,12 +59,12 @@ def test_tool_not_available_hint_fallback() -> None:
 
 def test_target_not_found_suggestions() -> None:
     """TargetNotFoundError suggests close matches when provided."""
-    error = TargetNotFoundError("fuction_metrics", ["function_metrics", "ast"])
+    error = TargetNotFoundError("fuction_metrics", ["function_types", "ast"])
 
     expect_in("does not exist", error.user_message)
     hint = error.actionable_hint or ""
     expect_in("Did you mean", hint)
-    expect_in("function_metrics", hint)
+    expect_in("function_types", hint)
 
 
 def test_missing_dependency_error_hint() -> None:

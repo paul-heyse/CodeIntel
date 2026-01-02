@@ -16,12 +16,6 @@ from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.catalog import FunctionCatalog
 from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsFunctionMetricsRow as FunctionMetricsRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFunctionTypesRow as FunctionTypesRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -35,9 +29,6 @@ from codeintel.core.schemas.generated_rows.analytics import (
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsTestProfileRow as ProfileRowModel,
 )
 from tests._helpers import TestScenario
 from tests._helpers.analytics_domain import make_graph_metric_function_row
@@ -62,41 +53,6 @@ class ContractCtx:
     gateway: StorageGateway
     repo: str
     commit: str
-
-
-def _function_metrics_row(ctx: ContractCtx) -> FunctionMetricsRow:
-    now = datetime.now(UTC)
-    return {
-        "function_goid_h128": 1,
-        "urn": "urn:demo#fn",
-        "repo": ctx.repo,
-        "commit": ctx.commit,
-        "rel_path": "pkg/mod.py",
-        "language": "python",
-        "kind": "function",
-        "qualname": "pkg.mod.fn",
-        "start_line": 1,
-        "end_line": 2,
-        "loc": 2,
-        "logical_loc": 2,
-        "param_count": 1,
-        "positional_params": 1,
-        "keyword_only_params": 0,
-        "has_varargs": False,
-        "has_varkw": False,
-        "is_async": False,
-        "is_generator": False,
-        "return_count": 0,
-        "yield_count": 0,
-        "raise_count": 0,
-        "cyclomatic_complexity": 1,
-        "max_nesting_depth": 0,
-        "stmt_count": 1,
-        "decorator_count": 0,
-        "has_docstring": False,
-        "complexity_bucket": "low",
-        "created_at": now,
-    }
 
 
 def _graph_metrics_functions_row(ctx: ContractCtx) -> GraphMetricsFunctionsRow:
@@ -149,9 +105,6 @@ def _assert_graph_fk(con: DuckDBPyConnection) -> None:
 
 
 COUNT_QUERIES: dict[str, str] = {
-    "analytics.function_metrics": """
-        SELECT COUNT(*) FROM analytics.function_metrics WHERE repo = ? AND commit = ?
-    """,
     "analytics.graph_metrics_functions": """
         SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?
     """,
@@ -189,7 +142,6 @@ def contract_ctx(tmp_path: Path) -> Iterator[ContractCtx]:
 @pytest.mark.parametrize(
     ("table_key", "row_builder", "extra_assertion"),
     [
-        ("analytics.function_metrics", _function_metrics_row, None),
         ("analytics.graph_metrics_functions", _graph_metrics_functions_row, _assert_graph_fk),
     ],
 )
@@ -240,10 +192,7 @@ def _assert_row_matches_table(row_type: type[Mapping[str, object]], table_key: s
 @pytest.mark.parametrize(
     ("row_type", "table_key"),
     [
-        (FunctionMetricsRow, "analytics.function_metrics"),
         (FunctionTypesRow, "analytics.function_types"),
-        (ProfileRowModel, "analytics.test_profile"),
-        (BehavioralCoverageRowModel, "analytics.behavioral_coverage"),
         (GraphMetricsFunctionsRow, "analytics.graph_metrics_functions"),
         (GraphMetricsModulesRow, "analytics.graph_metrics_modules"),
         (GraphMetricsFunctionsExtRow, "analytics.graph_metrics_functions_ext"),

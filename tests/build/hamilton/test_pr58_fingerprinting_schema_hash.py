@@ -14,17 +14,17 @@ def test_compute_table_schema_hash_delegates_to_schema_provider() -> None:
     """compute_table_schema_hash should use the resolved TableSchema from provider."""
     table_schema = TableSchema(
         schema="analytics",
-        name="function_metrics",
+        name="function_types",
         columns=[
             Column("repo", "VARCHAR", nullable=False),
             Column("commit", "VARCHAR", nullable=False),
             Column("loc", "INTEGER"),
         ],
     )
-    provider = MappingSchemaProvider({"analytics.function_metrics": table_schema})
+    provider = MappingSchemaProvider({"analytics.function_types": table_schema})
 
     actual = compute_table_schema_hash(
-        "analytics.function_metrics",
+        "analytics.function_types",
         schema_provider=provider,
     )
     expected = schema_hash(table_schema)

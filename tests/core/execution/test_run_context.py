@@ -119,11 +119,11 @@ class TestRunContext:
             kind="analytics",
             snapshot=snapshot,
             trigger="api",
-            requested_datasets=("analytics.function_metrics", "analytics.module_profiles"),
+            requested_datasets=("analytics.function_types", "analytics.static_diagnostics"),
         )
         expect_equal(
             ctx.requested_datasets,
-            ("analytics.function_metrics", "analytics.module_profiles"),
+            ("analytics.function_types", "analytics.static_diagnostics"),
         )
 
     @staticmethod
@@ -208,7 +208,7 @@ class TestNewRunContext:
     @staticmethod
     def test_requested_datasets_from_list(snapshot: SnapshotRef) -> None:
         """new_run_context should convert datasets list to tuple."""
-        datasets = ["analytics.function_metrics", "analytics.module_profiles"]
+        datasets = ["analytics.function_types", "analytics.static_diagnostics"]
         ctx = new_run_context(
             snapshot=snapshot,
             kind="analytics",

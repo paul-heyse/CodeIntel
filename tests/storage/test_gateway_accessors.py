@@ -68,14 +68,10 @@ def test_analytics_tables_relations_are_queryable(fresh_gateway: StorageGateway)
     """Verify analytics accessor returns relations that can be queried."""
     analytics = AnalyticsTables(fresh_gateway)
     for relation in (
-        analytics.function_metrics(),
         analytics.function_types(),
         analytics.function_validation(),
-        analytics.function_profile(),
         analytics.test_catalog(),
-        analytics.goid_risk_factors(),
         analytics.config_values(),
-        analytics.typedness(),
         analytics.static_diagnostics(),
         analytics.subsystems(),
         analytics.subsystem_modules(),
@@ -86,6 +82,6 @@ def test_analytics_tables_relations_are_queryable(fresh_gateway: StorageGateway)
 def test_docs_views_relations_are_queryable(fresh_gateway: StorageGateway) -> None:
     """Verify docs view accessor returns relations that can be queried."""
     docs = DocsViews(fresh_gateway)
-    relations = (docs.function_summary(), docs.call_graph_enriched(), docs.function_profile())
+    relations = (docs.call_graph_enriched(),)
     for relation in relations:
         require_row(relation.count("*").fetchone(), message="count row present")

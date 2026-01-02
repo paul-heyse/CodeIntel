@@ -64,7 +64,7 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
         now = datetime.now(tz=UTC)
         version = AssetVersionRecord(
             asset_kind="table",
-            asset_key="analytics.function_metrics",
+            asset_key="analytics.function_types",
             version_hash="0123456789abcdef",
             schema_hash="schemahash",
             row_count=10,
@@ -80,12 +80,12 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
             repo="test/repo",
             commit="abc123",
             asset_kind="table",
-            asset_key="analytics.function_metrics",
+            asset_key="analytics.function_types",
             version_hash="0123456789abcdef",
             status="materialized",
-            target="function_metrics",
+            target="function_types",
             impl_kind="native",
-            location="analytics.function_metrics",
+            location="analytics.function_types",
             input_hash="inputhash01234567",
             options_hash=None,
             recorded_at=now,
@@ -99,11 +99,11 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
             repo="test/repo",
             commit="abc123",
             asset_kind="table",
-            asset_key="analytics.function_metrics",
+            asset_key="analytics.function_types",
             version_hash="0123456789abcdef",
             resolution_kind="materialized",
             recorded_at=now,
-            target="function_metrics",
+            target="function_types",
             meta={"why": "test"},
         )
         gateway.assets.record_run_asset_versions_batch([run_map])
@@ -115,17 +115,17 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
             repo="test/repo",
             commit="abc123",
             asset_kind="table",
-            asset_key="analytics.function_metrics",
+            asset_key="analytics.function_types",
             limit=1,
         )
         expect_length(history, 1)
-        expect_equal(history[0].location, "analytics.function_metrics")
+        expect_equal(history[0].location, "analytics.function_types")
 
         gateway.assets.set_alias(
             AssetAliasRecord(
                 alias="latest",
                 asset_kind="table",
-                asset_key="analytics.function_metrics",
+                asset_key="analytics.function_types",
                 version_hash="0123456789abcdef",
                 set_at=now,
                 set_by_run_id="run-1",
@@ -133,14 +133,14 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
             )
         )
         resolved = gateway.assets.resolve_alias(
-            alias="latest", asset_kind="table", asset_key="analytics.function_metrics"
+            alias="latest", asset_kind="table", asset_key="analytics.function_types"
         )
         expect_equal(resolved, "0123456789abcdef")
 
         gateway.assets.save_cached_diff(
             AssetDiffRecord(
                 asset_kind="table",
-                asset_key="analytics.function_metrics",
+                asset_key="analytics.function_types",
                 from_version_hash="0123456789abcdef",
                 to_version_hash="fedcba9876543210",
                 diff_kind="schema_rowcount",
@@ -151,7 +151,7 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
         )
         cached = gateway.assets.get_cached_diff(
             asset_kind="table",
-            asset_key="analytics.function_metrics",
+            asset_key="analytics.function_types",
             from_version_hash="0123456789abcdef",
             to_version_hash="fedcba9876543210",
             diff_kind="schema_rowcount",

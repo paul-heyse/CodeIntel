@@ -14,159 +14,15 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ConfigValueRow",
-    "FunctionMetricsRow",
     "FunctionTypesRow",
     "FunctionValidationRow",
     "GraphMetricsModulesExtRow",
-    "HotspotRow",
-    "RiskFactorRow",
     "StaticDiagnosticsRow",
     "SubsystemModuleRow",
     "SubsystemRow",
     "SymbolGraphMetricsModulesRow",
     "TestCatalogRow",
-    "TypednessRow",
 ]
-
-
-@dataclass(frozen=True)
-class FunctionMetricsRow:
-    """Row for analytics.function_metrics."""
-
-    __table__: ClassVar[str] = "analytics.function_metrics"
-    __columns__: ClassVar[tuple[str, ...]] = (
-        "function_goid_h128",
-        "urn",
-        "repo",
-        "commit",
-        "rel_path",
-        "language",
-        "kind",
-        "qualname",
-        "start_line",
-        "end_line",
-        "loc",
-        "logical_loc",
-        "param_count",
-        "positional_params",
-        "keyword_only_params",
-        "has_varargs",
-        "has_varkw",
-        "is_async",
-        "is_generator",
-        "return_count",
-        "yield_count",
-        "raise_count",
-        "cyclomatic_complexity",
-        "max_nesting_depth",
-        "stmt_count",
-        "decorator_count",
-        "has_docstring",
-        "complexity_bucket",
-        "created_at",
-    )
-
-    function_goid_h128: int
-    urn: str
-    repo: str
-    commit: str
-    rel_path: str
-    language: str
-    kind: str
-    qualname: str
-    start_line: int
-    end_line: int
-    loc: int
-    logical_loc: int
-    param_count: int
-    positional_params: int
-    keyword_only_params: int
-    has_varargs: bool
-    has_varkw: bool
-    is_async: bool
-    is_generator: bool
-    return_count: int
-    yield_count: int
-    raise_count: int
-    cyclomatic_complexity: int
-    max_nesting_depth: int
-    stmt_count: int
-    decorator_count: int
-    has_docstring: bool
-    complexity_bucket: str
-    created_at: datetime
-
-    def to_tuple(
-        self,
-    ) -> tuple[
-        int,
-        str,
-        str,
-        str,
-        str,
-        str,
-        str,
-        str,
-        int,
-        int,
-        int,
-        int,
-        int,
-        int,
-        int,
-        bool,
-        bool,
-        bool,
-        bool,
-        int,
-        int,
-        int,
-        int,
-        int,
-        int,
-        int,
-        bool,
-        str,
-        str,
-    ]:
-        """Serialize row to database insert order.
-
-        Returns
-        -------
-        tuple
-            Values in column order for INSERT.
-        """
-        return (
-            self.function_goid_h128,
-            self.urn,
-            self.repo,
-            self.commit,
-            self.rel_path,
-            self.language,
-            self.kind,
-            self.qualname,
-            self.start_line,
-            self.end_line,
-            self.loc,
-            self.logical_loc,
-            self.param_count,
-            self.positional_params,
-            self.keyword_only_params,
-            self.has_varargs,
-            self.has_varkw,
-            self.is_async,
-            self.is_generator,
-            self.return_count,
-            self.yield_count,
-            self.raise_count,
-            self.cyclomatic_complexity,
-            self.max_nesting_depth,
-            self.stmt_count,
-            self.decorator_count,
-            self.has_docstring,
-            self.complexity_bucket,
-            _iso(self.created_at),
-        )
 
 
 @dataclass(frozen=True)
@@ -187,18 +43,11 @@ class FunctionTypesRow:
         "end_line",
         "total_params",
         "annotated_params",
-        "unannotated_params",
-        "param_typed_ratio",
         "has_return_annotation",
         "return_type",
         "return_type_source",
         "type_comment",
         "param_types",
-        "fully_typed",
-        "partial_typed",
-        "untyped",
-        "typedness_bucket",
-        "typedness_source",
         "created_at",
     )
 
@@ -214,18 +63,11 @@ class FunctionTypesRow:
     end_line: int
     total_params: int
     annotated_params: int
-    unannotated_params: int
-    param_typed_ratio: float
     has_return_annotation: bool
-    return_type: str
-    return_type_source: str
+    return_type: str | None
+    return_type_source: str | None
     type_comment: str | None
-    param_types_json: JsonValue | None
-    fully_typed: bool
-    partial_typed: bool
-    untyped: bool
-    typedness_bucket: str
-    typedness_source: str
+    param_types: JsonValue | None
     created_at: datetime
 
     def to_tuple(
@@ -243,18 +85,11 @@ class FunctionTypesRow:
         int,
         int,
         int,
-        int,
-        float,
         bool,
-        str,
-        str,
+        str | None,
+        str | None,
         str | None,
         JsonValue | None,
-        bool,
-        bool,
-        bool,
-        str,
-        str,
         str,
     ]:
         """Serialize row to database insert order.
@@ -277,79 +112,12 @@ class FunctionTypesRow:
             self.end_line,
             self.total_params,
             self.annotated_params,
-            self.unannotated_params,
-            self.param_typed_ratio,
             self.has_return_annotation,
             self.return_type,
             self.return_type_source,
             self.type_comment,
-            self.param_types_json,
-            self.fully_typed,
-            self.partial_typed,
-            self.untyped,
-            self.typedness_bucket,
-            self.typedness_source,
+            self.param_types,
             _iso(self.created_at),
-        )
-
-
-@dataclass(frozen=True)
-class RiskFactorRow:
-    """Row for analytics.goid_risk_factors."""
-
-    __table__: ClassVar[str] = "analytics.goid_risk_factors"
-    __columns__: ClassVar[tuple[str, ...]] = (
-        "function_goid_h128",
-        "repo",
-        "commit",
-        "risk_score",
-        "risk_level",
-        "cyclomatic_complexity",
-        "fan_in_count",
-        "fan_out_count",
-        "has_tests",
-    )
-
-    function_goid_h128: int
-    repo: str
-    commit: str
-    risk_score: int = 0
-    risk_level: str = "low"
-    cyclomatic_complexity: int = 0
-    fan_in_count: int = 0
-    fan_out_count: int = 0
-    has_tests: bool = False
-
-    def to_tuple(
-        self,
-    ) -> tuple[
-        int,
-        str,
-        str,
-        int,
-        str,
-        int,
-        int,
-        int,
-        bool,
-    ]:
-        """Serialize row to database insert order.
-
-        Returns
-        -------
-        tuple
-            Values in column order for INSERT.
-        """
-        return (
-            self.function_goid_h128,
-            self.repo,
-            self.commit,
-            self.risk_score,
-            self.risk_level,
-            self.cyclomatic_complexity,
-            self.fan_in_count,
-            self.fan_out_count,
-            self.has_tests,
         )
 
 
@@ -435,48 +203,6 @@ class TestCatalogRow:
 
 
 @dataclass(frozen=True)
-class TypednessRow:
-    """Row for analytics.typedness."""
-
-    __table__: ClassVar[str] = "analytics.typedness"
-    __columns__: ClassVar[tuple[str, ...]] = (
-        "repo",
-        "commit",
-        "path",
-        "type_error_count",
-        "annotation_ratio",
-        "untyped_defs",
-        "overlay_needed",
-    )
-
-    repo: str
-    commit: str
-    path: str
-    type_error_count: int
-    annotation_ratio: str
-    untyped_defs: int
-    overlay_needed: bool
-
-    def to_tuple(self) -> tuple[str, str, str, int, str, int, bool]:
-        """Serialize row to database insert order.
-
-        Returns
-        -------
-        tuple
-            Values in column order for INSERT.
-        """
-        return (
-            self.repo,
-            self.commit,
-            self.path,
-            self.type_error_count,
-            self.annotation_ratio,
-            self.untyped_defs,
-            self.overlay_needed,
-        )
-
-
-@dataclass(frozen=True)
 class StaticDiagnosticsRow:
     """Row for analytics.static_diagnostics."""
 
@@ -518,48 +244,6 @@ class StaticDiagnosticsRow:
             self.ruff_errors,
             self.total_errors,
             self.has_errors,
-        )
-
-
-@dataclass(frozen=True)
-class HotspotRow:
-    """Row for analytics.hotspots."""
-
-    __table__: ClassVar[str] = "analytics.hotspots"
-    __columns__: ClassVar[tuple[str, ...]] = (
-        "rel_path",
-        "commit_count",
-        "author_count",
-        "lines_added",
-        "lines_deleted",
-        "complexity",
-        "score",
-    )
-
-    rel_path: str
-    commit_count: int
-    author_count: int
-    lines_added: int
-    lines_deleted: int
-    complexity: float
-    score: float
-
-    def to_tuple(self) -> tuple[str, int, int, int, int, float, float]:
-        """Serialize row to database insert order.
-
-        Returns
-        -------
-        tuple
-            Values in column order for INSERT.
-        """
-        return (
-            self.rel_path,
-            self.commit_count,
-            self.author_count,
-            self.lines_added,
-            self.lines_deleted,
-            self.complexity,
-            self.score,
         )
 
 

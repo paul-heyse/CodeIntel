@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self
 
-from codeintel.build.hamilton.native.analytics.tables_functions import FUNCTION_METRICS_TABLE_KEY
-from codeintel.build.hamilton.native.analytics.tables_risk import RISK_FACTORS_TABLE_KEY
+from codeintel.build.hamilton.native.analytics.function_types import FUNCTION_TYPES_TABLE_KEY
 from tests._helpers.assertions.table_assertions import assert_table_has_rows
 from tests._helpers.fixtures.repos import write_graph_metrics_repo
 from tests._helpers.harnesses.hamilton_build import (
@@ -22,7 +21,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.run_records import TargetRunRecord
 
 
-DEFAULT_ANALYTICS_TARGETS: tuple[str, ...] = ("function_metrics",)
+DEFAULT_ANALYTICS_TARGETS: tuple[str, ...] = ("function_types",)
 
 
 @dataclass
@@ -65,15 +64,10 @@ class AnalyticsTargetHarness:
         result = self.harness.run_targets(requested)
         return {target: self.harness.record(target, result=result) for target in requested}
 
-    def assert_function_metrics(self, *, min_rows: int = 1) -> None:
-        """Assert function metrics tables exist with at least min_rows rows."""
+    def assert_function_types(self, *, min_rows: int = 1) -> None:
+        """Assert function types table exists with at least min_rows rows."""
         gateway = self.harness.ctx.gateway
-        assert_table_has_rows(gateway, FUNCTION_METRICS_TABLE_KEY, min_rows=min_rows)
-
-    def assert_risk_factors(self, *, min_rows: int = 1) -> None:
-        """Assert risk factor table exists with at least min_rows rows."""
-        gateway = self.harness.ctx.gateway
-        assert_table_has_rows(gateway, RISK_FACTORS_TABLE_KEY, min_rows=min_rows)
+        assert_table_has_rows(gateway, FUNCTION_TYPES_TABLE_KEY, min_rows=min_rows)
 
     def close(self) -> None:
         """Close the underlying HamiltonBuildHarness."""

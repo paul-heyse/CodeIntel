@@ -81,10 +81,8 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
         "cfg_blocks.parquet",
         "import_graph_edges.parquet",
         "docstrings.parquet",
-        "function_metrics.parquet",
         "function_types.parquet",
         "test_catalog.parquet",
-        "goid_risk_factors.parquet",
         "goids.jsonl",
         "goid_crosswalk.jsonl",
         "call_graph_nodes.jsonl",
@@ -92,10 +90,8 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
         "cfg_blocks.jsonl",
         "import_graph_edges.jsonl",
         "docstrings.jsonl",
-        "function_metrics.jsonl",
         "function_types.jsonl",
         "test_catalog.jsonl",
-        "goid_risk_factors.jsonl",
         "datasets_manifest.json",
     }
 
@@ -107,11 +103,11 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
         raise AssertionError(message)
     manifest = json.loads((output_dir / "datasets_manifest.json").read_text(encoding="utf-8"))
     dataset_entries = {entry["name"]: entry for entry in manifest.get("datasets", [])}
-    if "function_metrics" not in dataset_entries:
-        pytest.fail("function_metrics missing from dataset manifest")
-    metrics_entry = dataset_entries["function_metrics"]
-    if metrics_entry.get("jsonl") != "function_metrics.jsonl":
-        pytest.fail(f"Unexpected manifest entry: {metrics_entry}")
+    if "function_types" not in dataset_entries:
+        pytest.fail("function_types missing from dataset manifest")
+    types_entry = dataset_entries["function_types"]
+    if types_entry.get("jsonl") != "function_types.jsonl":
+        pytest.fail(f"Unexpected manifest entry: {types_entry}")
 
 
 def test_export_validation_passes_on_minimal_data(
@@ -125,7 +121,7 @@ def test_export_validation_passes_on_minimal_data(
         settings=EXPORT_SETTINGS,
         options=ExportCallOptions(
             validate_exports=True,
-            schemas=["analytics.function_profile"],
+            schemas=["analytics.function_types"],
         ),
     )
 
@@ -133,7 +129,7 @@ def test_export_validation_passes_on_minimal_data(
 def test_export_subset_by_dataset_name(docs_export_gateway: TestContext, tmp_path: Path) -> None:
     """Exports honor dataset-name selection using the registry."""
     output_dir = tmp_path / "Document Output"
-    selected = ["function_metrics", "goids"]
+    selected = ["function_types", "goids"]
     export_all_parquet(
         _build_gateway(docs_export_gateway),
         output_dir,
@@ -149,16 +145,16 @@ def test_export_subset_by_dataset_name(docs_export_gateway: TestContext, tmp_pat
 
     written = {p.name for p in output_dir.iterdir() if p.is_file()}
     expected = {
-        "function_metrics.parquet",
+        "function_types.parquet",
         "goids.parquet",
-        "function_metrics.jsonl",
+        "function_types.jsonl",
         "goids.jsonl",
-        "function_metrics.parquet.manifest.json",
-        "function_metrics.parquet.marker.json",
+        "function_types.parquet.manifest.json",
+        "function_types.parquet.marker.json",
         "goids.parquet.manifest.json",
         "goids.parquet.marker.json",
-        "function_metrics.jsonl.manifest.json",
-        "function_metrics.jsonl.marker.json",
+        "function_types.jsonl.manifest.json",
+        "function_types.jsonl.marker.json",
         "goids.jsonl.manifest.json",
         "goids.jsonl.marker.json",
         "datasets_manifest.json",
@@ -195,13 +191,13 @@ def test_export_helpers_resolve_dataset_names(
     output_dir = tmp_path / "Document Output"
     jsonl_path = export_dataset_to_jsonl(
         _build_gateway(docs_export_gateway),
-        "function_metrics",
+        "function_types",
         output_dir,
         settings=EXPORT_SETTINGS,
     )
     parquet_path = export_dataset_to_parquet(
         _build_gateway(docs_export_gateway),
-        "function_metrics",
+        "function_types",
         output_dir,
         settings=EXPORT_SETTINGS,
     )
@@ -211,10 +207,10 @@ def test_export_helpers_resolve_dataset_names(
     if not parquet_path.exists():
         message = f"Parquet export not written: {parquet_path}"
         pytest.fail(message)
-    if jsonl_path.name != "function_metrics.jsonl":
+    if jsonl_path.name != "function_types.jsonl":
         message = f"Unexpected JSONL path: {jsonl_path.name}"
         pytest.fail(message)
-    if parquet_path.name != "function_metrics.parquet":
+    if parquet_path.name != "function_types.parquet":
         message = f"Unexpected Parquet path: {parquet_path.name}"
         pytest.fail(message)
     with pytest.raises(ValueError, match="Unknown dataset"):
@@ -230,7 +226,7 @@ def test_export_helpers_resolve_dataset_names(
         settings=EXPORT_SETTINGS,
         options=ExportCallOptions(
             validate_exports=True,
-            schemas=["analytics.function_profile"],
+            schemas=["analytics.function_types"],
         ),
     )
 

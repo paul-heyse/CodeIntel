@@ -245,6 +245,8 @@ class TypingIngestResult:
     result: ExecutionResult
     diagnostic_rows: ColumnarRows = field(default_factory=dict)
     diagnostic_row_count: int = 0
+
+
 __all__ = [
     "TypingIngestResult",
     "TypingIngestStep",

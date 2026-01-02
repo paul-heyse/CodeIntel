@@ -454,7 +454,7 @@ class TestJsonSchemaRegistry:
     def test_get_json_schema_returns_valid_schema() -> None:
         """Verify get_json_schema returns valid schema for known table."""
         # Use a well-known table key
-        schema = get_json_schema("analytics.function_metrics")
+        schema = get_json_schema("analytics.function_types")
 
         if schema["$schema"] != EXPECTED_SCHEMA_VERSION:
             pytest.fail(f"Expected schema version {EXPECTED_SCHEMA_VERSION}")
@@ -465,8 +465,8 @@ class TestJsonSchemaRegistry:
     def test_get_json_schema_is_cached() -> None:
         """Verify get_json_schema caches results."""
         clear_json_schema_cache()
-        schema1 = get_json_schema("analytics.function_metrics")
-        schema2 = get_json_schema("analytics.function_metrics")
+        schema1 = get_json_schema("analytics.function_types")
+        schema2 = get_json_schema("analytics.function_types")
 
         # Should be the same object due to caching
         if schema1 is not schema2:
@@ -475,7 +475,7 @@ class TestJsonSchemaRegistry:
     @staticmethod
     def test_get_json_schema_for_table_key() -> None:
         """Verify get_json_schema works for a table key."""
-        schema = get_json_schema("analytics.function_metrics")
+        schema = get_json_schema("analytics.function_types")
 
         if schema["$schema"] != EXPECTED_SCHEMA_VERSION:
             pytest.fail(f"Expected schema version {EXPECTED_SCHEMA_VERSION}")
@@ -483,7 +483,7 @@ class TestJsonSchemaRegistry:
     @staticmethod
     def test_compute_json_schema_digest_returns_hex_string() -> None:
         """Verify compute_json_schema_digest returns valid hex digest."""
-        digest = compute_json_schema_digest("analytics.function_metrics")
+        digest = compute_json_schema_digest("analytics.function_types")
 
         if digest is None:
             pytest.fail("Expected non-None digest for known table")
@@ -494,8 +494,8 @@ class TestJsonSchemaRegistry:
     @staticmethod
     def test_compute_json_schema_digest_is_deterministic() -> None:
         """Verify digest is deterministic across calls."""
-        digest1 = compute_json_schema_digest("analytics.function_metrics")
-        digest2 = compute_json_schema_digest("analytics.function_metrics")
+        digest1 = compute_json_schema_digest("analytics.function_types")
+        digest2 = compute_json_schema_digest("analytics.function_types")
 
         if digest1 != digest2:
             pytest.fail("Digest should be deterministic")

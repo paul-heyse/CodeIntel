@@ -274,7 +274,7 @@ def test_iter_table_schemas_contains_expected_keys() -> None:
     """Verify iter_table_schemas contains known critical schemas."""
     schema_keys = {schema.table_key for schema in iter_table_schemas()}
     expected_keys = {
-        "analytics.function_metrics",
+        "analytics.function_types",
         "core.modules",
         "core.goids",
         "graph.call_graph_nodes",

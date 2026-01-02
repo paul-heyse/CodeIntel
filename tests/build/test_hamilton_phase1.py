@@ -106,8 +106,8 @@ class TestHamiltonBuildResult:
     def test_result_has_closure_field() -> None:
         """Verify HamiltonBuildResult has closure field."""
         result = HamiltonBuildResult(
-            requested=("risk_factors",),
-            closure=("modules", "scip", "ast", "goids", "risk_factors"),
+            requested=("function_types",),
+            closure=("modules", "scip", "ast", "goids", "function_types"),
         )
         if len(result.closure) != CLOSURE_LENGTH_PHASE0:
             pytest.fail(
@@ -118,7 +118,7 @@ class TestHamiltonBuildResult:
     def test_result_has_computed_targets() -> None:
         """Verify HamiltonBuildResult has computed_targets."""
         result = HamiltonBuildResult(
-            requested=("risk_factors",),
+            requested=("function_types",),
             computed_targets=("modules", "scip"),
         )
         if result.computed_targets != ("modules", "scip"):
@@ -128,7 +128,7 @@ class TestHamiltonBuildResult:
     def test_result_has_skipped_targets() -> None:
         """Verify HamiltonBuildResult has skipped_targets."""
         result = HamiltonBuildResult(
-            requested=("risk_factors",),
+            requested=("function_types",),
             skipped_targets=("goids",),
         )
         if result.skipped_targets != ("goids",):
@@ -138,7 +138,7 @@ class TestHamiltonBuildResult:
     def test_result_has_duration_ms() -> None:
         """Verify HamiltonBuildResult has duration_ms."""
         result = HamiltonBuildResult(
-            requested=("risk_factors",),
+            requested=("function_types",),
             duration_ms=SAMPLE_DURATION_MS,
         )
         if result.duration_ms != SAMPLE_DURATION_MS:
@@ -148,7 +148,7 @@ class TestHamiltonBuildResult:
     def test_result_has_run_id() -> None:
         """Verify HamiltonBuildResult has run_id."""
         result = HamiltonBuildResult(
-            requested=("risk_factors",),
+            requested=("function_types",),
             run_id="hamilton-20241201-abc123",
         )
         if not result.run_id.startswith("hamilton-"):
@@ -219,13 +219,13 @@ class TestDatasetRef:
     def test_dataset_ref_creation() -> None:
         """Verify DatasetRef can be created with all fields."""
         ref = DatasetRef(
-            table_key="analytics.function_metrics",
+            table_key="analytics.function_types",
             schema_version="1.0.0",
             row_count=DEFAULT_ROW_COUNT,
-            source_target="function_metrics",
+            source_target="function_types",
             metadata={"computed_at": "2024-01-01"},
         )
-        if ref.table_key != "analytics.function_metrics":
+        if ref.table_key != "analytics.function_types":
             pytest.fail("table_key not set correctly")
         if ref.row_count != DEFAULT_ROW_COUNT:
             pytest.fail("row_count not set correctly")
@@ -233,16 +233,16 @@ class TestDatasetRef:
     @staticmethod
     def test_dataset_ref_schema_name_extraction() -> None:
         """Verify schema_name is extracted from qualified table key."""
-        ref = DatasetRef(table_key="analytics.function_metrics")
+        ref = DatasetRef(table_key="analytics.function_types")
         if ref.schema_name != "analytics":
             pytest.fail(f"Expected 'analytics', got '{ref.schema_name}'")
 
     @staticmethod
     def test_dataset_ref_table_name_extraction() -> None:
         """Verify table_name is extracted from qualified table key."""
-        ref = DatasetRef(table_key="analytics.function_metrics")
-        if ref.table_name != "function_metrics":
-            pytest.fail(f"Expected 'function_metrics', got '{ref.table_name}'")
+        ref = DatasetRef(table_key="analytics.function_types")
+        if ref.table_name != "function_types":
+            pytest.fail(f"Expected 'function_types', got '{ref.table_name}'")
 
     @staticmethod
     def test_dataset_ref_with_row_count() -> None:
@@ -268,8 +268,8 @@ class TestRefsFromTargetResult:
     def test_creates_refs_for_all_tables() -> None:
         """Verify refs are created for all table keys."""
         refs = refs_from_target_result(
-            target_name="function_metrics",
-            table_keys=("analytics.function_metrics", "analytics.extra"),
+            target_name="function_types",
+            table_keys=("analytics.function_types", "analytics.extra"),
         )
         if len(refs) != EXPECTED_REF_COUNT:
             pytest.fail(f"Expected {EXPECTED_REF_COUNT} refs, got {len(refs)}")
@@ -278,11 +278,11 @@ class TestRefsFromTargetResult:
     def test_includes_row_counts() -> None:
         """Verify row counts are included when provided."""
         refs = refs_from_target_result(
-            target_name="function_metrics",
-            table_keys=("analytics.function_metrics",),
-            row_counts={"analytics.function_metrics": DEFAULT_ROW_COUNT},
+            target_name="function_types",
+            table_keys=("analytics.function_types",),
+            row_counts={"analytics.function_types": DEFAULT_ROW_COUNT},
         )
-        ref = refs["analytics.function_metrics"]
+        ref = refs["analytics.function_types"]
         if ref.row_count != DEFAULT_ROW_COUNT:
             pytest.fail(f"Expected {DEFAULT_ROW_COUNT}, got {ref.row_count}")
 
@@ -386,8 +386,8 @@ class TestSupportNodesCompilation:
     def test_driver_includes_dataset_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify driver graph includes dataset nodes for contract outputs."""
         node_names = set(hamilton_runtime.dr.graph.nodes)
-        if dataset_node("analytics.function_metrics") not in node_names:
-            pytest.fail("Expected dataset nodes for analytics.function_metrics")
+        if dataset_node("analytics.function_types") not in node_names:
+            pytest.fail("Expected dataset nodes for analytics.function_types")
 
 
 class TestDriverConstruction:
@@ -408,8 +408,8 @@ class TestDatasetNodeNaming:
         """Verify dataset node names follow convention."""
         table_keys = [
             "graph.call_graph_edges",
-            "analytics.function_metrics",
-            "analytics.risk_factors",
+            "analytics.function_types",
+            "analytics.static_diagnostics",
         ]
         for key in table_keys:
             node_name = dataset_node(key)
@@ -421,8 +421,8 @@ class TestDatasetNodeNaming:
     @staticmethod
     def test_dataset_and_target_nodes_distinct() -> None:
         """Verify dataset and target nodes use different prefixes."""
-        target_name = target_node("function_metrics")
-        dataset_name = dataset_node("analytics.function_metrics")
+        target_name = target_node("function_types")
+        dataset_name = dataset_node("analytics.function_types")
         if target_name == dataset_name:
             pytest.fail("Target and dataset nodes should have different names")
         if not target_name.startswith("t__"):

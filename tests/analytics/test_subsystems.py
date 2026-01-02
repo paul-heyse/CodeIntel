@@ -15,7 +15,7 @@ from codeintel.build.analytics.subsystems.materialize import (
     build_subsystem_rows,
 )
 from codeintel.config.primitives import SnapshotRef
-from tests._helpers.assertions import expect_equal, expect_in, expect_length
+from tests._helpers.assertions import expect_equal, expect_length
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.subsystems_analytics import (
     SubsystemAnalyticsPack,
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 EXPECTED_SUBSYSTEMS = 2
 EXPECTED_MEMBERSHIP_COUNT = 6
-EXPECTED_HIGH_RISK_COUNT = 1
+EXPECTED_HIGH_RISK_COUNT = 0
 EXPECTED_MODULES = {
     "pkg.api",
     "pkg.core",
@@ -54,17 +54,6 @@ def subsystem_ctx(tmp_path: Path) -> Iterator[TestContext]:
         yield ctx
     finally:
         ctx.close()
-
-
-def _cluster_by_risk(
-    subsystems: dict[str, tuple[set[str], str, int]],
-    risk_level: str,
-) -> tuple[set[str], int]:
-    for modules, risk, high_count in subsystems.values():
-        if risk == risk_level:
-            return modules, high_count
-    message = f"Expected subsystem with risk level {risk_level}"
-    raise AssertionError(message)
 
 
 def _frame_from_table(ctx: TestContext, table_key: str) -> pl.DataFrame:
@@ -94,8 +83,6 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
             import_graph_edges_frame=_frame_from_table(subsystem_ctx, "graph.import_graph_edges"),
             symbol_use_edges_frame=_frame_from_table(subsystem_ctx, "graph.symbol_use_edges"),
             config_values_frame=_frame_from_table(subsystem_ctx, "analytics.config_values"),
-            risk_factors_frame=_frame_from_table(subsystem_ctx, "analytics.goid_risk_factors"),
-            function_metrics_frame=_frame_from_table(subsystem_ctx, "analytics.function_metrics"),
             options=options,
         ),
     )
@@ -132,13 +119,9 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
         for row in subsystems
     }
 
-    high_modules, high_count = _cluster_by_risk(subs_by_id, "high")
-    low_modules, low_count = _cluster_by_risk(subs_by_id, "low")
-
-    expect_in("pkg.core", high_modules)
-    expect_equal(high_count, EXPECTED_HIGH_RISK_COUNT)
-    expect_in("pkg.misc", low_modules)
-    expect_equal(low_count, 0)
+    for _, risk_level, high_count in subs_by_id.values():
+        expect_equal(risk_level, "low")
+        expect_equal(high_count, EXPECTED_HIGH_RISK_COUNT)
 
     memberships = subsystem_ctx.query(
         "SELECT subsystem_id, module FROM analytics.subsystem_modules"

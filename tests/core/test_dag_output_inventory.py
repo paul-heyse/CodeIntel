@@ -49,7 +49,7 @@ def test_dag_output_inventory_loads_default() -> None:
 
     expect_equal(inventory.version, 1)
     expect_true(len(inventory.outputs) > 0)
-    pilot = inventory.by_target("function_metrics")
+    pilot = inventory.by_target("function_types")
     expect_true(pilot.pilot)
 
 
