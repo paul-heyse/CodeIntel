@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 from codeintel.build.analytics.profiles.types import (
-    CoverageSummary,
     FunctionBaseInfo,
     FunctionContractView,
     FunctionDocView,
@@ -123,7 +122,6 @@ class FunctionProfileViews:
 
     base_by_func: Mapping[int, FunctionBaseInfo]
     risk_by_func: Mapping[int, FunctionRiskView]
-    coverage_by_func: Mapping[int, CoverageSummary]
     graph_by_func: Mapping[int, FunctionGraphFeatures]
     effects_by_func: Mapping[int, FunctionEffectsView]
     contracts_by_func: Mapping[int, FunctionContractView]
@@ -168,7 +166,6 @@ def compute_function_profile_inputs(
         typedness=frames.typedness,
         diagnostics=frames.diagnostics,
         goid_risk_factors=frames.goid_risk_factors,
-        coverage_functions=frames.coverage_functions,
         graph_metrics_functions=frames.graph_metrics_functions,
         function_effects=frames.function_effects,
         function_contracts=frames.function_contracts,
@@ -177,8 +174,6 @@ def compute_function_profile_inputs(
         hotspots=frames.hotspots,
         call_graph_edges=frames.call_graph_edges,
         call_graph_nodes=frames.call_graph_nodes,
-        test_coverage_edges=frames.test_coverage_edges,
-        test_catalog=frames.test_catalog,
     )
 
 
@@ -320,132 +315,6 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
             hotspot_score=hotspots_by_path.get(rel_path),
             tags=tags if tags is not None else "[]",
             owners=owners if owners is not None else "[]",
-        )
-    return result
-
-
-@dataclass(frozen=True)
-class _CoverageTestSets:
-    tests_touching: dict[int, set[str]]
-    failing_tests: dict[int, set[str]]
-    slow_tests: dict[int, set[str]]
-    flaky_tests: dict[int, set[str]]
-    status_sets: dict[int, dict[str, set[str]]]
-
-
-def _catalog_by_test(catalog: pl.DataFrame) -> dict[str, dict[str, object]]:
-    catalog_by_test: dict[str, dict[str, object]] = {}
-    for row in catalog.iter_rows(named=True):
-        test_id = row.get("test_id")
-        if isinstance(test_id, str):
-            catalog_by_test[test_id] = row
-    return catalog_by_test
-
-
-def _coverage_sets_from_edges(
-    edges: pl.DataFrame,
-    catalog_by_test: dict[str, dict[str, object]],
-    *,
-    slow_threshold: float,
-) -> _CoverageTestSets:
-    tests_touching: dict[int, set[str]] = {}
-    failing_tests: dict[int, set[str]] = {}
-    slow_tests: dict[int, set[str]] = {}
-    flaky_tests: dict[int, set[str]] = {}
-    status_sets: dict[int, dict[str, set[str]]] = {}
-
-    for row in edges.iter_rows(named=True):
-        goid = optional_int(row.get("function_goid_h128"))
-        test_id = row.get("test_id")
-        if goid is None or not isinstance(test_id, str):
-            continue
-        tests_touching.setdefault(goid, set()).add(test_id)
-        test_meta = catalog_by_test.get(test_id)
-        if test_meta is None:
-            continue
-        status = optional_str(test_meta.get("status")) or "unknown"
-        status_sets.setdefault(goid, {}).setdefault(status, set()).add(test_id)
-        if status in {"failed", "error"}:
-            failing_tests.setdefault(goid, set()).add(test_id)
-        duration = optional_float(test_meta.get("duration_ms")) or 0.0
-        if duration > slow_threshold:
-            slow_tests.setdefault(goid, set()).add(test_id)
-        if bool(test_meta.get("flaky")):
-            flaky_tests.setdefault(goid, set()).add(test_id)
-
-    return _CoverageTestSets(
-        tests_touching=tests_touching,
-        failing_tests=failing_tests,
-        slow_tests=slow_tests,
-        flaky_tests=flaky_tests,
-        status_sets=status_sets,
-    )
-
-
-def _dominant_status_by_goid(
-    status_sets: dict[int, dict[str, set[str]]],
-) -> dict[int, str | None]:
-    dominant_status: dict[int, str | None] = {}
-    for goid, status_map in status_sets.items():
-        if not status_map:
-            dominant_status[goid] = None
-            continue
-        max_count = max(len(vals) for vals in status_map.values())
-        candidates = sorted(
-            [status for status, vals in status_map.items() if len(vals) == max_count]
-        )
-        dominant_status[goid] = candidates[0] if candidates else None
-    return dominant_status
-
-
-def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, CoverageSummary]:
-    """
-    Aggregate coverage and test metrics per function.
-
-    Returns
-    -------
-    Mapping[int, CoverageSummary]
-        Mapping keyed by function GOID.
-    """
-    coverage = _scope_frame(inputs.coverage_functions, inputs.repo, inputs.commit)
-    if coverage.is_empty():
-        return {}
-
-    edges = _scope_frame(inputs.test_coverage_edges, inputs.repo, inputs.commit)
-    catalog = _scope_frame(inputs.test_catalog, inputs.repo, inputs.commit)
-    slow_threshold = float(inputs.slow_test_threshold_ms)
-    catalog_by_test = _catalog_by_test(catalog)
-    coverage_sets = _coverage_sets_from_edges(
-        edges,
-        catalog_by_test,
-        slow_threshold=slow_threshold,
-    )
-    dominant_status = _dominant_status_by_goid(coverage_sets.status_sets)
-
-    result: dict[int, CoverageSummary] = {}
-    for record in coverage.iter_rows(named=True):
-        goid_value = _coerce_goid(record)
-        if goid_value is None:
-            continue
-        goid = goid_value
-        tests = coverage_sets.tests_touching.get(goid, set())
-        failing = coverage_sets.failing_tests.get(goid, set())
-        slow = coverage_sets.slow_tests.get(goid, set())
-        flaky = coverage_sets.flaky_tests.get(goid, set())
-        dominant = dominant_status.get(goid)
-        result[goid] = CoverageSummary(
-            function_goid_h128=goid,
-            executable_lines=int_or_default(record.get("executable_lines")),
-            covered_lines=int_or_default(record.get("covered_lines")),
-            coverage_ratio=optional_float(record.get("coverage_ratio")),
-            tested=bool(record.get("tested")),
-            untested_reason=optional_str(record.get("untested_reason")),
-            tests_touching=len(tests),
-            failing_tests=len(failing),
-            slow_tests=len(slow),
-            flaky_tests=len(flaky),
-            last_test_status=dominant or "untested",
-            dominant_test_status=dominant,
         )
     return result
 
@@ -605,14 +474,13 @@ def build_function_profile_rows(
     """
     for goid, base in views.base_by_func.items():
         risk = views.risk_by_func.get(goid)
-        coverage = views.coverage_by_func.get(goid)
         graph = views.graph_by_func.get(goid)
         effects = views.effects_by_func.get(goid)
         contract = views.contracts_by_func.get(goid)
         role = views.roles_by_func.get(goid)
         doc = views.docs_by_func.get(goid)
 
-        coverage_ratio = coverage.coverage_ratio if coverage is not None else None
+        coverage_ratio = None
         risk_component_coverage = 0.0
         risk_component_complexity = 0.0
         if base.complexity_bucket == "high":
@@ -665,19 +533,17 @@ def build_function_profile_rows(
             "file_typed_ratio": base.file_typed_ratio,
             "static_error_count": base.static_error_count,
             "has_static_errors": base.has_static_errors,
-            "executable_lines": coverage.executable_lines if coverage is not None else 0,
-            "covered_lines": coverage.covered_lines if coverage is not None else 0,
+            "executable_lines": 0,
+            "covered_lines": 0,
             "coverage_ratio": coverage_ratio,
-            "tested": coverage.tested if coverage is not None else False,
-            "untested_reason": coverage.untested_reason if coverage is not None else None,
-            "tests_touching": coverage.tests_touching if coverage is not None else 0,
-            "failing_tests": coverage.failing_tests if coverage is not None else 0,
-            "slow_tests": coverage.slow_tests if coverage is not None else 0,
-            "flaky_tests": coverage.flaky_tests if coverage is not None else 0,
-            "last_test_status": coverage.last_test_status if coverage is not None else None,
-            "dominant_test_status": (
-                coverage.dominant_test_status if coverage is not None else None
-            ),
+            "tested": None,
+            "untested_reason": None,
+            "tests_touching": None,
+            "failing_tests": None,
+            "slow_tests": None,
+            "flaky_tests": None,
+            "last_test_status": None,
+            "dominant_test_status": None,
             "slow_test_threshold_ms": inputs.slow_test_threshold_ms,
             "created_in_commit": None,
             "created_at_history": None,

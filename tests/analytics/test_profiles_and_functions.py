@@ -7,6 +7,8 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import duckdb
+import polars as pl
 import pytest
 
 from codeintel.build.analytics.compute.functions.complexity import (
@@ -71,6 +73,11 @@ from codeintel.build.analytics.profiles.graph_features import summarize_graph_fo
 from codeintel.build.analytics.profiles.modules import (
     build_module_profile_rows,
     compute_module_profile_inputs,
+)
+from codeintel.build.analytics.profiles.types import (
+    FileProfileFrames,
+    FunctionProfileFrames,
+    ModuleProfileFrames,
 )
 from codeintel.build.analytics.profiles.utils import DEFAULT_MODULE_TABLE
 from codeintel.build.analytics.utilities.datasets import (
@@ -211,12 +218,60 @@ def _build_function_profile_views(
     return FunctionProfileViews(
         base_by_func=load_function_base_info(inputs, module_table=module_table),
         risk_by_func=join_function_risk(inputs),
-        coverage_by_func={},
         graph_by_func=summarize_graph_for_function_profile(inputs),
         effects_by_func=join_function_effects(inputs),
         contracts_by_func=join_function_contracts(inputs),
         roles_by_func=join_function_roles(inputs),
         docs_by_func=join_function_docs(inputs),
+    )
+
+
+def _frame_from_table(gateway: StorageGateway, table_key: str) -> pl.DataFrame:
+    try:
+        relation = gateway.relation_from_table_key(table_key)
+    except duckdb.Error:
+        return pl.DataFrame()
+    frame = pl.from_arrow(relation.arrow())
+    return frame if isinstance(frame, pl.DataFrame) else pl.DataFrame()
+
+
+def _function_profile_frames(gateway: StorageGateway) -> FunctionProfileFrames:
+    return FunctionProfileFrames(
+        function_metrics=_frame_from_table(gateway, "analytics.function_metrics"),
+        function_types=_frame_from_table(gateway, "analytics.function_types"),
+        modules=_frame_from_table(gateway, DEFAULT_MODULE_TABLE),
+        typedness=_frame_from_table(gateway, "analytics.typedness"),
+        diagnostics=_frame_from_table(gateway, "analytics.static_diagnostics"),
+        goid_risk_factors=_frame_from_table(gateway, "analytics.goid_risk_factors"),
+        graph_metrics_functions=_frame_from_table(gateway, "analytics.graph_metrics_functions"),
+        function_effects=_frame_from_table(gateway, "analytics.function_effects"),
+        function_contracts=_frame_from_table(gateway, "analytics.function_contracts"),
+        semantic_roles_functions=_frame_from_table(gateway, "analytics.semantic_roles_functions"),
+        docstrings=_frame_from_table(gateway, "analytics.docstrings"),
+        hotspots=_frame_from_table(gateway, "analytics.hotspots"),
+        call_graph_edges=_frame_from_table(gateway, "graph.call_graph_edges"),
+        call_graph_nodes=_frame_from_table(gateway, "graph.call_graph_nodes"),
+    )
+
+
+def _file_profile_frames(gateway: StorageGateway) -> FileProfileFrames:
+    return FileProfileFrames(
+        function_profile=_frame_from_table(gateway, FUNCTION_PROFILE_TABLE_KEY),
+        ast_metrics=_frame_from_table(gateway, "analytics.ast_metrics"),
+        hotspots=_frame_from_table(gateway, "analytics.hotspots"),
+        typedness=_frame_from_table(gateway, "analytics.typedness"),
+        static_diagnostics=_frame_from_table(gateway, "analytics.static_diagnostics"),
+        modules=_frame_from_table(gateway, DEFAULT_MODULE_TABLE),
+    )
+
+
+def _module_profile_frames(gateway: StorageGateway) -> ModuleProfileFrames:
+    return ModuleProfileFrames(
+        modules=_frame_from_table(gateway, DEFAULT_MODULE_TABLE),
+        function_profile=_frame_from_table(gateway, FUNCTION_PROFILE_TABLE_KEY),
+        file_profile=_frame_from_table(gateway, FILE_PROFILE_TABLE_KEY),
+        import_graph_edges=_frame_from_table(gateway, "graph.import_graph_edges"),
+        semantic_roles_modules=_frame_from_table(gateway, "analytics.semantic_roles_modules"),
     )
 
 
@@ -234,21 +289,24 @@ def _write_snapshot_rows(
 
 def _populate_profile_tables(gateway: StorageGateway, snapshot: SnapshotRef) -> None:
     module_table = DEFAULT_MODULE_TABLE
-    function_inputs = compute_function_profile_inputs(gateway, snapshot)
+    function_inputs = compute_function_profile_inputs(
+        snapshot,
+        _function_profile_frames(gateway),
+    )
     views = _build_function_profile_views(function_inputs, module_table)
     function_rows = list(build_function_profile_rows(function_inputs, views=views))
     if not function_rows:
         pytest.fail("function_profile rows missing")
     _write_snapshot_rows(gateway, FUNCTION_PROFILE_TABLE_KEY, function_rows, snapshot)
 
-    file_inputs = compute_file_profile_inputs(gateway, snapshot)
+    file_inputs = compute_file_profile_inputs(snapshot, _file_profile_frames(gateway))
     file_rows_iter = build_file_profile_rows(file_inputs, module_table=module_table)
     if file_rows_iter is None:
         pytest.fail("file_profile rows missing")
     file_rows = list(file_rows_iter)
     _write_snapshot_rows(gateway, FILE_PROFILE_TABLE_KEY, file_rows, snapshot)
 
-    module_inputs = compute_module_profile_inputs(gateway, snapshot)
+    module_inputs = compute_module_profile_inputs(snapshot, _module_profile_frames(gateway))
     module_rows_iter = build_module_profile_rows(module_inputs, module_table=module_table)
     if module_rows_iter is None:
         pytest.fail("module_profile rows missing")

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.build.hamilton.validate import (
     GraphValidationResult,
     validate_nodes,
     validation_result_to_json,
 )
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+
+if TYPE_CHECKING:
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 def validate_graph(

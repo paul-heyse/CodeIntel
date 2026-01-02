@@ -91,8 +91,6 @@ def compute_entrypoints_pure(
         module_map_override=inputs.module_map,
         features=inputs.features_map,
         modules_frame=context_inputs.modules_frame,
-        coverage_functions_frame=context_inputs.coverage_functions_frame,
-        test_coverage_edges_frame=context_inputs.test_coverage_edges_frame,
         test_catalog_frame=context_inputs.test_catalog_frame,
         subsystem_modules_frame=context_inputs.subsystem_modules_frame,
         subsystems_frame=context_inputs.subsystems_frame,

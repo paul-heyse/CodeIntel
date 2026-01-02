@@ -37,7 +37,6 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
@@ -100,7 +99,6 @@ def _graph_metrics_result(
     """
     return compute_test_graph_metrics_pure(
         env.snapshot,
-        test_coverage_edges_frame=None,
         goid_risk_factors_frame=None,
     )
 
@@ -138,11 +136,6 @@ del _graph_metrics_tests__base
         table_key=TEST_GRAPH_TESTS_TABLE_KEY,
         collect_group=TEST_GRAPH_COLLECT_GROUP,
     ),
-)
-@tag_dataset(
-    domain="analytics",
-    target=TEST_GRAPH_TARGET_NAME,
-    table_key=TEST_GRAPH_TESTS_TABLE_KEY,
 )
 @table_contract(TEST_GRAPH_TESTS_CONTRACT)
 def _graph_metrics_tests__table(
@@ -195,11 +188,6 @@ del _graph_metrics_functions__base
         table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY,
         collect_group=TEST_GRAPH_COLLECT_GROUP,
     ),
-)
-@tag_dataset(
-    domain="analytics",
-    target=TEST_GRAPH_TARGET_NAME,
-    table_key=TEST_GRAPH_FUNCTIONS_TABLE_KEY,
 )
 @table_contract(TEST_GRAPH_FUNCTIONS_CONTRACT)
 def _graph_metrics_functions__table(
@@ -314,7 +302,6 @@ def test_profile_inputs(
 ) -> TestProfileFrameInputs:
     return TestProfileFrameInputs(
         test_catalog_frame=test_profile_core_frames.test_catalog_frame,
-        test_coverage_edges_frame=pl.DataFrame(),
         goids_frame=test_profile_core_frames.goids_frame,
         modules_frame=test_profile_core_frames.modules_frame,
         subsystem_modules_frame=test_profile_subsystem_frames.subsystem_modules_frame,

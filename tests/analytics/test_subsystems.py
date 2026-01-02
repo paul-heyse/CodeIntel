@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import duckdb
+import polars as pl
 import pytest
 
 from codeintel.build.analytics.subsystems.materialize import (
+    SubsystemBuildInputs,
     SubsystemOptions,
     build_subsystem_rows,
 )
@@ -64,6 +67,15 @@ def _cluster_by_risk(
     raise AssertionError(message)
 
 
+def _frame_from_table(ctx: TestContext, table_key: str) -> pl.DataFrame:
+    try:
+        relation = ctx.gateway.relation_from_table_key(table_key)
+    except duckdb.Error:
+        return pl.DataFrame()
+    frame = pl.from_arrow(relation.arrow())
+    return frame if isinstance(frame, pl.DataFrame) else pl.DataFrame()
+
+
 def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> None:
     """Cluster modules and aggregate risk across subsystems using seeded pack."""
     snapshot = SnapshotRef(
@@ -75,7 +87,18 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
         max_subsystems=2,
         min_modules=1,
     )
-    rows = build_subsystem_rows(subsystem_ctx.gateway, snapshot, options=options)
+    rows = build_subsystem_rows(
+        snapshot,
+        SubsystemBuildInputs(
+            modules_frame=_frame_from_table(subsystem_ctx, "core.modules"),
+            import_graph_edges_frame=_frame_from_table(subsystem_ctx, "graph.import_graph_edges"),
+            symbol_use_edges_frame=_frame_from_table(subsystem_ctx, "graph.symbol_use_edges"),
+            config_values_frame=_frame_from_table(subsystem_ctx, "analytics.config_values"),
+            risk_factors_frame=_frame_from_table(subsystem_ctx, "analytics.goid_risk_factors"),
+            function_metrics_frame=_frame_from_table(subsystem_ctx, "analytics.function_metrics"),
+            options=options,
+        ),
+    )
     backend = subsystem_ctx.gateway.policy
     backend.delete_for_snapshot(
         "analytics.subsystems",

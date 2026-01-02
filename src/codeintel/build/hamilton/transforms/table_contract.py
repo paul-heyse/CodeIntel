@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from types import ModuleType
 
 from codeintel.build.hamilton.naming import sanitize_pipeline_component
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.decorators import (
     pipe_canonical_output,
     pipe_clean_df,
@@ -37,15 +36,10 @@ def table_contract(
     Returns
     -------
     Callable[[Callable[..., object]], Callable[..., object]]
-        Decorator that applies tag, cleaning, and feature policies.
+        Decorator that applies cleaning and feature policies.
     """
 
     def _decorator(fn: Callable[..., object]) -> Callable[..., object]:
-        fn = tag_dataset(
-            domain=spec.domain,
-            target=spec.target,
-            table_key=spec.table_key,
-        )(fn)
         clean_namespace = f"prep__{sanitize_pipeline_component(spec.table_key)}"
         fn = pipe_clean_df(
             required_cols=spec.required_cols,

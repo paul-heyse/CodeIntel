@@ -34,6 +34,8 @@ from codeintel.build.hamilton.native.graphs.import_graph import (
     import_modules_compute,
 )
 from codeintel.build.hamilton.native.graphs.symbol_use import symbol_use_edges_compute
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.types import InferableTabularInput
 
 try:
     import polars as pl
@@ -120,6 +122,10 @@ def _sample_scip_occurrences_frame() -> pl.DataFrame:
     )
 
 
+def _collect_frame(frame: InferableTabularInput) -> pl.DataFrame:
+    return tabular_to_lazyframe(frame).collect()
+
+
 def _write_sample_module(repo_root: Path) -> None:
     module_path = repo_root / "src" / "app.py"
     module_path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +149,7 @@ def test_call_graph_nodes_compute_columns(tmp_path: Path) -> None:
         _sample_goids_frame(),
         _sample_modules_frame(),
     )
-    result = frame.collect()
+    result = _collect_frame(frame)
     assert result.columns == [
         "goid_h128",
         "language",
@@ -161,7 +167,7 @@ def test_call_graph_edges_compute_columns(tmp_path: Path) -> None:
     goids = _sample_goids_frame()
     modules = _sample_modules_frame()
     frame = call_graph_edges_compute(env, goids, modules)
-    result = frame.collect()
+    result = _collect_frame(frame)
     assert result.columns == [
         "repo",
         "commit",
@@ -184,7 +190,7 @@ def test_import_graph_compute_columns(tmp_path: Path) -> None:
     env = _fake_env(tmp_path)
     analysis = import_graph_analysis(env, _sample_modules_frame())
     modules = import_modules_compute(env, analysis)
-    result_modules = modules.collect()
+    result_modules = _collect_frame(modules)
     assert result_modules.columns == [
         "repo",
         "commit",
@@ -196,7 +202,7 @@ def test_import_graph_compute_columns(tmp_path: Path) -> None:
     ]
 
     edges = import_graph_edges_compute(env, analysis)
-    result_edges = edges.collect()
+    result_edges = _collect_frame(edges)
     assert result_edges.columns == [
         "repo",
         "commit",
@@ -215,7 +221,7 @@ def test_cfg_dfg_compute_columns(tmp_path: Path) -> None:
     env = _fake_env(tmp_path)
     analysis = cfg_dfg_analysis(env, _sample_goids_frame(), _sample_ast_nodes_frame())
     blocks = cfg_blocks_compute(analysis)
-    result_blocks = blocks.collect()
+    result_blocks = _collect_frame(blocks)
     assert result_blocks.columns == [
         "function_goid_h128",
         "block_idx",
@@ -231,7 +237,7 @@ def test_cfg_dfg_compute_columns(tmp_path: Path) -> None:
     ]
 
     cfg_edges = cfg_edges_compute(analysis)
-    result_cfg_edges = cfg_edges.collect()
+    result_cfg_edges = _collect_frame(cfg_edges)
     assert result_cfg_edges.columns == [
         "function_goid_h128",
         "src_block_id",
@@ -240,7 +246,7 @@ def test_cfg_dfg_compute_columns(tmp_path: Path) -> None:
     ]
 
     dfg_edges = dfg_edges_compute(analysis)
-    result_dfg_edges = dfg_edges.collect()
+    result_dfg_edges = _collect_frame(dfg_edges)
     assert result_dfg_edges.columns == [
         "function_goid_h128",
         "src_block_id",
@@ -258,8 +264,8 @@ def test_goids_compute_columns(tmp_path: Path) -> None:
     env = _fake_env(tmp_path)
     inputs = goids_inputs(_sample_modules_frame(), _sample_ast_nodes_frame())
     analysis = goids_analysis(env, inputs)
-    goids = goids__base(analysis).collect()
-    crosswalk = goid_crosswalk__base(analysis).collect()
+    goids = _collect_frame(goids__base(analysis))
+    crosswalk = _collect_frame(goid_crosswalk__base(analysis))
     assert goids.columns == list(GOIDS_COLUMNS)
     assert crosswalk.columns == list(GOID_CROSSWALK_COLUMNS)
 
@@ -272,7 +278,7 @@ def test_symbol_use_edges_compute_columns(tmp_path: Path) -> None:
         _sample_modules_frame(),
         _sample_goids_frame(),
     )
-    result = frame.collect()
+    result = _collect_frame(frame)
     assert result.columns == [
         "symbol",
         "def_path",

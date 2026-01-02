@@ -14,6 +14,7 @@ from codeintel.build.hamilton.native.ingestion.scip import (
     t__scip__ingest,
 )
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.core.hamilton.records import TargetRunRecord
 from tests._helpers.assertions import expect_true
 from tests._helpers.context import create_test_context
@@ -85,8 +86,10 @@ def test_scip_ingest_parses_explicit_index_path(tmp_path: Path) -> None:
     expect_true(payload is not None)
     if payload is None:
         return
-    expect_true(payload["core.scip_symbols"].collect().height > 0)
-    expect_true(payload["core.scip_occurrences"].collect().height > 0)
+    symbols = tabular_to_lazyframe(payload["core.scip_symbols"]).collect()
+    occurrences = tabular_to_lazyframe(payload["core.scip_occurrences"]).collect()
+    expect_true(symbols.height > 0)
+    expect_true(occurrences.height > 0)
 
 
 def test_scip_ingest_payload_is_columnar(tmp_path: Path) -> None:
@@ -113,7 +116,8 @@ def test_scip_ingest_payload_is_columnar(tmp_path: Path) -> None:
     if payload is None:
         return
     for table_key, frame in payload.items():
+        lazy = tabular_to_lazyframe(frame)
         expect_true(
-            isinstance(frame, pl.LazyFrame),
+            isinstance(lazy, pl.LazyFrame),
             message=f"Expected LazyFrame for {table_key}",
         )

@@ -37,7 +37,6 @@ _GRAPH_CACHE_TABLES: dict[GraphKind, tuple[str, ...]] = {
     GraphKind.SYMBOL_MODULE_GRAPH: ("graph.symbol_use_edges", "core.modules"),
     GraphKind.SYMBOL_FUNCTION_GRAPH: ("graph.symbol_use_edges",),
     GraphKind.CONFIG_MODULE_BIPARTITE: ("core.modules", "analytics.config_values"),
-    GraphKind.TEST_FUNCTION_BIPARTITE: ("analytics.test_coverage_edges",),
 }
 
 
@@ -235,37 +234,6 @@ class NxGraphEngine:
             Config-module bipartite graph.
         """
         return self.config_module_bipartite()
-
-    def test_function_bipartite(self) -> nx.Graph:
-        """
-        Return the test <-> function bipartite graph.
-
-        Returns
-        -------
-        nx.Graph
-            Cached or freshly materialized test/function bipartite graph.
-        """
-        metadata = self._graph_cache_metadata(GraphKind.TEST_FUNCTION_BIPARTITE)
-        return self._cache.get(
-            GraphKind.TEST_FUNCTION_BIPARTITE,
-            lambda: views.load_test_function_bipartite(
-                self.dataset_root_dir,
-                self.repo,
-                self.commit,
-                use_gpu=self.effective_use_gpu,
-            ),
-            metadata=metadata,
-        )
-
-    def load_test_function_bipartite(self) -> nx.Graph:
-        """Alias for test_function_bipartite to satisfy GraphEngine protocol.
-
-        Returns
-        -------
-        nx.Graph
-            Test-function bipartite graph.
-        """
-        return self.test_function_bipartite()
 
     def _graph_cache_metadata(self, kind: GraphKind) -> GraphCacheMetadata:
         table_keys = _GRAPH_CACHE_TABLES.get(kind, ())

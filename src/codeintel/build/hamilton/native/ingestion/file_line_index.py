@@ -4,31 +4,25 @@ from __future__ import annotations
 
 import io
 import logging
+import sys
 import tokenize
 from pathlib import Path
 
 import polars as pl
 
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -38,10 +32,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FILE_LINE_INDEX_TARGET_NAME = "file_line_index"
 FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
-FILE_LINE_INDEX_SAVE_CONTEXT = SaverContext(
-    domain="ingestion",
-    target=FILE_LINE_INDEX_TARGET_NAME,
-)
 
 FILE_LINE_INDEX_COLUMNS = (
     "repo",
@@ -162,60 +152,29 @@ def file_line_index__base(
     return rows_to_frame(FILE_LINE_INDEX_TABLE_KEY, rows, columns=FILE_LINE_INDEX_COLUMNS)
 
 
-@save_dataset(
-    context=FILE_LINE_INDEX_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=FILE_LINE_INDEX_TABLE_KEY,
-        partition_columns=("repo", "commit"),
+_MODULE = sys.modules[__name__]
+_FILE_LINE_INDEX_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="ingestion",
+    target_name=FILE_LINE_INDEX_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FILE_LINE_INDEX_TABLE_KEY,
+            base_node="file_line_index__base",
+            save_spec=DatasetSaveSpec(
+                table_key=FILE_LINE_INDEX_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="file_line_index__table",
+            input_type=pl.LazyFrame,
+        ),
     ),
+    table_materializations_node="file_line_index__table_materializations",
+    anchor_node_name="t__file_line_index",
 )
-@tag_dataset(
-    domain="ingestion",
-    target=FILE_LINE_INDEX_TARGET_NAME,
-    table_key=FILE_LINE_INDEX_TABLE_KEY,
-)
-def file_line_index__table(file_line_index__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist core.file_line_index rows.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Lazy frame to materialize for core.file_line_index.
-    """
-    return file_line_index__base
-
-
-file_line_index__table_materializations = make_table_materializations_collector(
-    domain="ingestion",
-    target=FILE_LINE_INDEX_TARGET_NAME,
-    table_keys=(FILE_LINE_INDEX_TABLE_KEY,),
-    node_name="file_line_index__table_materializations",
-)
-
-
-@codeintel_target(domain="ingestion", target=FILE_LINE_INDEX_TARGET_NAME)
-def t__file_line_index(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    file_line_index__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize file_line_index target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the file_line_index target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FILE_LINE_INDEX_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=file_line_index__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_FILE_LINE_INDEX_TABLE_TARGET_SPEC)
+file_line_index__table = _MODULE.file_line_index__table
+file_line_index__table_materializations = _MODULE.file_line_index__table_materializations
+t__file_line_index = _MODULE.t__file_line_index
 
 
 __all__ = [

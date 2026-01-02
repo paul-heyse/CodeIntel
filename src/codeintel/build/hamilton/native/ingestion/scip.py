@@ -79,13 +79,6 @@ from codeintel.ingestion.scip import (
     SCIP_SYMBOLS_TABLE_KEY,
     ScipParsedIndex,
     ScipRowContext,
-    iter_diagnostic_rows,
-    iter_external_symbol_rows,
-    iter_module_state_rows,
-    iter_occurrence_rows,
-    iter_symbol_information_rows,
-    iter_symbol_relationship_rows,
-    iter_symbol_rows,
     parse_index,
 )
 from codeintel.ingestion.scip.incremental import (
@@ -99,6 +92,15 @@ from codeintel.ingestion.scip.manifest import (
     manifest_from_state_rows,
     manifest_path,
     write_manifest,
+)
+from codeintel.ingestion.scip.rows import (
+    iter_diagnostic_rows,
+    iter_external_symbol_rows,
+    iter_module_state_rows,
+    iter_occurrence_rows,
+    iter_symbol_information_rows,
+    iter_symbol_relationship_rows,
+    iter_symbol_rows,
 )
 from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
 from codeintel.observability.semconv_keys import (

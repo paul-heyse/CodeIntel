@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import polars as pl
 import pytest
 
 from codeintel.build.analytics.compute.dependencies.classification import (
@@ -116,7 +117,9 @@ def test_load_config_keys_filters_repo(dependencies_ctx: DependenciesFixture) ->
         ],
     )
 
-    mapping = load_config_key_map(con, ctx.repo, ctx.commit)
+    frame = pl.from_arrow(con.execute("SELECT * FROM analytics.config_values").arrow())
+    config_frame = frame if isinstance(frame, pl.DataFrame) else pl.DataFrame()
+    mapping = load_config_key_map(config_frame, repo=ctx.repo, commit=ctx.commit)
 
     expect_in("pkg.mod_a", mapping)
     expect_in("pkg.mod_b", mapping)

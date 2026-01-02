@@ -2,27 +2,22 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_cache_rows
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -30,11 +25,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SUBSYSTEM_CACHES_TARGET_NAME = "subsystem_caches"
 SUBSYSTEM_PROFILE_CACHE_TABLE_KEY = "analytics.subsystem_profile_cache"
-SUBSYSTEM_CACHE_TABLE_KEYS = (SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,)
-SUBSYSTEM_CACHE_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=SUBSYSTEM_CACHES_TARGET_NAME,
-)
 SUBSYSTEM_PROFILE_CACHE_CONTRACT = TableContractSpec(
     table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
     domain="analytics",
@@ -65,60 +55,26 @@ def subsystem_profile_cache__base(
     return rows_to_frame(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=SUBSYSTEM_CACHE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_SUBSYSTEM_CACHES_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=SUBSYSTEM_CACHES_TARGET_NAME,
-    table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
+    target_name=SUBSYSTEM_CACHES_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
+            base_node="subsystem_profile_cache__base",
+            contract=SUBSYSTEM_PROFILE_CACHE_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
+            node_name="subsystem_profile_cache__table",
+        ),
+    ),
+    table_materializations_node="subsystem_caches__table_materializations",
+    anchor_node_name="t__subsystem_caches",
 )
-@table_contract(SUBSYSTEM_PROFILE_CACHE_CONTRACT)
-def subsystem_profile_cache__table(
-    subsystem_profile_cache__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist subsystem profile cache rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted subsystem profile cache frame.
-    """
-    return subsystem_profile_cache__base
-
-
-subsystem_caches__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=SUBSYSTEM_CACHES_TARGET_NAME,
-    table_keys=SUBSYSTEM_CACHE_TABLE_KEYS,
-    node_name="subsystem_caches__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
-def t__subsystem_caches(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    subsystem_caches__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize subsystem_caches target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the subsystem_caches target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=SUBSYSTEM_CACHES_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=subsystem_caches__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_SUBSYSTEM_CACHES_TABLE_TARGET_SPEC)
+subsystem_profile_cache__table = _MODULE.subsystem_profile_cache__table
+subsystem_caches__table_materializations = _MODULE.subsystem_caches__table_materializations
+t__subsystem_caches = _MODULE.t__subsystem_caches
 
 
 __all__ = [

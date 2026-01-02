@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import polars as pl
+import pytest
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
-from codeintel.build.hamilton.materializers import ArrowDatasetSaver, DuckDBRelationSaver
+from codeintel.build.hamilton.materializers import ArrowDatasetSaver
 from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
@@ -144,14 +145,14 @@ def _module_row_for_schema(
 def test_materialize_table_uses_policy_and_insert_select(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBRelationSaver should replace snapshot rows via Warehouse policy."""
+    """ArrowDatasetSaver should persist datasets and update manifests."""
     harness = build_harness.with_force_targets("modules")
     env = harness.build_env()
     snapshot = env.snapshot
     repo = snapshot.repo
     commit = snapshot.commit
     graph = _make_graph()
-    saver = DuckDBRelationSaver(
+    saver = ArrowDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -159,38 +160,32 @@ def test_materialize_table_uses_policy_and_insert_select(
     )
 
     df1 = _modules_rows(repo=repo, commit=commit, count=1)
-    env.gateway.con.register("tmp_modules_1", df1)
-    rel1 = env.gateway.con.table("tmp_modules_1")
-    meta1 = saver.save_data(rel1)
+    meta1 = saver.save_data(df1)
     expect_equal(meta1["status"], expected="succeeded")
     expect_equal(meta1["row_count"], expected=1)
 
     df2 = _modules_rows(repo=repo, commit=commit, count=2)
-    env.gateway.con.register("tmp_modules_2", df2)
-    rel2 = env.gateway.con.table("tmp_modules_2")
-    meta2 = saver.save_data(rel2)
+    meta2 = saver.save_data(df2)
     expect_equal(meta2["status"], expected="succeeded")
     expect_equal(meta2["row_count"], expected=2)
 
-    row = env.gateway.con.execute(
-        "SELECT COUNT(*) FROM core.modules WHERE repo=? AND commit=?",
-        [repo, commit],
-    ).fetchone()
-    expect_true(row is not None, message="Expected COUNT(*) query to return a row")
-    row_tuple = cast("tuple[int, ...]", row)
-    expect_equal(row_tuple[0], expected=2)
+    manifest_path = meta2.get("dataset_manifest_path")
+    if not isinstance(manifest_path, str):
+        pytest.fail("Expected dataset_manifest_path in materialization metadata")
+    manifest = read_dataset_manifest(Path(manifest_path))
+    expect_equal(manifest.row_count, expected=2)
 
 
 def test_materialize_table_validates_when_schema_available(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBRelationSaver should succeed when schema validation is enabled."""
+    """ArrowDatasetSaver should succeed when schema validation is enabled."""
     harness = build_harness.with_force_targets("modules")
     env = replace(harness.build_env(), validate_outputs=True)
     repo = env.snapshot.repo
     commit = env.snapshot.commit
     graph = _make_graph()
-    saver = DuckDBRelationSaver(
+    saver = ArrowDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -198,9 +193,7 @@ def test_materialize_table_validates_when_schema_available(
     )
 
     df = _modules_rows(repo=repo, commit=commit, count=2)
-    env.gateway.con.register("tmp_modules_validate", df)
-    rel = env.gateway.con.table("tmp_modules_validate")
-    meta = saver.save_data(rel)
+    meta = saver.save_data(df)
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=df.height)
 
@@ -208,7 +201,7 @@ def test_materialize_table_validates_when_schema_available(
 def test_relation_saver_accepts_lazyframe(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBRelationSaver should persist LazyFrame inputs."""
+    """ArrowDatasetSaver should persist LazyFrame inputs."""
     harness = build_harness.with_force_targets("modules")
     env = harness.build_env()
     repo = env.snapshot.repo
@@ -224,7 +217,7 @@ def test_relation_saver_accepts_lazyframe(
     column_names = tuple(column.name for column in schema.columns)
     frame = pl.DataFrame([row], schema=list(column_names)).lazy()
 
-    saver = DuckDBRelationSaver(
+    saver = ArrowDatasetSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -236,13 +229,11 @@ def test_relation_saver_accepts_lazyframe(
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=1)
 
-    row_result = env.gateway.con.execute(
-        "SELECT * FROM core.modules WHERE repo=? AND commit=?",
-        [repo, commit],
-    ).fetchone()
-    expect_true(row_result is not None, message="Expected row materialization to persist data")
-    persisted = cast("tuple[object, ...]", row_result)
-    expect_equal(persisted, expected=row)
+    manifest_path = meta.get("dataset_manifest_path")
+    if not isinstance(manifest_path, str):
+        pytest.fail("Expected dataset_manifest_path in materialization metadata")
+    manifest = read_dataset_manifest(Path(manifest_path))
+    expect_equal(manifest.row_count, expected=1)
 
 
 def test_arrow_dataset_saver_writes_manifest(

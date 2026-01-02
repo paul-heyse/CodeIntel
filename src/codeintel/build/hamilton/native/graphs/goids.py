@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -15,23 +16,16 @@ from codeintel.build.graphs.compute.goid import (
     compute_goid_result,
     determine_kind,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
@@ -42,9 +36,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 GOIDS_TARGET_NAME = "goids"
 GOIDS_TABLE_KEY = "core.goids"
 GOID_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
-GOIDS_TABLE_KEYS = (GOIDS_TABLE_KEY, GOID_CROSSWALK_TABLE_KEY)
-
-GOIDS_SAVE_CONTEXT = SaverContext(domain="ingestion", target=GOIDS_TARGET_NAME)
 
 GOIDS_COLUMNS = (
     "goid_h128",
@@ -339,75 +330,40 @@ def goid_crosswalk__base(goids_analysis: _GoidsAnalysis) -> pl.LazyFrame:
     )
 
 
-@save_dataset(
-    context=GOIDS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=GOIDS_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@tag_dataset(domain="ingestion", target=GOIDS_TARGET_NAME, table_key=GOIDS_TABLE_KEY)
-def goids__table(goids__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist core.goids rows.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Lazy frame to materialize for core.goids.
-    """
-    return goids__base
-
-
-@save_dataset(
-    context=GOIDS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=GOID_CROSSWALK_TABLE_KEY,
-        partition_columns=("repo", "commit"),
-    ),
-)
-@tag_dataset(domain="ingestion", target=GOIDS_TARGET_NAME, table_key=GOID_CROSSWALK_TABLE_KEY)
-def goid_crosswalk__table(goid_crosswalk__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist core.goid_crosswalk rows.
-
-    Returns
-    -------
-    polars.LazyFrame
-        Lazy frame to materialize for core.goid_crosswalk.
-    """
-    return goid_crosswalk__base
-
-
-goids__table_materializations = make_table_materializations_collector(
+_MODULE = sys.modules[__name__]
+_GOIDS_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="ingestion",
-    target=GOIDS_TARGET_NAME,
-    table_keys=GOIDS_TABLE_KEYS,
-    node_name="goids__table_materializations",
+    target_name=GOIDS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=GOIDS_TABLE_KEY,
+            base_node="goids__base",
+            save_spec=DatasetSaveSpec(
+                table_key=GOIDS_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="goids__table",
+            input_type=pl.LazyFrame,
+        ),
+        TableTargetTableSpec(
+            table_key=GOID_CROSSWALK_TABLE_KEY,
+            base_node="goid_crosswalk__base",
+            save_spec=DatasetSaveSpec(
+                table_key=GOID_CROSSWALK_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="goid_crosswalk__table",
+            input_type=pl.LazyFrame,
+        ),
+    ),
+    table_materializations_node="goids__table_materializations",
+    anchor_node_name="t__goids",
 )
-
-
-@codeintel_target(domain="ingestion", target=GOIDS_TARGET_NAME)
-def t__goids(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    goids__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize goids target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the goids target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=GOIDS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=goids__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_GOIDS_TABLE_TARGET_SPEC)
+goids__table = _MODULE.goids__table
+goid_crosswalk__table = _MODULE.goid_crosswalk__table
+goids__table_materializations = _MODULE.goids__table_materializations
+t__goids = _MODULE.t__goids
 
 
 __all__ = [

@@ -25,16 +25,8 @@ class GraphKind(Flag):
     SYMBOL_MODULE_GRAPH = auto()
     SYMBOL_FUNCTION_GRAPH = auto()
     CONFIG_MODULE_BIPARTITE = auto()
-    TEST_FUNCTION_BIPARTITE = auto()
     SYMBOL = SYMBOL_MODULE_GRAPH | SYMBOL_FUNCTION_GRAPH
-    ALL = (
-        CALL_GRAPH
-        | IMPORT_GRAPH
-        | CFG_GRAPH
-        | SYMBOL
-        | CONFIG_MODULE_BIPARTITE
-        | TEST_FUNCTION_BIPARTITE
-    )
+    ALL = CALL_GRAPH | IMPORT_GRAPH | CFG_GRAPH | SYMBOL | CONFIG_MODULE_BIPARTITE
 
 
 class GraphEngine(Protocol):
@@ -123,21 +115,6 @@ class GraphEngine(Protocol):
 
     def load_config_module_bipartite(self) -> nx.Graph:
         """Return the config key <-> module bipartite graph."""
-        ...
-
-    def test_function_bipartite(self) -> nx.Graph:
-        """
-        Return the test <-> function bipartite graph (cached or loaded).
-
-        Returns
-        -------
-        nx.Graph
-            Test-function bipartite graph.
-        """
-        ...
-
-    def load_test_function_bipartite(self) -> nx.Graph:
-        """Return the test <-> function bipartite graph."""
         ...
 
     @property

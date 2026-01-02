@@ -61,7 +61,6 @@ class TestGraphMetricsResult:
 def compute_test_graph_metrics_pure(
     snapshot: SnapshotRef,
     *,
-    test_coverage_edges_frame: pl.DataFrame | None = None,
     goid_risk_factors_frame: pl.DataFrame | None = None,
 ) -> TestGraphMetricsResult:
     """Compute test graph metrics without writing to database.
@@ -73,8 +72,6 @@ def compute_test_graph_metrics_pure(
     ----------
     snapshot
         Repository and commit snapshot reference.
-    test_coverage_edges_frame
-        Coverage edges for the test/function bipartite graph.
     goid_risk_factors_frame
         Function risk scores keyed by GOID.
 
@@ -95,11 +92,7 @@ def compute_test_graph_metrics_pure(
     - Projection metrics (clustering, betweenness)
     - Risk-weighted degree based on function risk scores
     """
-    graph = _test_function_graph_from_frame(
-        test_coverage_edges_frame,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
+    graph = nx.Graph()
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=snapshot.repo,
@@ -162,52 +155,6 @@ def compute_test_graph_metrics_pure(
         test_rows=tuple(test_rows),
         function_rows=tuple(func_rows),
     )
-
-
-def _test_function_graph_from_frame(
-    frame: pl.DataFrame | None,
-    *,
-    repo: str,
-    commit: str,
-) -> nx.Graph:
-    graph = nx.Graph()
-    if frame is None or frame.is_empty():
-        return graph
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    for row in filtered.iter_rows(named=True):
-        test_id = row.get("test_id")
-        goid_raw = row.get("function_goid_h128")
-        goid = normalize_decimal_id(goid_raw)
-        if test_id is None or goid is None:
-            continue
-        test_node = ("t", str(test_id))
-        func_node = ("f", goid)
-        if not graph.has_node(test_node):
-            graph.add_node(test_node, bipartite=0)
-        if not graph.has_node(func_node):
-            graph.add_node(func_node, bipartite=1)
-        weight = coerce_optional_float(row.get("coverage_ratio"), ctx="coverage_ratio") or 0.0
-        if graph.has_edge(test_node, func_node):
-            attrs = graph[test_node][func_node]
-            attrs["weight"] = _coerce_edge_weight_float(attrs.get("weight")) + weight
-        else:
-            graph.add_edge(test_node, func_node, weight=weight)
-    return graph
-
-
-def _coerce_edge_weight_float(value: object) -> float:
-    if value is None:
-        return 0.0
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return 0.0
-    return 0.0
 
 
 def _filter_frame_by_snapshot(

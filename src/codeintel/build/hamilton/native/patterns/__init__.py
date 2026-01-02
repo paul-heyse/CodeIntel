@@ -33,6 +33,11 @@ from codeintel.build.hamilton.native.patterns.specs import (
     TableOutputSpec,
     ToolTargetSpec,
 )
+from codeintel.build.hamilton.native.patterns.table_target import (
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
+)
 from codeintel.build.hamilton.native.patterns.tool_target import (
     IngestStep,
     ToolFinalizeContext,
@@ -53,9 +58,12 @@ __all__ = [
     "RelationTableSaveSpec",
     "SaverContext",
     "TableOutputSpec",
+    "TableTargetSpec",
+    "TableTargetTableSpec",
     "ToolFinalizeContext",
     "ToolRunContext",
     "ToolTargetSpec",
+    "attach_table_target_template",
     "attach_tool_target_template",
     "finalize_target_from_materializations",
     "load_access",

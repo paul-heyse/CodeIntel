@@ -120,10 +120,13 @@ def _scan_parquet_with_row_index(
         signature = inspect.signature(scan_fn)
     except (TypeError, ValueError):
         return scan_fn(str(dataset_dir), row_index_name=row_index_name)
-    kwargs: dict[str, object] = {"row_index_name": row_index_name}
     if "row_index_offset" in signature.parameters:
-        kwargs["row_index_offset"] = row_index_offset
-    return scan_fn(str(dataset_dir), **kwargs)
+        return scan_fn(
+            str(dataset_dir),
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+        )
+    return scan_fn(str(dataset_dir), row_index_name=row_index_name)
 
 
 def sample_reader(

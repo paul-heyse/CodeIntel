@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import networkx as nx
 import polars as pl
+from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.compute.row_builders import (
     build_symbol_module_edges,
@@ -61,7 +62,6 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
@@ -481,6 +481,7 @@ def graph_metric_inputs(
     )
 
 
+@cache()
 def graph_metrics_result(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
@@ -529,11 +530,6 @@ def graph_metrics_functions__base(graph_metrics_result: GraphMetricsRows) -> pl.
         collect_group=GRAPH_METRICS_COLLECT_GROUP,
     ),
 )
-@tag_dataset(
-    domain="analytics",
-    target=GRAPH_METRICS_TARGET_NAME,
-    table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-)
 @table_contract(GRAPH_METRICS_FUNCTIONS_CONTRACT)
 def graph_metrics_functions__table(
     graph_metrics_functions__base: pl.LazyFrame,
@@ -567,11 +563,6 @@ def graph_metrics_modules__base(graph_metrics_result: GraphMetricsRows) -> pl.La
         table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
         collect_group=GRAPH_METRICS_COLLECT_GROUP,
     ),
-)
-@tag_dataset(
-    domain="analytics",
-    target=GRAPH_METRICS_TARGET_NAME,
-    table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
 )
 @table_contract(GRAPH_METRICS_MODULES_CONTRACT)
 def graph_metrics_modules__table(
@@ -645,11 +636,6 @@ def graph_metrics_functions_ext__base(
     context=GRAPH_METRICS_EXT_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
 )
-@tag_dataset(
-    domain="analytics",
-    target=GRAPH_METRICS_EXT_TARGET_NAME,
-    table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
-)
 @table_contract(GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT)
 def graph_metrics_functions_ext__table(
     graph_metrics_functions_ext__base: pl.LazyFrame,
@@ -688,11 +674,6 @@ def graph_metrics_modules_ext__base(
 @save_dataset(
     context=GRAPH_METRICS_EXT_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=GRAPH_METRICS_EXT_TARGET_NAME,
-    table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
 )
 @table_contract(GRAPH_METRICS_MODULES_EXT_CONTRACT)
 def graph_metrics_modules_ext__table(
@@ -766,11 +747,6 @@ def symbol_graph_metrics_functions__base(
     context=SYMBOL_GRAPH_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY),
 )
-@tag_dataset(
-    domain="analytics",
-    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-    table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY,
-)
 @table_contract(SYMBOL_GRAPH_FUNCTIONS_CONTRACT)
 def symbol_graph_metrics_functions__table(
     symbol_graph_metrics_functions__base: pl.LazyFrame,
@@ -809,11 +785,6 @@ def symbol_graph_metrics_modules__base(
 @save_dataset(
     context=SYMBOL_GRAPH_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-    table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY,
 )
 @table_contract(SYMBOL_GRAPH_MODULES_CONTRACT)
 def symbol_graph_metrics_modules__table(
@@ -918,11 +889,6 @@ def graph_stats__base(
 @save_dataset(
     context=GRAPH_STATS_SAVE_CONTEXT,
     spec=DatasetSaveSpec(table_key=GRAPH_STATS_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=GRAPH_STATS_TARGET_NAME,
-    table_key=GRAPH_STATS_TABLE_KEY,
 )
 @table_contract(GRAPH_STATS_CONTRACT)
 def graph_stats__table(graph_stats__base: pl.LazyFrame) -> pl.LazyFrame:

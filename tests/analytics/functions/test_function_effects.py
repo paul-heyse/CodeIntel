@@ -253,7 +253,6 @@ def test_function_effects_inputs_defaults() -> None:
     inputs = FunctionEffectsInputs()
 
     expect_is_none(inputs.catalog_provider)
-    expect_is_none(inputs.runtime)
     expect_is_none(inputs.ast_map)
     expect_is_none(inputs.missing_goids)
 

@@ -29,7 +29,6 @@ def _runtime_options(
         symbol_module_graph=empty_graph(),
         symbol_function_graph=empty_graph(),
         config_graph=empty_graph(),
-        test_function_graph=empty_graph(),
     )
     return make_graph_runtime_options(
         snapshot=env.snapshot,

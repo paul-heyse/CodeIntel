@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
 from collections import deque
 from dataclasses import dataclass, replace
-from types import MappingProxyType
+from pathlib import Path
+from types import FunctionType, MappingProxyType, MethodType
 from typing import TYPE_CHECKING, TypeGuard, cast
 
 from codeintel.build.hamilton.dag_catalog import (
@@ -136,13 +138,35 @@ def _compile_nodes(nodes: Mapping[str, Node]) -> dict[str, NodeDescriptor]:
         tags = _node_tags(node)
         tag_spec = _parse_tag_spec(tags)
         deps = tuple(dep.name for dep in node.dependencies)
+        module_name, module_path = _resolve_node_module(node)
         compiled[name] = NodeDescriptor(
             name=name,
             deps=deps,
             tags=MappingProxyType(tags),
             tag_spec=tag_spec,
+            module=module_name,
+            module_path=module_path,
         )
     return compiled
+
+
+def _resolve_node_module(node: Node) -> tuple[str | None, Path | None]:
+    candidate = getattr(node, "callable", None)
+    if candidate is None:
+        candidate = getattr(node, "callabl", None)
+    if isinstance(candidate, (FunctionType, MethodType)):
+        module_name = getattr(candidate, "__module__", None)
+    else:
+        module_name = getattr(candidate, "__module__", None) if callable(candidate) else None
+    module_path = None
+    if module_name and callable(candidate):
+        try:
+            source_path = inspect.getsourcefile(candidate)
+        except (OSError, TypeError):
+            source_path = None
+        if source_path:
+            module_path = Path(source_path).resolve()
+    return module_name if isinstance(module_name, str) else None, module_path
 
 
 def _node_tags(node: Node) -> dict[str, object]:

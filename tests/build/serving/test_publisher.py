@@ -17,12 +17,12 @@ from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
 )
-from codeintel.build.serving.publisher import (
+from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
+from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
-from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
-from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset

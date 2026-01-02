@@ -16,7 +16,7 @@ from codeintel.build.hamilton.tag_spec import (
     tag_spec_from_tags,
     validate_tag_spec,
 )
-from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.primitives import TableSchema
@@ -58,6 +58,42 @@ class _TagDecoratorFactory(Protocol):
 
 
 _TAG_DECORATOR_FACTORY = cast("_TagDecoratorFactory", h_tag)
+
+_REQUIRED_TABLE_OUTPUT_TAGS: frozenset[TagKey] = frozenset(
+    {
+        cast("TagKey", ht.TAG_TABLE_KEY),
+        cast("TagKey", ht.TAG_TARGET),
+        cast("TagKey", "ci.data_node"),
+    }
+)
+_REQUIRED_DATASET_NODE_TAGS: frozenset[TagKey] = frozenset(
+    {
+        cast("TagKey", ht.TAG_TABLE_KEY),
+        cast("TagKey", ht.TAG_NODE_TYPE),
+    }
+)
+
+
+def required_table_output_tags() -> frozenset[TagKey]:
+    """Return required tags for contract table output saver nodes.
+
+    Returns
+    -------
+    frozenset[TagKey]
+        Required tag keys for table output nodes.
+    """
+    return _REQUIRED_TABLE_OUTPUT_TAGS
+
+
+def required_dataset_node_tags() -> frozenset[TagKey]:
+    """Return required tags for dataset producer nodes.
+
+    Returns
+    -------
+    frozenset[TagKey]
+        Required tag keys for dataset nodes.
+    """
+    return _REQUIRED_DATASET_NODE_TAGS
 
 
 def apply_tags[TCallable](
@@ -292,6 +328,8 @@ __all__ = [
     "TagSpec",
     "TagValue",
     "apply_tags",
+    "required_dataset_node_tags",
+    "required_table_output_tags",
     "tag_artifact",
     "tag_compute",
     "tag_dataset",

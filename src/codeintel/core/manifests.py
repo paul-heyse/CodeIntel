@@ -137,6 +137,140 @@ class ExportManifestData(msgspec.Struct, ManifestBase, frozen=True):
         return payload
 
 
+class InferencePlanLoaderOverride(msgspec.Struct, frozen=True):
+    """Loader override mapping for inference execution."""
+
+    node: str
+    table_key: str
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return JSON-serializable loader override payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable loader override payload.
+        """
+        return {"node": self.node, "table_key": self.table_key}
+
+
+class InferencePlanDatasetRef(msgspec.Struct, frozen=True):
+    """Dataset reference mapping for inference execution."""
+
+    param: str
+    table_key: str
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return JSON-serializable dataset reference payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable dataset reference payload.
+        """
+        return {"param": self.param, "table_key": self.table_key}
+
+
+class InferencePlanSeedDataset(msgspec.Struct, frozen=True):
+    """Seed dataset settings captured for inference runs."""
+
+    dataset_root_dir: str | None
+    snapshot_id: str | None
+    scan_mode: str
+    sample_rows: int
+    batch_size: int
+    fragment_readahead: int | None
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return JSON-serializable seed dataset payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable seed dataset payload.
+        """
+        return {
+            "dataset_root_dir": self.dataset_root_dir,
+            "snapshot_id": self.snapshot_id,
+            "scan_mode": self.scan_mode,
+            "sample_rows": self.sample_rows,
+            "batch_size": self.batch_size,
+            "fragment_readahead": self.fragment_readahead,
+        }
+
+
+class InferencePlanSettings(msgspec.Struct, frozen=True):
+    """Runtime settings snapshot used for inference."""
+
+    engine_version: str
+    polars_profile: bool
+    polars_inspect: bool
+    polars_query_opt_flags: tuple[str, ...]
+    polars_streaming: bool
+    polars_streaming_fallback: bool
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return JSON-serializable settings payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable settings payload.
+        """
+        return {
+            "engine_version": self.engine_version,
+            "polars_profile": self.polars_profile,
+            "polars_inspect": self.polars_inspect,
+            "polars_query_opt_flags": list(self.polars_query_opt_flags),
+            "polars_streaming": self.polars_streaming,
+            "polars_streaming_fallback": self.polars_streaming_fallback,
+        }
+
+
+class InferencePlanManifest(msgspec.Struct, ManifestBase, frozen=True):
+    """Manifest describing a deterministic inference plan."""
+
+    manifest_version: int
+    run_id: str
+    repo: str
+    commit: str
+    repo_root: str
+    generated_at: str
+    table_keys: tuple[str, ...]
+    targets: tuple[str, ...]
+    qparams: tuple[str, ...]
+    loader_overrides: tuple[InferencePlanLoaderOverride, ...]
+    dataset_refs: tuple[InferencePlanDatasetRef, ...]
+    seed_dataset: InferencePlanSeedDataset | None
+    settings: InferencePlanSettings
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return JSON-serializable inference plan manifest payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable inference plan manifest payload.
+        """
+        payload: dict[str, object] = {
+            "manifest_version": self.manifest_version,
+            "run_id": self.run_id,
+            "repo": self.repo,
+            "commit": self.commit,
+            "repo_root": self.repo_root,
+            "generated_at": self.generated_at,
+            "table_keys": list(self.table_keys),
+            "targets": list(self.targets),
+            "qparams": list(self.qparams),
+            "loader_overrides": [entry.to_json_obj() for entry in self.loader_overrides],
+            "dataset_refs": [entry.to_json_obj() for entry in self.dataset_refs],
+            "settings": self.settings.to_json_obj(),
+        }
+        if self.seed_dataset is not None:
+            payload["seed_dataset"] = self.seed_dataset.to_json_obj()
+        return payload
+
+
 class ArrowDatasetManifest(msgspec.Struct, ManifestBase, frozen=True):
     """Manifest describing an Arrow dataset snapshot."""
 
@@ -783,6 +917,11 @@ __all__ = [
     "ExportArtifactKind",
     "ExportManifestData",
     "IncrementalMarker",
+    "InferencePlanDatasetRef",
+    "InferencePlanLoaderOverride",
+    "InferencePlanManifest",
+    "InferencePlanSeedDataset",
+    "InferencePlanSettings",
     "InferenceStatus",
     "ManifestBase",
     "ManifestDerivationKind",

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 
 import polars as pl
+from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.build.analytics.entrypoints.compute import (
@@ -19,27 +21,20 @@ from codeintel.build.analytics.entrypoints.core import (
     EntrypointContextInputs,
 )
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -49,8 +44,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 ENTRYPOINTS_TARGET_NAME = "entrypoints"
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
-ENTRYPOINT_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
-ENTRYPOINTS_SAVE_CONTEXT = SaverContext(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 ENTRYPOINTS_CONTRACT = TableContractSpec(
     table_key=ENTRYPOINTS_TABLE_KEY,
     domain="analytics",
@@ -86,9 +79,7 @@ class EntrypointModuleFrames:
 class EntrypointTestFrames:
     """Frame inputs for entrypoint test context."""
 
-    coverage_frame: pl.DataFrame
     test_catalog_frame: pl.DataFrame
-    coverage_edges_frame: pl.DataFrame
 
 
 @dataclass(frozen=True)
@@ -188,13 +179,10 @@ def entrypoint_test_frames(
     Returns
     -------
     EntrypointTestFrames
-        Frame bundle with test catalog and empty coverage placeholders.
+        Frame bundle with the test catalog snapshot.
     """
-    empty_frame = pl.DataFrame()
     return EntrypointTestFrames(
-        coverage_frame=empty_frame,
         test_catalog_frame=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
-        coverage_edges_frame=empty_frame,
     )
 
 
@@ -215,6 +203,7 @@ def entrypoint_subsystem_frames(
     )
 
 
+@cache()
 def entrypoints_result(
     env: BuildEnv,
     entrypoint_module_frames: EntrypointModuleFrames,
@@ -242,8 +231,6 @@ def entrypoints_result(
     )
     context_inputs = EntrypointContextInputs(
         modules_frame=entrypoint_module_frames.modules_frame,
-        coverage_functions_frame=entrypoint_test_frames.coverage_frame,
-        test_coverage_edges_frame=entrypoint_test_frames.coverage_edges_frame,
         test_catalog_frame=entrypoint_test_frames.test_catalog_frame,
         subsystem_modules_frame=entrypoint_subsystem_frames.subsystem_modules_frame,
         subsystems_frame=entrypoint_subsystem_frames.subsystems_frame,
@@ -270,27 +257,6 @@ def entrypoints__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:
     )
 
 
-@save_dataset(
-    context=ENTRYPOINTS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=ENTRYPOINTS_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=ENTRYPOINTS_TARGET_NAME,
-    table_key=ENTRYPOINTS_TABLE_KEY,
-)
-@table_contract(ENTRYPOINTS_CONTRACT)
-def entrypoints__table(entrypoints__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist entrypoint rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted entrypoints frame.
-    """
-    return entrypoints__base
-
-
 def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:
     """Build entrypoint test rows from computed entrypoints metadata.
 
@@ -308,58 +274,34 @@ def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pl.LazyFram
     )
 
 
-@save_dataset(
-    context=ENTRYPOINTS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=ENTRYPOINT_TESTS_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_ENTRYPOINTS_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=ENTRYPOINTS_TARGET_NAME,
-    table_key=ENTRYPOINT_TESTS_TABLE_KEY,
+    target_name=ENTRYPOINTS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=ENTRYPOINTS_TABLE_KEY,
+            base_node="entrypoints__base",
+            contract=ENTRYPOINTS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=ENTRYPOINTS_TABLE_KEY),
+            node_name="entrypoints__table",
+        ),
+        TableTargetTableSpec(
+            table_key=ENTRYPOINT_TESTS_TABLE_KEY,
+            base_node="entrypoint_tests__base",
+            contract=ENTRYPOINT_TESTS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=ENTRYPOINT_TESTS_TABLE_KEY),
+            node_name="entrypoint_tests__table",
+        ),
+    ),
+    table_materializations_node="entrypoints__table_materializations",
+    anchor_node_name="t__entrypoints",
 )
-@table_contract(ENTRYPOINT_TESTS_CONTRACT)
-def entrypoint_tests__table(entrypoint_tests__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist entrypoint test rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted entrypoint tests frame.
-    """
-    return entrypoint_tests__base
-
-
-entrypoints__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=ENTRYPOINTS_TARGET_NAME,
-    table_keys=ENTRYPOINT_TABLE_KEYS,
-    node_name="entrypoints__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
-def t__entrypoints(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    entrypoints__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize entrypoints target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the entrypoints target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=ENTRYPOINTS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=entrypoints__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_ENTRYPOINTS_TABLE_TARGET_SPEC)
+entrypoints__table = _MODULE.entrypoints__table
+entrypoint_tests__table = _MODULE.entrypoint_tests__table
+entrypoints__table_materializations = _MODULE.entrypoints__table_materializations
+t__entrypoints = _MODULE.t__entrypoints
 
 
 __all__ = [

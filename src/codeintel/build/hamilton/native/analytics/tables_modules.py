@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.build.analytics.profiles.modules import (
@@ -9,23 +11,18 @@ from codeintel.build.analytics.profiles.modules import (
     compute_module_profile_inputs,
 )
 from codeintel.build.analytics.profiles.types import ModuleProfileFrames
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import module_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -33,10 +30,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 MODULE_PROFILE_TARGET_NAME = "module_profile"
 MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
-MODULE_PROFILE_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=MODULE_PROFILE_TARGET_NAME,
-)
 MODULE_PROFILE_CONTRACT = TableContractSpec(
     table_key=MODULE_PROFILE_TABLE_KEY,
     domain="analytics",
@@ -81,47 +74,26 @@ def module_profile__base(
     return rows_to_frame(MODULE_PROFILE_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=MODULE_PROFILE_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=MODULE_PROFILE_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_MODULE_PROFILE_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=MODULE_PROFILE_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=MODULE_PROFILE_TABLE_KEY,
+            base_node="module_profile__base",
+            contract=MODULE_PROFILE_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=MODULE_PROFILE_TABLE_KEY),
+            node_name="module_profile__table",
+        ),
+    ),
+    table_materializations_node="module_profile__table_materializations",
+    anchor_node_name="t__module_profile",
 )
-@table_contract(MODULE_PROFILE_CONTRACT)
-def module_profile__table(module_profile__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched module profile frame.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Cleaned/enriched module profile frame.
-    """
-    return module_profile__base
-
-
-@codeintel_target(domain="analytics", target=MODULE_PROFILE_TARGET_NAME)
-def t__module_profile(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__module_profile: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize module_profile target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the module_profile target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=MODULE_PROFILE_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            MODULE_PROFILE_TABLE_KEY: m__analytics__module_profile,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_MODULE_PROFILE_TABLE_TARGET_SPEC)
+module_profile__table = _MODULE.module_profile__table
+module_profile__table_materializations = _MODULE.module_profile__table_materializations
+t__module_profile = _MODULE.t__module_profile
 
 
 __all__ = [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import polars as pl
 
@@ -16,27 +17,20 @@ from codeintel.build.analytics.dependencies.compute import (
 from codeintel.build.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -46,14 +40,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 EXTERNAL_DEPS_TARGET_NAME = "external_deps"
 EXTERNAL_DEPENDENCIES_TABLE_KEY = "analytics.external_dependencies"
 EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY = "analytics.external_dependency_calls"
-EXTERNAL_DEPS_TABLE_KEYS = (
-    EXTERNAL_DEPENDENCIES_TABLE_KEY,
-    EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
-)
-EXTERNAL_DEPS_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=EXTERNAL_DEPS_TARGET_NAME,
-)
 EXTERNAL_DEPENDENCIES_CONTRACT = TableContractSpec(
     table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
     domain="analytics",
@@ -180,29 +166,6 @@ def external_dependency_calls__base(
     )
 
 
-@save_dataset(
-    context=EXTERNAL_DEPS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=EXTERNAL_DEPS_TARGET_NAME,
-    table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
-)
-@table_contract(EXTERNAL_DEPENDENCY_CALLS_CONTRACT)
-def external_dependency_calls__table(
-    external_dependency_calls__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist external dependency calls.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted external dependency calls frame.
-    """
-    return external_dependency_calls__base
-
-
 def external_dependencies__base(
     env: BuildEnv,
     q__analytics__external_dependency_calls: InferableTabularInput,
@@ -229,58 +192,34 @@ def external_dependencies__base(
     )
 
 
-@save_dataset(
-    context=EXTERNAL_DEPS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_EXTERNAL_DEPS_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=EXTERNAL_DEPS_TARGET_NAME,
-    table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
+    target_name=EXTERNAL_DEPS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
+            base_node="external_dependency_calls__base",
+            contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
+            node_name="external_dependency_calls__table",
+        ),
+        TableTargetTableSpec(
+            table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
+            base_node="external_dependencies__base",
+            contract=EXTERNAL_DEPENDENCIES_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY),
+            node_name="external_dependencies__table",
+        ),
+    ),
+    table_materializations_node="external_deps__table_materializations",
+    anchor_node_name="t__external_deps",
 )
-@table_contract(EXTERNAL_DEPENDENCIES_CONTRACT)
-def external_dependencies__table(external_dependencies__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist external dependencies.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted external dependencies frame.
-    """
-    return external_dependencies__base
-
-
-external_deps__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=EXTERNAL_DEPS_TARGET_NAME,
-    table_keys=EXTERNAL_DEPS_TABLE_KEYS,
-    node_name="external_deps__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
-def t__external_deps(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    external_deps__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize external_deps target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the external_deps target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=EXTERNAL_DEPS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=external_deps__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_EXTERNAL_DEPS_TABLE_TARGET_SPEC)
+external_dependency_calls__table = _MODULE.external_dependency_calls__table
+external_dependencies__table = _MODULE.external_dependencies__table
+external_deps__table_materializations = _MODULE.external_deps__table_materializations
+t__external_deps = _MODULE.t__external_deps
 
 
 __all__ = [

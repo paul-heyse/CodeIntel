@@ -336,7 +336,6 @@ class GraphRuntime:
     symbol_module_graph: nx.Graph | None = None
     symbol_function_graph: nx.Graph | None = None
     config_module_bipartite: nx.Graph | None = None
-    test_function_bipartite: nx.Graph | None = None
     _cache: dict[GraphKind, GraphCacheValue] = field(default_factory=dict, repr=False)
 
     @property
@@ -438,23 +437,6 @@ class GraphRuntime:
             "config_module_bipartite", self.config_module_bipartite, cache_hit=cache_hit
         )
         return self.config_module_bipartite
-
-    def ensure_test_function_bipartite(self) -> nx.Graph:
-        """Return a cached test-function bipartite graph.
-
-        Returns
-        -------
-        nx.Graph
-            Test to function bipartite graph.
-        """
-        graph, cache_hit = self._get_graph(
-            GraphKind.TEST_FUNCTION_BIPARTITE, self.engine.load_test_function_bipartite
-        )
-        self.test_function_bipartite = graph
-        self._log_graph_stats(
-            "test_function_bipartite", self.test_function_bipartite, cache_hit=cache_hit
-        )
-        return self.test_function_bipartite
 
     def _get_graph(
         self,
@@ -632,8 +614,6 @@ def build_graph_runtime(
             runtime.ensure_symbol_function_graph()
         if options.graphs & GraphKind.CONFIG_MODULE_BIPARTITE:
             runtime.ensure_config_module_bipartite()
-        if options.graphs & GraphKind.TEST_FUNCTION_BIPARTITE:
-            runtime.ensure_test_function_bipartite()
     return runtime
 
 

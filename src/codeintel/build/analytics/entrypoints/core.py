@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -22,7 +21,6 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
-from codeintel.build.analytics.profiles.functions import SLOW_TEST_THRESHOLD_MS
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
@@ -103,14 +101,6 @@ class ModuleContext:
 
 
 @dataclass(frozen=True)
-class TestEdge:
-    """Coverage edge from a test to a function GOID."""
-
-    test_id: str
-    coverage_ratio: float | None
-
-
-@dataclass(frozen=True)
 class TestMeta:
     """Metadata for a test from analytics.test_catalog."""
 
@@ -128,8 +118,6 @@ class EntryPointContext:
     commit: str
     module_ctx: dict[str, ModuleContext]
     module_map: dict[str, str]
-    coverage_by_goid: dict[int, float | None]
-    edges_by_goid: dict[int, dict[str, TestEdge]]
     test_meta: dict[str, TestMeta]
     subsystem_by_module: dict[str, str]
     subsystem_names: dict[str, str]
@@ -171,8 +159,6 @@ class EntrypointContextInputs:
     module_map_override: dict[str, str] | None = None
     features: Mapping[int, FunctionAstFeatures] | None = None
     modules_frame: pl.DataFrame | None = None
-    coverage_functions_frame: pl.DataFrame | None = None
-    test_coverage_edges_frame: pl.DataFrame | None = None
     test_catalog_frame: pl.DataFrame | None = None
     subsystem_modules_frame: pl.DataFrame | None = None
     subsystems_frame: pl.DataFrame | None = None
@@ -231,16 +217,6 @@ def _build_entrypoint_context(
         }
     if not module_ctx:
         return None
-    coverage_by_goid = _coverage_by_goid_from_frame(
-        inputs.coverage_functions_frame,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-    edges_by_goid = _test_edges_from_frame(
-        inputs.test_coverage_edges_frame,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
     test_meta = _test_meta_from_frame(
         inputs.test_catalog_frame,
         repo=snapshot.repo,
@@ -258,8 +234,6 @@ def _build_entrypoint_context(
         commit=snapshot.commit,
         module_ctx=module_ctx,
         module_map=module_map,
-        coverage_by_goid=coverage_by_goid,
-        edges_by_goid=edges_by_goid,
         test_meta=test_meta,
         subsystem_by_module=subsystem_by_module,
         subsystem_names=subsystem_names,
@@ -287,15 +261,7 @@ def _materialize_candidate(
     entrypoint_id = _entrypoint_id(ctx.repo, ctx.commit, cand, urn)
     subsystem_id = ctx.subsystem_by_module.get(module_info.module)
     subsystem_name = ctx.subsystem_names.get(subsystem_id) if subsystem_id is not None else None
-    coverage_ratio = ctx.coverage_by_goid.get(goid)
-    if coverage_ratio is None:
-        edge_coverages = [
-            edge.coverage_ratio
-            for edge in ctx.edges_by_goid.get(goid, {}).values()
-            if edge.coverage_ratio is not None
-        ]
-        if edge_coverages:
-            coverage_ratio = sum(edge_coverages) / len(edge_coverages)
+    coverage_ratio = None
     summary, edge_rows = _summarize_tests(goid, entrypoint_id, ctx)
     extra_payload = cand.extra or {}
     if feature_vector is not None:
@@ -403,67 +369,6 @@ def _module_context_from_frame(
     return context
 
 
-def _coverage_by_goid_from_frame(
-    frame: pl.DataFrame | None,
-    *,
-    repo: str,
-    commit: str,
-) -> dict[int, float | None]:
-    coverage: dict[int, float | None] = {}
-    if frame is None or frame.is_empty():
-        return coverage
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.is_empty():
-        return coverage
-    ordering: list[str] = []
-    descending: list[bool] = []
-    if "executable_lines" in filtered.columns:
-        ordering.append("executable_lines")
-        descending.append(True)
-    if "created_at" in filtered.columns:
-        ordering.append("created_at")
-        descending.append(True)
-    if ordering:
-        filtered = filtered.sort(ordering, descending=descending, nulls_last=True)
-    if "function_goid_h128" in filtered.columns:
-        filtered = filtered.unique(subset=["function_goid_h128"], keep="first")
-    for row in filtered.iter_rows(named=True):
-        goid_int = normalize_decimal_id(row.get("function_goid_h128"))
-        if goid_int is None:
-            continue
-        coverage[goid_int] = coerce_optional_float(
-            row.get("coverage_ratio"),
-            ctx="coverage_ratio",
-        )
-    return coverage
-
-
-def _test_edges_from_frame(
-    frame: pl.DataFrame | None,
-    *,
-    repo: str,
-    commit: str,
-) -> dict[int, dict[str, TestEdge]]:
-    edges_by_goid: dict[int, dict[str, TestEdge]] = defaultdict(dict)
-    if frame is None or frame.is_empty():
-        return edges_by_goid
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    for row in filtered.iter_rows(named=True):
-        goid_int = normalize_decimal_id(row.get("function_goid_h128"))
-        test_id = row.get("test_id")
-        if goid_int is None or test_id is None:
-            continue
-        test_id_text = coerce_str(test_id, ctx="test_coverage_edges.test_id")
-        edges_by_goid[goid_int][test_id_text] = TestEdge(
-            test_id=test_id_text,
-            coverage_ratio=coerce_optional_float(
-                row.get("coverage_ratio"),
-                ctx="coverage_ratio",
-            ),
-        )
-    return edges_by_goid
-
-
 def _test_meta_from_frame(
     frame: pl.DataFrame | None,
     *,
@@ -544,64 +449,14 @@ def _filter_frame_by_snapshot(
 
 
 def _summarize_tests(
-    goid: int,
-    entrypoint_id: str,
-    ctx: EntryPointContext,
+    _goid: int,
+    _entrypoint_id: str,
+    _ctx: EntryPointContext,
 ) -> tuple[TestSummary, list[tuple[object, ...]]]:
-    edges = ctx.edges_by_goid.get(goid, {})
-    if not edges:
-        return TestSummary(
-            tests_touching=0,
-            failing_tests=0,
-            slow_tests=0,
-            flaky_tests=0,
-            last_test_status="untested",
-        ), []
-
-    failing = 0
-    slow = 0
-    flaky = 0
-    rows: list[tuple[object, ...]] = []
-    statuses: set[str] = set()
-    for edge in edges.values():
-        meta = ctx.test_meta.get(edge.test_id)
-        status = meta.status if meta is not None else None
-        duration_ms = meta.duration_ms if meta is not None else None
-        flaky_flag = meta.flaky if meta is not None else None
-        if status in {"failed", "error"}:
-            failing += 1
-        if duration_ms is not None and duration_ms > SLOW_TEST_THRESHOLD_MS:
-            slow += 1
-        if flaky_flag:
-            flaky += 1
-        if status:
-            statuses.add(status)
-        rows.append(
-            (
-                ctx.repo,
-                ctx.commit,
-                entrypoint_id,
-                edge.test_id,
-                _decimal(meta.test_goid_h128) if meta and meta.test_goid_h128 is not None else None,
-                edge.coverage_ratio,
-                status,
-                duration_ms,
-                ctx.now,
-            )
-        )
-
-    if failing > 0:
-        last_status = "some_failing"
-    elif statuses == {"passed"}:
-        last_status = "all_passing"
-    else:
-        last_status = "unknown"
-
-    summary = TestSummary(
-        tests_touching=len(edges),
-        failing_tests=failing,
-        slow_tests=slow,
-        flaky_tests=flaky,
-        last_test_status=last_status,
-    )
-    return summary, rows
+    return TestSummary(
+        tests_touching=0,
+        failing_tests=0,
+        slow_tests=0,
+        flaky_tests=0,
+        last_test_status="untested",
+    ), []

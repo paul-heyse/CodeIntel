@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import (
     TAG_MCP_VISIBLE,
@@ -15,6 +14,7 @@ from codeintel.core.hamilton.semantic_tags import (
 )
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.serving.semantic_compile import compile_semantic_registry_from_views
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 

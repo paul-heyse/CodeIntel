@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.build.analytics.functions.function_effects import (
@@ -10,22 +12,17 @@ from codeintel.build.analytics.functions.function_effects import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -33,10 +30,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
 FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
-FUNCTION_EFFECTS_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=FUNCTION_EFFECTS_TARGET_NAME,
-)
 FUNCTION_EFFECTS_CONTRACT = TableContractSpec(
     table_key=FUNCTION_EFFECTS_TABLE_KEY,
     domain="analytics",
@@ -84,47 +77,26 @@ def function_effects__base(
     return rows_to_frame(FUNCTION_EFFECTS_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=FUNCTION_EFFECTS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=FUNCTION_EFFECTS_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_FUNCTION_EFFECTS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=FUNCTION_EFFECTS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FUNCTION_EFFECTS_TABLE_KEY,
+            base_node="function_effects__base",
+            contract=FUNCTION_EFFECTS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=FUNCTION_EFFECTS_TABLE_KEY),
+            node_name="function_effects__table",
+        ),
+    ),
+    table_materializations_node="function_effects__table_materializations",
+    anchor_node_name="t__function_effects",
 )
-@table_contract(FUNCTION_EFFECTS_CONTRACT)
-def function_effects__table(function_effects__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched function effects frame.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Cleaned/enriched function effects frame.
-    """
-    return function_effects__base
-
-
-@codeintel_target(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
-def t__function_effects(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__function_effects: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize function_effects target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the function_effects target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FUNCTION_EFFECTS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            FUNCTION_EFFECTS_TABLE_KEY: m__analytics__function_effects,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_FUNCTION_EFFECTS_TABLE_TARGET_SPEC)
+function_effects__table = _MODULE.function_effects__table
+function_effects__table_materializations = _MODULE.function_effects__table_materializations
+t__function_effects = _MODULE.t__function_effects
 
 
 __all__ = [

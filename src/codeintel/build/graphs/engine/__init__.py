@@ -38,7 +38,6 @@ from codeintel.build.graphs.engine.views import (
     load_import_graph,
     load_symbol_function_graph,
     load_symbol_module_graph,
-    load_test_function_bipartite,
 )
 
 __all__ = [
@@ -54,6 +53,5 @@ __all__ = [
     "load_import_graph",
     "load_symbol_function_graph",
     "load_symbol_module_graph",
-    "load_test_function_bipartite",
     "maybe_enable_nx_gpu",
 ]

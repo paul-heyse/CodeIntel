@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import sys
 
 import polars as pl
 from intervaltree import IntervalTree
@@ -14,23 +15,16 @@ from codeintel.build.graphs.compute.symbols import (
     edges_to_rows,
     parse_symbol_roles,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
@@ -41,8 +35,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SYMBOL_USES_TARGET_NAME = "symbol_uses"
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
-
-SYMBOL_USES_SAVE_CONTEXT = SaverContext(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 
 
 def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
@@ -75,7 +67,10 @@ def _goid_spans_by_path(
             end_line if isinstance(end_line, int) else None,
         )
         span_start, span_end = to_half_open_span(start_line, resolved_end)
-        tree = spans_by_path.setdefault(rel_path, IntervalTree())
+        tree = spans_by_path.get(rel_path)
+        if tree is None:
+            tree = IntervalTree()
+            spans_by_path[rel_path] = tree
         tree.addi(span_start, span_end, int(goid_value))
     return spans_by_path
 
@@ -234,55 +229,25 @@ def symbol_use_edges_empty(env: BuildEnv) -> InferableTabularInput:
     return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
 
-@save_dataset(
-    context=SYMBOL_USES_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SYMBOL_USE_EDGES_TABLE_KEY),
-)
-@tag_dataset(domain="graphs", target=SYMBOL_USES_TARGET_NAME, table_key=SYMBOL_USE_EDGES_TABLE_KEY)
-def symbol_use_edges__table(
-    symbol_use_edges: InferableTabularInput,
-) -> InferableTabularInput:
-    """Persist symbol use edges.
-
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for symbol use edges.
-    """
-    return symbol_use_edges
-
-
-symbol_uses__table_materializations = make_table_materializations_collector(
+_MODULE = sys.modules[__name__]
+_SYMBOL_USES_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="graphs",
-    target=SYMBOL_USES_TARGET_NAME,
-    table_keys=(SYMBOL_USE_EDGES_TABLE_KEY,),
-    node_name="symbol_uses__table_materializations",
+    target_name=SYMBOL_USES_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SYMBOL_USE_EDGES_TABLE_KEY,
+            base_node="symbol_use_edges",
+            save_spec=DatasetSaveSpec(table_key=SYMBOL_USE_EDGES_TABLE_KEY),
+            node_name="symbol_use_edges__table",
+        ),
+    ),
+    table_materializations_node="symbol_uses__table_materializations",
+    anchor_node_name="t__symbol_uses",
 )
-
-
-@codeintel_target(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
-def t__symbol_uses(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    symbol_uses__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize symbol_uses target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the symbol_uses target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=SYMBOL_USES_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=symbol_uses__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_SYMBOL_USES_TABLE_TARGET_SPEC)
+symbol_use_edges__table = _MODULE.symbol_use_edges__table
+symbol_uses__table_materializations = _MODULE.symbol_uses__table_materializations
+t__symbol_uses = _MODULE.t__symbol_uses
 
 
 __all__ = [

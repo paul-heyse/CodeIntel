@@ -62,8 +62,6 @@ class GraphBundle:
         Symbol to function bipartite graph.
     config_module_bipartite
         Config key to module bipartite graph.
-    test_function_bipartite
-        Test to function bipartite graph.
     cfg_graph
         Control flow graph (directed), if available.
 
@@ -79,7 +77,6 @@ class GraphBundle:
     symbol_module_graph: nx.Graph | None = None
     symbol_function_graph: nx.Graph | None = None
     config_module_bipartite: nx.Graph | None = None
-    test_function_bipartite: nx.Graph | None = None
     cfg_graph: nx.DiGraph | None = None
 
     @classmethod
@@ -135,8 +132,6 @@ class GraphBundle:
             names.append("symbol_function_graph")
         if self.config_module_bipartite is not None:
             names.append("config_module_bipartite")
-        if self.test_function_bipartite is not None:
-            names.append("test_function_bipartite")
         if self.cfg_graph is not None:
             names.append("cfg_graph")
         return tuple(names)
@@ -251,17 +246,6 @@ class ExtendedGraphProviderProtocol(GraphProviderProtocol[T_co], Protocol[T_co])
         -------
         nx.Graph | None
             The config-module graph, or None if not available.
-        """
-        ...
-
-    @property
-    def test_function_bipartite(self) -> nx.Graph | None:
-        """Access test-function bipartite graph.
-
-        Returns
-        -------
-        nx.Graph | None
-            The test-function graph, or None if not available.
         """
         ...
 

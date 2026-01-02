@@ -11,7 +11,7 @@ import pytest
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
-from codeintel.build.hamilton.materializers import DuckDBRelationSaver, FileArtifactSaver
+from codeintel.build.hamilton.materializers import ArrowDatasetSaver, FileArtifactSaver
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 
@@ -34,7 +34,7 @@ def _module_with_saver_outputs() -> ModuleType:
     module = ModuleType("saver_inventory_module")
 
     @SaveToObjectMetadataDecorator(
-        [DuckDBRelationSaver],
+        [ArrowDatasetSaver],
         output_name_="m__core__alpha",
         env=source("env"),
         catalog=source("catalog"),

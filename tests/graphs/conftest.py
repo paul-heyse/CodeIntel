@@ -307,8 +307,8 @@ def mock_runtime_all_graphs() -> MockGraphRuntime:
     """Provide a MockGraphRuntime with all graph types populated.
 
     Includes call_graph, import_graph, symbol_module_graph,
-    symbol_function_graph, config_module_bipartite, test_function_bipartite,
-    and cfg_graph. Use for comprehensive integration testing.
+    symbol_function_graph, config_module_bipartite, and cfg_graph. Use for
+    comprehensive integration testing.
 
     Returns
     -------

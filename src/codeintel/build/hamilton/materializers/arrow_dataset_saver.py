@@ -9,7 +9,7 @@ import threading
 import types
 import typing
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, TypeAliasType, cast, get_args, get_origin
@@ -20,6 +20,7 @@ import pyarrow.dataset as ds
 from hamilton.io.data_adapters import DataSaver
 from polars.exceptions import PolarsError
 
+from codeintel.build.hamilton.build_log import record_build_event
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -40,6 +41,7 @@ from codeintel.build.schemas.observations import (
     instrument_reader_for_observation,
     merge_table_schema_hints,
     observe_batches,
+    schema_drift_summary,
 )
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar import (
@@ -63,6 +65,7 @@ from codeintel.core.datasets.manifests import (
 )
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
+from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_gen import (
     EXTRAS_POLICIES,
@@ -116,6 +119,8 @@ _COLLECT_GROUP_TAG = "ci.collect_group"
 _COLLECT_ALL_WAIT_S = 0.5
 _PROFILE_RESULT_TUPLE_LENGTH = 2
 _SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
+_DEFAULT_SCHEMA_DRIFT_MODE = "warn"
+_ALLOWED_SCHEMA_DRIFT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
 
 LOG = logging.getLogger(__name__)
 
@@ -1145,18 +1150,109 @@ def _validate_partition_columns(table_schema: TableSchema, columns: tuple[str, .
         raise ValueError(msg)
 
 
+def _normalize_settings_payload(value: object) -> object:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _normalize_settings_payload(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_settings_payload(item) for item in value]
+    return value
+
+
+def _settings_fingerprint(env: BuildEnv) -> str:
+    payload = {
+        "build_settings": _normalize_settings_payload(asdict(env.settings)),
+        "execution_settings": _normalize_settings_payload(asdict(env.execution_settings)),
+        "variants": env.variants.variant_fingerprint,
+    }
+    return fingerprint(payload)
+
+
+def _schema_drift_mode(env: BuildEnv) -> str:
+    mode = env.config.schema_drift_mode()
+    if mode in _ALLOWED_SCHEMA_DRIFT_MODES:
+        return mode
+    msg = f"Unsupported schema drift mode: {mode}"
+    raise ValueError(msg)
+
+
+def _handle_schema_drift(
+    *,
+    ctx: _MaterializeContext,
+    inferred: TableSchema,
+    baseline: TableSchema | None,
+) -> dict[str, object] | None:
+    drift_summary = schema_drift_summary(inferred, baseline)
+    if drift_summary is None:
+        return None
+    mode = _schema_drift_mode(ctx.env)
+    missing = drift_summary.get("missing_columns")
+    extra = drift_summary.get("extra_columns")
+    type_changes = drift_summary.get("type_changes")
+    missing_count = len(missing) if isinstance(missing, list) else 0
+    extra_count = len(extra) if isinstance(extra, list) else 0
+    type_change_count = len(type_changes) if isinstance(type_changes, list) else 0
+    if mode != "off":
+        record_build_event(
+            "build.schema.drift.detected",
+            table_key=ctx.table_key,
+            mode=mode,
+            details=drift_summary,
+            missing_columns=missing,
+            extra_columns=extra,
+            type_changes=type_changes,
+        )
+        LOG.warning(
+            "build.schema.drift.detected table_key=%s mode=%s missing=%d extra=%d "
+            "type_changes=%d",
+            ctx.table_key,
+            mode,
+            missing_count,
+            extra_count,
+            type_change_count,
+        )
+    else:
+        LOG.info(
+            "build.schema.drift.detected table_key=%s mode=off missing=%d extra=%d "
+            "type_changes=%d",
+            ctx.table_key,
+            missing_count,
+            extra_count,
+            type_change_count,
+        )
+    if mode == "strict":
+        record_build_event(
+            "build.schema.drift.blocked",
+            table_key=ctx.table_key,
+            mode=mode,
+            details=drift_summary,
+        )
+        msg = (
+            f"Schema drift detected for {ctx.table_key}: missing={missing_count} "
+            f"extra={extra_count} type_changes={type_change_count}"
+        )
+        raise ValueError(msg)
+    return drift_summary
+
+
 def _manifest_extras(
     *,
     table_schema: TableSchema,
     table_key: str,
     inferred_settings: dict[str, object] | None,
     write_settings: dict[str, object],
+    drift_summary: Mapping[str, object] | None,
+    settings_fingerprint: str,
     provenance: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     extras: dict[str, object] = {"table_schema": table_schema.to_json_obj()}
     resolved_provenance = provenance or _schema_provenance(table_key)
     if resolved_provenance:
         extras["provenance"] = resolved_provenance
+    if drift_summary is not None:
+        extras["schema_drift_summary"] = dict(drift_summary)
+    extras["settings_fingerprint"] = settings_fingerprint
     if inferred_settings:
         extras["inferred_settings"] = dict(inferred_settings)
     settings_payload = _write_settings_payload(write_settings)

@@ -25,7 +25,6 @@ class FunctionProfileInputs:
     typedness: pl.DataFrame
     diagnostics: pl.DataFrame
     goid_risk_factors: pl.DataFrame
-    coverage_functions: pl.DataFrame
     graph_metrics_functions: pl.DataFrame
     function_effects: pl.DataFrame
     function_contracts: pl.DataFrame
@@ -34,8 +33,6 @@ class FunctionProfileInputs:
     hotspots: pl.DataFrame
     call_graph_edges: pl.DataFrame
     call_graph_nodes: pl.DataFrame
-    test_coverage_edges: pl.DataFrame
-    test_catalog: pl.DataFrame
 
 
 @dataclass(frozen=True)
@@ -48,7 +45,6 @@ class FunctionProfileFrames:
     typedness: pl.DataFrame
     diagnostics: pl.DataFrame
     goid_risk_factors: pl.DataFrame
-    coverage_functions: pl.DataFrame
     graph_metrics_functions: pl.DataFrame
     function_effects: pl.DataFrame
     function_contracts: pl.DataFrame
@@ -57,8 +53,6 @@ class FunctionProfileFrames:
     hotspots: pl.DataFrame
     call_graph_edges: pl.DataFrame
     call_graph_nodes: pl.DataFrame
-    test_coverage_edges: pl.DataFrame
-    test_catalog: pl.DataFrame
 
 
 @dataclass(frozen=True)
@@ -165,24 +159,6 @@ class FunctionRiskView:
     hotspot_score: float | None
     tags: object
     owners: object
-
-
-@dataclass(frozen=True)
-class CoverageSummary:
-    """Coverage and test-derived metrics for a function."""
-
-    function_goid_h128: int
-    executable_lines: int
-    covered_lines: int
-    coverage_ratio: float | None
-    tested: bool
-    untested_reason: str | None
-    tests_touching: int
-    failing_tests: int
-    slow_tests: int
-    flaky_tests: int
-    last_test_status: str | None
-    dominant_test_status: str | None
 
 
 @dataclass(frozen=True)

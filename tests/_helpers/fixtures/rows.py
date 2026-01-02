@@ -15,6 +15,9 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows
 from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFileProfileRow as FileProfileRowModel,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -486,6 +489,20 @@ def blank_test_profile_row() -> ProfileRowModel:
         Blank row payload.
     """
     return cast("ProfileRowModel", RowFactory.blank_row("analytics.test_profile"))
+
+
+def blank_behavioral_coverage_row() -> BehavioralCoverageRowModel:
+    """Return a blank analytics.behavioral_coverage row.
+
+    Returns
+    -------
+    BehavioralCoverageRowModel
+        Blank row payload.
+    """
+    return cast(
+        "BehavioralCoverageRowModel",
+        RowFactory.blank_row("analytics.behavioral_coverage"),
+    )
 
 
 def blank_function_profile_row() -> FunctionProfileRowModel:
@@ -2137,6 +2154,7 @@ def config_value_row(
 __all__ = [
     "AstMetricSeed",
     "AstMetricsRow",
+    "BehavioralCoverageRowModel",
     "CFGBlockRow",
     "CFGEdgeRow",
     "CallGraphEdgeRow",
@@ -2198,6 +2216,7 @@ __all__ = [
     "TypednessRow",
     "TypednessSeed",
     "ast_metric_row",
+    "blank_behavioral_coverage_row",
     "blank_file_profile_row",
     "blank_function_profile_row",
     "blank_module_profile_row",

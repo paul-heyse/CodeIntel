@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 import polars as pl
+from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.compute.data_models.usage import (
     DataModelUsageInputs,
@@ -35,12 +37,13 @@ from codeintel.build.hamilton.native.materialization_records import (
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     SaverContext,
-    make_table_materializations_collector,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
     save_dataset,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
@@ -52,12 +55,6 @@ DATA_MODELS_TABLE_KEY = "analytics.data_models"
 DATA_MODEL_FIELDS_TABLE_KEY = "analytics.data_model_fields"
 DATA_MODEL_RELATIONSHIPS_TABLE_KEY = "analytics.data_model_relationships"
 DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
-DATA_MODELS_TABLE_KEYS = (
-    DATA_MODELS_TABLE_KEY,
-    DATA_MODEL_FIELDS_TABLE_KEY,
-    DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
-)
-DATA_MODELS_SAVE_CONTEXT = SaverContext(domain="analytics", target=DATA_MODELS_TARGET_NAME)
 DATA_MODELS_CONTRACT = TableContractSpec(
     table_key=DATA_MODELS_TABLE_KEY,
     domain="analytics",
@@ -168,6 +165,7 @@ def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
     return module_map
 
 
+@cache()
 def data_models_result(
     env: BuildEnv,
     q__core__goids: InferableTabularInput,
@@ -207,23 +205,6 @@ def data_models__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
     )
 
 
-@save_dataset(
-    context=DATA_MODELS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=DATA_MODELS_TABLE_KEY),
-)
-@tag_dataset(domain="analytics", target=DATA_MODELS_TARGET_NAME, table_key=DATA_MODELS_TABLE_KEY)
-@table_contract(DATA_MODELS_CONTRACT)
-def data_models__table(data_models__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist data model summary rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted data model summary frame.
-    """
-    return data_models__base
-
-
 def data_model_fields__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
     """Build data model field rows.
 
@@ -237,27 +218,6 @@ def data_model_fields__base(data_models_result: DataModelsResult) -> pl.LazyFram
         data_models_result.field_rows,
         columns=DATA_MODEL_FIELDS_COLS,
     )
-
-
-@save_dataset(
-    context=DATA_MODELS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=DATA_MODEL_FIELDS_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=DATA_MODELS_TARGET_NAME,
-    table_key=DATA_MODEL_FIELDS_TABLE_KEY,
-)
-@table_contract(DATA_MODEL_FIELDS_CONTRACT)
-def data_model_fields__table(data_model_fields__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist data model field rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted data model field frame.
-    """
-    return data_model_fields__base
 
 
 def data_model_relationships__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
@@ -275,60 +235,42 @@ def data_model_relationships__base(data_models_result: DataModelsResult) -> pl.L
     )
 
 
-@save_dataset(
-    context=DATA_MODELS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=DATA_MODELS_TARGET_NAME,
-    table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
+    target_name=DATA_MODELS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=DATA_MODELS_TABLE_KEY,
+            base_node="data_models__base",
+            contract=DATA_MODELS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=DATA_MODELS_TABLE_KEY),
+            node_name="data_models__table",
+        ),
+        TableTargetTableSpec(
+            table_key=DATA_MODEL_FIELDS_TABLE_KEY,
+            base_node="data_model_fields__base",
+            contract=DATA_MODEL_FIELDS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=DATA_MODEL_FIELDS_TABLE_KEY),
+            node_name="data_model_fields__table",
+        ),
+        TableTargetTableSpec(
+            table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
+            base_node="data_model_relationships__base",
+            contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
+            node_name="data_model_relationships__table",
+        ),
+    ),
+    table_materializations_node="data_models__table_materializations",
+    anchor_node_name="t__data_models",
 )
-@table_contract(DATA_MODEL_RELATIONSHIPS_CONTRACT)
-def data_model_relationships__table(
-    data_model_relationships__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist data model relationship rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted data model relationship frame.
-    """
-    return data_model_relationships__base
-
-
-data_models__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=DATA_MODELS_TARGET_NAME,
-    table_keys=DATA_MODELS_TABLE_KEYS,
-    node_name="data_models__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=DATA_MODELS_TARGET_NAME)
-def t__data_models(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    data_models__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize data model target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the data model target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=DATA_MODELS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=data_models__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_DATA_MODELS_TABLE_TARGET_SPEC)
+data_models__table = _MODULE.data_models__table
+data_model_fields__table = _MODULE.data_model_fields__table
+data_model_relationships__table = _MODULE.data_model_relationships__table
+data_models__table_materializations = _MODULE.data_models__table_materializations
+t__data_models = _MODULE.t__data_models
 
 
 def data_model_usage__base(

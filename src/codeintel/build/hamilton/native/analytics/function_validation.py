@@ -2,35 +2,28 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.analytics.parsing.compute import get_validation_rows
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, FunctionAnalyticsResult)
 
 FUNCTION_VALIDATION_TARGET_NAME = "function_validation"
 FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
-FUNCTION_VALIDATION_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=FUNCTION_VALIDATION_TARGET_NAME,
-)
 FUNCTION_VALIDATION_CONTRACT = TableContractSpec(
     table_key=FUNCTION_VALIDATION_TABLE_KEY,
     domain="analytics",
@@ -57,47 +50,26 @@ def function_validation__base(
     return rows_to_frame(FUNCTION_VALIDATION_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=FUNCTION_VALIDATION_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=FUNCTION_VALIDATION_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_FUNCTION_VALIDATION_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=FUNCTION_VALIDATION_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FUNCTION_VALIDATION_TABLE_KEY,
+            base_node="function_validation__base",
+            contract=FUNCTION_VALIDATION_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=FUNCTION_VALIDATION_TABLE_KEY),
+            node_name="function_validation__table",
+        ),
+    ),
+    table_materializations_node="function_validation__table_materializations",
+    anchor_node_name="t__function_validation",
 )
-@table_contract(FUNCTION_VALIDATION_CONTRACT)
-def function_validation__table(function_validation__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched function validation frame.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Cleaned/enriched function validation frame.
-    """
-    return function_validation__base
-
-
-@codeintel_target(domain="analytics", target=FUNCTION_VALIDATION_TARGET_NAME)
-def t__function_validation(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__function_validation: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize function_validation target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the function_validation target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FUNCTION_VALIDATION_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            FUNCTION_VALIDATION_TABLE_KEY: m__analytics__function_validation,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_FUNCTION_VALIDATION_TABLE_TARGET_SPEC)
+function_validation__table = _MODULE.function_validation__table
+function_validation__table_materializations = _MODULE.function_validation__table_materializations
+t__function_validation = _MODULE.t__function_validation
 
 
 __all__ = [

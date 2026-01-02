@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 import polars as pl
 import pyarrow as pa
+import pyarrow.dataset as pa_ds
 
 from codeintel.build.tabular.types import InferableTabularInput, TabularRelation
 
@@ -49,14 +50,15 @@ def arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> pl.LazyFrame:
         If the Arrow reader cannot be materialized and provides no schema.
     """
     try:
-        table = reader.read_all()
+        dataset = pa_ds.dataset(reader)
     except (ValueError, pa.ArrowInvalid) as exc:
         schema = getattr(reader, "schema", None)
         if schema is None:
             raise
-        table = pa.Table.from_batches([], schema=schema)
+        empty = pa.Table.from_batches([], schema=schema)
         _ = exc
-    return table_to_lazyframe(table)
+        return table_to_lazyframe(empty)
+    return pl.scan_pyarrow_dataset(dataset)
 
 
 def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:

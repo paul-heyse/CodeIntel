@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
+import sys
+
 import pandas as pd
 import polars as pl
 from hamilton.experimental.decorators.parameterize_frame import parameterize_frame
 
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import risk_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -29,10 +26,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 RISK_FACTORS_TARGET_NAME = "risk_factors"
 RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
-RISK_FACTORS_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=RISK_FACTORS_TARGET_NAME,
-)
 RISK_FACTORS_CONTRACT = TableContractSpec(
     table_key=RISK_FACTORS_TABLE_KEY,
     domain="analytics",
@@ -132,47 +125,26 @@ def risk_factors__base(
     )
 
 
-@save_dataset(
-    context=RISK_FACTORS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=RISK_FACTORS_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_RISK_FACTORS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=RISK_FACTORS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=RISK_FACTORS_TABLE_KEY,
+            base_node="risk_factors__base",
+            contract=RISK_FACTORS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=RISK_FACTORS_TABLE_KEY),
+            node_name="risk_factors__table",
+        ),
+    ),
+    table_materializations_node="risk_factors__table_materializations",
+    anchor_node_name="t__risk_factors",
 )
-@table_contract(RISK_FACTORS_CONTRACT)
-def risk_factors__table(risk_factors__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched risk factors frame.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Cleaned/enriched risk factors frame.
-    """
-    return risk_factors__base
-
-
-@codeintel_target(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
-def t__risk_factors(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__goid_risk_factors: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize risk_factors target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the risk_factors target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=RISK_FACTORS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            RISK_FACTORS_TABLE_KEY: m__analytics__goid_risk_factors,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_RISK_FACTORS_TABLE_TARGET_SPEC)
+risk_factors__table = _MODULE.risk_factors__table
+risk_factors__table_materializations = _MODULE.risk_factors__table_materializations
+t__risk_factors = _MODULE.t__risk_factors
 
 
 __all__ = [

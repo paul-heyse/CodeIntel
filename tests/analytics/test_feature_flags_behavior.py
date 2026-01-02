@@ -71,7 +71,7 @@ def test_eager_hydration_respects_feature_override(
         engine=stub,
         features=GraphFeatureFlags(eager_hydration=True),
     )
-    build_graph_runtime(ctx.gateway, opts)
+    build_graph_runtime(opts)
 
     expect_true(
         stub.method_counts.get("load_call_graph", 0) > 0
@@ -94,7 +94,7 @@ def test_eager_hydration_off_defers_graph_loads(
         engine=stub,
         features=GraphFeatureFlags(),
     )
-    build_graph_runtime(ctx.gateway, opts)
+    build_graph_runtime(opts)
 
     expect_true(
         stub.method_counts.get("load_call_graph", 0) == 0

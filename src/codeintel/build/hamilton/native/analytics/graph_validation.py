@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
@@ -9,26 +11,20 @@ from codeintel.build.graphs.validation.runner import (
     GraphValidationRunRequest,
     run_graph_validations_with_runner,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.validation.reporters import GraphValidationReporter
 
@@ -36,10 +32,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 GRAPH_VALIDATION_TARGET_NAME = "graph_validation"
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
-GRAPH_VALIDATION_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=GRAPH_VALIDATION_TARGET_NAME,
-)
 GRAPH_VALIDATION_CONTRACT = TableContractSpec(
     table_key=GRAPH_VALIDATION_TABLE_KEY,
     domain="analytics",
@@ -104,52 +96,26 @@ def graph_validation__base(
     return rows_to_frame(GRAPH_VALIDATION_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=GRAPH_VALIDATION_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=GRAPH_VALIDATION_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_GRAPH_VALIDATION_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=GRAPH_VALIDATION_TARGET_NAME,
-    table_key=GRAPH_VALIDATION_TABLE_KEY,
+    target_name=GRAPH_VALIDATION_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=GRAPH_VALIDATION_TABLE_KEY,
+            base_node="graph_validation__base",
+            contract=GRAPH_VALIDATION_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=GRAPH_VALIDATION_TABLE_KEY),
+            node_name="graph_validation__table",
+        ),
+    ),
+    table_materializations_node="graph_validation__table_materializations",
+    anchor_node_name="t__graph_validation",
 )
-@table_contract(GRAPH_VALIDATION_CONTRACT)
-def graph_validation__table(graph_validation__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist graph validation rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted graph validation frame.
-    """
-    return graph_validation__base
-
-
-@codeintel_target(domain="analytics", target=GRAPH_VALIDATION_TARGET_NAME)
-def t__graph_validation(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__graph_validation: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize graph validation target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the graph validation target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=GRAPH_VALIDATION_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            GRAPH_VALIDATION_TABLE_KEY: m__analytics__graph_validation,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_GRAPH_VALIDATION_TABLE_TARGET_SPEC)
+graph_validation__table = _MODULE.graph_validation__table
+graph_validation__table_materializations = _MODULE.graph_validation__table_materializations
+t__graph_validation = _MODULE.t__graph_validation
 
 
 __all__ = [

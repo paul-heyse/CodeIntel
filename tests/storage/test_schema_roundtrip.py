@@ -19,9 +19,6 @@ from codeintel.core.data_models.rows import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
 )
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsTestCoverageEdgesRow as CoverageEdgeRowModel,
-)
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphEdgesRow as CallGraphEdgeRow,
 )
@@ -99,38 +96,6 @@ SYMBOL_USE_SAMPLES: list[SymbolUseRow] = [
         use_goid_h128=None,
     ),
 ]
-TEST_COVERAGE_EDGE_SAMPLES: list[CoverageEdgeRowModel] = [
-    {
-        "test_id": "test_demo",
-        "test_goid_h128": 101,
-        "function_goid_h128": 202,
-        "urn": "urn:ci:test:demo",
-        "repo": "alpha",
-        "commit": "bravo",
-        "rel_path": "tests/test_demo.py",
-        "qualname": "TestDemo.test_demo",
-        "covered_lines": 12,
-        "executable_lines": 20,
-        "coverage_ratio": 0.6,
-        "last_status": "passed",
-        "created_at": datetime(2023, 1, 1, tzinfo=UTC),
-    },
-    {
-        "test_id": None,
-        "test_goid_h128": None,
-        "function_goid_h128": None,
-        "urn": None,
-        "repo": None,
-        "commit": None,
-        "rel_path": None,
-        "qualname": None,
-        "covered_lines": None,
-        "executable_lines": None,
-        "coverage_ratio": None,
-        "last_status": None,
-        "created_at": None,
-    },
-]
 BEHAVIORAL_COVERAGE_SAMPLES: list[BehavioralCoverageRowModel] = [
     {
         "repo": "alpha",
@@ -189,10 +154,6 @@ def _optional_float() -> SearchStrategy[float | None]:
 
 def _call_graph_edge_strategy() -> SearchStrategy[CallGraphEdgeRow]:
     return st.sampled_from(CALL_GRAPH_EDGE_SAMPLES)
-
-
-def _test_coverage_edge_strategy() -> SearchStrategy[CoverageEdgeRowModel]:
-    return st.sampled_from(TEST_COVERAGE_EDGE_SAMPLES)
 
 
 def _symbol_use_row_strategy() -> SearchStrategy[SymbolUseRow]:
@@ -254,20 +215,6 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
     values = row.to_tuple()
     contract = _contracts_by_table_key()["graph.symbol_use_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
-    if len(values) != expected_len:
-        pytest.fail(f"Expected {expected_len} values, got {len(values)}")
-
-
-@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES, deadline=None)
-@given(_test_coverage_edge_strategy())
-def test_test_coverage_round_trip(row: CoverageEdgeRowModel) -> None:
-    """Generate schemas should align with test coverage edge TypedDict and serializer."""
-    schema = json_schema_from_typeddict(CoverageEdgeRowModel)
-    validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
-    contract = _contracts_by_table_key()["analytics.test_coverage_edges"]
-    expected_len = len(contract.schema.columns) if contract.schema else 0
-    columns = [col.name for col in contract.schema.columns] if contract.schema else []
-    values = tuple(cast("dict[str, object]", row)[col] for col in columns)
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 

@@ -164,7 +164,6 @@ def test_row_models_column_constants_match_contracts() -> None:
             "analytics.graph_metrics_modules_ext",
             column_registry["analytics.graph_metrics_modules_ext"],
         ),
-        ("analytics.test_coverage_edges", column_registry["analytics.test_coverage_edges"]),
         ("analytics.function_profile", column_registry["analytics.function_profile"]),
         ("analytics.file_profile", column_registry["analytics.file_profile"]),
         ("analytics.module_profile", column_registry["analytics.module_profile"]),

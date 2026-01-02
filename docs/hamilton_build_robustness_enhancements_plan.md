@@ -5,19 +5,26 @@
 - Make the Hamilton build DAG safer and more deterministic at runtime.
 - Detect and explain schema drift and misconfiguration early.
 - Improve reproducibility for inference and build outputs.
-- Expand structured logging so audits and failures are diagnosable from logs alone.
+- Emit a unified, build-scoped JSONL log artifact for diagnostics.
 
 ## Scope summary
 
-This plan covers five improvements:
+This plan covers six improvements:
 
 1. DAG preflight audit and layering enforcement
 2. Deterministic inference plan manifest
 3. Schema drift gates at materialization
 4. Typed BuildConfig and execution settings validation
 5. Runtime/settings fingerprint in dataset metadata
+6. High-resolution diagnostics + unified build log artifact
 
-It also adds a structured logging expansion that cuts across each area.
+Status overview (current):
+- Workstream 1: implemented
+- Workstream 2: implemented
+- Workstream 3: not implemented
+- Workstream 4: implemented
+- Workstream 5: not implemented
+- Workstream 6: implemented
 
 ## Success criteria
 
@@ -26,7 +33,7 @@ It also adds a structured logging expansion that cuts across each area.
 - Schema drift is logged and optionally enforced at materialization time.
 - Build configuration rejects unknown keys and invalid values with explicit errors.
 - Dataset metadata includes a stable fingerprint of runtime and settings.
-- Logs provide enough data to diagnose failures without re-running builds.
+- A unified build log JSONL artifact is emitted alongside each dataset snapshot.
 
 ---
 
@@ -34,7 +41,8 @@ It also adds a structured logging expansion that cuts across each area.
 
 ### Intent
 
-Ensure every build run is validated for correct tags, saver wiring, and build-only imports before execution.
+Ensure every build run is validated for correct tags, saver wiring, and build-only
+imports before execution.
 
 ### Design
 
@@ -55,21 +63,12 @@ Ensure every build run is validated for correct tags, saver wiring, and build-on
 - src/codeintel/build/hamilton/executor.py
   - Invoke preflight before execution and surface errors.
 
-### Structured logging
-
-- Event: build.dag.preflight.start
-  - fields: run_id, repo, commit, target_count, table_count
-- Event: build.dag.preflight.fail
-  - fields: run_id, repo, commit, failures (list of structured entries)
-- Event: build.dag.preflight.ok
-  - fields: run_id, repo, commit, duration_ms
-
 ### Checklist
 
-- [ ] Preflight validation runs before any target execution.
-- [ ] Tag requirements enforced for all table outputs.
-- [ ] Layering violations (build importing storage/serving) are detected.
-- [ ] Failures include node name, table_key, and missing tags.
+- [x] Preflight validation runs before any target execution.
+- [x] Tag requirements enforced for all table outputs.
+- [x] Layering violations (build importing storage/serving) are detected.
+- [x] Failures include node name, table_key, and missing tags.
 
 ---
 
@@ -92,24 +91,17 @@ Record a reproducible schema inference plan that can be replayed or audited.
 ### Files to change
 
 - src/codeintel/build/schemas/inference_service.py
-  - Build and emit the inference plan manifest.
-- src/codeintel/build/hamilton/run_records.py
-  - Register artifact output and include in run record metadata.
+  - Build and emit the inference plan manifest. (done)
+- src/codeintel/build/assets/emitter.py
+  - Register run-scoped inference plan artifact in asset tracking. (done)
 - src/codeintel/core/manifests.py
-  - Add msgspec.Struct for inference manifest (if needed).
-
-### Structured logging
-
-- Event: build.inference.plan.emit
-  - fields: run_id, repo, commit, table_keys_count, qparams_count
-- Event: build.inference.plan.fail
-  - fields: run_id, repo, commit, error
+  - Add msgspec.Struct for inference manifest (if needed). (done)
 
 ### Checklist
 
-- [ ] Inference plan manifest contains snapshot + target list + settings.
-- [ ] Manifest stored alongside other build artifacts.
-- [ ] Logging emitted for success and failure.
+- [x] Inference plan manifest contains snapshot + target list + settings.
+- [x] Manifest stored under `build/schema/inference_plan_<run_id>.json`.
+- [x] Run-scoped artifact registration recorded in asset tracking.
 
 ---
 
@@ -136,13 +128,6 @@ Detect and optionally enforce schema drift at the dataset boundary.
   - Allow configuration of drift enforcement mode.
 - src/codeintel/core/manifests.py
   - Add a drift event manifest type (optional).
-
-### Structured logging
-
-- Event: build.schema.drift.detected
-  - fields: run_id, repo, commit, table_key, added_cols, removed_cols, type_changes
-- Event: build.schema.drift.blocked
-  - fields: run_id, repo, commit, table_key, reason
 
 ### Checklist
 
@@ -173,18 +158,11 @@ Fail fast on mis-typed or unknown config keys and make configuration fully expli
 - src/codeintel/core/config/settings.py
   - Ensure runtime settings are aligned with config validation.
 
-### Structured logging
-
-- Event: build.config.validation.fail
-  - fields: run_id, config_path, invalid_keys, error
-- Event: build.config.validation.ok
-  - fields: run_id, config_path
-
 ### Checklist
 
-- [ ] Config decoding is strict and rejects unknown keys.
-- [ ] Validation errors are logged and surfaced to CLI.
-- [ ] Execution settings are validated consistently.
+- [x] Config decoding is strict and rejects unknown keys.
+- [x] Validation errors are logged and surfaced to CLI.
+- [x] Execution settings are validated consistently.
 
 ---
 
@@ -209,11 +187,6 @@ Provide full lineage for dataset outputs so scans can detect changes in runtime 
 - src/codeintel/build/hamilton/run_records.py
   - Capture fingerprint in run metadata.
 
-### Structured logging
-
-- Event: build.dataset.metadata.write
-  - fields: run_id, table_key, settings_fingerprint, schema_hash
-
 ### Checklist
 
 - [ ] Fingerprint is stable and deterministic.
@@ -222,29 +195,58 @@ Provide full lineage for dataset outputs so scans can detect changes in runtime 
 
 ---
 
-## Structured logging expansion (shared schema)
+## Workstream 6: High-resolution diagnostics + unified build log artifact
 
-### Common fields
+### Intent
 
-Use these fields consistently across all build validation and drift events:
+Make inference and runtime errors fully diagnosable with node-level context, and
+emit a single consolidated log artifact per build run stored alongside the
+Parquet dataset snapshot.
 
-- event
-- run_id
-- repo
-- commit
-- target (when relevant)
-- table_key (when relevant)
-- data_node (when relevant)
-- mode (validation mode or inference mode)
-- duration_ms
-- error (string)
-- details (structured payload)
+### Design
 
-### Logging principles
+- Diagnostics logging
+  - Emit explicit node error events with node_name, target, table_key, exception type, and message.
+  - Emit inference job lifecycle events (start/ok/fail) with qparam and loader override counts.
+  - Emit a top-level runtime failure event for uncaught execution errors.
+  - Wire HamiltonTracker tags to include repo/commit/run_id for UI traceability.
+- Unified build log artifact
+  - Collect structured events emitted during a run into a single JSONL file.
+  - Write the log file into the dataset root for the snapshot (same folder as the Parquet
+    dataset snapshot, e.g. `<dataset_root>/<snapshot_id>/build_logs/build_<run_id>.jsonl`).
+  - Ensure the log artifact is written at end-of-run (success or failure).
 
-- Use structlog with JSONRenderer and orjson for stable payloads.
-- Avoid logging large arrays directly; summarize and provide counts.
-- Include a stable error code when possible.
+### Files to change
+
+- src/codeintel/build/hamilton/build_log.py
+  - Buffer build-scoped events and compute JSONL path. (done)
+- src/codeintel/build/hamilton/hooks/telemetry_hook.py
+  - Emit node-level error events with consistent fields. (done)
+- src/codeintel/build/schemas/inference_service.py
+  - Emit inference job start/ok/fail events with table_key + qparam metadata. (done)
+- src/codeintel/build/hamilton/executor.py
+  - Emit runtime failure events and finalize the unified log. (done)
+- src/codeintel/build/hamilton/run_writer.py
+  - Write consolidated JSONL log artifact under dataset_root snapshot folder. (done)
+
+### Build log events (implemented)
+
+- Event: build.node.error
+  - fields: run_id, repo, commit, node_name, target, table_key, exception_type, error
+- Event: build.inference.job.start
+  - fields: run_id, repo, commit, table_key, target, qparams_count, loader_overrides_count
+- Event: build.inference.job.ok
+  - fields: run_id, repo, commit, table_key, target, duration_ms
+- Event: build.inference.job.fail
+  - fields: run_id, repo, commit, table_key, target, exception_type, error
+- Event: build.runtime.error
+  - fields: run_id, repo, commit, exception_type, error
+
+### Checklist
+
+- [x] Node error events include node_name + target + table_key.
+- [x] Inference job lifecycle events are emitted.
+- [x] A single JSONL log artifact is written per build run under the dataset root snapshot.
 
 ---
 
@@ -279,4 +281,4 @@ Use these fields consistently across all build validation and drift events:
 - [ ] Schema drift emits a structured event and is visible in logs.
 - [ ] Inference plan manifest is present and contains settings, targets, and qparams.
 - [ ] Dataset metadata includes a stable settings fingerprint.
-
+- [ ] Consolidated build log JSONL artifact exists alongside the snapshot Parquet datasets.

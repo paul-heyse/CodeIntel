@@ -23,7 +23,13 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import sqlglot
 
+try:
+    import orjson as _orjson
+except ImportError:  # pragma: no cover - optional dependency
+    _orjson = None
+
 from codeintel.build.assets.emitter import persist_asset_catalog_for_run
+from codeintel.build.hamilton.build_log import build_log_path
 from codeintel.core.build_manifest import BuildRunRecord
 from codeintel.core.errors.storage import StorageError
 from codeintel.storage.tracking.asset_tracking import RunEnvironmentRecord
@@ -34,9 +40,10 @@ except ImportError:  # pragma: no cover - optional dependency
     _dulwich_porcelain = None
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
+    from codeintel.build.hamilton.build_log import BuildLogContext
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.gateway import BuildGateway
@@ -87,6 +94,12 @@ def _git_dirty(env: BuildEnv) -> bool:
         if value:
             return True
     return False
+
+
+def _json_line(payload: Mapping[str, object]) -> str:
+    if _orjson is not None:
+        return _orjson.dumps(payload).decode("utf-8")
+    return json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +261,31 @@ class BuildRunWriter:
         except StorageError as exc:
             log.warning("build.hamilton.writer.run_nodes_failed run_id=%s error=%s", run_id, exc)
             return 0
+
+    def write_build_log(
+        self,
+        *,
+        context: BuildLogContext,
+        events: Sequence[Mapping[str, object]],
+    ) -> Path | None:
+        """Write the consolidated JSONL build log for a run."""
+        if not events:
+            return None
+        try:
+            path = build_log_path(context=context)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as handle:
+                for event in events:
+                    handle.write(_json_line(event))
+                    handle.write("\n")
+            return path
+        except (OSError, ValueError) as exc:
+            log.warning(
+                "build.hamilton.writer.build_log_failed run_id=%s error=%s",
+                context.run_id,
+                exc,
+            )
+            return None
 
     def persist_asset_catalog(
         self,

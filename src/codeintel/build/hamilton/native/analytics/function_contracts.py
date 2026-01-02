@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.build.analytics.functions.function_contracts import (
@@ -10,22 +12,17 @@ from codeintel.build.analytics.functions.function_contracts import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -33,10 +30,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_CONTRACTS_TARGET_NAME = "function_contracts"
 FUNCTION_CONTRACTS_TABLE_KEY = "analytics.function_contracts"
-FUNCTION_CONTRACTS_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=FUNCTION_CONTRACTS_TARGET_NAME,
-)
 FUNCTION_CONTRACTS_CONTRACT = TableContractSpec(
     table_key=FUNCTION_CONTRACTS_TABLE_KEY,
     domain="analytics",
@@ -87,47 +80,26 @@ def function_contracts__base(
     return rows_to_frame(FUNCTION_CONTRACTS_TABLE_KEY, rows)
 
 
-@save_dataset(
-    context=FUNCTION_CONTRACTS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=FUNCTION_CONTRACTS_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_FUNCTION_CONTRACTS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=FUNCTION_CONTRACTS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FUNCTION_CONTRACTS_TABLE_KEY,
+            base_node="function_contracts__base",
+            contract=FUNCTION_CONTRACTS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=FUNCTION_CONTRACTS_TABLE_KEY),
+            node_name="function_contracts__table",
+        ),
+    ),
+    table_materializations_node="function_contracts__table_materializations",
+    anchor_node_name="t__function_contracts",
 )
-@table_contract(FUNCTION_CONTRACTS_CONTRACT)
-def function_contracts__table(function_contracts__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched function contracts frame.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Cleaned/enriched function contracts frame.
-    """
-    return function_contracts__base
-
-
-@codeintel_target(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
-def t__function_contracts(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__function_contracts: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize function_contracts target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the function_contracts target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FUNCTION_CONTRACTS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            FUNCTION_CONTRACTS_TABLE_KEY: m__analytics__function_contracts,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_FUNCTION_CONTRACTS_TABLE_TARGET_SPEC)
+function_contracts__table = _MODULE.function_contracts__table
+function_contracts__table_materializations = _MODULE.function_contracts__table_materializations
+t__function_contracts = _MODULE.t__function_contracts
 
 
 __all__ = [

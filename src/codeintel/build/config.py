@@ -37,6 +37,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar, overload
 
+import msgspec
+
 from codeintel.build.parameters import TargetParameters
 
 _T = TypeVar("_T")
@@ -53,6 +55,35 @@ __all__ = [
 
 
 CONFIG_FILE_NAME = "codeintel.build.toml"
+
+_ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
+    {
+        "analytics",
+        "ingestion",
+        "graphs",
+        "export",
+        "views",
+        "hamilton",
+        "variants",
+        "seed_suite_manifest_path",
+        "ci_seeded_datasets",
+    }
+)
+
+_ALLOWED_SCHEMA_DRIFT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
+
+
+class _SeededDatasetConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    table_key: str
+    repo: str
+    commit: str
+
+
+class _HamiltonConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    graph_backend: str | None = None
+    seed_suite_manifest_path: str | None = None
+    ci_seeded_datasets: tuple[_SeededDatasetConfig, ...] = msgspec.field(default_factory=tuple)
+    schema_drift_mode: str | None = None
 
 
 @dataclass(frozen=True)
@@ -269,6 +300,29 @@ class BuildConfig:
             )
             parsed.append({"table_key": table_key, "repo": repo, "commit": commit})
         return tuple(parsed)
+
+    def schema_drift_mode(self) -> str:
+        """Return the configured schema drift mode.
+
+        Returns
+        -------
+        str
+            Normalized drift mode ("off", "warn", or "strict").
+        """
+        raw = self.get("hamilton.schema_drift_mode")
+        if raw is None:
+            return "warn"
+        if not isinstance(raw, str):
+            msg = "hamilton.schema_drift_mode must be a string"
+            raise TypeError(msg)
+        normalized = raw.strip().lower()
+        if normalized in _ALLOWED_SCHEMA_DRIFT_MODES:
+            return normalized
+        msg = (
+            "hamilton.schema_drift_mode must be one of: "
+            f"{', '.join(sorted(_ALLOWED_SCHEMA_DRIFT_MODES))}"
+        )
+        raise ValueError(msg)
 
     def raw_data(self) -> dict[str, Any]:
         """Return a shallow copy of raw TOML data.
@@ -491,6 +545,13 @@ def load_build_config(project_root: Path) -> BuildConfig:
     -------
     BuildConfig
         Loaded or empty configuration.
+
+    Raises
+    ------
+    TypeError
+        Raised when configuration data does not match expected types.
+    ValueError
+        Raised when configuration data is invalid or cannot be read.
     """
     config_path = project_root / CONFIG_FILE_NAME
 
@@ -501,14 +562,98 @@ def load_build_config(project_root: Path) -> BuildConfig:
     try:
         with config_path.open("rb") as f:
             data = tomllib.load(f)
-        log.info("Loaded build config from %s", config_path)
+        _validate_config_data(data, config_path=config_path)
+        log.info("build.config.validation.ok config_path=%s", config_path)
         return BuildConfig.from_dict(data, config_path)
-    except tomllib.TOMLDecodeError as e:
-        log.warning("Failed to parse build config %s: %s", config_path, e)
-        return BuildConfig.empty()
-    except OSError as e:
-        log.warning("Failed to read build config %s: %s", config_path, e)
-        return BuildConfig.empty()
+    except tomllib.TOMLDecodeError as exc:
+        log.exception("build.config.validation.fail config_path=%s", config_path)
+        raise ValueError(_format_config_error("Failed to parse", config_path, exc)) from exc
+    except (TypeError, ValueError):
+        log.exception("build.config.validation.fail config_path=%s", config_path)
+        raise
+    except OSError as exc:
+        log.exception("build.config.validation.fail config_path=%s", config_path)
+        raise ValueError(_format_config_error("Failed to read", config_path, exc)) from exc
+
+
+def _format_config_error(action: str, config_path: Path, exc: Exception) -> str:
+    return f"{action} build config {config_path}: {exc}"
+
+
+def _validate_config_data(data: Mapping[str, Any], *, config_path: Path) -> None:
+    if not isinstance(data, Mapping):
+        msg = f"Build config must be a mapping; got {type(data).__name__}"
+        raise TypeError(msg)
+    unknown = sorted(set(data) - _ALLOWED_TOP_LEVEL_KEYS)
+    if unknown:
+        msg = f"Unknown build config sections: {', '.join(unknown)}"
+        raise ValueError(msg)
+
+    for section_name in ("analytics", "ingestion", "graphs", "export", "views"):
+        section = data.get(section_name)
+        if section is None:
+            continue
+        if not isinstance(section, Mapping):
+            msg = f"{section_name} section must be a mapping"
+            raise TypeError(msg)
+
+    variants = data.get("variants")
+    if variants is not None and not isinstance(variants, Mapping):
+        msg = "variants section must be a mapping"
+        raise TypeError(msg)
+
+    hamilton = data.get("hamilton")
+    if hamilton is not None:
+        if not isinstance(hamilton, Mapping):
+            msg = "hamilton section must be a mapping"
+            raise TypeError(msg)
+        _decode_hamilton_section(hamilton, config_path=config_path)
+
+    _validate_seeded_datasets(data.get("ci_seeded_datasets"), ctx="ci_seeded_datasets")
+    _validate_seed_suite_manifest(data.get("seed_suite_manifest_path"))
+
+
+def _decode_hamilton_section(section: Mapping[str, Any], *, config_path: Path) -> None:
+    try:
+        msgspec.convert(section, type=_HamiltonConfig, strict=True)
+    except msgspec.ValidationError as exc:
+        msg = f"hamilton section invalid in {config_path}: {exc}"
+        raise ValueError(msg) from exc
+    _validate_schema_drift_mode(section.get("schema_drift_mode"), config_path=config_path)
+
+
+def _validate_schema_drift_mode(raw: object, *, config_path: Path) -> None:
+    if raw is None:
+        return
+    if not isinstance(raw, str):
+        msg = f"hamilton.schema_drift_mode must be a string in {config_path}"
+        raise TypeError(msg)
+    normalized = raw.strip().lower()
+    if normalized in _ALLOWED_SCHEMA_DRIFT_MODES:
+        return
+    msg = (
+        "hamilton.schema_drift_mode must be one of: "
+        f"{', '.join(sorted(_ALLOWED_SCHEMA_DRIFT_MODES))} in {config_path}"
+    )
+    raise ValueError(msg)
+
+
+def _validate_seeded_datasets(raw: object, *, ctx: str) -> None:
+    if raw is None:
+        return
+    try:
+        msgspec.convert(raw, type=tuple[_SeededDatasetConfig, ...], strict=True)
+    except msgspec.ValidationError as exc:
+        msg = f"{ctx} must be a list of entries: {exc}"
+        raise ValueError(msg) from exc
+
+
+def _validate_seed_suite_manifest(raw: object) -> None:
+    if raw is None:
+        return
+    if not isinstance(raw, str) or not raw:
+        msg = "seed_suite_manifest_path must be a non-empty string"
+        raise TypeError(msg)
 
 
 DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {

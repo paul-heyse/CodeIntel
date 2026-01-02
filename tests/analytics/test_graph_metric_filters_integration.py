@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.graphs.graph_metrics import (
     GraphMetricFilters,
-    build_graph_metric_filters,
+    build_graph_metric_filters_from_sets,
 )
 from tests._helpers import TestScenario
 from tests._helpers.assertions import (
@@ -15,7 +15,6 @@ from tests._helpers.assertions import (
     assert_graph_counts,
     expect_equal,
 )
-from tests._helpers.factories import make_snapshot
 from tests._helpers.fixtures.graphs import chain_graph, cyclic_graph, disconnected_graph
 from tests._helpers.graph_runtime_harness import (
     run_graph_metrics_pipeline,
@@ -114,8 +113,7 @@ def test_filter_import_graph_noop_without_modules() -> None:
 def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
     """Building filters from empty repositories should yield no-op filters."""
     ctx = TestScenario.empty().build(tmp_path)
-    snapshot = make_snapshot(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
-    filters = build_graph_metric_filters(ctx.gateway, snapshot)
+    filters = build_graph_metric_filters_from_sets()
     expect_equal(filters.function_goids, None)
     expect_equal(filters.modules, None)
     ctx.close()

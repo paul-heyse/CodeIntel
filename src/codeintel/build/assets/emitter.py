@@ -95,6 +95,17 @@ def _try_artifact_size_bytes(ref: ArtifactRefProtocol) -> int | None:
         return None
 
 
+def _try_artifact_size_from_path(path: Path | None) -> int | None:
+    if path is None:
+        return None
+    if not path.exists():
+        return None
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
 def _dataset_version_record(
     ctx: _VersionState,
     record: TargetRunRecord,
@@ -428,6 +439,87 @@ def persist_asset_catalog_for_run(
         log.warning("build.asset_catalog.persist_failed run_id=%s error=%s", run_id, exc)
 
 
+def record_run_artifact(
+    *,
+    env: BuildEnv,
+    run_id: str,
+    artifact_name: str,
+    artifact_type: str,
+    path: Path | None,
+    meta: dict[str, object] | None = None,
+) -> None:
+    """Persist a run-scoped artifact in the asset catalog."""
+    bytes_value = _try_artifact_size_from_path(path)
+    version_input = ArtifactVersionInput(
+        artifact_name=artifact_name,
+        artifact_type=artifact_type,
+        size_bytes=bytes_value,
+        upstream_versions=(),
+        options_hash=None,
+    )
+    policy = env.fingerprint_policy
+    version_hash = policy.compute_artifact_version(version_input)
+    created_at = datetime.now(tz=UTC)
+    resolved_meta = {
+        "fingerprint": policy.mode.value,
+        "artifact_type": artifact_type,
+        "bytes": bytes_value,
+    }
+    if meta:
+        resolved_meta.update(meta)
+    location = str(path) if path is not None else None
+    version = AssetVersionRecord(
+        asset_kind="artifact",
+        asset_key=artifact_name,
+        version_hash=version_hash,
+        schema_hash=None,
+        row_count=None,
+        bytes=bytes_value,
+        created_at=created_at,
+        meta=resolved_meta,
+    )
+    event = AssetVersionEventRecord(
+        run_id=run_id,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        asset_kind="artifact",
+        asset_key=artifact_name,
+        version_hash=version_hash,
+        status="materialized",
+        target=None,
+        impl_kind=None,
+        location=location,
+        input_hash=None,
+        options_hash=None,
+        recorded_at=created_at,
+        meta=resolved_meta,
+    )
+    run_map = RunAssetVersionRecord(
+        run_id=run_id,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        asset_kind="artifact",
+        asset_key=artifact_name,
+        version_hash=version_hash,
+        target=None,
+        resolution_kind="materialized",
+        recorded_at=created_at,
+        meta=resolved_meta,
+    )
+    try:
+        env.gateway.assets.record_asset_versions_batch([version])
+        env.gateway.assets.record_asset_version_events_batch([event])
+        env.gateway.assets.record_run_asset_versions_batch([run_map])
+    except (AttributeError, RuntimeError, StorageError, TypeError, ValueError) as exc:
+        log.warning(
+            "build.asset_catalog.run_artifact_failed run_id=%s artifact=%s error=%s",
+            run_id,
+            artifact_name,
+            exc,
+        )
+
+
 __all__ = [
     "persist_asset_catalog_for_run",
+    "record_run_artifact",
 ]

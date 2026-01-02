@@ -897,6 +897,27 @@ def _drift_summary(
     }
 
 
+def schema_drift_summary(
+    inferred: TableSchema,
+    baseline: TableSchema | None,
+) -> dict[str, object] | None:
+    """Return a drift summary between inferred and baseline schemas.
+
+    Parameters
+    ----------
+    inferred
+        Observed schema from the dataset output.
+    baseline
+        Declared schema to compare against.
+
+    Returns
+    -------
+    dict[str, object] | None
+        Drift summary with missing/extra/type changes, or None when aligned.
+    """
+    return _drift_summary(inferred, baseline, baseline_kind="declared")
+
+
 def _extras_policy_from_drift(
     drift_summary: Mapping[str, object] | None,
     *,
@@ -1338,6 +1359,7 @@ __all__ = [
     "merge_table_schema_hints",
     "observe_batches",
     "persist_observation_bundle",
+    "schema_drift_summary",
     "schema_hints_from_tag_sets",
     "schema_hints_from_tags",
     "table_schema_from_tag_sets",

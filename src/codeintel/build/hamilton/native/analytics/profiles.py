@@ -16,7 +16,6 @@ from codeintel.build.analytics.profiles.functions import (
     build_function_profile_rows,
     compute_function_profile_inputs,
     join_function_contracts,
-    join_function_coverage,
     join_function_docs,
     join_function_effects,
     join_function_risk,
@@ -117,9 +116,6 @@ class FunctionProfileCoreFrames:
 class FunctionProfileRiskFrames:
     goid_risk_factors: pl.DataFrame
     hotspots: pl.DataFrame
-    coverage_functions: pl.DataFrame
-    test_coverage_edges: pl.DataFrame
-    test_catalog: pl.DataFrame
 
 
 @dataclass(frozen=True)
@@ -157,13 +153,9 @@ def function_profile_risk_frames(
     q__analytics__goid_risk_factors: InferableTabularInput,
     q__analytics__hotspots: InferableTabularInput,
 ) -> FunctionProfileRiskFrames:
-    empty_frame = pl.DataFrame()
     return FunctionProfileRiskFrames(
         goid_risk_factors=tabular_to_lazyframe(q__analytics__goid_risk_factors).collect(),
         hotspots=tabular_to_lazyframe(q__analytics__hotspots).collect(),
-        coverage_functions=empty_frame,
-        test_coverage_edges=empty_frame,
-        test_catalog=empty_frame,
     )
 
 
@@ -210,7 +202,6 @@ def function_profile_frames(
         typedness=function_profile_core_frames.typedness,
         diagnostics=function_profile_core_frames.diagnostics,
         goid_risk_factors=function_profile_risk_frames.goid_risk_factors,
-        coverage_functions=function_profile_risk_frames.coverage_functions,
         graph_metrics_functions=function_profile_graph_frames.graph_metrics_functions,
         function_effects=function_profile_effect_frames.function_effects,
         function_contracts=function_profile_effect_frames.function_contracts,
@@ -219,8 +210,6 @@ def function_profile_frames(
         hotspots=function_profile_risk_frames.hotspots,
         call_graph_edges=function_profile_graph_frames.call_graph_edges,
         call_graph_nodes=function_profile_graph_frames.call_graph_nodes,
-        test_coverage_edges=function_profile_risk_frames.test_coverage_edges,
-        test_catalog=function_profile_risk_frames.test_catalog,
     )
 
 
@@ -311,7 +300,6 @@ def function_profile__base(function_profile_inputs: FunctionProfileInputs) -> pl
     views = FunctionProfileViews(
         base_by_func=load_function_base_info(inputs),
         risk_by_func=join_function_risk(inputs),
-        coverage_by_func=join_function_coverage(inputs),
         graph_by_func=summarize_graph_for_function_profile(inputs),
         effects_by_func=join_function_effects(inputs),
         contracts_by_func=join_function_contracts(inputs),

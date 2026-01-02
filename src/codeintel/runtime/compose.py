@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import local
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 import hamilton.driver as h_driver
 from hamilton import graph_types
@@ -27,6 +27,10 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.graph_validation import (
+    validate_graph,
+    validation_result_to_json,
+)
 from codeintel.build.hamilton.nodes.support_spec import support_spec_from_catalog
 from codeintel.build.schemas.contract_service import configure_contract_service
 from codeintel.build.schemas.inference_service import (
@@ -67,6 +71,12 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
+_ALLOWED_GRAPH_VALIDATION_MODES: frozenset[str] = frozenset({"strict", "warn", "off"})
+CacheBehavior = Literal["default", "recompute", "disable", "ignore"]
+
+_ALLOWED_CACHE_BEHAVIORS: frozenset[CacheBehavior] = frozenset(
+    {"default", "recompute", "disable", "ignore"}
+)
 
 _STATE = local()
 
@@ -109,6 +119,16 @@ class _RuntimeIdentity:
     config: Mapping[str, Any]
     module_paths: tuple[str, ...]
     modules_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class _DriverResourceInputs:
+    options: BuildDriverOptions
+    config: Mapping[str, Any]
+    base_catalog: DagCatalog
+    modules_fingerprint: str
+    cache_profile: str | None
+    tracker: object | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,14 +220,17 @@ def compose_runtime(
         )
         cache_profile = _cache_profile(merged_config)
         adapters, cache_adapter, cache_store = _resolve_driver_resources(
-            options=resolved_options,
-            base_catalog=base_catalog,
-            modules_fingerprint=resolved_modules.fingerprint,
-            cache_profile=cache_profile,
-            tracker=_build_tracker_adapter(
-                env=env,
+            inputs=_DriverResourceInputs(
+                options=resolved_options,
+                config=merged_config,
+                base_catalog=base_catalog,
                 modules_fingerprint=resolved_modules.fingerprint,
-            ),
+                cache_profile=cache_profile,
+                tracker=_build_tracker_adapter(
+                    env=env,
+                    modules_fingerprint=resolved_modules.fingerprint,
+                ),
+            )
         )
         driver = _build_driver_with_adapters(
             config=merged_config,
@@ -225,6 +248,10 @@ def compose_runtime(
         )
         configure_schema_service(runtime=runtime_bundle, observation_provider=env.gateway.schemas)
         configure_contract_service(runtime=runtime_bundle)
+        _validate_graph_invariants(
+            runtime=runtime_bundle,
+            mode=_graph_validation_mode(identity.config),
+        )
         runtime_key = _runtime_key(
             env=identity.env,
             config=identity.config,
@@ -384,16 +411,28 @@ def _cache_options_from_profile(
     *,
     cache_profile: str | None,
     cache_store: CacheStore,
+    config: Mapping[str, Any],
 ) -> CacheAdapterOptions:
-    default_behavior = "default"
-    log_to_file = False
+    default_behavior: CacheBehavior = "disable"
+    log_to_file = True
     if cache_profile:
         normalized = cache_profile.lower()
-        if normalized in {"audit", "jsonl"}:
+        if normalized in {"default", "optout"}:
+            default_behavior = "default"
+        elif normalized in {"audit", "jsonl"}:
             default_behavior = "disable"
             log_to_file = True
-        elif normalized != "default":
+        elif normalized in {"off", "disable"}:
+            default_behavior = "disable"
+            log_to_file = False
+        else:
             log.warning("Unknown cache profile %s; falling back to defaults", cache_profile)
+    behavior_override = _parse_cache_behavior(config.get("ci.cache.default_behavior"))
+    if behavior_override is not None:
+        default_behavior = behavior_override
+    log_override = config.get("ci.cache.log_to_file")
+    if isinstance(log_override, bool):
+        log_to_file = log_override
     return CacheAdapterOptions(
         cache_store=cache_store,
         default_behavior=default_behavior,
@@ -586,35 +625,31 @@ def _build_support_config(
 
 def _resolve_driver_resources(
     *,
-    options: BuildDriverOptions | None,
-    base_catalog: DagCatalog,
-    modules_fingerprint: str,
-    cache_profile: str | None,
-    tracker: object | None,
+    inputs: _DriverResourceInputs,
 ) -> tuple[list[LifecycleAdapter], HamiltonCacheAdapter | None, CacheStore | None]:
-    resolved_options = options or BuildDriverOptions()
-    adapter_list = list(resolved_options.adapters) if resolved_options.adapters else []
-    if resolved_options.adapter_factory is not None:
-        adapter_list.extend(resolved_options.adapter_factory(base_catalog))
+    adapter_list = list(inputs.options.adapters) if inputs.options.adapters else []
+    if inputs.options.adapter_factory is not None:
+        adapter_list.extend(inputs.options.adapter_factory(inputs.base_catalog))
 
-    cache_adapter = resolved_options.cache_adapter
+    cache_adapter = inputs.options.cache_adapter
     cache_store = _cache_store_from_adapter(cache_adapter)
     if cache_adapter is not None:
-        _set_cache_code_version(cache_adapter, modules_fingerprint)
-    if _has_tracker_adapter(adapter_list) is False and tracker is not None:
-        adapter_list.append(cast("LifecycleAdapter", tracker))
-    enable_cache = resolved_options.enable_cache or cache_profile is not None
+        _set_cache_code_version(cache_adapter, inputs.modules_fingerprint)
+    if _has_tracker_adapter(adapter_list) is False and inputs.tracker is not None:
+        adapter_list.append(cast("LifecycleAdapter", inputs.tracker))
+    enable_cache = inputs.options.enable_cache or inputs.cache_profile is not None
     if enable_cache and cache_adapter is None:
-        cache_dir = _cache_dir(resolved_options.cache_dir)
+        cache_dir = _cache_dir(inputs.options.cache_dir)
         cache_store = _cache_store_from_path(cache_dir)
         cache_adapter = ManifestBackedCacheAdapter(
             path=cache_dir,
             options=_cache_options_from_profile(
-                cache_profile=cache_profile,
+                cache_profile=inputs.cache_profile,
                 cache_store=cache_store,
+                config=inputs.config,
             ),
         )
-        _set_cache_code_version(cache_adapter, modules_fingerprint)
+        _set_cache_code_version(cache_adapter, inputs.modules_fingerprint)
     if cache_adapter is not None:
         adapter_list.append(cache_adapter)
 
@@ -629,13 +664,16 @@ def _build_driver_with_adapters(
     materializers: Sequence[ExtractorFactory | MaterializerFactory] | None,
     dynamic_config: _DynamicExecutionConfig,
 ) -> h_driver.Driver:
-    builder = (
-        h_driver.Builder().with_config(dict(config)).with_modules(*modules).allow_module_overrides()
-    )
+    builder = h_driver.Builder().with_config(dict(config)).with_modules(*modules)
+    allow_overrides = _allow_module_overrides(config)
+    builder = _apply_module_overrides(builder=builder, allow_overrides=allow_overrides)
     if materializers:
         builder = builder.with_materializers(*materializers)
     builder = _apply_dynamic_execution(builder=builder, config=dynamic_config)
-    return builder.with_adapters(*adapters).build()
+    return _build_or_raise(
+        builder=builder.with_adapters(*adapters),
+        allow_overrides=allow_overrides,
+    )
 
 
 def _build_runtime_bundle(
@@ -718,13 +756,10 @@ def _build_driver(
     config: Mapping[str, Any],
     modules: Sequence[ModuleType],
 ) -> h_driver.Driver:
-    return (
-        h_driver.Builder()
-        .with_config(dict(config))
-        .with_modules(*modules)
-        .allow_module_overrides()
-        .build()
-    )
+    builder = h_driver.Builder().with_config(dict(config)).with_modules(*modules)
+    allow_overrides = _allow_module_overrides(config)
+    builder = _apply_module_overrides(builder=builder, allow_overrides=allow_overrides)
+    return _build_or_raise(builder=builder, allow_overrides=allow_overrides)
 
 
 def _cache_dir(path: str | Path | None) -> Path:
@@ -744,6 +779,73 @@ def _cache_store_from_adapter(
 ) -> CacheStore | None:
     if isinstance(cache_adapter, ManifestBackedCacheAdapter):
         return cache_adapter.cache_store
+    return None
+
+
+def _allow_module_overrides(config: Mapping[str, Any]) -> bool:
+    value = config.get("ci.allow_module_overrides")
+    if isinstance(value, bool):
+        return value
+    return False
+
+
+def _apply_module_overrides(
+    *,
+    builder: h_driver.Builder,
+    allow_overrides: bool,
+) -> h_driver.Builder:
+    if allow_overrides:
+        return builder.allow_module_overrides()
+    return builder
+
+
+def _build_or_raise(
+    *,
+    builder: h_driver.Builder,
+    allow_overrides: bool,
+) -> h_driver.Driver:
+    try:
+        return builder.build()
+    except Exception as exc:
+        if allow_overrides:
+            raise
+        msg = (
+            "Hamilton driver build failed. If this is due to duplicate node names, "
+            "set ci.allow_module_overrides=true to enable overrides."
+        )
+        raise RuntimeError(msg) from exc
+
+
+def _graph_validation_mode(config: Mapping[str, Any]) -> str:
+    value = config.get("ci.graph_validation")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _ALLOWED_GRAPH_VALIDATION_MODES:
+            return normalized
+    if value is not None:
+        log.warning("Unknown graph validation mode %r; defaulting to strict", value)
+    return "strict"
+
+
+def _validate_graph_invariants(*, runtime: RuntimeBundle, mode: str) -> None:
+    if mode == "off":
+        return
+    result = validate_graph(runtime=runtime, validate_schema=True)
+    if not result.errors and not result.warnings:
+        return
+    payload = validation_result_to_json(result)
+    if result.errors and mode == "strict":
+        raise RuntimeError(payload)
+    log.warning("graph.validation.warn %s", payload)
+
+
+def _parse_cache_behavior(value: object) -> CacheBehavior | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in _ALLOWED_CACHE_BEHAVIORS:
+        return cast("CacheBehavior", normalized)
+    log.warning("Unknown cache behavior override %r; ignoring", value)
     return None
 
 

@@ -12,10 +12,6 @@ from typing import TYPE_CHECKING, get_args
 
 import duckdb
 
-from codeintel.build.serving.publisher import (
-    PublishServingSnapshotRequest,
-    publish_serving_snapshot,
-)
 from codeintel.config.primitives import BuildPaths
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
@@ -34,6 +30,10 @@ from codeintel.core.schemas.hashing import (
 )
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.serving.publisher import (
+    PublishServingSnapshotRequest,
+    publish_serving_snapshot,
+)
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest

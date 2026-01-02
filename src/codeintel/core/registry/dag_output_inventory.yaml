@@ -35,21 +35,6 @@ outputs:
       - "core.modules"
       - "core.goids"
     notes: "Single-table output; low coupling, useful as a follow-on validation."
-  - target: "coverage_functions"
-    domain: "analytics"
-    anchor: "t__coverage_functions"
-    materialization: "table"
-    table_keys:
-      - "analytics.coverage_functions"
-    contracts:
-      - "analytics.coverage_functions"
-    downstream_consumers:
-      - "core.views"
-      - "cli.datasets"
-    upstream_targets:
-      - "core.goids"
-      - "analytics.coverage_lines"
-    notes: "Ibis materialization; depends on coverage ingest input."
   - target: "data_models"
     domain: "analytics"
     anchor: "t__data_models"
@@ -108,7 +93,6 @@ outputs:
       - "analytics.function_effects"
       - "analytics.goid_risk_factors"
       - "analytics.semantic_roles_functions"
-      - "analytics.coverage_functions"
       - "graph.v_function_call_counts"
       - "graph.v_call_depth_stats"
     notes: "Aggregated function/file/module profiles for serving and CLI."
@@ -143,8 +127,7 @@ outputs:
       - "analytics.test_graph_metrics"
       - "analytics.subsystem_caches"
     upstream_targets:
-      - "analytics.test_coverage_edges"
-    notes: "Per-test profiles derived from coverage edges."
+    notes: "Per-test profiles derived from catalog and graph metrics."
   - target: "function_contracts"
     domain: "analytics"
     anchor: "t__function_contracts"
@@ -326,8 +309,7 @@ outputs:
       - "cli.datasets"
     upstream_targets:
       - "analytics.test_catalog"
-      - "analytics.test_coverage_edges"
-    notes: "Graph metrics for tests and their covered functions."
+    notes: "Graph metrics for tests and their associated functions."
   - target: "subsystem_caches"
     domain: "analytics"
     anchor: "t__subsystem_caches"
@@ -359,9 +341,8 @@ outputs:
       - "cli.datasets"
     upstream_targets:
       - "analytics.function_metrics"
-      - "analytics.coverage_functions"
       - "graph.call_graph_edges"
-    notes: "Risk scoring based on complexity, coverage, and fan-in/out."
+    notes: "Risk scoring based on complexity and graph connectivity."
   - target: "subsystems"
     domain: "analytics"
     anchor: "t__subsystems"
@@ -380,22 +361,6 @@ outputs:
       - "graph.import_graph_edges"
       - "analytics.semantic_roles_functions"
     notes: "Subsystem inference from import graph communities."
-  - target: "coverage_test_edges"
-    domain: "analytics"
-    anchor: "t__coverage_test_edges"
-    materialization: "table"
-    table_keys:
-      - "analytics.test_coverage_edges"
-    contracts:
-      - "analytics.test_coverage_edges"
-    downstream_consumers:
-      - "analytics.test_profile"
-      - "analytics.test_graph_metrics"
-    upstream_targets:
-      - "core.goids"
-      - "analytics.coverage_lines"
-      - "analytics.test_catalog"
-    notes: "Edges linking tests to covered functions."
   - target: "behavioral_coverage"
     domain: "analytics"
     anchor: "t__behavioral_coverage"
@@ -570,7 +535,6 @@ outputs:
     upstream_targets:
       - "call_graph"
       - "config_data_flow"
-      - "coverage_functions"
       - "data_models"
       - "entrypoints"
       - "external_deps"

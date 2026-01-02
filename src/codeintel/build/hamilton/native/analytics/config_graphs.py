@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ast
+import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
+from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.graphs.config_data_flow import (
@@ -26,27 +28,20 @@ from codeintel.build.analytics.graphs.config_graph_metrics import (
 from codeintel.build.analytics.graphs.graph_metrics import build_call_graph_from_rows
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -57,10 +52,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 CONFIG_DATA_FLOW_TARGET_NAME = "config_data_flow"
 CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
-CONFIG_DATA_FLOW_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=CONFIG_DATA_FLOW_TARGET_NAME,
-)
 CONFIG_DATA_FLOW_CONTRACT = TableContractSpec(
     table_key=CONFIG_DATA_FLOW_TABLE_KEY,
     domain="analytics",
@@ -83,7 +74,6 @@ CONFIG_GRAPH_TABLE_KEYS = (
     CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
     CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
 )
-CONFIG_GRAPH_SAVE_CONTEXT = SaverContext(domain="analytics", target=CONFIG_GRAPH_TARGET_NAME)
 CONFIG_GRAPH_KEYS_CONTRACT = TableContractSpec(
     table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
     domain="analytics",
@@ -366,54 +356,7 @@ def config_data_flow__base(
     )
 
 
-@save_dataset(
-    context=CONFIG_DATA_FLOW_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CONFIG_DATA_FLOW_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=CONFIG_DATA_FLOW_TARGET_NAME,
-    table_key=CONFIG_DATA_FLOW_TABLE_KEY,
-)
-@table_contract(CONFIG_DATA_FLOW_CONTRACT)
-def config_data_flow__table(config_data_flow__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist config data flow rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted config data flow frame.
-    """
-    return config_data_flow__base
-
-
-@codeintel_target(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
-def t__config_data_flow(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__config_data_flow: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize config data flow target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the config data flow target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=CONFIG_DATA_FLOW_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            CONFIG_DATA_FLOW_TABLE_KEY: m__analytics__config_data_flow,
-        },
-    )
-
-
+@cache()
 def config_graph_metrics_result(
     env: BuildEnv,
     q__analytics__config_values: InferableTabularInput,
@@ -474,27 +417,6 @@ def config_graph_metrics_keys__base(
     )
 
 
-@save_dataset(
-    context=CONFIG_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEYS_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
-)
-@table_contract(CONFIG_GRAPH_KEYS_CONTRACT)
-def config_graph_metrics_keys__table(config_graph_metrics_keys__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist config graph key metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted key metrics frame.
-    """
-    return config_graph_metrics_keys__base
-
-
 def config_graph_metrics_modules__base(
     config_graph_metrics_result: ConfigGraphMetricsResult,
 ) -> pl.LazyFrame:
@@ -512,29 +434,6 @@ def config_graph_metrics_modules__base(
         config_graph_metrics_result.module_rows,
         columns=CONFIG_GRAPH_METRICS_MODULES_COLS,
     )
-
-
-@save_dataset(
-    context=CONFIG_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULES_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
-)
-@table_contract(CONFIG_GRAPH_MODULES_CONTRACT)
-def config_graph_metrics_modules__table(
-    config_graph_metrics_modules__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist config graph module metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted module metrics frame.
-    """
-    return config_graph_metrics_modules__base
 
 
 def config_projection_key_edges__base(
@@ -556,29 +455,6 @@ def config_projection_key_edges__base(
     )
 
 
-@save_dataset(
-    context=CONFIG_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
-)
-@table_contract(CONFIG_GRAPH_KEY_EDGES_CONTRACT)
-def config_projection_key_edges__table(
-    config_projection_key_edges__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist config projection key edge rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted projection key edge frame.
-    """
-    return config_projection_key_edges__base
-
-
 def config_projection_module_edges__base(
     config_graph_metrics_result: ConfigGraphMetricsResult,
 ) -> pl.LazyFrame:
@@ -598,60 +474,70 @@ def config_projection_module_edges__base(
     )
 
 
-@save_dataset(
-    context=CONFIG_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_CONFIG_DATA_FLOW_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
+    target_name=CONFIG_DATA_FLOW_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=CONFIG_DATA_FLOW_TABLE_KEY,
+            base_node="config_data_flow__base",
+            contract=CONFIG_DATA_FLOW_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=CONFIG_DATA_FLOW_TABLE_KEY),
+            node_name="config_data_flow__table",
+        ),
+    ),
+    table_materializations_node="config_data_flow__table_materializations",
+    anchor_node_name="t__config_data_flow",
 )
-@table_contract(CONFIG_GRAPH_MODULE_EDGES_CONTRACT)
-def config_projection_module_edges__table(
-    config_projection_module_edges__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist config projection module edge rows.
+attach_table_target_template(_MODULE, spec=_CONFIG_DATA_FLOW_TABLE_TARGET_SPEC)
+config_data_flow__table = _MODULE.config_data_flow__table
+config_data_flow__table_materializations = _MODULE.config_data_flow__table_materializations
+t__config_data_flow = _MODULE.t__config_data_flow
 
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted projection module edge frame.
-    """
-    return config_projection_module_edges__base
-
-
-config_graph_metrics__table_materializations = make_table_materializations_collector(
+_CONFIG_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    table_keys=CONFIG_GRAPH_TABLE_KEYS,
-    node_name="config_graph_metrics__table_materializations",
+    target_name=CONFIG_GRAPH_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
+            base_node="config_graph_metrics_keys__base",
+            contract=CONFIG_GRAPH_KEYS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEYS_TABLE_KEY),
+            node_name="config_graph_metrics_keys__table",
+        ),
+        TableTargetTableSpec(
+            table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
+            base_node="config_graph_metrics_modules__base",
+            contract=CONFIG_GRAPH_MODULES_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULES_TABLE_KEY),
+            node_name="config_graph_metrics_modules__table",
+        ),
+        TableTargetTableSpec(
+            table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
+            base_node="config_projection_key_edges__base",
+            contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY),
+            node_name="config_projection_key_edges__table",
+        ),
+        TableTargetTableSpec(
+            table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
+            base_node="config_projection_module_edges__base",
+            contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY),
+            node_name="config_projection_module_edges__table",
+        ),
+    ),
+    table_materializations_node="config_graph_metrics__table_materializations",
+    anchor_node_name="t__config_graph_metrics",
 )
-
-
-@codeintel_target(domain="analytics", target=CONFIG_GRAPH_TARGET_NAME)
-def t__config_graph_metrics(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    config_graph_metrics__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize config graph metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the config graph metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=CONFIG_GRAPH_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=config_graph_metrics__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_CONFIG_GRAPH_TABLE_TARGET_SPEC)
+config_graph_metrics_keys__table = _MODULE.config_graph_metrics_keys__table
+config_graph_metrics_modules__table = _MODULE.config_graph_metrics_modules__table
+config_projection_key_edges__table = _MODULE.config_projection_key_edges__table
+config_projection_module_edges__table = _MODULE.config_projection_module_edges__table
+config_graph_metrics__table_materializations = _MODULE.config_graph_metrics__table_materializations
+t__config_graph_metrics = _MODULE.t__config_graph_metrics
 
 
 __all__ = [

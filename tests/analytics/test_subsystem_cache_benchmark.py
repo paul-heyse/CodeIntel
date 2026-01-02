@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import polars as pl
 import pytest
 
 from codeintel.build.analytics.subsystems.cache import (
@@ -72,7 +73,23 @@ def test_subsystem_cache_rows_build(tmp_path: Path) -> None:
     ctx = TestScenario.minimal().build(tmp_path)
     try:
         _seed_subsystem(ctx)
-        profile_rows = build_subsystem_profile_cache_rows(ctx.gateway, ctx.snapshot)
+        subsystems = pl.from_arrow(
+            ctx.gateway.relation_from_table_key("analytics.subsystems").arrow()
+        )
+        metrics = pl.from_arrow(
+            ctx.gateway.relation_from_table_key("analytics.subsystem_graph_metrics").arrow()
+        )
+        subsystems_frame = (
+            subsystems.lazy() if isinstance(subsystems, pl.DataFrame) else pl.DataFrame().lazy()
+        )
+        metrics_frame = (
+            metrics.lazy() if isinstance(metrics, pl.DataFrame) else pl.DataFrame().lazy()
+        )
+        profile_rows = build_subsystem_profile_cache_rows(
+            ctx.snapshot,
+            subsystems_frame,
+            metrics_frame,
+        )
     finally:
         ctx.close()
 

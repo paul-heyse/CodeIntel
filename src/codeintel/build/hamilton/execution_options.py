@@ -33,6 +33,36 @@ class BuildExecutionOptions:
     plugins_disabled: tuple[str, ...] | None = None
     allow_workspace_modules: bool | None = None
 
+    def validate(self) -> None:
+        """Validate execution option values.
+
+        Raises
+        ------
+        ValueError
+            If any option value is invalid.
+        """
+        if self.parallel_backend not in _ALLOWED_PARALLEL_BACKENDS:
+            msg = (
+                "parallel_backend must be one of "
+                f"{sorted(_ALLOWED_PARALLEL_BACKENDS)}; got {self.parallel_backend!r}"
+            )
+            raise ValueError(msg)
+        if self.max_workers is not None and self.max_workers <= 0:
+            msg = "max_workers must be a positive integer"
+            raise ValueError(msg)
+        if self.plugins_enabled is not None and not isinstance(self.plugins_enabled, tuple):
+            msg = "plugins_enabled must be a tuple of plugin names"
+            raise ValueError(msg)
+        if self.plugins_disabled is not None and not isinstance(self.plugins_disabled, tuple):
+            msg = "plugins_disabled must be a tuple of plugin names"
+            raise ValueError(msg)
+        if self.cache_dir is not None and not isinstance(self.cache_dir, str):
+            msg = "cache_dir must be a string path"
+            raise ValueError(msg)
+        if self.profile is not None and not isinstance(self.profile, str):
+            msg = "profile must be a string"
+            raise ValueError(msg)
+
     def resolved_profile(self, *, env: BuildEnv) -> str:
         """Resolve the effective profile for this run.
 
@@ -105,6 +135,17 @@ class BuildExecutionOptions:
         if self.allow_workspace_modules is not None:
             overrides["ci.plugins.allow_workspace_modules"] = self.allow_workspace_modules
         return overrides
+
+
+_ALLOWED_PARALLEL_BACKENDS: frozenset[str] = frozenset(
+    {
+        "sequential",
+        "threadpool",
+        "ray",
+        "dask",
+        "auto",
+    }
+)
 
 
 __all__ = ["BuildExecutionOptions"]

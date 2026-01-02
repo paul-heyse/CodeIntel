@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import ast
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.build.hamilton.tag_spec import TagSpec
+from codeintel.build.hamilton.tagging import required_dataset_node_tags, required_table_output_tags
+from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.resources import TargetExecution, TargetResources
@@ -18,6 +23,13 @@ if TYPE_CHECKING:
 
 OutputKind = Literal["table", "artifact"]
 OutputRole = Literal["contract", "internal"]
+PreflightIssueKind = Literal[
+    "layering_violation",
+    "missing_contract",
+    "missing_data_node",
+    "missing_saver",
+    "missing_tags",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +40,8 @@ class NodeDescriptor:
     deps: tuple[str, ...]
     tags: Mapping[str, object]
     tag_spec: TagSpec | None = None
+    module: str | None = None
+    module_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +56,79 @@ class OutputDescriptor:
     sink: str
     artifact_path_template: str | None = None
     tags: Mapping[str, object] = MappingProxyType({})
+
+
+@dataclass(frozen=True, slots=True)
+class DagPreflightIssue:
+    """Issue discovered during DAG preflight validation."""
+
+    kind: PreflightIssueKind
+    node_name: str | None
+    table_key: str | None
+    message: str
+    missing_tags: tuple[str, ...] = ()
+    module: str | None = None
+    module_path: Path | None = None
+
+    def to_log_entry(self) -> dict[str, object]:
+        """Return a structured log entry for this issue.
+
+        Returns
+        -------
+        dict[str, object]
+            Structured log entry payload.
+        """
+        payload: dict[str, object] = {
+            "kind": self.kind,
+            "message": self.message,
+        }
+        if self.node_name:
+            payload["node_name"] = self.node_name
+        if self.table_key:
+            payload["table_key"] = self.table_key
+        if self.missing_tags:
+            payload["missing_tags"] = list(self.missing_tags)
+        if self.module:
+            payload["module"] = self.module
+        if self.module_path:
+            payload["module_path"] = str(self.module_path)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class DagPreflightReport:
+    """Summary of DAG preflight validation."""
+
+    issues: tuple[DagPreflightIssue, ...]
+    duration_ms: float
+
+    @property
+    def ok(self) -> bool:
+        """Return True when no issues were found."""
+        return not self.issues
+
+    def log_entries(self) -> tuple[dict[str, object], ...]:
+        """Return structured log entries for issues.
+
+        Returns
+        -------
+        tuple[dict[str, object], ...]
+            Structured log entry payloads.
+        """
+        return tuple(issue.to_log_entry() for issue in self.issues)
+
+    def summary(self) -> str:
+        """Return a concise summary string for error reporting.
+
+        Returns
+        -------
+        str
+            Human-friendly summary string.
+        """
+        if not self.issues:
+            return "Preflight ok"
+        parts = [issue.message for issue in self.issues]
+        return "Preflight failed: " + "; ".join(parts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,6 +436,28 @@ class DagCatalog:
                 errors.append(str(exc))
         return tuple(errors)
 
+    def preflight_report(self, *, repo_root: Path | None = None) -> DagPreflightReport:
+        """Run preflight validation for tag contracts and layering rules.
+
+        Parameters
+        ----------
+        repo_root
+            Optional repository root for resolving module import checks.
+
+        Returns
+        -------
+        DagPreflightReport
+            Report of any preflight issues.
+        """
+        start = time.perf_counter()
+        issues: list[DagPreflightIssue] = []
+        issues.extend(_preflight_output_tag_issues(self))
+        issues.extend(_preflight_dataset_node_issues(self))
+        if repo_root is not None:
+            issues.extend(_preflight_layering_issues(self, repo_root=repo_root))
+        duration_ms = (time.perf_counter() - start) * 1000
+        return DagPreflightReport(issues=tuple(issues), duration_ms=duration_ms)
+
     def producer_of_table(self, table_key: str) -> str | None:
         """Return producer target for a table key.
 
@@ -487,9 +596,238 @@ def freeze_mapping[T](mapping: Mapping[str, T]) -> Mapping[str, T]:
     return cast("Mapping[str, T]", MappingProxyType(dict(mapping)))
 
 
+def _tag_value(tags: Mapping[str, object], key: str) -> str | None:
+    value = tags.get(key)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def _missing_required_tags(
+    tags: Mapping[str, object],
+    required: Iterable[str],
+) -> tuple[str, ...]:
+    missing = [key for key in required if _tag_value(tags, key) is None]
+    return tuple(sorted(missing))
+
+
+def _preflight_output_tag_issues(catalog: DagCatalog) -> list[DagPreflightIssue]:
+    issues: list[DagPreflightIssue] = []
+    required_tags = required_table_output_tags()
+    for table_key, output in catalog.table_outputs.items():
+        missing = _missing_required_tags(output.tags, required_tags)
+        if missing:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_tags",
+                    node_name=output.saver_node,
+                    table_key=table_key,
+                    message=(
+                        f"Saver node {output.saver_node} missing required tags: "
+                        f"{', '.join(missing)}"
+                    ),
+                    missing_tags=missing,
+                )
+            )
+        data_node = _tag_value(output.tags, "ci.data_node")
+        if data_node is None:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_data_node",
+                    node_name=output.saver_node,
+                    table_key=table_key,
+                    message=f"Saver node {output.saver_node} missing ci.data_node tag",
+                )
+            )
+            continue
+        node = catalog.nodes.get(data_node)
+        if node is None:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_data_node",
+                    node_name=output.saver_node,
+                    table_key=table_key,
+                    message=f"Saver node {output.saver_node} references missing data node {data_node}",
+                )
+            )
+            continue
+        node_type = node.tags.get(ht.TAG_NODE_TYPE)
+        if node_type != ht.NODE_TYPE_DATASET:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_data_node",
+                    node_name=output.saver_node,
+                    table_key=table_key,
+                    message=(
+                        f"Saver node {output.saver_node} references non-dataset node {data_node}"
+                    ),
+                )
+            )
+        node_table_key = _tag_value(node.tags, ht.TAG_TABLE_KEY)
+        if node_table_key and node_table_key != table_key:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_data_node",
+                    node_name=output.saver_node,
+                    table_key=table_key,
+                    message=(
+                        f"Saver node {output.saver_node} data node {data_node} "
+                        f"uses table_key {node_table_key}"
+                    ),
+                )
+            )
+    return issues
+
+
+def _preflight_dataset_node_issues(catalog: DagCatalog) -> list[DagPreflightIssue]:
+    issues: list[DagPreflightIssue] = []
+    required_tags = required_dataset_node_tags()
+    for node in catalog.nodes.values():
+        if node.tags.get(ht.TAG_NODE_TYPE) != ht.NODE_TYPE_DATASET:
+            continue
+        table_key = _tag_value(node.tags, ht.TAG_TABLE_KEY)
+        missing = _missing_required_tags(node.tags, required_tags)
+        if missing:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_tags",
+                    node_name=node.name,
+                    table_key=table_key,
+                    message=f"Dataset node {node.name} missing required tags: {', '.join(missing)}",
+                    missing_tags=missing,
+                )
+            )
+        if table_key is None:
+            continue
+        output = catalog.table_outputs.get(table_key)
+        if output is None:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_contract",
+                    node_name=node.name,
+                    table_key=table_key,
+                    message=f"Dataset node {node.name} missing contract output for {table_key}",
+                )
+            )
+            continue
+        data_node = _tag_value(output.tags, "ci.data_node")
+        if data_node is None or data_node != node.name:
+            issues.append(
+                DagPreflightIssue(
+                    kind="missing_saver",
+                    node_name=node.name,
+                    table_key=table_key,
+                    message=(
+                        f"Dataset node {node.name} not wired to saver for {table_key}; "
+                        f"ci.data_node={data_node}"
+                    ),
+                )
+            )
+    return issues
+
+
+def _preflight_layering_issues(
+    catalog: DagCatalog,
+    *,
+    repo_root: Path,
+) -> list[DagPreflightIssue]:
+    issues: list[DagPreflightIssue] = []
+    module_paths: dict[Path, list[NodeDescriptor]] = {}
+    for node in catalog.nodes.values():
+        module_path = node.module_path
+        if module_path is None:
+            continue
+        module_paths.setdefault(module_path, []).append(node)
+    for path, nodes in module_paths.items():
+        if not _is_build_module_path(path, repo_root=repo_root):
+            continue
+        forbidden = _find_forbidden_imports(path)
+        if not forbidden:
+            continue
+        node_names = sorted({node.name for node in nodes})
+        module_name = nodes[0].module if nodes else None
+        message = f"Module imports forbidden namespaces: {', '.join(sorted(forbidden))}"
+        issues.append(
+            DagPreflightIssue(
+                kind="layering_violation",
+                node_name=node_names[0] if node_names else None,
+                table_key=None,
+                message=message,
+                module=module_name,
+                module_path=path,
+            )
+        )
+    return issues
+
+
+def _is_build_module_path(path: Path, *, repo_root: Path) -> bool:
+    try:
+        relative = path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return False
+    return relative.parts[:3] == ("src", "codeintel", "build")
+
+
+def _find_forbidden_imports(path: Path) -> set[str]:
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    scanner = _ForbiddenImportScanner()
+    scanner.visit(tree)
+    return scanner.found
+
+
+def _is_type_checking_guard(node: ast.AST) -> bool:
+    return (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
+        isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
+    )
+
+
+class _ForbiddenImportScanner(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.found: set[str] = set()
+        self._type_checking_depth = 0
+
+    def visit_If(self, node: ast.If) -> None:
+        if _is_type_checking_guard(node.test):
+            self._type_checking_depth += 1
+            self.generic_visit(node)
+            self._type_checking_depth -= 1
+            return
+        self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        if self._type_checking_depth:
+            return
+        for alias in node.names:
+            if _is_forbidden_import(alias.name):
+                self.found.add(alias.name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if self._type_checking_depth:
+            return
+        if node.level:
+            return
+        if node.module and _is_forbidden_import(node.module):
+            self.found.add(node.module)
+
+
+def _is_forbidden_import(module_name: str) -> bool:
+    return module_name.startswith(("codeintel.storage", "codeintel.serving"))
+
+
 __all__ = [
     "ArtifactWrite",
     "DagCatalog",
+    "DagPreflightIssue",
+    "DagPreflightReport",
     "IOSurface",
     "NodeDescriptor",
     "OutputDescriptor",

@@ -127,6 +127,8 @@ dependencies = [
     "orjson>=3.11.5",
     "structlog>=25.5.0",
     "dulwich>=0.25.0",
+    "ripgrep>=15.0.0",
+    "rpygrep>=0.2.1",
 ]
 
 [project.scripts]

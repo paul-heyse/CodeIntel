@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence, Sized
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import polars as pl
 import pyarrow as pa
@@ -27,6 +27,14 @@ from codeintel.core.schemas.type_mappings import polars_type_from_column_type
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+
+class _PanderaSchemaProtocol(Protocol):
+    def validate(
+        self,
+        check_obj: pl.DataFrame | pl.LazyFrame,
+        **kwargs: object,
+    ) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +231,8 @@ class PanderaSchemaValidator(DataValidator):
                 message=f"Pandera error types unavailable for {self.table_key}",
             )
         try:
-            schema.validate(frame, lazy=True)
+            schema_obj = cast("_PanderaSchemaProtocol", schema)
+            schema_obj.validate(frame, lazy=True)
         except error_types as exc:
             diagnostics = _pandera_error_diagnostics(exc, table_key=self.table_key)
             return ValidationResult(
@@ -565,6 +574,17 @@ def _pandera_error_diagnostics(exc: BaseException, *, table_key: str) -> dict[st
     return diagnostics
 
 
+def _pandera_dtype(polars_type: object | None) -> type | str | None:
+    if isinstance(polars_type, str):
+        return polars_type
+    if isinstance(polars_type, type):
+        return polars_type
+    dtype_type = getattr(polars_type, "__class__", None)
+    if isinstance(dtype_type, type):
+        return dtype_type
+    return None
+
+
 def _pandera_schema_for_table(table_key: str) -> object | None:
     if pandera_polars is None:
         return None
@@ -573,9 +593,10 @@ def _pandera_schema_for_table(table_key: str) -> object | None:
         return None
     columns: dict[str, object] = {}
     for column in schema.columns:
-        polars_type = polars_type_from_column_type(column.type) or pl.Object
+        polars_type = polars_type_from_column_type(column.type)
+        dtype = _pandera_dtype(polars_type) or pl.Object
         columns[column.name] = pandera_polars.Column(
-            dtype=polars_type,
+            dtype=dtype,
             nullable=column.nullable,
             required=True,
         )
@@ -590,15 +611,18 @@ def _pandera_frame(dataset: object) -> pl.LazyFrame | pl.DataFrame | None:
     if isinstance(dataset, (pl.LazyFrame, pl.DataFrame)):
         return dataset
     if isinstance(dataset, pa.Table):
-        return pl.from_arrow(dataset)
+        frame = pl.from_arrow(dataset)
+        return frame if isinstance(frame, pl.DataFrame) else None
     if isinstance(dataset, pa.RecordBatch):
-        return pl.from_arrow(pa.Table.from_batches([dataset]))
+        frame = pl.from_arrow(pa.Table.from_batches([dataset]))
+        return frame if isinstance(frame, pl.DataFrame) else None
     if isinstance(dataset, pa.RecordBatchReader):
         try:
-            table = pa.Table.from_batches(list(dataset))
+            table = pa.Table.from_batches(list(cast("Iterable[pa.RecordBatch]", dataset)))
         except (TypeError, ValueError, pa.ArrowInvalid):
             return None
-        return pl.from_arrow(table)
+        frame = pl.from_arrow(table)
+        return frame if isinstance(frame, pl.DataFrame) else None
     return None
 
 

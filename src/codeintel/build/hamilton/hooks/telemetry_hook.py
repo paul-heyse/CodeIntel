@@ -6,12 +6,14 @@ execution telemetry to build.run_nodes for profiling and debugging.
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from hamilton.lifecycle import base as lifecycle_base
 
+from codeintel.build.hamilton.build_log import record_build_event
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.records import NodeExecutionRecord
 
@@ -19,6 +21,9 @@ if TYPE_CHECKING:
     from hamilton.node import Node
 
     from codeintel.build.hamilton.run_writer import BuildRunWriter
+
+
+log = logging.getLogger(__name__)
 
 
 class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
@@ -110,6 +115,30 @@ class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePo
         target = target_raw if isinstance(target_raw, str) else None
         node_type_raw = node_tags.get(ht.TAG_NODE_TYPE) if node_tags else None
         node_type = node_type_raw if isinstance(node_type_raw, str) else None
+        table_key_raw = node_tags.get(ht.TAG_TABLE_KEY) if node_tags else None
+        table_key = table_key_raw if isinstance(table_key_raw, str) else None
+
+        if not success:
+            exception_type = type(error).__name__ if error else None
+            error_message = str(error) if error else None
+            record_build_event(
+                "build.node.error",
+                node_name=node_name,
+                target=target,
+                table_key=table_key,
+                exception_type=exception_type,
+                error=error_message,
+            )
+            log.error(
+                "build.node.error run_id=%s node_name=%s target=%s table_key=%s exception_type=%s "
+                "error=%s",
+                self._run_id,
+                node_name,
+                target,
+                table_key,
+                exception_type,
+                error_message,
+            )
 
         record = NodeExecutionRecord(
             run_id=self._run_id,

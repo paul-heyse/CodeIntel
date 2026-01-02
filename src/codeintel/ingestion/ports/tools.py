@@ -98,7 +98,6 @@ class DiagnosticResult:
 
 
 @dataclass(frozen=True)
-@dataclass(frozen=True)
 class ScipSymbol:
     """A symbol from SCIP index.
 

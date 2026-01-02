@@ -14,7 +14,7 @@ from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
 )
-from codeintel.build.serving.publisher import (
+from codeintel.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )

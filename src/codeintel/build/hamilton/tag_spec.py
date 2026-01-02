@@ -409,6 +409,7 @@ def _tag_key_set() -> set[str]:
         ht.TAG_TARGET_PARAMETERS,
         ht.TAG_TARGET_ESTIMATED_DURATION_MS,
         ht.TAG_TARGET_SPEC_VERSION,
+        "ci.data_node",
     }
 
 

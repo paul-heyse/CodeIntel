@@ -29,6 +29,11 @@ from opentelemetry import trace as otel_trace
 
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
+from codeintel.build.hamilton.build_log import (
+    drain_build_log,
+    record_build_event,
+    start_build_log,
+)
 from codeintel.build.hamilton.cache_adapter import CacheAdapterOptions, ManifestBackedCacheAdapter
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
 from codeintel.build.hamilton.decision_trace import (
@@ -228,6 +233,39 @@ def _apply_tracker_constants(settings: HamiltonTrackerSettings) -> None:
         constants.MAX_LIST_LENGTH_CAPTURE = settings.max_list_length
     if settings.max_dict_length is not None:
         constants.MAX_DICT_LENGTH_CAPTURE = settings.max_dict_length
+
+
+def _run_preflight(
+    *,
+    context: _RunState,
+    catalog: DagCatalog,
+) -> tuple[bool, str | None]:
+    log.info(
+        "build.dag.preflight.start run_id=%s repo=%s commit=%s target_count=%d table_count=%d",
+        context.run_id,
+        context.env.repo,
+        context.env.commit,
+        len(catalog.targets),
+        len(catalog.table_outputs),
+    )
+    report = catalog.preflight_report(repo_root=context.env.snapshot.repo_root)
+    if report.ok:
+        log.info(
+            "build.dag.preflight.ok run_id=%s repo=%s commit=%s duration_ms=%.1f",
+            context.run_id,
+            context.env.repo,
+            context.env.commit,
+            report.duration_ms,
+        )
+        return True, None
+    log.error(
+        "build.dag.preflight.fail run_id=%s repo=%s commit=%s failures=%s",
+        context.run_id,
+        context.env.repo,
+        context.env.commit,
+        report.log_entries(),
+    )
+    return False, report.summary()
 
 
 def _normalize_executor_name(value: str | None, *, default: str) -> str:
@@ -1102,6 +1140,15 @@ def _finalize_run(
         duration_ms,
     )
     _maybe_ingest_cache_logs(context=context)
+    record_build_event(
+        "build.run.complete",
+        success=success,
+        duration_ms=duration_ms,
+        computed_targets_count=len(computed),
+        skipped_targets_count=len(skipped),
+        failed_targets_count=len(failed),
+        error=inputs.error,
+    )
 
     return HamiltonBuildResult(
         requested=context.targets,
@@ -1186,12 +1233,18 @@ def _options_from_overrides(
     overrides: Mapping[str, object],
 ) -> BuildExecutionOptions:
     if options is not None:
-        return _ensure_no_overrides(options, overrides)
+        resolved = _ensure_no_overrides(options, overrides)
+        resolved.validate()
+        return resolved
     if not overrides:
-        return BuildExecutionOptions()
+        resolved = BuildExecutionOptions()
+        resolved.validate()
+        return resolved
     _ensure_known_overrides(overrides)
     data = _build_override_data(overrides)
-    return BuildExecutionOptions(**cast("BuildExecutionOptionsData", data))
+    resolved = BuildExecutionOptions(**cast("BuildExecutionOptionsData", data))
+    resolved.validate()
+    return resolved
 
 
 def _ensure_no_overrides(
@@ -1269,6 +1322,11 @@ class HamiltonBuildExecutor:
             Structured result containing outputs and status details.
         """
         run_id = _generate_run_id()
+        start_build_log(env=env, run_id=run_id)
+        record_build_event(
+            "build.run.start",
+            requested_targets_count=len(targets),
+        )
         writer = BuildRunWriter(env.gateway)
         cache_dir = self._options.resolved_cache_dir(env=env)
         runtime, telemetry_hook = self._build_runtime(
@@ -1306,78 +1364,92 @@ class HamiltonBuildExecutor:
         catalog = context.runtime.catalog
         requested_targets = list(context.targets)
 
-        log.info(
-            "build.hamilton.executor.start run_id=%s targets=%s",
-            context.run_id,
-            requested_targets,
-        )
-
-        writer.start_run(
-            env=context.env,
-            run_id=context.run_id,
-            requested_targets=requested_targets,
-            started_at=context.started_at,
-        )
-
-        closure = self._compute_closure(catalog, requested_targets, context.run_id)
-        if closure is None:
-            writer.complete_run(
-                run_id=context.run_id,
-                success=False,
-                computed_targets=(),
-                skipped_targets=(),
-                error_summary="Failed to compute closure",
-            )
-            return self._make_error_result(context, "Failed to compute closure")
-
-        final_vars, missing = _map_closure_to_nodes(closure, context.runtime)
-        if missing:
-            writer.complete_run(
-                run_id=context.run_id,
-                success=False,
-                computed_targets=(),
-                skipped_targets=(),
-                error_summary=f"Missing node mappings for: {missing}",
-            )
-            return self._make_missing_result(context, closure, missing)
-
-        final_vars, preflight_records = _apply_preflight(
-            context=context,
-            closure=closure,
-            final_vars=final_vars,
-        )
-
         try:
-            if final_vars:
-                outputs, error = self._execute_dag(context, final_vars)
-            else:
-                outputs, error = {}, None
-        finally:
-            if telemetry_hook is not None:
-                telemetry_hook.flush()
-
-        outputs.update(preflight_records)
-
-        if error:
-            _ensure_failure_records(
-                env=context.env,
-                runtime=context.runtime,
-                closure=closure,
-                outputs=outputs,
-                error=error,
+            log.info(
+                "build.hamilton.executor.start run_id=%s targets=%s",
+                context.run_id,
+                requested_targets,
             )
 
-        _apply_cache_keys(outputs=outputs, runtime=context.runtime)
+            writer.start_run(
+                env=context.env,
+                run_id=context.run_id,
+                requested_targets=requested_targets,
+                started_at=context.started_at,
+            )
 
-        return _finalize_run(
-            context=context,
-            inputs=_FinalizeInputs(
-                writer=writer,
+            closure = self._compute_closure(catalog, requested_targets, context.run_id)
+            if closure is None:
+                writer.complete_run(
+                    run_id=context.run_id,
+                    success=False,
+                    computed_targets=(),
+                    skipped_targets=(),
+                    error_summary="Failed to compute closure",
+                )
+                return self._make_error_result(context, "Failed to compute closure")
+
+            preflight_ok, preflight_error = _run_preflight(context=context, catalog=catalog)
+            if not preflight_ok:
+                writer.complete_run(
+                    run_id=context.run_id,
+                    success=False,
+                    computed_targets=(),
+                    skipped_targets=(),
+                    error_summary=preflight_error,
+                )
+                return self._make_error_result(context, preflight_error or "DAG preflight failed")
+
+            final_vars, missing = _map_closure_to_nodes(closure, context.runtime)
+            if missing:
+                writer.complete_run(
+                    run_id=context.run_id,
+                    success=False,
+                    computed_targets=(),
+                    skipped_targets=(),
+                    error_summary=f"Missing node mappings for: {missing}",
+                )
+                return self._make_missing_result(context, closure, missing)
+
+            final_vars, preflight_records = _apply_preflight(
+                context=context,
                 closure=closure,
-                outputs=outputs,
-                error=error,
-            ),
-        )
+                final_vars=final_vars,
+            )
+
+            try:
+                if final_vars:
+                    outputs, error = self._execute_dag(context, final_vars)
+                else:
+                    outputs, error = {}, None
+            finally:
+                if telemetry_hook is not None:
+                    telemetry_hook.flush()
+
+            outputs.update(preflight_records)
+
+            if error:
+                _ensure_failure_records(
+                    env=context.env,
+                    runtime=context.runtime,
+                    closure=closure,
+                    outputs=outputs,
+                    error=error,
+                )
+
+            _apply_cache_keys(outputs=outputs, runtime=context.runtime)
+
+            return _finalize_run(
+                context=context,
+                inputs=_FinalizeInputs(
+                    writer=writer,
+                    closure=closure,
+                    outputs=outputs,
+                    error=error,
+                ),
+            )
+        finally:
+            _persist_build_log(context=context, writer=writer)
 
     def _effective_max_workers(self, catalog: DagCatalog) -> int | None:
         return effective_max_workers_for_graph(run_options=self._options, catalog=catalog)
@@ -1601,10 +1673,31 @@ class HamiltonBuildExecutor:
                 finally:
                     set_execution_active(active=False)
         except Exception as exc:
+            record_build_event(
+                "build.runtime.error",
+                exception_type=type(exc).__name__,
+                error=str(exc),
+            )
             log.exception("build.hamilton.executor.error run_id=%s", context.run_id)
             return {}, str(exc)
         else:
             return outputs, None
+
+
+def _persist_build_log(*, context: _RunState, writer: BuildRunWriter) -> None:
+    drained = drain_build_log()
+    if drained is None:
+        return
+    log_context, events = drained
+    path = writer.write_build_log(context=log_context, events=events)
+    if path is None:
+        return
+    log.info(
+        "build.hamilton.executor.build_log_written run_id=%s event_count=%d path=%s",
+        context.run_id,
+        len(events),
+        path,
+    )
 
 
 __all__ = [

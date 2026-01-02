@@ -15,9 +15,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import duckdb
+import polars as pl
 import pytest
 
 from codeintel.build.analytics.testing.profiles.builder import (
+    TestProfileFrameInputs,
     build_test_profile_result,
     infer_behavior_tags,
 )
@@ -37,6 +40,15 @@ if TYPE_CHECKING:
 
 
 EXPECTED_EMPTY_LIST_LENGTH = 0
+
+
+def _frame_from_table(ctx: TestContext, table_key: str) -> pl.DataFrame:
+    try:
+        relation = ctx.gateway.relation_from_table_key(table_key)
+    except duckdb.Error:
+        return pl.DataFrame()
+    frame = pl.from_arrow(relation.arrow())
+    return frame if isinstance(frame, pl.DataFrame) else pl.DataFrame()
 
 
 class TestInferBehaviorTags:
@@ -317,7 +329,15 @@ class TestBuildTestProfile:
 
     @staticmethod
     def _build_and_write_test_profile(ctx: TestContext, snapshot: SnapshotRef) -> None:
-        result = build_test_profile_result(ctx.gateway, snapshot)
+        inputs = TestProfileFrameInputs(
+            test_catalog_frame=_frame_from_table(ctx, "analytics.test_catalog"),
+            goids_frame=_frame_from_table(ctx, "core.goids"),
+            modules_frame=_frame_from_table(ctx, "core.modules"),
+            subsystem_modules_frame=_frame_from_table(ctx, "analytics.subsystem_modules"),
+            subsystems_frame=_frame_from_table(ctx, "analytics.subsystems"),
+            test_graph_metrics_frame=_frame_from_table(ctx, "analytics.test_graph_metrics_tests"),
+        )
+        result = build_test_profile_result(snapshot, inputs)
         if result.rows is None:
             return
         ctx.gateway.policy.delete_for_snapshot(

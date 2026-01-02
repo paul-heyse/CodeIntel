@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.boundary_types import MaterializationResult
+import sys
+
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.graphs.call_graph import (
@@ -18,19 +19,13 @@ from codeintel.build.hamilton.native.graphs.import_graph import (
     IMPORT_GRAPH_EDGES_TABLE_KEY,
     IMPORT_MODULES_TABLE_KEY,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -40,277 +35,113 @@ IMPORT_GRAPH_TARGET_NAME = "import_graph"
 CFG_TARGET_NAME = "cfg"
 DFG_TARGET_NAME = "dfg"
 
-CALL_GRAPH_TABLE_KEYS = (CALL_GRAPH_NODES_TABLE_KEY, CALL_GRAPH_EDGES_TABLE_KEY)
-IMPORT_GRAPH_TABLE_KEYS = (IMPORT_MODULES_TABLE_KEY, IMPORT_GRAPH_EDGES_TABLE_KEY)
-CFG_TABLE_KEYS = (CFG_BLOCKS_TABLE_KEY, CFG_EDGES_TABLE_KEY)
-DFG_TABLE_KEYS = (DFG_EDGES_TABLE_KEY,)
 
-CALL_GRAPH_SAVE_CONTEXT = SaverContext(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
-IMPORT_GRAPH_SAVE_CONTEXT = SaverContext(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
-CFG_SAVE_CONTEXT = SaverContext(domain="graphs", target=CFG_TARGET_NAME)
-DFG_SAVE_CONTEXT = SaverContext(domain="graphs", target=DFG_TARGET_NAME)
-
-
-@save_dataset(
-    context=CALL_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY),
-)
-@tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_NODES_TABLE_KEY)
-def call_graph__nodes_table(
-    call_graph_nodes: InferableTabularInput,
-) -> InferableTabularInput:
-    """Persist call graph nodes.
-
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for call graph nodes.
-    """
-    return call_graph_nodes
-
-
-@save_dataset(
-    context=CALL_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=CALL_GRAPH_EDGES_TABLE_KEY,
-        partition_columns=("repo", "commit"),
+_MODULE = sys.modules[__name__]
+_CALL_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="graphs",
+    target_name=CALL_GRAPH_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=CALL_GRAPH_NODES_TABLE_KEY,
+            base_node="call_graph_nodes",
+            save_spec=DatasetSaveSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY),
+            node_name="call_graph__nodes_table",
+        ),
+        TableTargetTableSpec(
+            table_key=CALL_GRAPH_EDGES_TABLE_KEY,
+            base_node="call_graph_edges",
+            save_spec=DatasetSaveSpec(
+                table_key=CALL_GRAPH_EDGES_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="call_graph__edges_table",
+        ),
     ),
+    table_materializations_node="call_graph__table_materializations",
+    anchor_node_name="t__call_graph",
 )
-@tag_dataset(domain="graphs", target=CALL_GRAPH_TARGET_NAME, table_key=CALL_GRAPH_EDGES_TABLE_KEY)
-def call_graph__edges_table(
-    call_graph_edges: InferableTabularInput,
-) -> InferableTabularInput:
-    """Persist call graph edges.
+attach_table_target_template(_MODULE, spec=_CALL_GRAPH_TABLE_TARGET_SPEC)
+call_graph__nodes_table = _MODULE.call_graph__nodes_table
+call_graph__edges_table = _MODULE.call_graph__edges_table
+call_graph__table_materializations = _MODULE.call_graph__table_materializations
+t__call_graph = _MODULE.t__call_graph
 
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for call graph edges.
-    """
-    return call_graph_edges
-
-
-@save_dataset(
-    context=IMPORT_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=IMPORT_MODULES_TABLE_KEY,
-        partition_columns=("repo", "commit"),
+_IMPORT_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="graphs",
+    target_name=IMPORT_GRAPH_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=IMPORT_MODULES_TABLE_KEY,
+            base_node="import_modules",
+            save_spec=DatasetSaveSpec(
+                table_key=IMPORT_MODULES_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="import_graph__modules_table",
+        ),
+        TableTargetTableSpec(
+            table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
+            base_node="import_graph_edges",
+            save_spec=DatasetSaveSpec(
+                table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
+                partition_columns=("repo", "commit"),
+            ),
+            node_name="import_graph__edges_table",
+        ),
     ),
+    table_materializations_node="import_graph__table_materializations",
+    anchor_node_name="t__import_graph",
 )
-@tag_dataset(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, table_key=IMPORT_MODULES_TABLE_KEY)
-def import_graph__modules_table(
-    import_modules: InferableTabularInput,
-) -> InferableTabularInput:
-    """Persist import modules.
+attach_table_target_template(_MODULE, spec=_IMPORT_GRAPH_TABLE_TARGET_SPEC)
+import_graph__modules_table = _MODULE.import_graph__modules_table
+import_graph__edges_table = _MODULE.import_graph__edges_table
+import_graph__table_materializations = _MODULE.import_graph__table_materializations
+t__import_graph = _MODULE.t__import_graph
 
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for import modules.
-    """
-    return import_modules
-
-
-@save_dataset(
-    context=IMPORT_GRAPH_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(
-        table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
-        partition_columns=("repo", "commit"),
+_CFG_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="graphs",
+    target_name=CFG_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=CFG_BLOCKS_TABLE_KEY,
+            base_node="cfg_blocks",
+            save_spec=DatasetSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY),
+            node_name="cfg__blocks_table",
+        ),
+        TableTargetTableSpec(
+            table_key=CFG_EDGES_TABLE_KEY,
+            base_node="cfg_edges",
+            save_spec=DatasetSaveSpec(table_key=CFG_EDGES_TABLE_KEY),
+            node_name="cfg__edges_table",
+        ),
     ),
+    table_materializations_node="cfg__table_materializations",
+    anchor_node_name="t__cfg",
 )
-@tag_dataset(
+attach_table_target_template(_MODULE, spec=_CFG_TABLE_TARGET_SPEC)
+cfg__blocks_table = _MODULE.cfg__blocks_table
+cfg__edges_table = _MODULE.cfg__edges_table
+cfg__table_materializations = _MODULE.cfg__table_materializations
+t__cfg = _MODULE.t__cfg
+
+_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="graphs",
-    target=IMPORT_GRAPH_TARGET_NAME,
-    table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
+    target_name=DFG_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=DFG_EDGES_TABLE_KEY,
+            base_node="dfg_edges",
+            save_spec=DatasetSaveSpec(table_key=DFG_EDGES_TABLE_KEY),
+            node_name="dfg__edges_table",
+        ),
+    ),
+    table_materializations_node="dfg__table_materializations",
+    anchor_node_name="t__dfg",
 )
-def import_graph__edges_table(
-    import_graph_edges: InferableTabularInput,
-) -> InferableTabularInput:
-    """Persist import graph edges.
-
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for import graph edges.
-    """
-    return import_graph_edges
-
-
-@save_dataset(
-    context=CFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY),
-)
-@tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_BLOCKS_TABLE_KEY)
-def cfg__blocks_table(cfg_blocks: InferableTabularInput) -> InferableTabularInput:
-    """Persist CFG blocks.
-
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for CFG blocks.
-    """
-    return cfg_blocks
-
-
-@save_dataset(
-    context=CFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=CFG_EDGES_TABLE_KEY),
-)
-@tag_dataset(domain="graphs", target=CFG_TARGET_NAME, table_key=CFG_EDGES_TABLE_KEY)
-def cfg__edges_table(cfg_edges: InferableTabularInput) -> InferableTabularInput:
-    """Persist CFG edges.
-
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for CFG edges.
-    """
-    return cfg_edges
-
-
-@save_dataset(
-    context=DFG_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=DFG_EDGES_TABLE_KEY),
-)
-@tag_dataset(domain="graphs", target=DFG_TARGET_NAME, table_key=DFG_EDGES_TABLE_KEY)
-def dfg__edges_table(dfg_edges: InferableTabularInput) -> InferableTabularInput:
-    """Persist DFG edges.
-
-    Returns
-    -------
-    InferableTabularInput
-        Tabular input to materialize for DFG edges.
-    """
-    return dfg_edges
-
-
-call_graph__table_materializations = make_table_materializations_collector(
-    domain="graphs",
-    target=CALL_GRAPH_TARGET_NAME,
-    table_keys=CALL_GRAPH_TABLE_KEYS,
-    node_name="call_graph__table_materializations",
-)
-
-import_graph__table_materializations = make_table_materializations_collector(
-    domain="graphs",
-    target=IMPORT_GRAPH_TARGET_NAME,
-    table_keys=IMPORT_GRAPH_TABLE_KEYS,
-    node_name="import_graph__table_materializations",
-)
-
-cfg__table_materializations = make_table_materializations_collector(
-    domain="graphs",
-    target=CFG_TARGET_NAME,
-    table_keys=CFG_TABLE_KEYS,
-    node_name="cfg__table_materializations",
-)
-
-dfg__table_materializations = make_table_materializations_collector(
-    domain="graphs",
-    target=DFG_TARGET_NAME,
-    table_keys=DFG_TABLE_KEYS,
-    node_name="dfg__table_materializations",
-)
-
-
-@codeintel_target(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
-def t__call_graph(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    call_graph__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize call_graph target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the call_graph target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=CALL_GRAPH_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=call_graph__table_materializations,
-    )
-
-
-@codeintel_target(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
-def t__import_graph(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    import_graph__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize import_graph target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the import_graph target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=IMPORT_GRAPH_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=import_graph__table_materializations,
-    )
-
-
-@codeintel_target(domain="graphs", target=CFG_TARGET_NAME)
-def t__cfg(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    cfg__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize cfg target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the cfg target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=CFG_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=cfg__table_materializations,
-    )
-
-
-@codeintel_target(domain="graphs", target=DFG_TARGET_NAME)
-def t__dfg(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    dfg__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize dfg target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the dfg target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=DFG_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=dfg__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_DFG_TABLE_TARGET_SPEC)
+dfg__edges_table = _MODULE.dfg__edges_table
+dfg__table_materializations = _MODULE.dfg__table_materializations
+t__dfg = _MODULE.t__dfg
 
 
 __all__ = [

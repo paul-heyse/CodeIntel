@@ -44,7 +44,6 @@ class GraphRuntimeInitKwargs(TypedDict, total=False):
     symbol_module_graph: nx.Graph | None
     symbol_function_graph: nx.Graph | None
     config_graph: nx.Graph | None
-    test_function_graph: nx.Graph | None
     cfg_graph: nx.DiGraph | None
     backend: GraphBackendConfig | None
     use_gpu: bool
@@ -53,7 +52,6 @@ class GraphRuntimeInitKwargs(TypedDict, total=False):
     symbol_module_graph_obj: nx.Graph | None
     symbol_function_graph_obj: nx.Graph | None
     config_bipartite_obj: nx.Graph | None
-    test_function_bipartite_obj: nx.Graph | None
     copy_graphs: bool
     calls: list[GraphCallRecord]
 
@@ -66,7 +64,6 @@ class GraphEngineSeedKwargs(TypedDict, total=False):
     symbol_module_graph: nx.Graph | None
     symbol_function_graph: nx.Graph | None
     config_graph: nx.Graph | None
-    test_function_graph: nx.Graph | None
     cfg_graph: nx.DiGraph | None
     backend: GraphBackendConfig | None
     use_gpu: bool
@@ -152,7 +149,6 @@ class GraphRuntimeDouble:
     symbol_module_graph_obj: nx.Graph | None = None
     symbol_function_graph_obj: nx.Graph | None = None
     config_bipartite_obj: nx.Graph | None = None
-    test_function_bipartite_obj: nx.Graph | None = None
     _cfg_graph_internal: nx.DiGraph | None = None
     _backend_internal: GraphBackendConfig | None = None
     _use_gpu_internal: bool = False
@@ -173,9 +169,6 @@ class GraphRuntimeDouble:
             "symbol_function_graph"
         )
         self.config_bipartite_obj = kwargs.get("config_bipartite_obj") or kwargs.get("config_graph")
-        self.test_function_bipartite_obj = kwargs.get("test_function_bipartite_obj") or kwargs.get(
-            "test_function_graph"
-        )
         self._cfg_graph_internal = kwargs.get("cfg_graph")
         self._backend_internal = kwargs.get("backend")
         self._use_gpu_internal = kwargs.get("use_gpu", False)
@@ -213,7 +206,6 @@ class GraphRuntimeDouble:
             symbol_module_graph_obj=graphs.symbol_module_graph,
             symbol_function_graph_obj=graphs.symbol_function_graph,
             config_bipartite_obj=graphs.config_graph,
-            test_function_bipartite_obj=nx.Graph(),
             cfg_graph=graphs.cfg_graph,
             backend=backend,
             copy_graphs=copy_graphs,
@@ -250,7 +242,6 @@ class GraphRuntimeDouble:
             symbol_module_graph_obj=symbol_graph,
             symbol_function_graph_obj=symbol_graph,
             config_bipartite_obj=nx.Graph(),
-            test_function_bipartite_obj=nx.Graph(),
             cfg_graph=None,
             backend=resolved_options.backend,
             copy_graphs=resolved_options.copy_graphs,
@@ -292,11 +283,6 @@ class GraphRuntimeDouble:
     def config_module_bipartite(self) -> nx.Graph | None:
         self._recorder.record("config_module_bipartite")
         return self._clone_graph(self.config_bipartite_obj)
-
-    @property
-    def test_function_bipartite(self) -> nx.Graph | None:
-        self._recorder.record("test_function_bipartite")
-        return self._clone_graph(self.test_function_bipartite_obj)
 
     @property
     def cfg_graph(self) -> nx.DiGraph | None:
@@ -368,15 +354,6 @@ class GraphRuntimeDouble:
             return_default_on_missing=False,
         )
 
-    def ensure_test_function_bipartite(self) -> nx.Graph | None:
-        self._recorder.record("ensure_test_function_bipartite")
-        return self._graph_or_db(
-            "test_function_bipartite_obj",
-            loader=lambda: None,
-            default_type=nx.Graph,
-            return_default_on_missing=False,
-        )
-
     def clear_graphs(self) -> None:
         """Clear any cached graph objects."""
         for attr in (
@@ -385,7 +362,6 @@ class GraphRuntimeDouble:
             "symbol_module_graph_obj",
             "symbol_function_graph_obj",
             "config_bipartite_obj",
-            "test_function_bipartite_obj",
             "_cfg_graph_internal",
         ):
             if hasattr(self, attr):
@@ -538,12 +514,6 @@ class GraphEngineAdapter(GraphEngine):
     def load_config_module_bipartite(self) -> nx.Graph:
         return self._ensure_graph(self._runtime.ensure_config_module_bipartite, nx.Graph)
 
-    def test_function_bipartite(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_test_function_bipartite, nx.Graph)
-
-    def load_test_function_bipartite(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_test_function_bipartite, nx.Graph)
-
     def clear_cache(self) -> None:
         """Clear any cached graphs on the runtime."""
         self._runtime.clear_graphs()
@@ -596,10 +566,6 @@ class CountingGraphEngineAdapter(GraphEngineAdapter):
         self._increment("load_config_module_bipartite")
         return super().load_config_module_bipartite()
 
-    def load_test_function_bipartite(self) -> nx.Graph:
-        self._increment("load_test_function_bipartite")
-        return super().load_test_function_bipartite()
-
 
 def build_graph_engine_double(
     gateway: StorageGateway,
@@ -642,7 +608,6 @@ def graph_engine_with_cache(
         GraphKind.SYMBOL_MODULE_GRAPH: "symbol_module_graph",
         GraphKind.SYMBOL_FUNCTION_GRAPH: "symbol_function_graph",
         GraphKind.CONFIG_MODULE_BIPARTITE: "config_graph",
-        GraphKind.TEST_FUNCTION_BIPARTITE: "test_function_graph",
     }
     seed_kwargs: dict[str, object] = {"copy_graphs": copy_graphs}
 
@@ -729,7 +694,6 @@ def create_mock_runtime_all_graphs() -> GraphRuntimeDouble:
     symbol_mod_g = nx.Graph([("sym1", "mod1"), ("sym2", "mod2")])
     symbol_func_g = nx.Graph([("sym1", "func1"), ("sym2", "func2")])
     config_mod_g = nx.Graph([("config1", "mod1")])
-    test_func_g = nx.Graph([("test1", "func1")])
     cfg_g = nx.DiGraph([("entry", "block1"), ("block1", "exit")])
     return GraphRuntimeDouble(
         call_graph=call_g,
@@ -737,7 +701,6 @@ def create_mock_runtime_all_graphs() -> GraphRuntimeDouble:
         symbol_module_graph=symbol_mod_g,
         symbol_function_graph=symbol_func_g,
         config_graph=config_mod_g,
-        test_function_graph=test_func_g,
         cfg_graph=cfg_g,
     )
 

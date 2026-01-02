@@ -2,39 +2,33 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
+from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.functions.metrics import (
     FunctionAnalyticsResult,
     compute_function_analytics_result_from_tabular,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import function_features
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
 FUNCTION_METRICS_TARGET_NAME = "function_metrics"
 FUNCTION_METRICS_TABLE_KEY = "analytics.function_metrics"
-FUNCTION_METRICS_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=FUNCTION_METRICS_TARGET_NAME,
-)
 FUNCTION_METRICS_CONTRACT = TableContractSpec(
     table_key=FUNCTION_METRICS_TABLE_KEY,
     domain="analytics",
@@ -47,6 +41,7 @@ FUNCTION_METRICS_CONTRACT = TableContractSpec(
 )
 
 
+@cache()
 def function_analytics_result(
     env: BuildEnv, q__core__goids: InferableTabularInput
 ) -> FunctionAnalyticsResult:
@@ -74,47 +69,26 @@ def function_metrics__base(function_analytics_result: FunctionAnalyticsResult) -
     )
 
 
-@save_dataset(
-    context=FUNCTION_METRICS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=FUNCTION_METRICS_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_FUNCTION_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=FUNCTION_METRICS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FUNCTION_METRICS_TABLE_KEY,
+            base_node="function_metrics__base",
+            contract=FUNCTION_METRICS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=FUNCTION_METRICS_TABLE_KEY),
+            node_name="function_metrics__table",
+        ),
+    ),
+    table_materializations_node="function_metrics__table_materializations",
+    anchor_node_name="t__function_metrics",
 )
-@table_contract(FUNCTION_METRICS_CONTRACT)
-def function_metrics__table(function_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched function metrics frame.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Cleaned/enriched function metrics frame.
-    """
-    return function_metrics__base
-
-
-@codeintel_target(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
-def t__function_metrics(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__function_metrics: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize function_metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the function_metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FUNCTION_METRICS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            FUNCTION_METRICS_TABLE_KEY: m__analytics__function_metrics,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_FUNCTION_METRICS_TABLE_TARGET_SPEC)
+function_metrics__table = _MODULE.function_metrics__table
+function_metrics__table_materializations = _MODULE.function_metrics__table_materializations
+t__function_metrics = _MODULE.t__function_metrics
 
 
 __all__ = [

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 
 import polars as pl
+from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
@@ -15,27 +17,20 @@ from codeintel.build.analytics.semantic_roles.core import (
     build_semantic_roles_rows,
 )
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import (
     empty_frame_for_table,
     rows_to_frame,
 )
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    make_table_materializations_collector,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -45,11 +40,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 SEMANTIC_ROLES_TARGET_NAME = "semantic_roles"
 SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY = "analytics.semantic_roles_functions"
 SEMANTIC_ROLES_MODULES_TABLE_KEY = "analytics.semantic_roles_modules"
-SEMANTIC_ROLES_TABLE_KEYS = (
-    SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
-    SEMANTIC_ROLES_MODULES_TABLE_KEY,
-)
-SEMANTIC_ROLES_SAVE_CONTEXT = SaverContext(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 SEMANTIC_ROLES_FUNCTIONS_CONTRACT = TableContractSpec(
     table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
     domain="analytics",
@@ -185,6 +175,7 @@ def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeat
     return features_map
 
 
+@cache()
 def semantic_roles_result(
     env: BuildEnv,
     semantic_role_module_frames: SemanticRoleModuleFrames,
@@ -240,29 +231,6 @@ def semantic_roles_functions__base(semantic_roles_result: SemanticRolesResult) -
     return rows_to_frame(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY, semantic_roles_result.function_rows)
 
 
-@save_dataset(
-    context=SEMANTIC_ROLES_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
-)
-@tag_dataset(
-    domain="analytics",
-    target=SEMANTIC_ROLES_TARGET_NAME,
-    table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
-)
-@table_contract(SEMANTIC_ROLES_FUNCTIONS_CONTRACT)
-def semantic_roles_functions__table(
-    semantic_roles_functions__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist semantic role rows for functions.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted semantic roles functions frame.
-    """
-    return semantic_roles_functions__base
-
-
 def semantic_roles_modules__base(semantic_roles_result: SemanticRolesResult) -> pl.LazyFrame:
     """Build semantic role rows for modules.
 
@@ -276,58 +244,34 @@ def semantic_roles_modules__base(semantic_roles_result: SemanticRolesResult) -> 
     return rows_to_frame(SEMANTIC_ROLES_MODULES_TABLE_KEY, semantic_roles_result.module_rows)
 
 
-@save_dataset(
-    context=SEMANTIC_ROLES_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_SEMANTIC_ROLES_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=SEMANTIC_ROLES_TARGET_NAME,
-    table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY,
+    target_name=SEMANTIC_ROLES_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
+            base_node="semantic_roles_functions__base",
+            contract=SEMANTIC_ROLES_FUNCTIONS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
+            node_name="semantic_roles_functions__table",
+        ),
+        TableTargetTableSpec(
+            table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY,
+            base_node="semantic_roles_modules__base",
+            contract=SEMANTIC_ROLES_MODULES_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY),
+            node_name="semantic_roles_modules__table",
+        ),
+    ),
+    table_materializations_node="semantic_roles__table_materializations",
+    anchor_node_name="t__semantic_roles",
 )
-@table_contract(SEMANTIC_ROLES_MODULES_CONTRACT)
-def semantic_roles_modules__table(semantic_roles_modules__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Persist semantic role rows for modules.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted semantic roles modules frame.
-    """
-    return semantic_roles_modules__base
-
-
-semantic_roles__table_materializations = make_table_materializations_collector(
-    domain="analytics",
-    target=SEMANTIC_ROLES_TARGET_NAME,
-    table_keys=SEMANTIC_ROLES_TABLE_KEYS,
-    node_name="semantic_roles__table_materializations",
-)
-
-
-@codeintel_target(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
-def t__semantic_roles(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    semantic_roles__table_materializations: dict[str, MaterializationResult],
-) -> TargetRunRecord:
-    """Finalize semantic roles target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the semantic roles target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=SEMANTIC_ROLES_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations=semantic_roles__table_materializations,
-    )
+attach_table_target_template(_MODULE, spec=_SEMANTIC_ROLES_TABLE_TARGET_SPEC)
+semantic_roles_functions__table = _MODULE.semantic_roles_functions__table
+semantic_roles_modules__table = _MODULE.semantic_roles_modules__table
+semantic_roles__table_materializations = _MODULE.semantic_roles__table_materializations
+t__semantic_roles = _MODULE.t__semantic_roles
 
 
 __all__ = [

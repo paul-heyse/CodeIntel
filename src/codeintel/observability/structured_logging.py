@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from opentelemetry import trace as otel_trace
+
+if TYPE_CHECKING:
+    from structlog.types import Processor
 
 try:
     import orjson
@@ -141,15 +144,17 @@ def _configure_structlog(*, level: int) -> None:
     if structlog is None:
         return
     serializer = orjson.dumps if orjson is not None else None
-    processors = [
+    processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
     ]
     if serializer is not None:
-        processors.append(structlog.processors.JSONRenderer(serializer=serializer))
+        processors.append(
+            cast("Processor", structlog.processors.JSONRenderer(serializer=serializer))
+        )
     else:
-        processors.append(structlog.processors.JSONRenderer())
+        processors.append(cast("Processor", structlog.processors.JSONRenderer()))
     structlog.configure(
         cache_logger_on_first_use=True,
         wrapper_class=structlog.make_filtering_bound_logger(level),

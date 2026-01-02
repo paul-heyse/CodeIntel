@@ -372,7 +372,7 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
     )
 
     engine = NxGraphEngine(
-        gateway=graph_ctx.gateway,
+        dataset_root_dir=None,
         snapshot=graph_ctx.to_snapshot_ref(),
     )
     findings = warn_graph_structure(engine, graph_ctx.repo, graph_ctx.commit, log=None)

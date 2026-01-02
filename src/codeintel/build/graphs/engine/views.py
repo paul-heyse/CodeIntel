@@ -24,7 +24,7 @@ from codeintel.build.graphs.engine.datasets import (
 )
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
-from codeintel.core.query_results import coerce_optional_float, iter_tuples_from_arrow_reader
+from codeintel.core.query_results import iter_tuples_from_arrow_reader
 
 log = logging.getLogger(__name__)
 
@@ -309,71 +309,6 @@ def load_import_graph(
             [(module, {"layer": layer}) for module, layer in fallback_layer_by_module.items()]
         )
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
-
-
-def load_test_function_bipartite(
-    dataset_root: Path | None,
-    repo: str,
-    commit: str,
-    *,
-    use_gpu: bool = False,
-) -> nx.Graph:
-    """
-    Build a bipartite graph of tests <-> functions from coverage edges.
-
-    Test nodes are keyed as ("t", test_id); function nodes as ("f", goid).
-    Edge weight is derived from coverage_ratio when present.
-
-    Parameters
-    ----------
-    dataset_root :
-        Root directory for Parquet dataset snapshots.
-    repo : str
-        Repository identifier anchoring the view.
-    commit : str
-        Commit hash anchoring the view.
-    use_gpu : bool, optional
-        Whether to prefer a GPU-backed graph when supported.
-
-    Returns
-    -------
-    nx.Graph
-        Undirected bipartite graph with weighted coverage edges.
-    """
-    dataset_root = _ensure_dataset_root(dataset_root, "analytics.test_coverage_edges")
-    if dataset_root is None:
-        return nx.Graph()
-    reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="analytics.test_coverage_edges",
-            snapshot_id=commit,
-            columns=("test_id", "function_goid_h128", "coverage_ratio"),
-            repo=repo,
-            commit=commit,
-        )
-    )
-    if reader is None:
-        return nx.Graph()
-
-    graph = nx.Graph()
-    for test_id, goid_raw, coverage_ratio in iter_tuples_from_arrow_reader(reader):
-        goid = normalize_decimal(goid_raw)
-        if test_id is None or goid is None:
-            continue
-        test_node = ("t", str(test_id))
-        func_node = ("f", goid)
-        if not graph.has_node(test_node):
-            graph.add_node(test_node, bipartite=0)
-        if not graph.has_node(func_node):
-            graph.add_node(func_node, bipartite=1)
-        weight = coerce_optional_float(coverage_ratio, ctx="coverage_ratio") or 0.0
-        if graph.has_edge(test_node, func_node):
-            attrs = graph[test_node][func_node]
-            attrs["weight"] = _coerce_edge_weight_float(attrs.get("weight")) + weight
-        else:
-            graph.add_edge(test_node, func_node, weight=weight)
-    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 
 def parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> list[str]:
@@ -674,7 +609,6 @@ __all__ = [
     "load_import_graph",
     "load_symbol_function_graph",
     "load_symbol_module_graph",
-    "load_test_function_bipartite",
     "module_attrs_from_row",
     "normalize_decimal",
     "parse_reference_modules",

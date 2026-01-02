@@ -7,7 +7,7 @@ import json
 import textwrap
 from typing import TYPE_CHECKING
 
-import networkx as nx
+import polars as pl
 
 from codeintel.build.analytics.functions.function_effects import (
     FunctionEffectsInputs,
@@ -15,12 +15,10 @@ from codeintel.build.analytics.functions.function_effects import (
     build_function_effects_rows,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
-from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers import TestScenario
 from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
-from tests._helpers.fakes.graph_runtime import build_graph_engine_double
-from tests._helpers.fixtures.rows import CallGraphEdgeRow, function_meta, insert_rows
+from tests._helpers.fixtures.rows import function_meta
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -107,19 +105,6 @@ def test_build_function_effects_with_transitive_and_missing(
         ctx.repo_root, source, {k: v for k, v in goids.items() if k != "missing"}
     )
     snapshot = ctx.to_snapshot_ref()
-    engine = build_graph_engine_double(
-        ctx.gateway,
-        snapshot,
-        call_graph=nx.DiGraph(
-            [
-                (goids["caller"], goids["impure"]),
-                (goids["wrapper"], goids["caller"]),
-            ]
-        ),
-        copy_graphs=False,
-    )
-    runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
-    runtime.ensure_call_graph()
     options = FunctionEffectsOptions(
         max_call_depth=2,
         io_apis={"os": ["getenv"]},
@@ -129,23 +114,58 @@ def test_build_function_effects_with_transitive_and_missing(
         threading_apis={"threading": ["Thread"]},
     )
 
-    insert_rows(
-        ctx.gateway,
+    edges_frame = pl.DataFrame(
         [
-            CallGraphEdgeRow(
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-                caller_goid_h128=goids["caller"],
-                callee_goid_h128=None,
-                callsite_path=ast_map[goids["caller"]].rel_path,
-                callsite_line=ast_map[goids["caller"]].start_line,
-                callsite_col=0,
-                language="python",
-                kind="call",
-                resolved_via="static",
-                confidence=1.0,
-            )
-        ],
+            {
+                "repo": snapshot.repo,
+                "commit": snapshot.commit,
+                "caller_goid_h128": goids["caller"],
+                "callee_goid_h128": goids["impure"],
+                "callsite_path": ast_map[goids["caller"]].rel_path,
+                "callsite_line": ast_map[goids["caller"]].start_line,
+                "callsite_col": 0,
+                "language": "python",
+                "kind": "call",
+                "resolved_via": "static",
+                "confidence": 1.0,
+                "evidence_json": None,
+            },
+            {
+                "repo": snapshot.repo,
+                "commit": snapshot.commit,
+                "caller_goid_h128": goids["wrapper"],
+                "callee_goid_h128": goids["caller"],
+                "callsite_path": ast_map[goids["wrapper"]].rel_path,
+                "callsite_line": ast_map[goids["wrapper"]].start_line,
+                "callsite_col": 0,
+                "language": "python",
+                "kind": "call",
+                "resolved_via": "static",
+                "confidence": 1.0,
+                "evidence_json": None,
+            },
+            {
+                "repo": snapshot.repo,
+                "commit": snapshot.commit,
+                "caller_goid_h128": goids["caller"],
+                "callee_goid_h128": None,
+                "callsite_path": ast_map[goids["caller"]].rel_path,
+                "callsite_line": ast_map[goids["caller"]].start_line,
+                "callsite_col": 0,
+                "language": "python",
+                "kind": "call",
+                "resolved_via": "static",
+                "confidence": 1.0,
+                "evidence_json": None,
+            },
+        ]
+    )
+    nodes_frame = pl.DataFrame(
+        [
+            {"goid_h128": goids["impure"], "kind": "function"},
+            {"goid_h128": goids["caller"], "kind": "function"},
+            {"goid_h128": goids["wrapper"], "kind": "function"},
+        ]
     )
 
     inputs = FunctionEffectsInputs(
@@ -211,14 +231,15 @@ def test_build_function_effects_with_transitive_and_missing(
             ],
             module_by_path={module_path.relative_to(ctx.repo_root).as_posix(): "pkg.effects"},
         ),
-        runtime=runtime,
         ast_map=ast_map,
         missing_goids={goids["missing"]},
+        call_graph_edges=edges_frame,
+        call_graph_nodes=nodes_frame,
     )
 
     caplog.set_level("INFO")
     try:
-        rows = build_function_effects_rows(ctx.gateway, snapshot, options=options, inputs=inputs)
+        rows = build_function_effects_rows(snapshot, options=options, inputs=inputs)
         if rows:
             ctx.gateway.policy.delete_for_snapshot(
                 "analytics.function_effects",

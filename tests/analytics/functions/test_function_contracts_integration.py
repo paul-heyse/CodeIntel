@@ -15,7 +15,10 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.analytics.functions.function_contracts import build_function_contracts_rows
+from codeintel.build.analytics.functions.function_contracts import (
+    FunctionContractInputs,
+    build_function_contracts_rows,
+)
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.storage.warehouse import Warehouse
 from tests._helpers import TestScenario
@@ -228,10 +231,11 @@ def _build_and_write_contract_rows(
     catalog: FunctionCatalogProvider | None = None,
 ) -> None:
     rows = build_function_contracts_rows(
-        gateway,
         snapshot,
-        function_ast_map=function_ast_map or {},
-        catalog=catalog,
+        FunctionContractInputs(
+            function_ast_map=function_ast_map or {},
+            catalog=catalog,
+        ),
     )
     if not rows:
         return

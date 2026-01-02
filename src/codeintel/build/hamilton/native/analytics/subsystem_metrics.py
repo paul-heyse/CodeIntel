@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import polars as pl
 
 from codeintel.build.analytics.graphs.graph_metrics import (
@@ -13,23 +15,17 @@ from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
     build_subsystem_graph_metrics_rows,
 )
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import rows_to_frame
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_dataset
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -37,10 +33,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SUBSYSTEM_GRAPH_METRICS_TARGET_NAME = "subsystem_graph_metrics"
 SUBSYSTEM_GRAPH_METRICS_TABLE_KEY = "analytics.subsystem_graph_metrics"
-SUBSYSTEM_GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-)
 SUBSYSTEM_GRAPH_METRICS_CONTRACT = TableContractSpec(
     table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
     domain="analytics",
@@ -150,54 +142,26 @@ def subsystem_graph_metrics__base(
     )
 
 
-@save_dataset(
-    context=SUBSYSTEM_GRAPH_METRICS_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
-)
-@tag_dataset(
+_MODULE = sys.modules[__name__]
+_SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="analytics",
-    target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-    table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
+    target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
+            base_node="subsystem_graph_metrics__base",
+            contract=SUBSYSTEM_GRAPH_METRICS_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
+            node_name="subsystem_graph_metrics__table",
+        ),
+    ),
+    table_materializations_node="subsystem_graph_metrics__table_materializations",
+    anchor_node_name="t__subsystem_graph_metrics",
 )
-@table_contract(SUBSYSTEM_GRAPH_METRICS_CONTRACT)
-def subsystem_graph_metrics__table(
-    subsystem_graph_metrics__base: pl.LazyFrame,
-) -> pl.LazyFrame:
-    """Persist subsystem graph metrics rows.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Persisted subsystem graph metrics frame.
-    """
-    return subsystem_graph_metrics__base
-
-
-@codeintel_target(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
-def t__subsystem_graph_metrics(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__subsystem_graph_metrics: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize subsystem_graph_metrics target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the subsystem_graph_metrics target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            SUBSYSTEM_GRAPH_METRICS_TABLE_KEY: m__analytics__subsystem_graph_metrics,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC)
+subsystem_graph_metrics__table = _MODULE.subsystem_graph_metrics__table
+subsystem_graph_metrics__table_materializations = _MODULE.subsystem_graph_metrics__table_materializations
+t__subsystem_graph_metrics = _MODULE.t__subsystem_graph_metrics
 
 
 __all__ = [

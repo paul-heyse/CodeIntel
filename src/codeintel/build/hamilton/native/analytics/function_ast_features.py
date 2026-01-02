@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,22 +12,17 @@ import polars as pl
 
 from codeintel.build.analytics.ast_features.extract import compute_function_features
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
-from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.table_utils import empty_frame_for_table
-from codeintel.build.hamilton.native.materialization_records import (
-    MaterializationRecordContext,
-    record_from_materializations,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    SaverContext,
-    save_dataset,
+    TableTargetSpec,
+    TableTargetTableSpec,
+    attach_table_target_template,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -35,10 +31,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_AST_FEATURES_TARGET_NAME = "function_ast_features"
 FUNCTION_AST_FEATURES_TABLE_KEY = "analytics.function_ast_features"
-FUNCTION_AST_FEATURES_SAVE_CONTEXT = SaverContext(
-    domain="analytics",
-    target=FUNCTION_AST_FEATURES_TARGET_NAME,
-)
 FUNCTION_AST_FEATURES_CONTRACT = TableContractSpec(
     table_key=FUNCTION_AST_FEATURES_TABLE_KEY,
     domain="analytics",
@@ -282,47 +274,26 @@ def function_ast_features__base(
     )
 
 
-@save_dataset(
-    context=FUNCTION_AST_FEATURES_SAVE_CONTEXT,
-    spec=DatasetSaveSpec(table_key=FUNCTION_AST_FEATURES_TABLE_KEY),
+_MODULE = sys.modules[__name__]
+_FUNCTION_AST_FEATURES_TABLE_TARGET_SPEC = TableTargetSpec(
+    domain="analytics",
+    target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
+    tables=(
+        TableTargetTableSpec(
+            table_key=FUNCTION_AST_FEATURES_TABLE_KEY,
+            base_node="function_ast_features__base",
+            contract=FUNCTION_AST_FEATURES_CONTRACT,
+            save_spec=DatasetSaveSpec(table_key=FUNCTION_AST_FEATURES_TABLE_KEY),
+            node_name="function_ast_features__table",
+        ),
+    ),
+    table_materializations_node="function_ast_features__table_materializations",
+    anchor_node_name="t__function_ast_features",
 )
-@table_contract(FUNCTION_AST_FEATURES_CONTRACT)
-def function_ast_features__table(function_ast_features__base: pl.LazyFrame) -> pl.LazyFrame:
-    """Return the cleaned/enriched function AST features frame.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Cleaned/enriched function AST features frame.
-    """
-    return function_ast_features__base
-
-
-@codeintel_target(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
-def t__function_ast_features(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    m__analytics__function_ast_features: MaterializationResult,
-) -> TargetRunRecord:
-    """Finalize function_ast_features target run record.
-
-    Returns
-    -------
-    TargetRunRecord
-        Run record for the function_ast_features target.
-    """
-    context = MaterializationRecordContext(
-        env=env,
-        catalog=catalog,
-        target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
-    )
-    return record_from_materializations(
-        context=context,
-        artifact_materializations=None,
-        table_materializations={
-            FUNCTION_AST_FEATURES_TABLE_KEY: m__analytics__function_ast_features,
-        },
-    )
+attach_table_target_template(_MODULE, spec=_FUNCTION_AST_FEATURES_TABLE_TARGET_SPEC)
+function_ast_features__table = _MODULE.function_ast_features__table
+function_ast_features__table_materializations = _MODULE.function_ast_features__table_materializations
+t__function_ast_features = _MODULE.t__function_ast_features
 
 
 __all__ = [
