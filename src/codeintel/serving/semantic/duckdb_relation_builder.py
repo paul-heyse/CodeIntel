@@ -16,9 +16,9 @@ from codeintel.core.columnar.schema_alignment import (
     extras_policy_from_schema,
 )
 from codeintel.core.filters import FilterOpError, validate_filter_value
-from codeintel.core.helpers.json import normalize_duckdb_json_value
 from codeintel.core.schemas.primitives import column_type_base
 from codeintel.core.schemas.type_mappings import complex_type_mapping
+from codeintel.core.serialization.json import normalize_duckdb_json_value
 from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
 from codeintel.serving.semantic.models import FilterValue, Op
 from codeintel.serving.semantic.specs import SemanticQuerySpec

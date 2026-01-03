@@ -11,14 +11,11 @@ import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from sqlglot import diff as sqlglot_diff
-
+from codeintel.core.queries.ast import coerce_ast, diff_ast
 from codeintel.core.sqlglot_tools import (
     ParseError,
-    canonicalize_expression_duckdb,
     extract_table_keys_duckdb,
     fingerprint_sql_duckdb,
-    parse_one_duckdb,
 )
 
 if TYPE_CHECKING:
@@ -107,9 +104,9 @@ def diff_sql_structural(
         Structural diff summary.
     """
     try:
-        before_ast = canonicalize_expression_duckdb(parse_one_duckdb(before))
-        after_ast = canonicalize_expression_duckdb(parse_one_duckdb(after))
-        actions = sqlglot_diff(before_ast, after_ast)
+        before_ast = coerce_ast(before)
+        after_ast = coerce_ast(after)
+        actions = diff_ast(before_ast, after_ast)
         counts: dict[str, int] = {}
         for action in actions:
             name = type(action).__name__

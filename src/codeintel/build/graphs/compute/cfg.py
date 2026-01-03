@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.serialization.payload import encode_payload
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

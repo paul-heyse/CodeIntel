@@ -7,7 +7,14 @@ AST nodes by line spans.
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+
+from intervaltree import IntervalTree
+
+from codeintel.core.spans import to_half_open_span
+
+_SPAN_TUPLE_LEN = 3
 
 
 @dataclass(frozen=True)
@@ -32,6 +39,8 @@ class AstSpanIndex:
     """
 
     node_map: dict[tuple[int, int], ast.AST]
+    _tree: IntervalTree = field(default_factory=IntervalTree, repr=False)
+    _order: dict[tuple[int, int], int] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_tree(
@@ -54,6 +63,9 @@ class AstSpanIndex:
             Span index mapping (start_line, end_line) to nodes.
         """
         mapping: dict[tuple[int, int], ast.AST] = {}
+        interval_tree = IntervalTree()
+        order_map: dict[tuple[int, int], int] = {}
+        order = 0
         for node in ast.walk(tree):
             if not isinstance(node, kinds):
                 continue
@@ -64,7 +76,12 @@ class AstSpanIndex:
             start = int(lineno)
             end = int(end_lineno) if end_lineno is not None else start
             mapping[start, end] = node
-        return cls(node_map=mapping)
+            order_map.setdefault((start, end), order)
+            order += 1
+            span_start, span_end = to_half_open_span(start, end)
+            if span_end > span_start:
+                interval_tree.addi(span_start, span_end, (start, end, node))
+        return cls(node_map=mapping, _tree=interval_tree, _order=order_map)
 
     def lookup(self, start_line: int, end_line: int | None = None) -> ast.AST | None:
         """Return the node that spans the given lines, or the first enclosing span.
@@ -93,36 +110,51 @@ class AstSpanIndex:
         if node is not None:
             return node
 
-        # Search for enclosing or overlapping spans
-        enclosing: ast.AST | None = None
-        smallest_enclosing_span: tuple[int, int] | None = None
-
-        overlap: ast.AST | None = None
-        smallest_overlap_span: tuple[int, int] | None = None
-
-        for (span_start, span_end), candidate in self.node_map.items():
-            # Check for enclosing span
-            if span_start <= start_line <= span_end:
-                if smallest_enclosing_span is None or (span_end - span_start) < (
-                    smallest_enclosing_span[1] - smallest_enclosing_span[0]
-                ):
-                    smallest_enclosing_span = (span_start, span_end)
-                    enclosing = candidate
-                continue
-
-            # Check for overlapping span
-            if start_line <= span_start <= end <= span_end and (
-                smallest_overlap_span is None
-                or (span_end - span_start) < (smallest_overlap_span[1] - smallest_overlap_span[0])
-            ):
-                smallest_overlap_span = (span_start, span_end)
-                overlap = candidate
-
+        query_start, query_end = to_half_open_span(start_line, end)
+        enclosing = self._best_candidate(self._enclosing_intervals(query_start, query_end))
         if enclosing is not None:
             return enclosing
+        overlap = self._best_candidate(self._tree.overlap(query_start, query_end))
         if overlap is not None:
             return overlap
         return None
+
+    def _enclosing_intervals(self, start: int, end: int) -> list[object]:
+        envelop = getattr(self._tree, "envelop", None)
+        if callable(envelop):
+            intervals = envelop(start, end)
+            if isinstance(intervals, Iterable):
+                return list(intervals)
+            return []
+        contained: list[object] = []
+        for interval in self._tree.overlap(start, end):
+            begin = getattr(interval, "begin", None)
+            finish = getattr(interval, "end", None)
+            if (
+                isinstance(begin, int)
+                and isinstance(finish, int)
+                and begin <= start
+                and finish >= end
+            ):
+                contained.append(interval)
+        return contained
+
+    def _best_candidate(self, intervals: Iterable[object]) -> ast.AST | None:
+        candidates: list[tuple[int, int, int, ast.AST]] = []
+        for interval in intervals:
+            data = getattr(interval, "data", None)
+            if not isinstance(data, tuple) or len(data) != _SPAN_TUPLE_LEN:
+                continue
+            span_start, span_end, node = data
+            if not isinstance(node, ast.AST):
+                continue
+            key = (span_start, span_end)
+            order = self._order.get(key, 0)
+            candidates.append((span_end - span_start, order, span_start, node))
+        if not candidates:
+            return None
+        _, _, _, best = min(candidates, key=lambda item: (item[0], item[1], item[2]))
+        return best
 
     def __len__(self) -> int:
         """Return the number of indexed nodes.

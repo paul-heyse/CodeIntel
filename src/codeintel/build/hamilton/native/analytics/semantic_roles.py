@@ -33,8 +33,8 @@ from codeintel.build.tabular.frames import (
 )
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.helpers.json import decode_json_list
-from codeintel.core.helpers.payload import decode_payload
+from codeintel.core.serialization.json import decode_json_list
+from codeintel.core.serialization.payload import decode_payload
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 

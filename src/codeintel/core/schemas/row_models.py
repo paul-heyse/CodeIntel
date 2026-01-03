@@ -9,6 +9,7 @@ that includes provenance metadata (table_key, schema_hash) for cache invalidatio
 and debugging.
 
 Row models are derived from ``TableSchema`` and avoid pandas-specific types.
+Msgspec Structs are the canonical row model for internal pipelines.
 """
 
 from __future__ import annotations
@@ -19,16 +20,16 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, make_dataclass
 from decimal import Decimal
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import msgspec
 import numpy as np
 
-from codeintel.core.helpers.json import normalize_duckdb_json_value
-from codeintel.core.helpers.payload import PayloadValue, encode_payload
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import COLUMN_TYPE_REGISTRY, column_type_base
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
+from codeintel.core.serialization.json import normalize_duckdb_json_value
+from codeintel.core.serialization.payload import PayloadValue, encode_payload
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
@@ -97,14 +98,14 @@ def _row_struct_cached(
 ) -> type[msgspec.Struct]:
     class_name = _row_struct_class_name(schema=schema, name=name)
 
-    fields: list[tuple[str, object]] = []
+    fields: list[tuple[str, type[object]]] = []
     for col_name, col_type, nullable in signature:
         if not _VALID_IDENTIFIER_RE.match(col_name):
             msg = f"Column name is not a valid identifier for row struct: {col_name}"
             raise ValueError(msg)
         base = _python_type_for_column_type(col_type)
-        annotated: object = base | None if nullable else base
-        fields.append((col_name, annotated))
+        annotated = base | None if nullable else base
+        fields.append((col_name, cast("type[object]", annotated)))
 
     model = msgspec.defstruct(
         class_name,
@@ -161,6 +162,7 @@ def row_struct_for_table_schema(*, table_schema: TableSchema) -> type[msgspec.St
 
 RowSerializer = Callable[[Mapping[str, object]], tuple[object, ...]]
 RowStructBuilder = Callable[[Mapping[str, object]], msgspec.Struct]
+RowStructSerializer = Callable[[msgspec.Struct], tuple[object, ...]]
 
 _ROW_VALUE_CONTAINERS: tuple[type[object], ...] = (dict, list, tuple, set)
 _ROW_VALUE_BINARY: tuple[type[object], ...] = (bytes, bytearray, memoryview)
@@ -275,6 +277,39 @@ def row_serializer_for_table_schema(*, table_schema: TableSchema) -> RowSerializ
 
 
 @lru_cache(maxsize=2048)
+def _row_struct_serializer_cached(
+    signature: tuple[tuple[str, ColumnType, bool], ...],
+) -> RowStructSerializer:
+    column_types: tuple[tuple[str, ColumnType], ...] = tuple(
+        (name, col_type) for name, col_type, _nullable in signature
+    )
+
+    def _serialize(row: msgspec.Struct) -> tuple[object, ...]:
+        return tuple(
+            normalize_row_value_for_type(getattr(row, name), col_type)
+            for name, col_type in column_types
+        )
+
+    return _serialize
+
+
+def row_struct_serializer_for_table_schema(*, table_schema: TableSchema) -> RowStructSerializer:
+    """Return a cached serializer for msgspec Struct row instances.
+
+    Parameters
+    ----------
+    table_schema
+        Source TableSchema.
+
+    Returns
+    -------
+    RowStructSerializer
+        Serializer that orders struct fields according to schema columns.
+    """
+    return _row_struct_serializer_cached(_row_model_signature(table_schema))
+
+
+@lru_cache(maxsize=2048)
 def _row_struct_builder_cached(
     schema: str,
     name: str,
@@ -353,6 +388,8 @@ class GeneratedRowBinding:
         Generated frozen dataclass type with fields matching the schema.
     serializer
         Function that converts a row mapping to an ordered tuple.
+    struct_serializer
+        Function that converts a msgspec Struct row to an ordered tuple.
     struct_model
         Generated msgspec Struct type with fields matching the schema.
     struct_builder
@@ -383,8 +420,9 @@ class GeneratedRowBinding:
 
     row_model: type[object]
     serializer: RowSerializer
-    struct_model: type[msgspec.Struct] | None = None
-    struct_builder: RowStructBuilder | None = None
+    struct_serializer: RowStructSerializer
+    struct_model: type[msgspec.Struct]
+    struct_builder: RowStructBuilder
     table_key: str
     schema_hash: str
     derivation_kind: str | None = None
@@ -400,8 +438,8 @@ def row_binding_for_table_schema(
     """Generate a complete row binding from a TableSchema.
 
     This function creates a ``GeneratedRowBinding`` containing both the row
-    model (frozen dataclass) and serializer, along with provenance metadata
-    for cache management.
+    model (frozen dataclass) and serializers (mapping + struct), along with
+    provenance metadata for cache management.
 
     Parameters
     ----------
@@ -415,7 +453,7 @@ def row_binding_for_table_schema(
     Returns
     -------
     GeneratedRowBinding
-        Complete binding with row model, serializer, and provenance.
+        Complete binding with row model, serializers, and provenance.
 
     Examples
     --------
@@ -438,10 +476,12 @@ def row_binding_for_table_schema(
     serializer = row_serializer_for_table_schema(table_schema=table_schema)
     struct_model = row_struct_for_table_schema(table_schema=table_schema)
     struct_builder = row_struct_builder_for_table_schema(table_schema=table_schema)
+    struct_serializer = row_struct_serializer_for_table_schema(table_schema=table_schema)
 
     return GeneratedRowBinding(
         row_model=model,
         serializer=serializer,
+        struct_serializer=struct_serializer,
         struct_model=struct_model,
         struct_builder=struct_builder,
         table_key=table_schema.table_key,
@@ -455,6 +495,7 @@ __all__ = [
     "GeneratedRowBinding",
     "RowSerializer",
     "RowStructBuilder",
+    "RowStructSerializer",
     "normalize_row_value",
     "normalize_row_value_for_type",
     "row_binding_for_table_schema",
@@ -462,4 +503,5 @@ __all__ = [
     "row_serializer_for_table_schema",
     "row_struct_builder_for_table_schema",
     "row_struct_for_table_schema",
+    "row_struct_serializer_for_table_schema",
 ]

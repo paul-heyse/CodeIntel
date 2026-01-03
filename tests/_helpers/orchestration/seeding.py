@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.fakes import utcnow
 from tests._helpers.fixtures.rows import (

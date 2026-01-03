@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, SupportsInt, TextIO, cast
 
-import polars as pl
+import msgspec
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.core.exports.serialization import coerce_export_value
+from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
 from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
 
 if TYPE_CHECKING:
@@ -134,14 +134,14 @@ def write_jsonl_reader(
         Number of rows written to the JSONL output.
     """
     rows_written = 0
+    encoder = msgspec.json.Encoder()
     for batch in _iter_batches(reader):
-        frame = _frame_for_batch(batch)
-        if record_type is not None:
-            frame = frame.with_columns(pl.lit(record_type).alias("_type"))
-        if frame.height == 0:
+        rows = _json_rows_from_batch(batch, record_type=record_type)
+        if not rows:
             continue
-        frame.write_ndjson(handle)
-        rows_written += frame.height
+        payload = encoder.encode_lines(rows)
+        handle.write(payload.decode("utf-8"))
+        rows_written += len(rows)
     return rows_written
 
 
@@ -169,25 +169,18 @@ def write_json_array(
     """
     rows_written = 0
     first = True
+    encoder = msgspec.json.Encoder()
     handle.write("[")
     for batch in _iter_batches(reader):
-        frame = _frame_for_batch(batch)
-        if record_type is not None:
-            frame = frame.with_columns(pl.lit(record_type).alias("_type"))
-        if frame.height == 0:
-            continue
-        payload = frame.write_json()
-        if payload == "[]":
-            continue
-        content = payload[1:-1]
-        if not content:
-            continue
-        if first:
-            first = False
-        else:
-            handle.write(",")
-        handle.write(content)
-        rows_written += frame.height
+        rows = _json_rows_from_batch(batch, record_type=record_type)
+        for row in rows:
+            payload = encoder.encode(row).decode("utf-8")
+            if first:
+                first = False
+            else:
+                handle.write(",")
+            handle.write(payload)
+        rows_written += len(rows)
     handle.write("]\n")
     return rows_written
 
@@ -249,11 +242,17 @@ def _iter_batches(reader: Iterable[RecordBatch]) -> Iterable[RecordBatch]:
     return reader
 
 
-def _frame_for_batch(batch: RecordBatch) -> pl.DataFrame:
-    frame = pl.from_arrow(batch)
-    if isinstance(frame, pl.Series):
-        return frame.to_frame()
-    return frame
+def _json_rows_from_batch(
+    batch: RecordBatch,
+    *,
+    record_type: str | None,
+) -> list[dict[str, object]]:
+    table = pa.Table.from_batches([cast("pa.RecordBatch", batch)], schema=batch.schema)
+    rows: list[dict[str, object]] = table.to_pylist()
+    if record_type is not None:
+        for row in rows:
+            row["_type"] = record_type
+    return [coerce_export_row(row) for row in rows]
 
 
 __all__ = [

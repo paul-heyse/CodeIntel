@@ -19,9 +19,9 @@ import polars as pl
 
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
-    scan_snapshot_lazyframe,
     scan_snapshot_reader,
 )
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 from codeintel.core.query_results import iter_tuples_from_arrow_reader
@@ -36,6 +36,13 @@ def _ensure_dataset_root(dataset_root: Path | None, table_key: str) -> Path | No
     return dataset_root
 
 
+def _scan_snapshot_frame(request: SnapshotScanRequest) -> pl.LazyFrame | None:
+    reader = scan_snapshot_reader(request)
+    if reader is None:
+        return None
+    return arrow_reader_to_lazyframe(reader)
+
+
 def _filter_optional_scope(frame: pl.LazyFrame, *, repo: str, commit: str) -> pl.LazyFrame:
     available = set(frame.columns)
     if "repo" in available:
@@ -43,6 +50,30 @@ def _filter_optional_scope(frame: pl.LazyFrame, *, repo: str, commit: str) -> pl
     if "commit" in available:
         frame = frame.filter(pl.col("commit").is_null() | (pl.col("commit") == commit))
     return frame
+
+
+def _module_name_map(
+    reader: object,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, str]:
+    module_by_path: dict[str, str] = {}
+    specificity_by_path: dict[str, int] = {}
+    for path, module, row_repo, row_commit in iter_tuples_from_arrow_reader(reader):
+        if path is None or module is None:
+            continue
+        if row_repo is not None and str(row_repo) != repo:
+            continue
+        if row_commit is not None and str(row_commit) != commit:
+            continue
+        specificity = int(row_repo is not None) + int(row_commit is not None)
+        key = str(path)
+        if specificity < specificity_by_path.get(key, -1):
+            continue
+        module_by_path[key] = str(module)
+        specificity_by_path[key] = specificity
+    return module_by_path
 
 
 def _add_call_edges(graph: nx.DiGraph, reader: object) -> None:
@@ -427,7 +458,7 @@ def load_config_module_bipartite(
     dataset_root = _ensure_dataset_root(dataset_root, "analytics.config_values")
     if dataset_root is None:
         return nx.Graph()
-    modules_frame = scan_snapshot_lazyframe(
+    modules_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="core.modules",
@@ -439,7 +470,7 @@ def load_config_module_bipartite(
         return nx.Graph()
     allowed_modules = _allowed_modules_from_frame(modules_frame, repo=repo, commit=commit)
 
-    config_frame = scan_snapshot_lazyframe(
+    config_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="analytics.config_values",
@@ -500,7 +531,7 @@ def load_symbol_module_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
         return nx.Graph()
-    edges_frame = scan_snapshot_lazyframe(
+    edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.symbol_use_edges",
@@ -508,9 +539,9 @@ def load_symbol_module_graph(
             columns=("def_path", "use_path"),
         )
     )
-    if edges_frame is None:
+    if edge_reader is None:
         return nx.Graph()
-    modules_frame = scan_snapshot_lazyframe(
+    module_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="core.modules",
@@ -518,32 +549,24 @@ def load_symbol_module_graph(
             columns=("path", "module", "repo", "commit"),
         )
     )
-    if modules_frame is None:
+    if module_reader is None:
         return nx.Graph()
-    modules_frame = _filter_optional_scope(modules_frame, repo=repo, commit=commit).select(
-        ["path", "module"]
-    )
-    def_modules = modules_frame.rename({"path": "def_path", "module": "def_module"})
-    use_modules = modules_frame.rename({"path": "use_path", "module": "use_module"})
-    joined = edges_frame.join(def_modules, on="def_path", how="left").join(
-        use_modules, on="use_path", how="left"
-    )
-
+    module_by_path = _module_name_map(module_reader, repo=repo, commit=commit)
     graph = nx.Graph()
-    for row in joined.collect().iter_rows(named=True):
-        use_module = row.get("use_module")
-        def_module = row.get("def_module")
-        if use_module is None or def_module is None:
+    for def_path, use_path in iter_tuples_from_arrow_reader(edge_reader):
+        if def_path is None or use_path is None:
             continue
-        left = str(use_module)
-        right = str(def_module)
-        if left == right:
+        def_module = module_by_path.get(str(def_path))
+        use_module = module_by_path.get(str(use_path))
+        if def_module is None or use_module is None:
             continue
-        if graph.has_edge(left, right):
-            attrs = graph[left][right]
+        if def_module == use_module:
+            continue
+        if graph.has_edge(use_module, def_module):
+            attrs = graph[use_module][def_module]
             attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
         else:
-            graph.add_edge(left, right, weight=1)
+            graph.add_edge(use_module, def_module, weight=1)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 

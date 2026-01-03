@@ -16,10 +16,10 @@ from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.data_models.rows import (
     SymbolUseRow,
 )
-from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphEdgesRow as CallGraphEdgeRow,
 )
+from codeintel.core.serialization.payload import encode_payload
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema.json_schema import (

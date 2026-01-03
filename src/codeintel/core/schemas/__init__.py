@@ -32,10 +32,14 @@ from codeintel.core.schemas.provider import (
 from codeintel.core.schemas.row_models import (
     GeneratedRowBinding,
     row_binding_for_table_schema,
+    row_struct_builder_for_table_schema,
+    row_struct_for_table_schema,
+    row_struct_serializer_for_table_schema,
 )
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.schemas.service import (
     ArrowSchemaProvider,
+    ContractBundle,
     DatasetSchemaLike,
     DatasetSchemaProvider,
     SchemaRecord,
@@ -49,6 +53,7 @@ __all__ = [
     "ArrowSchemaProvider",
     "Column",
     "ColumnType",
+    "ContractBundle",
     "DatasetContract",
     "DatasetSchemaLike",
     "DatasetSchemaProvider",
@@ -69,6 +74,9 @@ __all__ = [
     "get_schema_service",
     "json_schema_from_table_schema",
     "row_binding_for_table_schema",
+    "row_struct_builder_for_table_schema",
+    "row_struct_for_table_schema",
+    "row_struct_serializer_for_table_schema",
     "schema_hash",
     "set_schema_service",
     "table_schema_from_arrow_schema",

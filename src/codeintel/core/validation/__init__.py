@@ -38,6 +38,14 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "ValidationReport",
         "ValidationRunner",
     ),
+    "codeintel.core.validation.engine": (
+        "ColumnarValidationContext",
+        "TableValidationError",
+        "ValidationMode",
+        "validate_parquet_path",
+        "validate_record_batch_reader",
+        "validate_table",
+    ),
 }
 
 _EXPORT_TO_MODULE: Final[dict[str, str]] = {
@@ -51,8 +59,11 @@ __all__: Final[tuple[str, ...]] = (
     "BaseValidationReporter",
     "CheckProtocol",
     "CheckResult",
+    "ColumnarValidationContext",
     "FunctionValidationReporter",
     "GraphValidationReporter",
+    "TableValidationError",
+    "ValidationMode",
     "ValidationOutcome",
     "ValidationReport",
     "ValidationRunner",
@@ -61,9 +72,20 @@ __all__: Final[tuple[str, ...]] = (
     "cap_findings",
     "gateway_timestamp",
     "has_error_findings",
+    "validate_parquet_path",
+    "validate_record_batch_reader",
+    "validate_table",
 )
 
 if TYPE_CHECKING:
+    from codeintel.core.validation.engine import (
+        ColumnarValidationContext,
+        TableValidationError,
+        ValidationMode,
+        validate_parquet_path,
+        validate_record_batch_reader,
+        validate_table,
+    )
     from codeintel.core.validation.findings import (
         apply_severity_overrides,
         cap_findings,
@@ -99,10 +121,16 @@ if TYPE_CHECKING:
         ValidationReport,
         ValidationRunner,
         ValidationSeverity,
+        ColumnarValidationContext,
+        TableValidationError,
+        ValidationMode,
         apply_severity_overrides,
         cap_findings,
         gateway_timestamp,
         has_error_findings,
+        validate_parquet_path,
+        validate_record_batch_reader,
+        validate_table,
     )
 
 

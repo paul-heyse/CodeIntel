@@ -10,6 +10,7 @@ import io
 import logging
 import sys
 import tokenize
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from types import CodeType
 from typing import TYPE_CHECKING
@@ -122,6 +123,15 @@ class _CodeUnitInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class _ExceptionEntry:
+    start: int
+    end: int
+    target: int
+    depth: int | None
+    lasti: bool | None
+
+
+@dataclass(frozen=True, slots=True)
 class _BytecodeContext:
     repo: str
     commit: str
@@ -137,6 +147,14 @@ class _CodeUnitContext:
     code: CodeType
     code_unit_id: str
     qualpath: str
+
+
+@dataclass(frozen=True, slots=True)
+class _CodeUnitRowSpec:
+    parent_code_unit_id: str | None
+    span_start: int | None
+    span_end: int | None
+    kind: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +205,43 @@ class _EdgeSpec:
     exc_entry_index: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class _InstructionRowInputs:
+    context: _CodeUnitContext
+    instr: dis.Instruction
+    instr_index: int
+    instr_id: str
+    positions_payload: dict[str, object] | None
+    span_start: int | None
+    span_end: int | None
+    label_map: dict[int, str]
+    code_bytes: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class _CodeUnitRowInputs:
+    unit: _CodeUnitInfo
+    span_start: int | None
+    span_end: int | None
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ModuleDisResult:
+    buffers: _DisBuffers
+    warnings: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _DisModuleJob:
+    module: ModuleRecord
+    source_text: str
+    source_index: LineIndexedSource
+    repo: str
+    commit: str
+    options: BytecodeExtractOptions
+
+
 def _stable_id(*parts: object) -> str:
     payload = "|".join("" if part is None else str(part) for part in parts)
     digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16)
@@ -219,6 +274,23 @@ def _build_dis_buffers() -> _DisBuffers:
         cfg_edges=columnar_buffer_for_table_key(PY_BC_CFG_EDGES_TABLE_KEY),
         defuse_events=columnar_buffer_for_table_key(PY_BC_DEFUSE_EVENTS_TABLE_KEY),
     )
+
+
+def _merge_columnar_buffers(target: ColumnarRowBuffer, source: ColumnarRowBuffer) -> None:
+    if source.row_count == 0:
+        return
+    for name in target.columns:
+        target.data[name].extend(source.data[name])
+    target.row_count += source.row_count
+
+
+def _merge_dis_buffers(target: _DisBuffers, source: _DisBuffers) -> None:
+    _merge_columnar_buffers(target.code_units, source.code_units)
+    _merge_columnar_buffers(target.instructions, source.instructions)
+    _merge_columnar_buffers(target.exceptions, source.exceptions)
+    _merge_columnar_buffers(target.blocks, source.blocks)
+    _merge_columnar_buffers(target.cfg_edges, source.cfg_edges)
+    _merge_columnar_buffers(target.defuse_events, source.defuse_events)
 
 
 def _coerce_int(value: object) -> int | None:
@@ -517,15 +589,17 @@ def _build_instruction_rows(
         )
         instr_id = _instruction_id(context, instr, instr_index)
         row, info = _instruction_row(
-            context=context,
-            instr=instr,
-            instr_index=instr_index,
-            instr_id=instr_id,
-            positions_payload=positions_payload,
-            span_start=span_start,
-            span_end=span_end,
-            label_map=label_map,
-            code_bytes=code_bytes,
+            _InstructionRowInputs(
+                context=context,
+                instr=instr,
+                instr_index=instr_index,
+                instr_id=instr_id,
+                positions_payload=positions_payload,
+                span_start=span_start,
+                span_end=span_end,
+                label_map=label_map,
+                code_bytes=code_bytes,
+            )
         )
         rows.append(row)
         infos.append(info)
@@ -536,67 +610,56 @@ def _label_map(instructions: Sequence[dis.Instruction]) -> dict[int, str]:
     return {instr.offset: _label_for_offset(instr.offset) or "" for instr in instructions}
 
 
-def _instruction_row(
-    *,
-    context: _CodeUnitContext,
-    instr: dis.Instruction,
-    instr_index: int,
-    instr_id: str,
-    positions_payload: dict[str, object] | None,
-    span_start: int | None,
-    span_end: int | None,
-    label_map: dict[int, str],
-    code_bytes: bytes,
-) -> tuple[dict[str, object], _InstructionInfo]:
-    argval_info = _argval_fields(instr.argval)
-    offsets = _offset_info(instr)
-    jump_info = _jump_info(instr, label_map)
-    line_info = _line_info(instr)
-    byte_info = _byte_info(instr, code_bytes)
+def _instruction_row(inputs: _InstructionRowInputs) -> tuple[dict[str, object], _InstructionInfo]:
+    argval_info = _argval_fields(inputs.instr.argval)
+    offsets = _offset_info(inputs.instr)
+    jump_info = _jump_info(inputs.instr, inputs.label_map)
+    line_info = _line_info(inputs.instr)
+    byte_info = _byte_info(inputs.instr, inputs.code_bytes)
     row: dict[str, object] = {
-        "repo": context.base.repo,
-        "commit": context.base.commit,
-        "rel_path": context.base.rel_path,
-        "code_unit_id": context.code_unit_id,
-        "instr_id": instr_id,
-        "instr_physical_id": _instruction_physical_id(context.code_unit_id, instr),
-        "instr_index": instr_index,
-        "start_offset": instr.start_offset,
-        "offset": instr.offset,
-        "cache_offset": instr.cache_offset,
-        "end_offset": instr.end_offset,
+        "repo": inputs.context.base.repo,
+        "commit": inputs.context.base.commit,
+        "rel_path": inputs.context.base.rel_path,
+        "code_unit_id": inputs.context.code_unit_id,
+        "instr_id": inputs.instr_id,
+        "instr_physical_id": _instruction_physical_id(inputs.context.code_unit_id, inputs.instr),
+        "instr_index": inputs.instr_index,
+        "start_offset": inputs.instr.start_offset,
+        "offset": inputs.instr.offset,
+        "cache_offset": inputs.instr.cache_offset,
+        "end_offset": inputs.instr.end_offset,
         "ext_arg_len": offsets.ext_arg_len,
         "op_len": offsets.op_len,
         "cache_len": offsets.cache_len,
-        "opcode": instr.opcode,
-        "opname": instr.opname,
-        "baseopcode": instr.baseopcode,
-        "baseopname": instr.baseopname,
-        "arg": instr.arg,
-        "argrepr": instr.argrepr,
+        "opcode": inputs.instr.opcode,
+        "opname": inputs.instr.opname,
+        "baseopcode": inputs.instr.baseopcode,
+        "baseopname": inputs.instr.baseopname,
+        "arg": inputs.instr.arg,
+        "argrepr": inputs.instr.argrepr,
         "argval_kind": argval_info.kind,
         "argval_str": argval_info.text,
         "argval_int": argval_info.int_value,
         "argval_repr": argval_info.repr_text,
-        "is_jump_target": instr.is_jump_target,
+        "is_jump_target": inputs.instr.is_jump_target,
         "jump_target_offset": jump_info.target_offset,
         "jump_target_label": jump_info.target_label,
         "label": jump_info.label,
         "starts_line": line_info.starts_line,
         "line_number": line_info.line_number,
-        "pos": positions_payload,
-        "span_start_byte": span_start,
-        "span_end_byte": span_end,
-        "cache_info": _cache_info_payload(instr.cache_info),
+        "pos": inputs.positions_payload,
+        "span_start_byte": inputs.span_start,
+        "span_end_byte": inputs.span_end,
+        "cache_info": _cache_info_payload(inputs.instr.cache_info),
         "cache_bytes": byte_info.cache_bytes,
         "op_bytes": byte_info.op_bytes,
     }
     info = _InstructionInfo(
-        instr=instr,
-        instr_id=instr_id,
-        instr_index=instr_index,
-        span_start_byte=span_start,
-        span_end_byte=span_end,
+        instr=inputs.instr,
+        instr_id=inputs.instr_id,
+        instr_index=inputs.instr_index,
+        span_start_byte=inputs.span_start,
+        span_end_byte=inputs.span_end,
     )
     return row, info
 
@@ -632,17 +695,39 @@ def _exception_rows(
     return rows
 
 
-def _exception_entries(code: CodeType) -> list[object]:
+def _exception_entry(entry: object) -> _ExceptionEntry | None:
+    start = getattr(entry, "start", None)
+    end = getattr(entry, "end", None)
+    target = getattr(entry, "target", None)
+    if not isinstance(start, int) or not isinstance(end, int) or not isinstance(target, int):
+        return None
+    depth = getattr(entry, "depth", None)
+    lasti = getattr(entry, "lasti", None)
+    return _ExceptionEntry(
+        start=start,
+        end=end,
+        target=target,
+        depth=depth if isinstance(depth, int) else None,
+        lasti=lasti if isinstance(lasti, bool) else None,
+    )
+
+
+def _exception_entries(code: CodeType) -> list[_ExceptionEntry]:
     bytecode = dis.Bytecode(code)
     entries = getattr(bytecode, "exception_entries", None)
-    if entries is None:
+    if not entries:
         return []
-    return list(entries)
+    normalized: list[_ExceptionEntry] = []
+    for entry in entries:
+        normalized_entry = _exception_entry(entry)
+        if normalized_entry is not None:
+            normalized.append(normalized_entry)
+    return normalized
 
 
 def _block_start_offsets(
     instructions: Sequence[_InstructionInfo],
-    exception_entries: Sequence[object],
+    exception_entries: Sequence[_ExceptionEntry],
 ) -> list[int]:
     if not instructions:
         return []
@@ -688,15 +773,11 @@ def _next_offset_boundary(
     return set()
 
 
-def _exception_boundaries(exception_entries: Sequence[object]) -> set[int]:
+def _exception_boundaries(exception_entries: Sequence[_ExceptionEntry]) -> set[int]:
     boundaries: set[int] = set()
     for entry in exception_entries:
-        start = getattr(entry, "start", None)
-        target = getattr(entry, "target", None)
-        if isinstance(start, int):
-            boundaries.add(start)
-        if isinstance(target, int):
-            boundaries.add(target)
+        boundaries.add(entry.start)
+        boundaries.add(entry.target)
     return boundaries
 
 
@@ -705,7 +786,7 @@ def _build_blocks(
     *,
     instructions: Sequence[_InstructionInfo],
     label_map: dict[int, str],
-    exception_entries: Sequence[object],
+    exception_entries: Sequence[_ExceptionEntry],
 ) -> tuple[list[dict[str, object]], list[_BlockInfo], dict[int, str]]:
     rows: list[dict[str, object]] = []
     blocks: list[_BlockInfo] = []
@@ -781,73 +862,56 @@ def _cfg_edges(
     *,
     blocks: Sequence[_BlockInfo],
     offset_to_block_id: dict[int, str],
-    exception_entries: Sequence[object],
+    exception_entries: Sequence[_ExceptionEntry],
 ) -> list[dict[str, object]]:
-    edges: list[dict[str, object]] = []
-    edge_keys: set[str] = set()
+    state = _EdgeBuildState(edges=[], edge_keys=set(), context=context)
     block_list = list(blocks)
     _append_jump_edges(
-        edges,
-        edge_keys,
-        context=context,
+        state,
         block_list=block_list,
         offset_to_block_id=offset_to_block_id,
     )
     _append_exception_edges(
-        edges,
-        edge_keys,
-        context=context,
+        state,
         block_list=block_list,
         offset_to_block_id=offset_to_block_id,
         exception_entries=exception_entries,
     )
-    return edges
+    return state.edges
 
 
-def _append_edge(
-    edges: list[dict[str, object]],
-    edge_keys: set[str],
-    *,
-    context: _CodeUnitContext,
-    src_block_id: str,
-    dst_block_id: str,
-    kind: str,
-    cond_instr_id: str | None,
-    exc_entry_index: int | None,
-) -> None:
+def _append_edge(state: _EdgeBuildState, *, spec: _EdgeSpec) -> None:
     edge_id = _stable_id(
         "py_bc_cfg",
-        context.code_unit_id,
-        src_block_id,
-        dst_block_id,
-        kind,
-        cond_instr_id,
-        exc_entry_index,
+        state.context.code_unit_id,
+        spec.src_block_id,
+        spec.dst_block_id,
+        spec.kind,
+        spec.cond_instr_id,
+        spec.exc_entry_index,
     )
-    if edge_id in edge_keys:
+    if edge_id in state.edge_keys:
         return
-    edge_keys.add(edge_id)
-    edges.append(
+    state.edge_keys.add(edge_id)
+    state.edges.append(
         {
-            "repo": context.base.repo,
-            "commit": context.base.commit,
-            "rel_path": context.base.rel_path,
+            "repo": state.context.base.repo,
+            "commit": state.context.base.commit,
+            "rel_path": state.context.base.rel_path,
             "edge_id": edge_id,
-            "code_unit_id": context.code_unit_id,
-            "src_block_id": src_block_id,
-            "dst_block_id": dst_block_id,
-            "kind": kind,
-            "cond_instr_id": cond_instr_id,
-            "exc_entry_index": exc_entry_index,
+            "code_unit_id": state.context.code_unit_id,
+            "src_block_id": spec.src_block_id,
+            "dst_block_id": spec.dst_block_id,
+            "kind": spec.kind,
+            "cond_instr_id": spec.cond_instr_id,
+            "exc_entry_index": spec.exc_entry_index,
         }
     )
 
 
 def _append_jump_edges(
-    edges: list[dict[str, object]],
-    edge_keys: set[str],
+    state: _EdgeBuildState,
     *,
-    context: _CodeUnitContext,
     block_list: Sequence[_BlockInfo],
     offset_to_block_id: dict[int, str],
 ) -> None:
@@ -857,9 +921,7 @@ def _append_jump_edges(
         next_block = block_list[index + 1] if index + 1 < len(block_list) else None
         if jump_target is not None:
             _append_jump_target_edges(
-                edges,
-                edge_keys,
-                context=context,
+                state,
                 block=block,
                 next_block=next_block,
                 jump_target=jump_target,
@@ -869,22 +931,20 @@ def _append_jump_edges(
         if _is_terminator(last_instr.opname) or next_block is None:
             continue
         _append_edge(
-            edges,
-            edge_keys,
-            context=context,
-            src_block_id=block.block_id,
-            dst_block_id=next_block.block_id,
-            kind="FALLTHROUGH",
-            cond_instr_id=None,
-            exc_entry_index=None,
+            state,
+            spec=_EdgeSpec(
+                src_block_id=block.block_id,
+                dst_block_id=next_block.block_id,
+                kind="FALLTHROUGH",
+                cond_instr_id=None,
+                exc_entry_index=None,
+            ),
         )
 
 
 def _append_jump_target_edges(
-    edges: list[dict[str, object]],
-    edge_keys: set[str],
+    state: _EdgeBuildState,
     *,
-    context: _CodeUnitContext,
     block: _BlockInfo,
     next_block: _BlockInfo | None,
     jump_target: int,
@@ -895,75 +955,64 @@ def _append_jump_target_edges(
         kind = "JUMP" if _is_unconditional_jump(block.last_instr.opname) else "BRANCH"
         cond_instr_id = None if kind == "JUMP" else block.last_instr_id
         _append_edge(
-            edges,
-            edge_keys,
-            context=context,
-            src_block_id=block.block_id,
-            dst_block_id=dst_block_id,
-            kind=kind,
-            cond_instr_id=cond_instr_id,
-            exc_entry_index=None,
+            state,
+            spec=_EdgeSpec(
+                src_block_id=block.block_id,
+                dst_block_id=dst_block_id,
+                kind=kind,
+                cond_instr_id=cond_instr_id,
+                exc_entry_index=None,
+            ),
         )
     if not _is_unconditional_jump(block.last_instr.opname) and next_block is not None:
         _append_edge(
-            edges,
-            edge_keys,
-            context=context,
-            src_block_id=block.block_id,
-            dst_block_id=next_block.block_id,
-            kind="FALLTHROUGH",
-            cond_instr_id=block.last_instr_id,
-            exc_entry_index=None,
+            state,
+            spec=_EdgeSpec(
+                src_block_id=block.block_id,
+                dst_block_id=next_block.block_id,
+                kind="FALLTHROUGH",
+                cond_instr_id=block.last_instr_id,
+                exc_entry_index=None,
+            ),
         )
 
 
 def _append_exception_edges(
-    edges: list[dict[str, object]],
-    edge_keys: set[str],
+    state: _EdgeBuildState,
     *,
-    context: _CodeUnitContext,
     block_list: Sequence[_BlockInfo],
     offset_to_block_id: dict[int, str],
-    exception_entries: Sequence[object],
+    exception_entries: Sequence[_ExceptionEntry],
 ) -> None:
     for entry_index, entry in enumerate(exception_entries):
         target_block_id = _exception_target_block(entry, offset_to_block_id)
         if target_block_id is None:
             continue
         start, end = _exception_span(entry)
-        if start is None or end is None:
-            continue
         for block in block_list:
             if block.start_offset >= end or block.end_offset <= start:
                 continue
             _append_edge(
-                edges,
-                edge_keys,
-                context=context,
-                src_block_id=block.block_id,
-                dst_block_id=target_block_id,
-                kind="EXCEPTION",
-                cond_instr_id=None,
-                exc_entry_index=entry_index,
+                state,
+                spec=_EdgeSpec(
+                    src_block_id=block.block_id,
+                    dst_block_id=target_block_id,
+                    kind="EXCEPTION",
+                    cond_instr_id=None,
+                    exc_entry_index=entry_index,
+                ),
             )
 
 
 def _exception_target_block(
-    entry: object,
+    entry: _ExceptionEntry,
     offset_to_block_id: dict[int, str],
 ) -> str | None:
-    target_offset = getattr(entry, "target", None)
-    if not isinstance(target_offset, int):
-        return None
-    return offset_to_block_id.get(target_offset)
+    return offset_to_block_id.get(entry.target)
 
 
-def _exception_span(entry: object) -> tuple[int | None, int | None]:
-    start = getattr(entry, "start", None)
-    end = getattr(entry, "end", None)
-    if not isinstance(start, int) or not isinstance(end, int):
-        return None, None
-    return start, end
+def _exception_span(entry: _ExceptionEntry) -> tuple[int, int]:
+    return entry.start, entry.end
 
 
 def _defuse_event_from_op(
@@ -1090,11 +1139,9 @@ def _append_code_unit_row(
     buffers: _DisBuffers,
     *,
     context: _BytecodeContext,
-    unit: _CodeUnitInfo,
-    span_start: int | None,
-    span_end: int | None,
-    kind: str,
+    inputs: _CodeUnitRowInputs,
 ) -> None:
+    unit = inputs.unit
     co_qualname = getattr(unit.code, "co_qualname", None)
     buffers.code_units.append(
         {
@@ -1106,10 +1153,10 @@ def _append_code_unit_row(
             "qualpath": unit.qualpath,
             "co_name": unit.code.co_name,
             "co_qualname": co_qualname if isinstance(co_qualname, str) else None,
-            "kind": kind,
+            "kind": inputs.kind,
             "co_firstlineno": _normalize_line(unit.code.co_firstlineno),
-            "span_start_byte": span_start,
-            "span_end_byte": span_end,
+            "span_start_byte": inputs.span_start,
+            "span_end_byte": inputs.span_end,
             "flags": unit.code.co_flags,
             "argcount": unit.code.co_argcount,
             "posonlyargcount": unit.code.co_posonlyargcount,
@@ -1152,12 +1199,14 @@ def _process_code_unit(
     _append_code_unit_row(
         buffers,
         context=context,
-        unit=unit,
-        span_start=span_start,
-        span_end=span_end,
-        kind=kind,
+        inputs=_CodeUnitRowInputs(
+            unit=unit,
+            span_start=span_start,
+            span_end=span_end,
+            kind=kind,
+        ),
     )
-    exception_entries = dis.Bytecode(unit.code).exception_entries
+    exception_entries = _exception_entries(unit.code)
     if context.options.include_exception_table:
         for row in _exception_rows(unit_context, label_map=label_map):
             buffers.exceptions.append(row)
@@ -1208,6 +1257,36 @@ def _process_module(
         _process_code_unit(context, unit=unit, buffers=buffers)
 
 
+def _module_size_bytes(module: ModuleRecord) -> int | None:
+    try:
+        return module.file_path.stat().st_size
+    except OSError:
+        return None
+
+
+def _extract_module_rows(
+    job: _DisModuleJob,
+) -> _ModuleDisResult:
+    buffers = _build_dis_buffers()
+    warnings: list[str] = []
+    context = _BytecodeContext(
+        repo=job.repo,
+        commit=job.commit,
+        rel_path=job.module.rel_path,
+        module_name=job.module.module_name,
+        source_index=job.source_index,
+        options=job.options,
+    )
+    _process_module(
+        context,
+        module=job.module,
+        source_text=job.source_text,
+        buffers=buffers,
+        warnings=warnings,
+    )
+    return _ModuleDisResult(buffers=buffers, warnings=warnings)
+
+
 class DisExtractStep(BaseExtractStep):
     """Bytecode extraction step with port injection."""
 
@@ -1240,22 +1319,49 @@ class DisExtractStep(BaseExtractStep):
             return DisExtractResult(result=ExecutionResult.failed(str(exc)))
 
         warnings: list[str] = []
-        for module, source_text, source_index in self._iter_python_source_bundles(modules):
-            context = _BytecodeContext(
-                repo=repo,
-                commit=commit,
-                rel_path=module.rel_path,
-                module_name=module.module_name,
-                source_index=source_index,
-                options=self._options,
-            )
-            _process_module(
-                context,
-                module=module,
-                source_text=source_text,
-                buffers=buffers,
+        module_bundles = list(
+            self._iter_python_source_bundles(
+                modules,
                 warnings=warnings,
+                max_module_bytes=self._options.max_module_bytes,
             )
+        )
+        worker_count = max(self._options.max_workers, 1)
+        if worker_count > 1 and len(module_bundles) > 1:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                future_map = {
+                    executor.submit(
+                        _extract_module_rows,
+                        _DisModuleJob(
+                            module=module,
+                            source_text=source_text,
+                            source_index=source_index,
+                            repo=repo,
+                            commit=commit,
+                            options=self._options,
+                        ),
+                    ): module
+                    for module, source_text, source_index in module_bundles
+                }
+                for future in future_map:
+                    result = future.result()
+                    if result.warnings:
+                        warnings.extend(result.warnings)
+                    _merge_dis_buffers(buffers, result.buffers)
+        else:
+            for module, source_text, source_index in module_bundles:
+                result = _extract_module_rows(
+                    _DisModuleJob(
+                        module=module,
+                        source_text=source_text,
+                        source_index=source_index,
+                        repo=repo,
+                        commit=commit,
+                        options=self._options,
+                    )
+                )
+                warnings.extend(result.warnings)
+                _merge_dis_buffers(buffers, result.buffers)
 
         LOG.info(
             "Bytecode extraction: repo=%s commit=%s code_units=%d instr=%d",
@@ -1283,16 +1389,31 @@ class DisExtractStep(BaseExtractStep):
     def _iter_python_source_bundles(
         self,
         modules: Sequence[ModuleRecord],
+        *,
+        warnings: list[str],
+        max_module_bytes: int | None,
     ) -> Iterable[tuple[ModuleRecord, str, LineIndexedSource]]:
         for module in modules:
             if not module.rel_path.endswith(".py"):
                 continue
+            if max_module_bytes is not None:
+                size_bytes = _module_size_bytes(module)
+                if size_bytes is not None and size_bytes > max_module_bytes:
+                    warnings.append(
+                        f"Skipping bytecode for {module.rel_path} (size {size_bytes} bytes)"
+                    )
+                    continue
             source_bytes = self._discovery.read_module_bytes(module)
             if source_bytes is None:
                 source_text = self._discovery.read_module_source(module)
                 if source_text is None:
                     continue
                 source_bytes = source_text.encode("utf-8", errors="replace")
+            if max_module_bytes is not None and len(source_bytes) > max_module_bytes:
+                warnings.append(
+                    f"Skipping bytecode for {module.rel_path} (size {len(source_bytes)} bytes)"
+                )
+                continue
             source_text, source_index = _build_source_index(source_bytes)
             yield module, source_text, source_index
 

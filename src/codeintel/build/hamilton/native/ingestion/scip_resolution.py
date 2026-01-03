@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import polars as pl
 from google.protobuf.struct_pb2 import NullValue, Struct
-from intervaltree import IntervalTree
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -24,13 +21,13 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import tabular_to_frame, tabular_to_lazyframe
 from codeintel.build.tabular.frames import (
+    JoinSpec,
     dedupe_frame_for_table,
+    join_validated,
     rows_to_frame,
 )
 from codeintel.build.tabular.types import InferableTabularInput
-
-if TYPE_CHECKING:
-    from intervaltree import Interval
+from codeintel.core.intervals.span_resolver import SpanResolver
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
@@ -60,8 +57,7 @@ class ScipResolutionFrames:
 
 @dataclass(slots=True)
 class _SyntaxNodeIndex:
-    tree: IntervalTree
-    exact: dict[tuple[int, int], list[str]]
+    resolver: SpanResolver[str]
     line_exact: dict[tuple[int, int, int, int], list[str]]
 
 
@@ -107,10 +103,11 @@ def _symbol_goid_xref_frame(
     created_at: datetime,
 ) -> pl.LazyFrame:
     definitions = occurrences.filter((pl.col("roles") & _ROLE_DEFINITION) != 0)
-    joined = definitions.join(
+    # Contract: goids are unique per (rel_path, start_line, end_line).
+    joined = join_validated(
+        definitions,
         goids,
-        on=["rel_path", "start_line", "end_line"],
-        how="left",
+        spec=JoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1"),
     )
     return joined.select(
         "repo",
@@ -141,14 +138,16 @@ def _occurrence_span_xref_frame(
         "scip_symbol",
         "goid_h128",
     )
-    base = occurrences.join(
+    # Contract: symbol_info/goid_lookup are unique per (repo, commit, scip_symbol).
+    base = join_validated(
+        occurrences,
         symbol_info,
-        on=["repo", "commit", "scip_symbol"],
-        how="left",
-    ).join(
+        spec=JoinSpec(on=["repo", "commit", "scip_symbol"], how="left", validate="m:1"),
+    )
+    base = join_validated(
+        base,
         goid_lookup,
-        on=["repo", "commit", "scip_symbol"],
-        how="left",
+        spec=JoinSpec(on=["repo", "commit", "scip_symbol"], how="left", validate="m:1"),
     )
 
     roles = pl.col("roles")
@@ -221,7 +220,10 @@ def _build_syntax_node_indexes(
         key = (rel_path, producer)
         index = indexes.get(key)
         if index is None:
-            index = _SyntaxNodeIndex(tree=IntervalTree(), exact={}, line_exact={})
+            index = _SyntaxNodeIndex(
+                resolver=SpanResolver.for_bytes(path_normalizer=lambda value: value),
+                line_exact={},
+            )
             indexes[key] = index
         start_line = row.get("start_line")
         start_col = row.get("start_col")
@@ -238,69 +240,13 @@ def _build_syntax_node_indexes(
         start_byte = row.get("start_byte")
         end_byte = row.get("end_byte")
         if isinstance(start_byte, int) and isinstance(end_byte, int):
-            index.exact.setdefault((start_byte, end_byte), []).append(node_id)
-            if end_byte > start_byte:
-                index.tree.addi(start_byte, end_byte, node_id)
+            index.resolver.add_span(rel_path, start_byte, end_byte, node_id)
     return indexes
-
-
-def _pick_interval_candidate(
-    candidates: Iterable[Interval],
-) -> tuple[str | None, int]:
-    candidate_list = [candidate for candidate in candidates if isinstance(candidate.data, str)]
-    if not candidate_list:
-        return None, 0
-    best = min(candidate_list, key=lambda iv: (iv.end - iv.begin, iv.data))
-    return best.data, len(candidate_list)
-
-
-def _match_exact_bytes(
-    index: _SyntaxNodeIndex,
-    start_byte: int,
-    end_byte: int,
-) -> tuple[str, str, int] | None:
-    exact = index.exact.get((start_byte, end_byte))
-    if not exact:
-        return None
-    return min(exact), "EXACT", len(exact)
-
-
-def _match_point_bytes(
-    index: _SyntaxNodeIndex,
-    point: int,
-) -> tuple[str, str, int] | None:
-    node_id, candidate_count = _pick_interval_candidate(index.tree.at(point))
-    if node_id is not None:
-        return node_id, "POINT", candidate_count
-    if point > 0:
-        node_id, candidate_count = _pick_interval_candidate(index.tree.at(point - 1))
-        if node_id is not None:
-            return node_id, "POINT_ADJACENT", candidate_count
-    return None
-
-
-def _match_overlap_bytes(
-    index: _SyntaxNodeIndex,
-    start_byte: int,
-    end_byte: int,
-) -> tuple[str, str, int] | None:
-    candidates = list(index.tree.overlap(start_byte, end_byte))
-    containing = [
-        candidate
-        for candidate in candidates
-        if candidate.begin <= start_byte and candidate.end >= end_byte
-    ]
-    node_id, candidate_count = _pick_interval_candidate(containing)
-    if node_id is not None:
-        return node_id, "CONTAINS", candidate_count
-    node_id, candidate_count = _pick_interval_candidate(candidates)
-    if node_id is not None:
-        return node_id, "OVERLAP", candidate_count
-    return None
 
 
 def _match_occurrence_to_node(
     index: _SyntaxNodeIndex,
+    rel_path: str,
     occ_row: dict[str, object],
 ) -> tuple[str | None, str, int]:
     start_byte = occ_row.get("occ_start_byte")
@@ -311,13 +257,14 @@ def _match_occurrence_to_node(
         and start_byte >= 0
         and end_byte >= 0
     ):
-        match = _match_exact_bytes(index, start_byte, end_byte)
-        if match is None and start_byte == end_byte:
-            match = _match_point_bytes(index, start_byte)
-        if match is None and start_byte != end_byte:
-            match = _match_overlap_bytes(index, start_byte, end_byte)
-        if match is not None:
-            return match
+        match = index.resolver.resolve(
+            rel_path,
+            start_byte,
+            end_byte,
+            allow_adjacent_point=True,
+        )
+        if match.match_kind != "NONE":
+            return match.payload, match.match_kind, match.candidate_count
 
     start_line = occ_row.get("occ_start_line")
     start_col = occ_row.get("occ_start_col")
@@ -366,6 +313,7 @@ def _occurrence_syntax_xref_rows(
             }
             syntax_node_id, match_kind, candidate_count = _match_occurrence_to_node(
                 index,
+                rel_path,
                 occ_row,
             )
             rows.append(

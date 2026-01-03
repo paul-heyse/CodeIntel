@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING
 from sqlglot import exp
 
 from codeintel.core.hashing.fingerprint import fingerprint
-from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 from codeintel.core.schemas.serde import table_schema_from_json_obj
+from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME

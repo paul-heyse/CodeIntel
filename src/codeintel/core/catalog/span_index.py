@@ -93,7 +93,7 @@ class SpanIndex:
             span = getattr(match, "data", None)
             if span is not None:
                 spans.append(span)
-        spans.sort(key=lambda s: (s.start_line, s.end_line))
+        spans.sort(key=lambda s: (s.end_line - s.start_line, s.start_line, s.end_line))
         return spans
 
     def paths(self) -> list[str]:

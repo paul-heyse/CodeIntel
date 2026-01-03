@@ -6,7 +6,7 @@ providers, plus convenience helpers for validating and inserting rows.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import polars as pl
+import pyarrow as pa
 from sqlglot import exp
 
 if TYPE_CHECKING:
@@ -28,6 +29,8 @@ from codeintel.build.schemas import (
     get_contract_for_table_key,
 )
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
@@ -215,7 +218,12 @@ def _write_parquet_dataset(
     if not normalized:
         return 0
     dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
-    frame = pl.from_dicts(normalized)
+    arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+    reader = _record_batch_reader_from_rows(
+        normalized,
+        schema=arrow_schema,
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
     schema_hash_value = schema_hash(table_schema)
     schema_digest_value = schema_digest(table_schema)
     partition_columns = _partition_columns_for_schema(table_schema)
@@ -240,7 +248,7 @@ def _write_parquet_dataset(
         dataset_root=dataset_root_dir,
         table_key=contract.table_key,
         snapshot_id=snapshot_id,
-        data=frame.to_arrow(),
+        data=reader,
         options=options,
     )
     return len(normalized)
@@ -358,6 +366,31 @@ def validate_contract_rows(
         }
         for record in records
     ]
+
+
+def _record_batch_reader_from_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    schema: pa.Schema,
+    batch_size: int,
+) -> pa.RecordBatchReader:
+    if not rows:
+        return pa.RecordBatchReader.from_batches(schema, [])
+
+    def _iter_batches() -> Iterable[pa.RecordBatch]:
+        for chunk in _chunked_rows(rows, batch_size=batch_size):
+            yield pa.RecordBatch.from_pylist(chunk, schema=schema)
+
+    return pa.RecordBatchReader.from_batches(schema, _iter_batches())
+
+
+def _chunked_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    batch_size: int,
+) -> Iterable[Sequence[Mapping[str, object]]]:
+    for start in range(0, len(rows), batch_size):
+        yield rows[start : start + batch_size]
 
 
 __all__ = [

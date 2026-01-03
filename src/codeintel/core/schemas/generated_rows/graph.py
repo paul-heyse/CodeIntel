@@ -101,6 +101,11 @@ class GraphCpgCallTargetsRow(TypedDict):
     callee_goid_h128: int | None
     callee_entry_block_id: str | None
     callee_exit_block_id: str | None
+    target_role: str
+    binding_kind: str
+    origin: str
+    call_kind: str | None
+    augop: str | None
     resolution_kind: str
     confidence: float | None
     candidate_count: int | None
@@ -215,6 +220,11 @@ class GraphCpgEdgesArgToParamRow(TypedDict):
     param_ordinal: int | None
     arg_name: str | None
     param_name: str | None
+    arg_slot: str | None
+    arg_role: str | None
+    arg_is_implicit: bool | None
+    call_kind: str | None
+    augop: str | None
     confidence: float | None
     extras_json: bytes | None
 
@@ -227,6 +237,9 @@ class GraphCpgEdgesRetToCallRow(TypedDict):
     call_id: str
     exit_block_id: str | None
     call_node_id: str | None
+    target_role: str | None
+    call_kind: str | None
+    origin: str | None
     edge_kind: str
     confidence: float | None
     extras_json: bytes | None

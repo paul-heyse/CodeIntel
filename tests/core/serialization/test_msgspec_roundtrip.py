@@ -22,11 +22,11 @@ def _sample_table_schema() -> TableSchema:
     return TableSchema(
         schema="core",
         name="sample_contracts",
-        columns=(
+        columns=[
             Column("repo", "VARCHAR", nullable=False),
             Column("commit", "VARCHAR", nullable=False),
             Column("example_count", "INTEGER"),
-        ),
+        ],
         primary_key=("repo", "commit"),
     )
 

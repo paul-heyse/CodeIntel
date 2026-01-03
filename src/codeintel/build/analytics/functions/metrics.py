@@ -23,9 +23,9 @@ from codeintel.build.analytics.functions.config import (
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
+from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.validation.reporters import FunctionValidationReporter
 
 if TYPE_CHECKING:

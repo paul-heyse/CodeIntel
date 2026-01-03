@@ -8,6 +8,7 @@ import io
 import logging
 import symtable
 import tokenize
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -26,7 +27,7 @@ from codeintel.ingestion.infrastructure.ast_facts import (
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Sequence
     from symtable import Symbol, SymbolTable
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -414,6 +415,18 @@ def _binding_kind(symbol: Symbol) -> tuple[str, str, bool]:
     return binding_kind, scoping_class, declared_here
 
 
+def _symtable_names(table: SymbolTable, attr_name: str) -> list[str]:
+    getter = getattr(table, attr_name, None)
+    if callable(getter):
+        values = getter()
+        if not isinstance(values, Iterable):
+            return []
+        if isinstance(values, list):
+            return list(values)
+        return list(values)
+    return []
+
+
 def _scope_line(scope: _ScopeInfo) -> int | None:
     if scope.lineno is None:
         return None
@@ -641,11 +654,11 @@ def _append_symbols_and_bindings(
                     "commit": context.commit,
                     "rel_path": context.module.rel_path,
                     "scope_id": scope_id,
-                    "parameters": table.get_parameters(),
-                    "locals": table.get_locals(),
-                    "globals": table.get_globals(),
-                    "nonlocals": table.get_nonlocals(),
-                    "frees": table.get_frees(),
+                    "parameters": _symtable_names(table, "get_parameters"),
+                    "locals": _symtable_names(table, "get_locals"),
+                    "globals": _symtable_names(table, "get_globals"),
+                    "nonlocals": _symtable_names(table, "get_nonlocals"),
+                    "frees": _symtable_names(table, "get_frees"),
                 }
             )
     return binding_by_scope

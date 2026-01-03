@@ -13,7 +13,7 @@ import polars as pl
 
 from codeintel.build.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.helpers.payload import decode_payload
+from codeintel.core.serialization.payload import decode_payload
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst

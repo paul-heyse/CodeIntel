@@ -39,10 +39,7 @@ if TYPE_CHECKING:
     from tree_sitter_language_pack import SupportedLanguage
 
     from codeintel.core.schemas.generated_rows.core import (
-        TreeSitterCaptureExtras,
-        TreeSitterNodeExtras,
         TreeSitterParseErrorExtras,
-        TreeSitterTokenExtras,
     )
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.tree_sitter.runner import (
@@ -297,7 +294,6 @@ def _capture_rows(
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        extras = cast("TreeSitterCaptureExtras | None", capture.extras)
         rows.append(
             CoreTsCapturesRow(
                 repo=context.repo,
@@ -314,7 +310,7 @@ def _capture_rows(
                 end_col=capture.end_col,
                 node_type=capture.node_type,
                 text_preview=capture.text_preview,
-                extras=extras,
+                extras=capture.extras,
             )
         )
     return rows
@@ -330,7 +326,6 @@ def _node_rows(
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        extras_json = cast("TreeSitterNodeExtras | None", node.extras_json)
         rows.append(
             CoreTsNodesRow(
                 repo=context.repo,
@@ -354,7 +349,7 @@ def _node_rows(
                 parse_state=node.parse_state,
                 next_parse_state=node.next_parse_state,
                 text_preview=node.text_preview,
-                extras_json=extras_json,
+                extras_json=node.extras_json,
             )
         )
     return rows
@@ -453,7 +448,6 @@ def _token_rows(
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        extras_json = cast("TreeSitterTokenExtras | None", token.extras_json)
         rows.append(
             CoreTsTokensRow(
                 repo=context.repo,
@@ -470,7 +464,7 @@ def _token_rows(
                 end_row=token.end_row,
                 end_col=token.end_col,
                 text_preview=token.text_preview,
-                extras_json=extras_json,
+                extras_json=token.extras_json,
             )
         )
     return rows
@@ -486,7 +480,6 @@ def _trivia_rows(
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        extras_json = cast("TreeSitterTokenExtras | None", item.extras_json)
         rows.append(
             CoreTsTriviaRow(
                 repo=context.repo,
@@ -503,7 +496,7 @@ def _trivia_rows(
                 end_row=item.end_row,
                 end_col=item.end_col,
                 text_preview=item.text_preview,
-                extras_json=extras_json,
+                extras_json=item.extras_json,
             )
         )
     return rows

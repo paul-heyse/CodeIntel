@@ -76,7 +76,7 @@ def _owner_package_from_prefix(
 def _resolve_row_binding(
     schema_service: SchemaService, table_key: str
 ) -> GeneratedRowBinding | None:
-    return schema_service.get_row_binding(table_key)
+    return schema_service.get_bundle(table_key).row_binding
 
 
 def build_dataset_contract(

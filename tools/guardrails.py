@@ -139,7 +139,7 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         pattern=re.compile(r"(?m)^\\s*(?:from|import)\\s+(?:json|orjson)\\b"),
         message=(
             "Core must not import json/orjson outside boundary modules; use "
-            "codeintel.core.helpers.json or msgspec helpers."
+            "codeintel.core.serialization.json or msgspec helpers."
         ),
         include_prefixes=("src/codeintel/core/",),
         allow_prefixes=(
@@ -417,7 +417,13 @@ def _policy_doc_issues(repo_root: Path) -> list[str]:
 
 
 def _core_registry_issues() -> list[str]:
-    """Return core registry violations for JSON/BLOB column usage."""
+    """Return core registry violations for JSON/BLOB column usage.
+
+    Returns
+    -------
+    list[str]
+        Core registry violation messages.
+    """
     issues: list[str] = []
 
     def _check_table(table: object) -> None:
@@ -443,6 +449,59 @@ def _core_registry_issues() -> list[str]:
     for table in TABLE_SCHEMAS.values():
         _check_table(table)
     return issues
+
+
+def _emit_issue_lines(issues: Iterable[str]) -> bool:
+    """Write guardrail issue lines and return True when any exist.
+
+    Returns
+    -------
+    bool
+        True when issues were emitted, otherwise False.
+    """
+    lines = list(issues)
+    if not lines:
+        return False
+    for line in lines:
+        sys.stderr.write(f"{line}\n")
+    return True
+
+
+def _emit_runtime_guardrail_issues(
+    runtime_bundle: RuntimeBundle | None,
+    graph_result: GraphValidationResult | None,
+    observation_issues: Iterable[str],
+    error: str | None,
+) -> bool:
+    """Write runtime guardrail issues and return True when failures occur.
+
+    Returns
+    -------
+    bool
+        True when guardrails should fail, otherwise False.
+    """
+    if error is not None:
+        sys.stderr.write(error)
+        return True
+    if graph_result is None:
+        sys.stderr.write("Hamilton graph validation did not run.\n")
+        return True
+    if graph_result.has_errors:
+        sys.stderr.write("Hamilton graph validation failed.\n")
+        node_provenance = _node_provenance_map(runtime_bundle) if runtime_bundle else None
+        sys.stderr.write(
+            validation_result_to_json(
+                graph_result,
+                indent=2,
+                node_provenance=node_provenance,
+            )
+        )
+        return True
+    if observation_issues:
+        sys.stderr.write("Schema observation guardrails warning: missing observations.\n")
+        for issue in observation_issues:
+            sys.stderr.write(f"{issue}\n")
+    return False
 
 
 def _guardrails_storage_config(runtime: ResolvedRuntime) -> StorageConfig:
@@ -657,48 +716,23 @@ def main() -> int:
         Zero when clean, non-zero when violations are found.
     """
     repo_root = Path(__file__).resolve().parent.parent
-    violations = find_violations(repo_root)
-    if violations:
-        for line in violations:
-            sys.stderr.write(f"{line}\n")
+    if _emit_issue_lines(find_violations(repo_root)):
         return 1
-    policy_issues = _policy_doc_issues(repo_root)
-    if policy_issues:
-        for line in policy_issues:
-            sys.stderr.write(f"{line}\n")
+    if _emit_issue_lines(_policy_doc_issues(repo_root)):
         return 1
-    registry_issues = _core_registry_issues()
-    if registry_issues:
-        for line in registry_issues:
-            sys.stderr.write(f"{line}\n")
+    if _emit_issue_lines(_core_registry_issues()):
         return 1
 
     runtime_bundle, graph_result, observation_issues, error = _run_runtime_guardrails(
         repo_root=repo_root
     )
-    if error is not None:
-        sys.stderr.write(error)
+    if _emit_runtime_guardrail_issues(
+        runtime_bundle,
+        graph_result,
+        observation_issues,
+        error,
+    ):
         return 1
-    if graph_result is None:
-        sys.stderr.write("Hamilton graph validation did not run.\n")
-        return 1
-    if graph_result.has_errors:
-        sys.stderr.write("Hamilton graph validation failed.\n")
-        node_provenance = (
-            _node_provenance_map(runtime_bundle) if runtime_bundle is not None else None
-        )
-        sys.stderr.write(
-            validation_result_to_json(
-                graph_result,
-                indent=2,
-                node_provenance=node_provenance,
-            )
-        )
-        return 1
-    if observation_issues:
-        sys.stderr.write("Schema observation guardrails warning: missing observations.\n")
-        for issue in observation_issues:
-            sys.stderr.write(f"{issue}\n")
     return 0
 
 

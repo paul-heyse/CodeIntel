@@ -31,7 +31,7 @@ class DatasetContract(msgspec.Struct, frozen=True):
         Statically defined TableSchema when the dataset is backed by a table;
         None when the dataset is a view.
     row_binding
-        Optional binding to a schema-generated row model and serializer.
+        Optional binding to schema-generated row models and serializers.
     json_schema_id
         Optional JSON Schema identifier (without .json) used for export validation.
     jsonl_filename
@@ -88,7 +88,7 @@ class DatasetContract(msgspec.Struct, frozen=True):
     composition: CompositeSchema | None = None
 
     def has_row_binding(self) -> bool:
-        """Return True when this dataset has a TypedDict row binding.
+        """Return True when this dataset has a row binding.
 
         Returns
         -------

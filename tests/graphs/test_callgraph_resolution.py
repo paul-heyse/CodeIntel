@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.build.graphs.compute import callgraph as call_resolution
 from codeintel.build.graphs.compute.callgraph import persistence as call_persist
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:

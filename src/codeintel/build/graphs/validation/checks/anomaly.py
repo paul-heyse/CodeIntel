@@ -13,12 +13,13 @@ from typing import TYPE_CHECKING, ClassVar
 
 import polars as pl
 
-from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_lazyframe
+from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_reader
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.query_results import coerce_int, coerce_str
 
 if TYPE_CHECKING:
@@ -96,6 +97,13 @@ class SubsystemDisagreementCheck(GraphCheckBase):
 # =============================================================================
 
 
+def _scan_snapshot_frame(request: SnapshotScanRequest) -> pl.LazyFrame | None:
+    reader = scan_snapshot_reader(request)
+    if reader is None:
+        return None
+    return arrow_reader_to_lazyframe(reader)
+
+
 def _symbol_community_findings_impl(
     dataset_root_dir: Path | None,
     repo: str,
@@ -111,7 +119,7 @@ def _symbol_community_findings_impl(
     """
     if dataset_root_dir is None:
         return []
-    frame = scan_snapshot_lazyframe(
+    frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="analytics.symbol_graph_metrics_modules",
@@ -170,7 +178,7 @@ def _subsystem_disagreement_findings_impl(
     """
     if dataset_root_dir is None:
         return []
-    frame = scan_snapshot_lazyframe(
+    frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="analytics.subsystem_agreement",

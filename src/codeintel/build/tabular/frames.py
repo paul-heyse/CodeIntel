@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import polars as pl
 import pyarrow as pa
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.service import SchemaService
 
 ColumnsSpec = Mapping[str, Sequence[object]] | Sequence[str] | None
+JoinStrategy = Literal["inner", "left", "right", "full", "semi", "anti", "cross", "outer"]
+JoinValidation = Literal["m:m", "m:1", "1:m", "1:1"]
 
 
 def _schema_service() -> SchemaService | None:
@@ -254,6 +257,69 @@ def lazyframe_for_ingest_columns(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class JoinSpec:
+    """Join configuration for validated LazyFrame joins."""
+
+    on: Sequence[str] | None = None
+    left_on: Sequence[str] | None = None
+    right_on: Sequence[str] | None = None
+    how: JoinStrategy = "inner"
+    validate: JoinValidation | None = None
+    suffix: str = ""
+
+
+def join_validated(
+    left: pl.LazyFrame,
+    right: pl.LazyFrame,
+    *,
+    spec: JoinSpec | None = None,
+) -> pl.LazyFrame:
+    """Join two LazyFrames with optional cardinality validation.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Joined LazyFrame.
+    """
+    resolved = spec or JoinSpec()
+    if resolved.validate is None:
+        if resolved.suffix:
+            return left.join(
+                right,
+                on=resolved.on,
+                left_on=resolved.left_on,
+                right_on=resolved.right_on,
+                how=resolved.how,
+                suffix=resolved.suffix,
+            )
+        return left.join(
+            right,
+            on=resolved.on,
+            left_on=resolved.left_on,
+            right_on=resolved.right_on,
+            how=resolved.how,
+        )
+    if resolved.suffix:
+        return left.join(
+            right,
+            on=resolved.on,
+            left_on=resolved.left_on,
+            right_on=resolved.right_on,
+            how=resolved.how,
+            validate=resolved.validate,
+            suffix=resolved.suffix,
+        )
+    return left.join(
+        right,
+        on=resolved.on,
+        left_on=resolved.left_on,
+        right_on=resolved.right_on,
+        how=resolved.how,
+        validate=resolved.validate,
+    )
+
+
 def dedupe_frame_for_table(
     frame: pl.LazyFrame,
     *,
@@ -300,9 +366,11 @@ def to_records(frame: pl.DataFrame | pl.LazyFrame | pa.Table) -> list[dict[str, 
 
 __all__ = [
     "ColumnsSpec",
+    "JoinSpec",
     "dedupe_frame_for_table",
     "empty_frame_for_table",
     "empty_lazyframe_for_table",
+    "join_validated",
     "lazyframe_for_ingest_columns",
     "lazyframe_for_table_columns",
     "rows_to_frame",

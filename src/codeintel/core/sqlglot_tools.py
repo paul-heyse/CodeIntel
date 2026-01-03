@@ -55,12 +55,14 @@ __all__ = [
     "ensure_ast_capability",
     "extract_column_lineage_duckdb",
     "extract_column_lineage_from_ast",
+    "extract_join_key_pairs",
     "extract_table_keys_duckdb",
     "extract_table_refs",
     "fingerprint_canonical_sql",
     "fingerprint_expression_duckdb",
     "fingerprint_sql_duckdb",
     "fingerprint_sql_duckdb_safe",
+    "join_key_issues",
     "normalize_sql_for_hash",
     "parse_one_duckdb",
     "render_sql_duckdb",
@@ -1166,6 +1168,85 @@ def _append_ellipsis(tokens: list[str], *, max_len: int) -> list[str]:
     if trimmed:
         trimmed = [*trimmed, "..."]
     return trimmed
+
+
+@dataclass(frozen=True)
+class JoinKeyPair:
+    """Join key pair extracted from a SQLGlot join expression."""
+
+    join_kind: str
+    left: str
+    right: str
+
+
+def _column_ref(expr: exp.Expression) -> str | None:
+    if not isinstance(expr, exp.Column):
+        return None
+    rendered = expr.sql(dialect=DUCKDB_DIALECT)
+    return rendered or None
+
+
+def _join_pairs_from_expr(expr: exp.Expression) -> list[JoinKeyPair]:
+    if isinstance(expr, exp.And):
+        pairs = _join_pairs_from_expr(expr.this)
+        pairs.extend(_join_pairs_from_expr(expr.expression))
+        return pairs
+    if isinstance(expr, exp.EQ):
+        left = _column_ref(expr.this)
+        right = _column_ref(expr.expression)
+        if left is None or right is None:
+            return []
+        return [JoinKeyPair(join_kind="", left=left, right=right)]
+    return []
+
+
+def extract_join_key_pairs(root: exp.Expression) -> tuple[JoinKeyPair, ...]:
+    """Extract equi-join key pairs from a SQLGlot AST.
+
+    Returns
+    -------
+    tuple[JoinKeyPair, ...]
+        Join key pairs discovered in JOIN ... ON expressions.
+    """
+    pairs: list[JoinKeyPair] = []
+    for join in root.find_all(exp.Join):
+        join_kind = str(join.args.get("kind") or "inner").lower()
+        on_expr = join.args.get("on")
+        if not isinstance(on_expr, exp.Expression):
+            continue
+        pairs.extend(
+            JoinKeyPair(
+                join_kind=join_kind,
+                left=pair.left,
+                right=pair.right,
+            )
+            for pair in _join_pairs_from_expr(on_expr)
+        )
+    return tuple(pairs)
+
+
+def join_key_issues(root: exp.Expression) -> tuple[str, ...]:
+    """Report joins that lack equi-join key pairs.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Issue strings describing join key problems.
+    """
+    issues: list[str] = []
+    for join in root.find_all(exp.Join):
+        join_kind = str(join.args.get("kind") or "inner").lower()
+        on_expr = join.args.get("on")
+        if on_expr is None:
+            if join_kind != "cross":
+                issues.append(f"join:{join_kind}:missing_on")
+            continue
+        if not isinstance(on_expr, exp.Expression):
+            issues.append(f"join:{join_kind}:invalid_on")
+            continue
+        if not _join_pairs_from_expr(on_expr):
+            issues.append(f"join:{join_kind}:no_equi_keys")
+    return tuple(issues)
 
 
 def semantic_diff_sql_duckdb(

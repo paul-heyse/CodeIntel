@@ -137,12 +137,12 @@ class SqlIngressPolicy:
 
 
 def assert_select_perimeter(
-    sql: str,
+    sql: str | exp.Expression,
     *,
     policy: SqlIngressPolicy,
     enforce_safe_sql: bool = True,
 ) -> exp.Expression:
-    """Validate a SQL string against a policy perimeter.
+    """Validate a SQL string or AST against a policy perimeter.
 
     Parameters
     ----------
@@ -158,7 +158,10 @@ def assert_select_perimeter(
     sqlglot.expressions.Expression
         Parsed SQLGlot AST root.
     """
-    root = assert_single_select_statement(sql, enforce_safe_sql=enforce_safe_sql)
+    if isinstance(sql, exp.Expression):
+        root = assert_select_ast(sql, enforce_safe_sql=enforce_safe_sql)
+    else:
+        root = assert_single_select_statement(sql, enforce_safe_sql=enforce_safe_sql)
     _validate_ingress_tables(root, policy=policy)
     _validate_ingress_functions(root, policy=policy)
     try:
@@ -276,6 +279,29 @@ def assert_single_select_statement(sql: str, *, enforce_safe_sql: bool = True) -
         reason = "not_select"
         raise UnsafeSqlError(reason)
 
+    return assert_select_ast(root, enforce_safe_sql=enforce_safe_sql)
+
+
+def assert_select_ast(root: exp.Expression, *, enforce_safe_sql: bool = True) -> exp.Expression:
+    """Validate a SQLGlot AST is a select-like statement.
+
+    Parameters
+    ----------
+    root
+        SQLGlot AST to validate.
+    enforce_safe_sql
+        Whether to enforce the DuckDBSafe SQL capability envelope.
+
+    Returns
+    -------
+    sqlglot.expressions.Expression
+        Validated SQLGlot AST root.
+
+    Raises
+    ------
+    UnsafeSqlError
+        If the AST violates select-only perimeter constraints.
+    """
     try:
         ensure_ast_capability(
             root,
@@ -289,7 +315,6 @@ def assert_single_select_statement(sql: str, *, enforce_safe_sql: bool = True) -
     except AstCapabilityError as exc:
         reason = "disallowed_operation"
         raise UnsafeSqlError(reason, detail=str(exc)) from exc
-
     return root
 
 

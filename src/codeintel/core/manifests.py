@@ -13,12 +13,8 @@ from typing import (
 
 import msgspec
 
-from codeintel.core.serialization.msgspec import strip_unknown_fields
-from codeintel.core.serialization.msgspec_json import (
-    decode_json_bytes,
-    encode_json_bytes,
-    encode_json_text,
-)
+from codeintel.core.serialization.msgspec import decode_boundary_payload
+from codeintel.core.serialization.msgspec_json import encode_json_bytes, encode_json_text
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -71,21 +67,8 @@ def read_manifest_json[T](
         Parsed JSON payload or a typed manifest instance when requested.
     """
     raw = path.read_bytes()
-    if payload_type is None:
-        return decode_json_bytes(raw, payload_type=dict[str, object])
-    return _decode_manifest_payload(raw, payload_type=payload_type)
-
-
-def _decode_manifest_payload[T](payload: bytes, *, payload_type: type[T]) -> T:
-    try:
-        return decode_json_bytes(payload, payload_type=payload_type)
-    except msgspec.ValidationError as exc:
-        builtins = msgspec.json.decode(payload)
-        sanitized = strip_unknown_fields(builtins, payload_type)
-        try:
-            return msgspec.convert(sanitized, type=payload_type, strict=True)
-        except msgspec.ValidationError as fallback_exc:
-            raise fallback_exc from exc
+    resolved_type = payload_type or dict[str, object]
+    return decode_boundary_payload(raw, payload_type=resolved_type)
 
 
 def _encode_manifest_bytes(payload: object) -> bytes:

@@ -11,6 +11,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
@@ -147,36 +148,10 @@ def scan_snapshot_lazyframe(
     polars.LazyFrame | None
         LazyFrame for the dataset snapshot or None when missing.
     """
-    dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
-    if dataset is None:
+    reader = scan_snapshot_reader(request)
+    if reader is None:
         return None
-    filter_expression = _snapshot_filter_expression(
-        dataset,
-        repo=request.repo,
-        commit=request.commit,
-    )
-    arrow_filtered = False
-    if filter_expression is not None:
-        try:
-            dataset = dataset.filter(filter_expression)
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            arrow_filtered = False
-        else:
-            arrow_filtered = True
-    frame = pl.scan_pyarrow_dataset(dataset, batch_size=request.batch_size)
-    if not arrow_filtered:
-        frame = _filter_frame(
-            frame,
-            dataset.schema,
-            repo=request.repo,
-            commit=request.commit,
-        )
-    if request.columns is not None:
-        resolved_columns = _resolve_columns(dataset, request.columns)
-        if resolved_columns is None:
-            return None
-        frame = frame.select(list(resolved_columns))
-    return frame
+    return arrow_reader_to_lazyframe(reader)
 
 
 def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Dataset | None:
@@ -226,21 +201,6 @@ def _resolve_columns(
         )
         return None
     return columns
-
-
-def _filter_frame(
-    frame: pl.LazyFrame,
-    schema: pa.Schema,
-    *,
-    repo: str | None,
-    commit: str | None,
-) -> pl.LazyFrame:
-    names = set(schema.names)
-    if repo is not None and "repo" in names:
-        frame = frame.filter(pl.col("repo") == repo)
-    if commit is not None and "commit" in names:
-        frame = frame.filter(pl.col("commit") == commit)
-    return frame
 
 
 __all__ = [

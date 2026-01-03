@@ -17,12 +17,12 @@ from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.gateway import ScipRunRecordProtocol
-from codeintel.core.helpers.json import (
+from codeintel.core.serialization.json import (
     decode_json_dict,
     deserialize_str_tuple,
     serialize_str_sequence,
 )
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE

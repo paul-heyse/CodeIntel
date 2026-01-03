@@ -18,17 +18,17 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema_metadata import merge_metadata
+from codeintel.core.columnar.streaming import (
+    DatasetScanOptions,
+    build_scanner,
+    dataset_for_manifest,
+)
 from codeintel.core.datasets.manifests import (
     dataset_manifest_path,
     read_dataset_manifest,
     write_dataset_manifest,
 )
 from codeintel.core.datasets.paths import dataset_snapshot_dir
-from codeintel.core.datasets.scanning import (
-    DatasetScanOptions,
-    build_scanner,
-    dataset_for_manifest,
-)
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.core.schemas.arrow_metadata import arrow_schema_hash
 from codeintel.core.validation.schema_constraints import schema_metadata_errors

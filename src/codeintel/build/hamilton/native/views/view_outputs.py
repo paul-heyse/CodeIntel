@@ -38,8 +38,11 @@ from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
 from codeintel.core.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.sqlglot_tools import (
+    canonicalize_expression_duckdb,
     extract_column_lineage_from_ast,
+    join_key_issues,
     render_sql_duckdb,
+    schema_mapping_for_table_key,
 )
 from codeintel.core.views.discovery import discover_view_builders
 from codeintel.core.views.inventory import view_builder_modules
@@ -119,6 +122,30 @@ def _rewrite_ast_tables(ast: exp.Expression) -> exp.Expression:
 def _render_view_sql(ast: exp.Expression) -> str:
     rewritten = _rewrite_ast_tables(ast.copy())
     return render_sql_duckdb(rewritten)
+
+
+def _schema_mapping_for_dependencies(
+    dependencies: Iterable[str],
+) -> Mapping[str, Mapping[str, str]] | None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        return None
+    merged: dict[str, Mapping[str, str]] = {}
+    for table_key in dependencies:
+        schema = provider.get_table_schema(table_key)
+        if schema is None:
+            continue
+        column_types = {col.name: col.type for col in schema.columns}
+        mapping = schema_mapping_for_table_key(table_key, column_types=column_types)
+        if mapping is not None:
+            merged.update(mapping)
+    return merged or None
+
+
+def _optimize_view_ast(ast: exp.Expression, dependencies: Sequence[str]) -> exp.Expression:
+    schema_mapping = _schema_mapping_for_dependencies(dependencies)
+    return canonicalize_expression_duckdb(ast, schema=schema_mapping)
 
 
 def _discover_registered_views() -> tuple[DiscoveredViewBuilder, ...]:
@@ -392,9 +419,18 @@ _VIEW_PLANS: dict[str, ViewPlan] = {}
 for builder in _VIEW_BUILDERS:
     ast = _view_ast_from_builder(table_key=builder.table_key, builder=builder.builder)
     tags = _normalize_view_tags(builder.tags)
+    dependencies = _table_keys_from_ast(ast)
+    ast = _optimize_view_ast(ast, dependencies)
+    dependencies = _table_keys_from_ast(ast)
     sql = _render_view_sql(ast)
     _validate_view_sql(table_key=builder.table_key, sql=sql)
-    dependencies = _table_keys_from_ast(ast)
+    issues = join_key_issues(ast)
+    if issues:
+        LOG.warning(
+            "View join audit issues (table=%s): %s",
+            builder.table_key,
+            ", ".join(issues),
+        )
     _VIEW_PLANS[builder.table_key] = ViewPlan(
         table_key=builder.table_key,
         node_name=builder.node_name,

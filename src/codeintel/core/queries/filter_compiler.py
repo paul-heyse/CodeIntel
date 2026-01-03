@@ -24,8 +24,8 @@ from codeintel.core.filters import (
     allowed_ops_for_column_types,
     validate_filter_value,
 )
-from codeintel.core.helpers.json import normalize_duckdb_json_value
 from codeintel.core.schemas.primitives import ColumnType, column_type_base
+from codeintel.core.serialization.json import normalize_duckdb_json_value
 from codeintel.core.sqlglot_tools import canonicalize_expression_duckdb
 
 if TYPE_CHECKING:

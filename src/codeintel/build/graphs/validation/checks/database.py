@@ -13,15 +13,20 @@ from typing import TYPE_CHECKING, ClassVar
 
 import polars as pl
 
-from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_lazyframe
+from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_reader
 from codeintel.build.graphs.validation.base import GraphCheckBase
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.query_results import coerce_int, coerce_str
+from codeintel.core.serialization.payload import decode_payload
 
 if TYPE_CHECKING:
     import logging
+    from collections.abc import Sequence
 
     from codeintel.build.graphs.validation.context import GraphValidationContext
+    from codeintel.core.catalog.function_span import FunctionSpan
     from codeintel.core.validation import ValidationSeverity
     from codeintel.storage.catalog import FunctionCatalog
 
@@ -124,9 +129,143 @@ class OrphanModulesCheck(GraphCheckBase):
         )
 
 
+class SymtableResolutionEdgesCheck(GraphCheckBase):
+    """Check for symtable bindings missing resolution edges."""
+
+    check_name: ClassVar[str] = "symtable_resolution_edges"
+    check_description: ClassVar[str] = (
+        "Detect global/nonlocal/free bindings missing resolution edges"
+    )
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute symtable resolution edge check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with gateway.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for missing resolution edges.
+        """
+        _ = self
+        return _warn_missing_symtable_resolution_edges_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+        )
+
+
+class SymtableFreevarsCheck(GraphCheckBase):
+    """Check for symtable freevars mismatching bytecode freevars."""
+
+    check_name: ClassVar[str] = "symtable_freevars_mismatch"
+    check_description: ClassVar[str] = (
+        "Detect mismatches between symtable frees and bytecode freevars"
+    )
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute symtable freevar mismatch check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with gateway.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for symtable/bytecode mismatches.
+        """
+        _ = self
+        return _warn_symtable_freevar_mismatch_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+        )
+
+
+class BytecodeCfgEdgeIntegrityCheck(GraphCheckBase):
+    """Check for bytecode CFG edges referencing missing blocks."""
+
+    check_name: ClassVar[str] = "bytecode_cfg_edge_integrity"
+    check_description: ClassVar[str] = "Detect bytecode CFG edges with missing blocks"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute bytecode CFG edge integrity check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with gateway.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for missing CFG blocks.
+        """
+        _ = self
+        return _warn_missing_bytecode_blocks_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+        )
+
+
+class BytecodeDefuseBindingSpaceCheck(GraphCheckBase):
+    """Check for def/use binding edges with mismatched binding kinds."""
+
+    check_name: ClassVar[str] = "bytecode_defuse_binding_space"
+    check_description: ClassVar[str] = "Detect def/use bindings that disagree with bytecode space"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute def/use binding space check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with gateway.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for mismatched def/use binding kinds.
+        """
+        _ = self
+        return _warn_defuse_binding_space_mismatch_impl(
+            ctx.dataset_root_dir,
+            ctx.repo,
+            ctx.commit,
+            ctx.logger,
+        )
+
+
 # =============================================================================
 # Implementation Functions (internal)
 # =============================================================================
+
+
+def _scan_snapshot_frame(request: SnapshotScanRequest) -> pl.LazyFrame | None:
+    reader = scan_snapshot_reader(request)
+    if reader is None:
+        return None
+    return arrow_reader_to_lazyframe(reader)
+
+
+def _function_span_resolver(spans: Sequence[FunctionSpan]) -> SpanResolver[int]:
+    resolver = SpanResolver.for_lines(path_normalizer=lambda value: value)
+    for span in spans:
+        resolver.add_span(span.rel_path, span.start_line, span.end_line, span.goid)
+    return resolver
 
 
 def _warn_missing_function_goids_impl(
@@ -144,7 +283,7 @@ def _warn_missing_function_goids_impl(
     """
     if dataset_root_dir is None:
         return []
-    ast_frame = scan_snapshot_lazyframe(
+    ast_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.ast_nodes",
@@ -156,7 +295,7 @@ def _warn_missing_function_goids_impl(
     )
     if ast_frame is None:
         return []
-    goids_frame = scan_snapshot_lazyframe(
+    goids_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.goids",
@@ -232,9 +371,10 @@ def _warn_callsite_span_mismatches_impl(
         Findings for callsite span mismatches.
     """
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
+    span_resolver = _function_span_resolver(catalog.function_spans)
     if dataset_root_dir is None:
         return []
-    frame = scan_snapshot_lazyframe(
+    frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="graph.call_graph_edges",
@@ -257,19 +397,28 @@ def _warn_callsite_span_mismatches_impl(
         if span is None:
             continue
         line_value = coerce_int(row.get("callsite_line"), ctx="callsite_line")
+        callsite_path = row.get("callsite_path")
+        match_kind = "NONE"
+        candidate_count = 0
+        if isinstance(callsite_path, str):
+            match = span_resolver.resolve(callsite_path, line_value, line_value)
+            match_kind = match.match_kind
+            candidate_count = match.candidate_count
         if line_value < span.start_line or line_value > span.end_line:
             mismatches.append(
                 (
-                    coerce_str(row.get("callsite_path"), ctx="callsite_path"),
+                    coerce_str(callsite_path, ctx="callsite_path"),
                     line_value,
                     span.start_line,
                     span.end_line,
+                    match_kind,
+                    candidate_count,
                 )
             )
 
     if not mismatches:
         return []
-    sample = ", ".join(f"{path}:{line}" for path, line, _, _ in mismatches[:5])
+    sample = ", ".join(f"{path}:{line}" for path, line, *_ in mismatches[:5])
     log.warning(
         "Validation: %d call graph edges fall outside caller spans (sample: %s)",
         len(mismatches),
@@ -283,9 +432,15 @@ def _warn_callsite_span_mismatches_impl(
             "severity": "warning",
             "path": path,
             "detail": f"callsite {line} outside span {start}-{end}",
-            "context": {"callsite_line": line, "start_line": start, "end_line": end},
+            "context": {
+                "callsite_line": line,
+                "start_line": start,
+                "end_line": end,
+                "match_kind": match_kind,
+                "candidate_count": candidate_count,
+            },
         }
-        for path, line, start, end in mismatches
+        for path, line, start, end, match_kind, candidate_count in mismatches
     ]
 
 
@@ -305,7 +460,7 @@ def _warn_orphan_modules_impl(
     """
     if dataset_root_dir is None:
         return []
-    modules_frame = scan_snapshot_lazyframe(
+    modules_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.modules",
@@ -315,7 +470,7 @@ def _warn_orphan_modules_impl(
             commit=commit,
         )
     )
-    goids_frame = scan_snapshot_lazyframe(
+    goids_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.goids",
@@ -354,10 +509,11 @@ def _warn_orphan_modules_impl(
                 .collect()
                 .to_dicts()
             )
-            sample_detail = ", ".join(
-                f"{row['path']} (module_goids={coerce_int(row['module_goids'], ctx='module_goids')})"
-                for row in sample
-            )
+            sample_detail_parts: list[str] = []
+            for row in sample:
+                module_goids = coerce_int(row.get("module_goids"), ctx="module_goids")
+                sample_detail_parts.append(f"{row['path']} (module_goids={module_goids})")
+            sample_detail = ", ".join(sample_detail_parts)
             log.info(
                 "Orphan module debug: repo=%s commit=%s sample=%s",
                 repo,
@@ -386,6 +542,293 @@ def _warn_orphan_modules_impl(
     ]
 
 
+def _warn_missing_symtable_resolution_edges_impl(
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+) -> list[dict[str, object]]:
+    if dataset_root_dir is None:
+        return []
+    bindings = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.py_sym_bindings",
+            snapshot_id=commit,
+            columns=("rel_path", "binding_id", "binding_kind", "name", "scope_id"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    edges = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.py_sym_resolution_edges",
+            snapshot_id=commit,
+            columns=("rel_path", "src_binding_id"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    if bindings is None or edges is None:
+        return []
+    ref_kinds = ["global_ref", "nonlocal_ref", "free_ref"]
+    refs = bindings.filter(pl.col("binding_kind").is_in(ref_kinds))
+    joined = refs.join(
+        edges,
+        left_on=["rel_path", "binding_id"],
+        right_on=["rel_path", "src_binding_id"],
+        how="left",
+    )
+    missing = joined.filter(pl.col("src_binding_id").is_null()).collect().to_dicts()
+    if not missing:
+        return []
+    log.warning(
+        "Validation: %d symtable bindings missing resolution edges",
+        len(missing),
+    )
+    findings: list[dict[str, object]] = []
+    for row in missing:
+        rel_path = coerce_str(row.get("rel_path"), ctx="symtable_resolution_edges.rel_path")
+        binding_id = coerce_str(row.get("binding_id"), ctx="symtable_resolution_edges.binding_id")
+        binding_kind = coerce_str(
+            row.get("binding_kind"),
+            ctx="symtable_resolution_edges.binding_kind",
+        )
+        name = coerce_str(row.get("name"), ctx="symtable_resolution_edges.name")
+        scope_id = coerce_str(row.get("scope_id"), ctx="symtable_resolution_edges.scope_id")
+        findings.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "symtable_resolution_edges",
+                "severity": "warning",
+                "path": rel_path,
+                "detail": f"missing resolution for {name} ({binding_kind})",
+                "context": {
+                    "binding_id": binding_id,
+                    "binding_kind": binding_kind,
+                    "scope_id": scope_id,
+                    "name": name,
+                },
+            }
+        )
+    return findings
+
+
+def _warn_symtable_freevar_mismatch_impl(
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+) -> list[dict[str, object]]:
+    if dataset_root_dir is None:
+        return []
+    scopes = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.py_sym_scopes",
+            snapshot_id=commit,
+            columns=("rel_path", "scope_id", "qualpath"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    partitions = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.py_sym_function_partitions",
+            snapshot_id=commit,
+            columns=("rel_path", "scope_id", "frees"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    code_units = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.py_bc_code_units",
+            snapshot_id=commit,
+            columns=("rel_path", "qualpath", "freevars"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    if scopes is None or partitions is None or code_units is None:
+        return []
+    with_qualpath = partitions.join(
+        scopes,
+        on=["rel_path", "scope_id"],
+        how="left",
+    )
+    joined = with_qualpath.join(code_units, on=["rel_path", "qualpath"], how="left")
+    mismatches: list[dict[str, object]] = []
+    for row in joined.collect().to_dicts():
+        rel_path = coerce_str(row.get("rel_path"), ctx="symtable_freevars.rel_path")
+        qualpath = coerce_str(row.get("qualpath"), ctx="symtable_freevars.qualpath")
+        frees = row.get("frees")
+        freevars = row.get("freevars")
+        if not isinstance(frees, list) or not isinstance(freevars, list):
+            continue
+        frees_set = {item for item in frees if isinstance(item, str)}
+        freevars_set = {item for item in freevars if isinstance(item, str)}
+        if frees_set == freevars_set:
+            continue
+        mismatches.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "symtable_freevars_mismatch",
+                "severity": "warning",
+                "path": rel_path,
+                "detail": f"freevars mismatch for {qualpath}",
+                "context": {
+                    "qualpath": qualpath,
+                    "symtable_frees": sorted(frees_set),
+                    "bytecode_freevars": sorted(freevars_set),
+                },
+            }
+        )
+    if mismatches:
+        log.warning("Validation: %d symtable/bytecode freevar mismatches", len(mismatches))
+    return mismatches
+
+
+def _warn_missing_bytecode_blocks_impl(
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+) -> list[dict[str, object]]:
+    if dataset_root_dir is None:
+        return []
+    edges = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.py_bc_cfg_edges",
+            snapshot_id=commit,
+            columns=("rel_path", "code_unit_id", "src_block_id", "dst_block_id"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    blocks = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="core.py_bc_blocks",
+            snapshot_id=commit,
+            columns=("rel_path", "code_unit_id", "block_id"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    if edges is None or blocks is None:
+        return []
+    block_keys = {
+        (
+            coerce_str(row.get("rel_path"), ctx="bytecode_cfg_blocks.rel_path"),
+            coerce_str(row.get("code_unit_id"), ctx="bytecode_cfg_blocks.code_unit_id"),
+            coerce_str(row.get("block_id"), ctx="bytecode_cfg_blocks.block_id"),
+        )
+        for row in blocks.collect().to_dicts()
+    }
+    missing: list[dict[str, object]] = []
+    for row in edges.collect().to_dicts():
+        rel_path = coerce_str(row.get("rel_path"), ctx="bytecode_cfg_edges.rel_path")
+        code_unit_id = coerce_str(row.get("code_unit_id"), ctx="bytecode_cfg_edges.code_unit_id")
+        src_block = coerce_str(row.get("src_block_id"), ctx="bytecode_cfg_edges.src_block_id")
+        dst_block = coerce_str(row.get("dst_block_id"), ctx="bytecode_cfg_edges.dst_block_id")
+        if rel_path is None or code_unit_id is None or src_block is None or dst_block is None:
+            continue
+        if (rel_path, code_unit_id, src_block) not in block_keys or (
+            rel_path,
+            code_unit_id,
+            dst_block,
+        ) not in block_keys:
+            missing.append(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "check_name": "bytecode_cfg_edge_integrity",
+                    "severity": "warning",
+                    "path": rel_path,
+                    "detail": "CFG edge references missing block",
+                    "context": {
+                        "code_unit_id": code_unit_id,
+                        "src_block_id": src_block,
+                        "dst_block_id": dst_block,
+                    },
+                }
+            )
+    if missing:
+        log.warning("Validation: %d bytecode CFG edges missing blocks", len(missing))
+    return missing
+
+
+def _warn_defuse_binding_space_mismatch_impl(
+    dataset_root_dir: Path | None,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+) -> list[dict[str, object]]:
+    if dataset_root_dir is None:
+        return []
+    edges = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=dataset_root_dir,
+            table_key="graph.cpg_edges",
+            snapshot_id=commit,
+            columns=("rel_path", "edge_kind", "extras_json"),
+            repo=repo,
+            commit=commit,
+        )
+    )
+    if edges is None:
+        return []
+    expected = {
+        "local": {"local", "param"},
+        "global": {"global_ref"},
+        "free": {"free_ref", "nonlocal_ref"},
+    }
+    filtered = edges.filter(
+        pl.col("edge_kind").is_in(["DEFINES_BINDING", "USES_BINDING"])
+    ).collect()
+    mismatches: list[dict[str, object]] = []
+    for row in filtered.to_dicts():
+        rel_path = coerce_str(row.get("rel_path"), ctx="defuse_binding_space.rel_path")
+        extras = decode_payload(row.get("extras_json"))
+        if not isinstance(extras, dict):
+            continue
+        space = extras.get("space")
+        binding_kind = extras.get("binding_kind")
+        if not isinstance(space, str) or not isinstance(binding_kind, str):
+            continue
+        allowed = expected.get(space)
+        if allowed is None or binding_kind in allowed:
+            continue
+        mismatches.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "bytecode_defuse_binding_space",
+                "severity": "warning",
+                "path": rel_path,
+                "detail": "def/use binding kind mismatches bytecode space",
+                "context": {
+                    "space": space,
+                    "binding_kind": binding_kind,
+                    "edge_kind": row.get("edge_kind"),
+                },
+            }
+        )
+    if mismatches:
+        log.warning(
+            "Validation: %d bytecode def/use bindings mismatch expected space",
+            len(mismatches),
+        )
+    return mismatches
+
+
 # =============================================================================
 # All Check Classes (for runner registration)
 # =============================================================================
@@ -394,12 +837,20 @@ ALL_DATABASE_CHECKS: tuple[type[GraphCheckBase], ...] = (
     MissingFunctionGoidsCheck,
     CallsiteSpanMismatchCheck,
     OrphanModulesCheck,
+    SymtableResolutionEdgesCheck,
+    SymtableFreevarsCheck,
+    BytecodeCfgEdgeIntegrityCheck,
+    BytecodeDefuseBindingSpaceCheck,
 )
 
 __all__ = [
     # Check classes
     "ALL_DATABASE_CHECKS",
+    "BytecodeCfgEdgeIntegrityCheck",
+    "BytecodeDefuseBindingSpaceCheck",
     "CallsiteSpanMismatchCheck",
     "MissingFunctionGoidsCheck",
     "OrphanModulesCheck",
+    "SymtableFreevarsCheck",
+    "SymtableResolutionEdgesCheck",
 ]

@@ -6,21 +6,20 @@ with Arrow structural checks and optional Pandera semantic validation.
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
+import pyarrow.json as pa_json
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import log_export_error
 from codeintel.build.schemas import get_schema_provider
+from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED
 from codeintel.core.errors.taxonomy import NOT_FOUND
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
-from codeintel.core.schemas.primitives import TableSchema, column_type_base
-from codeintel.core.schemas.row_models import normalize_row_value_for_type
+from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.validation.profiles import ValidationProfile
 from codeintel.storage.validation.columnar import (
     ColumnarValidationContext,
@@ -63,92 +62,28 @@ def _table_schema_for_key(
     raise BuildProblemError(problem)
 
 
-def _read_jsonl_records(path: Path) -> tuple[list[tuple[int, dict[str, Any]]], list[str]]:
-    records: list[tuple[int, dict[str, Any]]] = []
-    errors: list[str] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for idx, raw_line in enumerate(handle):
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError as exc:
-                errors.append(f"row={idx}: invalid JSON ({exc})")
-                continue
-            if not isinstance(payload, dict):
-                errors.append(f"row={idx}: expected JSON object")
-                continue
-            records.append((idx, payload))
-    return records, errors
-
-
-def _normalize_record(
-    record: dict[str, Any],
-    column_types: dict[str, str],
-) -> dict[str, object]:
-    normalized: dict[str, object] = {}
-    for name, column_type in column_types.items():
-        value = record.get(name)
-        if _is_temporal_type(column_type):
-            normalized[name] = _coerce_timestamp(value)
-        else:
-            normalized[name] = normalize_row_value_for_type(value, column_type)
-    for key, value in record.items():
-        key_str = str(key)
-        if key_str in normalized:
-            continue
-        normalized[key_str] = value
-    return normalized
-
-
-def _is_temporal_type(column_type: str) -> bool:
-    base = column_type_base(column_type)
-    return base in {"TIMESTAMP", "TIMESTAMPTZ"}
-
-
-def _coerce_timestamp(value: object) -> object:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        trimmed = value.strip()
-        if not trimmed:
-            return None
-        normalized = trimmed.replace("Z", "+00:00")
-        try:
-            return datetime.fromisoformat(normalized)
-        except ValueError:
-            return value
-    return value
-
-
 def _reader_for_jsonl(
     path: Path,
     *,
-    table_schema: TableSchema,
     contract_schema: pa.Schema,
 ) -> tuple[pa.RecordBatchReader, list[str]]:
-    raw_records, errors = _read_jsonl_records(path)
-    column_types = {column.name: column.type for column in table_schema.columns}
-    normalized_records: list[dict[str, object]] = []
-    for idx, record in raw_records:
-        try:
-            normalized_records.append(_normalize_record(record, column_types))
-        except (TypeError, ValueError) as exc:
-            errors.append(f"row={idx}: normalization failed ({exc})")
-    if not normalized_records:
-        reader = pa.RecordBatchReader.from_batches(contract_schema, [])
-        return reader, errors
+    behavior = _unexpected_field_behavior(contract_schema)
+    parse_options = pa_json.ParseOptions(
+        explicit_schema=contract_schema,
+        unexpected_field_behavior=behavior,
+    )
     try:
-        table = pa.Table.from_pylist(normalized_records)
-    except (TypeError, ValueError, pa.ArrowInvalid) as exc:
-        errors.append(f"Failed to build Arrow table from JSONL: {exc}")
+        return pa_json.open_json(path, parse_options=parse_options), []
+    except (pa.ArrowInvalid, OSError, ValueError) as exc:
+        errors = [f"Failed to parse JSONL: {exc}"]
         reader = pa.RecordBatchReader.from_batches(contract_schema, [])
         return reader, errors
-    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
-    return reader, errors
+
+
+def _unexpected_field_behavior(schema: pa.Schema) -> str:
+    if extras_policy_from_schema(schema) == "reject":
+        return "error"
+    return "infer"
 
 
 def _effective_validation_profile(
@@ -222,7 +157,6 @@ def validate_export_files(
             if path.suffix.lower() == ".jsonl":
                 reader, read_errors = _reader_for_jsonl(
                     path,
-                    table_schema=table_schema,
                     contract_schema=contract_schema,
                 )
                 errors = list(read_errors)

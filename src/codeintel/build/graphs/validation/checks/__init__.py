@@ -25,9 +25,13 @@ from codeintel.build.graphs.validation.checks.anomaly import (
 )
 from codeintel.build.graphs.validation.checks.database import (
     ALL_DATABASE_CHECKS,
+    BytecodeCfgEdgeIntegrityCheck,
+    BytecodeDefuseBindingSpaceCheck,
     CallsiteSpanMismatchCheck,
     MissingFunctionGoidsCheck,
     OrphanModulesCheck,
+    SymtableFreevarsCheck,
+    SymtableResolutionEdgesCheck,
 )
 from codeintel.build.graphs.validation.checks.structure import (
     ALL_STRUCTURE_CHECKS,
@@ -42,13 +46,12 @@ from codeintel.build.graphs.validation.checks.structure import (
 )
 
 __all__ = [
-    # Check class tuples
     "ALL_ANOMALY_CHECKS",
     "ALL_DATABASE_CHECKS",
     "ALL_STRUCTURE_CHECKS",
-    # Structure check classes
+    "BytecodeCfgEdgeIntegrityCheck",
+    "BytecodeDefuseBindingSpaceCheck",
     "CallGraphStructureCheck",
-    # Database check classes
     "CallsiteSpanMismatchCheck",
     "ConfigKeyCheck",
     "ImportBridgeCheck",
@@ -58,8 +61,9 @@ __all__ = [
     "ImportUpwardCheck",
     "MissingFunctionGoidsCheck",
     "OrphanModulesCheck",
-    # Anomaly check classes
     "SubsystemDisagreementCheck",
     "SymbolCommunityCheck",
     "SymbolGraphCheck",
+    "SymtableFreevarsCheck",
+    "SymtableResolutionEdgesCheck",
 ]

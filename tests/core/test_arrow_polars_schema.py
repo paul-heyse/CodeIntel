@@ -18,6 +18,7 @@ from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_dataframe,
 )
+from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import Column, TableSchema
 
 
@@ -199,3 +200,7 @@ def test_arrow_contract_roundtrip_preserves_table_schema() -> None:
         pytest.fail("Arrow contract extras_column metadata mismatch")
     if metadata.get("codeintel.table_key") != table_schema.table_key:
         pytest.fail("Arrow contract table_key metadata mismatch")
+    if metadata.get("codeintel.schema_hash") != schema_hash(table_schema):
+        pytest.fail("Arrow contract schema_hash metadata mismatch")
+    if metadata.get("codeintel.schema_digest") != schema_digest(table_schema):
+        pytest.fail("Arrow contract schema_digest metadata mismatch")

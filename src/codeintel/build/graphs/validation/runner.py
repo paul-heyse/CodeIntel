@@ -27,7 +27,7 @@ from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     dataset_snapshot_exists,
     resolve_dataset_root,
-    scan_snapshot_lazyframe,
+    scan_snapshot_reader,
 )
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.graphs.validation.base import GraphCheckBase
@@ -54,6 +54,7 @@ from codeintel.build.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.validation.runner import ValidationRunner
 
 if TYPE_CHECKING:
@@ -274,6 +275,13 @@ def warn_graph_structure(
 # =============================================================================
 
 
+def _scan_snapshot_frame(request: SnapshotScanRequest) -> pl.LazyFrame | None:
+    reader = scan_snapshot_reader(request)
+    if reader is None:
+        return None
+    return arrow_reader_to_lazyframe(reader)
+
+
 def _catalog_provider_from_dataset(
     *,
     dataset_root_dir: Path | None,
@@ -281,7 +289,7 @@ def _catalog_provider_from_dataset(
 ) -> FunctionCatalogProvider | None:
     if dataset_root_dir is None:
         return None
-    goids_frame = scan_snapshot_lazyframe(
+    goids_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.goids",
@@ -301,7 +309,7 @@ def _catalog_provider_from_dataset(
             commit=snapshot.commit,
         )
     )
-    modules_frame = scan_snapshot_lazyframe(
+    modules_frame = _scan_snapshot_frame(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.modules",
@@ -375,7 +383,7 @@ def log_db_snapshot(
     def _count(table_key: str, *, filter_expr: pl.Expr | None = None) -> int:
         if dataset_root_dir is None:
             return -1
-        frame = scan_snapshot_lazyframe(
+        frame = _scan_snapshot_frame(
             SnapshotScanRequest(
                 dataset_root=dataset_root_dir,
                 table_key=table_key,

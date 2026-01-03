@@ -142,6 +142,10 @@ class BytecodeExtractOptions:
         Whether to derive CFG blocks/edges.
     include_defuse
         Whether to emit def/use events.
+    max_module_bytes
+        Maximum module size in bytes to process (None disables the limit).
+    max_workers
+        Number of worker threads to use for bytecode extraction.
     """
 
     optimize: int = 0
@@ -150,6 +154,8 @@ class BytecodeExtractOptions:
     include_exception_table: bool = True
     include_cfg: bool = True
     include_defuse: bool = True
+    max_module_bytes: int | None = None
+    max_workers: int = 1
 
 
 @dataclass(frozen=True)
@@ -162,6 +168,14 @@ class InspectExtractOptions:
         Whether to enable inspect extraction (disabled by default).
     module_allowlist
         Explicit module names allowed for import/inspection.
+    use_subprocess
+        Whether to isolate inspect extraction in a subprocess.
+    timeout_seconds
+        Timeout for inspect extraction (applies to subprocess runs).
+    max_modules
+        Maximum number of modules to inspect per run (None disables the limit).
+    max_module_bytes
+        Maximum module size in bytes to inspect (None disables the limit).
     max_objects
         Maximum number of objects to inspect.
     follow_wrapped
@@ -172,6 +186,10 @@ class InspectExtractOptions:
 
     enable: bool = False
     module_allowlist: list[str] = field(default_factory=list)
+    use_subprocess: bool = True
+    timeout_seconds: int = 30
+    max_modules: int | None = None
+    max_module_bytes: int | None = None
     max_objects: int = 5000
     follow_wrapped: bool = True
     eval_str: bool = False

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+from codeintel.core.schemas.contract_bundle import ContractBundle
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.primitives import TableSchema
@@ -106,6 +107,7 @@ class SchemaService:
     _arrow_cache: dict[str, pa.Schema | None] = field(default_factory=dict, repr=False)
     _row_cache: dict[str, GeneratedRowBinding | None] = field(default_factory=dict, repr=False)
     _record_cache: dict[str, SchemaRecord] = field(default_factory=dict, repr=False)
+    _bundle_cache: dict[str, ContractBundle] = field(default_factory=dict, repr=False)
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
         """Return a TableSchema for a table key, or None if unknown.
@@ -268,6 +270,65 @@ class SchemaService:
         self._arrow_cache[table_key] = arrow_schema
         return arrow_schema
 
+    def get_bundle(self, table_key: str) -> ContractBundle:
+        """Return a ContractBundle aggregating schema artifacts.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        ContractBundle
+            Aggregated schema bundle for the table key.
+        """
+        if table_key in self._bundle_cache:
+            return self._bundle_cache[table_key]
+        table_schema = self.get_table_schema(table_key)
+        row_binding = self.get_row_binding(table_key)
+        arrow_schema = self.get_arrow_schema(table_key)
+        json_schema = self.get_json_schema(table_key)
+        json_schema_id = f"urn:codeintel:schema:{table_key}" if json_schema is not None else None
+        json_schema_digest = self.compute_json_schema_digest(table_key) if json_schema else None
+        schema_hash_value = schema_hash(table_schema) if table_schema is not None else None
+        bundle = ContractBundle(
+            table_key=table_key,
+            table_schema=table_schema,
+            arrow_schema=arrow_schema,
+            json_schema=json_schema,
+            json_schema_id=json_schema_id,
+            json_schema_digest=json_schema_digest,
+            row_binding=row_binding,
+            schema_hash=schema_hash_value,
+        )
+        self._bundle_cache[table_key] = bundle
+        return bundle
+
+    def require_bundle(self, table_key: str) -> ContractBundle:
+        """Return a ContractBundle, raising if the schema is missing.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        ContractBundle
+            Schema bundle with a resolved TableSchema.
+
+        Raises
+        ------
+        KeyError
+            If the table key is not registered.
+        """
+        bundle = self.get_bundle(table_key)
+        if bundle.table_schema is None:
+            msg = f"Unknown table schema: {table_key}"
+            raise KeyError(msg)
+        return bundle
+
     def get_json_schema(self, table_key: str) -> dict[str, Any] | None:
         """Return a generated JSON Schema for a table key.
 
@@ -335,22 +396,17 @@ class SchemaService:
         """
         if table_key in self._record_cache:
             return self._record_cache[table_key]
-        table_schema = self.get_table_schema(table_key)
+        bundle = self.get_bundle(table_key)
         dataset_schema = self.get_dataset_schema(table_key)
-        json_schema = self.get_json_schema(table_key)
-        json_schema_id = f"urn:codeintel:schema:{table_key}" if json_schema is not None else None
-        digest = self.compute_json_schema_digest(table_key) if json_schema is not None else None
-        row_binding = self.get_row_binding(table_key)
-        schema_hash_value = schema_hash(table_schema) if table_schema is not None else None
         record = SchemaRecord(
             table_key=table_key,
-            table_schema=table_schema,
+            table_schema=bundle.table_schema,
             dataset_schema=dataset_schema,
-            json_schema=json_schema,
-            json_schema_id=json_schema_id,
-            json_schema_digest=digest,
-            row_binding=row_binding,
-            schema_hash=schema_hash_value,
+            json_schema=bundle.json_schema,
+            json_schema_id=bundle.json_schema_id,
+            json_schema_digest=bundle.json_schema_digest,
+            row_binding=bundle.row_binding,
+            schema_hash=bundle.schema_hash,
         )
         self._record_cache[table_key] = record
         return record
@@ -363,6 +419,7 @@ class SchemaService:
         self._arrow_cache.clear()
         self._row_cache.clear()
         self._record_cache.clear()
+        self._bundle_cache.clear()
 
 
 def _default_json_schema_factory(schema: TableSchema, schema_id: str | None) -> dict[str, Any]:
@@ -430,6 +487,7 @@ def clear_schema_service() -> None:
 
 __all__ = [
     "ArrowSchemaProvider",
+    "ContractBundle",
     "DatasetSchemaLike",
     "DatasetSchemaProvider",
     "SchemaRecord",

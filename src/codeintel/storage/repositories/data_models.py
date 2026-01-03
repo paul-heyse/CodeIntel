@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import SupportsInt, cast
 
-from codeintel.core.helpers.json import decode_json, decode_json_dict
+from codeintel.core.serialization.json import decode_json, decode_json_dict
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.repositories.base import BaseRepository
 

@@ -27,6 +27,7 @@ from codeintel.build.analytics.utilities.ast import (
     snippet_from_lines,
 )
 from codeintel.core.hashing import sha256_short
+from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.paths import normalize_path, path_to_module
 from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -770,11 +771,28 @@ def _base_classes(node: ast.ClassDef) -> list[dict[str, str]]:
     return bases
 
 
-def _match_class_meta(meta_by_line: dict[int, ClassMeta], node: ast.ClassDef) -> ClassMeta | None:
+def _class_meta_resolver(rel_path: str, metas: list[ClassMeta]) -> SpanResolver[ClassMeta]:
+    resolver = SpanResolver.for_lines(path_normalizer=lambda value: value)
+    for meta in metas:
+        resolver.add_span(rel_path, meta.start_line, meta.end_line, meta)
+    return resolver
+
+
+def _match_class_meta(
+    resolver: SpanResolver[ClassMeta],
+    rel_path: str,
+    node: ast.ClassDef,
+) -> ClassMeta | None:
     lineno = getattr(node, "lineno", None)
     if lineno is None:
         return None
-    return meta_by_line.get(int(lineno))
+    end_lineno = getattr(node, "end_lineno", None)
+    start_line = int(lineno)
+    end_line = int(end_lineno) if isinstance(end_lineno, int) else start_line
+    match = resolver.resolve(rel_path, start_line, end_line)
+    if match.match_kind == "NONE":
+        return None
+    return match.payload
 
 
 def _all_class_defs(tree: ast.AST) -> Iterator[ast.ClassDef]:
@@ -795,12 +813,12 @@ def _gather_models_for_path(
         log.debug("Skipping %s; unable to parse module", abs_path)
         return []
     lines, tree = parsed
-    meta_by_line = {meta.start_line: meta for meta in metas}
+    meta_resolver = _class_meta_resolver(rel_path, metas)
     module_name = metas[0].module if metas else path_to_module(rel_path)
     import_ctx = _build_import_context(module_name, tree)
     models: list[ModelRecord] = []
     for cls_node in _all_class_defs(tree):
-        meta = _match_class_meta(meta_by_line, cls_node)
+        meta = _match_class_meta(meta_resolver, rel_path, cls_node)
         if meta is None:
             continue
         decorators = _class_decorators(cls_node)

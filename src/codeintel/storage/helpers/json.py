@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.core.helpers.json import (
+from codeintel.core.serialization.json import (
     decode_json,
     decode_json_dict,
     decode_json_list,

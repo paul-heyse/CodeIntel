@@ -6,7 +6,7 @@ import types
 from collections.abc import Iterable, Mapping
 from enum import Enum
 from pathlib import Path
-from typing import TypeGuard, Union, get_args, get_origin
+from typing import Literal, TypeGuard, Union, cast, get_args, get_origin
 
 import msgspec
 import msgspec.structs as msgspec_structs
@@ -36,6 +36,15 @@ def encode_json_bytes(
 ) -> bytes:
     """Encode a payload as JSON bytes with deterministic ordering.
 
+    Parameters
+    ----------
+    payload
+        Payload to serialize.
+    indent
+        Optional indentation for pretty formatting.
+    newline
+        Whether to append a trailing newline.
+
     Returns
     -------
     bytes
@@ -57,6 +66,15 @@ def encode_json_text(
 ) -> str:
     """Encode a payload as JSON text with deterministic ordering.
 
+    Parameters
+    ----------
+    payload
+        Payload to serialize.
+    indent
+        Optional indentation for pretty formatting.
+    newline
+        Whether to append a trailing newline.
+
     Returns
     -------
     str
@@ -68,6 +86,11 @@ def encode_json_text(
 def encode_json_lines(payloads: Iterable[object]) -> bytes:
     """Encode an iterable payload as JSON Lines bytes.
 
+    Parameters
+    ----------
+    payloads
+        Iterable of payloads to encode.
+
     Returns
     -------
     bytes
@@ -78,6 +101,11 @@ def encode_json_lines(payloads: Iterable[object]) -> bytes:
 
 def encode_json_line_text(payload: object) -> str:
     """Encode a single payload as JSON Lines text.
+
+    Parameters
+    ----------
+    payload
+        Payload to serialize.
 
     Returns
     -------
@@ -95,6 +123,13 @@ def decode_json_bytes[T](
 ) -> T:
     """Decode JSON bytes into a typed payload.
 
+    Parameters
+    ----------
+    payload
+        JSON-encoded bytes payload.
+    payload_type
+        Target type for decoding.
+
     Returns
     -------
     T
@@ -110,6 +145,13 @@ def decode_json_text[T](
 ) -> T:
     """Decode JSON text into a typed payload.
 
+    Parameters
+    ----------
+    payload
+        JSON-encoded text payload.
+    payload_type
+        Target type for decoding.
+
     Returns
     -------
     T
@@ -118,8 +160,87 @@ def decode_json_text[T](
     return decode_json_bytes(payload.encode("utf-8"), payload_type=payload_type)
 
 
+def decode_boundary_payload[T](
+    payload: object,
+    *,
+    payload_type: type[T],
+) -> T:
+    """Decode a boundary payload into a typed object.
+
+    Parameters
+    ----------
+    payload
+        Boundary payload (bytes, text, or JSON-like builtins).
+    payload_type
+        Target type for decoding.
+
+    Returns
+    -------
+    T
+        Decoded payload instance.
+
+    Raises
+    ------
+    TypeError
+        Raised when the payload type is unsupported.
+    """
+    if isinstance(payload_type, type) and isinstance(payload, payload_type):
+        return cast("T", payload)
+    if isinstance(payload, (bytes, bytearray, memoryview)):
+        return _decode_boundary_bytes(bytes(payload), payload_type)
+    if isinstance(payload, str):
+        return _decode_boundary_text(payload, payload_type)
+    if isinstance(payload, (Mapping, list, tuple)):
+        return _convert_boundary_payload(payload, payload_type)
+    msg = f"Unsupported payload type: {type(payload).__name__}"
+    raise TypeError(msg)
+
+
+def encode_boundary_payload(
+    payload: object,
+    *,
+    payload_format: Literal["json", "msgpack"] = "json",
+    indent: int | None = 2,
+    newline: bool = False,
+) -> bytes:
+    """Encode a payload for boundary transport.
+
+    Parameters
+    ----------
+    payload
+        Payload to encode.
+    payload_format
+        Encoding format ("json" or "msgpack").
+    indent
+        Optional indentation for JSON formatting.
+    newline
+        Whether to append a trailing newline for JSON output.
+
+    Returns
+    -------
+    bytes
+        Encoded payload bytes.
+
+    Raises
+    ------
+    ValueError
+        Raised when an unsupported format is requested.
+    """
+    if payload_format == "msgpack":
+        return msgspec.msgpack.encode(payload)
+    if payload_format == "json":
+        return encode_json_bytes(payload, indent=indent, newline=newline)
+    msg = f"Unsupported boundary format: {payload_format}"
+    raise ValueError(msg)
+
+
 def to_builtins(payload: object) -> object:
     """Convert supported objects into JSON-serializable builtins.
+
+    Parameters
+    ----------
+    payload
+        Payload to convert.
 
     Returns
     -------
@@ -131,6 +252,11 @@ def to_builtins(payload: object) -> object:
 
 def schema_for(payload_type: type[object]) -> dict[str, object]:
     """Generate JSON Schema for a msgspec-compatible type.
+
+    Parameters
+    ----------
+    payload_type
+        Type to generate schema for.
 
     Returns
     -------
@@ -144,6 +270,11 @@ def schema_components(
     types: Iterable[object],
 ) -> tuple[tuple[dict[str, object], ...], dict[str, object]]:
     """Generate JSON Schema components for a collection of types.
+
+    Parameters
+    ----------
+    types
+        Types to include in schema generation.
 
     Returns
     -------
@@ -227,7 +358,7 @@ def _strip_union_fields(value: object, target_type: object) -> object:
 def _strip_struct_fields(value: object, target_type: type[msgspec.Struct]) -> object:
     if not isinstance(value, dict):
         return value
-    fields = msgspec_structs.fields(target_type)
+    fields = msgspec_structs.fields(cast("msgspec.Struct", target_type))
     allowed = {field.encode_name: field.type for field in fields}
     normalized: dict[str, object] = {}
     for key, item in value.items():
@@ -237,6 +368,31 @@ def _strip_struct_fields(value: object, target_type: type[msgspec.Struct]) -> ob
     return normalized
 
 
+def _decode_boundary_bytes[T](payload: bytes, payload_type: type[T]) -> T:
+    try:
+        return msgspec.msgpack.decode(payload, type=payload_type)
+    except (msgspec.DecodeError, msgspec.ValidationError):
+        pass
+    try:
+        return msgspec.json.decode(payload, type=payload_type, strict=True)
+    except msgspec.ValidationError as exc:
+        builtins = msgspec.json.decode(payload)
+        sanitized = strip_unknown_fields(builtins, payload_type)
+        try:
+            return msgspec.convert(sanitized, type=payload_type, strict=True)
+        except msgspec.ValidationError as fallback_exc:
+            raise fallback_exc from exc
+
+
+def _decode_boundary_text[T](payload: str, payload_type: type[T]) -> T:
+    return _decode_boundary_bytes(payload.encode("utf-8"), payload_type)
+
+
+def _convert_boundary_payload[T](payload: object, payload_type: type[T]) -> T:
+    sanitized = strip_unknown_fields(payload, payload_type)
+    return msgspec.convert(sanitized, type=payload_type, strict=True)
+
+
 def _is_struct_type(target_type: object) -> TypeGuard[type[msgspec.Struct]]:
     return isinstance(target_type, type) and issubclass(target_type, msgspec.Struct)
 
@@ -244,8 +400,10 @@ def _is_struct_type(target_type: object) -> TypeGuard[type[msgspec.Struct]]:
 __all__ = [
     "JSON_DECODER",
     "JSON_ENCODER",
+    "decode_boundary_payload",
     "decode_json_bytes",
     "decode_json_text",
+    "encode_boundary_payload",
     "encode_json_bytes",
     "encode_json_line_text",
     "encode_json_lines",

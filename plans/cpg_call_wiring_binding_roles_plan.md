@@ -23,6 +23,13 @@ instead of `extras_json`.
 - Keep callsite identity stable and deterministic for implicit calls (desugaring).
 - Provide golden fixtures for descriptor reads/writes and augmented assignment.
 
+## Functional Scope Items (Stage-F Call Wiring)
+- classmethod/staticmethod binding
+- bound vs unbound instance methods
+- property read -> implicit getter call
+- explicit descriptor .__get__ call
+- implicit descriptor get for instance + class access (obj=None) and arg binding
+
 ## Non-goals
 - No runtime instrumentation or dynamic execution for analysis.
 - No full dynamic dispatch resolution beyond deterministic syntax + SCIP + decorators.

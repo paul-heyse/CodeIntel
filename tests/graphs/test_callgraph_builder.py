@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, cast
 
-from codeintel.core.helpers.json import decode_json
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.serialization.json import decode_json
+from codeintel.core.serialization.payload import encode_payload
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 from tests._helpers.assertions import expect_true

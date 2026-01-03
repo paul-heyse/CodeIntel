@@ -657,6 +657,7 @@ def _write_lazyframe_dataset(
             frame=profiled,
             contract_schema=contract_schema,
             observation=observation,
+            query_opt_flags=query_opt_flags,
         )
     if contract_schema is not None:
         return _write_contract_dataset(
@@ -729,8 +730,15 @@ def _write_profiled_dataset(
     frame: pl.DataFrame,
     contract_schema: pa.Schema | None,
     observation: SchemaObservationAccumulator | None,
+    query_opt_flags: object | None,
 ) -> ArrowDatasetManifest:
-    reader = _reader_from_frame(frame)
+    reader = _reader_from_frame(
+        frame,
+        query_opt_flags=query_opt_flags,
+        streaming=ctx.build_settings.polars_streaming,
+        streaming_fallback=ctx.build_settings.polars_streaming_fallback,
+        inspect=ctx.build_settings.polars_inspect,
+    )
     aligned = _align_reader_to_contract(
         reader,
         contract_schema=contract_schema,
@@ -939,10 +947,22 @@ def _lazyframe_stream(
     )
 
 
-def _reader_from_frame(frame: pl.DataFrame) -> pa.RecordBatchReader:
-    table = frame.to_arrow()
-    batches = table.to_batches()
-    return pa.RecordBatchReader.from_batches(table.schema, batches)
+def _reader_from_frame(
+    frame: pl.DataFrame,
+    *,
+    query_opt_flags: object | None,
+    streaming: bool,
+    streaming_fallback: bool,
+    inspect: bool,
+) -> pa.RecordBatchReader:
+    stream = LazyFrameStream(
+        frame.lazy(),
+        query_opt_flags=query_opt_flags,
+        streaming=streaming,
+        streaming_fallback=streaming_fallback,
+        inspect=inspect,
+    )
+    return stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
 
 
 def _log_lazyframe_plan(

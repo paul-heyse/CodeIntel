@@ -43,8 +43,8 @@ import sqlglot.expressions as exp
 
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
-from codeintel.core.helpers.json import normalize_duckdb_json_value
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
+from codeintel.core.serialization.json import normalize_duckdb_json_value
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.contracts.provider import is_view as is_view_contract
 from codeintel.storage.datasets import DatasetRegistry

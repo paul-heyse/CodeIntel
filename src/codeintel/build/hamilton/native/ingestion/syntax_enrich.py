@@ -18,8 +18,10 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import (
+    JoinSpec,
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
+    join_validated,
 )
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -98,7 +100,12 @@ def _occurrence_resolution_frame(
         "occ_end_line",
         "occ_end_col",
     ]
-    return syntax.join(span, on=join_keys, how="left")
+    # Contract: span rows are unique per occurrence join key.
+    return join_validated(
+        syntax,
+        span,
+        spec=JoinSpec(on=join_keys, how="left", validate="m:1"),
+    )
 
 
 def _resolve_facts(
@@ -119,68 +126,82 @@ def _resolve_facts(
     occ_bytes = occurrences.filter(
         pl.col("occ_start_byte").is_not_null() & pl.col("occ_end_byte").is_not_null()
     )
-    bytes_join = facts_with_bytes.join(
+    # Contract: occurrence spans are unique per byte span.
+    bytes_join = join_validated(
+        facts_with_bytes,
         occ_bytes,
-        left_on=["repo", "commit", "rel_path", "producer", "start_byte", "end_byte"],
-        right_on=[
-            "repo",
-            "commit",
-            "rel_path",
-            "producer",
-            "occ_start_byte",
-            "occ_end_byte",
-        ],
-        how="left",
+        spec=JoinSpec(
+            left_on=["repo", "commit", "rel_path", "producer", "start_byte", "end_byte"],
+            right_on=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "occ_start_byte",
+                "occ_end_byte",
+            ],
+            how="left",
+            validate="m:1",
+        ),
     )
 
     fallback = bytes_join.filter(pl.col("scip_symbol").is_null()).select(fact_columns)
-    line_join = facts_without_bytes.join(
+    # Contract: occurrence spans are unique per line/col span.
+    line_join = join_validated(
+        facts_without_bytes,
         occurrences,
-        left_on=[
-            "repo",
-            "commit",
-            "rel_path",
-            "producer",
-            "start_line",
-            "start_col",
-            "end_line",
-            "end_col",
-        ],
-        right_on=[
-            "repo",
-            "commit",
-            "rel_path",
-            "producer",
-            "occ_start_line",
-            "occ_start_col",
-            "occ_end_line",
-            "occ_end_col",
-        ],
-        how="left",
+        spec=JoinSpec(
+            left_on=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "start_line",
+                "start_col",
+                "end_line",
+                "end_col",
+            ],
+            right_on=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "occ_start_line",
+                "occ_start_col",
+                "occ_end_line",
+                "occ_end_col",
+            ],
+            how="left",
+            validate="m:1",
+        ),
     )
-    fallback_join = fallback.join(
+    fallback_join = join_validated(
+        fallback,
         occurrences,
-        left_on=[
-            "repo",
-            "commit",
-            "rel_path",
-            "producer",
-            "start_line",
-            "start_col",
-            "end_line",
-            "end_col",
-        ],
-        right_on=[
-            "repo",
-            "commit",
-            "rel_path",
-            "producer",
-            "occ_start_line",
-            "occ_start_col",
-            "occ_end_line",
-            "occ_end_col",
-        ],
-        how="left",
+        spec=JoinSpec(
+            left_on=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "start_line",
+                "start_col",
+                "end_line",
+                "end_col",
+            ],
+            right_on=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "occ_start_line",
+                "occ_start_col",
+                "occ_end_line",
+                "occ_end_col",
+            ],
+            how="left",
+            validate="m:1",
+        ),
     )
 
     matched_bytes = bytes_join.filter(pl.col("scip_symbol").is_not_null())

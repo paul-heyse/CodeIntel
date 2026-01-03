@@ -13,13 +13,13 @@ import pyarrow.compute as pc
 
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_metadata import decode_metadata
-from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
     EXTRAS_POLICIES,
     ExtrasPolicy,
 )
+from codeintel.core.serialization.payload import encode_payload
 
 _JSON_ENCODER = msgspec.json.Encoder(order="deterministic")
 

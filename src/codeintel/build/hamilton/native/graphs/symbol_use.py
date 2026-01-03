@@ -6,7 +6,6 @@ import dataclasses
 import sys
 
 import polars as pl
-from intervaltree import IntervalTree
 
 from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
@@ -29,7 +28,7 @@ from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.spans import normalize_line_span, to_half_open_span
+from codeintel.core.intervals.span_resolver import SpanResolver
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -54,12 +53,12 @@ def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
     return module_by_path
 
 
-def _goid_spans_by_path(
+def _goid_resolver(
     goids_frame: pl.DataFrame,
-) -> dict[str, IntervalTree]:
-    spans_by_path: dict[str, IntervalTree] = {}
+) -> SpanResolver[int]:
+    resolver = SpanResolver.for_lines(path_normalizer=lambda value: value)
     if goids_frame.is_empty() or "rel_path" not in goids_frame.columns:
-        return spans_by_path
+        return resolver
     data = goids_frame.select(["rel_path", "goid_h128", "start_line", "end_line"]).to_dict(
         as_series=False
     )
@@ -77,28 +76,22 @@ def _goid_spans_by_path(
             continue
         if not isinstance(start_line, int):
             continue
-        _, resolved_end = normalize_line_span(
+        resolver.add_span(
+            rel_path,
             start_line,
             end_line if isinstance(end_line, int) else None,
+            int(goid_value),
         )
-        span_start, span_end = to_half_open_span(start_line, resolved_end)
-        tree = spans_by_path.get(rel_path)
-        if tree is None:
-            tree = IntervalTree()
-            spans_by_path[rel_path] = tree
-        tree.addi(span_start, span_end, int(goid_value))
-    return spans_by_path
+    return resolver
 
 
-def _match_goid(tree: IntervalTree | None, line: int) -> int | None:
-    if tree is None:
+def _match_goid(resolver: SpanResolver[int], rel_path: str, line: int) -> int | None:
+    match = resolver.resolve(rel_path, line, line)
+    if match.match_kind == "NONE":
         return None
-    span_start, span_end = to_half_open_span(line, line)
-    matches = tree.overlap(span_start, span_end)
-    if not matches:
+    if match.payload is None:
         return None
-    best = min(matches, key=lambda item: (item.end - item.begin, item.begin, int(item.data)))
-    return int(best.data)
+    return int(match.payload)
 
 
 def _symbol_occurrences(occurrences_frame: pl.DataFrame) -> list[SymbolOccurrence]:
@@ -163,18 +156,18 @@ def _attach_goids(
     edges: list[SymbolUseEdge],
     def_map: dict[str, tuple[str, int]],
     use_lines_by_symbol_path: dict[tuple[str, str], int],
-    goid_spans_by_path: dict[str, IntervalTree],
+    goid_resolver: SpanResolver[int],
 ) -> list[SymbolUseEdge]:
     updated: list[SymbolUseEdge] = []
     for edge in edges:
         def_info = def_map.get(edge.symbol)
         def_goid: int | None = None
         if def_info is not None:
-            def_tree = goid_spans_by_path.get(def_info[0])
-            def_goid = _match_goid(def_tree, def_info[1])
-        use_tree = goid_spans_by_path.get(edge.use_path)
+            def_goid = _match_goid(goid_resolver, def_info[0], def_info[1])
         use_line = use_lines_by_symbol_path.get((edge.symbol, edge.use_path))
-        use_goid = _match_goid(use_tree, use_line) if use_line is not None else None
+        use_goid = (
+            _match_goid(goid_resolver, edge.use_path, use_line) if use_line is not None else None
+        )
         updated.append(
             SymbolUseEdge(
                 symbol=edge.symbol,
@@ -227,8 +220,8 @@ def symbol_use_edges_compute(
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     use_lines_by_symbol_path = _reference_lines_by_symbol_path(occurrences)
-    goid_spans_by_path = _goid_spans_by_path(goids_frame)
-    edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_spans_by_path)
+    goid_resolver = _goid_resolver(goids_frame)
+    edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_resolver)
     rows = (dataclasses.asdict(row) for row in edges_to_rows(edges))
     reader, _ = record_batch_reader_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
     return reader

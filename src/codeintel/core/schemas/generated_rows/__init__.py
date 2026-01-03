@@ -1,4 +1,7 @@
-"""Generated TypedDict row models for table-shaped data."""
+"""Generated TypedDict row models for table-shaped data.
+
+Deprecated: use msgspec Struct row models from ``codeintel.core.schemas.row_models``.
+"""
 
 from __future__ import annotations
 

@@ -23,22 +23,20 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import lru_cache
 from typing import TypeVar, cast
 
 import msgspec
 
-from codeintel.core.helpers.payload import encode_payload
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsFunctionValidationRow as FunctionValidationRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphValidationRow as GraphValidationRow,
-)
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.schemas.contract_bundle import ContractBundle
+from codeintel.core.schemas.row_models import RowStructBuilder, RowStructSerializer
+from codeintel.core.schemas.row_serialization import row_struct_serializer_for_table_key
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.serialization.msgspec import to_builtins
+from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.time import utc_now
 
-RowT = TypeVar("RowT")
+RowStructT = TypeVar("RowStructT", bound=msgspec.Struct)
 
 FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
@@ -78,15 +76,16 @@ class FunctionValidationFinding(msgspec.Struct, frozen=True):
     detail: str
     created_at: datetime
 
-    def to_row(self) -> FunctionValidationRow:
+    def to_row(self, builder: RowStructBuilder) -> msgspec.Struct:
         """Convert finding into a row mapping for persistence.
 
         Returns
         -------
-        FunctionValidationRow
-            Row mapping ready for persistence.
+        msgspec.Struct
+            Row struct ready for persistence.
         """
-        return cast("FunctionValidationRow", to_builtins(self))
+        payload = cast("Mapping[str, object]", to_builtins(self))
+        return builder(payload)
 
 
 class GraphValidationFinding(msgspec.Struct, frozen=True):
@@ -103,19 +102,20 @@ class GraphValidationFinding(msgspec.Struct, frozen=True):
     metadata: bytes | None
     created_at: datetime
 
-    def to_row(self) -> GraphValidationRow:
+    def to_row(self, builder: RowStructBuilder) -> msgspec.Struct:
         """Convert finding into a row mapping for persistence.
 
         Returns
         -------
-        GraphValidationRow
-            Row mapping ready for persistence.
+        msgspec.Struct
+            Row struct ready for persistence.
         """
-        return cast("GraphValidationRow", to_builtins(self))
+        payload = cast("Mapping[str, object]", to_builtins(self))
+        return builder(payload)
 
 
 @dataclass
-class BaseValidationReporter[RowT]:
+class BaseValidationReporter[RowStructT]:
     """Collect validation rows for persistence via policy backend.
 
     Parameters
@@ -135,12 +135,12 @@ class BaseValidationReporter[RowT]:
 
     repo: str
     commit: str
-    rows: list[RowT] = field(default_factory=list)
+    rows: list[RowStructT] = field(default_factory=list)
     total: int = 0
 
 
 @dataclass
-class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
+class FunctionValidationReporter(BaseValidationReporter[msgspec.Struct]):
     """Validation reporter for function-level parsing/span issues.
 
     Parameters
@@ -218,7 +218,8 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
             detail=detail,
             created_at=gateway_timestamp(),
         )
-        self.rows.append(finding.to_row())
+        builder = _row_struct_builder(FUNCTION_VALIDATION_TABLE_KEY)
+        self.rows.append(finding.to_row(builder))
 
     def to_rows(self) -> tuple[tuple[object, ...], ...]:
         """Return accumulated rows as tuples without writing.
@@ -230,12 +231,12 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        serializer = row_serializer_for_table_key(FUNCTION_VALIDATION_TABLE_KEY)
+        serializer = _row_struct_serializer(FUNCTION_VALIDATION_TABLE_KEY)
         return tuple(serializer(r) for r in self.rows)
 
 
 @dataclass
-class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
+class GraphValidationReporter(BaseValidationReporter[msgspec.Struct]):
     """Validation reporter for graph-level issues.
 
     Parameters
@@ -298,7 +299,8 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
             metadata=metadata,
             created_at=gateway_timestamp(),
         )
-        self.rows.append(finding.to_row())
+        builder = _row_struct_builder(GRAPH_VALIDATION_TABLE_KEY)
+        self.rows.append(finding.to_row(builder))
 
     def to_rows(self) -> tuple[tuple[object, ...], ...]:
         """Return accumulated rows as tuples without writing.
@@ -310,7 +312,7 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        serializer = row_serializer_for_table_key(GRAPH_VALIDATION_TABLE_KEY)
+        serializer = _row_struct_serializer(GRAPH_VALIDATION_TABLE_KEY)
         return tuple(serializer(r) for r in self.rows)
 
 
@@ -333,6 +335,25 @@ def gateway_timestamp() -> datetime:
         Current UTC timestamp.
     """
     return utc_now()
+
+
+@lru_cache(maxsize=16)
+def _bundle_for_table(table_key: str) -> ContractBundle:
+    service = get_schema_service()
+    return service.get_bundle(table_key)
+
+
+def _row_struct_builder(table_key: str) -> RowStructBuilder:
+    bundle = _bundle_for_table(table_key)
+    builder = bundle.row_struct_builder
+    if builder is None:
+        msg = f"Row struct builder missing for {table_key}"
+        raise RuntimeError(msg)
+    return builder
+
+
+def _row_struct_serializer(table_key: str) -> RowStructSerializer:
+    return row_struct_serializer_for_table_key(table_key)
 
 
 __all__ = [

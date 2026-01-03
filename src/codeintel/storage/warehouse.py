@@ -804,8 +804,7 @@ def _write_relation_inner(
         _apply_select(select_expr)
     except ParseError:
         reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        table = pa.Table.from_batches(list(reader), schema=reader.schema)
-        with registered_temp_relation(gateway.con, table, prefix="ci_rel_") as name:
+        with registered_temp_relation(gateway.con, reader, prefix="ci_rel_") as name:
             select_expr = exp.Select(
                 expressions=[exp.Column(this=exp.to_identifier(column)) for column in columns],
             ).from_(exp.Table(this=exp.to_identifier(name)))

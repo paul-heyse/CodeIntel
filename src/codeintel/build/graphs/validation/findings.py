@@ -13,8 +13,9 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import msgspec
 import pyarrow as pa
 
 from codeintel.build.graphs.runtime import GraphRuntime
@@ -160,7 +161,7 @@ def persist_findings(
 
 def _persist_findings_parquet(
     dataset_root_dir: Path | None,
-    rows: Sequence[Mapping[str, object]],
+    rows: Sequence[Mapping[str, object] | msgspec.Struct],
     *,
     repo: str,
     commit: str,
@@ -210,14 +211,24 @@ def _persist_findings_parquet(
     return True
 
 
-def _normalize_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+def _normalize_rows(
+    rows: Sequence[Mapping[str, object] | msgspec.Struct],
+) -> list[dict[str, object]]:
     normalized: list[dict[str, object]] = []
     for row in rows:
-        metadata = row.get("metadata")
+        row_mapping: Mapping[str, object]
+        if isinstance(row, Mapping):
+            row_mapping = row
+        else:
+            builtins = msgspec.to_builtins(row)
+            if not isinstance(builtins, Mapping):
+                continue
+            row_mapping = cast("Mapping[str, object]", builtins)
+        metadata = row_mapping.get("metadata")
         if metadata is None:
-            normalized.append(dict(row))
+            normalized.append(dict(row_mapping))
             continue
-        updated = dict(row)
+        updated = dict(row_mapping)
         updated["metadata"] = _normalize_metadata(metadata)
         normalized.append(updated)
     return normalized

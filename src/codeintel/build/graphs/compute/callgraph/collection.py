@@ -25,10 +25,10 @@ from codeintel.build.graphs.compute.callgraph.types import (
     CallEdge,
     ResolutionResult,
 )
-from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphEdgesRow as CallGraphEdgeRow,
 )
+from codeintel.core.serialization.payload import encode_payload
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence

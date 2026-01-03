@@ -74,7 +74,7 @@ Reference anchors:
 - [ ] Confirm byte-span line index is stored for every ingested file.
 - [ ] Add a run meta table for compiler and environment facts:
   - python version, magic number, optimize flags, dont_inherit.
-- [ ] Add ingestion options toggles for new extractors (symtable/dis/inspect).
+- [x] Add ingestion options toggles for new extractors (symtable/dis/inspect).
 - [ ] Decide stable-ish id strategy for scopes and code units (span anchored).
 
 ### Phase 1: AST enrichment (native AST first-class)
@@ -90,30 +90,31 @@ Reference anchors:
 - [ ] Add tests for AST span correctness and payload completeness.
 
 ### Phase 2: Symtable extraction (scopes + bindings as truth)
-- [ ] Add src/codeintel/ingestion/compute/symtable_extract.py:
+- [x] Add src/codeintel/ingestion/compute/symtable_extract.py:
   - extract py_sym_scopes, py_sym_symbols, py_sym_scope_edges
   - emit py_sym_namespace_edges and py_sym_function_partitions
-- [ ] Add anchoring to AST spans:
+- [x] Add anchoring to AST spans:
   - MODULE -> file span
   - FUNCTION/CLASS -> AST def node by name + lineno
   - TYPE_* scopes -> owning def or annotation span (low confidence if needed)
-- [ ] Derive py_sym_bindings and py_sym_resolution_edges deterministically.
-- [ ] Add new ingestion target and schema definitions for symtable tables.
+- [x] Derive py_sym_bindings and py_sym_resolution_edges deterministically.
+- [x] Add new ingestion target for symtable tables.
+- [ ] Add schema definitions for symtable tables.
 - [ ] Add validation checks:
   - co_freevars vs symtable frees
   - declared_global/nonlocal resolution edges exist
 
 ### Phase 3: Bytecode extraction (dis -> CFG/DFG substrate)
-- [ ] Add src/codeintel/ingestion/compute/dis_extract.py:
+- [x] Add src/codeintel/ingestion/compute/dis_extract.py:
   - compile with deterministic flags
   - enumerate all nested code objects
   - emit py_bc_code_units and py_bc_instructions
   - parse exception table into py_bc_exception_table
-- [ ] Add derived tables:
+- [x] Add derived tables:
   - py_bc_blocks (block boundaries)
   - py_bc_cfg_edges (normal + exception edges)
   - py_bc_defuse_events (baseopname classifier)
-- [ ] Anchor instructions to byte spans via Instruction.positions + line index.
+- [x] Anchor instructions to byte spans via Instruction.positions + line index.
 - [ ] Add tests for:
   - CFG edges (if/loop/try/with)
   - exception table parsing
@@ -130,12 +131,14 @@ Reference anchors:
   - LOAD_GLOBAL -> module binding
 
 ### Phase 5: Inspect overlay (optional, isolated)
-- [ ] Add inspect extraction worker (subprocess, budgeted, static-safe):
-  - getmembers_static, getattr_static, get_annotations(eval_str=False)
+- [x] Add inspect extraction worker (in-process, static-safe allowlist):
+  - getmembers_static, get_annotations(eval_str=False)
   - signature(raw/wrapped), unwrap hops, source anchors
-- [ ] Emit inspect tables and derived anchors to AST/SCIP.
+- [ ] Isolate inspect extraction in a subprocess with timeouts and budgets.
+- [x] Emit inspect tables (objects, members, unwrap, signatures, annotations, source).
+- [ ] Emit derived anchors to AST/SCIP.
 - [ ] Add optional callsite param wiring using inspect signatures.
-- [ ] Add budgets and toggles in ingestion options to disable by default.
+- [x] Add budgets and toggles in ingestion options to disable by default.
 
 ### Phase 6: CPG projection and schema wiring
 - [ ] Update schema registry to include py_sym_* and py_bc_* tables.
@@ -172,12 +175,12 @@ Reference anchors:
 ## File-by-File Change List (Initial Pass)
 
 ### New ingestion steps
-- [ ] src/codeintel/ingestion/compute/symtable_extract.py
+- [x] src/codeintel/ingestion/compute/symtable_extract.py
   - symtable extraction and derived bindings/resolution edges
-- [ ] src/codeintel/ingestion/compute/dis_extract.py
+- [x] src/codeintel/ingestion/compute/dis_extract.py
   - dis code units, instructions, exception table, derived CFG/DFG tables
-- [ ] src/codeintel/ingestion/compute/inspect_extract.py
-  - optional inspect extraction (static-safe, subprocess)
+- [x] src/codeintel/ingestion/compute/inspect_extract.py
+  - optional inspect extraction (static-safe allowlist, in-process)
 
 ### AST/CST enhancements
 - [ ] src/codeintel/ingestion/compute/ast_extract.py
@@ -187,10 +190,12 @@ Reference anchors:
   - ensure AST span join logic uses byte offsets consistently
 
 ### Ingestion targets and options
-- [ ] src/codeintel/build/hamilton/native/ingestion/extraction_targets.py
+- [x] src/codeintel/build/hamilton/native/ingestion/extraction_targets.py
   - add new targets for symtable, bytecode, inspect
-- [ ] src/codeintel/build/hamilton/native/options/ingestion.py
+- [x] src/codeintel/build/hamilton/native/options/ingestion.py
   - add options for new targets and safety budgets
+- [x] src/codeintel/core/registry/dag_output_inventory.yaml
+  - register new ingestion outputs for symtable/bytecode/inspect
 
 ### Schema and storage wiring
 - [ ] src/codeintel/build/schemas/service.py
@@ -212,6 +217,61 @@ Reference anchors:
 - [ ] tests/ingestion/test_dis_extract_defuse.py
 - [ ] tests/ingestion/test_ast_span_joins.py
 - [ ] tests/ingestion/test_inspect_overlay.py (optional, sandboxed)
+
+## Remaining Work Checklist (Detailed)
+
+### AST/CST enrichment
+- [ ] Expand AST extraction payload in `src/codeintel/ingestion/compute/ast_extract.py`
+  - byte spans for all nodes
+  - ctx/type_comment/name/import/constant extras
+  - include FunctionDef/ClassDef names and arg names
+- [ ] Merge expanded AST payload into syntax nodes in `src/codeintel/ingestion/compute/cst_extract.py`
+  - attach AST payload to core.syntax_nodes extras_json
+  - ensure byte-span joins stay deterministic
+- [ ] Emit AST def/use facts
+  - Name(Store/Load), Attribute, Subscript, Import, Param defs
+  - align spans and ids to syntax nodes where possible
+- [ ] Add AST span correctness and payload completeness tests
+
+### Schema + registry + storage wiring
+- [ ] Register py_sym_*, py_bc_*, py_inspect_* tables in schema service
+- [ ] Define Arrow schemas and metadata for new datasets
+- [ ] Add row model definitions and serialization coverage
+- [ ] Update output registry and warehouse mapping for new datasets
+
+### DFG wiring (bytecode + symtable bindings)
+- [ ] Map code_unit_id -> scope_id using AST anchors
+- [ ] Resolve DEF/USE events to bindings via symtable resolution
+- [ ] Run reaching-defs over py_bc_cfg_edges and emit REACHES edges
+- [ ] Emit DEFINES_BINDING/USES_BINDING edges for bytecode events
+- [ ] Add DFG sanity checks (LOAD_FAST/LOAD_DEREF/LOAD_GLOBAL mapping)
+
+### Inspect overlay hardening
+- [ ] Isolate inspect extraction in a subprocess (avoid in-process import side effects)
+- [ ] Enforce timeouts and memory budgets per module and per run
+- [ ] Emit derived anchors to AST/SCIP and confidence metadata
+- [ ] Add optional callsite param wiring using inspect signatures
+- [ ] Add allowlist validation and error reporting for blocked imports
+
+### CPG projection and validation wiring
+- [ ] Add nodes/edges for scopes, bindings, bytecode code units, CFG blocks
+- [ ] Bridge bindings to SCIP symbols via AST def/use anchors
+- [ ] Add validation gates for symtable/dis/dfg invariants
+- [ ] Ensure node/edge ids remain span anchored and stable
+
+### Tests, fixtures, and drift gates
+- [ ] Add micro-fixture suite (global/nonlocal/free, nested, comprehensions)
+- [ ] Add CFG fixtures for try/except/finally/with
+- [ ] Add tests for symtable/dis/inspect extraction outputs
+- [ ] Add quality report metrics (anchoring rates, DFG coverage)
+- [ ] Segment pytest runs by affected directories
+
+### Performance + rollout
+- [ ] Add incremental caching for code unit compilation
+- [ ] Bound memory by streaming row buffers and lazy materialization
+- [ ] Add per-file size thresholds and timeouts for dis/inspect
+- [ ] Add configurable parallelism for dis extraction
+- [ ] Stage rollout: symtable -> bytecode CFG -> DFG -> inspect overlay
 
 ## Acceptance Criteria
 - AST nodes and syntax nodes have consistent byte spans and stable ids.

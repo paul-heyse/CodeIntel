@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows
-from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
+from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.builders import (
     AstMetricsRow,
     CallGraphEdgeRow,

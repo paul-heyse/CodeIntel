@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from numbers import Integral
 
 import polars as pl
-from intervaltree import IntervalTree
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.options.ingestion import SyntaxAugmentOptions
@@ -26,6 +25,7 @@ from codeintel.build.tabular.frames import (
     rows_to_frame,
 )
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.spans import normalize_byte_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, InferableTabularInput)
@@ -45,17 +45,8 @@ EDGE_KIND = "AST_CHILD"
 
 
 @dataclass(slots=True)
-class _SyntaxNodeCandidate:
-    node_id: str
-    start_byte: int
-    end_byte: int
-    order: int
-
-
-@dataclass(slots=True)
 class _SyntaxNodeIndex:
-    tree: IntervalTree
-    exact: dict[tuple[int, int], list[_SyntaxNodeCandidate]]
+    resolver: SpanResolver[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +119,7 @@ def _failure_paths(parse_manifest: pl.DataFrame) -> set[str]:
 
 def _build_syntax_index(nodes_frame: pl.DataFrame) -> dict[str, _SyntaxNodeIndex]:
     indexes: dict[str, _SyntaxNodeIndex] = {}
-    for order, row in enumerate(nodes_frame.iter_rows(named=True)):
+    for row in nodes_frame.iter_rows(named=True):
         rel_path = row.get("rel_path")
         node_id = row.get("node_id")
         if not isinstance(rel_path, str) or not isinstance(node_id, str):
@@ -141,86 +132,24 @@ def _build_syntax_index(nodes_frame: pl.DataFrame) -> dict[str, _SyntaxNodeIndex
         if span is None:
             continue
         start_byte, end_byte = span
-        candidate = _SyntaxNodeCandidate(
-            node_id=node_id,
-            start_byte=start_byte,
-            end_byte=end_byte,
-            order=order,
-        )
         index = indexes.get(rel_path)
         if index is None:
-            index = _SyntaxNodeIndex(tree=IntervalTree(), exact={})
+            index = _SyntaxNodeIndex(
+                resolver=SpanResolver.for_bytes(path_normalizer=lambda value: value)
+            )
             indexes[rel_path] = index
-        index.exact.setdefault((start_byte, end_byte), []).append(candidate)
-        if start_byte < end_byte:
-            index.tree.addi(start_byte, end_byte, candidate)
+        index.resolver.add_span(rel_path, start_byte, end_byte, node_id)
     return indexes
-
-
-def _pick_candidate(candidates: Iterable[_SyntaxNodeCandidate]) -> _SyntaxNodeCandidate | None:
-    items = list(candidates)
-    if not items:
-        return None
-    return min(items, key=lambda item: (item.end_byte - item.start_byte, item.order))
-
-
-def _interval_candidates(intervals: Iterable[object]) -> list[_SyntaxNodeCandidate]:
-    candidates: list[_SyntaxNodeCandidate] = []
-    for interval in intervals:
-        data = getattr(interval, "data", None)
-        if isinstance(data, _SyntaxNodeCandidate):
-            candidates.append(data)
-    return candidates
-
-
-def _containing_intervals(tree: IntervalTree, start: int, end: int) -> list[object]:
-    envelop = getattr(tree, "envelop", None)
-    if callable(envelop):
-        intervals = envelop(start, end)
-        if isinstance(intervals, Iterable):
-            return list(intervals)
-        return []
-    return [
-        interval
-        for interval in tree.overlap(start, end)
-        if interval.begin <= start and interval.end >= end
-    ]
-
-
-def _point_intervals(tree: IntervalTree, point: int) -> list[object]:
-    at = getattr(tree, "at", None)
-    if callable(at):
-        intervals = at(point)
-        if isinstance(intervals, Iterable):
-            return list(intervals)
-        return []
-    return list(tree.overlap(point, point + 1))
 
 
 def _match_syntax_node(
     index: _SyntaxNodeIndex,
+    rel_path: str,
     start: int,
     end: int,
 ) -> tuple[str | None, str, int]:
-    exact = index.exact.get((start, end))
-    if exact:
-        chosen = _pick_candidate(exact)
-        return (chosen.node_id if chosen else None, "EXACT", len(exact))
-    if start == end:
-        point = _interval_candidates(_point_intervals(index.tree, start))
-        chosen = _pick_candidate(point)
-        if chosen is None:
-            return None, "NONE", 0
-        return chosen.node_id, "POINT", len(point)
-    containing = _interval_candidates(_containing_intervals(index.tree, start, end))
-    if containing:
-        chosen = _pick_candidate(containing)
-        return (chosen.node_id if chosen else None, "CONTAINS", len(containing))
-    overlaps = _interval_candidates(index.tree.overlap(start, end))
-    if overlaps:
-        chosen = _pick_candidate(overlaps)
-        return (chosen.node_id if chosen else None, "OVERLAP", len(overlaps))
-    return None, "NONE", 0
+    match = index.resolver.resolve(rel_path, start, end, allow_adjacent_point=True)
+    return match.payload, match.match_kind, match.candidate_count
 
 
 def _producer_by_path(nodes_frame: pl.DataFrame) -> dict[str, str]:
@@ -305,6 +234,7 @@ def _xref_row_for_ts_node(
         )
     syntax_node_id, match_kind, candidate_count = _match_syntax_node(
         index,
+        rel_path,
         start_byte,
         end_byte,
     )

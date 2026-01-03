@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlglot import exp
 
-from codeintel.core.helpers.payload import decode_payload, encode_payload
+from codeintel.core.serialization.payload import decode_payload, encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 

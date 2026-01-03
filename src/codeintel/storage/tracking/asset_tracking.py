@@ -18,8 +18,8 @@ from codeintel.core.gateway import (
     RunAssetVersionRecordProtocol,
     RunEnvironmentRecordProtocol,
 )
-from codeintel.core.helpers.json import decode_json_dict
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.serialization.json import decode_json_dict
+from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE

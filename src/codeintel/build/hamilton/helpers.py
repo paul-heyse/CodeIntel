@@ -251,8 +251,11 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         paths: list[str] = []
         for batch in reader:
-            values = [str(value) for value in batch.column(0).to_pylist() if value is not None]
-            paths.extend(values)
+            for value in batch.column(0):
+                raw = value.as_py()
+                if raw is None:
+                    continue
+                paths.append(str(raw))
     except (RuntimeError, OSError, DuckDBError) as exc:
         log.warning("gateway error fetching module paths: %s", exc)
         return []

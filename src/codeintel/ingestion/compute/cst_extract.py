@@ -1576,6 +1576,61 @@ def _merge_ast_into_syntax_nodes(
         row["extras_json"] = merged
 
 
+def _ast_nodes_by_span(
+    ast_nodes: Sequence[AstNodeRecord],
+) -> dict[tuple[int, int], list[AstNodeRecord]]:
+    index: dict[tuple[int, int], list[AstNodeRecord]] = {}
+    for record in ast_nodes:
+        key = (record.span.start_byte, record.span.end_byte)
+        index.setdefault(key, []).append(record)
+    return index
+
+
+def _pick_ast_candidate(
+    candidates: Sequence[AstNodeRecord],
+    *,
+    preferred_kinds: set[str],
+) -> AstNodeRecord:
+    for candidate in candidates:
+        if candidate.kind in preferred_kinds:
+            return candidate
+    return candidates[0]
+
+
+@dataclass(frozen=True, slots=True)
+class _AstMergeConfig:
+    preferred_kinds: set[str]
+    match_kind: str
+    start_key: str = "start_byte"
+    end_key: str = "end_byte"
+
+
+def _merge_ast_into_syntax_facts(
+    rows: list[dict[str, object]],
+    ast_nodes: Sequence[AstNodeRecord],
+    *,
+    config: _AstMergeConfig,
+) -> None:
+    if not rows or not ast_nodes:
+        return
+    index = _ast_nodes_by_span(ast_nodes)
+    for row in rows:
+        start_byte = row.get(config.start_key)
+        end_byte = row.get(config.end_key)
+        if not isinstance(start_byte, int) or not isinstance(end_byte, int):
+            continue
+        candidates = index.get((start_byte, end_byte))
+        if not candidates:
+            continue
+        candidate = _pick_ast_candidate(candidates, preferred_kinds=config.preferred_kinds)
+        extras = row.get("extras_json")
+        merged = dict(extras) if isinstance(extras, dict) else {}
+        merged["ast_node_id"] = candidate.node_id
+        merged["ast_kind"] = candidate.kind
+        merged["ast_match_kind"] = config.match_kind
+        row["extras_json"] = merged
+
+
 def _parse_manifest_row(
     context: _ParseManifestContext,
     *,
@@ -1845,6 +1900,40 @@ def _extract_module_syntax(
 
     if emit_ast_nodes and ast_nodes:
         _merge_ast_into_syntax_nodes(syntax_graph_visitor.node_rows, ast_nodes)
+        _merge_ast_into_syntax_facts(
+            syntax_visitor.defs,
+            ast_nodes,
+            config=_AstMergeConfig(
+                preferred_kinds={"Name", "arg", "FunctionDef", "AsyncFunctionDef", "ClassDef"},
+                match_kind="DEF",
+            ),
+        )
+        _merge_ast_into_syntax_facts(
+            syntax_visitor.refs,
+            ast_nodes,
+            config=_AstMergeConfig(
+                preferred_kinds={"Name", "Attribute", "Subscript"},
+                match_kind="REF",
+            ),
+        )
+        _merge_ast_into_syntax_facts(
+            syntax_visitor.imports,
+            ast_nodes,
+            config=_AstMergeConfig(
+                preferred_kinds={"Import", "ImportFrom", "alias"},
+                match_kind="IMPORT",
+            ),
+        )
+        _merge_ast_into_syntax_facts(
+            syntax_visitor.func_params,
+            ast_nodes,
+            config=_AstMergeConfig(
+                preferred_kinds={"arg"},
+                match_kind="PARAM",
+                start_key="param_start_byte",
+                end_key="param_end_byte",
+            ),
+        )
 
     _flush_cst_rows(buffers, cst_visitor.rows)
 
