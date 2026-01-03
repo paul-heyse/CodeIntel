@@ -9,14 +9,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+
 if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = [
+    "AstExtractOptions",
     "BytecodeExtractOptions",
     "InspectExtractOptions",
     "ModuleIngestOptions",
     "ScipIngestOptions",
+    "SymtableExtractOptions",
     "SyntaxAugmentOptions",
     "SyntaxIndexOptions",
     "TreeSitterIndexOptions",
@@ -119,9 +123,41 @@ class SyntaxIndexOptions:
     ----------
     emit_ast_nodes
         Whether to merge CPython AST facts into syntax nodes.
+    batch_size
+        Target row count per Arrow RecordBatch when streaming.
     """
 
     emit_ast_nodes: bool = True
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+
+
+@dataclass(frozen=True)
+class AstExtractOptions:
+    """Configuration options for AST extraction.
+
+    Attributes
+    ----------
+    batch_size
+        Target row count per Arrow RecordBatch when streaming.
+    """
+
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+
+
+@dataclass(frozen=True)
+class SymtableExtractOptions:
+    """Configure symtable extraction behavior.
+
+    Attributes
+    ----------
+    enable
+        Whether to enable symtable extraction.
+    batch_size
+        Target row count per Arrow RecordBatch when streaming.
+    """
+
+    enable: bool = True
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
 
 
 @dataclass(frozen=True)
@@ -130,6 +166,8 @@ class BytecodeExtractOptions:
 
     Attributes
     ----------
+    enable
+        Whether to enable bytecode extraction.
     optimize
         Optimization level passed to compile() (0, 1, or 2).
     show_caches
@@ -142,20 +180,39 @@ class BytecodeExtractOptions:
         Whether to derive CFG blocks/edges.
     include_defuse
         Whether to emit def/use events.
+    dont_inherit
+        Whether to ignore future flags from the runtime environment during compile.
+    compile_flags
+        Optional flags passed to compile() for bytecode extraction.
     max_module_bytes
         Maximum module size in bytes to process (None disables the limit).
+    max_module_seconds
+        Optional per-module wall-clock budget for bytecode extraction.
     max_workers
         Number of worker threads to use for bytecode extraction.
+    batch_size
+        Target row count per Arrow RecordBatch when streaming.
+    enable_cache
+        Whether to cache compiled code objects for reuse across runs.
+    cache_dir
+        Optional directory for compiled bytecode cache files.
     """
 
+    enable: bool = True
     optimize: int = 0
     show_caches: bool = True
     adaptive: bool = False
     include_exception_table: bool = True
     include_cfg: bool = True
     include_defuse: bool = True
+    dont_inherit: bool = True
+    compile_flags: int = 0
     max_module_bytes: int | None = None
+    max_module_seconds: float | None = None
     max_workers: int = 1
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+    enable_cache: bool = True
+    cache_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -176,8 +233,14 @@ class InspectExtractOptions:
         Maximum number of modules to inspect per run (None disables the limit).
     max_module_bytes
         Maximum module size in bytes to inspect (None disables the limit).
+    max_module_seconds
+        Optional per-module wall-clock budget for inspect extraction.
+    max_memory_mb
+        Optional per-run memory ceiling for inspect extraction (megabytes).
     max_objects
         Maximum number of objects to inspect.
+    batch_size
+        Target row count per Arrow RecordBatch when streaming.
     follow_wrapped
         Whether to follow wrapper chains for signatures.
     eval_str
@@ -190,7 +253,10 @@ class InspectExtractOptions:
     timeout_seconds: int = 30
     max_modules: int | None = None
     max_module_bytes: int | None = None
+    max_module_seconds: float | None = None
+    max_memory_mb: int | None = None
     max_objects: int = 5000
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
     follow_wrapped: bool = True
     eval_str: bool = False
 

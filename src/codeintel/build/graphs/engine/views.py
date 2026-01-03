@@ -10,22 +10,25 @@ from __future__ import annotations
 import importlib
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
-import polars as pl
 
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     scan_snapshot_reader,
     scan_snapshot_table,
 )
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, table_to_reader
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 from codeintel.core.query_results import iter_tuples_from_arrow_reader
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 log = logging.getLogger(__name__)
 
@@ -37,20 +40,36 @@ def _ensure_dataset_root(dataset_root: Path | None, table_key: str) -> Path | No
     return dataset_root
 
 
-def _scan_snapshot_frame(request: SnapshotScanRequest) -> pl.LazyFrame | None:
-    reader = scan_snapshot_reader(request)
-    if reader is None:
+def _scan_snapshot_reader(request: SnapshotScanRequest) -> pa.RecordBatchReader | None:
+    return scan_snapshot_reader(request)
+
+
+def _column_index(names: list[str], column: str) -> int | None:
+    try:
+        return names.index(column)
+    except ValueError:
         return None
-    return arrow_reader_to_lazyframe(reader)
 
 
-def _filter_optional_scope(frame: pl.LazyFrame, *, repo: str, commit: str) -> pl.LazyFrame:
-    available = set(frame.columns)
-    if "repo" in available:
-        frame = frame.filter(pl.col("repo").is_null() | (pl.col("repo") == repo))
-    if "commit" in available:
-        frame = frame.filter(pl.col("commit").is_null() | (pl.col("commit") == commit))
-    return frame
+def _iter_scoped_rows(
+    reader: pa.RecordBatchReader,
+    *,
+    repo: str,
+    commit: str,
+) -> Iterable[tuple[object, ...]]:
+    names = list(reader.schema.names)
+    repo_idx = _column_index(names, "repo")
+    commit_idx = _column_index(names, "commit")
+    for row in iter_tuples_from_arrow_reader(reader):
+        if repo_idx is not None:
+            row_repo = row[repo_idx]
+            if row_repo is not None and str(row_repo) != repo:
+                continue
+        if commit_idx is not None:
+            row_commit = row[commit_idx]
+            if row_commit is not None and str(row_commit) != commit:
+                continue
+        yield row
 
 
 def _module_name_map(
@@ -375,27 +394,43 @@ class ConfigGraphStats:
     dropped_modules: int = 0
 
 
-def _allowed_modules_from_frame(
-    modules_frame: pl.LazyFrame,
+def _allowed_modules_from_reader(
+    modules_reader: pa.RecordBatchReader,
     *,
     repo: str,
     commit: str,
 ) -> set[str]:
-    scoped = _filter_optional_scope(modules_frame, repo=repo, commit=commit)
-    module_rows = scoped.select("module").collect()
-    return {str(mod) for mod in module_rows.get_column("module").to_list()}
+    names = list(modules_reader.schema.names)
+    module_idx = _column_index(names, "module")
+    if module_idx is None:
+        return set()
+    allowed: set[str] = set()
+    for row in _iter_scoped_rows(modules_reader, repo=repo, commit=commit):
+        value = row[module_idx]
+        if value is None:
+            continue
+        allowed.add(str(value))
+    return allowed
 
 
 def _populate_config_graph(
     graph: nx.Graph,
-    config_frame: pl.LazyFrame,
+    config_reader: pa.RecordBatchReader,
+    *,
+    repo: str,
+    commit: str,
     allowed_modules: set[str],
 ) -> ConfigGraphStats:
     stats = ConfigGraphStats()
-    for row in config_frame.collect().iter_rows(named=True):
+    names = list(config_reader.schema.names)
+    key_idx = _column_index(names, "key")
+    ref_idx = _column_index(names, "reference_modules")
+    if key_idx is None or ref_idx is None:
+        return stats
+    for row in _iter_scoped_rows(config_reader, repo=repo, commit=commit):
         stats.total_rows += 1
-        key = row.get("key")
-        ref_modules = row.get("reference_modules")
+        key = row[key_idx]
+        ref_modules = row[ref_idx]
         if key is None or ref_modules is None:
             stats.empty_refs += 1
             continue
@@ -459,7 +494,7 @@ def load_config_module_bipartite(
     dataset_root = _ensure_dataset_root(dataset_root, "analytics.config_values")
     if dataset_root is None:
         return nx.Graph()
-    modules_frame = _scan_snapshot_frame(
+    modules_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="core.modules",
@@ -467,25 +502,29 @@ def load_config_module_bipartite(
             columns=("module", "repo", "commit"),
         )
     )
-    if modules_frame is None:
+    if modules_reader is None:
         return nx.Graph()
-    allowed_modules = _allowed_modules_from_frame(modules_frame, repo=repo, commit=commit)
+    allowed_modules = _allowed_modules_from_reader(modules_reader, repo=repo, commit=commit)
 
-    config_frame = _scan_snapshot_frame(
+    config_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="analytics.config_values",
             snapshot_id=commit,
             columns=("key", "reference_modules", "repo", "commit"),
-            repo=repo,
-            commit=commit,
         )
     )
-    if config_frame is None:
+    if config_reader is None:
         return nx.Graph()
 
     graph = nx.Graph()
-    stats = _populate_config_graph(graph, config_frame, allowed_modules)
+    stats = _populate_config_graph(
+        graph,
+        config_reader,
+        repo=repo,
+        commit=commit,
+        allowed_modules=allowed_modules,
+    )
     log.info(
         "Config bipartite built: rows=%d empty_refs=%d allowed_modules=%d "
         "parsed_modules=%d kept_modules=%d dropped_modules=%d graph_nodes=%d edges=%d",

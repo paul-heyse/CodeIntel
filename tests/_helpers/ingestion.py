@@ -6,7 +6,10 @@ import json
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
+
+import pyarrow as pa
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.helpers import paths_to_modules
@@ -27,6 +30,7 @@ from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
+from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet, FileDigest
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.modules import ModulesAssertions
 from tests._helpers.build import TEST_BUILD_SETTINGS
@@ -40,6 +44,11 @@ from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 from tests._helpers.modules_expectations import (
     module_paths_expected_from_repo_tree,
     modules_expected_from_env,
+)
+from tests._helpers.parquet_datasets import (
+    rows_from_columnar_rows,
+    write_snapshot_rows,
+    write_snapshot_rows_raw,
 )
 from tests._helpers.scip_proto import ensure_proto_module
 from tests._helpers.scip_proto import write_scip_index as write_proto_index
@@ -113,6 +122,8 @@ __all__ = [
     "seed_inventory_from_paths",
     "seed_modules_and_repo_map",
     "seed_numeric_table",
+    "seed_parquet_ingestion_tables",
+    "seed_parquet_modules",
     "seed_varchar_table",
     "write_dummy_scip_files",
     "write_pytest_report",
@@ -225,8 +236,7 @@ def build_target_context_for_target(
 
     gateway = cfg.gateway
     if gateway is None:
-        factory = cfg.gateway_factory or GatewayFactory().with_macros()
-        gateway = factory.open()
+        gateway = _open_gateway(cfg.gateway_factory)
 
     snapshot = cfg.snapshot
     if isinstance(snapshot, tuple):
@@ -382,7 +392,7 @@ def build_ingestion_context_bundle(
             include_macros=opts.include_macros,
             include_symlinks=opts.include_symlinks,
         )
-    gateway = (gateway_factory or GatewayFactory().with_macros()).open()
+    gateway = _open_gateway(gateway_factory)
     target = _make_ingestion_target("repo_scan", "Repository scan target for testing")
     ctx = build_target_context_for_target(
         target,
@@ -455,6 +465,33 @@ def materialize_repo_scan_result(
         "core.repo_map",
         scan_result.repo_map_rows,
         snapshot=snapshot,
+    )
+
+
+def write_repo_scan_result(
+    dataset_root: Path,
+    scan_result: RepoScanResult,
+    *,
+    snapshot: SnapshotRef,
+) -> None:
+    """Write repo scan results as parquet datasets."""
+    write_snapshot_rows(
+        dataset_root,
+        table_key="core.modules",
+        snapshot_id=snapshot.commit,
+        rows=rows_from_columnar_rows(scan_result.module_rows),
+    )
+    write_snapshot_rows(
+        dataset_root,
+        table_key="core.file_state",
+        snapshot_id=snapshot.commit,
+        rows=rows_from_columnar_rows(scan_result.file_state_rows),
+    )
+    write_snapshot_rows(
+        dataset_root,
+        table_key="core.repo_map",
+        snapshot_id=snapshot.commit,
+        rows=rows_from_columnar_rows(scan_result.repo_map_rows),
     )
 
 
@@ -636,7 +673,7 @@ def make_scan_setup(
         write_tree(repo_root, opts.repo_structure)
     else:
         repo_root = build_repo_with_variants(tmp_path, include_invalid=opts.include_invalid)
-    gateway = (opts.gateway_factory or GatewayFactory().with_macros()).open()
+    gateway = _open_gateway(opts.gateway_factory)
     profile = build_scan_profile(
         repo_root,
         include_globs=opts.include_globs,
@@ -698,6 +735,20 @@ class ScipIngestContext:
     build_dir: Path
 
 
+@dataclass(frozen=True)
+class ScipRepoPaths:
+    repo_root: Path
+    build_dir: Path
+
+
+@dataclass(frozen=True)
+class ParquetRepoScanContext:
+    snapshot: SnapshotRef
+    dataset_root: Path
+    repo_root: Path
+    scan_result: RepoScanResult
+
+
 def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     """Create a repo, gateway, and adapters for SCIP ingest tests.
 
@@ -714,7 +765,7 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     build_dir = repo_root / "build"
     db_path = build_dir / "db" / "codeintel.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    gateway = GatewayFactory().file_backed(db_path).with_macros().open()
+    gateway = GatewayFactory().file_backed(db_path).open()
     target = _make_ingestion_target("tests_ingest", "Tests ingestion target")
     ctx = build_target_context_for_target(
         target,
@@ -734,6 +785,24 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
         tools=tool_adapter,
         build_dir=build_dir,
     )
+
+
+def build_scip_repo_paths(tmp_path: Path) -> ScipRepoPaths:
+    """Create repo/build paths for SCIP resolver tests without gateways.
+
+    Returns
+    -------
+    ScipRepoPaths
+        Repository root and build directory paths.
+    """
+    repo_root = tmp_path / "repo"
+    write_tree(
+        repo_root,
+        {"pkg/__init__.py": "", "pkg/mod.py": "def foo(x: int) -> int:\n    return x + 1\n"},
+    )
+    build_dir = repo_root / "build"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    return ScipRepoPaths(repo_root=repo_root, build_dir=build_dir)
 
 
 def build_scip_repo_fixture(tmp_path: Path) -> ScipIngestContext:
@@ -798,7 +867,7 @@ def module_inventory_context(
         },
     )
     snapshot = make_snapshot(repo="demo", commit="abc123", repo_root=repo_root)
-    gateway = (gateway_factory or GatewayFactory().with_macros()).open()
+    gateway = _open_gateway(gateway_factory)
     profile = default_code_profile(repo_root)
     scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
     ctx = ModuleInventoryContext(
@@ -811,6 +880,89 @@ def module_inventory_context(
     )
     with closing_gateway(gateway):
         yield ctx
+
+
+class _MemoryChangeDetection:
+    def compute_changes(
+        self,
+        request: ChangeRequest,
+        current_modules: Sequence[ModuleRecord],
+    ) -> ChangeSet:
+        _ = self, request
+        return ChangeSet(
+            added=list(current_modules),
+            modified=[],
+            deleted=[],
+            state_hash="memory",
+            state_rows={},
+        )
+
+    def load_previous_state(self, repo: str, language: str) -> Mapping[str, FileDigest]:
+        _ = self, repo, language
+        return {}
+
+    def save_current_state(
+        self,
+        repo: str,
+        commit: str,
+        language: str,
+        state: Mapping[str, FileDigest],
+    ) -> None:
+        _ = self, repo, commit, language, state
+
+    def compute_file_digest(self, path: Path) -> FileDigest | None:
+        _ = self, path
+        return None
+
+
+def build_parquet_repo_scan_context(
+    tmp_path: Path,
+    *,
+    repo_structure: Mapping[str, str] | None = None,
+    snapshot: SnapshotRef | None = None,
+    profile: ScanProfile | None = None,
+) -> ParquetRepoScanContext:
+    """Run repo scan and materialize parquet datasets for module inventory tests.
+
+    Returns
+    -------
+    ParquetRepoScanContext
+        Context containing snapshot, dataset root, repo root, and scan results.
+    """
+    repo_root = tmp_path / "repo"
+    write_tree(
+        repo_root,
+        repo_structure
+        or {
+            "src/pkg/a.py": "print('a')\n",
+            "src/pkg/b.py": "print('b')\n",
+        },
+    )
+    resolved_snapshot = snapshot or make_snapshot(repo="demo", commit="abc123", repo_root=repo_root)
+    resolved_profile = profile or default_code_profile(repo_root)
+    scan_step = RepoScanStep(
+        discovery=FilesystemDiscoveryAdapter(repo_root),
+        change_detection=_MemoryChangeDetection(),
+    )
+    scan_result = scan_step.execute(
+        repo=resolved_snapshot.repo,
+        commit=resolved_snapshot.commit,
+        repo_root=repo_root,
+        profile=resolved_profile,
+    )
+    dataset_root = tmp_path / "datasets"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    write_repo_scan_result(
+        dataset_root,
+        scan_result,
+        snapshot=resolved_snapshot,
+    )
+    return ParquetRepoScanContext(
+        snapshot=resolved_snapshot,
+        dataset_root=dataset_root,
+        repo_root=repo_root,
+        scan_result=scan_result,
+    )
 
 
 @contextmanager
@@ -826,6 +978,10 @@ def closing_gateway(gateway: StorageGateway) -> Generator[StorageGateway]:
         yield gateway
     finally:
         gateway.close()
+
+
+def _open_gateway(factory: GatewayFactory | None) -> StorageGateway:
+    return (factory or GatewayFactory()).open()
 
 
 def seed_modules_and_repo_map(
@@ -949,6 +1105,18 @@ class SeedIngestionConfig:
     include_duplicates: bool = False
 
 
+@dataclass(frozen=True)
+class ParquetForeignKeySeed:
+    """Seed specification for parquet foreign key fixtures."""
+
+    dataset_root: Path
+    snapshot: SnapshotRef
+    parent_table: str
+    child_table: str
+    parent_rows: Sequence[tuple[int, str]]
+    child_rows: Sequence[tuple[int, int | None]]
+
+
 def seed_ingestion_tables(
     ctx: BuildEnv,
     config: SeedIngestionConfig | None = None,
@@ -1005,6 +1173,243 @@ def seed_ingestion_tables(
             parent_rows=default_parent_rows,
             child_rows=default_child_rows,
         )
+
+
+_PARQUET_TEST_TABLE_SCHEMAS: dict[str, pa.Schema] = {
+    "core.test_numeric": pa.schema([("id", pa.int64()), ("value", pa.float64())]),
+    "core.test_numeric2": pa.schema([("id", pa.int64()), ("value", pa.float64())]),
+    "core.test_empty_num": pa.schema([("id", pa.int64()), ("value", pa.float64())]),
+    "core.test_empty_num2": pa.schema([("id", pa.int64()), ("value", pa.float64())]),
+    "core.test_pos": pa.schema([("id", pa.int64()), ("value", pa.float64())]),
+    "core.test_all_pos": pa.schema([("id", pa.int64()), ("value", pa.float64())]),
+    "core.test_nulls": pa.schema([("id", pa.int64()), ("value", pa.string())]),
+    "core.test_dupes": pa.schema([("id", pa.int64()), ("name", pa.string())]),
+    "core.test_unique": pa.schema([("id", pa.int64()), ("name", pa.string())]),
+    "core.test_varchar": pa.schema([("id", pa.int64()), ("value", pa.string())]),
+    "core.test_frac1": pa.schema([("id", pa.int64()), ("value", pa.string())]),
+    "core.test_frac2": pa.schema([("id", pa.int64()), ("value", pa.string())]),
+    "core.test_frac3": pa.schema([("id", pa.int64()), ("value", pa.string())]),
+    "core.test_frac_empty": pa.schema([("id", pa.int64()), ("value", pa.string())]),
+    "core.test_parent": pa.schema([("id", pa.int64()), ("name", pa.string())]),
+    "core.test_parent2": pa.schema([("id", pa.int64()), ("name", pa.string())]),
+    "core.test_parent3": pa.schema([("id", pa.int64()), ("name", pa.string())]),
+    "core.test_child": pa.schema([("id", pa.int64()), ("parent_id", pa.int64())]),
+    "core.test_child2": pa.schema([("id", pa.int64()), ("parent_id", pa.int64())]),
+    "core.test_child3": pa.schema([("id", pa.int64()), ("parent_id", pa.int64())]),
+}
+
+_PARQUET_VARCHAR_COLUMNS: dict[str, str] = {
+    "core.test_nulls": "value",
+    "core.test_dupes": "name",
+    "core.test_unique": "name",
+    "core.test_varchar": "value",
+    "core.test_frac1": "value",
+    "core.test_frac2": "value",
+    "core.test_frac3": "value",
+    "core.test_frac_empty": "value",
+}
+
+
+def seed_parquet_modules(
+    dataset_root: Path,
+    snapshot: SnapshotRef,
+    paths: Sequence[str],
+) -> None:
+    """Write module inventory datasets to parquet."""
+    records = module_records_for_paths(paths, snapshot.repo_root)
+    module_rows = [
+        {
+            "module": record.module_name,
+            "path": record.file_path.relative_to(snapshot.repo_root).as_posix(),
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "language": "python",
+            "tags": [],
+            "owners": [],
+        }
+        for record in records
+    ]
+    write_snapshot_rows(
+        dataset_root,
+        table_key="core.modules",
+        snapshot_id=snapshot.commit,
+        rows=module_rows,
+        allow_empty=True,
+    )
+    modules_json = {
+        record.module_name: record.file_path.relative_to(snapshot.repo_root).as_posix()
+        for record in records
+    }
+    repo_map_rows = [
+        {
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "modules": modules_json,
+            "overlays": {},
+            "generated_at": datetime.now(UTC),
+        }
+    ]
+    write_snapshot_rows(
+        dataset_root,
+        table_key="core.repo_map",
+        snapshot_id=snapshot.commit,
+        rows=repo_map_rows,
+        allow_empty=True,
+    )
+
+
+def seed_parquet_ingestion_tables(
+    dataset_root: Path,
+    snapshot: SnapshotRef,
+    config: SeedIngestionConfig | None = None,
+) -> None:
+    """Seed ingestion tables as parquet datasets."""
+    cfg = config or SeedIngestionConfig()
+    if cfg.module_paths:
+        seed_parquet_modules(dataset_root, snapshot, cfg.module_paths)
+
+    tables_seeded = False
+    if cfg.numeric_tables:
+        tables_seeded = True
+        for table, values in cfg.numeric_tables.items():
+            _seed_parquet_numeric_table(
+                dataset_root=dataset_root,
+                snapshot=snapshot,
+                table=table,
+                values=values,
+            )
+    if cfg.varchar_tables:
+        tables_seeded = True
+        for table, values in cfg.varchar_tables.items():
+            _seed_parquet_varchar_table(
+                dataset_root=dataset_root,
+                snapshot=snapshot,
+                table=table,
+                values=values,
+            )
+    if cfg.foreign_keys:
+        tables_seeded = True
+        for parent_table, child_table, parent_rows, child_rows in cfg.foreign_keys:
+            _seed_parquet_foreign_key_tables(
+                ParquetForeignKeySeed(
+                    dataset_root=dataset_root,
+                    snapshot=snapshot,
+                    parent_table=parent_table,
+                    child_table=child_table,
+                    parent_rows=parent_rows,
+                    child_rows=child_rows,
+                )
+            )
+
+    if cfg.include_defaults and not tables_seeded:
+        _seed_parquet_numeric_table(
+            dataset_root=dataset_root,
+            snapshot=snapshot,
+            table="core.test_numeric",
+            values=[10.5, 5.0, 20.0, 5.0] if cfg.include_duplicates else [10.5, 5.0, 20.0],
+        )
+        _seed_parquet_varchar_table(
+            dataset_root=dataset_root,
+            snapshot=snapshot,
+            table="core.test_varchar",
+            values=[
+                (1, "alpha"),
+                (2, "beta"),
+                (3, "gamma"),
+                (4, "beta") if cfg.include_duplicates else (4, "delta"),
+            ],
+        )
+        default_parent_rows: list[tuple[int, str]] = [(1, "Parent 1"), (2, "Parent 2")]
+        default_child_rows: list[tuple[int, int | None]] = [(1, 1), (2, 1)]
+        if cfg.include_orphans:
+            default_child_rows.append((3, None))
+        _seed_parquet_foreign_key_tables(
+            ParquetForeignKeySeed(
+                dataset_root=dataset_root,
+                snapshot=snapshot,
+                parent_table="core.test_parent",
+                child_table="core.test_child",
+                parent_rows=default_parent_rows,
+                child_rows=default_child_rows,
+            )
+        )
+
+
+def _seed_parquet_numeric_table(
+    *,
+    dataset_root: Path,
+    snapshot: SnapshotRef,
+    table: str,
+    values: Sequence[float],
+) -> None:
+    schema = _PARQUET_TEST_TABLE_SCHEMAS.get(table)
+    if schema is None:
+        message = f"Unsupported numeric table for parquet tests: {table}"
+        raise ValueError(message)
+    rows = [{"id": idx, "value": value} for idx, value in enumerate(values, start=1)]
+    write_snapshot_rows_raw(
+        dataset_root,
+        table_key=table,
+        snapshot_id=snapshot.commit,
+        rows=rows,
+        schema=schema,
+    )
+
+
+def _seed_parquet_varchar_table(
+    *,
+    dataset_root: Path,
+    snapshot: SnapshotRef,
+    table: str,
+    values: Sequence[tuple[int, str | None]],
+) -> None:
+    schema = _PARQUET_TEST_TABLE_SCHEMAS.get(table)
+    if schema is None:
+        message = f"Unsupported varchar table for parquet tests: {table}"
+        raise ValueError(message)
+    column = _PARQUET_VARCHAR_COLUMNS.get(table)
+    if column is None:
+        message = f"Unsupported varchar table column for parquet tests: {table}"
+        raise ValueError(message)
+    rows = [{"id": row_id, column: value} for row_id, value in values]
+    write_snapshot_rows_raw(
+        dataset_root,
+        table_key=table,
+        snapshot_id=snapshot.commit,
+        rows=rows,
+        schema=schema,
+    )
+
+
+def _seed_parquet_foreign_key_tables(seed: ParquetForeignKeySeed) -> None:
+    parent_schema = _PARQUET_TEST_TABLE_SCHEMAS.get(seed.parent_table)
+    child_schema = _PARQUET_TEST_TABLE_SCHEMAS.get(seed.child_table)
+    if parent_schema is None or child_schema is None:
+        message = (
+            "Unsupported foreign key tables for parquet tests: "
+            f"{seed.parent_table}, {seed.child_table}"
+        )
+        raise ValueError(message)
+    parent_payload = [
+        {"id": row_id, "name": name} for row_id, name in seed.parent_rows
+    ]
+    child_payload = [
+        {"id": row_id, "parent_id": parent_id} for row_id, parent_id in seed.child_rows
+    ]
+    write_snapshot_rows_raw(
+        seed.dataset_root,
+        table_key=seed.parent_table,
+        snapshot_id=seed.snapshot.commit,
+        rows=parent_payload,
+        schema=parent_schema,
+    )
+    write_snapshot_rows_raw(
+        seed.dataset_root,
+        table_key=seed.child_table,
+        snapshot_id=seed.snapshot.commit,
+        rows=child_payload,
+        schema=child_schema,
+    )
 
 
 def seed_foreign_key_tables(

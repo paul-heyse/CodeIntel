@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import polars as pl
+import pyarrow as pa
 from hamilton.function_modifiers import (
     apply_to,
     parameterize,
@@ -68,12 +68,10 @@ from codeintel.build.hamilton.transforms.ingestion_normalize import normalize_in
 from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.tabular.frames import (
-    dedupe_frame_for_table,
-    empty_lazyframe_for_table,
-    lazyframe_for_ingest_reader,
-)
-from codeintel.core.columnar.rows import columnar_row_count
+from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import columnar_row_count, empty_reader_for_table
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
@@ -125,14 +123,14 @@ class ModuleToolOutput(ToolStepOutput):
     modules: tuple[ModuleRecord, ...] = field(default_factory=tuple)
     change_set: ChangeSet | None = None
     file_state_hash: str | None = None
-    module_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(MODULES_TABLE_KEY)
+    module_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(MODULES_TABLE_KEY)
     )
-    file_state_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(FILE_STATE_TABLE_KEY)
+    file_state_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(FILE_STATE_TABLE_KEY)
     )
-    repo_map_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(REPO_MAP_TABLE_KEY)
+    repo_map_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(REPO_MAP_TABLE_KEY)
     )
     module_row_count: int = 0
     file_state_row_count: int = 0
@@ -165,8 +163,8 @@ class ConfigScanResult:
 class ConfigToolOutput(ToolStepOutput):
     """Tool step output for config ingestion."""
 
-    rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(CONFIG_VALUES_TABLE_KEY)
+    rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(CONFIG_VALUES_TABLE_KEY)
     )
     row_count: int = 0
 
@@ -175,8 +173,8 @@ class ConfigToolOutput(ToolStepOutput):
 class TestsToolOutput(ToolStepOutput):
     """Tool step output for tests ingestion."""
 
-    rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(TEST_CATALOG_TABLE_KEY)
+    rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(TEST_CATALOG_TABLE_KEY)
     )
     row_count: int = 0
 
@@ -185,8 +183,8 @@ class TestsToolOutput(ToolStepOutput):
 class TypingToolOutput(ToolStepOutput):
     """Tool step output for typing ingestion."""
 
-    diagnostic_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY)
+    diagnostic_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(STATIC_DIAGNOSTICS_TABLE_KEY)
     )
     diagnostic_row_count: int = 0
 
@@ -380,18 +378,9 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
             full_rebuild=False,
         )
 
-        module_rows = lazyframe_for_ingest_reader(
-            MODULES_TABLE_KEY,
-            scan_result.module_rows_reader,
-        )
-        file_state_rows = lazyframe_for_ingest_reader(
-            FILE_STATE_TABLE_KEY,
-            scan_result.file_state_rows_reader,
-        )
-        repo_map_rows = lazyframe_for_ingest_reader(
-            REPO_MAP_TABLE_KEY,
-            scan_result.repo_map_rows_reader,
-        )
+        module_rows = scan_result.module_rows_reader
+        file_state_rows = scan_result.file_state_rows_reader
+        repo_map_rows = scan_result.repo_map_rows_reader
         return ModuleToolOutput(
             result=ExecutionResult.ok(),
             modules=scan_result.modules,
@@ -413,13 +402,13 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
 @tag_compute(domain="ingestion", target=MODULES_TARGET_NAME)
 def t__modules__ingest(
     t__modules__run: ModuleToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
+) -> IngestStep[dict[str, InferableTabularInput]]:
     """Package module scan rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, pl.LazyFrame]]
-        Ingest result with table frames.
+    IngestStep[dict[str, InferableTabularInput]]
+        Ingest result with table inputs.
     """
     result = t__modules__run.result
     if result.skipped:
@@ -437,15 +426,16 @@ def t__modules__ingest(
             )
         )
 
-    module_rows = dedupe_frame_for_table(
-        t__modules__run.module_rows,
-        table_key=MODULES_TABLE_KEY,
-    )
-    file_state_rows = dedupe_frame_for_table(
-        t__modules__run.file_state_rows,
-        table_key=FILE_STATE_TABLE_KEY,
+    module_table = tabular_to_arrow_table(t__modules__run.module_rows)
+    module_table = dedupe_table_for_table(MODULES_TABLE_KEY, module_table)
+    module_rows = table_to_reader(module_table)
+    file_state_table = tabular_to_arrow_table(t__modules__run.file_state_rows)
+    file_state_table = dedupe_table_for_table(
+        FILE_STATE_TABLE_KEY,
+        file_state_table,
         prefer_columns=("mtime_ns", "content_hash"),
     )
+    file_state_rows = table_to_reader(file_state_table)
     repo_map_rows = t__modules__run.repo_map_rows
     payload = {
         MODULES_TABLE_KEY: module_rows,
@@ -464,14 +454,14 @@ def t__modules__ingest(
 
 
 def modules__module_rows__base(
-    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
+    t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> InferableTabularInput | None:
     """Extract rows for core.modules.
 
     Returns
     -------
-    pl.LazyFrame | None
-        Lazy frame for the modules table, or None when ingestion skipped or failed.
+    InferableTabularInput | None
+        Tabular input for the modules table, or None when ingestion skipped or failed.
 
     Raises
     ------
@@ -493,14 +483,14 @@ def modules__module_rows__base(
 
 
 def modules__file_state_rows__base(
-    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
+    t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> InferableTabularInput | None:
     """Extract rows for core.file_state.
 
     Returns
     -------
-    pl.LazyFrame | None
-        Lazy frame for the file_state table, or None when ingestion skipped or failed.
+    InferableTabularInput | None
+        Tabular input for the file_state table, or None when ingestion skipped or failed.
 
     Raises
     ------
@@ -522,14 +512,14 @@ def modules__file_state_rows__base(
 
 
 def modules__repo_map_rows__base(
-    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
+    t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> InferableTabularInput | None:
     """Extract rows for core.repo_map.
 
     Returns
     -------
-    pl.LazyFrame | None
-        Lazy frame for the repo_map table, or None when ingestion skipped or failed.
+    InferableTabularInput | None
+        Tabular input for the repo_map table, or None when ingestion skipped or failed.
 
     Raises
     ------
@@ -559,21 +549,21 @@ _MODULES_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="modules__module_rows__base",
             save_spec=RelationTableSaveSpec(table_key=MODULES_TABLE_KEY),
             node_name="modules__module_rows",
-            input_type=pl.LazyFrame | None,
+            input_type=InferableTabularInput | None,
         ),
         TableTargetTableSpec(
             table_key=FILE_STATE_TABLE_KEY,
             base_node="modules__file_state_rows__base",
             save_spec=RelationTableSaveSpec(table_key=FILE_STATE_TABLE_KEY),
             node_name="modules__file_state_rows",
-            input_type=pl.LazyFrame | None,
+            input_type=InferableTabularInput | None,
         ),
         TableTargetTableSpec(
             table_key=REPO_MAP_TABLE_KEY,
             base_node="modules__repo_map_rows__base",
             save_spec=RelationTableSaveSpec(table_key=REPO_MAP_TABLE_KEY),
             node_name="modules__repo_map_rows",
-            input_type=pl.LazyFrame | None,
+            input_type=InferableTabularInput | None,
         ),
     ),
     table_materializations_node="modules__table_materializations",
@@ -628,7 +618,7 @@ def modules__finalize_context(
 def t__modules(
     modules__finalize_context: ToolFinalizeContext,
     t__modules__run: ModuleToolOutput,
-    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
+    t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
     modules__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Scan repository modules and file index.
@@ -786,7 +776,7 @@ def t__config_ingest__run(
         if not config_files:
             return ConfigToolOutput(
                 result=ExecutionResult.ok(),
-                rows=empty_lazyframe_for_table(CONFIG_VALUES_TABLE_KEY),
+                rows=empty_reader_for_table(CONFIG_VALUES_TABLE_KEY),
                 row_count=0,
             )
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
@@ -796,10 +786,9 @@ def t__config_ingest__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_ingest_reader(CONFIG_VALUES_TABLE_KEY, ingest_result.rows_reader)
         return ConfigToolOutput(
             result=ingest_result.result,
-            rows=frame,
+            rows=ingest_result.rows_reader,
             row_count=ingest_result.row_count,
         )
 
@@ -808,7 +797,7 @@ def t__config_ingest__run(
         return output
     return ConfigToolOutput(
         result=output.result,
-        rows=empty_lazyframe_for_table(CONFIG_VALUES_TABLE_KEY),
+        rows=empty_reader_for_table(CONFIG_VALUES_TABLE_KEY),
         row_count=0,
     )
 
@@ -816,13 +805,13 @@ def t__config_ingest__run(
 @tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__ingest(
     t__config_ingest__run: ConfigToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
+) -> IngestStep[dict[str, InferableTabularInput]]:
     """Package config ingestion rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, pl.LazyFrame]]
-        Ingest result with table frames.
+    IngestStep[dict[str, InferableTabularInput]]
+        Ingest result with table inputs.
     """
     result = t__config_ingest__run.result
     if result.skipped:
@@ -861,10 +850,10 @@ def t__config_ingest__ingest(
     },
 )
 def _extract_ingest_rows(
-    ingest_step: IngestStep[dict[str, pl.LazyFrame]],
+    ingest_step: IngestStep[dict[str, InferableTabularInput]],
     table_key: str,
     label: str,
-) -> pl.LazyFrame | None:
+) -> InferableTabularInput | None:
     """Extract raw rows for ingestion tables.
 
     Parameters
@@ -878,8 +867,8 @@ def _extract_ingest_rows(
 
     Returns
     -------
-    pl.LazyFrame | None
-        Extracted frame or None when the ingest step skipped/failed.
+    InferableTabularInput | None
+        Extracted tabular input or None when the ingest step skipped/failed.
 
     Raises
     ------
@@ -905,14 +894,14 @@ def _extract_ingest_rows(
     input_name="config_ingest__raw_rows",
 )
 def config_ingest__rows__base(
-    config_ingest__raw_rows: pl.LazyFrame | None,
-) -> pl.LazyFrame | None:
+    config_ingest__raw_rows: InferableTabularInput | None,
+) -> InferableTabularInput | None:
     """Return cleaned rows for analytics.config_values.
 
     Returns
     -------
-    pl.LazyFrame | None
-        Cleaned frame for the config values table.
+    InferableTabularInput | None
+        Cleaned tabular input for the config values table.
     """
     return config_ingest__raw_rows
 
@@ -926,7 +915,7 @@ _CONFIG_INGEST_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="config_ingest__rows__base",
             save_spec=RelationTableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
             node_name="config_ingest__rows",
-            input_type=pl.LazyFrame | None,
+            input_type=InferableTabularInput | None,
         ),
     ),
     table_materializations_node="config_ingest__table_materializations",
@@ -960,7 +949,7 @@ def config_ingest__finalize_context(
 def t__config_ingest(
     config_ingest__finalize_context: ToolFinalizeContext,
     t__config_ingest__run: ConfigToolOutput,
-    t__config_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+    t__config_ingest__ingest: IngestStep[dict[str, InferableTabularInput]],
     config_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Parse configuration files and track references.
@@ -1040,7 +1029,7 @@ def _coerce_tests_output(
     merged = _merge_result_warnings(output.result, warnings)
     return TestsToolOutput(
         result=merged,
-        rows=empty_lazyframe_for_table(TEST_CATALOG_TABLE_KEY),
+        rows=empty_reader_for_table(TEST_CATALOG_TABLE_KEY),
         row_count=0,
     )
 
@@ -1076,7 +1065,7 @@ def t__tests_ingest__run(
             result = ExecutionResult.ok(warnings=warnings)
             return TestsToolOutput(
                 result=result,
-                rows=empty_lazyframe_for_table(TEST_CATALOG_TABLE_KEY),
+                rows=empty_reader_for_table(TEST_CATALOG_TABLE_KEY),
                 row_count=0,
             )
 
@@ -1087,10 +1076,9 @@ def t__tests_ingest__run(
             commit=env.snapshot.commit,
             json_report_path=report_path,
         )
-        frame = lazyframe_for_ingest_reader(TEST_CATALOG_TABLE_KEY, ingest_result.rows_reader)
         return TestsToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
-            rows=frame,
+            rows=ingest_result.rows_reader,
             row_count=ingest_result.row_count,
         )
 
@@ -1101,13 +1089,13 @@ def t__tests_ingest__run(
 @tag_compute(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest__ingest(
     t__tests_ingest__run: TestsToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
+) -> IngestStep[dict[str, InferableTabularInput]]:
     """Package tests ingestion rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, pl.LazyFrame]]
-        Ingest result with table frames.
+    IngestStep[dict[str, InferableTabularInput]]
+        Ingest result with table inputs.
     """
     result = t__tests_ingest__run.result
     if result.skipped:
@@ -1134,14 +1122,14 @@ def t__tests_ingest__ingest(
 
 
 def tests__rows__base(
-    tests__raw_rows: pl.LazyFrame | None,
-) -> pl.LazyFrame | None:
+    tests__raw_rows: InferableTabularInput | None,
+) -> InferableTabularInput | None:
     """Extract rows for analytics.test_catalog.
 
     Returns
     -------
-    pl.LazyFrame | None
-        Lazy frame for the test_catalog table, or None when ingestion is skipped or failed.
+    InferableTabularInput | None
+        Tabular input for the test_catalog table, or None when ingestion is skipped or failed.
     """
     return tests__raw_rows
 
@@ -1155,7 +1143,7 @@ _TESTS_INGEST_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="tests__rows__base",
             save_spec=RelationTableSaveSpec(table_key=TEST_CATALOG_TABLE_KEY),
             node_name="tests__rows",
-            input_type=pl.LazyFrame | None,
+            input_type=InferableTabularInput | None,
         ),
     ),
     table_materializations_node="tests_ingest__table_materializations",
@@ -1189,7 +1177,7 @@ def tests_ingest__finalize_context(
 def t__tests_ingest(
     tests_ingest__finalize_context: ToolFinalizeContext,
     t__tests_ingest__run: TestsToolOutput,
-    t__tests_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+    t__tests_ingest__ingest: IngestStep[dict[str, InferableTabularInput]],
     tests_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Ingest test catalog from pytest.
@@ -1228,7 +1216,7 @@ def _coerce_typing_output(
     merged = _merge_result_warnings(output.result, warnings)
     return TypingToolOutput(
         result=merged,
-        diagnostic_rows=empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
+        diagnostic_rows=empty_reader_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
         diagnostic_row_count=0,
     )
 
@@ -1262,7 +1250,7 @@ def t__typing__run(
             result = ExecutionResult.ok(warnings=warnings)
             return TypingToolOutput(
                 result=result,
-                diagnostic_rows=empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
+                diagnostic_rows=empty_reader_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
                 diagnostic_row_count=0,
             )
 
@@ -1277,13 +1265,9 @@ def t__typing__run(
                 run_diagnostics=True,
             )
         )
-        diagnostic_frame = lazyframe_for_ingest_reader(
-            STATIC_DIAGNOSTICS_TABLE_KEY,
-            ingest_result.diagnostic_rows_reader,
-        )
         return TypingToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
-            diagnostic_rows=diagnostic_frame,
+            diagnostic_rows=ingest_result.diagnostic_rows_reader,
             diagnostic_row_count=ingest_result.diagnostic_row_count,
         )
 
@@ -1294,13 +1278,13 @@ def t__typing__run(
 @tag_compute(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing__ingest(
     t__typing__run: TypingToolOutput,
-) -> IngestStep[dict[str, pl.LazyFrame]]:
+) -> IngestStep[dict[str, InferableTabularInput]]:
     """Package typing rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, pl.LazyFrame]]
-        Ingest result with table frames.
+    IngestStep[dict[str, InferableTabularInput]]
+        Ingest result with table inputs.
     """
     result = t__typing__run.result
     if result.skipped:
@@ -1331,14 +1315,14 @@ def t__typing__ingest(
 
 
 def typing__diagnostic_rows__base(
-    t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
-) -> pl.LazyFrame | None:
+    t__typing__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> InferableTabularInput | None:
     """Extract rows for analytics.static_diagnostics.
 
     Returns
     -------
-    pl.LazyFrame | None
-        Lazy frame for the static_diagnostics table, or None when ingestion is skipped or failed.
+    InferableTabularInput | None
+        Tabular input for the static_diagnostics table, or None when ingestion is skipped or failed.
 
     Raises
     ------
@@ -1368,7 +1352,7 @@ _TYPING_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="typing__diagnostic_rows__base",
             save_spec=RelationTableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
             node_name="typing__diagnostic_rows",
-            input_type=pl.LazyFrame | None,
+            input_type=InferableTabularInput | None,
         ),
     ),
     table_materializations_node="typing__table_materializations",
@@ -1417,7 +1401,7 @@ def typing__finalize_context(
 def t__typing(
     typing__finalize_context: ToolFinalizeContext,
     t__typing__run: TypingToolOutput,
-    t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
+    t__typing__ingest: IngestStep[dict[str, InferableTabularInput]],
     typing__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Analyze type annotations and static diagnostics.
@@ -1446,9 +1430,9 @@ def t__typing(
     apply_to(typing__diagnostic_rows, table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY)),
 )
 def _normalize_ingest_rows(
-    rows: pl.LazyFrame | None,
+    rows: InferableTabularInput | None,
     table_key: str,
-) -> pl.LazyFrame | None:
+) -> pa.RecordBatchReader | None:
     """Normalize ingestion outputs with shared alignment/dedupe logic.
 
     Parameters
@@ -1460,7 +1444,7 @@ def _normalize_ingest_rows(
 
     Returns
     -------
-    pl.LazyFrame | None
+    pa.RecordBatchReader | None
         Normalized rows for the table.
     """
     return normalize_ingest_frame(rows, table_key=table_key)

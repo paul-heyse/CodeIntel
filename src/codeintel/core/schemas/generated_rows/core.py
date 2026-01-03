@@ -23,6 +23,7 @@ __all__ = [
     "CorePyBcDefuseEventsRow",
     "CorePyBcExceptionTableRow",
     "CorePyBcInstructionsRow",
+    "CorePyCompilerMetadataRow",
     "CorePyInspectAnnotationsKvRow",
     "CorePyInspectClassAttrsRow",
     "CorePyInspectClassMroRow",
@@ -418,6 +419,19 @@ class CorePyBcInstructionsRow(TypedDict):
     cache_info: object | None
     cache_bytes: object | None
     op_bytes: object | None
+
+
+class CorePyCompilerMetadataRow(TypedDict):
+    """Row model for core.py_compiler_metadata."""
+
+    repo: str
+    commit: str
+    run_id: str
+    python_version: str | None
+    magic_number: object | None
+    optimize: int | None
+    dont_inherit: bool | None
+    flags: int | None
 
 
 class CorePyInspectAnnotationsKvRow(TypedDict):

@@ -62,12 +62,8 @@ def _create_or_replace_view(
     view_name: str,
     select_expr: exp.Expression,
 ) -> None:
-    relation = con.sql(render_sql_duckdb(select_expr))
-    create_view = getattr(relation, "create_view", None)
-    if not callable(create_view):
-        msg = "DuckDB relation does not support create_view"
-        raise TypeError(msg)
-    create_view(view_name, replace=True)
+    select_sql = render_sql_duckdb(select_expr)
+    con.execute(f"CREATE OR REPLACE VIEW {view_name} AS {select_sql}")
 
 
 def _apply_validation_summary_view(con: DuckDBPyConnection, *, catalog: str | None) -> None:

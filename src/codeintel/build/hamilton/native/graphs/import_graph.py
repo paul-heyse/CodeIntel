@@ -6,7 +6,8 @@ import ast
 import dataclasses
 from pathlib import Path
 
-import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
@@ -18,14 +19,59 @@ from codeintel.build.graphs.compute.imports import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import empty_frame_for_table
-from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
 IMPORT_GRAPH_EDGES_TABLE_KEY = "graph.import_graph_edges"
+
+
+def _and_kleene(
+    left: pa.Array | pa.ChunkedArray,
+    right: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("and_kleene", [left, right])
+
+
+def _or_kleene(
+    left: pa.Array | pa.ChunkedArray,
+    right: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("or_kleene", [left, right])
+
+
+def _non_empty_string_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    is_valid = pc.call_function("is_valid", [values])
+    lengths = pc.call_function("utf8_length", [values])
+    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
+    return _and_kleene(is_valid, non_empty)
+
+
+def _language_python_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    is_null = pc.call_function("is_null", [values])
+    is_python = pc.call_function("equal", [values, pc.scalar("python")])
+    return _or_kleene(is_null, is_python)
+
+
+def _filter_python_modules_table(modules_table: pa.Table) -> pa.Table:
+    if modules_table.num_rows == 0:
+        return modules_table
+    columns = set(modules_table.column_names)
+    required = {"path", "module"}
+    if not required.issubset(columns):
+        return modules_table
+    try:
+        path_mask = _non_empty_string_mask(modules_table.column("path"))
+        module_mask = _non_empty_string_mask(modules_table.column("module"))
+        mask = _and_kleene(path_mask, module_mask)
+        if "language" in columns:
+            language_mask = _language_python_mask(modules_table.column("language"))
+            mask = _and_kleene(mask, language_mask)
+        return modules_table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return modules_table
 
 
 def _resolve_import_from(
@@ -86,12 +132,13 @@ def import_graph_analysis(
     ImportAnalysisResult
         Import graph analysis derived from module sources.
     """
-    modules_frame = tabular_to_frame(q__core__modules)
+    modules_table = tabular_to_arrow_table(q__core__modules)
+    modules_table = _filter_python_modules_table(modules_table)
     modules: set[str] = set()
     edges: list[ImportEdge] = []
     repo_root = env.snapshot.repo_root
 
-    for row in modules_frame.iter_rows(named=True):
+    for row in modules_table.to_pylist():
         module_name = row.get("module")
         rel_path = row.get("path")
         language = row.get("language")
@@ -116,29 +163,22 @@ def import_graph_analysis(
 def import_modules_compute(
     env: BuildEnv,
     import_graph_analysis: ImportAnalysisResult,
-) -> TabularFrame:
+) -> InferableTabularInput:
     """Build import module rows from computed import graph analysis.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for computed import modules.
+    InferableTabularInput
+        Arrow reader for computed import modules.
     """
     rows = build_import_module_rows(env.repo, env.commit, import_graph_analysis)
     if not rows:
-        return empty_frame_for_table(IMPORT_MODULES_TABLE_KEY)
-    frame = pl.DataFrame([dataclasses.asdict(row) for row in rows])
-    return frame.lazy().select(
-        [
-            "repo",
-            "commit",
-            "module",
-            "scc_id",
-            "component_size",
-            "layer",
-            "cycle_group",
-        ]
+        return empty_reader_for_table(IMPORT_MODULES_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
+        IMPORT_MODULES_TABLE_KEY,
+        (dataclasses.asdict(row) for row in rows),
     )
+    return reader
 
 
 def import_graph_edges_compute(

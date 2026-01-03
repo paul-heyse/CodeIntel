@@ -78,6 +78,25 @@ class ColumnarBatchCollector:
         for row in rows:
             self.append(row)
 
+    def append_buffer(self, buffer: ColumnarRowBuffer) -> None:
+        """Append a columnar buffer as a RecordBatch.
+
+        Parameters
+        ----------
+        buffer
+            Buffer containing columnar row data to append.
+        """
+        if buffer.row_count == 0:
+            return
+        self._flush()
+        batch = pa.RecordBatch.from_pydict(buffer.data, schema=self.arrow_schema)
+        self.batches.append(batch)
+        self.row_count += buffer.row_count
+
+    def flush(self) -> None:
+        """Flush any buffered rows into a RecordBatch."""
+        self._flush()
+
     def to_reader(self) -> pa.RecordBatchReader:
         """Return a RecordBatchReader for the collected batches.
 
@@ -85,6 +104,10 @@ class ColumnarBatchCollector:
         -------
         pa.RecordBatchReader
             Reader over the collected RecordBatches.
+
+        Notes
+        -----
+        The returned reader is single-consume; materialize the data if reuse is required.
         """
         self._flush()
         return pa.RecordBatchReader.from_batches(self.arrow_schema, self.batches)

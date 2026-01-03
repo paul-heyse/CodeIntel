@@ -7,7 +7,8 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.goid import (
     GoidDescriptor,
@@ -25,10 +26,9 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.arrow_ops import arrow_join_frames
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import JoinSpec, empty_frame_for_table, rows_to_frame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
 from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.core.spans import normalize_line_span
@@ -54,8 +54,8 @@ GOID_CROSSWALK_COLUMNS = _columns_for_table(GOID_CROSSWALK_TABLE_KEY)
 
 @dataclass(frozen=True, slots=True)
 class _GoidsInputs:
-    modules: pl.DataFrame
-    ast_nodes: pl.DataFrame
+    modules: pa.Table
+    ast_nodes: pa.Table
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,38 +70,70 @@ class _GoidsAnalysis:
     crosswalk_rows: tuple[GoidCrosswalkRow, ...]
 
 
-def _rows_to_frame(
+def _rows_to_reader(
     rows: tuple[GoidRow | GoidCrosswalkRow, ...],
     table_key: str,
-) -> pl.LazyFrame:
+) -> InferableTabularInput:
     if not rows:
-        return empty_frame_for_table(table_key)
-    row_dicts = [dataclasses.asdict(row) for row in rows]
-    return rows_to_frame(table_key, row_dicts)
-
-
-def _module_frame(modules_frame: pl.DataFrame) -> pl.DataFrame:
-    if modules_frame.is_empty():
-        return modules_frame
-    required = {"path", "module", "language"}
-    if not required.issubset(set(modules_frame.columns)):
-        return pl.DataFrame()
-    return (
-        modules_frame.select(["path", "module", "language"])
-        .with_columns(
-            pl.col("path").cast(pl.Utf8, strict=False),
-            pl.col("module").cast(pl.Utf8, strict=False),
-            pl.col("language").cast(pl.Utf8, strict=False),
-        )
-        .filter(
-            pl.col("path").is_not_null()
-            & pl.col("module").is_not_null()
-            & pl.col("language").is_not_null()
-            & (pl.col("path").str.len_chars() > 0)
-            & (pl.col("module").str.len_chars() > 0)
-            & (pl.col("language").str.len_chars() > 0)
-        )
+        return empty_reader_for_table(table_key)
+    reader, _ = record_batch_reader_for_rows(
+        table_key,
+        (dataclasses.asdict(row) for row in rows),
     )
+    return reader
+
+
+def _module_frame(modules_table: pa.Table) -> list[dict[str, str]]:
+    if modules_table.num_rows == 0:
+        return []
+    required = {"path", "module", "language"}
+    if not required.issubset(set(modules_table.column_names)):
+        return []
+    modules_table = _filter_modules_table(modules_table)
+    rows: list[dict[str, str]] = []
+    for row in modules_table.to_pylist():
+        path = row.get("path")
+        module = row.get("module")
+        language = row.get("language")
+        if not isinstance(path, str) or not path:
+            continue
+        if not isinstance(module, str) or not module:
+            continue
+        if not isinstance(language, str) or not language:
+            continue
+        rows.append({"path": path, "module": module, "language": language})
+    return rows
+
+
+def _and_kleene(
+    left: pa.Array | pa.ChunkedArray,
+    right: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("and_kleene", [left, right])
+
+
+def _non_empty_string_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    is_valid = pc.call_function("is_valid", [values])
+    lengths = pc.call_function("utf8_length", [values])
+    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
+    return _and_kleene(is_valid, non_empty)
+
+
+def _filter_modules_table(modules_table: pa.Table) -> pa.Table:
+    if modules_table.num_rows == 0:
+        return modules_table
+    required = {"path", "module", "language"}
+    if not required.issubset(set(modules_table.column_names)):
+        return modules_table
+    try:
+        path_mask = _non_empty_string_mask(modules_table.column("path"))
+        module_mask = _non_empty_string_mask(modules_table.column("module"))
+        language_mask = _non_empty_string_mask(modules_table.column("language"))
+        mask = _and_kleene(path_mask, module_mask)
+        mask = _and_kleene(mask, language_mask)
+        return modules_table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return modules_table
 
 
 def _resolve_qualname(
@@ -200,11 +232,11 @@ def _descriptor_from_values(
 
 
 def _joined_ast_nodes(
-    ast_nodes_frame: pl.DataFrame,
-    modules_frame: pl.DataFrame,
-) -> pl.DataFrame:
-    if ast_nodes_frame.is_empty() or modules_frame.is_empty():
-        return pl.DataFrame()
+    ast_nodes_table: pa.Table,
+    modules: list[dict[str, str]],
+) -> list[dict[str, object]]:
+    if ast_nodes_table.num_rows == 0 or not modules:
+        return []
     required = {
         "path",
         "node_type",
@@ -214,65 +246,44 @@ def _joined_ast_nodes(
         "lineno",
         "end_lineno",
     }
-    if not required.issubset(set(ast_nodes_frame.columns)):
-        return pl.DataFrame()
-    filtered_nodes = ast_nodes_frame.select(list(required)).filter(
-        pl.col("node_type").is_in(list(_ALLOWED_NODE_TYPES))
-    )
-    if filtered_nodes.is_empty():
-        return pl.DataFrame()
-    return arrow_join_frames(
-        filtered_nodes,
-        modules_frame,
-        spec=JoinSpec(on=["path"], how="inner"),
-    )
+    if not required.issubset(set(ast_nodes_table.column_names)):
+        return []
+    module_by_path = {row["path"]: row for row in modules}
+    joined: list[dict[str, object]] = []
+    for row in ast_nodes_table.to_pylist():
+        node_type = row.get("node_type")
+        if node_type not in _ALLOWED_NODE_TYPES:
+            continue
+        path = row.get("path")
+        if not isinstance(path, str):
+            continue
+        module_row = module_by_path.get(path)
+        if module_row is None:
+            continue
+        joined.append({**row, **module_row})
+    return joined
 
 
 def _collect_descriptors(
     *,
-    joined_nodes: pl.DataFrame,
+    joined_nodes: list[dict[str, object]],
     repo: str,
     commit: str,
 ) -> list[_ResolvedDescriptor]:
     descriptors: list[_ResolvedDescriptor] = []
     seen: set[tuple[str, str, str, int]] = set()
-    if joined_nodes.is_empty():
+    if not joined_nodes:
         return descriptors
-    data = joined_nodes.select(
-        [
-            "node_type",
-            "path",
-            "module",
-            "language",
-            "name",
-            "qualname",
-            "parent_qualname",
-            "lineno",
-            "end_lineno",
-        ]
-    ).to_dict(as_series=False)
-    for (
-        node_type,
-        path,
-        module_name,
-        language,
-        name,
-        qualname,
-        parent_qualname,
-        lineno,
-        end_lineno,
-    ) in zip(
-        data["node_type"],
-        data["path"],
-        data["module"],
-        data["language"],
-        data["name"],
-        data["qualname"],
-        data["parent_qualname"],
-        data["lineno"],
-        data["end_lineno"],
-        strict=True,
-    ):
+    for row in joined_nodes:
+        node_type = row.get("node_type")
+        path = row.get("path")
+        module_name = row.get("module")
+        language = row.get("language")
+        name = row.get("name")
+        qualname = row.get("qualname")
+        parent_qualname = row.get("parent_qualname")
+        lineno = row.get("lineno")
+        end_lineno = row.get("end_lineno")
         result = _descriptor_from_values(
             values=_DescriptorValues(
                 node_type=str(node_type) if node_type is not None else None,
@@ -308,8 +319,8 @@ def goids_inputs(
     _GoidsInputs
         Collected frames for GOID computation.
     """
-    modules = tabular_to_lazyframe(q__core__modules).select(["path", "module", "language"])
-    ast_nodes = tabular_to_lazyframe(q__core__ast_nodes).select(
+    modules_table = tabular_to_arrow_table(q__core__modules).select(["path", "module", "language"])
+    ast_nodes_table = tabular_to_arrow_table(q__core__ast_nodes).select(
         [
             "path",
             "node_type",
@@ -320,10 +331,7 @@ def goids_inputs(
             "end_lineno",
         ]
     )
-    return _GoidsInputs(
-        modules=modules.collect(),
-        ast_nodes=ast_nodes.collect(),
-    )
+    return _GoidsInputs(modules=modules_table, ast_nodes=ast_nodes_table)
 
 
 def goids_analysis(env: BuildEnv, goids_inputs: _GoidsInputs) -> _GoidsAnalysis:
@@ -341,14 +349,14 @@ def goids_analysis(env: BuildEnv, goids_inputs: _GoidsInputs) -> _GoidsAnalysis:
     _GoidsAnalysis
         Container with GOID and crosswalk row tuples.
     """
-    if goids_inputs.modules.is_empty() or goids_inputs.ast_nodes.is_empty():
+    if goids_inputs.modules.num_rows == 0 or goids_inputs.ast_nodes.num_rows == 0:
         return _GoidsAnalysis(goid_rows=(), crosswalk_rows=())
 
-    modules_frame = _module_frame(goids_inputs.modules)
-    if modules_frame.is_empty():
+    modules = _module_frame(goids_inputs.modules)
+    if not modules:
         return _GoidsAnalysis(goid_rows=(), crosswalk_rows=())
 
-    joined_nodes = _joined_ast_nodes(goids_inputs.ast_nodes, modules_frame)
+    joined_nodes = _joined_ast_nodes(goids_inputs.ast_nodes, modules)
     descriptors = _collect_descriptors(
         joined_nodes=joined_nodes,
         repo=env.repo,
@@ -384,26 +392,26 @@ def goids_analysis(env: BuildEnv, goids_inputs: _GoidsInputs) -> _GoidsAnalysis:
     )
 
 
-def goids__base(goids_analysis: _GoidsAnalysis) -> pl.LazyFrame:
+def goids__base(goids_analysis: _GoidsAnalysis) -> InferableTabularInput:
     """Build core.goids rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of core.goids rows.
+    InferableTabularInput
+        Arrow reader of core.goids rows.
     """
-    return _rows_to_frame(goids_analysis.goid_rows, GOIDS_TABLE_KEY)
+    return _rows_to_reader(goids_analysis.goid_rows, GOIDS_TABLE_KEY)
 
 
-def goid_crosswalk__base(goids_analysis: _GoidsAnalysis) -> pl.LazyFrame:
+def goid_crosswalk__base(goids_analysis: _GoidsAnalysis) -> InferableTabularInput:
     """Build core.goid_crosswalk rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of core.goid_crosswalk rows.
+    InferableTabularInput
+        Arrow reader of core.goid_crosswalk rows.
     """
-    return _rows_to_frame(goids_analysis.crosswalk_rows, GOID_CROSSWALK_TABLE_KEY)
+    return _rows_to_reader(goids_analysis.crosswalk_rows, GOID_CROSSWALK_TABLE_KEY)
 
 
 _MODULE = sys.modules[__name__]
@@ -419,7 +427,7 @@ _GOIDS_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="goids__table",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=GOID_CROSSWALK_TABLE_KEY,
@@ -429,7 +437,7 @@ _GOIDS_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="goid_crosswalk__table",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="goids__table_materializations",

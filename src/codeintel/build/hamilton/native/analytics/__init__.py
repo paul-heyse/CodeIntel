@@ -108,6 +108,11 @@ from codeintel.build.hamilton.native.analytics.graph_validation import (
     graph_validation__table,
     t__graph_validation,
 )
+from codeintel.build.hamilton.native.analytics.py_cpg_quality_report import (
+    py_cpg_quality_report__base,
+    py_cpg_quality_report__table,
+    t__py_cpg_quality_report,
+)
 from codeintel.build.hamilton.native.analytics.semantic_roles import (
     semantic_roles__table_materializations,
     semantic_roles_functions__base,
@@ -219,6 +224,8 @@ __all__ = [
     "graph_stats__table",
     "graph_validation__base",
     "graph_validation__table",
+    "py_cpg_quality_report__base",
+    "py_cpg_quality_report__table",
     "semantic_roles__table_materializations",
     "semantic_roles_functions__base",
     "semantic_roles_functions__table",
@@ -258,6 +265,7 @@ __all__ = [
     "t__graph_metrics_ext",
     "t__graph_stats",
     "t__graph_validation",
+    "t__py_cpg_quality_report",
     "t__semantic_roles",
     "t__subsystem_agreement",
     "t__subsystem_caches",

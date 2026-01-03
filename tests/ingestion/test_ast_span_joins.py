@@ -4,25 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.core.columnar.rows import ColumnarRows
+import pyarrow as pa
+
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from tests._helpers.fixtures.repos import write_tree
 
 
-def _columnar_to_dicts(rows: ColumnarRows) -> list[dict[str, object]]:
-    if not rows:
-        return []
-    columns = list(rows.keys())
-    if not columns:
-        return []
-    row_count = len(rows[columns[0]])
-    return [{col: rows[col][idx] for col in columns} for idx in range(row_count)]
+def _reader_to_dicts(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
+    table = pa.Table.from_batches(reader, schema=reader.schema)
+    return list(table.to_pylist())
 
 
-def _has_ast_extras(rows: ColumnarRows) -> bool:
-    for row in _columnar_to_dicts(rows):
+def _has_ast_extras(reader: pa.RecordBatchReader) -> bool:
+    for row in _reader_to_dicts(reader):
         extras = row.get("extras_json")
         if isinstance(extras, dict) and "ast_node_id" in extras:
             return True
@@ -52,7 +48,7 @@ def test_ast_span_joins(tmp_path: Path) -> None:
     result = step.execute(modules, repo="demo", commit="abc123")
     assert result.result.success
 
-    assert _has_ast_extras(result.syntax_defs_rows)
-    assert _has_ast_extras(result.syntax_refs_rows)
-    assert _has_ast_extras(result.syntax_imports_rows)
-    assert _has_ast_extras(result.syntax_func_params_rows)
+    assert _has_ast_extras(result.syntax_defs_rows_reader)
+    assert _has_ast_extras(result.syntax_refs_rows_reader)
+    assert _has_ast_extras(result.syntax_imports_rows_reader)
+    assert _has_ast_extras(result.syntax_func_params_rows_reader)

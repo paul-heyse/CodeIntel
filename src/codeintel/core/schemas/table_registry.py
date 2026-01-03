@@ -21,6 +21,7 @@ from codeintel.config.datasets.primitives import (
     TableSchema,
 )
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
+from codeintel.core.schemas.view_registry import build_view_schema_overrides
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema
@@ -529,6 +530,8 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
 }
 
 TABLE_SCHEMAS.update(OUTPUT_TABLE_SCHEMAS)
+_VIEW_SCHEMA_OVERRIDES = build_view_schema_overrides(TABLE_SCHEMAS)
+TABLE_SCHEMAS.update(_VIEW_SCHEMA_OVERRIDES)
 
 COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {}
 

@@ -15,11 +15,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.native.options.ingestion import AstExtractOptions
 from codeintel.core.columnar.rows import (
+    ColumnarBatchCollector,
     ColumnarRows,
-    columnar_buffer_for_table_key,
+    columnar_batch_collector_for_table_key,
     empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 log = logging.getLogger(__name__)
 AST_NODES_TABLE_KEY = "core.ast_nodes"
@@ -116,6 +117,32 @@ class AstExtractResult:
     )
     ast_row_count: int = 0
     metric_row_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _AstCollectors:
+    ast_nodes: ColumnarBatchCollector
+    metrics: ColumnarBatchCollector
+
+
+def _build_ast_collectors(options: AstExtractOptions) -> _AstCollectors:
+    return _AstCollectors(
+        ast_nodes=columnar_batch_collector_for_table_key(
+            AST_NODES_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        metrics=columnar_batch_collector_for_table_key(
+            AST_METRICS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+    )
+
+
+def _flush_ast_collectors(collectors: _AstCollectors) -> None:
+    collectors.ast_nodes.flush()
+    collectors.metrics.flush()
 
 
 class AstVisitor(ast.NodeVisitor):
@@ -490,6 +517,15 @@ class AstExtractStep(BaseExtractStep):
         Discovery port for reading module source.
     """
 
+    def __init__(
+        self,
+        discovery: ModuleDiscoveryPort,
+        *,
+        options: AstExtractOptions | None = None,
+    ) -> None:
+        super().__init__(discovery=discovery)
+        self._options = options or AstExtractOptions()
+
     def execute(
         self,
         modules: Sequence[ModuleRecord],
@@ -513,9 +549,9 @@ class AstExtractStep(BaseExtractStep):
         AstExtractResult
             Result bundle with row tuples and execution status.
         """
+        options = self._options
         try:
-            ast_buffer = columnar_buffer_for_table_key(AST_NODES_TABLE_KEY)
-            metrics_buffer = columnar_buffer_for_table_key(AST_METRICS_TABLE_KEY)
+            collectors = _build_ast_collectors(options)
         except (KeyError, RuntimeError) as exc:
             return AstExtractResult(result=ExecutionResult.failed(str(exc)))
         warnings: list[str] = []
@@ -525,37 +561,30 @@ class AstExtractStep(BaseExtractStep):
                 warnings.append(f"Failed to extract AST from {module.rel_path}")
                 continue
 
-            for row in result.ast_rows:
-                ast_buffer.append(row)
+            if result.ast_rows:
+                collectors.ast_nodes.extend(result.ast_rows)
             if result.metric_row is not None:
-                metrics_buffer.append(result.metric_row)
+                collectors.metrics.append(result.metric_row)
+            _flush_ast_collectors(collectors)
 
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",
             repo,
             commit,
-            ast_buffer.row_count,
-            metrics_buffer.row_count,
+            collectors.ast_nodes.row_count,
+            collectors.metrics.row_count,
         )
 
-        ast_rows_reader, ast_row_count = record_batch_reader_for_columnar_rows(
-            AST_NODES_TABLE_KEY,
-            ast_buffer.data,
-            extras_policy="retain",
-        )
-        metric_rows_reader, metric_row_count = record_batch_reader_for_columnar_rows(
-            AST_METRICS_TABLE_KEY,
-            metrics_buffer.data,
-            extras_policy="retain",
-        )
+        ast_rows_reader = collectors.ast_nodes.to_reader()
+        metric_rows_reader = collectors.metrics.to_reader()
         return AstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            ast_rows=ast_buffer.data,
-            metric_rows=metrics_buffer.data,
+            ast_rows={},
+            metric_rows={},
             ast_rows_reader=ast_rows_reader,
             metric_rows_reader=metric_rows_reader,
-            ast_row_count=ast_row_count,
-            metric_row_count=metric_row_count,
+            ast_row_count=collectors.ast_nodes.row_count,
+            metric_row_count=collectors.metrics.row_count,
         )
 
     def _iter_python_source_bundles(

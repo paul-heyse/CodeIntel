@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.exports.common import MAX_EXPORT_LIMIT, build_export_relation
+from codeintel.build.exports.common import build_export_reader
 from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
 from codeintel.build.exports.writers import write_json_array
@@ -27,12 +27,12 @@ def export_jsonl_for_table(
     settings: ExportAuditSettings,
     serializer: Callable[[object], object] | None = None,
 ) -> None:
-    """Export a single DuckDB table to JSONL.
+    """Export a single dataset snapshot to JSONL.
 
     Parameters
     ----------
     gateway
-        BuildGateway providing the DuckDB connection.
+        BuildGateway providing dataset registry access.
     table_name
         Fully qualified table name (schema.table) to export.
     output_path
@@ -69,7 +69,7 @@ def export_dataset_to_jsonl(
     Parameters
     ----------
     gateway
-        BuildGateway providing the DuckDB connection.
+        BuildGateway providing dataset registry access.
     dataset_name
         Logical dataset name to export (e.g., ``function_types``).
     output_dir
@@ -112,7 +112,7 @@ def export_all_jsonl(
     Parameters
     ----------
     gateway
-        BuildGateway providing the DuckDB connection.
+        BuildGateway providing dataset registry access.
     document_output_dir
         Target directory where JSONL artifacts are written.
     settings
@@ -146,7 +146,7 @@ def export_repo_map_json(
     Parameters
     ----------
     gateway
-        BuildGateway providing the DuckDB connection.
+        BuildGateway providing dataset registry access.
     document_output_dir
         Target directory where the export artifact is written.
     settings
@@ -165,9 +165,12 @@ def export_repo_map_json(
     table_name = "core.repo_map"
     if format_output == "json":
         output_path = document_output_dir / "repo_map.json"
-        rel = build_export_relation(gateway, table_name, MAX_EXPORT_LIMIT, 0)
         with output_path.open("w", encoding="utf-8") as handle:
-            reader = rel.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+            reader = build_export_reader(
+                gateway,
+                table_name,
+                batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            )
             write_json_array(handle, reader=reader)
     else:
         output_path = document_output_dir / "repo_map.jsonl"

@@ -8,21 +8,24 @@ import importlib.util
 import inspect
 import io
 import logging
+import marshal
 import sys
+import tempfile
+import time
 import tokenize
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import CodeType
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.options.ingestion import BytecodeExtractOptions
 from codeintel.core.columnar.rows import (
-    ColumnarRowBuffer,
+    ColumnarBatchCollector,
     ColumnarRows,
-    columnar_buffer_for_table_key,
+    columnar_batch_collector_for_table_key,
     empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
@@ -180,13 +183,13 @@ class _CodeUnitRowSpec:
 
 
 @dataclass(frozen=True, slots=True)
-class _DisBuffers:
-    code_units: ColumnarRowBuffer
-    instructions: ColumnarRowBuffer
-    exceptions: ColumnarRowBuffer
-    blocks: ColumnarRowBuffer
-    cfg_edges: ColumnarRowBuffer
-    defuse_events: ColumnarRowBuffer
+class _DisCollectors:
+    code_units: ColumnarBatchCollector
+    instructions: ColumnarBatchCollector
+    exceptions: ColumnarBatchCollector
+    blocks: ColumnarBatchCollector
+    cfg_edges: ColumnarBatchCollector
+    defuse_events: ColumnarBatchCollector
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,8 +253,19 @@ class _CodeUnitRowInputs:
 
 @dataclass(frozen=True, slots=True)
 class _ModuleDisResult:
-    buffers: _DisBuffers
     warnings: list[str]
+    code_unit_batches: list[pa.RecordBatch]
+    instruction_batches: list[pa.RecordBatch]
+    exception_batches: list[pa.RecordBatch]
+    block_batches: list[pa.RecordBatch]
+    cfg_edge_batches: list[pa.RecordBatch]
+    defuse_event_batches: list[pa.RecordBatch]
+    code_unit_row_count: int
+    instruction_row_count: int
+    exception_row_count: int
+    block_row_count: int
+    cfg_edge_row_count: int
+    defuse_event_row_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +282,116 @@ def _stable_id(*parts: object) -> str:
     payload = "|".join("" if part is None else str(part) for part in parts)
     digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16)
     return digest.hexdigest()
+
+
+def _cache_key(
+    context: _BytecodeContext,
+    *,
+    rel_path: str,
+) -> str:
+    python_version = sys.version.split()[0]
+    payload = "|".join(
+        [
+            context.repo,
+            context.commit,
+            rel_path,
+            python_version,
+            str(context.options.compile_flags),
+            str(context.options.optimize),
+            str(context.options.dont_inherit),
+        ]
+    )
+    digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16)
+    return digest.hexdigest()
+
+
+def _cache_path(cache_dir: Path, cache_key: str) -> Path:
+    return cache_dir / f"{cache_key}.marshal"
+
+
+def _cache_enabled(options: BytecodeExtractOptions) -> bool:
+    return options.enable_cache and options.cache_dir is not None
+
+
+def _load_cached_code(
+    context: _BytecodeContext,
+    *,
+    rel_path: str,
+    warnings: list[str],
+) -> CodeType | None:
+    if not _cache_enabled(context.options):
+        return None
+    cache_dir = context.options.cache_dir
+    if cache_dir is None:
+        return None
+    payload = _read_cache_payload(
+        context=context,
+        cache_dir=cache_dir,
+        rel_path=rel_path,
+        warnings=warnings,
+    )
+    if payload is None:
+        return None
+    return _decode_cached_payload(payload=payload, rel_path=rel_path, warnings=warnings)
+
+
+def _read_cache_payload(
+    *,
+    context: _BytecodeContext,
+    cache_dir: Path,
+    rel_path: str,
+    warnings: list[str],
+) -> bytes | None:
+    cache_key = _cache_key(context, rel_path=rel_path)
+    cache_file = _cache_path(cache_dir, cache_key)
+    try:
+        return cache_file.read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        warnings.append(f"Bytecode cache read failed for {rel_path}: {exc}")
+        return None
+
+
+def _decode_cached_payload(
+    *,
+    payload: bytes,
+    rel_path: str,
+    warnings: list[str],
+) -> CodeType | None:
+    try:
+        cached = marshal.loads(payload)
+    except (ValueError, TypeError) as exc:
+        warnings.append(f"Bytecode cache decode failed for {rel_path}: {exc}")
+        return None
+    if not isinstance(cached, CodeType):
+        warnings.append(f"Bytecode cache type mismatch for {rel_path}")
+        return None
+    return cached
+
+
+def _store_cached_code(
+    context: _BytecodeContext,
+    *,
+    rel_path: str,
+    code: CodeType,
+    warnings: list[str],
+) -> None:
+    if not _cache_enabled(context.options):
+        return
+    cache_dir = context.options.cache_dir
+    if cache_dir is None:
+        return
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = _cache_key(context, rel_path=rel_path)
+    cache_file = _cache_path(cache_dir, cache_key)
+    try:
+        with tempfile.NamedTemporaryFile(dir=cache_dir, delete=False) as handle:
+            handle.write(marshal.dumps(code))
+            temp_path = Path(handle.name)
+        temp_path.replace(cache_file)
+    except OSError as exc:
+        warnings.append(f"Bytecode cache write failed for {rel_path}: {exc}")
 
 
 def _decode_source_bytes(source_bytes: bytes) -> tuple[str, str]:
@@ -287,32 +411,93 @@ def _build_source_index(source_bytes: bytes) -> tuple[str, LineIndexedSource]:
     return source_text, source_index
 
 
-def _build_dis_buffers() -> _DisBuffers:
-    return _DisBuffers(
-        code_units=columnar_buffer_for_table_key(PY_BC_CODE_UNITS_TABLE_KEY),
-        instructions=columnar_buffer_for_table_key(PY_BC_INSTRUCTIONS_TABLE_KEY),
-        exceptions=columnar_buffer_for_table_key(PY_BC_EXCEPTION_TABLE_KEY),
-        blocks=columnar_buffer_for_table_key(PY_BC_BLOCKS_TABLE_KEY),
-        cfg_edges=columnar_buffer_for_table_key(PY_BC_CFG_EDGES_TABLE_KEY),
-        defuse_events=columnar_buffer_for_table_key(PY_BC_DEFUSE_EVENTS_TABLE_KEY),
+def _build_dis_collectors(options: BytecodeExtractOptions) -> _DisCollectors:
+    return _DisCollectors(
+        code_units=columnar_batch_collector_for_table_key(
+            PY_BC_CODE_UNITS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        instructions=columnar_batch_collector_for_table_key(
+            PY_BC_INSTRUCTIONS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        exceptions=columnar_batch_collector_for_table_key(
+            PY_BC_EXCEPTION_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        blocks=columnar_batch_collector_for_table_key(
+            PY_BC_BLOCKS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        cfg_edges=columnar_batch_collector_for_table_key(
+            PY_BC_CFG_EDGES_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        defuse_events=columnar_batch_collector_for_table_key(
+            PY_BC_DEFUSE_EVENTS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
     )
 
+def _flush_dis_collectors(collectors: _DisCollectors) -> None:
+    collectors.code_units.flush()
+    collectors.instructions.flush()
+    collectors.exceptions.flush()
+    collectors.blocks.flush()
+    collectors.cfg_edges.flush()
+    collectors.defuse_events.flush()
 
-def _merge_columnar_buffers(target: ColumnarRowBuffer, source: ColumnarRowBuffer) -> None:
-    if source.row_count == 0:
+
+def _merge_dis_batches(
+    collector: ColumnarBatchCollector,
+    *,
+    batches: list[pa.RecordBatch],
+    row_count: int,
+) -> None:
+    if not batches and row_count == 0:
         return
-    for name in target.columns:
-        target.data[name].extend(source.data[name])
-    target.row_count += source.row_count
+    collector.flush()
+    collector.batches.extend(batches)
+    collector.row_count += row_count
 
 
-def _merge_dis_buffers(target: _DisBuffers, source: _DisBuffers) -> None:
-    _merge_columnar_buffers(target.code_units, source.code_units)
-    _merge_columnar_buffers(target.instructions, source.instructions)
-    _merge_columnar_buffers(target.exceptions, source.exceptions)
-    _merge_columnar_buffers(target.blocks, source.blocks)
-    _merge_columnar_buffers(target.cfg_edges, source.cfg_edges)
-    _merge_columnar_buffers(target.defuse_events, source.defuse_events)
+def _merge_dis_result(collectors: _DisCollectors, result: _ModuleDisResult) -> None:
+    _merge_dis_batches(
+        collectors.code_units,
+        batches=result.code_unit_batches,
+        row_count=result.code_unit_row_count,
+    )
+    _merge_dis_batches(
+        collectors.instructions,
+        batches=result.instruction_batches,
+        row_count=result.instruction_row_count,
+    )
+    _merge_dis_batches(
+        collectors.exceptions,
+        batches=result.exception_batches,
+        row_count=result.exception_row_count,
+    )
+    _merge_dis_batches(
+        collectors.blocks,
+        batches=result.block_batches,
+        row_count=result.block_row_count,
+    )
+    _merge_dis_batches(
+        collectors.cfg_edges,
+        batches=result.cfg_edge_batches,
+        row_count=result.cfg_edge_row_count,
+    )
+    _merge_dis_batches(
+        collectors.defuse_events,
+        batches=result.defuse_event_batches,
+        row_count=result.defuse_event_row_count,
+    )
 
 
 def _coerce_int(value: object) -> int | None:
@@ -1158,14 +1343,14 @@ def _iter_code_units(
 
 
 def _append_code_unit_row(
-    buffers: _DisBuffers,
+    collectors: _DisCollectors,
     *,
     context: _BytecodeContext,
     inputs: _CodeUnitRowInputs,
 ) -> None:
     unit = inputs.unit
     co_qualname = getattr(unit.code, "co_qualname", None)
-    buffers.code_units.append(
+    collectors.code_units.append(
         {
             "repo": context.repo,
             "commit": context.commit,
@@ -1194,7 +1379,7 @@ def _append_code_unit_row(
             "python_version": sys.version.split()[0],
             "bytecode_magic": importlib.util.MAGIC_NUMBER,
             "optimize": context.options.optimize,
-            "dont_inherit": True,
+            "dont_inherit": context.options.dont_inherit,
         }
     )
 
@@ -1203,7 +1388,7 @@ def _process_code_unit(
     context: _BytecodeContext,
     *,
     unit: _CodeUnitInfo,
-    buffers: _DisBuffers,
+    collectors: _DisCollectors,
 ) -> None:
     unit_context = _CodeUnitContext(
         base=context,
@@ -1213,7 +1398,7 @@ def _process_code_unit(
     )
     instruction_rows, instruction_infos, label_map = _build_instruction_rows(unit_context)
     for row in instruction_rows:
-        buffers.instructions.append(row)
+        collectors.instructions.append(row)
     span_start, span_end = _code_unit_span_from_positions(
         instruction_infos,
         context.source_index,
@@ -1221,7 +1406,7 @@ def _process_code_unit(
     )
     kind = _code_unit_kind(unit.code, context.source_index)
     _append_code_unit_row(
-        buffers,
+        collectors,
         context=context,
         inputs=_CodeUnitRowInputs(
             unit=unit,
@@ -1233,7 +1418,7 @@ def _process_code_unit(
     exception_entries = _exception_entries(unit.code)
     if context.options.include_exception_table:
         for row in _exception_rows(unit_context, label_map=label_map):
-            buffers.exceptions.append(row)
+            collectors.exceptions.append(row)
     if context.options.include_cfg:
         block_rows, block_infos, offset_map = _build_blocks(
             unit_context,
@@ -1242,7 +1427,7 @@ def _process_code_unit(
             exception_entries=exception_entries,
         )
         for row in block_rows:
-            buffers.blocks.append(row)
+            collectors.blocks.append(row)
         cfg_rows = _cfg_edges(
             unit_context,
             blocks=block_infos,
@@ -1250,10 +1435,10 @@ def _process_code_unit(
             exception_entries=exception_entries,
         )
         for row in cfg_rows:
-            buffers.cfg_edges.append(row)
+            collectors.cfg_edges.append(row)
     if context.options.include_defuse:
         for row in _build_defuse_events(unit_context, instructions=instruction_infos):
-            buffers.defuse_events.append(row)
+            collectors.defuse_events.append(row)
 
 
 def _process_module(
@@ -1261,24 +1446,28 @@ def _process_module(
     *,
     module: ModuleRecord,
     source_text: str,
-    buffers: _DisBuffers,
+    collectors: _DisCollectors,
     warnings: list[str],
 ) -> None:
-    try:
-        code = compile(
-            source_text,
-            str(module.file_path),
-            "exec",
-            dont_inherit=True,
-            optimize=context.options.optimize,
-        )
-    except (SyntaxError, ValueError, TypeError) as exc:
-        message = f"Bytecode compile failed for {module.rel_path}: {exc}"
-        warnings.append(message)
-        LOG.warning("%s", message)
-        return
+    code = _load_cached_code(context, rel_path=module.rel_path, warnings=warnings)
+    if code is None:
+        try:
+            code = compile(
+                source_text,
+                str(module.file_path),
+                "exec",
+                dont_inherit=context.options.dont_inherit,
+                optimize=context.options.optimize,
+                flags=context.options.compile_flags,
+            )
+        except (SyntaxError, ValueError, TypeError) as exc:
+            message = f"Bytecode compile failed for {module.rel_path}: {exc}"
+            warnings.append(message)
+            LOG.warning("%s", message)
+            return
+        _store_cached_code(context, rel_path=module.rel_path, code=code, warnings=warnings)
     for unit in _iter_code_units(code, context=context):
-        _process_code_unit(context, unit=unit, buffers=buffers)
+        _process_code_unit(context, unit=unit, collectors=collectors)
 
 
 def _module_size_bytes(module: ModuleRecord) -> int | None:
@@ -1291,7 +1480,7 @@ def _module_size_bytes(module: ModuleRecord) -> int | None:
 def _extract_module_rows(
     job: _DisModuleJob,
 ) -> _ModuleDisResult:
-    buffers = _build_dis_buffers()
+    collectors = _build_dis_collectors(job.options)
     warnings: list[str] = []
     context = _BytecodeContext(
         repo=job.repo,
@@ -1301,14 +1490,36 @@ def _extract_module_rows(
         source_index=job.source_index,
         options=job.options,
     )
+    start_time = time.monotonic()
     _process_module(
         context,
         module=job.module,
         source_text=job.source_text,
-        buffers=buffers,
+        collectors=collectors,
         warnings=warnings,
     )
-    return _ModuleDisResult(buffers=buffers, warnings=warnings)
+    elapsed = time.monotonic() - start_time
+    max_seconds = job.options.max_module_seconds
+    if max_seconds is not None and max_seconds > 0 and elapsed > max_seconds:
+        warnings.append(
+            f"Bytecode module budget exceeded for {job.module.rel_path}: {elapsed:.2f}s"
+        )
+    _flush_dis_collectors(collectors)
+    return _ModuleDisResult(
+        warnings=warnings,
+        code_unit_batches=list(collectors.code_units.batches),
+        instruction_batches=list(collectors.instructions.batches),
+        exception_batches=list(collectors.exceptions.batches),
+        block_batches=list(collectors.blocks.batches),
+        cfg_edge_batches=list(collectors.cfg_edges.batches),
+        defuse_event_batches=list(collectors.defuse_events.batches),
+        code_unit_row_count=collectors.code_units.row_count,
+        instruction_row_count=collectors.instructions.row_count,
+        exception_row_count=collectors.exceptions.row_count,
+        block_row_count=collectors.blocks.row_count,
+        cfg_edge_row_count=collectors.cfg_edges.row_count,
+        defuse_event_row_count=collectors.defuse_events.row_count,
+    )
 
 
 class DisExtractStep(BaseExtractStep):
@@ -1337,21 +1548,25 @@ class DisExtractStep(BaseExtractStep):
         DisExtractResult
             Result bundle with row payloads and execution status.
         """
+        if not self._options.enable:
+            return DisExtractResult(
+                result=ExecutionResult.skip("Bytecode extraction disabled by options")
+            )
+        options = self._options
         try:
-            buffers = _build_dis_buffers()
+            collectors = _build_dis_collectors(options)
         except (KeyError, RuntimeError) as exc:
             return DisExtractResult(result=ExecutionResult.failed(str(exc)))
 
         warnings: list[str] = []
-        module_bundles = list(
-            self._iter_python_source_bundles(
-                modules,
-                warnings=warnings,
-                max_module_bytes=self._options.max_module_bytes,
-            )
+        module_bundles_iter = self._iter_python_source_bundles(
+            modules,
+            warnings=warnings,
+            max_module_bytes=options.max_module_bytes,
         )
-        worker_count = max(self._options.max_workers, 1)
-        if worker_count > 1 and len(module_bundles) > 1:
+        worker_count = max(options.max_workers, 1)
+        module_bundles = list(module_bundles_iter) if worker_count > 1 else module_bundles_iter
+        if worker_count > 1 and isinstance(module_bundles, list) and len(module_bundles) > 1:
             with ThreadPoolExecutor(max_workers=worker_count) as executor:
                 future_map = {
                     executor.submit(
@@ -1362,7 +1577,7 @@ class DisExtractStep(BaseExtractStep):
                             source_index=source_index,
                             repo=repo,
                             commit=commit,
-                            options=self._options,
+                            options=options,
                         ),
                     ): module
                     for module, source_text, source_index in module_bundles
@@ -1371,7 +1586,7 @@ class DisExtractStep(BaseExtractStep):
                     result = future.result()
                     if result.warnings:
                         warnings.extend(result.warnings)
-                    _merge_dis_buffers(buffers, result.buffers)
+                    _merge_dis_result(collectors, result)
         else:
             for module, source_text, source_index in module_bundles:
                 result = _extract_module_rows(
@@ -1381,69 +1596,45 @@ class DisExtractStep(BaseExtractStep):
                         source_index=source_index,
                         repo=repo,
                         commit=commit,
-                        options=self._options,
+                        options=options,
                     )
                 )
                 warnings.extend(result.warnings)
-                _merge_dis_buffers(buffers, result.buffers)
+                _merge_dis_result(collectors, result)
 
         LOG.info(
             "Bytecode extraction: repo=%s commit=%s code_units=%d instr=%d",
             repo,
             commit,
-            buffers.code_units.row_count,
-            buffers.instructions.row_count,
+            collectors.code_units.row_count,
+            collectors.instructions.row_count,
         )
-        code_unit_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_BC_CODE_UNITS_TABLE_KEY,
-            buffers.code_units.data,
-            extras_policy="retain",
-        )
-        instruction_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_BC_INSTRUCTIONS_TABLE_KEY,
-            buffers.instructions.data,
-            extras_policy="retain",
-        )
-        exception_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_BC_EXCEPTION_TABLE_KEY,
-            buffers.exceptions.data,
-            extras_policy="retain",
-        )
-        block_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_BC_BLOCKS_TABLE_KEY,
-            buffers.blocks.data,
-            extras_policy="retain",
-        )
-        cfg_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_BC_CFG_EDGES_TABLE_KEY,
-            buffers.cfg_edges.data,
-            extras_policy="retain",
-        )
-        defuse_event_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_BC_DEFUSE_EVENTS_TABLE_KEY,
-            buffers.defuse_events.data,
-            extras_policy="retain",
-        )
+        code_unit_rows_reader = collectors.code_units.to_reader()
+        instruction_rows_reader = collectors.instructions.to_reader()
+        exception_rows_reader = collectors.exceptions.to_reader()
+        block_rows_reader = collectors.blocks.to_reader()
+        cfg_edge_rows_reader = collectors.cfg_edges.to_reader()
+        defuse_event_rows_reader = collectors.defuse_events.to_reader()
         return DisExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            code_unit_rows=buffers.code_units.data,
-            instruction_rows=buffers.instructions.data,
-            exception_rows=buffers.exceptions.data,
-            block_rows=buffers.blocks.data,
-            cfg_edge_rows=buffers.cfg_edges.data,
-            defuse_event_rows=buffers.defuse_events.data,
+            code_unit_rows={},
+            instruction_rows={},
+            exception_rows={},
+            block_rows={},
+            cfg_edge_rows={},
+            defuse_event_rows={},
             code_unit_rows_reader=code_unit_rows_reader,
             instruction_rows_reader=instruction_rows_reader,
             exception_rows_reader=exception_rows_reader,
             block_rows_reader=block_rows_reader,
             cfg_edge_rows_reader=cfg_edge_rows_reader,
             defuse_event_rows_reader=defuse_event_rows_reader,
-            code_unit_row_count=buffers.code_units.row_count,
-            instruction_row_count=buffers.instructions.row_count,
-            exception_row_count=buffers.exceptions.row_count,
-            block_row_count=buffers.blocks.row_count,
-            cfg_edge_row_count=buffers.cfg_edges.row_count,
-            defuse_event_row_count=buffers.defuse_events.row_count,
+            code_unit_row_count=collectors.code_units.row_count,
+            instruction_row_count=collectors.instructions.row_count,
+            exception_row_count=collectors.exceptions.row_count,
+            block_row_count=collectors.blocks.row_count,
+            cfg_edge_row_count=collectors.cfg_edges.row_count,
+            defuse_event_row_count=collectors.defuse_events.row_count,
         )
 
     def _iter_python_source_bundles(

@@ -9,9 +9,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
-from warnings import warn
-
-import duckdb
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
@@ -93,21 +90,6 @@ class GatewayFactory:
         factory._repo = options.repo
         factory._commit = options.commit
         return factory
-
-    def with_macros(self) -> GatewayFactory:
-        """Deprecate legacy macro toggle (no-op).
-
-        Returns
-        -------
-        GatewayFactory
-            Self for chaining.
-        """
-        warn(
-            "GatewayFactory.with_macros is deprecated and a no-op; macros are no longer used.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self
 
     def with_schema(self) -> GatewayFactory:
         """Enable schema application (default).
@@ -324,7 +306,7 @@ def analytics_gateway(options: GatewayOptions | None = None) -> Iterator[Storage
     Yields
     ------
     StorageGateway
-        Gateway with schema/views/macros applied.
+        Gateway with schema/views applied.
     """
     factory = GatewayFactory.from_options(options) if options else GatewayFactory()
     gateway = factory.open()
@@ -332,38 +314,6 @@ def analytics_gateway(options: GatewayOptions | None = None) -> Iterator[Storage
         yield gateway
     finally:
         gateway.close()
-
-
-def memory_con_with_macros() -> DuckDBConnection:
-    """Return an in-memory DuckDB connection (deprecated name).
-
-    Returns
-    -------
-    DuckDBConnection
-        Connection to an in-memory DuckDB instance.
-    """
-    warn(
-        "memory_con_with_macros is deprecated; macros are not registered in tests.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return duckdb.connect(database=":memory:")
-
-
-def gateway_with_macros() -> StorageGateway:
-    """Return an in-memory gateway with schema/views (deprecated name).
-
-    Returns
-    -------
-    StorageGateway
-        Gateway configured with schema/views.
-    """
-    warn(
-        "gateway_with_macros is deprecated; use GatewayFactory().open() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return GatewayFactory().open()
 
 
 def _ensure_contract_service_configured() -> None:
@@ -472,8 +422,6 @@ def seed_repo_identity(
 __all__ = [
     "DuckDBConnection",
     "GatewayFactory",
-    "gateway_with_macros",
-    "memory_con_with_macros",
     "seed_contract_catalog",
     "seed_repo_identity",
     "seed_tables",

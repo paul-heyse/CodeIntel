@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -57,7 +57,7 @@ def _write_dataset_rows(
     columns = type(rows[0]).__columns__
     table = arrow_table_for_rows(
         table_key,
-        [row.to_tuple() for row in rows],
+        [_row_mapping(columns, row.to_tuple()) for row in rows],
         columns=columns,
     )
     write_dataset(
@@ -68,24 +68,29 @@ def _write_dataset_rows(
     )
 
 
-def _write_dataset_tuples(
+def _write_dataset_mappings(
     dataset_root: Path,
     table_key: str,
     snapshot_id: str,
-    rows: Sequence[tuple[object, ...]],
-    *,
-    columns: Sequence[str],
+    rows: Sequence[Mapping[str, object]],
 ) -> None:
     if not rows:
         return
     dataset_root.mkdir(parents=True, exist_ok=True)
-    table = arrow_table_for_rows(table_key, rows, columns=columns)
+    table = arrow_table_for_rows(table_key, rows)
     write_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
         data=table,
     )
+
+
+def _row_mapping(
+    columns: Sequence[str],
+    values: Sequence[object],
+) -> dict[str, object]:
+    return dict(zip(columns, values, strict=True))
 
 
 def test_engine_matches_nx_views_for_core_graphs(
@@ -328,17 +333,17 @@ def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) ->
     repo = test_ctx.repo
     commit = test_ctx.commit
     dataset_root = test_ctx.build_paths.dataset_root_dir
+    columns = (*ImportGraphEdgeRow.__columns__, "module_layer")
     rows = [
-        (repo, commit, "a", "b", 0, 0, 0, 1),
-        (repo, commit, "a", "b", 0, 0, 0, 1),
-        (repo, commit, "b", "c", 0, 0, 0, 2),
+        _row_mapping(columns, (repo, commit, "a", "b", 0, 0, 0, 1)),
+        _row_mapping(columns, (repo, commit, "a", "b", 0, 0, 0, 1)),
+        _row_mapping(columns, (repo, commit, "b", "c", 0, 0, 0, 2)),
     ]
-    _write_dataset_tuples(
+    _write_dataset_mappings(
         dataset_root,
         "graph.import_graph_edges",
         commit,
         rows,
-        columns=(*ImportGraphEdgeRow.__columns__, "module_layer"),
     )
 
     graph = nx_views.load_import_graph(dataset_root, repo, commit)
@@ -425,15 +430,15 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
     """load_symbol_function_graph returns empty when dataset missing and normalizes decimals."""
     commit = test_ctx.commit
     dataset_root = test_ctx.build_paths.dataset_root_dir
+    columns = SymbolUseEdgeRow.__columns__
     rows = [
-        ("s1", "a.py", "b.py", False, False, Decimal("10"), 20),
+        _row_mapping(columns, ("s1", "a.py", "b.py", False, False, Decimal("10"), 20)),
     ]
-    _write_dataset_tuples(
+    _write_dataset_mappings(
         dataset_root,
         "graph.symbol_use_edges",
         commit,
         rows,
-        columns=SymbolUseEdgeRow.__columns__,
     )
 
     graph = nx_views.load_symbol_function_graph(dataset_root, commit)

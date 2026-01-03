@@ -21,6 +21,8 @@ __all__ = [
     "GraphImportModulesRow",
     "GraphPdgEdgesRow",
     "GraphSymbolUseEdgesRow",
+    "GraphVCallGraphDegreeRow",
+    "GraphVImportGraphDegreeRow",
 ]
 
 
@@ -256,3 +258,23 @@ class GraphSymbolUseEdgesRow(TypedDict):
     same_module: bool
     def_goid_h128: int | None
     use_goid_h128: int | None
+
+
+class GraphVCallGraphDegreeRow(TypedDict):
+    """Row model for graph.v_call_graph_degree."""
+
+    repo: str
+    commit: str
+    function_goid_h128: int | None
+    call_out_degree: int | None
+    call_in_degree: int
+
+
+class GraphVImportGraphDegreeRow(TypedDict):
+    """Row model for graph.v_import_graph_degree."""
+
+    repo: str
+    commit: str
+    module: str
+    import_out_degree: str
+    import_in_degree: str

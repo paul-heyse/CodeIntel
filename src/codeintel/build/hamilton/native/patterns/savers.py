@@ -17,7 +17,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
-from codeintel.build.tabular.frames import empty_lazyframe_for_table
+from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
 
@@ -190,7 +190,7 @@ def _coerce_none_output[**P_coerce, R_coerce](
     def wrapper(*args: P_coerce.args, **kwargs: P_coerce.kwargs) -> R_coerce:
         result = fn(*args, **kwargs)
         if result is None:
-            return cast("R_coerce", empty_lazyframe_for_table(table_key))
+            return cast("R_coerce", empty_reader_for_table(table_key))
         return result
 
     return wrapper

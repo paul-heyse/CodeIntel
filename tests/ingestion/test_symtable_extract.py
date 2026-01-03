@@ -5,21 +5,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-from codeintel.core.columnar.rows import ColumnarRows
+import pyarrow as pa
+
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.symtable_extract import SymtableExtractStep
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from tests._helpers.fixtures.repos import write_tree
 
 
-def _columnar_to_dicts(rows: ColumnarRows) -> list[dict[str, object]]:
-    if not rows:
-        return []
-    columns = list(rows.keys())
-    if not columns:
-        return []
-    row_count = len(rows[columns[0]])
-    return [{col: rows[col][idx] for col in columns} for idx in range(row_count)]
+def _reader_to_dicts(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
+    table = pa.Table.from_batches(reader, schema=reader.schema)
+    return list(table.to_pylist())
 
 
 def test_symtable_resolution_edges(tmp_path: Path) -> None:
@@ -49,7 +45,7 @@ def test_symtable_resolution_edges(tmp_path: Path) -> None:
     result = step.execute(modules, repo="demo", commit="abc123")
     assert result.result.success
 
-    rows = _columnar_to_dicts(result.resolution_edge_rows)
+    rows = _reader_to_dicts(result.resolution_edge_rows_reader)
     kinds = {row.get("kind") for row in rows if isinstance(row.get("kind"), str)}
     assert "GLOBAL" in kinds
     assert "NONLOCAL" in kinds
@@ -78,7 +74,7 @@ def test_symtable_freevars(tmp_path: Path) -> None:
     result = step.execute(modules, repo="demo", commit="abc123")
     assert result.result.success
 
-    partitions = _columnar_to_dicts(result.function_partition_rows)
+    partitions = _reader_to_dicts(result.function_partition_rows_reader)
 
     def _has_free_x(row: Mapping[str, object]) -> bool:
         frees = row.get("frees")
@@ -108,8 +104,49 @@ def test_symtable_comprehension_scope(tmp_path: Path) -> None:
     result = step.execute(modules, repo="demo", commit="abc123")
     assert result.result.success
 
-    scopes = _columnar_to_dicts(result.scope_rows)
+    scopes = _reader_to_dicts(result.scope_rows_reader)
     scope_types = {
         row.get("scope_type") for row in scopes if isinstance(row.get("scope_type"), str)
     }
     assert "COMPREHENSION" in scope_types
+
+
+def test_symtable_type_scopes_and_annotation_bindings(tmp_path: Path) -> None:
+    """Ensure type scopes and annotation-only bindings are captured."""
+    repo_root = tmp_path / "repo"
+    write_tree(
+        repo_root,
+        {
+            "pkg/types.py": "\n".join(
+                [
+                    "type Alias[T] = list[T]",
+                    "",
+                    "class Box[T]:",
+                    "    value: T",
+                    "    def __init__(self, value: T) -> None:",
+                    "        self.value = value",
+                    "",
+                    "def func[T](value: T) -> T:",
+                    "    return value",
+                    "",
+                    "x: int",
+                ]
+            ),
+        },
+    )
+    profile = default_code_profile(repo_root)
+    modules = FilesystemDiscoveryAdapter.discover_modules(repo_root, profile)
+    step = SymtableExtractStep(FilesystemDiscoveryAdapter(repo_root))
+    result = step.execute(modules, repo="demo", commit="abc123")
+    assert result.result.success
+
+    scope_rows = _reader_to_dicts(result.scope_rows_reader)
+    type_alias_scopes = [row for row in scope_rows if row.get("scope_type") == "TYPE_ALIAS"]
+    type_param_scopes = [row for row in scope_rows if row.get("scope_type") == "TYPE_PARAMETERS"]
+    assert type_alias_scopes
+    assert type_param_scopes
+    assert any(row.get("anchor_reason") == "type_alias" for row in type_alias_scopes)
+    assert any(row.get("anchor_reason") == "type_parameters_owner" for row in type_param_scopes)
+
+    binding_rows = _reader_to_dicts(result.binding_rows_reader)
+    assert any(row.get("binding_kind") == "annot_only" for row in binding_rows)

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import (
     ast_extract,
     config_ingest,
@@ -16,7 +15,6 @@ from codeintel.ingestion.compute import (
     repo_scan,
     typing_ingest,
 )
-from codeintel.storage.helpers.module_index import load_module_map
 from tests._helpers import modules_expected_from_repo_tree
 from tests._helpers.assertions import (
     MissingExtraOptions,
@@ -25,7 +23,8 @@ from tests._helpers.assertions import (
     format_module_map_diff,
     module_map_from_path_map,
 )
-from tests._helpers.ingestion import materialize_repo_scan_result, module_inventory_context
+from tests._helpers.ingestion import build_parquet_repo_scan_context
+from tests._helpers.parquet_datasets import read_snapshot_rows
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -62,62 +61,52 @@ def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
 
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
     """Verify module inventory round-trips through core.modules and iter_modules."""
-    with module_inventory_context(tmp_path) as ctx:
-        scan_result = ctx.scan_step.execute(
-            repo=ctx.snapshot.repo,
-            commit=ctx.snapshot.commit,
-            repo_root=ctx.snapshot.repo_root,
-            profile=ctx.profile,
+    ctx = build_parquet_repo_scan_context(tmp_path)
+    rows = read_snapshot_rows(
+        ctx.dataset_root,
+        table_key="core.modules",
+        snapshot_id=ctx.snapshot.commit,
+        columns=("module", "path"),
+    )
+    rel_paths: list[str] = []
+    for row in rows:
+        path_value = row.get("path")
+        if isinstance(path_value, str):
+            rel_paths.append(path_value)
+    rel_paths.sort()
+    expected_map = modules_expected_from_repo_tree(ctx.repo_root)
+    expected_paths = sorted(expected_map)
+    if rel_paths != expected_paths:
+        pytest.fail(
+            format_missing_extra(
+                expected_paths,
+                rel_paths,
+                options=MissingExtraOptions(
+                    noun="module paths",
+                    context="module inventory",
+                ),
+            )
         )
-        materialize_repo_scan_result(
-            ctx.gateway,
-            scan_result,
-            snapshot=ctx.snapshot,
-        )
+    if not all("/" in rel_path for rel_path in rel_paths):
+        pytest.fail(f"Non-POSIX module paths: {rel_paths}")
 
-        module_map = load_module_map(
-            ctx.gateway,
-            ctx.snapshot.repo,
-            ctx.snapshot.commit,
-            language="python",
-            logger=None,
-        )
-        records = list(
-            FilesystemDiscoveryAdapter.iter_modules(
-                module_map, ctx.snapshot.repo_root, logger=None, scan_profile=ctx.profile
+    module_path_map: dict[str, str] = {}
+    for row in rows:
+        module_value = row.get("module")
+        path_value = row.get("path")
+        if isinstance(module_value, str) and isinstance(path_value, str):
+            module_path_map[path_value] = module_value
+    expected_module_map = module_map_from_path_map(expected_map)
+    actual_module_map = module_map_from_path_map(module_path_map)
+    if actual_module_map != expected_module_map:
+        pytest.fail(
+            format_module_map_diff(
+                expected_module_map,
+                actual_module_map,
+                options=ModuleMapDiffOptions(context="core.modules parquet"),
             )
         )
 
-        rel_paths = sorted(record.rel_path for record in records)
-        expected_map = modules_expected_from_repo_tree(ctx.snapshot.repo_root)
-        expected_paths = sorted(expected_map)
-        if rel_paths != expected_paths:
-            pytest.fail(
-                format_missing_extra(
-                    expected_paths,
-                    rel_paths,
-                    options=MissingExtraOptions(
-                        noun="module paths",
-                        context="module inventory",
-                    ),
-                )
-            )
-        if not all("/" in rel_path for rel_path in rel_paths):
-            pytest.fail(f"Non-POSIX module paths: {rel_paths}")
-
-        expected_module_map = module_map_from_path_map(expected_map)
-        actual_module_map = module_map_from_path_map(module_map)
-        if actual_module_map != expected_module_map:
-            pytest.fail(
-                format_module_map_diff(
-                    expected_module_map,
-                    actual_module_map,
-                    options=ModuleMapDiffOptions(context="core.modules"),
-                )
-            )
-
-        scan_paths = sorted(module.rel_path for module in scan_result.modules)
-        if scan_paths != rel_paths:
-            pytest.fail(
-                f"Scan modules {scan_paths} differ from module_map derived paths {rel_paths}"
-            )
+    scan_paths = sorted(module.rel_path for module in ctx.scan_result.modules)
+    if scan_paths != rel_paths:
+        pytest.fail(f"Scan modules {scan_paths} differ from dataset-derived paths {rel_paths}")

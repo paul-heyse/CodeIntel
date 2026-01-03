@@ -11,6 +11,7 @@ from dataclasses import dataclass
 __all__ = [
     "CallGraphOptions",
     "CfgDfgOptions",
+    "CpgOptions",
     "GoidBuilderOptions",
     "ImportGraphOptions",
     "SymbolUsesOptions",
@@ -113,3 +114,16 @@ class CfgDfgOptions:
 
     scope_paths: list[str] | None = None
     include_test_files: bool = True
+
+
+@dataclass(frozen=True)
+class CpgOptions:
+    """Configuration options for CPG construction.
+
+    Attributes
+    ----------
+    enable_reaches
+        Whether to emit REACHES edges for bytecode dataflow reachability.
+    """
+
+    enable_reaches: bool = True

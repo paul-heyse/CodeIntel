@@ -556,6 +556,24 @@ outputs:
       - "graph.cfg_edges"
       - "graph.dfg_edges"
     notes: "Validation errors for graph construction."
+  - target: "py_cpg_quality_report"
+    domain: "graphs"
+    anchor: "t__py_cpg_quality_report"
+    materialization: "table"
+    table_keys:
+      - "analytics.py_cpg_quality_report"
+    contracts:
+      - "analytics.py_cpg_quality_report"
+    downstream_consumers:
+      - "cli.graph"
+    upstream_targets:
+      - "core.py_bc_instructions"
+      - "core.py_sym_scopes"
+      - "core.py_bc_blocks"
+      - "core.py_bc_cfg_edges"
+      - "core.py_bc_defuse_events"
+      - "graph.cpg_edges"
+    notes: "Run-level quality metrics for Python CPG extraction."
   - target: "symbol_uses"
     domain: "graphs"
     anchor: "t__symbol_uses"
@@ -684,6 +702,7 @@ outputs:
     anchor: "t__bytecode"
     materialization: "table"
     table_keys:
+      - "core.py_compiler_metadata"
       - "core.py_bc_code_units"
       - "core.py_bc_instructions"
       - "core.py_bc_exception_table"
@@ -691,6 +710,7 @@ outputs:
       - "core.py_bc_cfg_edges"
       - "core.py_bc_defuse_events"
     contracts:
+      - "core.py_compiler_metadata"
       - "core.py_bc_code_units"
       - "core.py_bc_instructions"
       - "core.py_bc_exception_table"

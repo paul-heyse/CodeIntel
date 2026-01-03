@@ -8,18 +8,19 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 from intervaltree import IntervalTree
 
-from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import (
-    JoinSpec,
-    dedupe_frame_for_table,
-    empty_frame_for_table,
-    join_validated,
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    align_table_to_contract,
+    arrow_join_tables,
+    dedupe_table_for_table,
 )
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
 from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
 
@@ -544,15 +545,50 @@ def _explicit_binding_kind(def_info: _DefInfo, callee_text: str | None) -> str:
     return _BINDING_BOUND_METHOD
 
 
-def _build_def_catalog(defs_df: pl.DataFrame) -> _DefCatalog:
+def _table_rows(table: pa.Table) -> list[dict[str, object]]:
+    if table.num_rows == 0:
+        return []
+    return table.to_pylist()
+
+
+def _empty_table(columns: Sequence[str]) -> pa.Table:
+    arrays = [pa.array([], type=pa.null()) for _ in columns]
+    return pa.Table.from_arrays(arrays, names=list(columns))
+
+
+def _select_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    present = [column for column in columns if column in table.column_names]
+    if not present:
+        return _empty_table(columns)
+    return table.select(present)
+
+
+def _build_def_catalog(defs_rows: Sequence[Mapping[str, object]]) -> _DefCatalog:
     builder = _DefCatalogBuilder()
-    for row in defs_df.iter_rows(named=True):
+    for row in defs_rows:
         builder.add_row(row)
     return builder.finalize()
 
 
-def _payload_literal(value: PayloadValue | bytes | bytearray | memoryview | None) -> pl.Expr:
-    return pl.lit(encode_payload(value)).cast(pl.Binary)
+def _table_to_reader(table_key: str, table: pa.Table) -> pa.RecordBatchReader:
+    aligned = align_table_to_contract(table_key, table, extras_policy=None)
+    return table_to_reader(aligned)
+
+
+def _drop_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    present = [column for column in columns if column in table.column_names]
+    if not present:
+        return table
+    return table.drop_columns(present)
+
+
+def _rename_table_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
+    if not mapping:
+        return table
+    new_names = [mapping.get(name, name) for name in table.column_names]
+    if new_names == list(table.column_names):
+        return table
+    return table.rename_columns(new_names)
 
 
 def _call_edge_extras(row: Mapping[str, object]) -> bytes:
@@ -584,17 +620,17 @@ def _rel_path_key(value: object) -> str | None:
 def _build_occurrence_resolver(
     *,
     rel_path: str,
-    occ_df: pl.DataFrame | None,
+    occ_rows: Sequence[Mapping[str, object]] | None,
 ) -> SpanResolver[_OccurrenceCandidate]:
     resolver = SpanResolver.for_bytes(path_normalizer=lambda value: value)
-    if occ_df is None or occ_df.is_empty():
+    if not occ_rows:
         return resolver
     spans: list[tuple[str, int, int, _OccurrenceCandidate]] = []
-    for row in occ_df.iter_rows(named=True):
+    for row in occ_rows:
         symbol = row.get("scip_symbol")
         start = row.get("start_byte")
         end = row.get("end_byte")
-        roles = row.get("roles")
+        roles = _coerce_int(row.get("roles")) or 0
         if not isinstance(symbol, str) or not isinstance(start, int) or not isinstance(end, int):
             continue
         if end <= start:
@@ -604,7 +640,7 @@ def _build_occurrence_resolver(
                 rel_path,
                 start,
                 end,
-                _OccurrenceCandidate(start, end, symbol, int(roles or 0)),
+                _OccurrenceCandidate(start, end, symbol, roles),
             )
         )
     resolver.add_spans(spans)
@@ -624,7 +660,7 @@ def _resolution_kind(match_kind: MatchKind) -> str:
 
 
 def _call_target_row(
-    call_row: dict[str, object],
+    call_row: Mapping[str, object],
     *,
     rel_path: str,
     resolver: SpanResolver[_OccurrenceCandidate],
@@ -676,31 +712,35 @@ def _call_target_row(
 
 
 def _resolve_call_targets(
-    calls: pl.DataFrame,
-    occurrences: pl.DataFrame,
-) -> pl.DataFrame:
+    calls: Sequence[Mapping[str, object]],
+    occurrences: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
     out_rows: list[dict[str, object]] = []
-    calls_by_path = calls.partition_by("rel_path", as_dict=True)
-    occs_by_path = occurrences.partition_by("rel_path", as_dict=True)
-
-    for rel_path_key, calls_df in calls_by_path.items():
-        rel_path = _rel_path_key(rel_path_key)
+    calls_by_path: dict[str, list[Mapping[str, object]]] = {}
+    occs_by_path: dict[str, list[Mapping[str, object]]] = {}
+    for row in calls:
+        rel_path = _rel_path_key(row.get("rel_path"))
         if rel_path is None:
             continue
+        calls_by_path.setdefault(rel_path, []).append(row)
+    for row in occurrences:
+        rel_path = _rel_path_key(row.get("rel_path"))
+        if rel_path is None:
+            continue
+        occs_by_path.setdefault(rel_path, []).append(row)
+
+    for rel_path, calls_rows in calls_by_path.items():
         resolver = _build_occurrence_resolver(
-            rel_path=rel_path,
-            occ_df=occs_by_path.get(rel_path_key),
+            rel_path=rel_path, occ_rows=occs_by_path.get(rel_path)
         )
         out_rows.extend(
             [
                 _call_target_row(call_row, rel_path=rel_path, resolver=resolver)
-                for call_row in calls_df.iter_rows(named=True)
+                for call_row in calls_rows
             ]
         )
 
-    if not out_rows:
-        return pl.DataFrame()
-    return pl.DataFrame(out_rows)
+    return out_rows
 
 
 def _ast_nodes_from_extras(extras: Mapping[str, object] | None) -> list[Mapping[str, object]]:
@@ -897,18 +937,22 @@ def _attribute_access_from_row(row: Mapping[str, object]) -> _AttributeAccess | 
     )
 
 
-def _extract_attribute_accesses(syntax_nodes: pl.DataFrame) -> list[_AttributeAccess]:
+def _extract_attribute_accesses(
+    syntax_nodes: Sequence[Mapping[str, object]],
+) -> list[_AttributeAccess]:
     accesses: list[_AttributeAccess] = []
-    for row in syntax_nodes.iter_rows(named=True):
+    for row in syntax_nodes:
         access = _attribute_access_from_row(row)
         if access is not None:
             accesses.append(access)
     return accesses
 
 
-def _extract_augassigns(syntax_nodes: pl.DataFrame) -> list[_AugAssignAccess]:
+def _extract_augassigns(
+    syntax_nodes: Sequence[Mapping[str, object]],
+) -> list[_AugAssignAccess]:
     records: list[_AugAssignAccess] = []
-    for row in syntax_nodes.iter_rows(named=True):
+    for row in syntax_nodes:
         repo = row.get("repo")
         commit = row.get("commit")
         rel_path = row.get("rel_path")
@@ -1062,11 +1106,11 @@ def _assignment_from_text(text: str | None) -> tuple[str, str] | None:
 
 
 def _parse_descriptor_assignments(
-    syntax_nodes: pl.DataFrame,
+    syntax_nodes: Sequence[Mapping[str, object]],
     context: _DescriptorAssignmentContext,
 ) -> dict[str, dict[str, str]]:
     assignments: dict[str, dict[str, str]] = {}
-    for row in syntax_nodes.iter_rows(named=True):
+    for row in syntax_nodes:
         candidate = _descriptor_assignment_candidate(row, context)
         if candidate is None:
             continue
@@ -1139,45 +1183,36 @@ def _call_site_from_access(access: _AttributeAccess | _AugAssignAccess) -> _Call
     )
 
 
-def _call_targets_defs(
-    defs_resolved: pl.LazyFrame,
-) -> pl.LazyFrame:
-    return (
-        defs_resolved.filter(pl.col("scip_symbol").is_not_null())
-        .filter(pl.col("def_kind").is_in(["function", "async_function"]))
-        .select(
-            "repo",
-            "commit",
-            "scip_symbol",
-            "def_id",
-            "syntax_node_id",
-            "goid_h128",
-        )
-        .group_by(["repo", "commit", "scip_symbol"])
-        .agg(
-            [
-                pl.first("def_id").alias("def_id"),
-                pl.first("syntax_node_id").alias("syntax_node_id"),
-                pl.first("goid_h128").alias("goid_h128"),
-            ]
-        )
-    )
+def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
+    required = {"kind", "function_goid_h128", "block_id"}
+    if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
+        return _empty_table(["function_goid_h128", "entry_block_id"])
+    try:
+        kind_mask = pc.call_function("equal", [cfg_blocks.column("kind"), pc.scalar("entry")])
+        filtered = cfg_blocks.filter(kind_mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return _empty_table(["function_goid_h128", "entry_block_id"])
+    if filtered.num_rows == 0:
+        return _empty_table(["function_goid_h128", "entry_block_id"])
+    table = filtered.select(["function_goid_h128", "block_id"])
+    table = table.drop_duplicates(["function_goid_h128"])
+    return table.rename_columns(["function_goid_h128", "entry_block_id"])
 
 
-def _entry_blocks(cfg_blocks: pl.LazyFrame) -> pl.LazyFrame:
-    return (
-        cfg_blocks.filter(pl.col("kind") == "entry")
-        .select("function_goid_h128", pl.col("block_id").alias("entry_block_id"))
-        .unique(subset=["function_goid_h128"])
-    )
-
-
-def _exit_blocks(cfg_blocks: pl.LazyFrame) -> pl.LazyFrame:
-    return (
-        cfg_blocks.filter(pl.col("kind") == "exit")
-        .select("function_goid_h128", pl.col("block_id").alias("exit_block_id"))
-        .unique(subset=["function_goid_h128"])
-    )
+def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
+    required = {"kind", "function_goid_h128", "block_id"}
+    if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
+        return _empty_table(["function_goid_h128", "exit_block_id"])
+    try:
+        kind_mask = pc.call_function("equal", [cfg_blocks.column("kind"), pc.scalar("exit")])
+        filtered = cfg_blocks.filter(kind_mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return _empty_table(["function_goid_h128", "exit_block_id"])
+    if filtered.num_rows == 0:
+        return _empty_table(["function_goid_h128", "exit_block_id"])
+    table = filtered.select(["function_goid_h128", "block_id"])
+    table = table.drop_duplicates(["function_goid_h128"])
+    return table.rename_columns(["function_goid_h128", "exit_block_id"])
 
 
 def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:
@@ -1341,9 +1376,12 @@ def _explicit_rows_for_entry(
     ]
 
 
-def _explicit_call_rows(resolved: pl.DataFrame, catalog: _DefCatalog) -> list[dict[str, object]]:
+def _explicit_call_rows(
+    resolved: Sequence[Mapping[str, object]],
+    catalog: _DefCatalog,
+) -> list[dict[str, object]]:
     explicit_rows: list[dict[str, object]] = []
-    for row in resolved.iter_rows(named=True):
+    for row in resolved:
         entry = _parse_explicit_call_row(row)
         if entry is None:
             continue
@@ -1383,7 +1421,7 @@ def _span_index_from_catalog(catalog: _DefCatalog) -> _SpanIndex:
 
 
 def _descriptor_assignments_for_syntax(
-    syntax_nodes_df: pl.DataFrame,
+    syntax_nodes_df: Sequence[Mapping[str, object]],
     span_index: _SpanIndex,
 ) -> dict[str, dict[str, str]]:
     assignment_context = _DescriptorAssignmentContext(
@@ -1787,10 +1825,10 @@ def _implicit_rows_from_augassigns(
 
 
 def _implicit_call_rows(
-    syntax_nodes_df: pl.DataFrame,
+    syntax_nodes_df: Sequence[Mapping[str, object]],
     context: _ImplicitResolutionContext,
 ) -> list[dict[str, object]]:
-    if syntax_nodes_df.is_empty():
+    if not syntax_nodes_df:
         return []
     attributes = _extract_attribute_accesses(syntax_nodes_df)
     augassigns = _extract_augassigns(syntax_nodes_df)
@@ -1800,20 +1838,20 @@ def _implicit_call_rows(
 
 
 def _explicit_rows_for_call_targets(
-    calls: pl.LazyFrame,
-    occurrences: pl.LazyFrame,
+    calls: pa.Table,
+    occurrences: pa.Table,
     catalog: _DefCatalog,
 ) -> list[dict[str, object]]:
-    calls_df = calls.collect()
-    if calls_df.is_empty():
+    calls_rows = _table_rows(calls)
+    if not calls_rows:
         return []
-    occ_df = occurrences.collect()
-    resolved = _resolve_call_targets(calls_df, occ_df)
+    occ_rows = _table_rows(occurrences)
+    resolved = _resolve_call_targets(calls_rows, occ_rows)
     return _explicit_call_rows(resolved, catalog)
 
 
 def _implicit_rows_for_call_targets(
-    syntax_nodes_df: pl.DataFrame,
+    syntax_nodes_df: Sequence[Mapping[str, object]],
     catalog: _DefCatalog,
 ) -> list[dict[str, object]]:
     span_index = _span_index_from_catalog(catalog)
@@ -1832,111 +1870,116 @@ def cpg_call_targets(
     q__core__syntax_defs_resolved: InferableTabularInput,
     q__graph__cfg_blocks: InferableTabularInput,
     q__core__syntax_nodes: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> InferableTabularInput:
     """Resolve call targets by welding callee spans to SCIP occurrences.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for graph.cpg_call_targets.
+    InferableTabularInput
+        Arrow reader for graph.cpg_call_targets.
     """
-    calls = tabular_to_lazyframe(q__core__syntax_calls).select(
-        "repo",
-        "commit",
-        "rel_path",
-        "call_id",
-        "call_node_id",
-        "callee_start_byte",
-        "callee_end_byte",
-        "callee_text",
+    calls = _select_table_columns(
+        tabular_to_arrow_table(q__core__syntax_calls),
+        [
+            "repo",
+            "commit",
+            "rel_path",
+            "call_id",
+            "call_node_id",
+            "callee_start_byte",
+            "callee_end_byte",
+            "callee_text",
+        ],
     )
-    occurrences = tabular_to_lazyframe(q__core__scip_occurrence_span_xref).select(
-        "rel_path",
-        "scip_symbol",
-        "roles",
-        "start_byte",
-        "end_byte",
+    occurrences = _select_table_columns(
+        tabular_to_arrow_table(q__core__scip_occurrence_span_xref),
+        [
+            "rel_path",
+            "scip_symbol",
+            "roles",
+            "start_byte",
+            "end_byte",
+        ],
     )
-    defs_df = (
-        tabular_to_lazyframe(q__core__syntax_defs_resolved)
-        .select(
-            [
-                "def_id",
-                "def_kind",
-                "name",
-                "scip_symbol",
-                "goid_h128",
-                "syntax_node_id",
-                "start_line",
-                "end_line",
-                "start_byte",
-                "end_byte",
-                "extras_json",
-            ]
-        )
-        .collect()
+    defs_table = _select_table_columns(
+        tabular_to_arrow_table(q__core__syntax_defs_resolved),
+        [
+            "def_id",
+            "def_kind",
+            "name",
+            "scip_symbol",
+            "goid_h128",
+            "syntax_node_id",
+            "start_line",
+            "end_line",
+            "start_byte",
+            "end_byte",
+            "extras_json",
+        ],
     )
-    catalog = _build_def_catalog(defs_df)
+    catalog = _build_def_catalog(_table_rows(defs_table))
 
     explicit_rows = _explicit_rows_for_call_targets(calls, occurrences, catalog)
-    syntax_nodes_df = (
-        tabular_to_lazyframe(q__core__syntax_nodes)
-        .filter(pl.col("extras_json").is_not_null())
-        .select(
-            [
-                "repo",
-                "commit",
-                "rel_path",
-                "node_id",
-                "start_line",
-                "start_col",
-                "end_line",
-                "end_col",
-                "start_byte",
-                "end_byte",
-                "text_preview",
-                "extras_json",
-            ]
-        )
-        .collect()
+    syntax_nodes_table = _select_table_columns(
+        tabular_to_arrow_table(q__core__syntax_nodes),
+        [
+            "repo",
+            "commit",
+            "rel_path",
+            "node_id",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+            "start_byte",
+            "end_byte",
+            "text_preview",
+            "extras_json",
+        ],
     )
-
-    implicit_rows = _implicit_rows_for_call_targets(syntax_nodes_df, catalog)
+    syntax_nodes_rows = [
+        row for row in _table_rows(syntax_nodes_table) if row.get("extras_json") is not None
+    ]
+    implicit_rows = _implicit_rows_for_call_targets(syntax_nodes_rows, catalog)
 
     all_rows = [*explicit_rows, *implicit_rows]
     if not all_rows:
-        return empty_frame_for_table(CPG_CALL_TARGETS_TABLE_KEY)
-    targets = pl.DataFrame(all_rows).lazy()
-    blocks = tabular_to_lazyframe(q__graph__cfg_blocks)
+        return empty_reader_for_table(CPG_CALL_TARGETS_TABLE_KEY)
+    targets_table = pa.Table.from_pylist(all_rows)
+    blocks = tabular_to_arrow_table(q__graph__cfg_blocks)
+    entry_table = _entry_blocks(blocks)
+    exit_table = _exit_blocks(blocks)
 
-    targets = arrow_join_lazyframes(
-        targets,
-        _entry_blocks(blocks),
-        spec=JoinSpec(
+    joined = arrow_join_tables(
+        targets_table,
+        entry_table,
+        spec=ArrowJoinSpec(
             left_on=["callee_goid_h128"],
             right_on=["function_goid_h128"],
             how="left",
             validate="m:1",
         ),
-    ).drop(["function_goid_h128"])
-    targets = arrow_join_lazyframes(
-        targets,
-        _exit_blocks(blocks),
-        spec=JoinSpec(
+    )
+    joined = _drop_table_columns(joined, ["function_goid_h128"])
+    joined = arrow_join_tables(
+        joined,
+        exit_table,
+        spec=ArrowJoinSpec(
             left_on=["callee_goid_h128"],
             right_on=["function_goid_h128"],
             how="left",
             validate="m:1",
         ),
-    ).drop(["function_goid_h128"])
-    targets = targets.rename(
+    )
+    joined = _drop_table_columns(joined, ["function_goid_h128"])
+    joined = _rename_table_columns(
+        joined,
         {
             "entry_block_id": "callee_entry_block_id",
             "exit_block_id": "callee_exit_block_id",
-        }
+        },
     )
-
-    targets = targets.select(
+    joined = joined.select(
         [
             "repo",
             "commit",
@@ -1960,834 +2003,464 @@ def cpg_call_targets(
             "extras_json",
         ]
     )
-    return dedupe_frame_for_table(targets, table_key=CPG_CALL_TARGETS_TABLE_KEY)
+    deduped = dedupe_table_for_table(CPG_CALL_TARGETS_TABLE_KEY, joined)
+    return _table_to_reader(CPG_CALL_TARGETS_TABLE_KEY, deduped)
 
 
-def cpg_edges_calls(cpg_call_targets: pl.LazyFrame) -> pl.LazyFrame:
+def cpg_edges_calls(cpg_call_targets: InferableTabularInput) -> InferableTabularInput:
     """Build CALLS edges from call targets.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for graph.cpg_edges_calls.
+    InferableTabularInput
+        Arrow reader for graph.cpg_edges_calls.
     """
-    required = [
-        "binding_kind",
-        "target_role",
-        "call_kind",
-        "origin",
-        "augop",
-        "extras_json",
-    ]
-    edges = cpg_call_targets.filter(pl.col("callee_entry_block_id").is_not_null())
-    available_columns = set(edges.columns)
-    missing = [column for column in required if column not in available_columns]
-    if missing:
-        edges = edges.with_columns([pl.lit(None).alias(column) for column in missing])
-    return edges.with_columns(
-        pl.lit("CALLS").alias("edge_kind"),
-        pl.struct(
-            [
-                "binding_kind",
-                "target_role",
-                "call_kind",
-                "origin",
-                "augop",
-                "extras_json",
-            ]
+    call_targets = tabular_to_arrow_table(cpg_call_targets)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(call_targets):
+        if row.get("callee_entry_block_id") is None:
+            continue
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "call_id": row.get("call_id"),
+                "call_node_id": row.get("call_node_id"),
+                "callee_entry_block_id": row.get("callee_entry_block_id"),
+                "edge_kind": "CALLS",
+                "confidence": row.get("confidence"),
+                "extras_json": _call_edge_extras(row),
+            }
         )
-        .map_elements(_call_edge_extras, return_dtype=pl.Binary)
-        .alias("extras_json"),
-    ).select(
-        [
-            "repo",
-            "commit",
-            "call_id",
-            "call_node_id",
-            "callee_entry_block_id",
-            "edge_kind",
-            "confidence",
-            "extras_json",
-        ]
-    )
+    if not rows:
+        return empty_reader_for_table(CPG_CALL_EDGES_TABLE_KEY)
+    edges_table = dedupe_table_for_table(CPG_CALL_EDGES_TABLE_KEY, pa.Table.from_pylist(rows))
+    return _table_to_reader(CPG_CALL_EDGES_TABLE_KEY, edges_table)
 
 
-def _arg_edges_positional(args: pl.LazyFrame, params: pl.LazyFrame) -> pl.LazyFrame:
-    pos_args = args.filter(pl.col("arg_kind") == "positional")
-    non_variadic = params.filter(~pl.col("param_kind").is_in(["varargs", "varkw"]))
-    return (
-        arrow_join_lazyframes(
-            pos_args,
-            non_variadic,
-            spec=JoinSpec(
-                left_on=["callee_def_id", "param_ordinal_hint"],
-                right_on=["callee_def_id", "param_ordinal"],
-                how="inner",
-                validate="m:1",
-            ),
+@dataclass(frozen=True, slots=True)
+class _ParamIndex:
+    by_ordinal: dict[tuple[str, int], Mapping[str, object]]
+    by_name: dict[tuple[str, str], Mapping[str, object]]
+    by_kind: dict[tuple[str, str], Mapping[str, object]]
+
+
+def _normalize_params_rows(params_rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
+    for row in params_rows:
+        callee_def_id = _coerce_str(row.get("func_def_id") or row.get("callee_def_id"))
+        if callee_def_id is None:
+            continue
+        normalized.append(
+            {
+                "callee_def_id": callee_def_id,
+                "param_ordinal": _coerce_int(row.get("param_ordinal")),
+                "param_kind": _coerce_str(row.get("param_kind")),
+                "param_name": _coerce_str(row.get("param_name")),
+                "param_node_id": row.get("param_node_id"),
+            }
         )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                pl.col("arg_name").alias("arg_name"),
-                pl.col("param_name").alias("param_name"),
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
+    return normalized
 
 
-def _arg_edges_keyword(args: pl.LazyFrame, params: pl.LazyFrame) -> pl.LazyFrame:
-    kw_args = args.filter(pl.col("arg_kind") == "keyword")
-    return (
-        arrow_join_lazyframes(
-            kw_args,
-            params,
-            spec=JoinSpec(
-                left_on=["callee_def_id", "arg_name"],
-                right_on=["callee_def_id", "param_name"],
-                how="inner",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
+def _build_param_index(params_rows: Sequence[Mapping[str, object]]) -> _ParamIndex:
+    by_ordinal: dict[tuple[str, int], Mapping[str, object]] = {}
+    by_name: dict[tuple[str, str], Mapping[str, object]] = {}
+    by_kind: dict[tuple[str, str], Mapping[str, object]] = {}
+    for row in params_rows:
+        callee_def_id = _coerce_str(row.get("callee_def_id"))
+        if callee_def_id is None:
+            continue
+        param_ordinal = _coerce_int(row.get("param_ordinal"))
+        param_name = _coerce_str(row.get("param_name"))
+        param_kind = _coerce_str(row.get("param_kind"))
+        if param_ordinal is not None:
+            by_ordinal[callee_def_id, param_ordinal] = row
+        if param_name:
+            by_name[callee_def_id, param_name] = row
+        if param_kind:
+            by_kind[callee_def_id, param_kind] = row
+    return _ParamIndex(by_ordinal=by_ordinal, by_name=by_name, by_kind=by_kind)
 
 
-def _arg_edges_star(
-    args: pl.LazyFrame,
-    params: pl.LazyFrame,
-    *,
-    arg_kind: str,
-    param_kind: str,
-    confidence_scale: float,
-) -> pl.LazyFrame:
-    subset = args.filter(pl.col("arg_kind") == arg_kind)
-    var_params = params.filter(pl.col("param_kind") == param_kind)
-    return (
-        arrow_join_lazyframes(
-            subset,
-            var_params,
-            spec=JoinSpec(on=["callee_def_id"], how="inner", validate="m:1"),
-        )
-        .with_columns(
-            pl.lit("ARG_TO_PARAM").alias("edge_kind"),
-            (pl.col("confidence") * pl.lit(confidence_scale)).alias("confidence"),
-        )
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
+def _explicit_targets_by_call(
+    call_targets_rows: Sequence[Mapping[str, object]],
+) -> tuple[list[dict[str, object]], dict[tuple[str, str, str], list[dict[str, object]]]]:
+    explicit_targets: list[dict[str, object]] = []
+    by_call: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+    for row in call_targets_rows:
+        if row.get("call_kind") != _CALL_KIND_EXPLICIT:
+            continue
+        target_role = row.get("target_role")
+        binding_kind = row.get("binding_kind")
+        if target_role != _TARGET_ROLE_INIT and binding_kind == _BINDING_CONSTRUCTOR:
+            continue
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        call_id = _coerce_str(row.get("call_id"))
+        if repo is None or commit is None or call_id is None:
+            continue
+        target = {
+            "repo": repo,
+            "commit": commit,
+            "call_id": call_id,
+            "call_node_id": row.get("call_node_id"),
+            "callee_def_id": _coerce_str(row.get("callee_def_id")),
+            "binding_kind": _coerce_str(binding_kind),
+            "target_role": _coerce_str(target_role),
+            "call_kind": _coerce_str(row.get("call_kind")),
+            "augop": row.get("augop"),
+            "confidence": _coerce_float(row.get("confidence")) or 0.0,
+            "extras_json": row.get("extras_json"),
+        }
+        explicit_targets.append(target)
+        by_call.setdefault((repo, commit, call_id), []).append(target)
+    return explicit_targets, by_call
 
 
-@dataclass(frozen=True)
-class _ArgToParamFrames:
-    call_targets: pl.LazyFrame
-    explicit_targets: pl.LazyFrame
-    args: pl.LazyFrame
-    params: pl.LazyFrame
+def _arg_slot(arg_kind: str, arg_ordinal: int | None, arg_name: str | None) -> str | None:
+    if arg_kind == "positional" and arg_ordinal is not None:
+        return f"positional:{arg_ordinal}"
+    if arg_kind == "keyword" and arg_name:
+        return f"keyword:{arg_name}"
+    if arg_kind == "starargs":
+        return "positional:*"
+    if arg_kind == "kwargs":
+        return "keyword:**"
+    return None
 
 
-def _arg_to_param_frames(
-    cpg_call_targets: pl.LazyFrame,
-    q__core__syntax_call_args: InferableTabularInput,
-    q__core__syntax_func_params: InferableTabularInput,
-) -> _ArgToParamFrames:
-    call_targets = cpg_call_targets.select(
-        [
-            "repo",
-            "commit",
-            "call_id",
-            "call_node_id",
-            "callee_def_id",
-            "binding_kind",
-            "target_role",
-            "call_kind",
-            "augop",
-            "confidence",
-            "extras_json",
-        ]
-    ).with_columns(
-        pl.col("repo").cast(pl.Utf8),
-        pl.col("commit").cast(pl.Utf8),
-        pl.col("call_id").cast(pl.Utf8),
-    )
-    explicit_targets = call_targets.filter(pl.col("call_kind") == _CALL_KIND_EXPLICIT).filter(
-        (pl.col("target_role") == _TARGET_ROLE_INIT)
-        | (pl.col("binding_kind") != _BINDING_CONSTRUCTOR)
-    )
-    args_source = tabular_to_lazyframe(q__core__syntax_call_args).with_columns(
-        pl.col("repo").cast(pl.Utf8),
-        pl.col("commit").cast(pl.Utf8),
-        pl.col("call_id").cast(pl.Utf8),
-    )
-    args = join_validated(
-        args_source,
-        explicit_targets,
-        spec=JoinSpec(on=["repo", "commit", "call_id"], how="left"),
-    )
-    args = args.filter(pl.col("callee_def_id").is_not_null())
-    args = args.with_columns(
-        pl.col("confidence").fill_null(0.0),
-        pl.col("callee_def_id").cast(pl.Utf8).alias("callee_def_id"),
-        pl.col("arg_kind").cast(pl.Utf8).alias("arg_kind"),
-        pl.col("arg_name").cast(pl.Utf8).alias("arg_name"),
-        pl.when(pl.col("arg_kind") == "positional")
-        .then(pl.format("positional:{}", pl.col("arg_ordinal")))
-        .when(pl.col("arg_kind") == "keyword")
-        .then(pl.format("keyword:{}", pl.col("arg_name")))
-        .when(pl.col("arg_kind") == "starargs")
-        .then(pl.lit("positional:*"))
-        .when(pl.col("arg_kind") == "kwargs")
-        .then(pl.lit("keyword:**"))
-        .otherwise(pl.lit(None))
-        .alias("arg_slot"),
-        pl.when(pl.col("arg_kind") == "keyword")
-        .then(pl.lit("keyword"))
-        .otherwise(pl.lit("positional"))
-        .alias("arg_role"),
-        pl.lit(value=False).alias("arg_is_implicit"),
-        pl.when(
-            pl.col("binding_kind").is_in(
-                [
-                    _BINDING_BOUND_METHOD,
-                    _BINDING_CLASSMETHOD,
-                ]
+def _build_arg_rows(
+    call_args_rows: Sequence[Mapping[str, object]],
+    explicit_targets_by_call: Mapping[tuple[str, str, str], Sequence[Mapping[str, object]]],
+) -> list[dict[str, object]]:
+    args: list[dict[str, object]] = []
+    for row in call_args_rows:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        call_id = _coerce_str(row.get("call_id"))
+        if repo is None or commit is None or call_id is None:
+            continue
+        targets = explicit_targets_by_call.get((repo, commit, call_id))
+        if not targets:
+            continue
+        arg_kind = _coerce_str(row.get("arg_kind"))
+        if arg_kind is None:
+            continue
+        arg_ordinal = _coerce_int(row.get("arg_ordinal"))
+        arg_name = _coerce_str(row.get("arg_name"))
+        arg_expr_node_id = row.get("arg_expr_node_id")
+        for target in targets:
+            callee_def_id = _coerce_str(target.get("callee_def_id"))
+            if callee_def_id is None:
+                continue
+            binding_kind = _coerce_str(target.get("binding_kind"))
+            param_ordinal_hint = arg_ordinal
+            if (
+                binding_kind in {_BINDING_BOUND_METHOD, _BINDING_CLASSMETHOD}
+                and arg_ordinal is not None
+            ):
+                param_ordinal_hint = arg_ordinal + 1
+            args.append(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "call_id": call_id,
+                    "callee_def_id": callee_def_id,
+                    "arg_kind": arg_kind,
+                    "arg_ordinal": arg_ordinal,
+                    "arg_name": arg_name,
+                    "arg_expr_node_id": arg_expr_node_id,
+                    "arg_slot": _arg_slot(arg_kind, arg_ordinal, arg_name),
+                    "arg_role": "keyword" if arg_kind == "keyword" else "positional",
+                    "arg_is_implicit": False,
+                    "param_ordinal_hint": param_ordinal_hint,
+                    "call_kind": _coerce_str(target.get("call_kind")),
+                    "augop": target.get("augop"),
+                    "confidence": _coerce_float(target.get("confidence")) or 0.0,
+                }
             )
+    return args
+
+
+def _explicit_arg_edges(
+    args: Sequence[Mapping[str, object]],
+    params_index: _ParamIndex,
+) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    for arg in args:
+        callee_def_id = _coerce_str(arg.get("callee_def_id"))
+        arg_kind = _coerce_str(arg.get("arg_kind"))
+        if callee_def_id is None or arg_kind is None:
+            continue
+        param_row, confidence = _resolve_param_row(
+            arg,
+            callee_def_id=callee_def_id,
+            arg_kind=arg_kind,
+            params_index=params_index,
         )
-        .then(pl.col("arg_ordinal") + pl.lit(1))
-        .otherwise(pl.col("arg_ordinal"))
-        .cast(pl.Int64)
-        .alias("param_ordinal_hint"),
-    )
-    params = tabular_to_lazyframe(q__core__syntax_func_params).select(
-        [
-            pl.col("func_def_id").alias("callee_def_id"),
-            "param_ordinal",
-            "param_kind",
-            "param_name",
-            "param_node_id",
-        ]
-    ).with_columns(
-        pl.col("callee_def_id").cast(pl.Utf8).alias("callee_def_id"),
-        pl.col("param_kind").cast(pl.Utf8).alias("param_kind"),
-        pl.col("param_name").cast(pl.Utf8).alias("param_name"),
-        pl.col("param_ordinal").cast(pl.Int64).alias("param_ordinal"),
-    )
-    return _ArgToParamFrames(
-        call_targets=call_targets,
-        explicit_targets=explicit_targets,
-        args=args,
-        params=params,
-    )
+        if param_row is None:
+            continue
+        edges.append(
+            {
+                "repo": arg.get("repo"),
+                "commit": arg.get("commit"),
+                "call_id": arg.get("call_id"),
+                "src_arg_node_id": arg.get("arg_expr_node_id"),
+                "dst_param_node_id": param_row.get("param_node_id"),
+                "edge_kind": "ARG_TO_PARAM",
+                "arg_ordinal": arg.get("arg_ordinal"),
+                "param_ordinal": param_row.get("param_ordinal"),
+                "arg_name": arg.get("arg_name"),
+                "param_name": param_row.get("param_name"),
+                "arg_slot": arg.get("arg_slot"),
+                "arg_role": arg.get("arg_role"),
+                "arg_is_implicit": arg.get("arg_is_implicit"),
+                "call_kind": arg.get("call_kind"),
+                "augop": arg.get("augop"),
+                "confidence": confidence,
+                "extras_json": None,
+            }
+        )
+    return edges
 
 
-def _explicit_arg_edges(args: pl.LazyFrame, params: pl.LazyFrame) -> pl.LazyFrame:
-    frames = [
-        _arg_edges_positional(args, params),
-        _arg_edges_keyword(args, params),
-        _arg_edges_star(
-            args,
-            params,
-            arg_kind="starargs",
-            param_kind="varargs",
-            confidence_scale=0.7,
-        ),
-        _arg_edges_star(args, params, arg_kind="kwargs", param_kind="varkw", confidence_scale=0.6),
-    ]
-    return pl.concat(frames, how="vertical_relaxed")
+def _resolve_param_row(
+    arg: Mapping[str, object],
+    *,
+    callee_def_id: str,
+    arg_kind: str,
+    params_index: _ParamIndex,
+) -> tuple[Mapping[str, object] | None, float]:
+    confidence = _coerce_float(arg.get("confidence")) or 0.0
+    param_row: Mapping[str, object] | None = None
+    if arg_kind == "positional":
+        hint = _coerce_int(arg.get("param_ordinal_hint"))
+        if hint is not None:
+            candidate = params_index.by_ordinal.get((callee_def_id, hint))
+            if candidate is not None and candidate.get("param_kind") not in {"varargs", "varkw"}:
+                param_row = candidate
+    elif arg_kind == "keyword":
+        arg_name = _coerce_str(arg.get("arg_name"))
+        if arg_name is not None:
+            param_row = params_index.by_name.get((callee_def_id, arg_name))
+    elif arg_kind == "starargs":
+        param_row = params_index.by_kind.get((callee_def_id, "varargs"))
+        confidence *= 0.7
+    elif arg_kind == "kwargs":
+        param_row = params_index.by_kind.get((callee_def_id, "varkw"))
+        confidence *= 0.6
+    return param_row, confidence
 
 
 def _implicit_receiver_edges(
-    explicit_targets: pl.LazyFrame,
-    params: pl.LazyFrame,
-) -> pl.LazyFrame:
-    implicit_receiver = explicit_targets.filter(
-        pl.col("binding_kind").is_in([_BINDING_BOUND_METHOD, _BINDING_CLASSMETHOD])
-    ).with_columns(
-        pl.lit(0).alias("param_ordinal"),
-        pl.lit("implicit:receiver").alias("arg_slot"),
-        pl.lit("receiver").alias("arg_role"),
-        pl.lit(value=True).alias("arg_is_implicit"),
-        pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-        pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-        pl.col("call_node_id").alias("arg_expr_node_id"),
-        pl.col("confidence").fill_null(0.0),
-    )
-    return (
-        arrow_join_lazyframes(
-            implicit_receiver,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
+    explicit_targets: Sequence[Mapping[str, object]],
+    params_index: _ParamIndex,
+) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    for target in explicit_targets:
+        binding_kind = _coerce_str(target.get("binding_kind"))
+        if binding_kind not in {_BINDING_BOUND_METHOD, _BINDING_CLASSMETHOD}:
+            continue
+        callee_def_id = _coerce_str(target.get("callee_def_id"))
+        if callee_def_id is None:
+            continue
+        param_row = params_index.by_ordinal.get((callee_def_id, 0))
+        if param_row is None:
+            continue
+        edges.append(
+            {
+                "repo": target.get("repo"),
+                "commit": target.get("commit"),
+                "call_id": target.get("call_id"),
+                "src_arg_node_id": target.get("call_node_id"),
+                "dst_param_node_id": param_row.get("param_node_id"),
+                "edge_kind": "ARG_TO_PARAM",
+                "arg_ordinal": None,
+                "param_ordinal": param_row.get("param_ordinal"),
+                "arg_name": None,
+                "param_name": param_row.get("param_name"),
+                "arg_slot": "implicit:receiver",
+                "arg_role": "receiver",
+                "arg_is_implicit": True,
+                "call_kind": target.get("call_kind"),
+                "augop": target.get("augop"),
+                "confidence": _coerce_float(target.get("confidence")) or 0.0,
+                "extras_json": None,
+            }
         )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
+    return edges
+
+
+def _descriptor_arg_templates(
+    binding_kind: str,
+    *,
+    call_kind: str | None,
+    descriptor_obj_is_none: bool | None,
+) -> list[tuple[int, str, str]]:
+    if binding_kind == _BINDING_PROPERTY_GET:
+        return [(0, "implicit:receiver", "receiver")]
+    if binding_kind == _BINDING_PROPERTY_SET:
+        return [
+            (0, "implicit:receiver", "receiver"),
+            (1, "implicit:value", "descriptor_value"),
+        ]
+    if binding_kind == _BINDING_DESCRIPTOR_GET:
+        slot = "implicit:none" if descriptor_obj_is_none else "implicit:obj"
+        role = "descriptor_none" if descriptor_obj_is_none else "descriptor_obj"
+        return [
+            (0, "implicit:receiver", "receiver"),
+            (1, slot, role),
+            (2, "implicit:objtype", "descriptor_objtype"),
+        ]
+    if binding_kind in {_BINDING_DESCRIPTOR_SET, _BINDING_DESCRIPTOR_SET_AUG}:
+        value_role = "descriptor_value"
+        if call_kind == _CALL_KIND_IMPLICIT_SET_AUG:
+            value_role = "augassign_value"
+        return [
+            (0, "implicit:receiver", "receiver"),
+            (1, "implicit:obj", "descriptor_obj"),
+            (2, "implicit:value", value_role),
+        ]
+    return []
 
 
 def _implicit_descriptor_edges(
-    call_targets: pl.LazyFrame,
-    params: pl.LazyFrame,
-) -> pl.LazyFrame:
-    implicit_calls = call_targets.filter(
-        pl.col("call_kind").is_in(
-            [
-                _CALL_KIND_IMPLICIT_GET,
-                _CALL_KIND_IMPLICIT_SET,
-                _CALL_KIND_IMPLICIT_SET_AUG,
-            ]
-        )
-    ).with_columns(
-        pl.col("extras_json").map_elements(decode_payload, return_dtype=pl.Object).alias("extras"),
-    )
-    implicit_calls = implicit_calls.with_columns(
-        pl.col("extras")
-        .map_elements(_extras_descriptor_obj_is_none, return_dtype=pl.Boolean)
-        .alias("descriptor_obj_is_none")
-    )
-    implicit_prop_get = implicit_calls.filter(pl.col("binding_kind") == _BINDING_PROPERTY_GET)
-    implicit_prop_set = implicit_calls.filter(pl.col("binding_kind") == _BINDING_PROPERTY_SET)
-    implicit_desc_get = implicit_calls.filter(pl.col("binding_kind") == _BINDING_DESCRIPTOR_GET)
-    implicit_desc_set = implicit_calls.filter(
-        pl.col("binding_kind").is_in([_BINDING_DESCRIPTOR_SET, _BINDING_DESCRIPTOR_SET_AUG])
-    )
-    frames: list[pl.LazyFrame] = []
-    frames.append(
-        implicit_prop_get.with_columns(
-            pl.lit(0).alias("param_ordinal"),
-            pl.lit("implicit:receiver").alias("arg_slot"),
-            pl.lit("receiver").alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_prop_set.with_columns(
-            pl.lit(0).alias("param_ordinal"),
-            pl.lit("implicit:receiver").alias("arg_slot"),
-            pl.lit("receiver").alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_prop_set.with_columns(
-            pl.lit(1).alias("param_ordinal"),
-            pl.lit("implicit:value").alias("arg_slot"),
-            pl.lit("descriptor_value").alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_desc_get.with_columns(
-            pl.lit(0).alias("param_ordinal"),
-            pl.lit("implicit:receiver").alias("arg_slot"),
-            pl.lit("receiver").alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_desc_get.with_columns(
-            pl.lit(1).alias("param_ordinal"),
-            pl.when(pl.col("descriptor_obj_is_none"))
-            .then(pl.lit("implicit:none"))
-            .otherwise(pl.lit("implicit:obj"))
-            .alias("arg_slot"),
-            pl.when(pl.col("descriptor_obj_is_none"))
-            .then(pl.lit("descriptor_none"))
-            .otherwise(pl.lit("descriptor_obj"))
-            .alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_desc_get.with_columns(
-            pl.lit(2).alias("param_ordinal"),
-            pl.lit("implicit:objtype").alias("arg_slot"),
-            pl.lit("descriptor_objtype").alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_desc_set.with_columns(
-            pl.lit(0).alias("param_ordinal"),
-            pl.lit("implicit:receiver").alias("arg_slot"),
-            pl.lit("receiver").alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(
-                on=["callee_def_id", "param_ordinal"],
-                how="left",
-                validate="m:1",
-            ),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_desc_set.with_columns(
-            pl.lit(1).alias("param_ordinal"),
-            pl.lit("implicit:obj").alias("arg_slot"),
-            pl.lit("descriptor_obj").alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(on=["callee_def_id", "param_ordinal"], how="left"),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    frames.append(
-        implicit_desc_set.with_columns(
-            pl.lit(2).alias("param_ordinal"),
-            pl.lit("implicit:value").alias("arg_slot"),
-            pl.when(pl.col("call_kind") == _CALL_KIND_IMPLICIT_SET_AUG)
-            .then(pl.lit("augassign_value"))
-            .otherwise(pl.lit("descriptor_value"))
-            .alias("arg_role"),
-            pl.lit(value=True).alias("arg_is_implicit"),
-            pl.lit(None).cast(pl.Int64).alias("arg_ordinal"),
-            pl.lit(None).cast(pl.Utf8).alias("arg_name"),
-            pl.col("call_node_id").alias("arg_expr_node_id"),
-            pl.col("confidence").fill_null(0.0),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            params,
-            spec=JoinSpec(on=["callee_def_id", "param_ordinal"], how="left"),
-        )
-        .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("arg_expr_node_id").alias("src_arg_node_id"),
-                pl.col("param_node_id").alias("dst_param_node_id"),
-                "edge_kind",
-                "arg_ordinal",
-                "param_ordinal",
-                "arg_name",
-                "param_name",
-                "arg_slot",
-                "arg_role",
-                "arg_is_implicit",
-                "call_kind",
-                "augop",
-                "confidence",
-                _payload_literal(None).alias("extras_json"),
-            ]
-        )
-    )
-    return pl.concat(frames, how="vertical_relaxed")
+    call_targets: Sequence[Mapping[str, object]],
+    params_index: _ParamIndex,
+) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    for row in call_targets:
+        call_kind = _coerce_str(row.get("call_kind"))
+        if call_kind not in {
+            _CALL_KIND_IMPLICIT_GET,
+            _CALL_KIND_IMPLICIT_SET,
+            _CALL_KIND_IMPLICIT_SET_AUG,
+        }:
+            continue
+        binding_kind = _coerce_str(row.get("binding_kind"))
+        if binding_kind is None:
+            continue
+        callee_def_id = _coerce_str(row.get("callee_def_id"))
+        if callee_def_id is None:
+            continue
+        extras = decode_payload(row.get("extras_json"))
+        descriptor_obj_is_none = _extras_descriptor_obj_is_none(extras)
+        for param_ordinal, arg_slot, arg_role in _descriptor_arg_templates(
+            binding_kind,
+            call_kind=call_kind,
+            descriptor_obj_is_none=descriptor_obj_is_none,
+        ):
+            param_row = params_index.by_ordinal.get((callee_def_id, param_ordinal))
+            if param_row is None:
+                continue
+            edges.append(
+                {
+                    "repo": row.get("repo"),
+                    "commit": row.get("commit"),
+                    "call_id": row.get("call_id"),
+                    "src_arg_node_id": row.get("call_node_id"),
+                    "dst_param_node_id": param_row.get("param_node_id"),
+                    "edge_kind": "ARG_TO_PARAM",
+                    "arg_ordinal": None,
+                    "param_ordinal": param_row.get("param_ordinal"),
+                    "arg_name": None,
+                    "param_name": param_row.get("param_name"),
+                    "arg_slot": arg_slot,
+                    "arg_role": arg_role,
+                    "arg_is_implicit": True,
+                    "call_kind": call_kind,
+                    "augop": row.get("augop"),
+                    "confidence": _coerce_float(row.get("confidence")) or 0.0,
+                    "extras_json": None,
+                }
+            )
+    return edges
 
 
 def cpg_edges_arg_to_param(
-    cpg_call_targets: pl.LazyFrame,
+    cpg_call_targets: InferableTabularInput,
     q__core__syntax_call_args: InferableTabularInput,
     q__core__syntax_func_params: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> InferableTabularInput:
     """Build ARG_TO_PARAM edges from call arguments and function params.
 
     Returns
     -------
-    pl.LazyFrame
-        ARG_TO_PARAM edges for graph.cpg_edges_arg_to_param.
+    InferableTabularInput
+        Arrow reader for graph.cpg_edges_arg_to_param.
     """
-    frames = _arg_to_param_frames(
-        cpg_call_targets,
-        q__core__syntax_call_args,
-        q__core__syntax_func_params,
+    call_targets_rows = _table_rows(tabular_to_arrow_table(cpg_call_targets))
+    explicit_targets, explicit_by_call = _explicit_targets_by_call(call_targets_rows)
+    call_args_rows = _table_rows(tabular_to_arrow_table(q__core__syntax_call_args))
+    args_rows = _build_arg_rows(call_args_rows, explicit_by_call)
+    params_rows = _normalize_params_rows(
+        _table_rows(tabular_to_arrow_table(q__core__syntax_func_params))
     )
-    explicit_edges = _explicit_arg_edges(frames.args, frames.params)
-    implicit_receiver_edges = _implicit_receiver_edges(frames.explicit_targets, frames.params)
-    implicit_descriptor_edges = _implicit_descriptor_edges(frames.call_targets, frames.params)
-    implicit_edges = pl.concat(
-        [implicit_descriptor_edges, implicit_receiver_edges],
-        how="vertical_relaxed",
+    params_index = _build_param_index(params_rows)
+
+    explicit_edges = _explicit_arg_edges(args_rows, params_index)
+    implicit_receiver_edges = _implicit_receiver_edges(explicit_targets, params_index)
+    implicit_descriptor_edges = _implicit_descriptor_edges(call_targets_rows, params_index)
+    combined_rows = [
+        *explicit_edges,
+        *implicit_descriptor_edges,
+        *implicit_receiver_edges,
+    ]
+    if not combined_rows:
+        return empty_reader_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
+    edges_table = dedupe_table_for_table(
+        CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
+        pa.Table.from_pylist(combined_rows),
     )
-    combined = pl.concat([explicit_edges, implicit_edges], how="vertical_relaxed")
-    if not combined.columns:
-        return empty_frame_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
-    return dedupe_frame_for_table(combined, table_key=CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
+    return _table_to_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY, edges_table)
 
 
-def cpg_edges_ret_to_call(cpg_call_targets: pl.LazyFrame) -> pl.LazyFrame:
+def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableTabularInput:
     """Build RET_TO_CALL edges using callee exit block summaries.
 
     Returns
     -------
-    pl.LazyFrame
-        RET_TO_CALL edges for graph.cpg_edges_ret_to_call.
+    InferableTabularInput
+        Arrow reader for graph.cpg_edges_ret_to_call.
     """
-    edges = (
-        cpg_call_targets.filter(pl.col("callee_exit_block_id").is_not_null())
-        .filter(pl.col("target_role") == _TARGET_ROLE_PRIMARY)
-        .filter(
-            ~pl.col("binding_kind").is_in(
-                [
-                    _BINDING_PROPERTY_SET,
-                    _BINDING_DESCRIPTOR_SET,
-                    _BINDING_DESCRIPTOR_SET_AUG,
-                ]
-            )
+    call_targets = tabular_to_arrow_table(cpg_call_targets)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(call_targets):
+        if row.get("callee_exit_block_id") is None:
+            continue
+        if row.get("target_role") != _TARGET_ROLE_PRIMARY:
+            continue
+        binding_kind = row.get("binding_kind")
+        if binding_kind in {
+            _BINDING_PROPERTY_SET,
+            _BINDING_DESCRIPTOR_SET,
+            _BINDING_DESCRIPTOR_SET_AUG,
+        }:
+            continue
+        confidence = _coerce_float(row.get("confidence")) or 0.0
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "call_id": row.get("call_id"),
+                "exit_block_id": row.get("callee_exit_block_id"),
+                "call_node_id": row.get("call_node_id"),
+                "target_role": row.get("target_role"),
+                "call_kind": row.get("call_kind"),
+                "origin": row.get("origin"),
+                "edge_kind": "RET_TO_CALL",
+                "confidence": confidence * 0.9,
+                "extras_json": encode_payload({"summary_kind": "exit_block"}),
+            }
         )
-        .with_columns(pl.lit("RET_TO_CALL").alias("edge_kind"))
-        .select(
-            [
-                "repo",
-                "commit",
-                "call_id",
-                pl.col("callee_exit_block_id").alias("exit_block_id"),
-                "call_node_id",
-                "target_role",
-                "call_kind",
-                "origin",
-                "edge_kind",
-                (pl.col("confidence") * pl.lit(0.9)).alias("confidence"),
-                _payload_literal({"summary_kind": "exit_block"}).alias("extras_json"),
-            ]
-        )
+    if not rows:
+        return empty_reader_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
+    edges_table = dedupe_table_for_table(
+        CPG_RET_TO_CALL_EDGES_TABLE_KEY,
+        pa.Table.from_pylist(rows),
     )
-    return dedupe_frame_for_table(edges, table_key=CPG_RET_TO_CALL_EDGES_TABLE_KEY)
+    return _table_to_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY, edges_table)
 
 
 __all__ = [

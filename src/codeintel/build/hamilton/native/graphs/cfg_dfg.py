@@ -7,16 +7,15 @@ import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 
-import polars as pl
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import table_to_frame, tabular_to_arrow_table
-from codeintel.build.tabular.frames import empty_frame_for_table
-from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
@@ -53,28 +52,22 @@ class _CfgDfgAnalysis:
 
 
 def _collect_ast_function_keys(
-    ast_nodes_frame: pl.DataFrame,
+    ast_nodes_table: pa.Table,
 ) -> tuple[dict[str, set[tuple[int, str]]], set[str]]:
     function_keys_by_path: dict[str, set[tuple[int, str]]] = {}
     paths: set[str] = set()
-    if ast_nodes_frame.is_empty() or "path" not in ast_nodes_frame.columns:
+    if ast_nodes_table.num_rows == 0 or "path" not in ast_nodes_table.column_names:
         return function_keys_by_path, paths
-    path_values = ast_nodes_frame.get_column("path").drop_nulls().to_list()
-    paths = {str(path) for path in path_values if isinstance(path, str) and path}
-    if not {"node_type", "name", "lineno"}.issubset(set(ast_nodes_frame.columns)):
+    if not {"node_type", "name", "lineno"}.issubset(set(ast_nodes_table.column_names)):
         return function_keys_by_path, paths
-    functions = ast_nodes_frame.select(["path", "node_type", "name", "lineno"]).filter(
-        pl.col("node_type").is_in(["FunctionDef", "AsyncFunctionDef"])
-    )
-    if functions.is_empty():
-        return function_keys_by_path, paths
-    data = functions.to_dict(as_series=False)
-    for path, name, lineno in zip(
-        data["path"],
-        data["name"],
-        data["lineno"],
-        strict=True,
-    ):
+    for row in ast_nodes_table.to_pylist():
+        path = row.get("path")
+        if isinstance(path, str) and path:
+            paths.add(path)
+        if row.get("node_type") not in {"FunctionDef", "AsyncFunctionDef"}:
+            continue
+        name = row.get("name")
+        lineno = row.get("lineno")
         if not isinstance(path, str) or not path:
             continue
         if not isinstance(name, str) or not name:
@@ -86,30 +79,26 @@ def _collect_ast_function_keys(
 
 
 def _collect_goids_by_path(
-    goids_frame: pl.DataFrame,
+    goids_table: pa.Table,
     function_keys_by_path: dict[str, set[tuple[int, str]]],
 ) -> dict[str, list[_FunctionGoidInfo]]:
     goids_by_path: dict[str, list[_FunctionGoidInfo]] = {}
-    if goids_frame.is_empty():
+    if goids_table.num_rows == 0:
         return goids_by_path
     required = {"kind", "rel_path", "qualname", "goid_h128", "start_line"}
-    if not required.issubset(set(goids_frame.columns)):
+    if not required.issubset(set(goids_table.column_names)):
         return goids_by_path
-    filtered = goids_frame.filter(pl.col("kind").is_in(["function", "method"]))
-    if "language" in filtered.columns:
-        filtered = filtered.filter(pl.col("language").is_null() | (pl.col("language") == "python"))
-    if filtered.is_empty():
-        return goids_by_path
-    columns = ["rel_path", "qualname", "goid_h128", "start_line", "end_line"]
-    data = filtered.select(columns).to_dict(as_series=False)
-    for rel_path, qualname, goid_raw, start_line, end_line in zip(
-        data["rel_path"],
-        data["qualname"],
-        data["goid_h128"],
-        data["start_line"],
-        data["end_line"],
-        strict=True,
-    ):
+    for row in goids_table.to_pylist():
+        if row.get("kind") not in {"function", "method"}:
+            continue
+        language = row.get("language")
+        if language not in {None, "python"}:
+            continue
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        goid_raw = row.get("goid_h128")
+        start_line = row.get("start_line")
+        end_line = row.get("end_line")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
         if not isinstance(start_line, int):
@@ -142,21 +131,21 @@ def _filter_goids_table(goids_table: pa.Table) -> pa.Table:
     columns = set(goids_table.column_names)
     if "kind" not in columns:
         return goids_table
-    kind_values = goids_table.column("kind").to_pylist()
-    language_values: list[object] | None = None
-    if "language" in columns:
-        language_values = goids_table.column("language").to_pylist()
-    mask: list[bool] = []
-    for index, kind in enumerate(kind_values):
-        if kind not in {"function", "method"}:
-            mask.append(False)
-            continue
-        if language_values is None:
-            mask.append(True)
-            continue
-        language = language_values[index]
-        mask.append(language is None or language == "python")
-    return goids_table.filter(pa.array(mask))
+    try:
+        kind_col = goids_table.column("kind")
+        is_function = pc.call_function("equal", [kind_col, pc.scalar("function")])
+        is_method = pc.call_function("equal", [kind_col, pc.scalar("method")])
+        kind_mask = pc.call_function("or_kleene", [is_function, is_method])
+        mask = kind_mask
+        if "language" in columns:
+            language_col = goids_table.column("language")
+            is_null = pc.call_function("is_null", [language_col])
+            is_python = pc.call_function("equal", [language_col, pc.scalar("python")])
+            language_mask = pc.call_function("or_kleene", [is_null, is_python])
+            mask = pc.call_function("and_kleene", [mask, language_mask])
+        return goids_table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return goids_table
 
 
 def _build_cfg_dfg_rows(
@@ -258,16 +247,14 @@ def cfg_dfg_analysis(
         ]
     )
     goids_table = _filter_goids_table(goids_table)
-    goids_frame = table_to_frame(goids_table)
-    if goids_frame.is_empty():
+    if goids_table.num_rows == 0:
         return _CfgDfgAnalysis(cfg_blocks=(), cfg_edges=(), dfg_edges=())
 
     ast_nodes_table = tabular_to_arrow_table(q__core__ast_nodes).select(
         ["path", "node_type", "name", "lineno"]
     )
-    ast_nodes_frame = table_to_frame(ast_nodes_table)
-    function_keys_by_path, paths = _collect_ast_function_keys(ast_nodes_frame)
-    goids_by_path = _collect_goids_by_path(goids_frame, function_keys_by_path)
+    function_keys_by_path, paths = _collect_ast_function_keys(ast_nodes_table)
+    goids_by_path = _collect_goids_by_path(goids_table, function_keys_by_path)
     resolved_paths = paths or set(goids_by_path)
     repo_root = Path(env.snapshot.repo_root)
     cfg_blocks, cfg_edges, dfg_edges = _build_cfg_dfg_rows(
@@ -283,32 +270,19 @@ def cfg_dfg_analysis(
     )
 
 
-def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> TabularFrame:
+def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
     """Build CFG blocks from parsed AST inputs.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of CFG block rows.
+    InferableTabularInput
+        Arrow reader of CFG block rows.
     """
     if not cfg_dfg_analysis.cfg_blocks:
-        return empty_frame_for_table(CFG_BLOCKS_TABLE_KEY)
-    frame = pl.DataFrame([dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_blocks])
-    return frame.lazy().select(
-        [
-            "function_goid_h128",
-            "block_idx",
-            "block_id",
-            "label",
-            "file_path",
-            "start_line",
-            "end_line",
-            "kind",
-            "stmts_json",
-            "in_degree",
-            "out_degree",
-        ]
-    )
+        return empty_reader_for_table(CFG_BLOCKS_TABLE_KEY)
+    rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_blocks)
+    reader, _ = record_batch_reader_for_rows(CFG_BLOCKS_TABLE_KEY, rows)
+    return reader
 
 
 def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:

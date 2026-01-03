@@ -3,35 +3,44 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import opcode
+import re
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from functools import partial
 from typing import TypedDict, cast
 
-import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.goid import DECIMAL_38_MAX
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.options.graphs import CpgOptions
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
-    arrow_join_frames,
-    arrow_join_lazyframes,
+    align_table_to_contract,
     arrow_join_tables,
-    arrow_table_from_lazyframe,
+    dedupe_table_for_table,
 )
-from codeintel.build.tabular.conversion import table_to_frame, tabular_to_lazyframe
-from codeintel.build.tabular.frames import JoinSpec, dedupe_frame_for_table, empty_frame_for_table
+from codeintel.build.tabular.conversion import (
+    table_to_reader,
+    tabular_to_arrow_table,
+)
+from codeintel.build.tabular.frames import JoinStrategy, JoinValidation
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.core.serialization.payload import decode_payload, encode_payload
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
+
+OccurrenceSpanKey = tuple[object, object, object, object, object, object, object, object]
 
 CPG_TARGET_NAME = "cpg"
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -63,6 +72,7 @@ PY_INSPECT_CLASS_ATTRS_TABLE_KEY = "core.py_inspect_class_attrs"
 PY_INSPECT_UNWRAP_TABLE_KEY = "core.py_inspect_unwrap_hops"
 PY_INSPECT_SIGNATURES_TABLE_KEY = "core.py_inspect_signatures"
 PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY = "core.py_inspect_signature_params"
+PY_INSPECT_SOURCE_TABLE_KEY = "core.py_inspect_source"
 PY_INSPECT_RUNTIME_STATE_TABLE_KEY = "core.py_inspect_runtime_state"
 
 ORDINAL_MOD = 2**31 - 1
@@ -93,22 +103,37 @@ _CPG_EDGE_COLUMNS = columns_for_table_key(CPG_EDGES_TABLE_KEY) or (
 )
 
 
+def cpg__options(env: BuildEnv) -> CpgOptions:
+    """Load CPG options from the build environment.
+
+    Returns
+    -------
+    CpgOptions
+        Options controlling CPG assembly behavior.
+    """
+    return load_target_options(
+        env,
+        target_name=CPG_TARGET_NAME,
+        options_type=CpgOptions,
+    )
+
+
 @dataclass(frozen=True)
 class _CpgSymbolInputs:
-    syntax_edges: pl.LazyFrame
-    occ_syntax: pl.LazyFrame
-    occ_span: pl.LazyFrame
-    symbol_rels: pl.LazyFrame
-    symbol_goid: pl.LazyFrame
+    syntax_edges: pa.Table
+    occ_syntax: pa.Table
+    occ_span: pa.Table
+    symbol_rels: pa.Table
+    symbol_goid: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgFlowInputs:
-    goids: pl.LazyFrame
-    cfg_edges: pl.LazyFrame
-    dfg_edges: pl.LazyFrame
-    cfg_blocks: pl.LazyFrame
-    cdg_edges: pl.LazyFrame
+    goids: pa.Table
+    cfg_edges: pa.Table
+    dfg_edges: pa.Table
+    cfg_blocks: pa.Table
+    cdg_edges: pa.Table
 
 
 @dataclass(frozen=True)
@@ -179,128 +204,131 @@ class _CpgNodeInputs:
 
 @dataclass(frozen=True)
 class _CpgNodeCoreLazyFrames:
-    syntax_nodes: pl.LazyFrame
-    ast_nodes: pl.LazyFrame
-    scip_symbol_information: pl.LazyFrame
-    goids: pl.LazyFrame
-    py_sym_scopes: pl.LazyFrame
-    py_sym_bindings: pl.LazyFrame
-    py_bc_code_units: pl.LazyFrame
-    py_bc_instructions: pl.LazyFrame
-    py_bc_blocks: pl.LazyFrame
-    py_inspect_objects: pl.LazyFrame
-    py_inspect_signatures: pl.LazyFrame
-    py_inspect_signature_params: pl.LazyFrame
-    ts_tokens: pl.LazyFrame
-    ts_trivia: pl.LazyFrame
+    syntax_nodes: pa.Table
+    ast_nodes: pa.Table
+    scip_symbol_information: pa.Table
+    goids: pa.Table
+    py_sym_scopes: pa.Table
+    py_sym_bindings: pa.Table
+    py_bc_code_units: pa.Table
+    py_bc_instructions: pa.Table
+    py_bc_blocks: pa.Table
+    py_inspect_objects: pa.Table
+    py_inspect_signatures: pa.Table
+    py_inspect_signature_params: pa.Table
+    ts_tokens: pa.Table
+    ts_trivia: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgNodeGraphLazyFrames:
-    cfg_blocks: pl.LazyFrame
-    import_modules: pl.LazyFrame
+    cfg_blocks: pa.Table
+    import_modules: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgLinkInputs:
-    call_edges: pl.LazyFrame
-    import_edges: pl.LazyFrame
+    call_edges: pa.Table
+    import_edges: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgCallWiringInputs:
-    call_edges: pl.LazyFrame
-    arg_to_param_edges: pl.LazyFrame
-    ret_to_call_edges: pl.LazyFrame
+    call_edges: pa.Table
+    arg_to_param_edges: pa.Table
+    ret_to_call_edges: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgSyntaxNodeInputs:
-    syntax_nodes: pl.LazyFrame
+    syntax_nodes: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgOverlayEdgeInputs:
-    ast_nodes: pl.LazyFrame
-    syntax_calls: pl.LazyFrame
-    syntax_call_args: pl.LazyFrame
-    scip_symbols: pl.LazyFrame
-    py_sym_scopes: pl.LazyFrame
-    py_sym_bindings: pl.LazyFrame
-    py_sym_scope_edges: pl.LazyFrame
-    py_sym_namespace_edges: pl.LazyFrame
-    py_sym_resolution_edges: pl.LazyFrame
-    py_bc_code_units: pl.LazyFrame
-    py_bc_instructions: pl.LazyFrame
-    py_bc_blocks: pl.LazyFrame
-    py_bc_cfg_edges: pl.LazyFrame
-    py_bc_defuse_events: pl.LazyFrame
-    py_inspect_objects: pl.LazyFrame
-    py_inspect_class_mro: pl.LazyFrame
-    py_inspect_class_attrs: pl.LazyFrame
-    py_inspect_unwrap_hops: pl.LazyFrame
-    py_inspect_signatures: pl.LazyFrame
-    py_inspect_signature_params: pl.LazyFrame
-    py_inspect_runtime_state: pl.LazyFrame
+    ast_nodes: pa.Table
+    syntax_calls: pa.Table
+    syntax_call_args: pa.Table
+    scip_symbols: pa.Table
+    py_sym_scopes: pa.Table
+    py_sym_bindings: pa.Table
+    py_sym_scope_edges: pa.Table
+    py_sym_namespace_edges: pa.Table
+    py_sym_resolution_edges: pa.Table
+    py_bc_code_units: pa.Table
+    py_bc_instructions: pa.Table
+    py_bc_blocks: pa.Table
+    py_bc_cfg_edges: pa.Table
+    py_bc_defuse_events: pa.Table
+    py_inspect_objects: pa.Table
+    py_inspect_class_mro: pa.Table
+    py_inspect_class_attrs: pa.Table
+    py_inspect_unwrap_hops: pa.Table
+    py_inspect_signatures: pa.Table
+    py_inspect_signature_params: pa.Table
+    py_inspect_source: pa.Table
+    py_inspect_runtime_state: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgOverlayScopeInputs:
-    py_sym_scopes: pl.LazyFrame
-    py_sym_bindings: pl.LazyFrame
-    py_sym_scope_edges: pl.LazyFrame
-    py_sym_namespace_edges: pl.LazyFrame
-    py_sym_resolution_edges: pl.LazyFrame
+    py_sym_scopes: pa.Table
+    py_sym_bindings: pa.Table
+    py_sym_scope_edges: pa.Table
+    py_sym_namespace_edges: pa.Table
+    py_sym_resolution_edges: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgOverlaySymbolInputs:
-    ast_nodes: pl.LazyFrame
-    scip_symbols: pl.LazyFrame
+    ast_nodes: pa.Table
+    scip_symbols: pa.Table
     scope_inputs: _CpgOverlayScopeInputs
 
 
 @dataclass(frozen=True)
 class _CpgOverlayBytecodeInputs:
-    py_bc_code_units: pl.LazyFrame
-    py_bc_instructions: pl.LazyFrame
-    py_bc_blocks: pl.LazyFrame
-    py_bc_cfg_edges: pl.LazyFrame
-    py_bc_defuse_events: pl.LazyFrame
+    py_bc_code_units: pa.Table
+    py_bc_instructions: pa.Table
+    py_bc_blocks: pa.Table
+    py_bc_cfg_edges: pa.Table
+    py_bc_defuse_events: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgOverlaySyntaxCallInputs:
-    syntax_calls: pl.LazyFrame
-    syntax_call_args: pl.LazyFrame
+    syntax_calls: pa.Table
+    syntax_call_args: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgOverlayInspectCoreInputs:
-    py_inspect_objects: pl.LazyFrame
-    py_inspect_class_mro: pl.LazyFrame
-    py_inspect_class_attrs: pl.LazyFrame
-    py_inspect_unwrap_hops: pl.LazyFrame
+    py_inspect_objects: pa.Table
+    py_inspect_class_mro: pa.Table
+    py_inspect_class_attrs: pa.Table
+    py_inspect_unwrap_hops: pa.Table
+    py_inspect_source: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgOverlayInspectRuntimeInputs:
-    py_inspect_signatures: pl.LazyFrame
-    py_inspect_signature_params: pl.LazyFrame
-    py_inspect_runtime_state: pl.LazyFrame
+    py_inspect_signatures: pa.Table
+    py_inspect_signature_params: pa.Table
+    py_inspect_runtime_state: pa.Table
 
 
 @dataclass(frozen=True)
 class _CpgOverlayInspectInputs:
-    py_inspect_objects: pl.LazyFrame
-    py_inspect_class_mro: pl.LazyFrame
-    py_inspect_class_attrs: pl.LazyFrame
-    py_inspect_unwrap_hops: pl.LazyFrame
-    py_inspect_signatures: pl.LazyFrame
-    py_inspect_signature_params: pl.LazyFrame
-    py_inspect_runtime_state: pl.LazyFrame
-    syntax_calls: pl.LazyFrame
-    syntax_call_args: pl.LazyFrame
+    py_inspect_objects: pa.Table
+    py_inspect_class_mro: pa.Table
+    py_inspect_class_attrs: pa.Table
+    py_inspect_unwrap_hops: pa.Table
+    py_inspect_signatures: pa.Table
+    py_inspect_signature_params: pa.Table
+    py_inspect_source: pa.Table
+    py_inspect_runtime_state: pa.Table
+    syntax_calls: pa.Table
+    syntax_call_args: pa.Table
 
 
 @dataclass(frozen=True)
@@ -362,151 +390,360 @@ def _encode_optional_payload(value: object) -> bytes | None:
     return None
 
 
-def _struct_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
-    fields = [expr.alias(name) for name, expr in values.items()]
-    return pl.struct(fields)
+def _empty_table(columns: Sequence[str]) -> pa.Table:
+    arrays = [pa.array([], type=pa.null()) for _ in columns]
+    return pa.Table.from_arrays(arrays, names=list(columns))
 
 
-def _pk_expr(table_key: str, values: Mapping[str, pl.Expr]) -> pl.Expr:
-    return _struct_expr(values).map_elements(
-        partial(_stable_cpg_id_from_row, table_key),
-        return_dtype=pl.Object,
+_CPG_DECIMAL_TYPE = pa.decimal128(38, 0)
+_CPG_NODE_DECIMAL_COLUMNS = frozenset({"cpg_node_id"})
+_CPG_EDGE_DECIMAL_COLUMNS = frozenset({"src_cpg_node_id", "dst_cpg_node_id"})
+
+
+def _rows_to_table(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    columns: Sequence[str],
+    decimal_columns: frozenset[str],
+) -> pa.Table:
+    if not rows:
+        return _empty_table(columns)
+    arrays: list[pa.Array] = []
+    for column in columns:
+        values = [row.get(column) for row in rows]
+        if column in decimal_columns:
+            arrays.append(pa.array(values, type=_CPG_DECIMAL_TYPE))
+        else:
+            arrays.append(pa.array(values))
+    return pa.Table.from_arrays(arrays, names=list(columns))
+
+
+def _node_rows_to_table(rows: Sequence[Mapping[str, object]]) -> pa.Table:
+    return _rows_to_table(
+        rows,
+        columns=_CPG_NODE_COLUMNS,
+        decimal_columns=_CPG_NODE_DECIMAL_COLUMNS,
     )
 
 
-def _ordinal_expr(table_key: str, values: Mapping[str, pl.Expr]) -> pl.Expr:
-    return _struct_expr(values).map_elements(
-        partial(_stable_ordinal_from_row, table_key),
-        return_dtype=pl.Int64,
+def _edge_rows_to_table(rows: Sequence[Mapping[str, object]]) -> pa.Table:
+    return _rows_to_table(
+        rows,
+        columns=_CPG_EDGE_COLUMNS,
+        decimal_columns=_CPG_EDGE_DECIMAL_COLUMNS,
     )
 
 
-def _pk_json_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
-    return _struct_expr(values).map_elements(_row_to_payload, return_dtype=pl.Binary)
+def _constant_array(value: object, length: int) -> pa.Array | pa.ChunkedArray:
+    if value is None:
+        return pa.nulls(length)
+    try:
+        true_value = True
+        return pc.call_function(
+            "if_else",
+            [pc.scalar(true_value), pc.scalar(value), pc.scalar(value)],
+            length=length,
+        )
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return pa.array([value] * length)
 
 
-def _payload_json_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
-    return _struct_expr(values).map_elements(_row_to_payload, return_dtype=pl.Binary)
+def _append_constant_columns(table: pa.Table, constants: Mapping[str, object]) -> pa.Table:
+    if table.num_rows == 0 or not constants:
+        return table
+    existing = set(table.column_names)
+    for name, value in constants.items():
+        if name in existing:
+            continue
+        table = table.append_column(name, _constant_array(value, table.num_rows))
+        existing.add(name)
+    return table
 
 
-def _select_node_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
-    missing = [name for name in _CPG_NODE_COLUMNS if name not in frame.columns]
-    if missing:
-        frame = frame.with_columns([pl.lit(None).alias(name) for name in missing])
-    return frame.select(_CPG_NODE_COLUMNS)
+def _filter_valid_values(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    if table.num_rows == 0 or not columns:
+        return table
+    names = set(table.column_names)
+    if not all(column in names for column in columns):
+        return table
+    try:
+        mask = pc.call_function("is_valid", [table.column(columns[0])])
+        for column in columns[1:]:
+            col_mask = pc.call_function("is_valid", [table.column(column)])
+            mask = pc.call_function("and_kleene", [mask, col_mask])
+        return table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return table
 
 
-def _select_edge_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
-    missing = [name for name in _CPG_EDGE_COLUMNS if name not in frame.columns]
-    if missing:
-        frame = frame.with_columns([pl.lit(None).alias(name) for name in missing])
-    return frame.select(_CPG_EDGE_COLUMNS)
+def _table_rows(table: pa.Table) -> list[dict[str, object]]:
+    if table.num_rows == 0:
+        return []
+    return table.to_pylist()
 
 
-def _syntax_node_keys(syntax_nodes: pl.LazyFrame) -> pl.LazyFrame:
-    return syntax_nodes.select("repo", "commit", "rel_path", "producer", "node_id")
+def _select_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    if not columns:
+        return table
+    present = [column for column in columns if column in table.column_names]
+    if not present:
+        return _empty_table(columns)
+    return table.select(present)
 
 
-def _syntax_nodes_to_cpg(syntax_nodes: pl.LazyFrame) -> pl.LazyFrame:
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "producer": pl.col("producer"),
-        "node_id": pl.col("node_id"),
-    }
-    return syntax_nodes.with_columns(
-        _pk_expr(SYNTAX_NODES_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("SYNTAX_NODE").alias("node_kind"),
-        pl.lit(SYNTAX_NODES_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.col("start_byte"),
-        pl.col("end_byte"),
-        pl.col("extras_json")
-        .map_elements(_encode_optional_payload, return_dtype=pl.Binary)
-        .alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+def _ensure_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    if not columns:
+        return table
+    existing = set(table.column_names)
+    arrays = [
+        table[column] if column in existing else pa.nulls(table.num_rows) for column in columns
+    ]
+    return pa.Table.from_arrays(arrays, names=list(columns))
 
 
-def _scip_symbols_to_cpg(symbols: pl.LazyFrame) -> pl.LazyFrame:
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "symbol": pl.col("symbol"),
-    }
-    return symbols.with_columns(
-        _pk_expr(SCIP_SYMBOLS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("SCIP_SYMBOL").alias("node_kind"),
-        pl.lit(SCIP_SYMBOLS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.lit(None).alias("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        pl.lit(None).cast(pl.Binary).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+def _pk_from_row(table_key: str, values: Mapping[str, object]) -> int:
+    return _stable_cpg_id_from_row(table_key, values)
 
 
-def _goids_to_cpg(goids: pl.LazyFrame) -> pl.LazyFrame:
-    pk_values = {"goid_h128": pl.col("goid_h128")}
-    return goids.with_columns(
-        _pk_expr(GOIDS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("GOID").alias("node_kind"),
-        pl.lit(GOIDS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        pl.lit(None).cast(pl.Binary).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+def _ordinal_from_row(table_key: str, values: Mapping[str, object]) -> int:
+    return _stable_ordinal_from_row(table_key, values)
 
 
-def _cfg_blocks_to_cpg(cfg_blocks: pl.LazyFrame, goids: pl.LazyFrame) -> pl.LazyFrame:
-    goid_ctx = goids.select(
-        pl.col("goid_h128").alias("function_goid_h128"),
-        "repo",
-        "commit",
+def _pk_json_from_row(values: Mapping[str, object]) -> bytes:
+    return _row_to_payload(values)
+
+
+def _payload_json_from_row(values: Mapping[str, object]) -> bytes:
+    return _row_to_payload(values)
+
+
+@dataclass(frozen=True, slots=True)
+class JoinSpec:
+    on: Sequence[str] | None = None
+    left_on: Sequence[str] | None = None
+    right_on: Sequence[str] | None = None
+    how: JoinStrategy = "inner"
+    validate: JoinValidation | None = None
+    suffix: str = ""
+
+
+def _select_node_columns(table: pa.Table) -> pa.Table:
+    return _ensure_table_columns(table, _CPG_NODE_COLUMNS)
+
+
+def _select_edge_columns(table: pa.Table) -> pa.Table:
+    return _ensure_table_columns(table, _CPG_EDGE_COLUMNS)
+
+
+def _syntax_node_keys(syntax_nodes: pa.Table) -> pa.Table:
+    return _select_table_columns(
+        syntax_nodes,
+        ["repo", "commit", "rel_path", "producer", "node_id"],
     )
-    blocks = arrow_join_lazyframes(
+
+
+def _syntax_nodes_to_cpg(syntax_nodes: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(syntax_nodes):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "producer": row.get("producer"),
+            "node_id": row.get("node_id"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, pk_values),
+                "node_kind": "SYNTAX_NODE",
+                "source_table_key": SYNTAX_NODES_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": row.get("start_byte"),
+                "end_byte": row.get("end_byte"),
+                "extras_json": _encode_optional_payload(row.get("extras_json")),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
+
+
+def _scip_symbols_to_cpg(symbols: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(symbols):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "symbol": row.get("symbol"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(SCIP_SYMBOLS_TABLE_KEY, pk_values),
+                "node_kind": "SCIP_SYMBOL",
+                "source_table_key": SCIP_SYMBOLS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": None,
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": None,
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
+
+
+def _goids_to_cpg(goids: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(goids):
+        pk_values = {"goid_h128": row.get("goid_h128")}
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(GOIDS_TABLE_KEY, pk_values),
+                "node_kind": "GOID",
+                "source_table_key": GOIDS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": None,
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
+
+
+def _rename_table_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
+    if not mapping:
+        return table
+    new_names = [mapping.get(name, name) for name in table.column_names]
+    if new_names == list(table.column_names):
+        return table
+    return table.rename_columns(new_names)
+
+
+def _cfg_block_index(
+    cfg_blocks: pa.Table,
+    goids: pa.Table,
+) -> dict[tuple[object, object], dict[str, object]]:
+    goid_context: dict[object, dict[str, object]] = {}
+    filtered_goids = _filter_valid_values(goids, ["goid_h128"])
+    for row in _table_rows(filtered_goids):
+        goid = row.get("goid_h128")
+        if goid is None:
+            continue
+        goid_context[goid] = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+        }
+    block_index: dict[tuple[object, object], dict[str, object]] = {}
+    filtered_blocks = _filter_valid_values(cfg_blocks, ["function_goid_h128", "block_id"])
+    for row in _table_rows(filtered_blocks):
+        function_goid = row.get("function_goid_h128")
+        block_id = row.get("block_id")
+        if function_goid is None or block_id is None:
+            continue
+        context = goid_context.get(function_goid, {})
+        block_index[function_goid, block_id] = {
+            "block_idx": row.get("block_idx"),
+            "rel_path": row.get("file_path"),
+            "repo": context.get("repo"),
+            "commit": context.get("commit"),
+        }
+    return block_index
+
+
+def _block_id_index(cfg_blocks: pa.Table) -> dict[object, dict[str, object]]:
+    index: dict[object, dict[str, object]] = {}
+    filtered_blocks = _filter_valid_values(cfg_blocks, ["block_id"])
+    for row in _table_rows(filtered_blocks):
+        block_id = row.get("block_id")
+        if block_id is None:
+            continue
+        index[block_id] = {
+            "function_goid_h128": row.get("function_goid_h128"),
+            "block_idx": row.get("block_idx"),
+        }
+    return index
+
+
+def _syntax_node_index(
+    syntax_nodes: pa.Table,
+) -> dict[tuple[object, object, object], dict[str, object]]:
+    index: dict[tuple[object, object, object], dict[str, object]] = {}
+    for row in _table_rows(syntax_nodes):
+        key = (row.get("repo"), row.get("commit"), row.get("node_id"))
+        index[key] = {
+            "rel_path": row.get("rel_path"),
+            "producer": row.get("producer"),
+        }
+    return index
+
+
+def _cfg_blocks_to_cpg(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
+    goid_ctx = _select_table_columns(goids, ["goid_h128", "repo", "commit"])
+    goid_ctx = _rename_table_columns(goid_ctx, {"goid_h128": "function_goid_h128"})
+    joined_table = arrow_join_tables(
         cfg_blocks,
         goid_ctx,
-        spec=JoinSpec(on=["function_goid_h128"], how="left"),
+        spec=ArrowJoinSpec(on=["function_goid_h128"], how="left"),
     )
-    pk_values = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("block_idx"),
-    }
-    return blocks.with_columns(
-        _pk_expr(CFG_BLOCKS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("CFG_BLOCK").alias("node_kind"),
-        pl.lit(CFG_BLOCKS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("file_path").alias("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        pl.lit(None).cast(pl.Binary).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(joined_table):
+        pk_values = {
+            "function_goid_h128": row.get("function_goid_h128"),
+            "block_idx": row.get("block_idx"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, pk_values),
+                "node_kind": "CFG_BLOCK",
+                "source_table_key": CFG_BLOCKS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("file_path"),
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": None,
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _import_modules_to_cpg(import_modules: pl.LazyFrame) -> pl.LazyFrame:
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "module": pl.col("module"),
-    }
-    return import_modules.with_columns(
-        _pk_expr(IMPORT_MODULES_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("MODULE").alias("node_kind"),
-        pl.lit(IMPORT_MODULES_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.lit(None).alias("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        pl.lit(None).cast(pl.Binary).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+def _import_modules_to_cpg(import_modules: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(import_modules):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "module": row.get("module"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(IMPORT_MODULES_TABLE_KEY, pk_values),
+                "node_kind": "MODULE",
+                "source_table_key": IMPORT_MODULES_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": None,
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": None,
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _ts_tokens_to_cpg(tokens: pl.LazyFrame) -> pl.LazyFrame:
+def _ts_tokens_to_cpg(tokens: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -520,34 +757,42 @@ def _ts_tokens_to_cpg(tokens: pl.LazyFrame) -> pl.LazyFrame:
         "text_preview",
         "extras_json",
     }
-    if not required.issubset(tokens.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "language": pl.col("language"),
-        "token_id": pl.col("token_id"),
-    }
-    extras_values = {
-        "token_kind": pl.col("token_kind"),
-        "node_type": pl.col("node_type"),
-        "text_preview": pl.col("text_preview"),
-        "token_extras": pl.col("extras_json"),
-    }
-    return tokens.with_columns(
-        _pk_expr(TS_TOKENS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("TS_TOKEN").alias("node_kind"),
-        pl.lit(TS_TOKENS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.col("start_byte"),
-        pl.col("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(tokens.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(tokens):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "language": row.get("language"),
+            "token_id": row.get("token_id"),
+        }
+        extras_values = {
+            "token_kind": row.get("token_kind"),
+            "node_type": row.get("node_type"),
+            "text_preview": row.get("text_preview"),
+            "token_extras": row.get("extras_json"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(TS_TOKENS_TABLE_KEY, pk_values),
+                "node_kind": "TS_TOKEN",
+                "source_table_key": TS_TOKENS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": row.get("start_byte"),
+                "end_byte": row.get("end_byte"),
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _ts_trivia_to_cpg(trivia: pl.LazyFrame) -> pl.LazyFrame:
+def _ts_trivia_to_cpg(trivia: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -561,34 +806,42 @@ def _ts_trivia_to_cpg(trivia: pl.LazyFrame) -> pl.LazyFrame:
         "text_preview",
         "extras_json",
     }
-    if not required.issubset(trivia.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "language": pl.col("language"),
-        "trivia_id": pl.col("trivia_id"),
-    }
-    extras_values = {
-        "trivia_kind": pl.col("trivia_kind"),
-        "node_type": pl.col("node_type"),
-        "text_preview": pl.col("text_preview"),
-        "trivia_extras": pl.col("extras_json"),
-    }
-    return trivia.with_columns(
-        _pk_expr(TS_TRIVIA_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("TS_TRIVIA").alias("node_kind"),
-        pl.lit(TS_TRIVIA_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.col("start_byte"),
-        pl.col("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(trivia.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(trivia):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "language": row.get("language"),
+            "trivia_id": row.get("trivia_id"),
+        }
+        extras_values = {
+            "trivia_kind": row.get("trivia_kind"),
+            "node_type": row.get("node_type"),
+            "text_preview": row.get("text_preview"),
+            "trivia_extras": row.get("extras_json"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(TS_TRIVIA_TABLE_KEY, pk_values),
+                "node_kind": "TS_TRIVIA",
+                "source_table_key": TS_TRIVIA_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": row.get("start_byte"),
+                "end_byte": row.get("end_byte"),
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _ast_nodes_to_cpg(ast_nodes: pl.LazyFrame, env: BuildEnv) -> pl.LazyFrame:
+def _ast_nodes_to_cpg(ast_nodes: pa.Table, env: BuildEnv) -> pa.Table:
     required = {
         "path",
         "node_type",
@@ -596,48 +849,54 @@ def _ast_nodes_to_cpg(ast_nodes: pl.LazyFrame, env: BuildEnv) -> pl.LazyFrame:
         "start_byte",
         "end_byte",
     }
-    if not required.issubset(ast_nodes.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {"hash": pl.col("hash")}
-    extras_values = {
-        "node_type": pl.col("node_type"),
-        "name": pl.col("name"),
-        "qualname": pl.col("qualname"),
-        "parent_qualname": pl.col("parent_qualname"),
-        "lineno": pl.col("lineno"),
-        "end_lineno": pl.col("end_lineno"),
-        "col_offset": pl.col("col_offset"),
-        "end_col_offset": pl.col("end_col_offset"),
-        "decorator_start_line": pl.col("decorator_start_line"),
-        "decorator_end_line": pl.col("decorator_end_line"),
-        "decorators": pl.col("decorators"),
-        "docstring": pl.col("docstring"),
-        "ctx": pl.col("ctx"),
-        "type_comment": pl.col("type_comment"),
-        "type_ignores": pl.col("type_ignores"),
-        "identifier": pl.col("identifier"),
-        "attribute": pl.col("attribute"),
-        "imported": pl.col("imported"),
-        "asname": pl.col("asname"),
-        "module": pl.col("module"),
-        "level": pl.col("level"),
-        "constant_kind": pl.col("constant_kind"),
-    }
-    return ast_nodes.with_columns(
-        pl.lit(env.repo).alias("repo"),
-        pl.lit(env.commit).alias("commit"),
-        _pk_expr(AST_NODES_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("AST_NODE").alias("node_kind"),
-        pl.lit(AST_NODES_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("path").alias("rel_path"),
-        pl.col("start_byte"),
-        pl.col("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(ast_nodes.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(ast_nodes):
+        pk_values = {"hash": row.get("hash")}
+        extras_values = {
+            "node_type": row.get("node_type"),
+            "name": row.get("name"),
+            "qualname": row.get("qualname"),
+            "parent_qualname": row.get("parent_qualname"),
+            "lineno": row.get("lineno"),
+            "end_lineno": row.get("end_lineno"),
+            "col_offset": row.get("col_offset"),
+            "end_col_offset": row.get("end_col_offset"),
+            "decorator_start_line": row.get("decorator_start_line"),
+            "decorator_end_line": row.get("decorator_end_line"),
+            "decorators": row.get("decorators"),
+            "docstring": row.get("docstring"),
+            "ctx": row.get("ctx"),
+            "type_comment": row.get("type_comment"),
+            "type_ignores": row.get("type_ignores"),
+            "identifier": row.get("identifier"),
+            "attribute": row.get("attribute"),
+            "imported": row.get("imported"),
+            "asname": row.get("asname"),
+            "module": row.get("module"),
+            "level": row.get("level"),
+            "constant_kind": row.get("constant_kind"),
+        }
+        rows.append(
+            {
+                "repo": env.repo,
+                "commit": env.commit,
+                "cpg_node_id": _pk_from_row(AST_NODES_TABLE_KEY, pk_values),
+                "node_kind": "AST_NODE",
+                "source_table_key": AST_NODES_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("path"),
+                "start_byte": row.get("start_byte"),
+                "end_byte": row.get("end_byte"),
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_sym_scopes_to_cpg(scopes: pl.LazyFrame) -> pl.LazyFrame:
+def _py_sym_scopes_to_cpg(scopes: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -645,41 +904,49 @@ def _py_sym_scopes_to_cpg(scopes: pl.LazyFrame) -> pl.LazyFrame:
         "scope_id",
         "scope_type",
     }
-    if not required.issubset(scopes.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "scope_id": pl.col("scope_id"),
-    }
-    extras_values = {
-        "scope_type": pl.col("scope_type"),
-        "scope_name": pl.col("scope_name"),
-        "qualpath": pl.col("qualpath"),
-        "lineno": pl.col("lineno"),
-        "is_nested": pl.col("is_nested"),
-        "is_optimized": pl.col("is_optimized"),
-        "has_children": pl.col("has_children"),
-        "parent_scope_id": pl.col("parent_scope_id"),
-        "anchor_ast_node_id": pl.col("anchor_ast_node_id"),
-        "anchor_confidence": pl.col("anchor_confidence"),
-        "anchor_reason": pl.col("anchor_reason"),
-        "scope_local_id": pl.col("scope_local_id"),
-    }
-    return scopes.with_columns(
-        _pk_expr(PY_SYM_SCOPES_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("SCOPE").alias("node_kind"),
-        pl.lit(PY_SYM_SCOPES_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.col("span_start_byte").alias("start_byte"),
-        pl.col("span_end_byte").alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(scopes.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(scopes):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "scope_id": row.get("scope_id"),
+        }
+        extras_values = {
+            "scope_type": row.get("scope_type"),
+            "scope_name": row.get("scope_name"),
+            "qualpath": row.get("qualpath"),
+            "lineno": row.get("lineno"),
+            "is_nested": row.get("is_nested"),
+            "is_optimized": row.get("is_optimized"),
+            "has_children": row.get("has_children"),
+            "parent_scope_id": row.get("parent_scope_id"),
+            "anchor_ast_node_id": row.get("anchor_ast_node_id"),
+            "anchor_confidence": row.get("anchor_confidence"),
+            "anchor_reason": row.get("anchor_reason"),
+            "scope_local_id": row.get("scope_local_id"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_SYM_SCOPES_TABLE_KEY, pk_values),
+                "node_kind": "SCOPE",
+                "source_table_key": PY_SYM_SCOPES_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": row.get("span_start_byte"),
+                "end_byte": row.get("span_end_byte"),
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_sym_bindings_to_cpg(bindings: pl.LazyFrame) -> pl.LazyFrame:
+def _py_sym_bindings_to_cpg(bindings: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -689,84 +956,100 @@ def _py_sym_bindings_to_cpg(bindings: pl.LazyFrame) -> pl.LazyFrame:
         "name",
         "binding_kind",
     }
-    if not required.issubset(bindings.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "binding_id": pl.col("binding_id"),
-    }
-    extras_values = {
-        "scope_id": pl.col("scope_id"),
-        "name": pl.col("name"),
-        "binding_kind": pl.col("binding_kind"),
-        "declared_here": pl.col("declared_here"),
-        "referenced_here": pl.col("referenced_here"),
-        "assigned_here": pl.col("assigned_here"),
-        "annotated_here": pl.col("annotated_here"),
-        "scoping_class": pl.col("scoping_class"),
-    }
-    return bindings.with_columns(
-        _pk_expr(PY_SYM_BINDINGS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("BINDING").alias("node_kind"),
-        pl.lit(PY_SYM_BINDINGS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(bindings.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(bindings):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "binding_id": row.get("binding_id"),
+        }
+        extras_values = {
+            "scope_id": row.get("scope_id"),
+            "name": row.get("name"),
+            "binding_kind": row.get("binding_kind"),
+            "declared_here": row.get("declared_here"),
+            "referenced_here": row.get("referenced_here"),
+            "assigned_here": row.get("assigned_here"),
+            "annotated_here": row.get("annotated_here"),
+            "scoping_class": row.get("scoping_class"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_SYM_BINDINGS_TABLE_KEY, pk_values),
+                "node_kind": "BINDING",
+                "source_table_key": PY_SYM_BINDINGS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_bc_code_units_to_cpg(code_units: pl.LazyFrame) -> pl.LazyFrame:
+def _py_bc_code_units_to_cpg(code_units: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
         "rel_path",
         "code_unit_id",
     }
-    if not required.issubset(code_units.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "code_unit_id": pl.col("code_unit_id"),
-    }
-    extras_values = {
-        "qualpath": pl.col("qualpath"),
-        "co_name": pl.col("co_name"),
-        "co_qualname": pl.col("co_qualname"),
-        "kind": pl.col("kind"),
-        "co_firstlineno": pl.col("co_firstlineno"),
-        "flags": pl.col("flags"),
-        "argcount": pl.col("argcount"),
-        "posonlyargcount": pl.col("posonlyargcount"),
-        "kwonlyargcount": pl.col("kwonlyargcount"),
-        "nlocals": pl.col("nlocals"),
-        "stacksize": pl.col("stacksize"),
-        "varnames": pl.col("varnames"),
-        "names": pl.col("names"),
-        "freevars": pl.col("freevars"),
-        "cellvars": pl.col("cellvars"),
-        "bytecode_len": pl.col("bytecode_len"),
-        "exceptiontable_len": pl.col("exceptiontable_len"),
-        "python_version": pl.col("python_version"),
-    }
-    return code_units.with_columns(
-        _pk_expr(PY_BC_CODE_UNITS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("BC_CODE_UNIT").alias("node_kind"),
-        pl.lit(PY_BC_CODE_UNITS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.col("span_start_byte").alias("start_byte"),
-        pl.col("span_end_byte").alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(code_units.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(code_units):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "code_unit_id": row.get("code_unit_id"),
+        }
+        extras_values = {
+            "qualpath": row.get("qualpath"),
+            "co_name": row.get("co_name"),
+            "co_qualname": row.get("co_qualname"),
+            "kind": row.get("kind"),
+            "co_firstlineno": row.get("co_firstlineno"),
+            "flags": row.get("flags"),
+            "argcount": row.get("argcount"),
+            "posonlyargcount": row.get("posonlyargcount"),
+            "kwonlyargcount": row.get("kwonlyargcount"),
+            "nlocals": row.get("nlocals"),
+            "stacksize": row.get("stacksize"),
+            "varnames": row.get("varnames"),
+            "names": row.get("names"),
+            "freevars": row.get("freevars"),
+            "cellvars": row.get("cellvars"),
+            "bytecode_len": row.get("bytecode_len"),
+            "exceptiontable_len": row.get("exceptiontable_len"),
+            "python_version": row.get("python_version"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_BC_CODE_UNITS_TABLE_KEY, pk_values),
+                "node_kind": "BC_CODE_UNIT",
+                "source_table_key": PY_BC_CODE_UNITS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": row.get("span_start_byte"),
+                "end_byte": row.get("span_end_byte"),
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_bc_instructions_to_cpg(instructions: pl.LazyFrame) -> pl.LazyFrame:
+def _py_bc_instructions_to_cpg(instructions: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -774,50 +1057,58 @@ def _py_bc_instructions_to_cpg(instructions: pl.LazyFrame) -> pl.LazyFrame:
         "code_unit_id",
         "instr_id",
     }
-    if not required.issubset(instructions.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "code_unit_id": pl.col("code_unit_id"),
-        "instr_id": pl.col("instr_id"),
-    }
-    extras_values = {
-        "instr_index": pl.col("instr_index"),
-        "start_offset": pl.col("start_offset"),
-        "offset": pl.col("offset"),
-        "end_offset": pl.col("end_offset"),
-        "opcode": pl.col("opcode"),
-        "opname": pl.col("opname"),
-        "baseopname": pl.col("baseopname"),
-        "arg": pl.col("arg"),
-        "argrepr": pl.col("argrepr"),
-        "argval_kind": pl.col("argval_kind"),
-        "argval_str": pl.col("argval_str"),
-        "argval_int": pl.col("argval_int"),
-        "argval_repr": pl.col("argval_repr"),
-        "is_jump_target": pl.col("is_jump_target"),
-        "jump_target_offset": pl.col("jump_target_offset"),
-        "jump_target_label": pl.col("jump_target_label"),
-        "label": pl.col("label"),
-        "starts_line": pl.col("starts_line"),
-        "line_number": pl.col("line_number"),
-        "pos": pl.col("pos"),
-    }
-    return instructions.with_columns(
-        _pk_expr(PY_BC_INSTRUCTIONS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("BC_INSTR").alias("node_kind"),
-        pl.lit(PY_BC_INSTRUCTIONS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.col("span_start_byte").alias("start_byte"),
-        pl.col("span_end_byte").alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(instructions.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(instructions):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "code_unit_id": row.get("code_unit_id"),
+            "instr_id": row.get("instr_id"),
+        }
+        extras_values = {
+            "instr_index": row.get("instr_index"),
+            "start_offset": row.get("start_offset"),
+            "offset": row.get("offset"),
+            "end_offset": row.get("end_offset"),
+            "opcode": row.get("opcode"),
+            "opname": row.get("opname"),
+            "baseopname": row.get("baseopname"),
+            "arg": row.get("arg"),
+            "argrepr": row.get("argrepr"),
+            "argval_kind": row.get("argval_kind"),
+            "argval_str": row.get("argval_str"),
+            "argval_int": row.get("argval_int"),
+            "argval_repr": row.get("argval_repr"),
+            "is_jump_target": row.get("is_jump_target"),
+            "jump_target_offset": row.get("jump_target_offset"),
+            "jump_target_label": row.get("jump_target_label"),
+            "label": row.get("label"),
+            "starts_line": row.get("starts_line"),
+            "line_number": row.get("line_number"),
+            "pos": row.get("pos"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_BC_INSTRUCTIONS_TABLE_KEY, pk_values),
+                "node_kind": "BC_INSTR",
+                "source_table_key": PY_BC_INSTRUCTIONS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": row.get("span_start_byte"),
+                "end_byte": row.get("span_end_byte"),
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_bc_blocks_to_cpg(blocks: pl.LazyFrame) -> pl.LazyFrame:
+def _py_bc_blocks_to_cpg(blocks: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -825,150 +1116,182 @@ def _py_bc_blocks_to_cpg(blocks: pl.LazyFrame) -> pl.LazyFrame:
         "block_id",
         "code_unit_id",
     }
-    if not required.issubset(blocks.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "block_id": pl.col("block_id"),
-    }
-    extras_values = {
-        "code_unit_id": pl.col("code_unit_id"),
-        "start_offset": pl.col("start_offset"),
-        "end_offset": pl.col("end_offset"),
-        "start_label": pl.col("start_label"),
-        "kind": pl.col("kind"),
-        "first_instr_index": pl.col("first_instr_index"),
-        "last_instr_index": pl.col("last_instr_index"),
-    }
-    return blocks.with_columns(
-        _pk_expr(PY_BC_BLOCKS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("BC_BLOCK").alias("node_kind"),
-        pl.lit(PY_BC_BLOCKS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.col("rel_path"),
-        pl.col("anchor_span_start_byte").alias("start_byte"),
-        pl.col("anchor_span_end_byte").alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(blocks.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(blocks):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "block_id": row.get("block_id"),
+        }
+        extras_values = {
+            "code_unit_id": row.get("code_unit_id"),
+            "start_offset": row.get("start_offset"),
+            "end_offset": row.get("end_offset"),
+            "start_label": row.get("start_label"),
+            "kind": row.get("kind"),
+            "first_instr_index": row.get("first_instr_index"),
+            "last_instr_index": row.get("last_instr_index"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_BC_BLOCKS_TABLE_KEY, pk_values),
+                "node_kind": "BC_BLOCK",
+                "source_table_key": PY_BC_BLOCKS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": row.get("rel_path"),
+                "start_byte": row.get("anchor_span_start_byte"),
+                "end_byte": row.get("anchor_span_end_byte"),
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_inspect_objects_to_cpg(objects: pl.LazyFrame) -> pl.LazyFrame:
+def _py_inspect_objects_to_cpg(objects: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
         "object_id",
         "kind",
     }
-    if not required.issubset(objects.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "object_id": pl.col("object_id"),
-    }
-    extras_values = {
-        "kind": pl.col("kind"),
-        "module_name": pl.col("module_name"),
-        "qualname": pl.col("qualname"),
-        "name": pl.col("name"),
-        "type_qualname": pl.col("type_qualname"),
-        "object_addr": pl.col("object_addr"),
-        "is_builtin": pl.col("is_builtin"),
-        "is_callable": pl.col("is_callable"),
-        "is_descriptor": pl.col("is_descriptor"),
-        "has_wrapped": pl.col("has_wrapped"),
-        "has_signature_override": pl.col("has_signature_override"),
-        "has_annotations": pl.col("has_annotations"),
-        "status": pl.col("status"),
-    }
-    return objects.with_columns(
-        _pk_expr(PY_INSPECT_OBJECTS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("INSPECT_OBJECT").alias("node_kind"),
-        pl.lit(PY_INSPECT_OBJECTS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.lit(None).alias("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(objects.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(objects):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "object_id": row.get("object_id"),
+        }
+        extras_values = {
+            "kind": row.get("kind"),
+            "module_name": row.get("module_name"),
+            "qualname": row.get("qualname"),
+            "name": row.get("name"),
+            "type_qualname": row.get("type_qualname"),
+            "object_addr": row.get("object_addr"),
+            "is_builtin": row.get("is_builtin"),
+            "is_callable": row.get("is_callable"),
+            "is_descriptor": row.get("is_descriptor"),
+            "has_wrapped": row.get("has_wrapped"),
+            "has_signature_override": row.get("has_signature_override"),
+            "has_annotations": row.get("has_annotations"),
+            "status": row.get("status"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_INSPECT_OBJECTS_TABLE_KEY, pk_values),
+                "node_kind": "INSPECT_OBJECT",
+                "source_table_key": PY_INSPECT_OBJECTS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": None,
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_inspect_signatures_to_cpg(signatures: pl.LazyFrame) -> pl.LazyFrame:
+def _py_inspect_signatures_to_cpg(signatures: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
         "signature_id",
         "object_id",
     }
-    if not required.issubset(signatures.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "signature_id": pl.col("signature_id"),
-    }
-    extras_values = {
-        "object_id": pl.col("object_id"),
-        "mode": pl.col("mode"),
-        "variant": pl.col("variant"),
-        "follow_wrapped": pl.col("follow_wrapped"),
-        "eval_str": pl.col("eval_str"),
-        "effective_object_id": pl.col("effective_object_id"),
-        "sig_text": pl.col("sig_text"),
-        "sig_format": pl.col("sig_format"),
-        "has_varargs": pl.col("has_varargs"),
-        "has_varkw": pl.col("has_varkw"),
-        "status": pl.col("status"),
-    }
-    return signatures.with_columns(
-        _pk_expr(PY_INSPECT_SIGNATURES_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("INSPECT_SIGNATURE").alias("node_kind"),
-        pl.lit(PY_INSPECT_SIGNATURES_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.lit(None).alias("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(signatures.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(signatures):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "signature_id": row.get("signature_id"),
+        }
+        extras_values = {
+            "object_id": row.get("object_id"),
+            "mode": row.get("mode"),
+            "variant": row.get("variant"),
+            "follow_wrapped": row.get("follow_wrapped"),
+            "eval_str": row.get("eval_str"),
+            "effective_object_id": row.get("effective_object_id"),
+            "sig_text": row.get("sig_text"),
+            "sig_format": row.get("sig_format"),
+            "has_varargs": row.get("has_varargs"),
+            "has_varkw": row.get("has_varkw"),
+            "status": row.get("status"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_INSPECT_SIGNATURES_TABLE_KEY, pk_values),
+                "node_kind": "INSPECT_SIGNATURE",
+                "source_table_key": PY_INSPECT_SIGNATURES_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": None,
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
-def _py_inspect_signature_params_to_cpg(params: pl.LazyFrame) -> pl.LazyFrame:
+def _py_inspect_signature_params_to_cpg(params: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
         "signature_id",
         "param_index",
     }
-    if not required.issubset(params.columns):
-        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
-    pk_values = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "signature_id": pl.col("signature_id"),
-        "param_index": pl.col("param_index"),
-    }
-    extras_values = {
-        "mode": pl.col("mode"),
-        "name": pl.col("name"),
-        "kind": pl.col("kind"),
-        "default_present": pl.col("default_present"),
-        "default_value": pl.col("default_value"),
-        "annotation_present": pl.col("annotation_present"),
-        "annotation_value": pl.col("annotation_value"),
-        "status": pl.col("status"),
-    }
-    return params.with_columns(
-        _pk_expr(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY, pk_values).alias("cpg_node_id"),
-        pl.lit("INSPECT_SIGNATURE_PARAM").alias("node_kind"),
-        pl.lit(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY).alias("source_table_key"),
-        _pk_json_expr(pk_values).alias("source_pk_json"),
-        pl.lit(None).alias("rel_path"),
-        pl.lit(None).alias("start_byte"),
-        pl.lit(None).alias("end_byte"),
-        _payload_json_expr(extras_values).alias("extras_json"),
-    ).select(_CPG_NODE_COLUMNS)
+    if not required.issubset(set(params.column_names)):
+        return _empty_table(_CPG_NODE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(params):
+        pk_values = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "signature_id": row.get("signature_id"),
+            "param_index": row.get("param_index"),
+        }
+        extras_values = {
+            "mode": row.get("mode"),
+            "name": row.get("name"),
+            "kind": row.get("kind"),
+            "default_present": row.get("default_present"),
+            "default_value": row.get("default_value"),
+            "annotation_present": row.get("annotation_present"),
+            "annotation_value": row.get("annotation_value"),
+            "status": row.get("status"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "cpg_node_id": _pk_from_row(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY, pk_values),
+                "node_kind": "INSPECT_SIGNATURE_PARAM",
+                "source_table_key": PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
+                "source_pk_json": _pk_json_from_row(pk_values),
+                "rel_path": None,
+                "start_byte": None,
+                "end_byte": None,
+                "extras_json": _payload_json_from_row(extras_values),
+            }
+        )
+    table = _node_rows_to_table(rows)
+    return _select_node_columns(table)
 
 
 def cpg_nodes__syntax_inputs(
@@ -1104,40 +1427,65 @@ def cpg_nodes__inputs(
 
 def _core_lazyframes(core_inputs: _CpgNodeCoreInputs) -> _CpgNodeCoreLazyFrames:
     return _CpgNodeCoreLazyFrames(
-        syntax_nodes=tabular_to_lazyframe(core_inputs.syntax_nodes),
-        ast_nodes=tabular_to_lazyframe(core_inputs.ast_nodes),
-        scip_symbol_information=tabular_to_lazyframe(core_inputs.scip_symbol_information),
-        goids=tabular_to_lazyframe(core_inputs.goids),
-        py_sym_scopes=tabular_to_lazyframe(core_inputs.py_sym_scopes),
-        py_sym_bindings=tabular_to_lazyframe(core_inputs.py_sym_bindings),
-        py_bc_code_units=tabular_to_lazyframe(core_inputs.py_bc_code_units),
-        py_bc_instructions=tabular_to_lazyframe(core_inputs.py_bc_instructions),
-        py_bc_blocks=tabular_to_lazyframe(core_inputs.py_bc_blocks),
-        py_inspect_objects=tabular_to_lazyframe(core_inputs.py_inspect_objects),
-        py_inspect_signatures=tabular_to_lazyframe(core_inputs.py_inspect_signatures),
-        py_inspect_signature_params=tabular_to_lazyframe(core_inputs.py_inspect_signature_params),
-        ts_tokens=tabular_to_lazyframe(core_inputs.ts_tokens),
-        ts_trivia=tabular_to_lazyframe(core_inputs.ts_trivia),
+        syntax_nodes=tabular_to_arrow_table(core_inputs.syntax_nodes),
+        ast_nodes=tabular_to_arrow_table(core_inputs.ast_nodes),
+        scip_symbol_information=tabular_to_arrow_table(core_inputs.scip_symbol_information),
+        goids=tabular_to_arrow_table(core_inputs.goids),
+        py_sym_scopes=tabular_to_arrow_table(core_inputs.py_sym_scopes),
+        py_sym_bindings=tabular_to_arrow_table(core_inputs.py_sym_bindings),
+        py_bc_code_units=tabular_to_arrow_table(core_inputs.py_bc_code_units),
+        py_bc_instructions=tabular_to_arrow_table(core_inputs.py_bc_instructions),
+        py_bc_blocks=tabular_to_arrow_table(core_inputs.py_bc_blocks),
+        py_inspect_objects=tabular_to_arrow_table(core_inputs.py_inspect_objects),
+        py_inspect_signatures=tabular_to_arrow_table(core_inputs.py_inspect_signatures),
+        py_inspect_signature_params=tabular_to_arrow_table(core_inputs.py_inspect_signature_params),
+        ts_tokens=tabular_to_arrow_table(core_inputs.ts_tokens),
+        ts_trivia=tabular_to_arrow_table(core_inputs.ts_trivia),
     )
 
 
 def _graph_lazyframes(graph_inputs: _CpgNodeGraphInputs) -> _CpgNodeGraphLazyFrames:
     return _CpgNodeGraphLazyFrames(
-        cfg_blocks=tabular_to_lazyframe(graph_inputs.cfg_blocks),
-        import_modules=tabular_to_lazyframe(graph_inputs.import_modules),
+        cfg_blocks=tabular_to_arrow_table(graph_inputs.cfg_blocks),
+        import_modules=tabular_to_arrow_table(graph_inputs.import_modules),
     )
+
+
+def _frame_to_reader(table_key: str, frame: pa.Table) -> pa.RecordBatchReader:
+    aligned = align_table_to_contract(table_key, frame, extras_policy=None)
+    return table_to_reader(aligned)
+
+
+def _arrow_join_frames(
+    left: pa.Table,
+    right: pa.Table,
+    *,
+    spec: JoinSpec | ArrowJoinSpec,
+) -> pa.Table:
+    if isinstance(spec, ArrowJoinSpec):
+        join_spec = spec
+    else:
+        join_spec = ArrowJoinSpec(
+            on=spec.on,
+            left_on=spec.left_on,
+            right_on=spec.right_on,
+            how=spec.how,
+            validate=spec.validate,
+            suffix=spec.suffix,
+        )
+    return arrow_join_tables(left, right, spec=join_spec)
 
 
 def cpg_nodes(
     env: BuildEnv,
     cpg_nodes__inputs: _CpgNodeInputs,
-) -> pl.LazyFrame:
+) -> InferableTabularInput:
     """Build CPG nodes from syntax, symbol, and flow inventories.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame for graph.cpg_nodes.
+    InferableTabularInput
+        Arrow reader for graph.cpg_nodes.
     """
     core = _core_lazyframes(cpg_nodes__inputs.core)
     graph = _graph_lazyframes(cpg_nodes__inputs.graph)
@@ -1160,50 +1508,60 @@ def cpg_nodes(
         _cfg_blocks_to_cpg(graph.cfg_blocks, core.goids),
         _import_modules_to_cpg(graph.import_modules),
     ]
-    combined = pl.concat(frames, how="vertical_relaxed")
-    if combined.columns:
-        combined = dedupe_frame_for_table(combined, table_key=CPG_NODES_TABLE_KEY)
-        return _select_node_columns(combined)
-    return empty_frame_for_table(CPG_NODES_TABLE_KEY)
+    tables = [frame for frame in frames if frame.num_rows > 0]
+    if tables:
+        combined = pa.concat_tables(tables, promote=True)
+        combined = _select_node_columns(combined)
+        combined = dedupe_table_for_table(CPG_NODES_TABLE_KEY, combined)
+        return _frame_to_reader(CPG_NODES_TABLE_KEY, combined)
+    return empty_reader_for_table(CPG_NODES_TABLE_KEY)
 
 
-def _syntax_edges_to_cpg(syntax_edges: pl.LazyFrame) -> pl.LazyFrame:
-    parent_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "producer": pl.col("producer"),
-        "node_id": pl.col("parent_node_id"),
-    }
-    child_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "producer": pl.col("producer"),
-        "node_id": pl.col("child_node_id"),
-    }
-    return syntax_edges.with_columns(
-        _pk_expr(SYNTAX_NODES_TABLE_KEY, parent_pk).alias("src_cpg_node_id"),
-        _pk_expr(SYNTAX_NODES_TABLE_KEY, child_pk).alias("dst_cpg_node_id"),
-        pl.lit("AST").alias("edge_kind"),
-        pl.lit("SYNTAX").alias("edge_layer"),
-        pl.col("rel_path"),
-        pl.col("child_ordinal").alias("ordinal"),
-        pl.lit(None).cast(pl.Binary).alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+def _syntax_edges_to_cpg(syntax_edges: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(syntax_edges):
+        parent_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "producer": row.get("producer"),
+            "node_id": row.get("parent_node_id"),
+        }
+        child_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "producer": row.get("producer"),
+            "node_id": row.get("child_node_id"),
+        }
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, parent_pk),
+                "dst_cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, child_pk),
+                "edge_kind": "AST",
+                "edge_layer": "SYNTAX",
+                "rel_path": row.get("rel_path"),
+                "ordinal": row.get("child_ordinal"),
+                "extras_json": None,
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _occurrence_role_resolvers(
-    span_frame: pl.DataFrame,
+    span_frame: pa.Table,
 ) -> dict[tuple[str, str], SpanResolver[_OccurrenceRolePayload]]:
     resolvers: dict[tuple[str, str], SpanResolver[_OccurrenceRolePayload]] = {}
-    for row in span_frame.iter_rows(named=True):
+    for row in _table_rows(span_frame):
         rel_path = row.get("rel_path")
         scip_symbol = row.get("scip_symbol")
         if not isinstance(rel_path, str) or not isinstance(scip_symbol, str):
             continue
-        start_line = row.get("occ_start_line")
-        end_line = row.get("occ_end_line")
+        start_line = row.get("occ_start_line", row.get("start_line"))
+        end_line = row.get("occ_end_line", row.get("end_line"))
         if not isinstance(start_line, int):
             continue
         end_line_value = end_line if isinstance(end_line, int) else start_line
@@ -1216,7 +1574,7 @@ def _occurrence_role_resolvers(
             start_line,
             end_line_value,
             _OccurrenceRolePayload(
-                scip_roles=_coerce_int(row.get("scip_roles")),
+                scip_roles=_coerce_int(row.get("scip_roles", row.get("roles"))),
                 is_definition=_coerce_bool(row.get("is_definition")),
                 is_reference=_coerce_bool(row.get("is_reference")),
                 is_import=_coerce_bool(row.get("is_import")),
@@ -1228,17 +1586,16 @@ def _occurrence_role_resolvers(
 
 
 def _occurrence_fallback_rows(
-    joined_frame: pl.DataFrame,
-    span_frame: pl.DataFrame,
+    joined_frame: pa.Table,
+    span_frame: pa.Table,
 ) -> list[dict[str, object]]:
-    if "scip_roles" not in joined_frame.columns:
-        return []
-    missing = joined_frame.filter(pl.col("scip_roles").is_null())
-    if missing.is_empty():
+    if "scip_roles" not in joined_frame.column_names:
         return []
     resolvers = _occurrence_role_resolvers(span_frame)
     rows: list[dict[str, object]] = []
-    for row in missing.iter_rows(named=True):
+    for row in _table_rows(joined_frame):
+        if row.get("scip_roles") is not None:
+            continue
         row_id = row.get("__row_id")
         rel_path = row.get("rel_path")
         scip_symbol = row.get("scip_symbol")
@@ -1277,776 +1634,709 @@ def _occurrence_fallback_rows(
 
 
 def _occurrence_roles(
-    occ_syntax: pl.LazyFrame,
-    occ_span: pl.LazyFrame,
-) -> pl.LazyFrame:
-    span_lf = occ_span.select(
-        "repo",
-        "commit",
-        "rel_path",
-        "scip_symbol",
-        pl.col("roles").alias("scip_roles"),
-        "is_definition",
-        "is_reference",
-        "is_import",
-        "is_write",
-        "is_read",
-        pl.col("start_line").alias("occ_start_line"),
-        pl.col("start_col").alias("occ_start_col"),
-        pl.col("end_line").alias("occ_end_line"),
-        pl.col("end_col").alias("occ_end_col"),
-    ).with_columns(
-        pl.col("occ_start_line").cast(pl.Int64),
-        pl.col("occ_start_col").cast(pl.Int64),
-        pl.col("occ_end_line").cast(pl.Int64),
-        pl.col("occ_end_col").cast(pl.Int64),
-    )
-    syntax_lf = occ_syntax.select(
-        "repo",
-        "commit",
-        "rel_path",
-        "producer",
-        "scip_symbol",
-        "scip_occurrence_id",
-        "occ_start_line",
-        "occ_start_col",
-        "occ_end_line",
-        "occ_end_col",
-        "syntax_node_id",
-        "match_kind",
-        "candidate_count",
-    ).with_columns(
-        pl.col("occ_start_line").cast(pl.Int64),
-        pl.col("occ_start_col").cast(pl.Int64),
-        pl.col("occ_end_line").cast(pl.Int64),
-        pl.col("occ_end_col").cast(pl.Int64),
-    )
-    join_keys = [
-        "repo",
-        "commit",
-        "rel_path",
-        "scip_symbol",
-        "occ_start_line",
-        "occ_start_col",
-        "occ_end_line",
-        "occ_end_col",
-    ]
-    # Contract: span rows are unique per occurrence join key.
-    span_table = arrow_table_from_lazyframe(span_lf)
-    syntax_table = arrow_table_from_lazyframe(syntax_lf)
-    joined_table = arrow_join_tables(
-        syntax_table,
-        span_table,
-        spec=ArrowJoinSpec(on=join_keys, how="left", validate="m:1"),
-    )
-    if joined_table.num_rows == 0:
-        return table_to_frame(joined_table).lazy()
-    joined = table_to_frame(joined_table)
-    span_frame = table_to_frame(span_table)
-    joined = joined.with_row_index(name="__row_id").with_columns(
-        pl.lit(None).cast(pl.Utf8).alias("span_match_kind"),
-        pl.lit(None).cast(pl.Int64).alias("span_candidate_count"),
-    )
-    fallback_rows = _occurrence_fallback_rows(joined, span_frame)
-    if fallback_rows:
-        fallback = pl.DataFrame(fallback_rows)
-        joined = arrow_join_frames(
-            joined,
-            fallback,
-            spec=JoinSpec(on=["__row_id"], how="left"),
+    occ_syntax: pa.Table,
+    occ_span: pa.Table,
+) -> pa.Table:
+    syntax_rows = _table_rows(occ_syntax)
+    if not syntax_rows:
+        return _empty_table([])
+    span_index = _occurrence_span_index(_table_rows(occ_span))
+    resolvers = _occurrence_role_resolvers(occ_span)
+    joined_rows = _occurrence_joined_rows(syntax_rows, span_index)
+    _apply_occurrence_resolvers(joined_rows, resolvers)
+    return pa.Table.from_pylist(joined_rows)
+
+
+def _occurrence_span_index(
+    span_rows: Sequence[Mapping[str, object]],
+) -> dict[OccurrenceSpanKey, Mapping[str, object]]:
+    index: dict[OccurrenceSpanKey, Mapping[str, object]] = {}
+    for row in span_rows:
+        key = (
+            row.get("repo"),
+            row.get("commit"),
+            row.get("rel_path"),
+            row.get("scip_symbol"),
+            row.get("start_line"),
+            row.get("start_col"),
+            row.get("end_line"),
+            row.get("end_col"),
         )
-        joined = joined.with_columns(
-            pl.coalesce([pl.col("scip_roles"), pl.col("scip_roles_fallback")]).alias("scip_roles"),
-            pl.coalesce([pl.col("is_definition"), pl.col("is_definition_fallback")]).alias(
-                "is_definition"
-            ),
-            pl.coalesce([pl.col("is_reference"), pl.col("is_reference_fallback")]).alias(
-                "is_reference"
-            ),
-            pl.coalesce([pl.col("is_import"), pl.col("is_import_fallback")]).alias("is_import"),
-            pl.coalesce([pl.col("is_write"), pl.col("is_write_fallback")]).alias("is_write"),
-            pl.coalesce([pl.col("is_read"), pl.col("is_read_fallback")]).alias("is_read"),
-            pl.coalesce([pl.col("span_match_kind"), pl.col("span_match_kind_fallback")]).alias(
-                "span_match_kind"
-            ),
-            pl.coalesce([pl.col("span_candidate_count"), pl.col("span_candidate_count_fallback")])
-            .alias("span_candidate_count"),
-        ).drop(
-            [
-                "scip_roles_fallback",
-                "is_definition_fallback",
-                "is_reference_fallback",
-                "is_import_fallback",
-                "is_write_fallback",
-                "is_read_fallback",
-                "span_match_kind_fallback",
-                "span_candidate_count_fallback",
-            ]
+        index[key] = row
+    return index
+
+
+def _occurrence_joined_rows(
+    syntax_rows: Sequence[Mapping[str, object]],
+    span_index: Mapping[OccurrenceSpanKey, Mapping[str, object]],
+) -> list[dict[str, object]]:
+    joined_rows: list[dict[str, object]] = []
+    for row in syntax_rows:
+        key = (
+            row.get("repo"),
+            row.get("commit"),
+            row.get("rel_path"),
+            row.get("scip_symbol"),
+            row.get("occ_start_line"),
+            row.get("occ_start_col"),
+            row.get("occ_end_line"),
+            row.get("occ_end_col"),
         )
-    return joined.drop("__row_id").lazy()
+        span_row = span_index.get(key)
+        joined = dict(row)
+        if span_row is not None:
+            joined["scip_roles"] = span_row.get("roles")
+            joined["is_definition"] = span_row.get("is_definition")
+            joined["is_reference"] = span_row.get("is_reference")
+            joined["is_import"] = span_row.get("is_import")
+            joined["is_write"] = span_row.get("is_write")
+            joined["is_read"] = span_row.get("is_read")
+        else:
+            joined["scip_roles"] = None
+            joined["is_definition"] = None
+            joined["is_reference"] = None
+            joined["is_import"] = None
+            joined["is_write"] = None
+            joined["is_read"] = None
+        joined["span_match_kind"] = None
+        joined["span_candidate_count"] = None
+        joined_rows.append(joined)
+    return joined_rows
+
+
+def _apply_occurrence_resolvers(
+    joined_rows: list[dict[str, object]],
+    resolvers: Mapping[tuple[str, str], SpanResolver[_OccurrenceRolePayload]],
+) -> None:
+    for joined in joined_rows:
+        if joined.get("scip_roles") is not None:
+            continue
+        rel_path = joined.get("rel_path")
+        scip_symbol = joined.get("scip_symbol")
+        if not isinstance(rel_path, str) or not isinstance(scip_symbol, str):
+            continue
+        resolver = resolvers.get((rel_path, scip_symbol))
+        start_line = joined.get("occ_start_line")
+        if resolver is None or not isinstance(start_line, int):
+            continue
+        end_line = joined.get("occ_end_line")
+        end_line_value = end_line if isinstance(end_line, int) else start_line
+        match = resolver.resolve(rel_path, start_line, end_line_value)
+        if match.match_kind == "NONE" or match.payload is None:
+            continue
+        payload = match.payload
+        joined["scip_roles"] = payload.scip_roles
+        joined["is_definition"] = payload.is_definition
+        joined["is_reference"] = payload.is_reference
+        joined["is_import"] = payload.is_import
+        joined["is_write"] = payload.is_write
+        joined["is_read"] = payload.is_read
+        joined["span_match_kind"] = match.match_kind
+        joined["span_candidate_count"] = match.candidate_count
 
 
 def _scip_occurrence_edges_to_cpg(
-    occ_syntax: pl.LazyFrame,
-    occ_span: pl.LazyFrame,
-) -> pl.LazyFrame:
+    occ_syntax: pa.Table,
+    occ_span: pa.Table,
+) -> pa.Table:
     joined = _occurrence_roles(occ_syntax, occ_span)
-    syntax_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "producer": pl.col("producer"),
-        "node_id": pl.col("syntax_node_id"),
-    }
-    symbol_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "symbol": pl.col("scip_symbol"),
-    }
-    is_def = pl.col("is_definition").fill_null(value=False)
-    is_import = pl.col("is_import").fill_null(value=False)
-    is_write = pl.col("is_write").fill_null(value=False)
-    is_read = pl.col("is_read").fill_null(value=False)
-    edge_kind = (
-        pl.when(is_def)
-        .then(pl.lit("DEFINES"))
-        .when(is_import)
-        .then(pl.lit("IMPORTS"))
-        .when(is_write)
-        .then(pl.lit("WRITES"))
-        .when(is_read)
-        .then(pl.lit("REFERS_TO"))
-        .otherwise(pl.lit("REFERS_TO"))
-    )
-    extras = _pk_json_expr(
-        {
-            "scip_occurrence_id": pl.col("scip_occurrence_id"),
-            "match_kind": pl.col("match_kind"),
-            "candidate_count": pl.col("candidate_count"),
-            "scip_roles": pl.col("scip_roles"),
-            "span_match_kind": pl.col("span_match_kind"),
-            "span_candidate_count": pl.col("span_candidate_count"),
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(joined):
+        if row.get("syntax_node_id") is None:
+            continue
+        syntax_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "producer": row.get("producer"),
+            "node_id": row.get("syntax_node_id"),
         }
-    )
-    ordinal = _ordinal_expr(
-        "core.scip_occurrence_syntax_xref",
-        {"scip_occurrence_id": pl.col("scip_occurrence_id")},
-    )
-    return (
-        joined.filter(pl.col("syntax_node_id").is_not_null())
-        .with_columns(
-            _pk_expr(SYNTAX_NODES_TABLE_KEY, syntax_pk).alias("src_cpg_node_id"),
-            _pk_expr(SCIP_SYMBOLS_TABLE_KEY, symbol_pk).alias("dst_cpg_node_id"),
-            edge_kind.alias("edge_kind"),
-            pl.lit("SYMBOL").alias("edge_layer"),
-            pl.col("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
+        symbol_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "symbol": row.get("scip_symbol"),
+        }
+        is_def = bool(row.get("is_definition")) if row.get("is_definition") is not None else False
+        is_import = (
+            bool(row.get("is_import")) if row.get("is_import") is not None else False
         )
-        .select(_CPG_EDGE_COLUMNS)
-    )
-
-
-def _scip_symbol_relationships_to_cpg(symbol_rels: pl.LazyFrame) -> pl.LazyFrame:
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "symbol": pl.col("symbol"),
-    }
-    dst_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "symbol": pl.col("related_symbol"),
-    }
-    ordinal = _ordinal_expr(
-        "core.scip_symbol_relationships",
-        {
-            "symbol": pl.col("symbol"),
-            "related_symbol": pl.col("related_symbol"),
-            "relationship_kind": pl.col("relationship_kind"),
-        },
-    )
-    return symbol_rels.with_columns(
-        _pk_expr(SCIP_SYMBOLS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-        _pk_expr(SCIP_SYMBOLS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-        pl.col("relationship_kind").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.lit(None).alias("rel_path"),
-        ordinal.alias("ordinal"),
-        pl.lit(None).cast(pl.Binary).alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
-
-
-def _scip_symbol_goid_edges_to_cpg(symbol_goid: pl.LazyFrame) -> pl.LazyFrame:
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "symbol": pl.col("scip_symbol"),
-    }
-    dst_pk = {"goid_h128": pl.col("goid_h128")}
-    extras = _pk_json_expr(
-        {
-            "def_rel_path": pl.col("def_rel_path"),
-            "def_start_line": pl.col("def_start_line"),
-            "def_start_col": pl.col("def_start_col"),
-            "def_end_line": pl.col("def_end_line"),
-            "def_end_col": pl.col("def_end_col"),
+        is_write = bool(row.get("is_write")) if row.get("is_write") is not None else False
+        is_read = bool(row.get("is_read")) if row.get("is_read") is not None else False
+        edge_kind = "REFERS_TO"
+        if is_def:
+            edge_kind = "DEFINES"
+        elif is_import:
+            edge_kind = "IMPORTS"
+        elif is_write:
+            edge_kind = "WRITES"
+        elif is_read:
+            edge_kind = "REFERS_TO"
+        extras_values = {
+            "scip_occurrence_id": row.get("scip_occurrence_id"),
+            "match_kind": row.get("match_kind"),
+            "candidate_count": row.get("candidate_count"),
+            "scip_roles": row.get("scip_roles"),
+            "span_match_kind": row.get("span_match_kind"),
+            "span_candidate_count": row.get("span_candidate_count"),
         }
-    )
-    ordinal = _ordinal_expr(
-        "core.scip_symbol_goid_xref",
-        {"scip_symbol": pl.col("scip_symbol"), "goid_h128": pl.col("goid_h128")},
-    )
-    return (
-        symbol_goid.filter(pl.col("goid_h128").is_not_null())
-        .with_columns(
-            _pk_expr(SCIP_SYMBOLS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(GOIDS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.lit("RESOLVES_TO").alias("edge_kind"),
-            pl.lit("SYMBOL").alias("edge_layer"),
-            pl.col("def_rel_path").alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
+        ordinal = _ordinal_from_row(
+            "core.scip_occurrence_syntax_xref",
+            {"scip_occurrence_id": row.get("scip_occurrence_id")},
         )
-        .select(_CPG_EDGE_COLUMNS)
-    )
-
-
-def _call_graph_edges_to_cpg(call_edges: pl.LazyFrame) -> pl.LazyFrame:
-    src_pk = {"goid_h128": pl.col("caller_goid_h128")}
-    dst_pk = {"goid_h128": pl.col("callee_goid_h128")}
-    extras = _pk_json_expr(
-        {
-            "resolved_via": pl.col("resolved_via"),
-            "confidence": pl.col("confidence"),
-            "kind": pl.col("kind"),
-        }
-    )
-    ordinal = _ordinal_expr(
-        "graph.call_graph_edges",
-        {
-            "caller_goid_h128": pl.col("caller_goid_h128"),
-            "callee_goid_h128": pl.col("callee_goid_h128"),
-            "callsite_path": pl.col("callsite_path"),
-            "callsite_line": pl.col("callsite_line"),
-            "callsite_col": pl.col("callsite_col"),
-        },
-    )
-    return (
-        call_edges.filter(pl.col("caller_goid_h128").is_not_null())
-        .filter(pl.col("callee_goid_h128").is_not_null())
-        .with_columns(
-            _pk_expr(GOIDS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(GOIDS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.lit("CALLS").alias("edge_kind"),
-            pl.lit("FLOW").alias("edge_layer"),
-            pl.col("callsite_path").alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, syntax_pk),
+                "dst_cpg_node_id": _pk_from_row(SCIP_SYMBOLS_TABLE_KEY, symbol_pk),
+                "edge_kind": edge_kind,
+                "edge_layer": "SYMBOL",
+                "rel_path": row.get("rel_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
         )
-        .select(_CPG_EDGE_COLUMNS)
-    )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
-def _import_graph_edges_to_cpg(import_edges: pl.LazyFrame) -> pl.LazyFrame:
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "module": pl.col("src_module"),
-    }
-    dst_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "module": pl.col("dst_module"),
-    }
-    extras = _pk_json_expr(
-        {
-            "src_fan_out": pl.col("src_fan_out"),
-            "dst_fan_in": pl.col("dst_fan_in"),
-            "cycle_group": pl.col("cycle_group"),
-            "module_layer": pl.col("module_layer"),
+def _scip_symbol_relationships_to_cpg(symbol_rels: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(symbol_rels):
+        src_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "symbol": row.get("symbol"),
         }
-    )
-    ordinal = _ordinal_expr(
-        "graph.import_graph_edges",
-        {
-            "src_module": pl.col("src_module"),
-            "dst_module": pl.col("dst_module"),
-            "cycle_group": pl.col("cycle_group"),
-        },
-    )
-    return import_edges.with_columns(
-        _pk_expr(IMPORT_MODULES_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-        _pk_expr(IMPORT_MODULES_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-        pl.lit("IMPORTS").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.lit(None).alias("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+        dst_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "symbol": row.get("related_symbol"),
+        }
+        ordinal = _ordinal_from_row(
+            "core.scip_symbol_relationships",
+            {
+                "symbol": row.get("symbol"),
+                "related_symbol": row.get("related_symbol"),
+                "relationship_kind": row.get("relationship_kind"),
+            },
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(SCIP_SYMBOLS_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(SCIP_SYMBOLS_TABLE_KEY, dst_pk),
+                "edge_kind": row.get("relationship_kind"),
+                "edge_layer": "SYMBOL",
+                "rel_path": None,
+                "ordinal": ordinal,
+                "extras_json": None,
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
+
+
+def _scip_symbol_goid_edges_to_cpg(symbol_goid: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(symbol_goid):
+        if row.get("goid_h128") is None:
+            continue
+        src_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "symbol": row.get("scip_symbol"),
+        }
+        dst_pk = {"goid_h128": row.get("goid_h128")}
+        extras_values = {
+            "def_rel_path": row.get("def_rel_path"),
+            "def_start_line": row.get("def_start_line"),
+            "def_start_col": row.get("def_start_col"),
+            "def_end_line": row.get("def_end_line"),
+            "def_end_col": row.get("def_end_col"),
+        }
+        ordinal = _ordinal_from_row(
+            "core.scip_symbol_goid_xref",
+            {"scip_symbol": row.get("scip_symbol"), "goid_h128": row.get("goid_h128")},
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(SCIP_SYMBOLS_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(GOIDS_TABLE_KEY, dst_pk),
+                "edge_kind": "RESOLVES_TO",
+                "edge_layer": "SYMBOL",
+                "rel_path": row.get("def_rel_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
+
+
+def _call_graph_edges_to_cpg(call_edges: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(call_edges):
+        if row.get("caller_goid_h128") is None or row.get("callee_goid_h128") is None:
+            continue
+        src_pk = {"goid_h128": row.get("caller_goid_h128")}
+        dst_pk = {"goid_h128": row.get("callee_goid_h128")}
+        extras_values = {
+            "resolved_via": row.get("resolved_via"),
+            "confidence": row.get("confidence"),
+            "kind": row.get("kind"),
+        }
+        ordinal = _ordinal_from_row(
+            "graph.call_graph_edges",
+            {
+                "caller_goid_h128": row.get("caller_goid_h128"),
+                "callee_goid_h128": row.get("callee_goid_h128"),
+                "callsite_path": row.get("callsite_path"),
+                "callsite_line": row.get("callsite_line"),
+                "callsite_col": row.get("callsite_col"),
+            },
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(GOIDS_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(GOIDS_TABLE_KEY, dst_pk),
+                "rel_path": row.get("callsite_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    table = _append_constant_columns(table, {"edge_kind": "CALLS", "edge_layer": "FLOW"})
+    return _select_edge_columns(table)
+
+
+def _import_graph_edges_to_cpg(import_edges: pa.Table) -> pa.Table:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(import_edges):
+        src_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "module": row.get("src_module"),
+        }
+        dst_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "module": row.get("dst_module"),
+        }
+        extras_values = {
+            "src_fan_out": row.get("src_fan_out"),
+            "dst_fan_in": row.get("dst_fan_in"),
+            "cycle_group": row.get("cycle_group"),
+            "module_layer": row.get("module_layer"),
+        }
+        ordinal = _ordinal_from_row(
+            "graph.import_graph_edges",
+            {
+                "src_module": row.get("src_module"),
+                "dst_module": row.get("dst_module"),
+                "cycle_group": row.get("cycle_group"),
+            },
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(IMPORT_MODULES_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(IMPORT_MODULES_TABLE_KEY, dst_pk),
+                "rel_path": None,
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    table = _append_constant_columns(table, {"edge_kind": "IMPORTS", "edge_layer": "SYMBOL"})
+    return _select_edge_columns(table)
 
 
 def _cfg_edges_to_cpg(
-    cfg_edges: pl.LazyFrame,
-    cfg_blocks: pl.LazyFrame,
-    goids: pl.LazyFrame,
-) -> pl.LazyFrame:
-    goid_ctx = goids.select(
-        pl.col("goid_h128").alias("function_goid_h128"),
-        "repo",
-        "commit",
-    )
-    blocks = arrow_join_lazyframes(
-        cfg_blocks,
-        goid_ctx,
-        spec=JoinSpec(on=["function_goid_h128"], how="left"),
-    ).select(
-        "function_goid_h128",
-        "block_id",
-        "block_idx",
-        "repo",
-        "commit",
-        pl.col("file_path").alias("rel_path"),
-    )
-    src_blocks = blocks.rename(
-        {"block_id": "src_block_id", "block_idx": "src_block_idx", "rel_path": "src_path"}
-    )
-    dst_blocks = blocks.rename(
-        {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
-    )
-    joined = arrow_join_lazyframes(
-        cfg_edges,
-        src_blocks,
-        spec=JoinSpec(on=["function_goid_h128", "src_block_id"], how="left"),
-    ).pipe(
-        arrow_join_lazyframes,
-        dst_blocks,
-        spec=JoinSpec(on=["function_goid_h128", "dst_block_id"], how="left"),
-    )
-    src_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("src_block_idx"),
-    }
-    dst_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("dst_block_idx"),
-    }
-    extras = _pk_json_expr({"cfg_edge_kind": pl.col("edge_kind")})
-    ordinal = _ordinal_expr(
-        "graph.cfg_edges",
-        {
-            "function_goid_h128": pl.col("function_goid_h128"),
-            "src_block_id": pl.col("src_block_id"),
-            "dst_block_id": pl.col("dst_block_id"),
-            "edge_kind": pl.col("edge_kind"),
-        },
-    )
-    rel_path = pl.coalesce([pl.col("src_path"), pl.col("dst_path")])
-    return (
-        joined.filter(pl.col("src_block_idx").is_not_null())
-        .filter(pl.col("dst_block_idx").is_not_null())
-        .with_columns(
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.lit("CFG").alias("edge_kind"),
-            pl.lit("FLOW").alias("edge_layer"),
-            rel_path.alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
+    cfg_edges: pa.Table,
+    cfg_blocks: pa.Table,
+    goids: pa.Table,
+) -> pa.Table:
+    block_index = _cfg_block_index(cfg_blocks, goids)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(cfg_edges):
+        function_goid = row.get("function_goid_h128")
+        src_block_id = row.get("src_block_id")
+        dst_block_id = row.get("dst_block_id")
+        if function_goid is None or src_block_id is None or dst_block_id is None:
+            continue
+        src_info = block_index.get((function_goid, src_block_id))
+        dst_info = block_index.get((function_goid, dst_block_id))
+        if src_info is None or dst_info is None:
+            continue
+        src_idx = src_info.get("block_idx")
+        dst_idx = dst_info.get("block_idx")
+        if src_idx is None or dst_idx is None:
+            continue
+        src_pk = {"function_goid_h128": function_goid, "block_idx": src_idx}
+        dst_pk = {"function_goid_h128": function_goid, "block_idx": dst_idx}
+        extras_values = {"cfg_edge_kind": row.get("edge_kind")}
+        ordinal = _ordinal_from_row(
+            "graph.cfg_edges",
+            {
+                "function_goid_h128": function_goid,
+                "src_block_id": src_block_id,
+                "dst_block_id": dst_block_id,
+                "edge_kind": row.get("edge_kind"),
+            },
         )
-        .select(_CPG_EDGE_COLUMNS)
-    )
+        rel_path = src_info.get("rel_path") or dst_info.get("rel_path")
+        rows.append(
+            {
+                "repo": src_info.get("repo") or dst_info.get("repo"),
+                "commit": src_info.get("commit") or dst_info.get("commit"),
+                "src_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, dst_pk),
+                "edge_kind": "CFG",
+                "edge_layer": "FLOW",
+                "rel_path": rel_path,
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _dfg_edges_to_cpg(
-    dfg_edges: pl.LazyFrame,
-    cfg_blocks: pl.LazyFrame,
-    goids: pl.LazyFrame,
-) -> pl.LazyFrame:
-    goid_ctx = goids.select(
-        pl.col("goid_h128").alias("function_goid_h128"),
-        "repo",
-        "commit",
-    )
-    blocks = arrow_join_lazyframes(
-        cfg_blocks,
-        goid_ctx,
-        spec=JoinSpec(on=["function_goid_h128"], how="left"),
-    ).select(
-        "function_goid_h128",
-        "block_id",
-        "block_idx",
-        "repo",
-        "commit",
-        pl.col("file_path").alias("rel_path"),
-    )
-    src_blocks = blocks.rename(
-        {"block_id": "src_block_id", "block_idx": "src_block_idx", "rel_path": "src_path"}
-    )
-    dst_blocks = blocks.rename(
-        {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
-    )
-    joined = arrow_join_lazyframes(
-        dfg_edges,
-        src_blocks,
-        spec=JoinSpec(on=["function_goid_h128", "src_block_id"], how="left"),
-    ).pipe(
-        arrow_join_lazyframes,
-        dst_blocks,
-        spec=JoinSpec(on=["function_goid_h128", "dst_block_id"], how="left"),
-    )
-    src_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("src_block_idx"),
+    dfg_edges: pa.Table,
+    cfg_blocks: pa.Table,
+    goids: pa.Table,
+) -> pa.Table:
+    block_index = _cfg_block_index(cfg_blocks, goids)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(dfg_edges):
+        edge_row = _dfg_edge_row(row, block_index)
+        if edge_row is not None:
+            rows.append(edge_row)
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
+
+
+def _dfg_edge_row(
+    row: Mapping[str, object],
+    block_index: Mapping[tuple[object, object], Mapping[str, object]],
+) -> dict[str, object] | None:
+    function_goid = row.get("function_goid_h128")
+    src_block_id = row.get("src_block_id")
+    dst_block_id = row.get("dst_block_id")
+    if function_goid is None or src_block_id is None or dst_block_id is None:
+        return None
+    src_info = block_index.get((function_goid, src_block_id))
+    dst_info = block_index.get((function_goid, dst_block_id))
+    if src_info is None or dst_info is None:
+        return None
+    src_idx = src_info.get("block_idx")
+    dst_idx = dst_info.get("block_idx")
+    if src_idx is None or dst_idx is None:
+        return None
+    src_pk = {"function_goid_h128": function_goid, "block_idx": src_idx}
+    dst_pk = {"function_goid_h128": function_goid, "block_idx": dst_idx}
+    extras_values = {
+        "src_var": row.get("src_var"),
+        "dst_var": row.get("dst_var"),
+        "edge_kind": row.get("edge_kind"),
+        "via_phi": row.get("via_phi"),
+        "use_kind": row.get("use_kind"),
     }
-    dst_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("dst_block_idx"),
-    }
-    extras = _pk_json_expr(
-        {
-            "src_var": pl.col("src_var"),
-            "dst_var": pl.col("dst_var"),
-            "edge_kind": pl.col("edge_kind"),
-            "via_phi": pl.col("via_phi"),
-            "use_kind": pl.col("use_kind"),
-        }
-    )
-    ordinal = _ordinal_expr(
+    ordinal = _ordinal_from_row(
         "graph.dfg_edges",
         {
-            "function_goid_h128": pl.col("function_goid_h128"),
-            "src_block_id": pl.col("src_block_id"),
-            "dst_block_id": pl.col("dst_block_id"),
-            "src_var": pl.col("src_var"),
-            "dst_var": pl.col("dst_var"),
+            "function_goid_h128": function_goid,
+            "src_block_id": src_block_id,
+            "dst_block_id": dst_block_id,
+            "src_var": row.get("src_var"),
+            "dst_var": row.get("dst_var"),
         },
     )
-    rel_path = pl.coalesce([pl.col("src_path"), pl.col("dst_path")])
-    return (
-        joined.filter(pl.col("src_block_idx").is_not_null())
-        .filter(pl.col("dst_block_idx").is_not_null())
-        .with_columns(
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.lit("DFG").alias("edge_kind"),
-            pl.lit("FLOW").alias("edge_layer"),
-            rel_path.alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
-        )
-        .select(_CPG_EDGE_COLUMNS)
-    )
+    rel_path = src_info.get("rel_path") or dst_info.get("rel_path")
+    return {
+        "repo": src_info.get("repo") or dst_info.get("repo"),
+        "commit": src_info.get("commit") or dst_info.get("commit"),
+        "src_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, src_pk),
+        "dst_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, dst_pk),
+        "edge_kind": "DFG",
+        "edge_layer": "FLOW",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _pk_json_from_row(extras_values),
+    }
 
 
 def _cdg_edges_to_cpg(
-    cdg_edges: pl.LazyFrame,
-    cfg_blocks: pl.LazyFrame,
-    goids: pl.LazyFrame,
-) -> pl.LazyFrame:
-    goid_ctx = goids.select(
-        pl.col("goid_h128").alias("function_goid_h128"),
-        "repo",
-        "commit",
-    )
-    blocks = arrow_join_lazyframes(
-        cfg_blocks,
-        goid_ctx,
-        spec=JoinSpec(on=["function_goid_h128"], how="left"),
-    ).select(
-        "function_goid_h128",
-        "block_id",
-        "block_idx",
-        "repo",
-        "commit",
-        pl.col("file_path").alias("rel_path"),
-    )
-    src_blocks = blocks.rename(
-        {"block_id": "src_block_id", "block_idx": "src_block_idx", "rel_path": "src_path"}
-    )
-    dst_blocks = blocks.rename(
-        {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
-    )
-    joined = arrow_join_lazyframes(
-        cdg_edges,
-        src_blocks,
-        spec=JoinSpec(on=["function_goid_h128", "src_block_id"], how="left"),
-    ).pipe(
-        arrow_join_lazyframes,
-        dst_blocks,
-        spec=JoinSpec(on=["function_goid_h128", "dst_block_id"], how="left"),
-    )
-    src_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("src_block_idx"),
+    cdg_edges: pa.Table,
+    cfg_blocks: pa.Table,
+    goids: pa.Table,
+) -> pa.Table:
+    block_index = _cfg_block_index(cfg_blocks, goids)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(cdg_edges):
+        edge_row = _cdg_edge_row(row, block_index)
+        if edge_row is not None:
+            rows.append(edge_row)
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
+
+
+def _cdg_edge_row(
+    row: Mapping[str, object],
+    block_index: Mapping[tuple[object, object], Mapping[str, object]],
+) -> dict[str, object] | None:
+    function_goid = row.get("function_goid_h128")
+    src_block_id = row.get("src_block_id")
+    dst_block_id = row.get("dst_block_id")
+    if function_goid is None or src_block_id is None or dst_block_id is None:
+        return None
+    src_info = block_index.get((function_goid, src_block_id))
+    dst_info = block_index.get((function_goid, dst_block_id))
+    if src_info is None or dst_info is None:
+        return None
+    src_idx = src_info.get("block_idx")
+    dst_idx = dst_info.get("block_idx")
+    if src_idx is None or dst_idx is None:
+        return None
+    src_pk = {"function_goid_h128": function_goid, "block_idx": src_idx}
+    dst_pk = {"function_goid_h128": function_goid, "block_idx": dst_idx}
+    extras_values = {
+        "via_succ_block_id": row.get("via_succ_block_id"),
+        "via_edge_kind": row.get("via_edge_kind"),
     }
-    dst_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("dst_block_idx"),
-    }
-    extras = _pk_json_expr(
-        {
-            "via_succ_block_id": pl.col("via_succ_block_id"),
-            "via_edge_kind": pl.col("via_edge_kind"),
-        }
-    )
-    ordinal = _ordinal_expr(
+    ordinal = _ordinal_from_row(
         "graph.cdg_edges",
         {
-            "function_goid_h128": pl.col("function_goid_h128"),
-            "src_block_id": pl.col("src_block_id"),
-            "dst_block_id": pl.col("dst_block_id"),
-            "via_succ_block_id": pl.col("via_succ_block_id"),
+            "function_goid_h128": function_goid,
+            "src_block_id": src_block_id,
+            "dst_block_id": dst_block_id,
+            "via_succ_block_id": row.get("via_succ_block_id"),
         },
     )
-    rel_path = pl.coalesce([pl.col("src_path"), pl.col("dst_path")])
-    return (
-        joined.filter(pl.col("src_block_idx").is_not_null())
-        .filter(pl.col("dst_block_idx").is_not_null())
-        .with_columns(
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.col("edge_kind").fill_null("CDG").alias("edge_kind"),
-            pl.lit("FLOW").alias("edge_layer"),
-            rel_path.alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
-        )
-        .select(_CPG_EDGE_COLUMNS)
-    )
+    rel_path = src_info.get("rel_path") or dst_info.get("rel_path")
+    edge_kind = row.get("edge_kind") or "CDG"
+    return {
+        "repo": src_info.get("repo") or dst_info.get("repo"),
+        "commit": src_info.get("commit") or dst_info.get("commit"),
+        "src_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, src_pk),
+        "dst_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, dst_pk),
+        "edge_kind": edge_kind,
+        "edge_layer": "FLOW",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _pk_json_from_row(extras_values),
+    }
 
 
 def _call_wiring_calls_to_cpg(
-    call_edges: pl.LazyFrame,
-    cfg_blocks: pl.LazyFrame,
-    syntax_nodes: pl.LazyFrame,
-) -> pl.LazyFrame:
-    syntax_keys = _syntax_node_keys(syntax_nodes).rename(
-        {
-            "rel_path": "call_rel_path",
-            "producer": "call_producer",
-            "node_id": "call_node_id",
+    call_edges: pa.Table,
+    cfg_blocks: pa.Table,
+    syntax_nodes: pa.Table,
+) -> pa.Table:
+    syntax_index = _syntax_node_index(syntax_nodes)
+    block_index = _block_id_index(cfg_blocks)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(call_edges):
+        call_node_id = row.get("call_node_id")
+        if call_node_id is None:
+            continue
+        syntax_info = syntax_index.get((row.get("repo"), row.get("commit"), call_node_id))
+        if syntax_info is None:
+            continue
+        block_info = block_index.get(row.get("callee_entry_block_id"))
+        if block_info is None:
+            continue
+        block_idx = block_info.get("block_idx")
+        function_goid = block_info.get("function_goid_h128")
+        if block_idx is None or function_goid is None:
+            continue
+        src_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": syntax_info.get("rel_path"),
+            "producer": syntax_info.get("producer"),
+            "node_id": call_node_id,
         }
-    )
-    blocks = cfg_blocks.select("function_goid_h128", "block_id", "block_idx")
-    joined = (
-        arrow_join_lazyframes(
-            call_edges,
-            syntax_keys,
-            spec=JoinSpec(on=["repo", "commit", "call_node_id"], how="left"),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            blocks,
-            spec=JoinSpec(
-                left_on=["callee_entry_block_id"],
-                right_on=["block_id"],
-                how="left",
-            ),
-        )
-        .drop(["block_id"])
-    )
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("call_rel_path"),
-        "producer": pl.col("call_producer"),
-        "node_id": pl.col("call_node_id"),
-    }
-    dst_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("block_idx"),
-    }
-    call_extras = pl.col("extras_json").map_elements(decode_payload, return_dtype=pl.Object)
-    extras = _pk_json_expr(
-        {
-            "call_id": pl.col("call_id"),
-            "confidence": pl.col("confidence"),
-            "call_extras": call_extras,
+        dst_pk = {
+            "function_goid_h128": function_goid,
+            "block_idx": block_idx,
         }
-    )
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_calls",
-        {"call_id": pl.col("call_id"), "callee_entry_block_id": pl.col("callee_entry_block_id")},
-    )
-    return (
-        joined.filter(pl.col("call_node_id").is_not_null())
-        .filter(pl.col("block_idx").is_not_null())
-        .with_columns(
-            _pk_expr(SYNTAX_NODES_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.col("edge_kind").fill_null("CALLS").alias("edge_kind"),
-            pl.lit("FLOW").alias("edge_layer"),
-            pl.col("call_rel_path").alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
+        extras_values = {
+            "call_id": row.get("call_id"),
+            "confidence": row.get("confidence"),
+            "call_extras": decode_payload(row.get("extras_json")),
+        }
+        ordinal = _ordinal_from_row(
+            "graph.cpg_edges_calls",
+            {
+                "call_id": row.get("call_id"),
+                "callee_entry_block_id": row.get("callee_entry_block_id"),
+            },
         )
-        .select(_CPG_EDGE_COLUMNS)
-    )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, dst_pk),
+                "edge_kind": row.get("edge_kind") or "CALLS",
+                "edge_layer": "FLOW",
+                "rel_path": syntax_info.get("rel_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _call_wiring_arg_to_param_to_cpg(
-    arg_edges: pl.LazyFrame,
-    syntax_nodes: pl.LazyFrame,
-) -> pl.LazyFrame:
-    syntax_keys = _syntax_node_keys(syntax_nodes)
-    src_keys = syntax_keys.rename(
-        {
-            "rel_path": "src_rel_path",
-            "producer": "src_producer",
-            "node_id": "src_arg_node_id",
+    arg_edges: pa.Table,
+    syntax_nodes: pa.Table,
+) -> pa.Table:
+    syntax_index = _syntax_node_index(syntax_nodes)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(arg_edges):
+        src_arg_node_id = row.get("src_arg_node_id")
+        dst_param_node_id = row.get("dst_param_node_id")
+        if src_arg_node_id is None or dst_param_node_id is None:
+            continue
+        src_info = syntax_index.get((row.get("repo"), row.get("commit"), src_arg_node_id))
+        dst_info = syntax_index.get((row.get("repo"), row.get("commit"), dst_param_node_id))
+        if src_info is None or dst_info is None:
+            continue
+        src_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": src_info.get("rel_path"),
+            "producer": src_info.get("producer"),
+            "node_id": src_arg_node_id,
         }
-    )
-    dst_keys = syntax_keys.rename(
-        {
-            "rel_path": "dst_rel_path",
-            "producer": "dst_producer",
-            "node_id": "dst_param_node_id",
+        dst_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": dst_info.get("rel_path"),
+            "producer": dst_info.get("producer"),
+            "node_id": dst_param_node_id,
         }
-    )
-    joined = arrow_join_lazyframes(
-        arg_edges,
-        src_keys,
-        spec=JoinSpec(on=["repo", "commit", "src_arg_node_id"], how="left"),
-    ).pipe(
-        arrow_join_lazyframes,
-        dst_keys,
-        spec=JoinSpec(on=["repo", "commit", "dst_param_node_id"], how="left"),
-    )
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("src_rel_path"),
-        "producer": pl.col("src_producer"),
-        "node_id": pl.col("src_arg_node_id"),
-    }
-    dst_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("dst_rel_path"),
-        "producer": pl.col("dst_producer"),
-        "node_id": pl.col("dst_param_node_id"),
-    }
-    extras = _pk_json_expr(
-        {
-            "call_id": pl.col("call_id"),
-            "arg_ordinal": pl.col("arg_ordinal"),
-            "param_ordinal": pl.col("param_ordinal"),
-            "arg_name": pl.col("arg_name"),
-            "param_name": pl.col("param_name"),
-            "arg_slot": pl.col("arg_slot"),
-            "arg_role": pl.col("arg_role"),
-            "arg_is_implicit": pl.col("arg_is_implicit"),
-            "call_kind": pl.col("call_kind"),
-            "augop": pl.col("augop"),
-            "confidence": pl.col("confidence"),
+        extras_values = {
+            "call_id": row.get("call_id"),
+            "arg_ordinal": row.get("arg_ordinal"),
+            "param_ordinal": row.get("param_ordinal"),
+            "arg_name": row.get("arg_name"),
+            "param_name": row.get("param_name"),
+            "arg_slot": row.get("arg_slot"),
+            "arg_role": row.get("arg_role"),
+            "arg_is_implicit": row.get("arg_is_implicit"),
+            "call_kind": row.get("call_kind"),
+            "augop": row.get("augop"),
+            "confidence": row.get("confidence"),
         }
-    )
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_arg_to_param",
-        {
-            "call_id": pl.col("call_id"),
-            "arg_ordinal": pl.col("arg_ordinal"),
-            "param_ordinal": pl.col("param_ordinal"),
-            "src_arg_node_id": pl.col("src_arg_node_id"),
-            "dst_param_node_id": pl.col("dst_param_node_id"),
-        },
-    )
-    return (
-        joined.filter(pl.col("src_arg_node_id").is_not_null())
-        .filter(pl.col("dst_param_node_id").is_not_null())
-        .with_columns(
-            _pk_expr(SYNTAX_NODES_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(SYNTAX_NODES_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.col("edge_kind").fill_null("ARG_TO_PARAM").alias("edge_kind"),
-            pl.lit("FLOW").alias("edge_layer"),
-            pl.col("src_rel_path").alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
+        ordinal = _ordinal_from_row(
+            "graph.cpg_edges_arg_to_param",
+            {
+                "call_id": row.get("call_id"),
+                "arg_ordinal": row.get("arg_ordinal"),
+                "param_ordinal": row.get("param_ordinal"),
+                "src_arg_node_id": src_arg_node_id,
+                "dst_param_node_id": dst_param_node_id,
+            },
         )
-        .select(_CPG_EDGE_COLUMNS)
-    )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, dst_pk),
+                "edge_kind": row.get("edge_kind") or "ARG_TO_PARAM",
+                "edge_layer": "FLOW",
+                "rel_path": src_info.get("rel_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _call_wiring_ret_to_call_to_cpg(
-    ret_edges: pl.LazyFrame,
-    cfg_blocks: pl.LazyFrame,
-    syntax_nodes: pl.LazyFrame,
-) -> pl.LazyFrame:
-    syntax_keys = _syntax_node_keys(syntax_nodes).rename(
-        {
-            "rel_path": "call_rel_path",
-            "producer": "call_producer",
-            "node_id": "call_node_id",
+    ret_edges: pa.Table,
+    cfg_blocks: pa.Table,
+    syntax_nodes: pa.Table,
+) -> pa.Table:
+    syntax_index = _syntax_node_index(syntax_nodes)
+    block_index = _block_id_index(cfg_blocks)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(ret_edges):
+        call_node_id = row.get("call_node_id")
+        if call_node_id is None:
+            continue
+        syntax_info = syntax_index.get((row.get("repo"), row.get("commit"), call_node_id))
+        if syntax_info is None:
+            continue
+        block_info = block_index.get(row.get("exit_block_id"))
+        if block_info is None:
+            continue
+        function_goid = block_info.get("function_goid_h128")
+        block_idx = block_info.get("block_idx")
+        if function_goid is None or block_idx is None:
+            continue
+        src_pk = {
+            "function_goid_h128": function_goid,
+            "block_idx": block_idx,
         }
-    )
-    blocks = cfg_blocks.select("function_goid_h128", "block_id", "block_idx")
-    joined = (
-        arrow_join_lazyframes(
-            ret_edges,
-            syntax_keys,
-            spec=JoinSpec(on=["repo", "commit", "call_node_id"], how="left"),
-        )
-        .pipe(
-            arrow_join_lazyframes,
-            blocks,
-            spec=JoinSpec(
-                left_on=["exit_block_id"],
-                right_on=["block_id"],
-                how="left",
-            ),
-        )
-        .drop(["block_id"])
-    )
-    src_pk = {
-        "function_goid_h128": pl.col("function_goid_h128"),
-        "block_idx": pl.col("block_idx"),
-    }
-    dst_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("call_rel_path"),
-        "producer": pl.col("call_producer"),
-        "node_id": pl.col("call_node_id"),
-    }
-    extras = _pk_json_expr(
-        {
-            "call_id": pl.col("call_id"),
-            "confidence": pl.col("confidence"),
-            "target_role": pl.col("target_role"),
-            "call_kind": pl.col("call_kind"),
-            "origin": pl.col("origin"),
-            "summary": pl.col("extras_json"),
+        dst_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": syntax_info.get("rel_path"),
+            "producer": syntax_info.get("producer"),
+            "node_id": call_node_id,
         }
-    )
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_ret_to_call",
-        {"call_id": pl.col("call_id"), "exit_block_id": pl.col("exit_block_id")},
-    )
-    return (
-        joined.filter(pl.col("call_node_id").is_not_null())
-        .filter(pl.col("block_idx").is_not_null())
-        .with_columns(
-            _pk_expr(CFG_BLOCKS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-            _pk_expr(SYNTAX_NODES_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-            pl.col("edge_kind").fill_null("RET_TO_CALL").alias("edge_kind"),
-            pl.lit("FLOW").alias("edge_layer"),
-            pl.col("call_rel_path").alias("rel_path"),
-            ordinal.alias("ordinal"),
-            extras.alias("extras_json"),
+        extras_values = {
+            "call_id": row.get("call_id"),
+            "confidence": row.get("confidence"),
+            "target_role": row.get("target_role"),
+            "call_kind": row.get("call_kind"),
+            "origin": row.get("origin"),
+            "summary": row.get("extras_json"),
+        }
+        ordinal = _ordinal_from_row(
+            "graph.cpg_edges_ret_to_call",
+            {"call_id": row.get("call_id"), "exit_block_id": row.get("exit_block_id")},
         )
-        .select(_CPG_EDGE_COLUMNS)
-    )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(CFG_BLOCKS_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(SYNTAX_NODES_TABLE_KEY, dst_pk),
+                "edge_kind": row.get("edge_kind") or "RET_TO_CALL",
+                "edge_layer": "FLOW",
+                "rel_path": syntax_info.get("rel_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _collect_rows(
-    frame: pl.LazyFrame,
+    frame: pa.Table,
     *,
     columns: Sequence[str],
 ) -> list[dict[str, object]]:
-    if not set(columns).issubset(frame.columns):
+    if not set(columns).issubset(frame.column_names):
         return []
-    return frame.select(list(columns)).collect().to_dicts()
+    return [{column: row.get(column) for column in columns} for row in _table_rows(frame)]
 
 
 def _coerce_str(value: object) -> str | None:
@@ -2078,6 +2368,7 @@ def _coerce_float(value: object) -> float | None:
 
 
 _VAR_KEY_LEN = 3
+_QUALPATH_SUFFIX_RE = re.compile(r"#\d+")
 
 
 def _coerce_var_key(value: object) -> tuple[str, str, str] | None:
@@ -2087,6 +2378,14 @@ def _coerce_var_key(value: object) -> tuple[str, str, str] | None:
     if isinstance(first, str) and isinstance(second, str) and isinstance(third, str):
         return first, second, third
     return None
+
+
+def _scope_qualname_from_qualpath(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    cleaned = value.replace("::", ".")
+    cleaned = _QUALPATH_SUFFIX_RE.sub("", cleaned)
+    return cleaned or None
 
 
 def _expected_scope_type(kind: str | None) -> str | None:
@@ -2575,11 +2874,9 @@ def _reaches_edge_row(
     }
 
 
-def _edge_rows_to_lazyframe(rows: list[dict[str, object]]) -> pl.LazyFrame:
-    if not rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    frame = pl.DataFrame(rows).lazy()
-    return _select_edge_columns(frame)
+def _edge_rows_to_lazyframe(rows: Sequence[Mapping[str, object]]) -> pa.Table:
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _ast_cpg_id(node_hash: str) -> int:
@@ -2841,7 +3138,9 @@ def _scopes_by_path(scope_rows: list[dict[str, object]]) -> dict[str, list[dict[
     return by_path
 
 
-def _ast_nodes_by_path(ast_rows: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+def _ast_nodes_by_path(
+    ast_rows: Sequence[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
     by_path: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in ast_rows:
         rel_path = _coerce_str(row.get("path"))
@@ -2849,6 +3148,56 @@ def _ast_nodes_by_path(ast_rows: list[dict[str, object]]) -> dict[str, list[dict
             continue
         by_path[rel_path].append(row)
     return by_path
+
+
+def _normalize_path(value: str) -> str:
+    return value.replace("\\", "/")
+
+
+def _best_source_path(file_name: str, ast_paths: Sequence[str]) -> str | None:
+    normalized = _normalize_path(file_name)
+    best_match: str | None = None
+    for path in ast_paths:
+        if normalized.endswith(path) and (best_match is None or len(path) > len(best_match)):
+            best_match = path
+    return best_match
+
+
+def _ast_span_for_source(node: Mapping[str, object]) -> tuple[int | None, int | None]:
+    decorator_start = _coerce_int(node.get("decorator_start_line"))
+    start_line = decorator_start if decorator_start is not None else _coerce_int(node.get("lineno"))
+    end_line = _coerce_int(node.get("end_lineno")) or start_line
+    return start_line, end_line
+
+
+def _select_ast_anchor_for_source(
+    nodes: list[dict[str, object]],
+    *,
+    source_start: int | None,
+    source_end: int | None,
+) -> tuple[dict[str, object], float, str] | None:
+    if source_start is None or source_end is None:
+        return None
+    candidates: list[tuple[int, dict[str, object]]] = []
+    for node in nodes:
+        start_line, end_line = _ast_span_for_source(node)
+        if start_line is None or end_line is None:
+            continue
+        if source_start < start_line or source_end > end_line:
+            continue
+        span_len = end_line - start_line
+        candidates.append((span_len, node))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    node = candidates[0][1]
+    start_line, end_line = _ast_span_for_source(node)
+    if start_line is None or end_line is None:
+        return None
+    confidence = 0.9
+    if source_start == start_line and source_end == end_line:
+        confidence = 0.95
+    return node, confidence, "SOURCE_SPAN"
 
 
 def _ast_anchor_candidates_by_span(
@@ -2921,11 +3270,11 @@ def _select_ast_anchor(
 
 
 def _ast_binding_edges_to_cpg(
-    ast_nodes: pl.LazyFrame,
-    scopes: pl.LazyFrame,
-    bindings: pl.LazyFrame,
-    resolution_edges: pl.LazyFrame,
-) -> pl.LazyFrame:
+    ast_nodes: pa.Table,
+    scopes: pa.Table,
+    bindings: pa.Table,
+    resolution_edges: pa.Table,
+) -> pa.Table:
     ast_rows = _collect_rows(
         ast_nodes,
         columns=(
@@ -2943,7 +3292,7 @@ def _ast_binding_edges_to_cpg(
         ),
     )
     if not ast_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     scope_rows = _collect_rows(
         scopes,
         columns=(
@@ -3033,9 +3382,9 @@ def _bytecode_ast_anchor_edge_row(
 
 
 def _py_bc_instruction_ast_edges_to_cpg(
-    instructions: pl.LazyFrame,
-    ast_nodes: pl.LazyFrame,
-) -> pl.LazyFrame:
+    instructions: pa.Table,
+    ast_nodes: pa.Table,
+) -> pa.Table:
     instr_rows = _collect_rows(
         instructions,
         columns=(
@@ -3054,7 +3403,7 @@ def _py_bc_instruction_ast_edges_to_cpg(
         columns=("path", "hash", "node_type", "start_byte", "end_byte", "lineno", "end_lineno"),
     )
     if not instr_rows or not ast_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     ast_by_path = _ast_nodes_by_path(ast_rows)
     edges: list[dict[str, object]] = []
     for instr in instr_rows:
@@ -3178,9 +3527,9 @@ def _bytecode_callsite_edge_row(
 
 
 def _py_bc_callsite_edges_to_cpg(
-    instructions: pl.LazyFrame,
-    syntax_calls: pl.LazyFrame,
-) -> pl.LazyFrame:
+    instructions: pa.Table,
+    syntax_calls: pa.Table,
+) -> pa.Table:
     instr_rows = _collect_rows(
         instructions,
         columns=(
@@ -3213,7 +3562,7 @@ def _py_bc_callsite_edges_to_cpg(
         ),
     )
     if not instr_rows or not call_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     calls_by_path = _ast_nodes_by_path(call_rows)
     edges: list[dict[str, object]] = []
     for instr in instr_rows:
@@ -3439,9 +3788,9 @@ class _CallsiteSymbolInputs:
 
 
 def _callsite_symbol_inputs(
-    instructions: pl.LazyFrame,
-    syntax_calls: pl.LazyFrame,
-    scip_symbols: pl.LazyFrame,
+    instructions: pa.Table,
+    syntax_calls: pa.Table,
+    scip_symbols: pa.Table,
 ) -> _CallsiteSymbolInputs | None:
     instr_rows = _collect_rows(
         instructions,
@@ -3491,13 +3840,13 @@ def _callsite_symbol_inputs(
 
 
 def _py_bc_callsite_symbol_edges_to_cpg(
-    instructions: pl.LazyFrame,
-    syntax_calls: pl.LazyFrame,
-    scip_symbols: pl.LazyFrame,
-) -> pl.LazyFrame:
+    instructions: pa.Table,
+    syntax_calls: pa.Table,
+    scip_symbols: pa.Table,
+) -> pa.Table:
     inputs = _callsite_symbol_inputs(instructions, syntax_calls, scip_symbols)
     if inputs is None:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     edges: list[dict[str, object]] = []
     for instr in inputs.instr_rows:
         edges.extend(
@@ -3640,10 +3989,10 @@ def _memory_edge_for_event(
 
 
 def _py_bc_memory_edges_to_cpg(
-    defuse_events: pl.LazyFrame,
-    instructions: pl.LazyFrame,
-    ast_nodes: pl.LazyFrame,
-) -> pl.LazyFrame:
+    defuse_events: pa.Table,
+    instructions: pa.Table,
+    ast_nodes: pa.Table,
+) -> pa.Table:
     event_rows = _collect_rows(
         defuse_events,
         columns=(
@@ -3667,7 +4016,7 @@ def _py_bc_memory_edges_to_cpg(
         columns=("path", "hash", "node_type", "start_byte", "end_byte", "lineno", "end_lineno"),
     )
     if not event_rows or not instr_rows or not ast_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     ast_by_path = _ast_nodes_by_path(ast_rows)
     instr_by_key = _instr_index(instr_rows)
     anchor_cache: dict[tuple[str, str], _AstAnchorMatch | None] = {}
@@ -4051,9 +4400,9 @@ def _stack_edges_for_block(
 
 
 def _py_bc_stack_edges_to_cpg(
-    instructions: pl.LazyFrame,
-    blocks: pl.LazyFrame,
-) -> pl.LazyFrame:
+    instructions: pa.Table,
+    blocks: pa.Table,
+) -> pa.Table:
     instr_rows = _collect_rows(
         instructions,
         columns=(
@@ -4073,7 +4422,7 @@ def _py_bc_stack_edges_to_cpg(
         columns=("code_unit_id", "block_id", "first_instr_index", "last_instr_index"),
     )
     if not instr_rows or not block_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     instrs_by_unit = _group_stack_instructions(instr_rows)
     blocks_by_unit = _group_blocks(block_rows)
     edges: list[dict[str, object]] = []
@@ -4086,7 +4435,7 @@ def _py_bc_stack_edges_to_cpg(
     return _edge_rows_to_lazyframe(edges)
 
 
-def _py_sym_scope_edges_to_cpg(scope_edges: pl.LazyFrame) -> pl.LazyFrame:
+def _py_sym_scope_edges_to_cpg(scope_edges: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -4095,65 +4444,77 @@ def _py_sym_scope_edges_to_cpg(scope_edges: pl.LazyFrame) -> pl.LazyFrame:
         "child_scope_id",
         "edge_kind",
     }
-    if not required.issubset(scope_edges.columns):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    base = scope_edges.filter(
-        pl.col("parent_scope_id").is_not_null() & pl.col("child_scope_id").is_not_null()
-    )
-    parent_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "scope_id": pl.col("parent_scope_id"),
-    }
-    child_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "scope_id": pl.col("child_scope_id"),
-    }
-    extras = _pk_json_expr({"edge_kind": pl.col("edge_kind")})
-    owns_ordinal = _ordinal_expr(
-        "graph.cpg_edges_scope",
-        {
-            "parent_scope_id": pl.col("parent_scope_id"),
-            "child_scope_id": pl.col("child_scope_id"),
-            "edge_kind": pl.lit("OWNS_SCOPE"),
-        },
-    )
-    parent_ordinal = _ordinal_expr(
-        "graph.cpg_edges_scope",
-        {
-            "parent_scope_id": pl.col("parent_scope_id"),
-            "child_scope_id": pl.col("child_scope_id"),
-            "edge_kind": pl.lit("PARENT_SCOPE"),
-        },
-    )
-    owns = base.with_columns(
-        _pk_expr(PY_SYM_SCOPES_TABLE_KEY, parent_pk).alias("src_cpg_node_id"),
-        _pk_expr(PY_SYM_SCOPES_TABLE_KEY, child_pk).alias("dst_cpg_node_id"),
-        pl.lit("OWNS_SCOPE").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.col("rel_path"),
-        owns_ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
-    parent = base.with_columns(
-        _pk_expr(PY_SYM_SCOPES_TABLE_KEY, child_pk).alias("src_cpg_node_id"),
-        _pk_expr(PY_SYM_SCOPES_TABLE_KEY, parent_pk).alias("dst_cpg_node_id"),
-        pl.lit("PARENT_SCOPE").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.col("rel_path"),
-        parent_ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
-    return pl.concat([owns, parent], how="vertical_relaxed")
+    if not required.issubset(scope_edges.column_names):
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(scope_edges):
+        parent_scope_id = row.get("parent_scope_id")
+        child_scope_id = row.get("child_scope_id")
+        if parent_scope_id is None or child_scope_id is None:
+            continue
+        parent_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "scope_id": parent_scope_id,
+        }
+        child_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "scope_id": child_scope_id,
+        }
+        extras = _pk_json_from_row({"edge_kind": row.get("edge_kind")})
+        owns_ordinal = _ordinal_from_row(
+            "graph.cpg_edges_scope",
+            {
+                "parent_scope_id": parent_scope_id,
+                "child_scope_id": child_scope_id,
+                "edge_kind": "OWNS_SCOPE",
+            },
+        )
+        parent_ordinal = _ordinal_from_row(
+            "graph.cpg_edges_scope",
+            {
+                "parent_scope_id": parent_scope_id,
+                "child_scope_id": child_scope_id,
+                "edge_kind": "PARENT_SCOPE",
+            },
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(PY_SYM_SCOPES_TABLE_KEY, parent_pk),
+                "dst_cpg_node_id": _pk_from_row(PY_SYM_SCOPES_TABLE_KEY, child_pk),
+                "edge_kind": "OWNS_SCOPE",
+                "edge_layer": "SYMBOL",
+                "rel_path": row.get("rel_path"),
+                "ordinal": owns_ordinal,
+                "extras_json": extras,
+            }
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(PY_SYM_SCOPES_TABLE_KEY, child_pk),
+                "dst_cpg_node_id": _pk_from_row(PY_SYM_SCOPES_TABLE_KEY, parent_pk),
+                "edge_kind": "PARENT_SCOPE",
+                "edge_layer": "SYMBOL",
+                "rel_path": row.get("rel_path"),
+                "ordinal": parent_ordinal,
+                "extras_json": extras,
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _py_sym_namespace_edges_to_cpg(
-    namespace_edges: pl.LazyFrame,
-    bindings: pl.LazyFrame,
-) -> pl.LazyFrame:
+    namespace_edges: pa.Table,
+    bindings: pa.Table,
+) -> pa.Table:
     edge_rows = _collect_rows(
         namespace_edges,
         columns=(
@@ -4173,7 +4534,7 @@ def _py_sym_namespace_edges_to_cpg(
         columns=("repo", "commit", "rel_path", "binding_id", "scope_id", "name"),
     )
     if not edge_rows or not binding_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     bindings_by_scope, _ = _build_binding_index(binding_rows)
     edges: list[dict[str, object]] = []
     for row in edge_rows:
@@ -4193,9 +4554,7 @@ def _namespace_edge_row(
     child_scope_id = _coerce_str(row.get("child_scope_id"))
     if rel_path is None or scope_id is None or name is None or child_scope_id is None:
         return {}
-    binding = bindings_by_scope.get(
-        (rel_path, scope_id, name)
-    )
+    binding = bindings_by_scope.get((rel_path, scope_id, name))
     if binding is None:
         return {}
     repo = _coerce_str(binding.get("repo"))
@@ -4246,7 +4605,7 @@ def _namespace_edge_row(
     }
 
 
-def _py_sym_binding_edges_to_cpg(bindings: pl.LazyFrame) -> pl.LazyFrame:
+def _py_sym_binding_edges_to_cpg(bindings: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -4256,49 +4615,55 @@ def _py_sym_binding_edges_to_cpg(bindings: pl.LazyFrame) -> pl.LazyFrame:
         "binding_kind",
         "name",
     }
-    if not required.issubset(bindings.columns):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    scope_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "scope_id": pl.col("scope_id"),
-    }
-    binding_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "binding_id": pl.col("binding_id"),
-    }
-    extras = _pk_json_expr(
-        {
-            "binding_kind": pl.col("binding_kind"),
-            "declared_here": pl.col("declared_here"),
-            "referenced_here": pl.col("referenced_here"),
-            "assigned_here": pl.col("assigned_here"),
-            "annotated_here": pl.col("annotated_here"),
-            "scoping_class": pl.col("scoping_class"),
+    if not required.issubset(bindings.column_names):
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(bindings):
+        scope_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "scope_id": row.get("scope_id"),
         }
-    )
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_binding",
-        {
-            "scope_id": pl.col("scope_id"),
-            "binding_id": pl.col("binding_id"),
-        },
-    )
-    return bindings.with_columns(
-        _pk_expr(PY_SYM_SCOPES_TABLE_KEY, scope_pk).alias("src_cpg_node_id"),
-        _pk_expr(PY_SYM_BINDINGS_TABLE_KEY, binding_pk).alias("dst_cpg_node_id"),
-        pl.lit("DECLARES").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.col("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+        binding_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "binding_id": row.get("binding_id"),
+        }
+        extras_values = {
+            "binding_kind": row.get("binding_kind"),
+            "declared_here": row.get("declared_here"),
+            "referenced_here": row.get("referenced_here"),
+            "assigned_here": row.get("assigned_here"),
+            "annotated_here": row.get("annotated_here"),
+            "scoping_class": row.get("scoping_class"),
+        }
+        ordinal = _ordinal_from_row(
+            "graph.cpg_edges_binding",
+            {
+                "scope_id": row.get("scope_id"),
+                "binding_id": row.get("binding_id"),
+            },
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(PY_SYM_SCOPES_TABLE_KEY, scope_pk),
+                "dst_cpg_node_id": _pk_from_row(PY_SYM_BINDINGS_TABLE_KEY, binding_pk),
+                "edge_kind": "DECLARES",
+                "edge_layer": "SYMBOL",
+                "rel_path": row.get("rel_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
-def _py_sym_resolution_edges_to_cpg(resolution_edges: pl.LazyFrame) -> pl.LazyFrame:
+def _py_sym_resolution_edges_to_cpg(resolution_edges: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -4308,47 +4673,53 @@ def _py_sym_resolution_edges_to_cpg(resolution_edges: pl.LazyFrame) -> pl.LazyFr
         "dst_binding_id",
         "kind",
     }
-    if not required.issubset(resolution_edges.columns):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    if not required.issubset(resolution_edges.column_names):
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    rows = [_py_sym_resolution_edge_row(row) for row in _table_rows(resolution_edges)]
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
+
+
+def _py_sym_resolution_edge_row(row: Mapping[str, object]) -> dict[str, object]:
     src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "binding_id": pl.col("src_binding_id"),
+        "repo": row.get("repo"),
+        "commit": row.get("commit"),
+        "rel_path": row.get("rel_path"),
+        "binding_id": row.get("src_binding_id"),
     }
     dst_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "binding_id": pl.col("dst_binding_id"),
+        "repo": row.get("repo"),
+        "commit": row.get("commit"),
+        "rel_path": row.get("rel_path"),
+        "binding_id": row.get("dst_binding_id"),
     }
-    extras = _pk_json_expr(
-        {
-            "kind": pl.col("kind"),
-            "confidence": pl.col("confidence"),
-            "reason": pl.col("reason"),
-        }
-    )
-    ordinal = _ordinal_expr(
+    extras_values = {
+        "kind": row.get("kind"),
+        "confidence": row.get("confidence"),
+        "reason": row.get("reason"),
+    }
+    ordinal = _ordinal_from_row(
         PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
-        {"edge_id": pl.col("edge_id")},
+        {"edge_id": row.get("edge_id")},
     )
-    return resolution_edges.with_columns(
-        _pk_expr(PY_SYM_BINDINGS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-        _pk_expr(PY_SYM_BINDINGS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-        pl.lit("RESOLVES_TO").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.col("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+    return {
+        "repo": row.get("repo"),
+        "commit": row.get("commit"),
+        "src_cpg_node_id": _pk_from_row(PY_SYM_BINDINGS_TABLE_KEY, src_pk),
+        "dst_cpg_node_id": _pk_from_row(PY_SYM_BINDINGS_TABLE_KEY, dst_pk),
+        "edge_kind": "RESOLVES_TO",
+        "edge_layer": "SYMBOL",
+        "rel_path": row.get("rel_path"),
+        "ordinal": ordinal,
+        "extras_json": _pk_json_from_row(extras_values),
+    }
 
 
 def _py_sym_binding_symbol_edges_to_cpg(
-    bindings: pl.LazyFrame,
-    scopes: pl.LazyFrame,
-    scip_symbols: pl.LazyFrame,
-) -> pl.LazyFrame:
+    bindings: pa.Table,
+    scopes: pa.Table,
+    scip_symbols: pa.Table,
+) -> pa.Table:
     required_bindings = {
         "repo",
         "commit",
@@ -4361,76 +4732,91 @@ def _py_sym_binding_symbol_edges_to_cpg(
     required_scopes = {"repo", "commit", "rel_path", "scope_id", "qualpath"}
     required_symbols = {"repo", "commit", "symbol", "display_name"}
     if (
-        not required_bindings.issubset(bindings.columns)
-        or not required_scopes.issubset(scopes.columns)
-        or not required_symbols.issubset(scip_symbols.columns)
+        not required_bindings.issubset(bindings.column_names)
+        or not required_scopes.issubset(scopes.column_names)
+        or not required_symbols.issubset(scip_symbols.column_names)
     ):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    scope_fields = scopes.select("repo", "commit", "rel_path", "scope_id", "qualpath")
-    joined = arrow_join_lazyframes(
-        bindings,
-        scope_fields,
-        spec=JoinSpec(on=["repo", "commit", "rel_path", "scope_id"], how="left"),
-    )
-    scope_qualname = (
-        pl.col("qualpath")
-        .str.replace_all("::", ".")
-        .str.replace_all(r"#\d+", "")
-        .alias("scope_qualname")
-    )
-    qualified = joined.with_columns(scope_qualname)
-    binding_qualname = (
-        pl.when(pl.col("scope_qualname").is_not_null())
-        .then(pl.concat_str([pl.col("scope_qualname"), pl.lit("."), pl.col("name")]))
-        .otherwise(None)
-        .alias("binding_qualname")
-    )
-    bindings_named = qualified.with_columns(binding_qualname).filter(
-        pl.col("binding_qualname").is_not_null()
-    )
-    symbols = scip_symbols.select("repo", "commit", "symbol", "display_name")
-    matched = arrow_join_lazyframes(
-        bindings_named,
-        symbols,
-        spec=JoinSpec(
-            left_on=["repo", "commit", "binding_qualname"],
-            right_on=["repo", "commit", "display_name"],
-            how="inner",
-        ),
-    )
-    binding_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "binding_id": pl.col("binding_id"),
-    }
-    symbol_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "symbol": pl.col("symbol"),
-    }
-    extras = _pk_json_expr(
-        {
-            "binding_kind": pl.col("binding_kind"),
-            "match_kind": pl.lit("qualpath"),
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    scope_index = _scope_qualname_index(scopes)
+    symbol_index = _symbol_display_index(scip_symbols)
+    rows = _binding_symbol_edge_rows(bindings, scope_index, symbol_index)
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
+
+
+def _scope_qualname_index(scopes: pa.Table) -> dict[tuple[object, object, object, object], str]:
+    index: dict[tuple[object, object, object, object], str] = {}
+    for row in _table_rows(scopes):
+        scope_key = (row.get("repo"), row.get("commit"), row.get("rel_path"), row.get("scope_id"))
+        qualname = _scope_qualname_from_qualpath(row.get("qualpath"))
+        if qualname:
+            index[scope_key] = qualname
+    return index
+
+
+def _symbol_display_index(
+    scip_symbols: pa.Table,
+) -> dict[tuple[object, object, object], list[Mapping[str, object]]]:
+    index: dict[tuple[object, object, object], list[Mapping[str, object]]] = {}
+    for row in _table_rows(scip_symbols):
+        key = (row.get("repo"), row.get("commit"), row.get("display_name"))
+        index.setdefault(key, []).append(row)
+    return index
+
+
+def _binding_symbol_edge_rows(
+    bindings: pa.Table,
+    scope_index: Mapping[tuple[object, object, object, object], str],
+    symbol_index: Mapping[tuple[object, object, object], Sequence[Mapping[str, object]]],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(bindings):
+        scope_key = (row.get("repo"), row.get("commit"), row.get("rel_path"), row.get("scope_id"))
+        scope_qualname = scope_index.get(scope_key)
+        name = _coerce_str(row.get("name"))
+        if scope_qualname is None or name is None:
+            continue
+        binding_qualname = f"{scope_qualname}.{name}"
+        symbols = symbol_index.get((row.get("repo"), row.get("commit"), binding_qualname))
+        if not symbols:
+            continue
+        binding_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "binding_id": row.get("binding_id"),
         }
-    )
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_binding_symbol",
-        {"binding_id": pl.col("binding_id"), "symbol": pl.col("symbol")},
-    )
-    return matched.with_columns(
-        _pk_expr(PY_SYM_BINDINGS_TABLE_KEY, binding_pk).alias("src_cpg_node_id"),
-        _pk_expr(SCIP_SYMBOLS_TABLE_KEY, symbol_pk).alias("dst_cpg_node_id"),
-        pl.lit("BINDS_SYMBOL").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.col("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+        for symbol in symbols:
+            symbol_pk = {
+                "repo": symbol.get("repo"),
+                "commit": symbol.get("commit"),
+                "symbol": symbol.get("symbol"),
+            }
+            extras_values = {
+                "binding_kind": row.get("binding_kind"),
+                "match_kind": "qualpath",
+            }
+            ordinal = _ordinal_from_row(
+                "graph.cpg_edges_binding_symbol",
+                {"binding_id": row.get("binding_id"), "symbol": symbol.get("symbol")},
+            )
+            rows.append(
+                {
+                    "repo": row.get("repo"),
+                    "commit": row.get("commit"),
+                    "src_cpg_node_id": _pk_from_row(PY_SYM_BINDINGS_TABLE_KEY, binding_pk),
+                    "dst_cpg_node_id": _pk_from_row(SCIP_SYMBOLS_TABLE_KEY, symbol_pk),
+                    "edge_kind": "BINDS_SYMBOL",
+                    "edge_layer": "SYMBOL",
+                    "rel_path": row.get("rel_path"),
+                    "ordinal": ordinal,
+                    "extras_json": _pk_json_from_row(extras_values),
+                }
+            )
+    return rows
 
 
-def _py_bc_cfg_edges_to_cpg(cfg_edges: pl.LazyFrame) -> pl.LazyFrame:
+def _py_bc_cfg_edges_to_cpg(cfg_edges: pa.Table) -> pa.Table:
     required = {
         "repo",
         "commit",
@@ -4440,37 +4826,46 @@ def _py_bc_cfg_edges_to_cpg(cfg_edges: pl.LazyFrame) -> pl.LazyFrame:
         "dst_block_id",
         "kind",
     }
-    if not required.issubset(cfg_edges.columns):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "block_id": pl.col("src_block_id"),
-    }
-    dst_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "rel_path": pl.col("rel_path"),
-        "block_id": pl.col("dst_block_id"),
-    }
-    extras = _pk_json_expr(
-        {
-            "kind": pl.col("kind"),
-            "cond_instr_id": pl.col("cond_instr_id"),
-            "exc_entry_index": pl.col("exc_entry_index"),
+    if not required.issubset(cfg_edges.column_names):
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(cfg_edges):
+        src_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "block_id": row.get("src_block_id"),
         }
-    )
-    ordinal = _ordinal_expr(PY_BC_CFG_EDGES_TABLE_KEY, {"edge_id": pl.col("edge_id")})
-    return cfg_edges.with_columns(
-        _pk_expr(PY_BC_BLOCKS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-        _pk_expr(PY_BC_BLOCKS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-        pl.lit("CFG").alias("edge_kind"),
-        pl.lit("FLOW").alias("edge_layer"),
-        pl.col("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+        dst_pk = {
+            "repo": row.get("repo"),
+            "commit": row.get("commit"),
+            "rel_path": row.get("rel_path"),
+            "block_id": row.get("dst_block_id"),
+        }
+        extras_values = {
+            "kind": row.get("kind"),
+            "cond_instr_id": row.get("cond_instr_id"),
+            "exc_entry_index": row.get("exc_entry_index"),
+        }
+        ordinal = _ordinal_from_row(
+            PY_BC_CFG_EDGES_TABLE_KEY,
+            {"edge_id": row.get("edge_id")},
+        )
+        rows.append(
+            {
+                "repo": row.get("repo"),
+                "commit": row.get("commit"),
+                "src_cpg_node_id": _pk_from_row(PY_BC_BLOCKS_TABLE_KEY, src_pk),
+                "dst_cpg_node_id": _pk_from_row(PY_BC_BLOCKS_TABLE_KEY, dst_pk),
+                "edge_kind": "CFG",
+                "edge_layer": "FLOW",
+                "rel_path": row.get("rel_path"),
+                "ordinal": ordinal,
+                "extras_json": _pk_json_from_row(extras_values),
+            }
+        )
+    table = _edge_rows_to_table(rows)
+    return _select_edge_columns(table)
 
 
 def _resolve_events_for_unit(
@@ -4715,13 +5110,13 @@ class _ReachesContext:
 
 @dataclass(frozen=True)
 class _PyBcReachesInputs:
-    defuse_events: pl.LazyFrame
-    code_units: pl.LazyFrame
-    scopes: pl.LazyFrame
-    bindings: pl.LazyFrame
-    resolution_edges: pl.LazyFrame
-    blocks: pl.LazyFrame
-    cfg_edges: pl.LazyFrame
+    defuse_events: pa.Table
+    code_units: pa.Table
+    scopes: pa.Table
+    bindings: pa.Table
+    resolution_edges: pa.Table
+    blocks: pa.Table
+    cfg_edges: pa.Table
 
 
 @dataclass(frozen=True)
@@ -4849,12 +5244,12 @@ def _build_reaches_edges_for_unit(
 
 
 def _py_bc_defuse_binding_edges_to_cpg(
-    defuse_events: pl.LazyFrame,
-    code_units: pl.LazyFrame,
-    scopes: pl.LazyFrame,
-    bindings: pl.LazyFrame,
-    resolution_edges: pl.LazyFrame,
-) -> pl.LazyFrame:
+    defuse_events: pa.Table,
+    code_units: pa.Table,
+    scopes: pa.Table,
+    bindings: pa.Table,
+    resolution_edges: pa.Table,
+) -> pa.Table:
     event_rows = _collect_rows(
         defuse_events,
         columns=(
@@ -4870,7 +5265,7 @@ def _py_bc_defuse_binding_edges_to_cpg(
         ),
     )
     if not event_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     code_unit_rows = _collect_rows(
         code_units,
         columns=(
@@ -4932,10 +5327,10 @@ def _py_bc_defuse_binding_edges_to_cpg(
     return _edge_rows_to_lazyframe(edges)
 
 
-def _py_bc_reaches_edges_to_cpg(inputs: _PyBcReachesInputs) -> pl.LazyFrame:
+def _py_bc_reaches_edges_to_cpg(inputs: _PyBcReachesInputs) -> pa.Table:
     rows = _collect_py_bc_reaches_rows(inputs)
     if rows is None:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     events_by_unit = _group_defuse_events(rows.event_rows)
     context = _reaches_context_from_rows(rows)
     edges: list[dict[str, object]] = []
@@ -4960,27 +5355,6 @@ def _inspect_full_qualname(module_name: str | None, qualname: str | None) -> str
     if qualname.startswith(f"{module_name}."):
         return qualname
     return f"{module_name}.{qualname}"
-
-
-def _inspect_full_qualname_expr() -> pl.Expr:
-    module_name = pl.col("module_name")
-    qualname = pl.col("qualname")
-    module_prefix = pl.concat_str([module_name, pl.lit(".")])
-    return (
-        pl.when(module_name.is_not_null() & qualname.is_not_null() & (qualname == module_name))
-        .then(module_name)
-        .when(
-            module_name.is_not_null()
-            & qualname.is_not_null()
-            & qualname.str.starts_with(module_prefix)
-        )
-        .then(qualname)
-        .when(module_name.is_not_null() & qualname.is_not_null())
-        .then(pl.concat_str([module_name, pl.lit("."), qualname]))
-        .when(module_name.is_not_null())
-        .then(module_name)
-        .otherwise(None)
-    )
 
 
 def _inspect_status_ok(status: object) -> bool:
@@ -5193,6 +5567,150 @@ def _assign_args_to_params(
     return mappings
 
 
+def _signature_from_params(
+    params: Sequence[Mapping[str, object]],
+) -> inspect.Signature | None:
+    kind_map = {
+        "POSITIONAL_ONLY": inspect.Parameter.POSITIONAL_ONLY,
+        "POSITIONAL_OR_KEYWORD": inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        "VAR_POSITIONAL": inspect.Parameter.VAR_POSITIONAL,
+        "KEYWORD_ONLY": inspect.Parameter.KEYWORD_ONLY,
+        "VAR_KEYWORD": inspect.Parameter.VAR_KEYWORD,
+    }
+    parameters: list[inspect.Parameter] = []
+    for row in _sorted_rows(params, key_field="param_index"):
+        name = _coerce_str(row.get("name"))
+        kind_name = _coerce_str(row.get("kind"))
+        if name is None or kind_name is None:
+            return None
+        kind = kind_map.get(kind_name)
+        if kind is None:
+            return None
+        parameters.append(inspect.Parameter(name, kind))
+    if not parameters:
+        return None
+    try:
+        return inspect.Signature(parameters)
+    except ValueError:
+        return None
+
+
+def _arg_identity(arg: Mapping[str, object]) -> tuple[object, object, object, object]:
+    return (
+        arg.get("arg_expr_node_id"),
+        arg.get("arg_ordinal"),
+        arg.get("arg_kind"),
+        arg.get("arg_name"),
+    )
+
+
+def _bound_arg_mappings(
+    args: Sequence[Mapping[str, object]],
+    params: Sequence[Mapping[str, object]],
+) -> list[tuple[dict[str, object], dict[str, object], str]]:
+    signature = _signature_from_params(params)
+    if signature is None:
+        return []
+    ordered_args = _sorted_rows(args, key_field="arg_ordinal")
+    if any(_coerce_str(arg.get("arg_kind")) in {"starargs", "kwargs"} for arg in ordered_args):
+        return []
+    param_by_name = {
+        cast("str", _coerce_str(row.get("name"))): dict(row)
+        for row in params
+        if _coerce_str(row.get("name")) is not None
+    }
+    token_result = _arg_tokens(ordered_args)
+    if token_result is None:
+        return []
+    tokens_by_arg, positional_tokens, keyword_tokens = token_result
+    try:
+        bound = signature.bind_partial(*positional_tokens, **keyword_tokens)
+    except TypeError:
+        return []
+    mappings: list[tuple[dict[str, object], dict[str, object], str]] = []
+    for param_name, value in bound.arguments.items():
+        param = param_by_name.get(param_name)
+        if param is None:
+            continue
+        _append_bound_mappings(
+            value=value,
+            tokens_by_arg=tokens_by_arg,
+            param=param,
+            mappings=mappings,
+        )
+    return mappings
+
+
+def _arg_tokens(
+    ordered_args: Sequence[Mapping[str, object]],
+) -> tuple[dict[object, dict[str, object]], list[object], dict[str, object]] | None:
+    tokens_by_arg: dict[object, dict[str, object]] = {}
+    positional_tokens: list[object] = []
+    keyword_tokens: dict[str, object] = {}
+    for arg in ordered_args:
+        arg_kind = _coerce_str(arg.get("arg_kind"))
+        token = object()
+        tokens_by_arg[token] = dict(arg)
+        if arg_kind == "positional":
+            positional_tokens.append(token)
+            continue
+        if arg_kind == "keyword":
+            arg_name = _coerce_str(arg.get("arg_name"))
+            if arg_name is None:
+                return None
+            keyword_tokens[arg_name] = token
+            continue
+        return None
+    return tokens_by_arg, positional_tokens, keyword_tokens
+
+
+def _append_bound_mappings(
+    *,
+    value: object,
+    tokens_by_arg: Mapping[object, dict[str, object]],
+    param: dict[str, object],
+    mappings: list[tuple[dict[str, object], dict[str, object], str]],
+) -> None:
+    if isinstance(value, tuple):
+        _append_token_mappings(
+            tokens=value,
+            tokens_by_arg=tokens_by_arg,
+            param=param,
+            mapping_kind="bound_varargs",
+            mappings=mappings,
+        )
+        return
+    if isinstance(value, dict):
+        _append_token_mappings(
+            tokens=value.values(),
+            tokens_by_arg=tokens_by_arg,
+            param=param,
+            mapping_kind="bound_varkw",
+            mappings=mappings,
+        )
+        return
+    arg = tokens_by_arg.get(value)
+    if arg is None:
+        return
+    arg_kind = _coerce_str(arg.get("arg_kind"))
+    mapping_kind = "bound_keyword" if arg_kind == "keyword" else "bound_positional"
+    mappings.append((arg, param, mapping_kind))
+
+
+def _append_token_mappings(
+    *,
+    tokens: Iterable[object],
+    tokens_by_arg: Mapping[object, dict[str, object]],
+    param: dict[str, object],
+    mapping_kind: str,
+    mappings: list[tuple[dict[str, object], dict[str, object], str]],
+) -> None:
+    for item in tokens:
+        arg = tokens_by_arg.get(item)
+        if arg is not None:
+            mappings.append((arg, param, mapping_kind))
+
+
 def _inspect_arg_to_param_edge_row(
     *,
     arg: Mapping[str, object],
@@ -5389,7 +5907,11 @@ def _inspect_arg_to_param_edges_for_call(
     params: Sequence[dict[str, object]],
 ) -> list[dict[str, object]]:
     edges: list[dict[str, object]] = []
-    mappings = _assign_args_to_params(args, params)
+    bound_mappings = _bound_arg_mappings(args, params)
+    assigned = {_arg_identity(arg) for arg, _, _ in bound_mappings}
+    remaining_args = [arg for arg in args if _arg_identity(arg) not in assigned]
+    fallback_mappings = _assign_args_to_params(remaining_args, params) if remaining_args else []
+    mappings = [*bound_mappings, *fallback_mappings]
     for arg, param, mapping_kind in mappings:
         context = _inspect_arg_context_for_row(arg, signature_id=signature_id)
         if context is None:
@@ -5406,12 +5928,12 @@ def _inspect_arg_to_param_edges_for_call(
 
 
 def _inspect_arg_to_param_edges_to_cpg(
-    syntax_calls: pl.LazyFrame,
-    syntax_call_args: pl.LazyFrame,
-    inspect_objects: pl.LazyFrame,
-    inspect_signatures: pl.LazyFrame,
-    inspect_signature_params: pl.LazyFrame,
-) -> pl.LazyFrame:
+    syntax_calls: pa.Table,
+    syntax_call_args: pa.Table,
+    inspect_objects: pa.Table,
+    inspect_signatures: pa.Table,
+    inspect_signature_params: pa.Table,
+) -> pa.Table:
     call_rows = _collect_rows(
         syntax_calls,
         columns=("repo", "commit", "rel_path", "producer", "call_id", "callee_text", "extras_json"),
@@ -5443,7 +5965,7 @@ def _inspect_arg_to_param_edges_to_cpg(
         columns=("repo", "commit", "signature_id", "param_index", "name", "kind", "status"),
     )
     if not call_rows or not arg_rows or not inspect_rows or not signature_rows or not param_rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     object_by_name = _inspect_object_by_name(inspect_rows)
     signature_by_object = _signature_by_object(signature_rows)
     params_by_signature = _params_by_signature(param_rows)
@@ -5472,180 +5994,417 @@ def _inspect_arg_to_param_edges_to_cpg(
 
 
 def _py_inspect_signature_edges_to_cpg(
-    signatures: pl.LazyFrame,
-    params: pl.LazyFrame,
-) -> pl.LazyFrame:
+    signatures: pa.Table,
+    params: pa.Table,
+) -> pa.Table:
     required_signatures = {"repo", "commit", "signature_id", "object_id"}
     required_params = {"repo", "commit", "signature_id", "param_index"}
-    if not required_signatures.issubset(signatures.columns) or not required_params.issubset(
-        params.columns
+    if not required_signatures.issubset(signatures.column_names) or not required_params.issubset(
+        params.column_names
     ):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    sig_src = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "object_id": pl.col("object_id"),
-    }
-    sig_dst = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "signature_id": pl.col("signature_id"),
-    }
-    sig_extras = _pk_json_expr(
-        {
-            "variant": pl.col("variant"),
-            "follow_wrapped": pl.col("follow_wrapped"),
-            "eval_str": pl.col("eval_str"),
-            "status": pl.col("status"),
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    edges: list[dict[str, object]] = []
+    for row in _table_rows(signatures):
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        signature_id = _coerce_str(row.get("signature_id"))
+        object_id = _coerce_str(row.get("object_id"))
+        if _has_missing(repo, commit, signature_id, object_id):
+            continue
+        src_cpg_node_id = _stable_cpg_id(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            {"repo": repo, "commit": commit, "object_id": object_id},
+        )
+        dst_cpg_node_id = _stable_cpg_id(
+            PY_INSPECT_SIGNATURES_TABLE_KEY,
+            {"repo": repo, "commit": commit, "signature_id": signature_id},
+        )
+        extras = {
+            "variant": row.get("variant"),
+            "follow_wrapped": row.get("follow_wrapped"),
+            "eval_str": row.get("eval_str"),
+            "status": row.get("status"),
         }
-    )
-    sig_ordinal = _ordinal_expr(
-        "graph.cpg_edges_inspect_signature",
-        {"signature_id": pl.col("signature_id")},
-    )
-    sig_edges = signatures.with_columns(
-        _pk_expr(PY_INSPECT_OBJECTS_TABLE_KEY, sig_src).alias("src_cpg_node_id"),
-        _pk_expr(PY_INSPECT_SIGNATURES_TABLE_KEY, sig_dst).alias("dst_cpg_node_id"),
-        pl.lit("HAS_SIGNATURE").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.lit(None).alias("rel_path"),
-        sig_ordinal.alias("ordinal"),
-        sig_extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
-    param_src = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "signature_id": pl.col("signature_id"),
-    }
-    param_dst = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "signature_id": pl.col("signature_id"),
-        "param_index": pl.col("param_index"),
-    }
-    param_extras = _pk_json_expr(
-        {
-            "param_index": pl.col("param_index"),
-            "name": pl.col("name"),
-            "kind": pl.col("kind"),
-            "status": pl.col("status"),
+        ordinal = _stable_ordinal(
+            "graph.cpg_edges_inspect_signature",
+            {"signature_id": signature_id},
+        )
+        edges.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "src_cpg_node_id": src_cpg_node_id,
+                "dst_cpg_node_id": dst_cpg_node_id,
+                "edge_kind": "HAS_SIGNATURE",
+                "edge_layer": "SYMBOL",
+                "rel_path": None,
+                "ordinal": ordinal,
+                "extras_json": _row_to_payload(extras),
+            }
+        )
+    for row in _table_rows(params):
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        signature_id = _coerce_str(row.get("signature_id"))
+        param_index = _coerce_int(row.get("param_index"))
+        if _has_missing(repo, commit, signature_id, param_index):
+            continue
+        src_cpg_node_id = _stable_cpg_id(
+            PY_INSPECT_SIGNATURES_TABLE_KEY,
+            {"repo": repo, "commit": commit, "signature_id": signature_id},
+        )
+        dst_cpg_node_id = _inspect_signature_param_cpg_id(
+            repo=cast("str", repo),
+            commit=cast("str", commit),
+            signature_id=cast("str", signature_id),
+            param_index=cast("int", param_index),
+        )
+        extras = {
+            "param_index": param_index,
+            "name": row.get("name"),
+            "kind": row.get("kind"),
+            "status": row.get("status"),
         }
+        ordinal = _stable_ordinal(
+            "graph.cpg_edges_inspect_signature_param",
+            {"signature_id": signature_id, "param_index": param_index},
+        )
+        edges.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "src_cpg_node_id": src_cpg_node_id,
+                "dst_cpg_node_id": dst_cpg_node_id,
+                "edge_kind": "HAS_PARAM",
+                "edge_layer": "SYMBOL",
+                "rel_path": None,
+                "ordinal": ordinal,
+                "extras_json": _row_to_payload(extras),
+            }
+        )
+    return _edge_rows_to_lazyframe(edges)
+
+
+@dataclass(frozen=True, slots=True)
+class _InspectAstIndex:
+    by_qualname: dict[str, list[dict[str, object]]]
+    by_norm_path: dict[str, list[dict[str, object]]]
+    paths: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _InspectAstContext:
+    repo: str
+    commit: str
+    object_id: str
+
+
+def _inspect_ast_indices(ast_rows: Sequence[dict[str, object]]) -> _InspectAstIndex:
+    ast_by_qualname: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in ast_rows:
+        qualname = _coerce_str(row.get("qualname"))
+        if qualname is None:
+            continue
+        ast_by_qualname[qualname].append(row)
+    ast_by_path = _ast_nodes_by_path(ast_rows)
+    ast_by_norm_path = {_normalize_path(path): rows for path, rows in ast_by_path.items()}
+    ast_paths = sorted(ast_by_norm_path.keys(), key=len, reverse=True)
+    return _InspectAstIndex(
+        by_qualname=ast_by_qualname,
+        by_norm_path=ast_by_norm_path,
+        paths=ast_paths,
     )
-    param_ordinal = _ordinal_expr(
-        "graph.cpg_edges_inspect_signature_param",
-        {
-            "signature_id": pl.col("signature_id"),
-            "param_index": pl.col("param_index"),
-        },
+
+
+def _inspect_sources_by_object(
+    source_rows: Sequence[Mapping[str, object]],
+) -> dict[str, dict[str, object]]:
+    sources_by_object: dict[str, dict[str, object]] = {}
+    for row in source_rows:
+        object_id = _coerce_str(row.get("object_id"))
+        file_name = _coerce_str(row.get("file_name"))
+        start_line = _coerce_int(row.get("start_line"))
+        line_count = _coerce_int(row.get("line_count"))
+        if _has_missing(object_id, file_name, start_line):
+            continue
+        start_line_value = cast("int", start_line)
+        end_line = (
+            start_line_value
+            if line_count is None or line_count <= 0
+            else start_line_value + line_count - 1
+        )
+        sources_by_object[cast("str", object_id)] = {
+            "file_name": cast("str", file_name),
+            "start_line": start_line_value,
+            "end_line": end_line,
+        }
+    return sources_by_object
+
+
+def _inspect_ast_edge_row(
+    context: _InspectAstContext,
+    *,
+    node_hash: str,
+    rel_path: object,
+    extras: Mapping[str, object],
+) -> dict[str, object]:
+    ordinal = _stable_ordinal(
+        "graph.cpg_edges_inspect_ast",
+        {"object_id": context.object_id, "ast_hash": node_hash},
     )
-    param_edges = params.with_columns(
-        _pk_expr(PY_INSPECT_SIGNATURES_TABLE_KEY, param_src).alias("src_cpg_node_id"),
-        _pk_expr(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY, param_dst).alias("dst_cpg_node_id"),
-        pl.lit("HAS_PARAM").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.lit(None).alias("rel_path"),
-        param_ordinal.alias("ordinal"),
-        param_extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
-    return pl.concat([sig_edges, param_edges], how="vertical_relaxed")
+    return {
+        "repo": context.repo,
+        "commit": context.commit,
+        "src_cpg_node_id": _stable_cpg_id(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            {
+                "repo": context.repo,
+                "commit": context.commit,
+                "object_id": context.object_id,
+            },
+        ),
+        "dst_cpg_node_id": _ast_cpg_id(node_hash),
+        "edge_kind": "INSPECT_ANCHORS_AST",
+        "edge_layer": "SYMBOL",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(extras),
+    }
+
+
+def _inspect_ast_edges_for_source(
+    context: _InspectAstContext,
+    *,
+    source: Mapping[str, object],
+    ast_index: _InspectAstIndex,
+    seen: set[tuple[str, str]],
+) -> list[dict[str, object]]:
+    file_name = cast("str", source["file_name"])
+    path = _best_source_path(file_name, ast_index.paths)
+    if path is None:
+        return []
+    nodes = ast_index.by_norm_path.get(path, [])
+    match = _select_ast_anchor_for_source(
+        nodes,
+        source_start=cast("int", source["start_line"]),
+        source_end=cast("int", source["end_line"]),
+    )
+    if match is None:
+        return []
+    node, confidence, match_kind = match
+    node_hash = _coerce_str(node.get("hash"))
+    if node_hash is None:
+        return []
+    key = (context.object_id, node_hash)
+    if key in seen:
+        return []
+    extras = {
+        "match_kind": match_kind,
+        "ast_kind": node.get("node_type"),
+        "match_confidence": confidence,
+        "source_start_line": source["start_line"],
+        "source_end_line": source["end_line"],
+    }
+    seen.add(key)
+    return [
+        _inspect_ast_edge_row(
+            context,
+            node_hash=node_hash,
+            rel_path=node.get("path"),
+            extras=extras,
+        )
+    ]
+
+
+def _inspect_ast_edges_for_qualname(
+    context: _InspectAstContext,
+    *,
+    ast_rows: Sequence[Mapping[str, object]],
+    seen: set[tuple[str, str]],
+) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    for ast_row in ast_rows:
+        node_hash = _coerce_str(ast_row.get("hash"))
+        if node_hash is None:
+            continue
+        key = (context.object_id, node_hash)
+        if key in seen:
+            continue
+        extras = {
+            "match_kind": "QUALNAME",
+            "ast_kind": ast_row.get("node_type"),
+            "match_confidence": 0.6,
+        }
+        edges.append(
+            _inspect_ast_edge_row(
+                context,
+                node_hash=node_hash,
+                rel_path=ast_row.get("path"),
+                extras=extras,
+            )
+        )
+        seen.add(key)
+    return edges
+
+
+_INSPECT_REQUIRED_COLUMNS = frozenset({"repo", "commit", "object_id", "module_name", "qualname"})
+_INSPECT_SOURCE_REQUIRED_COLUMNS = frozenset({"object_id", "file_name", "start_line", "line_count"})
+_INSPECT_AST_REQUIRED_COLUMNS = frozenset(
+    {
+        "hash",
+        "qualname",
+        "node_type",
+        "path",
+        "lineno",
+        "end_lineno",
+        "decorator_start_line",
+        "decorator_end_line",
+    }
+)
 
 
 def _inspect_to_ast_edges_to_cpg(
-    inspect_objects: pl.LazyFrame,
-    ast_nodes: pl.LazyFrame,
-) -> pl.LazyFrame:
-    required_inspect = {"repo", "commit", "object_id", "module_name", "qualname"}
-    required_ast = {"hash", "qualname", "node_type", "path"}
-    if not required_inspect.issubset(inspect_objects.columns) or not required_ast.issubset(
-        ast_nodes.columns
+    inspect_objects: pa.Table,
+    inspect_source: pa.Table,
+    ast_nodes: pa.Table,
+) -> pa.Table:
+    if (
+        not _INSPECT_REQUIRED_COLUMNS.issubset(inspect_objects.column_names)
+        or not _INSPECT_SOURCE_REQUIRED_COLUMNS.issubset(inspect_source.column_names)
+        or not _INSPECT_AST_REQUIRED_COLUMNS.issubset(ast_nodes.column_names)
     ):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    inspect_full = inspect_objects.with_columns(
-        _inspect_full_qualname_expr().alias("full_qualname")
-    ).filter(pl.col("full_qualname").is_not_null())
-    ast_defs = ast_nodes.filter(pl.col("qualname").is_not_null())
-    joined = arrow_join_lazyframes(
-        inspect_full,
-        ast_defs,
-        spec=JoinSpec(left_on=["full_qualname"], right_on=["qualname"], how="inner"),
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    ast_rows = _collect_rows(
+        ast_nodes,
+        columns=(
+            "path",
+            "hash",
+            "node_type",
+            "qualname",
+            "lineno",
+            "end_lineno",
+            "decorator_start_line",
+            "decorator_end_line",
+        ),
     )
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "object_id": pl.col("object_id"),
-    }
-    dst_pk = {"hash": pl.col("hash")}
-    extras = _pk_json_expr(
-        {
-            "match_kind": pl.lit("qualname"),
-            "ast_kind": pl.col("node_type"),
-        }
+    if not ast_rows:
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    ast_index = _inspect_ast_indices(ast_rows)
+    source_rows = _collect_rows(
+        inspect_source,
+        columns=("object_id", "file_name", "start_line", "line_count"),
     )
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_inspect_ast",
-        {"object_id": pl.col("object_id"), "ast_hash": pl.col("hash")},
-    )
-    return joined.with_columns(
-        _pk_expr(PY_INSPECT_OBJECTS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-        _pk_expr(AST_NODES_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-        pl.lit("INSPECT_ANCHORS_AST").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.col("path").alias("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+    sources_by_object = _inspect_sources_by_object(source_rows)
+    edges: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in _table_rows(inspect_objects):
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        object_id = _coerce_str(row.get("object_id"))
+        if _has_missing(repo, commit, object_id):
+            continue
+        context = _InspectAstContext(
+            repo=cast("str", repo),
+            commit=cast("str", commit),
+            object_id=cast("str", object_id),
+        )
+        source = sources_by_object.get(context.object_id)
+        if source is not None:
+            edges.extend(
+                _inspect_ast_edges_for_source(
+                    context,
+                    source=source,
+                    ast_index=ast_index,
+                    seen=seen,
+                )
+            )
+        full_qualname = _inspect_full_qualname(
+            _coerce_str(row.get("module_name")),
+            _coerce_str(row.get("qualname")),
+        )
+        if full_qualname is None:
+            continue
+        matches = ast_index.by_qualname.get(full_qualname)
+        if not matches:
+            continue
+        edges.extend(
+            _inspect_ast_edges_for_qualname(
+                context,
+                ast_rows=matches,
+                seen=seen,
+            )
+        )
+    return _edge_rows_to_lazyframe(edges)
 
 
 def _inspect_to_scip_edges_to_cpg(
-    inspect_objects: pl.LazyFrame,
-    scip_symbols: pl.LazyFrame,
-) -> pl.LazyFrame:
+    inspect_objects: pa.Table,
+    scip_symbols: pa.Table,
+) -> pa.Table:
     required_inspect = {"repo", "commit", "object_id", "module_name", "qualname"}
     required_symbols = {"repo", "commit", "symbol", "display_name"}
-    if not required_inspect.issubset(inspect_objects.columns) or not required_symbols.issubset(
-        scip_symbols.columns
+    if not required_inspect.issubset(inspect_objects.column_names) or not required_symbols.issubset(
+        scip_symbols.column_names
     ):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
-    inspect_full = inspect_objects.with_columns(
-        _inspect_full_qualname_expr().alias("full_qualname")
-    ).filter(pl.col("full_qualname").is_not_null())
-    symbols = scip_symbols.select("repo", "commit", "symbol", "display_name")
-    joined = arrow_join_lazyframes(
-        inspect_full,
-        symbols,
-        spec=JoinSpec(
-            left_on=["repo", "commit", "full_qualname"],
-            right_on=["repo", "commit", "display_name"],
-            how="inner",
-        ),
-    )
-    src_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "object_id": pl.col("object_id"),
-    }
-    dst_pk = {
-        "repo": pl.col("repo"),
-        "commit": pl.col("commit"),
-        "symbol": pl.col("symbol"),
-    }
-    extras = _pk_json_expr({"match_kind": pl.lit("display_name")})
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_inspect_symbol",
-        {"object_id": pl.col("object_id"), "symbol": pl.col("symbol")},
-    )
-    return joined.with_columns(
-        _pk_expr(PY_INSPECT_OBJECTS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
-        _pk_expr(SCIP_SYMBOLS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
-        pl.lit("INSPECT_SYMBOL").alias("edge_kind"),
-        pl.lit("SYMBOL").alias("edge_layer"),
-        pl.lit(None).alias("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    symbols_by_key: dict[tuple[str, str, str], list[Mapping[str, object]]] = defaultdict(list)
+    for row in _table_rows(scip_symbols):
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        display_name = _coerce_str(row.get("display_name"))
+        if _has_missing(repo, commit, display_name):
+            continue
+        symbols_by_key[cast("str", repo), cast("str", commit), cast("str", display_name)].append(
+            row
+        )
+    edges: list[dict[str, object]] = []
+    for row in _table_rows(inspect_objects):
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        object_id = _coerce_str(row.get("object_id"))
+        if _has_missing(repo, commit, object_id):
+            continue
+        full_qualname = _inspect_full_qualname(
+            _coerce_str(row.get("module_name")),
+            _coerce_str(row.get("qualname")),
+        )
+        if full_qualname is None:
+            continue
+        matches = symbols_by_key.get((cast("str", repo), cast("str", commit), full_qualname))
+        if not matches:
+            continue
+        for symbol_row in matches:
+            symbol = _coerce_str(symbol_row.get("symbol"))
+            if symbol is None:
+                continue
+            extras = {"match_kind": "display_name"}
+            ordinal = _stable_ordinal(
+                "graph.cpg_edges_inspect_symbol",
+                {"object_id": object_id, "symbol": symbol},
+            )
+            edges.append(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "src_cpg_node_id": _stable_cpg_id(
+                        PY_INSPECT_OBJECTS_TABLE_KEY,
+                        {"repo": repo, "commit": commit, "object_id": object_id},
+                    ),
+                    "dst_cpg_node_id": _stable_cpg_id(
+                        SCIP_SYMBOLS_TABLE_KEY,
+                        {"repo": repo, "commit": commit, "symbol": symbol},
+                    ),
+                    "edge_kind": "INSPECT_SYMBOL",
+                    "edge_layer": "SYMBOL",
+                    "rel_path": None,
+                    "ordinal": ordinal,
+                    "extras_json": _row_to_payload(extras),
+                }
+            )
+    return _edge_rows_to_lazyframe(edges)
 
 
-def _py_inspect_class_mro_edges_to_cpg(class_mro: pl.LazyFrame) -> pl.LazyFrame:
+def _py_inspect_class_mro_edges_to_cpg(class_mro: pa.Table) -> pa.Table:
     rows = _collect_rows(
         class_mro,
         columns=(
@@ -5659,7 +6418,7 @@ def _py_inspect_class_mro_edges_to_cpg(class_mro: pl.LazyFrame) -> pl.LazyFrame:
         ),
     )
     if not rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     edges: list[dict[str, object]] = []
     for row in rows:
         repo = _coerce_str(row.get("repo"))
@@ -5706,7 +6465,7 @@ def _py_inspect_class_mro_edges_to_cpg(class_mro: pl.LazyFrame) -> pl.LazyFrame:
     return _edge_rows_to_lazyframe(edges)
 
 
-def _py_inspect_class_attr_edges_to_cpg(class_attrs: pl.LazyFrame) -> pl.LazyFrame:
+def _py_inspect_class_attr_edges_to_cpg(class_attrs: pa.Table) -> pa.Table:
     rows = _collect_rows(
         class_attrs,
         columns=(
@@ -5726,7 +6485,7 @@ def _py_inspect_class_attr_edges_to_cpg(class_attrs: pl.LazyFrame) -> pl.LazyFra
         ),
     )
     if not rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     edges: list[dict[str, object]] = []
     for row in rows:
         context = _inspect_class_attr_context(row)
@@ -5865,137 +6624,253 @@ def _inspect_class_attr_edges(context: _InspectClassAttrContext) -> list[dict[st
     return edges
 
 
-def _runtime_state_extras_expr() -> pl.Expr:
-    return _pk_json_expr(
-        {
-            "state_kind": pl.col("state_kind"),
-            "state": pl.col("state"),
-            "object_kind": pl.col("object_kind"),
-            "frame_file": pl.col("frame_file"),
-            "frame_module": pl.col("frame_module"),
-            "frame_line": pl.col("frame_line"),
-            "frame_offset": pl.col("frame_offset"),
-            "status": pl.col("status"),
-        }
-    )
+def _runtime_state_extras(row: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "state_kind": row.get("state_kind"),
+        "state": row.get("state"),
+        "object_kind": row.get("object_kind"),
+        "frame_file": row.get("frame_file"),
+        "frame_module": row.get("frame_module"),
+        "frame_line": row.get("frame_line"),
+        "frame_offset": row.get("frame_offset"),
+        "status": row.get("status"),
+    }
 
 
-def _runtime_state_has_state_edges(runtime_state: pl.LazyFrame) -> pl.LazyFrame:
-    has_state = runtime_state.filter(pl.col("frame_object_id").is_not_null())
-    extras = _runtime_state_extras_expr()
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_inspect_runtime_state",
-        {
-            "object_id": pl.col("object_id"),
-            "state_kind": pl.col("state_kind"),
-            "frame_object_id": pl.col("frame_object_id"),
-        },
-    )
-    return has_state.with_columns(
-        _pk_expr(
-            PY_INSPECT_OBJECTS_TABLE_KEY,
-            {"repo": pl.col("repo"), "commit": pl.col("commit"), "object_id": pl.col("object_id")},
-        ).alias("src_cpg_node_id"),
-        _pk_expr(
-            PY_INSPECT_OBJECTS_TABLE_KEY,
+def _runtime_state_has_state_edges(runtime_state: pa.Table) -> pa.Table:
+    edges: list[dict[str, object]] = []
+    for row in _table_rows(runtime_state):
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        object_id = _coerce_str(row.get("object_id"))
+        frame_object_id = _coerce_str(row.get("frame_object_id"))
+        if _has_missing(repo, commit, object_id, frame_object_id):
+            continue
+        extras = _runtime_state_extras(row)
+        ordinal = _stable_ordinal(
+            "graph.cpg_edges_inspect_runtime_state",
             {
-                "repo": pl.col("repo"),
-                "commit": pl.col("commit"),
-                "object_id": pl.col("frame_object_id"),
+                "object_id": object_id,
+                "state_kind": row.get("state_kind"),
+                "frame_object_id": frame_object_id,
             },
-        ).alias("dst_cpg_node_id"),
-        pl.lit("HAS_STATE").alias("edge_kind"),
-        pl.lit("FLOW").alias("edge_layer"),
-        pl.lit(None).alias("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
-
-
-def _runtime_state_with_path(runtime_state: pl.LazyFrame) -> pl.LazyFrame:
-    frame_name = pl.coalesce([pl.col("frame_code_qualname"), pl.col("frame_code_name")])
-    return (
-        runtime_state.filter(pl.col("frame_module").is_not_null())
-        .with_columns(frame_name.alias("frame_name"))
-        .filter(pl.col("frame_name").is_not_null())
-        .with_columns(
-            pl.concat_str([pl.col("frame_module"), pl.lit("::"), pl.col("frame_name")]).alias(
-                "frame_qualpath"
-            )
         )
-        .filter(pl.col("frame_offset").is_not_null())
-        .filter(pl.col("frame_offset") >= 0)
+        edges.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "src_cpg_node_id": _stable_cpg_id(
+                    PY_INSPECT_OBJECTS_TABLE_KEY,
+                    {"repo": repo, "commit": commit, "object_id": object_id},
+                ),
+                "dst_cpg_node_id": _stable_cpg_id(
+                    PY_INSPECT_OBJECTS_TABLE_KEY,
+                    {"repo": repo, "commit": commit, "object_id": frame_object_id},
+                ),
+                "edge_kind": "HAS_STATE",
+                "edge_layer": "FLOW",
+                "rel_path": None,
+                "ordinal": ordinal,
+                "extras_json": _row_to_payload(extras),
+            }
+        )
+    return _edge_rows_to_lazyframe(edges)
+
+
+def _runtime_state_frame_name(row: Mapping[str, object]) -> str | None:
+    return _coerce_str(row.get("frame_code_qualname")) or _coerce_str(row.get("frame_code_name"))
+
+
+@dataclass(frozen=True, slots=True)
+class _RuntimeStateInstrContext:
+    repo: str
+    commit: str
+    object_id: str
+    state_kind: str | None
+    frame_qualpath: str
+    frame_offset: int
+    extras: dict[str, object]
+
+
+def _runtime_state_context(row: Mapping[str, object]) -> _RuntimeStateInstrContext | None:
+    repo = _coerce_str(row.get("repo"))
+    commit = _coerce_str(row.get("commit"))
+    object_id = _coerce_str(row.get("object_id"))
+    if _has_missing(repo, commit, object_id):
+        return None
+    frame_module = _coerce_str(row.get("frame_module"))
+    frame_name = _runtime_state_frame_name(row)
+    frame_offset = _coerce_int(row.get("frame_offset"))
+    if _has_missing(frame_module, frame_name, frame_offset):
+        return None
+    frame_offset_value = cast("int", frame_offset)
+    if frame_offset_value < 0:
+        return None
+    frame_qualpath = f"{frame_module}::{frame_name}"
+    return _RuntimeStateInstrContext(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        object_id=cast("str", object_id),
+        state_kind=_coerce_str(row.get("state_kind")),
+        frame_qualpath=frame_qualpath,
+        frame_offset=frame_offset_value,
+        extras=_runtime_state_extras(row),
     )
 
 
 def _runtime_state_instr_edges(
-    runtime_state: pl.LazyFrame,
-    code_units: pl.LazyFrame,
-    instructions: pl.LazyFrame,
-) -> pl.LazyFrame:
-    runtime_with_path = _runtime_state_with_path(runtime_state)
-    joined_units = arrow_join_lazyframes(
-        runtime_with_path,
-        code_units.select("repo", "commit", "rel_path", "code_unit_id", "qualpath"),
-        spec=JoinSpec(
-            left_on=["repo", "commit", "frame_qualpath"],
-            right_on=["repo", "commit", "qualpath"],
-            how="left",
-        ),
+    runtime_state: pa.Table,
+    code_units: pa.Table,
+    instructions: pa.Table,
+) -> pa.Table:
+    code_unit_rows = _collect_rows(
+        code_units,
+        columns=("repo", "commit", "rel_path", "code_unit_id", "qualpath"),
     )
-    joined_instr = arrow_join_lazyframes(
-        joined_units,
-        instructions.select("repo", "commit", "rel_path", "code_unit_id", "instr_id", "offset"),
-        spec=JoinSpec(
-            left_on=["repo", "commit", "rel_path", "code_unit_id", "frame_offset"],
-            right_on=["repo", "commit", "rel_path", "code_unit_id", "offset"],
-            how="left",
-        ),
+    instr_rows = _collect_rows(
+        instructions,
+        columns=("repo", "commit", "rel_path", "code_unit_id", "instr_id", "offset"),
     )
-    instr_filtered = joined_instr.filter(pl.col("instr_id").is_not_null())
-    edge_kind = (
-        pl.when(pl.col("state_kind") == "traceback")
-        .then(pl.lit("TRACEBACK_AT_INSTR"))
-        .otherwise(pl.lit("FRAME_AT_INSTR"))
-    )
-    extras = _runtime_state_extras_expr()
-    ordinal = _ordinal_expr(
-        "graph.cpg_edges_inspect_runtime_state",
-        {
-            "object_id": pl.col("object_id"),
-            "state_kind": pl.col("state_kind"),
-            "instr_id": pl.col("instr_id"),
-            "frame_offset": pl.col("frame_offset"),
-        },
-    )
-    return instr_filtered.with_columns(
-        _pk_expr(
-            PY_INSPECT_OBJECTS_TABLE_KEY,
-            {"repo": pl.col("repo"), "commit": pl.col("commit"), "object_id": pl.col("object_id")},
-        ).alias("src_cpg_node_id"),
-        _pk_expr(
-            PY_BC_INSTRUCTIONS_TABLE_KEY,
+    if not code_unit_rows or not instr_rows:
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    units_by_key = _runtime_units_index(code_unit_rows)
+    instr_by_key = _runtime_instr_index(instr_rows)
+    edges: list[dict[str, object]] = []
+    for row in _table_rows(runtime_state):
+        edges.extend(_runtime_state_instr_edge_rows(row, units_by_key, instr_by_key))
+    return _edge_rows_to_lazyframe(edges)
+
+
+def _runtime_units_index(
+    code_unit_rows: Sequence[Mapping[str, object]],
+) -> dict[tuple[str, str, str], list[tuple[str, str]]]:
+    units_by_key: dict[tuple[str, str, str], list[tuple[str, str]]] = defaultdict(list)
+    for row in code_unit_rows:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        qualpath = _coerce_str(row.get("qualpath"))
+        rel_path = _coerce_str(row.get("rel_path"))
+        code_unit_id = _coerce_str(row.get("code_unit_id"))
+        if _has_missing(repo, commit, qualpath, rel_path, code_unit_id):
+            continue
+        units_by_key[cast("str", repo), cast("str", commit), cast("str", qualpath)].append(
+            (cast("str", rel_path), cast("str", code_unit_id))
+        )
+    return units_by_key
+
+
+def _runtime_instr_index(
+    instr_rows: Sequence[Mapping[str, object]],
+) -> dict[tuple[str, str, str, str, int], list[str]]:
+    instr_by_key: dict[tuple[str, str, str, str, int], list[str]] = defaultdict(list)
+    for row in instr_rows:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        rel_path = _coerce_str(row.get("rel_path"))
+        code_unit_id = _coerce_str(row.get("code_unit_id"))
+        instr_id = _coerce_str(row.get("instr_id"))
+        offset = _coerce_int(row.get("offset"))
+        if _has_missing(repo, commit, rel_path, code_unit_id, instr_id, offset):
+            continue
+        key = (
+            cast("str", repo),
+            cast("str", commit),
+            cast("str", rel_path),
+            cast("str", code_unit_id),
+            cast("int", offset),
+        )
+        instr_by_key[key].append(cast("str", instr_id))
+    return instr_by_key
+
+
+def _runtime_state_instr_edge_rows(
+    row: Mapping[str, object],
+    units_by_key: Mapping[tuple[str, str, str], Sequence[tuple[str, str]]],
+    instr_by_key: Mapping[tuple[str, str, str, str, int], Sequence[str]],
+) -> list[dict[str, object]]:
+    context = _runtime_state_context(row)
+    if context is None:
+        return []
+    unit_matches = units_by_key.get((context.repo, context.commit, context.frame_qualpath))
+    if not unit_matches:
+        return []
+    return _runtime_state_edges_for_units(context, unit_matches, instr_by_key)
+
+
+def _runtime_state_edges_for_units(
+    context: _RuntimeStateInstrContext,
+    unit_matches: Sequence[tuple[str, str]],
+    instr_by_key: Mapping[tuple[str, str, str, str, int], Sequence[str]],
+) -> list[dict[str, object]]:
+    edge_kind = "TRACEBACK_AT_INSTR" if context.state_kind == "traceback" else "FRAME_AT_INSTR"
+    edges: list[dict[str, object]] = []
+    for rel_path, code_unit_id in unit_matches:
+        instr_matches = instr_by_key.get(
+            (context.repo, context.commit, rel_path, code_unit_id, context.frame_offset)
+        )
+        if not instr_matches:
+            continue
+        edges.extend(
+            _runtime_state_edges_for_instr(
+                context,
+                edge_kind=edge_kind,
+                rel_path=rel_path,
+                code_unit_id=code_unit_id,
+                instr_matches=instr_matches,
+            )
+        )
+    return edges
+
+
+def _runtime_state_edges_for_instr(
+    context: _RuntimeStateInstrContext,
+    *,
+    edge_kind: str,
+    rel_path: str,
+    code_unit_id: str,
+    instr_matches: Sequence[str],
+) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    for instr_id in instr_matches:
+        ordinal = _stable_ordinal(
+            "graph.cpg_edges_inspect_runtime_state",
             {
-                "repo": pl.col("repo"),
-                "commit": pl.col("commit"),
-                "rel_path": pl.col("rel_path"),
-                "code_unit_id": pl.col("code_unit_id"),
-                "instr_id": pl.col("instr_id"),
+                "object_id": context.object_id,
+                "state_kind": context.state_kind,
+                "instr_id": instr_id,
+                "frame_offset": context.frame_offset,
             },
-        ).alias("dst_cpg_node_id"),
-        edge_kind.alias("edge_kind"),
-        pl.lit("FLOW").alias("edge_layer"),
-        pl.col("rel_path"),
-        ordinal.alias("ordinal"),
-        extras.alias("extras_json"),
-    ).select(_CPG_EDGE_COLUMNS)
+        )
+        edges.append(
+            {
+                "repo": context.repo,
+                "commit": context.commit,
+                "src_cpg_node_id": _stable_cpg_id(
+                    PY_INSPECT_OBJECTS_TABLE_KEY,
+                    {"repo": context.repo, "commit": context.commit, "object_id": context.object_id},
+                ),
+                "dst_cpg_node_id": _instruction_cpg_id(
+                    repo=context.repo,
+                    commit=context.commit,
+                    rel_path=rel_path,
+                    code_unit_id=code_unit_id,
+                    instr_id=instr_id,
+                ),
+                "edge_kind": edge_kind,
+                "edge_layer": "FLOW",
+                "rel_path": rel_path,
+                "ordinal": ordinal,
+                "extras_json": _row_to_payload(context.extras),
+            }
+        )
+    return edges
 
 
 def _py_inspect_runtime_state_edges_to_cpg(
-    runtime_state: pl.LazyFrame,
-    code_units: pl.LazyFrame,
-    instructions: pl.LazyFrame,
-) -> pl.LazyFrame:
+    runtime_state: pa.Table,
+    code_units: pa.Table,
+    instructions: pa.Table,
+) -> pa.Table:
     required_state = {
         "repo",
         "commit",
@@ -6015,20 +6890,21 @@ def _py_inspect_runtime_state_edges_to_cpg(
     required_units = {"repo", "commit", "rel_path", "code_unit_id", "qualpath"}
     required_instr = {"repo", "commit", "rel_path", "code_unit_id", "instr_id", "offset"}
     if (
-        not required_state.issubset(runtime_state.columns)
-        or not required_units.issubset(code_units.columns)
-        or not required_instr.issubset(instructions.columns)
+        not required_state.issubset(runtime_state.column_names)
+        or not required_units.issubset(code_units.column_names)
+        or not required_instr.issubset(instructions.column_names)
     ):
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     has_state_edges = _runtime_state_has_state_edges(runtime_state)
     instr_edges = _runtime_state_instr_edges(runtime_state, code_units, instructions)
-    combined = pl.concat([has_state_edges, instr_edges], how="vertical_relaxed")
-    if combined.columns:
-        return combined.select(_CPG_EDGE_COLUMNS)
-    return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    tables = [table for table in (has_state_edges, instr_edges) if table.num_rows > 0]
+    if not tables:
+        return _empty_table(_CPG_EDGE_COLUMNS)
+    combined = pa.concat_tables(tables, promote=True)
+    return _select_edge_columns(combined)
 
 
-def _py_inspect_unwrap_edges_to_cpg(unwrap_hops: pl.LazyFrame) -> pl.LazyFrame:
+def _py_inspect_unwrap_edges_to_cpg(unwrap_hops: pa.Table) -> pa.Table:
     rows = _collect_rows(
         unwrap_hops,
         columns=(
@@ -6043,7 +6919,7 @@ def _py_inspect_unwrap_edges_to_cpg(unwrap_hops: pl.LazyFrame) -> pl.LazyFrame:
         ),
     )
     if not rows:
-        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+        return _empty_table(_CPG_EDGE_COLUMNS)
     grouped: dict[tuple[str, str, str], list[dict[str, object]]] = defaultdict(list)
     for row in rows:
         repo = _coerce_str(row.get("repo"))
@@ -6062,6 +6938,7 @@ def _py_inspect_unwrap_edges_to_cpg(unwrap_hops: pl.LazyFrame) -> pl.LazyFrame:
             dst_id = _coerce_str(items[idx + 1].get("object_id"))
             if _has_missing(src_id, dst_id):
                 continue
+            edge_kind = "DECORATES" if idx == 0 else "WRAPS"
             src_pk = {"repo": repo, "commit": commit, "object_id": src_id}
             dst_pk = {"repo": repo, "commit": commit, "object_id": dst_id}
             extras = {
@@ -6070,11 +6947,16 @@ def _py_inspect_unwrap_edges_to_cpg(unwrap_hops: pl.LazyFrame) -> pl.LazyFrame:
                 "has_wrapped": items[idx].get("has_wrapped"),
                 "has_signature_override": items[idx].get("has_signature_override"),
                 "stop_reason": items[idx].get("stop_reason"),
+                "edge_kind": edge_kind,
             }
             hop_value = _coerce_int(items[idx].get("hop"))
             ordinal = _stable_ordinal(
                 "graph.cpg_edges_inspect_wraps",
-                {"root_object_id": root_object_id, "hop": hop_value},
+                {
+                    "root_object_id": root_object_id,
+                    "hop": hop_value,
+                    "edge_kind": edge_kind,
+                },
             )
             edges.append(
                 {
@@ -6082,7 +6964,7 @@ def _py_inspect_unwrap_edges_to_cpg(unwrap_hops: pl.LazyFrame) -> pl.LazyFrame:
                     "commit": commit,
                     "src_cpg_node_id": _stable_cpg_id(PY_INSPECT_OBJECTS_TABLE_KEY, src_pk),
                     "dst_cpg_node_id": _stable_cpg_id(PY_INSPECT_OBJECTS_TABLE_KEY, dst_pk),
-                    "edge_kind": "WRAPS",
+                    "edge_kind": edge_kind,
                     "edge_layer": "SYMBOL",
                     "rel_path": None,
                     "ordinal": ordinal,
@@ -6107,11 +6989,11 @@ def cpg_edge_symbol_inputs(
         Symbol inputs for CPG edge assembly.
     """
     return _CpgSymbolInputs(
-        syntax_edges=tabular_to_lazyframe(q__core__syntax_edges),
-        occ_syntax=tabular_to_lazyframe(q__core__scip_occurrence_syntax_xref),
-        occ_span=tabular_to_lazyframe(q__core__scip_occurrence_span_xref),
-        symbol_rels=tabular_to_lazyframe(q__core__scip_symbol_relationships),
-        symbol_goid=tabular_to_lazyframe(q__core__scip_symbol_goid_xref),
+        syntax_edges=tabular_to_arrow_table(q__core__syntax_edges),
+        occ_syntax=tabular_to_arrow_table(q__core__scip_occurrence_syntax_xref),
+        occ_span=tabular_to_arrow_table(q__core__scip_occurrence_span_xref),
+        symbol_rels=tabular_to_arrow_table(q__core__scip_symbol_relationships),
+        symbol_goid=tabular_to_arrow_table(q__core__scip_symbol_goid_xref),
     )
 
 
@@ -6130,11 +7012,11 @@ def cpg_edge_flow_inputs(
         Flow inputs for CPG edge assembly.
     """
     return _CpgFlowInputs(
-        goids=tabular_to_lazyframe(q__core__goids),
-        cfg_edges=tabular_to_lazyframe(q__graph__cfg_edges),
-        dfg_edges=tabular_to_lazyframe(q__graph__dfg_edges),
-        cfg_blocks=tabular_to_lazyframe(q__graph__cfg_blocks),
-        cdg_edges=tabular_to_lazyframe(q__graph__cdg_edges),
+        goids=tabular_to_arrow_table(q__core__goids),
+        cfg_edges=tabular_to_arrow_table(q__graph__cfg_edges),
+        dfg_edges=tabular_to_arrow_table(q__graph__dfg_edges),
+        cfg_blocks=tabular_to_arrow_table(q__graph__cfg_blocks),
+        cdg_edges=tabular_to_arrow_table(q__graph__cdg_edges),
     )
 
 
@@ -6150,8 +7032,8 @@ def cpg_edge_link_inputs(
         Graph-link inputs for CPG edge assembly.
     """
     return _CpgLinkInputs(
-        call_edges=tabular_to_lazyframe(q__graph__call_graph_edges),
-        import_edges=tabular_to_lazyframe(q__graph__import_graph_edges),
+        call_edges=tabular_to_arrow_table(q__graph__call_graph_edges),
+        import_edges=tabular_to_arrow_table(q__graph__import_graph_edges),
     )
 
 
@@ -6168,9 +7050,9 @@ def cpg_edge_call_wiring_inputs(
         Call wiring inputs for CPG edge assembly.
     """
     return _CpgCallWiringInputs(
-        call_edges=tabular_to_lazyframe(q__graph__cpg_edges_calls),
-        arg_to_param_edges=tabular_to_lazyframe(q__graph__cpg_edges_arg_to_param),
-        ret_to_call_edges=tabular_to_lazyframe(q__graph__cpg_edges_ret_to_call),
+        call_edges=tabular_to_arrow_table(q__graph__cpg_edges_calls),
+        arg_to_param_edges=tabular_to_arrow_table(q__graph__cpg_edges_arg_to_param),
+        ret_to_call_edges=tabular_to_arrow_table(q__graph__cpg_edges_ret_to_call),
     )
 
 
@@ -6185,7 +7067,7 @@ def cpg_edge_syntax_node_inputs(
         Syntax node inputs for CPG edge assembly.
     """
     return _CpgSyntaxNodeInputs(
-        syntax_nodes=tabular_to_lazyframe(q__core__syntax_nodes),
+        syntax_nodes=tabular_to_arrow_table(q__core__syntax_nodes),
     )
 
 
@@ -6204,11 +7086,11 @@ def cpg_edge_overlay_scope_inputs(
         Scope overlay inputs for CPG edge assembly.
     """
     return _CpgOverlayScopeInputs(
-        py_sym_scopes=tabular_to_lazyframe(q__core__py_sym_scopes),
-        py_sym_bindings=tabular_to_lazyframe(q__core__py_sym_bindings),
-        py_sym_scope_edges=tabular_to_lazyframe(q__core__py_sym_scope_edges),
-        py_sym_namespace_edges=tabular_to_lazyframe(q__core__py_sym_namespace_edges),
-        py_sym_resolution_edges=tabular_to_lazyframe(q__core__py_sym_resolution_edges),
+        py_sym_scopes=tabular_to_arrow_table(q__core__py_sym_scopes),
+        py_sym_bindings=tabular_to_arrow_table(q__core__py_sym_bindings),
+        py_sym_scope_edges=tabular_to_arrow_table(q__core__py_sym_scope_edges),
+        py_sym_namespace_edges=tabular_to_arrow_table(q__core__py_sym_namespace_edges),
+        py_sym_resolution_edges=tabular_to_arrow_table(q__core__py_sym_resolution_edges),
     )
 
 
@@ -6225,8 +7107,8 @@ def cpg_edge_overlay_symbol_inputs(
         Symbol overlay inputs for CPG edge assembly.
     """
     return _CpgOverlaySymbolInputs(
-        ast_nodes=tabular_to_lazyframe(q__core__ast_nodes),
-        scip_symbols=tabular_to_lazyframe(q__core__scip_symbol_information),
+        ast_nodes=tabular_to_arrow_table(q__core__ast_nodes),
+        scip_symbols=tabular_to_arrow_table(q__core__scip_symbol_information),
         scope_inputs=cpg_edge_overlay_scope_inputs,
     )
 
@@ -6246,11 +7128,11 @@ def cpg_edge_overlay_bytecode_inputs(
         Bytecode overlay inputs for CPG edge assembly.
     """
     return _CpgOverlayBytecodeInputs(
-        py_bc_code_units=tabular_to_lazyframe(q__core__py_bc_code_units),
-        py_bc_instructions=tabular_to_lazyframe(q__core__py_bc_instructions),
-        py_bc_blocks=tabular_to_lazyframe(q__core__py_bc_blocks),
-        py_bc_cfg_edges=tabular_to_lazyframe(q__core__py_bc_cfg_edges),
-        py_bc_defuse_events=tabular_to_lazyframe(q__core__py_bc_defuse_events),
+        py_bc_code_units=tabular_to_arrow_table(q__core__py_bc_code_units),
+        py_bc_instructions=tabular_to_arrow_table(q__core__py_bc_instructions),
+        py_bc_blocks=tabular_to_arrow_table(q__core__py_bc_blocks),
+        py_bc_cfg_edges=tabular_to_arrow_table(q__core__py_bc_cfg_edges),
+        py_bc_defuse_events=tabular_to_arrow_table(q__core__py_bc_defuse_events),
     )
 
 
@@ -6266,8 +7148,8 @@ def cpg_edge_overlay_syntax_call_inputs(
         Syntax call inputs for inspect overlays.
     """
     return _CpgOverlaySyntaxCallInputs(
-        syntax_calls=tabular_to_lazyframe(q__core__syntax_calls),
-        syntax_call_args=tabular_to_lazyframe(q__core__syntax_call_args),
+        syntax_calls=tabular_to_arrow_table(q__core__syntax_calls),
+        syntax_call_args=tabular_to_arrow_table(q__core__syntax_call_args),
     )
 
 
@@ -6276,6 +7158,7 @@ def cpg_edge_overlay_inspect_core_inputs(
     q__core__py_inspect_class_mro: InferableTabularInput,
     q__core__py_inspect_class_attrs: InferableTabularInput,
     q__core__py_inspect_unwrap_hops: InferableTabularInput,
+    q__core__py_inspect_source: InferableTabularInput,
 ) -> _CpgOverlayInspectCoreInputs:
     """Collect core inspect inputs for CPG edge assembly.
 
@@ -6285,10 +7168,11 @@ def cpg_edge_overlay_inspect_core_inputs(
         Core inspect inputs for CPG edge assembly.
     """
     return _CpgOverlayInspectCoreInputs(
-        py_inspect_objects=tabular_to_lazyframe(q__core__py_inspect_objects),
-        py_inspect_class_mro=tabular_to_lazyframe(q__core__py_inspect_class_mro),
-        py_inspect_class_attrs=tabular_to_lazyframe(q__core__py_inspect_class_attrs),
-        py_inspect_unwrap_hops=tabular_to_lazyframe(q__core__py_inspect_unwrap_hops),
+        py_inspect_objects=tabular_to_arrow_table(q__core__py_inspect_objects),
+        py_inspect_class_mro=tabular_to_arrow_table(q__core__py_inspect_class_mro),
+        py_inspect_class_attrs=tabular_to_arrow_table(q__core__py_inspect_class_attrs),
+        py_inspect_unwrap_hops=tabular_to_arrow_table(q__core__py_inspect_unwrap_hops),
+        py_inspect_source=tabular_to_arrow_table(q__core__py_inspect_source),
     )
 
 
@@ -6305,9 +7189,9 @@ def cpg_edge_overlay_inspect_runtime_inputs(
         Runtime inspect inputs for CPG edge assembly.
     """
     return _CpgOverlayInspectRuntimeInputs(
-        py_inspect_signatures=tabular_to_lazyframe(q__core__py_inspect_signatures),
-        py_inspect_signature_params=tabular_to_lazyframe(q__core__py_inspect_signature_params),
-        py_inspect_runtime_state=tabular_to_lazyframe(q__core__py_inspect_runtime_state),
+        py_inspect_signatures=tabular_to_arrow_table(q__core__py_inspect_signatures),
+        py_inspect_signature_params=tabular_to_arrow_table(q__core__py_inspect_signature_params),
+        py_inspect_runtime_state=tabular_to_arrow_table(q__core__py_inspect_runtime_state),
     )
 
 
@@ -6329,7 +7213,10 @@ def cpg_edge_overlay_inspect_inputs(
         py_inspect_class_attrs=cpg_edge_overlay_inspect_core_inputs.py_inspect_class_attrs,
         py_inspect_unwrap_hops=cpg_edge_overlay_inspect_core_inputs.py_inspect_unwrap_hops,
         py_inspect_signatures=cpg_edge_overlay_inspect_runtime_inputs.py_inspect_signatures,
-        py_inspect_signature_params=cpg_edge_overlay_inspect_runtime_inputs.py_inspect_signature_params,
+        py_inspect_signature_params=(
+            cpg_edge_overlay_inspect_runtime_inputs.py_inspect_signature_params
+        ),
+        py_inspect_source=cpg_edge_overlay_inspect_core_inputs.py_inspect_source,
         py_inspect_runtime_state=cpg_edge_overlay_inspect_runtime_inputs.py_inspect_runtime_state,
         syntax_calls=cpg_edge_overlay_syntax_call_inputs.syntax_calls,
         syntax_call_args=cpg_edge_overlay_syntax_call_inputs.syntax_call_args,
@@ -6369,6 +7256,7 @@ def cpg_edge_overlay_inputs(
         py_inspect_unwrap_hops=cpg_edge_overlay_inspect_inputs.py_inspect_unwrap_hops,
         py_inspect_signatures=cpg_edge_overlay_inspect_inputs.py_inspect_signatures,
         py_inspect_signature_params=cpg_edge_overlay_inspect_inputs.py_inspect_signature_params,
+        py_inspect_source=cpg_edge_overlay_inspect_inputs.py_inspect_source,
         py_inspect_runtime_state=cpg_edge_overlay_inspect_inputs.py_inspect_runtime_state,
     )
 
@@ -6399,13 +7287,14 @@ def cpg_edge_core_inputs(
 def cpg_edges(
     cpg_edge_core_inputs: _CpgEdgeCoreInputs,
     cpg_edge_overlay_inputs: _CpgOverlayEdgeInputs,
-) -> pl.LazyFrame:
+    cpg__options: CpgOptions,
+) -> InferableTabularInput:
     """Build CPG edges from syntax, symbol, and flow sources.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame for graph.cpg_edges.
+    InferableTabularInput
+        Arrow reader for graph.cpg_edges.
     """
     cfg_blocks = cpg_edge_core_inputs.flow.cfg_blocks
     syntax_nodes = cpg_edge_core_inputs.syntax_nodes.syntax_nodes
@@ -6498,50 +7387,60 @@ def cpg_edges(
             overlay_inputs.py_bc_instructions,
             overlay_inputs.py_bc_blocks,
         ),
-        _py_bc_reaches_edges_to_cpg(
-            _PyBcReachesInputs(
-                defuse_events=overlay_inputs.py_bc_defuse_events,
-                code_units=overlay_inputs.py_bc_code_units,
-                scopes=overlay_inputs.py_sym_scopes,
-                bindings=overlay_inputs.py_sym_bindings,
-                resolution_edges=overlay_inputs.py_sym_resolution_edges,
-                blocks=overlay_inputs.py_bc_blocks,
-                cfg_edges=overlay_inputs.py_bc_cfg_edges,
-            )
-        ),
-        _py_inspect_signature_edges_to_cpg(
-            overlay_inputs.py_inspect_signatures,
-            overlay_inputs.py_inspect_signature_params,
-        ),
-        _inspect_arg_to_param_edges_to_cpg(
-            overlay_inputs.syntax_calls,
-            overlay_inputs.syntax_call_args,
-            overlay_inputs.py_inspect_objects,
-            overlay_inputs.py_inspect_signatures,
-            overlay_inputs.py_inspect_signature_params,
-        ),
-        _py_inspect_unwrap_edges_to_cpg(overlay_inputs.py_inspect_unwrap_hops),
-        _py_inspect_class_mro_edges_to_cpg(overlay_inputs.py_inspect_class_mro),
-        _py_inspect_class_attr_edges_to_cpg(overlay_inputs.py_inspect_class_attrs),
-        _py_inspect_runtime_state_edges_to_cpg(
-            overlay_inputs.py_inspect_runtime_state,
-            overlay_inputs.py_bc_code_units,
-            overlay_inputs.py_bc_instructions,
-        ),
-        _inspect_to_ast_edges_to_cpg(
-            overlay_inputs.py_inspect_objects,
-            overlay_inputs.ast_nodes,
-        ),
-        _inspect_to_scip_edges_to_cpg(
-            overlay_inputs.py_inspect_objects,
-            overlay_inputs.scip_symbols,
-        ),
     ]
-    combined = pl.concat(frames, how="vertical_relaxed")
-    if combined.columns:
-        combined = dedupe_frame_for_table(combined, table_key=CPG_EDGES_TABLE_KEY)
-        return _select_edge_columns(combined)
-    return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    if cpg__options.enable_reaches:
+        frames.append(
+            _py_bc_reaches_edges_to_cpg(
+                _PyBcReachesInputs(
+                    defuse_events=overlay_inputs.py_bc_defuse_events,
+                    code_units=overlay_inputs.py_bc_code_units,
+                    scopes=overlay_inputs.py_sym_scopes,
+                    bindings=overlay_inputs.py_sym_bindings,
+                    resolution_edges=overlay_inputs.py_sym_resolution_edges,
+                    blocks=overlay_inputs.py_bc_blocks,
+                    cfg_edges=overlay_inputs.py_bc_cfg_edges,
+                )
+            )
+        )
+    frames.extend(
+        [
+            _py_inspect_signature_edges_to_cpg(
+                overlay_inputs.py_inspect_signatures,
+                overlay_inputs.py_inspect_signature_params,
+            ),
+            _inspect_arg_to_param_edges_to_cpg(
+                overlay_inputs.syntax_calls,
+                overlay_inputs.syntax_call_args,
+                overlay_inputs.py_inspect_objects,
+                overlay_inputs.py_inspect_signatures,
+                overlay_inputs.py_inspect_signature_params,
+            ),
+            _py_inspect_unwrap_edges_to_cpg(overlay_inputs.py_inspect_unwrap_hops),
+            _py_inspect_class_mro_edges_to_cpg(overlay_inputs.py_inspect_class_mro),
+            _py_inspect_class_attr_edges_to_cpg(overlay_inputs.py_inspect_class_attrs),
+            _py_inspect_runtime_state_edges_to_cpg(
+                overlay_inputs.py_inspect_runtime_state,
+                overlay_inputs.py_bc_code_units,
+                overlay_inputs.py_bc_instructions,
+            ),
+            _inspect_to_ast_edges_to_cpg(
+                overlay_inputs.py_inspect_objects,
+                overlay_inputs.py_inspect_source,
+                overlay_inputs.ast_nodes,
+            ),
+            _inspect_to_scip_edges_to_cpg(
+                overlay_inputs.py_inspect_objects,
+                overlay_inputs.scip_symbols,
+            ),
+        ]
+    )
+    tables = [frame for frame in frames if frame.num_rows > 0]
+    if tables:
+        combined = pa.concat_tables(tables, promote=True)
+        combined = _select_edge_columns(combined)
+        combined = dedupe_table_for_table(CPG_EDGES_TABLE_KEY, combined)
+        return _frame_to_reader(CPG_EDGES_TABLE_KEY, combined)
+    return empty_reader_for_table(CPG_EDGES_TABLE_KEY)
 
 
 def instruction_cpg_id(
@@ -6580,32 +7479,74 @@ def stable_cpg_id(table_key: str, pk: Mapping[str, object]) -> int:
 
 
 def py_bc_callsite_symbol_edges_to_cpg(
-    instructions: pl.LazyFrame,
-    syntax_calls: pl.LazyFrame,
-    scip_symbols: pl.LazyFrame,
-) -> pl.LazyFrame:
+    instructions: pa.Table,
+    syntax_calls: pa.Table,
+    scip_symbols: pa.Table,
+) -> pa.Table:
     """Public wrapper for bytecode callsite symbol edges.
 
     Returns
     -------
-    polars.LazyFrame
-        LazyFrame of callsite symbol edges.
+    pyarrow.Table
+        Arrow table of callsite symbol edges.
     """
     return _py_bc_callsite_symbol_edges_to_cpg(instructions, syntax_calls, scip_symbols)
 
 
+def py_bc_callsite_edges_to_cpg(
+    instructions: pa.Table,
+    syntax_calls: pa.Table,
+) -> pa.Table:
+    """Public wrapper for bytecode callsite edges.
+
+    Returns
+    -------
+    pyarrow.Table
+        Arrow table of callsite edges.
+    """
+    return _py_bc_callsite_edges_to_cpg(instructions, syntax_calls)
+
+
 def py_bc_stack_edges_to_cpg(
-    instructions: pl.LazyFrame,
-    blocks: pl.LazyFrame,
-) -> pl.LazyFrame:
+    instructions: pa.Table,
+    blocks: pa.Table,
+) -> pa.Table:
     """Public wrapper for bytecode stack edges.
 
     Returns
     -------
-    polars.LazyFrame
-        LazyFrame of stack edges.
+    pyarrow.Table
+        Arrow table of stack edges.
     """
     return _py_bc_stack_edges_to_cpg(instructions, blocks)
+
+
+def py_inspect_unwrap_edges_to_cpg(
+    unwrap_hops: pa.Table,
+) -> pa.Table:
+    """Public wrapper for inspect unwrap edges.
+
+    Returns
+    -------
+    pyarrow.Table
+        Arrow table of unwrap edges.
+    """
+    return _py_inspect_unwrap_edges_to_cpg(unwrap_hops)
+
+
+def inspect_to_ast_edges_to_cpg(
+    inspect_objects: pa.Table,
+    inspect_source: pa.Table,
+    ast_nodes: pa.Table,
+) -> pa.Table:
+    """Public wrapper for inspect-to-AST anchor edges.
+
+    Returns
+    -------
+    pyarrow.Table
+        Arrow table of inspect anchor edges.
+    """
+    return _inspect_to_ast_edges_to_cpg(inspect_objects, inspect_source, ast_nodes)
 
 
 __all__ = [
@@ -6614,8 +7555,11 @@ __all__ = [
     "CPG_TARGET_NAME",
     "cpg_edges",
     "cpg_nodes",
+    "inspect_to_ast_edges_to_cpg",
     "instruction_cpg_id",
+    "py_bc_callsite_edges_to_cpg",
     "py_bc_callsite_symbol_edges_to_cpg",
     "py_bc_stack_edges_to_cpg",
+    "py_inspect_unwrap_edges_to_cpg",
     "stable_cpg_id",
 ]

@@ -226,6 +226,38 @@ def write_parquet_relation(
     return rows_written
 
 
+def write_parquet_reader(
+    *,
+    reader: RecordBatchReader,
+    output_path: Path,
+) -> int:
+    """Write a RecordBatchReader to Parquet and return row count.
+
+    Parameters
+    ----------
+    reader
+        Arrow record batch reader to export.
+    output_path
+        Destination path for the Parquet file.
+
+    Returns
+    -------
+    int
+        Number of rows written to the Parquet file.
+    """
+    rows_written = 0
+    wrote_batches = False
+    with pq.ParquetWriter(str(output_path), reader.schema) as writer:
+        for batch in _iter_batches(reader):
+            rows_written += batch.num_rows
+            wrote_batches = True
+            table = pa.Table.from_batches([cast("pa.RecordBatch", batch)], schema=reader.schema)
+            writer.write_table(table)
+    if not wrote_batches:
+        pq.write_table(pa.Table.from_batches([], schema=reader.schema), str(output_path))
+    return rows_written
+
+
 def _iter_batches(reader: Iterable[RecordBatch]) -> Iterable[RecordBatch]:
     """Yield record batches from a batch reader.
 
@@ -263,5 +295,6 @@ __all__ = [
     "write_json_array",
     "write_jsonl_reader",
     "write_jsonl_records",
+    "write_parquet_reader",
     "write_parquet_relation",
 ]

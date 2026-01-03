@@ -44,7 +44,9 @@ __all__ = [
     "AnalyticsGraphValidationRow",
     "AnalyticsHelloExampleRow",
     "AnalyticsHistoryTimeseriesRow",
+    "AnalyticsHotspotsRow",
     "AnalyticsModuleProfileRow",
+    "AnalyticsPyCpgQualityReportRow",
     "AnalyticsSemanticRolesFunctionsRow",
     "AnalyticsSemanticRolesModulesRow",
     "AnalyticsStaticDiagnosticsRow",
@@ -57,6 +59,9 @@ __all__ = [
     "AnalyticsSymbolGraphMetricsModulesRow",
     "AnalyticsTagsIndexRow",
     "AnalyticsTestCatalogRow",
+    "AnalyticsTestCoverageEdgesRow",
+    "AnalyticsTestGraphMetricsFunctionsRow",
+    "AnalyticsTestProfileRow",
 ]
 
 
@@ -908,6 +913,18 @@ class AnalyticsHistoryTimeseriesRow(TypedDict):
     created_at_row_1: str | None
 
 
+class AnalyticsHotspotsRow(TypedDict):
+    """Row model for analytics.hotspots."""
+
+    rel_path: str
+    commit_count: int | None
+    author_count: int | None
+    lines_added: int | None
+    lines_deleted: int | None
+    complexity: float | None
+    score: float | None
+
+
 class AnalyticsModuleProfileRow(TypedDict):
     """Row model for analytics.module_profile."""
 
@@ -941,6 +958,30 @@ class AnalyticsModuleProfileRow(TypedDict):
     tags: object | None
     owners: object | None
     created_at: datetime
+
+
+class AnalyticsPyCpgQualityReportRow(TypedDict):
+    """Row model for analytics.py_cpg_quality_report."""
+
+    repo: str
+    commit: str
+    run_id: str
+    instruction_count: int | None
+    instruction_anchored_count: int | None
+    instruction_anchor_rate: float | None
+    sym_scope_count: int | None
+    sym_scope_anchored_count: int | None
+    sym_scope_anchor_rate: float | None
+    cfg_block_count: int | None
+    cfg_reachable_block_count: int | None
+    cfg_reachability_rate: float | None
+    defuse_event_count: int | None
+    defuse_edge_count: int | None
+    defuse_resolution_rate: float | None
+    inspect_object_count: int | None
+    inspect_anchored_count: int | None
+    inspect_anchor_rate: float | None
+    created_at: datetime | None
 
 
 class AnalyticsSemanticRolesFunctionsRow(TypedDict):
@@ -1134,4 +1175,84 @@ class AnalyticsTestCatalogRow(TypedDict):
     markers: object | None
     parametrized: bool | None
     flaky: bool | None
+    created_at: datetime | None
+
+
+class AnalyticsTestCoverageEdgesRow(TypedDict):
+    """Row model for analytics.test_coverage_edges."""
+
+    test_id: str
+    test_goid_h128: int | None
+    function_goid_h128: int
+    urn: str | None
+    repo: str
+    commit: str
+    rel_path: str | None
+    qualname: str | None
+    covered_lines: int | None
+    executable_lines: int | None
+    coverage_ratio: float | None
+    last_status: str | None
+    created_at: datetime | None
+
+
+class AnalyticsTestGraphMetricsFunctionsRow(TypedDict):
+    """Row model for analytics.test_graph_metrics_functions."""
+
+    function_goid_h128: int
+    repo: str
+    commit: str
+    tests_degree: int | None
+    tests_weighted_degree: float | None
+    tests_degree_centrality: float | None
+    proj_degree: int | None
+    proj_weight: float | None
+    proj_clustering: float | None
+    proj_betweenness: float | None
+    tests_risk_weighted_degree: float | None
+    created_at: datetime | None
+
+
+class AnalyticsTestProfileRow(TypedDict):
+    """Row model for analytics.test_profile."""
+
+    repo: str
+    commit: str
+    test_id: str
+    test_goid_h128: int | None
+    urn: str | None
+    rel_path: str | None
+    module: str | None
+    qualname: str | None
+    language: str | None
+    kind: str | None
+    status: str | None
+    duration_ms: float | None
+    markers: object | None
+    flaky: bool | None
+    last_run_at: datetime | None
+    functions_covered: object | None
+    functions_covered_count: int | None
+    primary_function_goids: object | None
+    subsystems_covered: object | None
+    subsystems_covered_count: int | None
+    primary_subsystem_id: str | None
+    assert_count: int | None
+    raise_count: int | None
+    uses_parametrize: bool | None
+    uses_fixtures: bool | None
+    io_bound: bool | None
+    uses_network: bool | None
+    uses_db: bool | None
+    uses_filesystem: bool | None
+    uses_subprocess: bool | None
+    flakiness_score: float | None
+    importance_score: float | None
+    notes: str | None
+    tg_degree: int | None
+    tg_weighted_degree: float | None
+    tg_proj_degree: int | None
+    tg_proj_weight: float | None
+    tg_proj_clustering: float | None
+    tg_proj_betweenness: float | None
     created_at: datetime | None

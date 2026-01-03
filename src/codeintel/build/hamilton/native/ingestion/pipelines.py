@@ -5,12 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import ParamSpec, Protocol, TypeVar, cast
 
-import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 from hamilton.function_modifiers import mutate as h_mutate
 from hamilton.function_modifiers import pipe_input, resolve_from_config, step, value
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.tabular.conversion import tabular_to_arrow_reader
+from codeintel.build.tabular.types import InferableTabularInput
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -22,13 +25,44 @@ class _TransformCarrier(Protocol):
 
 
 def _drop_null_rows(
-    frame: pl.LazyFrame,
+    rows: InferableTabularInput | None,
     *,
     required_cols: tuple[str, ...],
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader | None:
+    if rows is None:
+        return None
     if not required_cols:
-        return frame
-    return frame.drop_nulls(list(required_cols))
+        return tabular_to_arrow_reader(rows)
+    reader = tabular_to_arrow_reader(rows)
+    required = [name for name in required_cols if name in reader.schema.names]
+    if not required:
+        return reader
+    batches: list[pa.RecordBatch] = []
+    for batch in reader:
+        mask = _required_columns_mask(batch, required)
+        if mask is None:
+            batches.append(batch)
+            continue
+        filtered = batch.filter(mask)
+        if filtered.num_rows:
+            batches.append(filtered)
+    return pa.RecordBatchReader.from_batches(reader.schema, batches)
+
+
+def _required_columns_mask(
+    batch: pa.RecordBatch,
+    required: Sequence[str],
+) -> pa.Array | None:
+    if not required:
+        return None
+    mask: pa.Array | None = None
+    for name in required:
+        index = batch.schema.get_field_index(name)
+        if index < 0:
+            continue
+        col_mask = pc.call_function("is_valid", [batch.column(index)])
+        mask = col_mask if mask is None else pc.call_function("and_kleene", [mask, col_mask])
+    return mask
 
 
 def _pipe_ingest_rows(

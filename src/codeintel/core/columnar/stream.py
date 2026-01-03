@@ -14,7 +14,6 @@ from codeintel.core.columnar.polars_collect import (
     collect_batches,
     collect_lazyframe,
 )
-from codeintel.core.columnar.schema import unify_schema_for_batches
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
 
@@ -159,9 +158,7 @@ class RecordBatchReaderStream:
         pyarrow.Table
             Materialized table containing the stream data.
         """
-        batches = list(self.reader)
-        schema = unify_schema_for_batches(batches, base_schema=self.reader.schema)
-        return pa.Table.from_batches(batches, schema=schema)
+        return self.reader.read_all()
 
 
 @dataclass(frozen=True, slots=True)
@@ -422,7 +419,7 @@ def coerce_arrow_table(value: object) -> pa.Table | None:
         return value
     reader = _import_c_stream(value)
     if reader is not None:
-        return pa.Table.from_batches(list(reader), schema=reader.schema)
+        return reader.read_all()
     return _table_from_interchange(value)
 
 

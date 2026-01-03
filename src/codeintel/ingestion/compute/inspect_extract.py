@@ -10,6 +10,7 @@ import logging
 import multiprocessing
 import queue
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,21 +23,20 @@ from types import (
 )
 from typing import TYPE_CHECKING, cast
 
+import pyarrow as pa
+
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.options.ingestion import InspectExtractOptions
 from codeintel.core.columnar.rows import (
-    ColumnarRowBuffer,
+    ColumnarBatchCollector,
     ColumnarRows,
-    columnar_buffer_for_table_key,
+    columnar_batch_collector_for_table_key,
     empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
-
-    import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
@@ -55,6 +55,11 @@ PY_INSPECT_ANNOTATIONS_TABLE_KEY = "core.py_inspect_annotations_kv"
 PY_INSPECT_SOURCE_TABLE_KEY = "core.py_inspect_source"
 PY_INSPECT_RUNTIME_STATE_TABLE_KEY = "core.py_inspect_runtime_state"
 _ALLOWLIST_PREVIEW_LIMIT = 5
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - platform dependent
+    resource = None
 
 
 @dataclass(frozen=True)
@@ -125,22 +130,22 @@ class _InspectContext:
 
 
 @dataclass(frozen=True, slots=True)
-class _InspectBuffers:
-    objects: ColumnarRowBuffer
-    members: ColumnarRowBuffer
-    class_mro: ColumnarRowBuffer
-    class_attrs: ColumnarRowBuffer
-    unwrap: ColumnarRowBuffer
-    signatures: ColumnarRowBuffer
-    signature_params: ColumnarRowBuffer
-    annotations: ColumnarRowBuffer
-    sources: ColumnarRowBuffer
-    runtime_state: ColumnarRowBuffer
+class _InspectCollectors:
+    objects: ColumnarBatchCollector
+    members: ColumnarBatchCollector
+    class_mro: ColumnarBatchCollector
+    class_attrs: ColumnarBatchCollector
+    unwrap: ColumnarBatchCollector
+    signatures: ColumnarBatchCollector
+    signature_params: ColumnarBatchCollector
+    annotations: ColumnarBatchCollector
+    sources: ColumnarBatchCollector
+    runtime_state: ColumnarBatchCollector
 
 
 @dataclass(slots=True)
 class _InspectState:
-    buffers: _InspectBuffers
+    collectors: _InspectCollectors
     seen_objects: set[str]
     warnings: list[str]
     repo: str
@@ -149,6 +154,7 @@ class _InspectState:
     object_limit: int
     eval_str: bool
     follow_wrapped: bool
+    module_timeout_seconds: float | None
     object_count: int = 0
 
 
@@ -171,16 +177,16 @@ class _RuntimeStateInfo:
 @dataclass(frozen=True, slots=True)
 class _InspectWorkerPayload:
     warnings: list[str]
-    object_rows: ColumnarRows
-    member_rows: ColumnarRows
-    class_mro_rows: ColumnarRows
-    class_attr_rows: ColumnarRows
-    unwrap_rows: ColumnarRows
-    signature_rows: ColumnarRows
-    signature_param_rows: ColumnarRows
-    annotation_rows: ColumnarRows
-    source_rows: ColumnarRows
-    runtime_state_rows: ColumnarRows
+    object_batches: list[pa.RecordBatch]
+    member_batches: list[pa.RecordBatch]
+    class_mro_batches: list[pa.RecordBatch]
+    class_attr_batches: list[pa.RecordBatch]
+    unwrap_batches: list[pa.RecordBatch]
+    signature_batches: list[pa.RecordBatch]
+    signature_param_batches: list[pa.RecordBatch]
+    annotation_batches: list[pa.RecordBatch]
+    source_batches: list[pa.RecordBatch]
+    runtime_state_batches: list[pa.RecordBatch]
     object_row_count: int
     member_row_count: int
     class_mro_row_count: int
@@ -208,19 +214,72 @@ def _stable_id(*parts: object) -> str:
     return digest.hexdigest()
 
 
-def _build_inspect_buffers() -> _InspectBuffers:
-    return _InspectBuffers(
-        objects=columnar_buffer_for_table_key(PY_INSPECT_OBJECTS_TABLE_KEY),
-        members=columnar_buffer_for_table_key(PY_INSPECT_MEMBERS_TABLE_KEY),
-        class_mro=columnar_buffer_for_table_key(PY_INSPECT_CLASS_MRO_TABLE_KEY),
-        class_attrs=columnar_buffer_for_table_key(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
-        unwrap=columnar_buffer_for_table_key(PY_INSPECT_UNWRAP_TABLE_KEY),
-        signatures=columnar_buffer_for_table_key(PY_INSPECT_SIGNATURES_TABLE_KEY),
-        signature_params=columnar_buffer_for_table_key(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
-        annotations=columnar_buffer_for_table_key(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
-        sources=columnar_buffer_for_table_key(PY_INSPECT_SOURCE_TABLE_KEY),
-        runtime_state=columnar_buffer_for_table_key(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
+def _build_inspect_collectors(options: InspectExtractOptions) -> _InspectCollectors:
+    return _InspectCollectors(
+        objects=columnar_batch_collector_for_table_key(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        members=columnar_batch_collector_for_table_key(
+            PY_INSPECT_MEMBERS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        class_mro=columnar_batch_collector_for_table_key(
+            PY_INSPECT_CLASS_MRO_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        class_attrs=columnar_batch_collector_for_table_key(
+            PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        unwrap=columnar_batch_collector_for_table_key(
+            PY_INSPECT_UNWRAP_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        signatures=columnar_batch_collector_for_table_key(
+            PY_INSPECT_SIGNATURES_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        signature_params=columnar_batch_collector_for_table_key(
+            PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        annotations=columnar_batch_collector_for_table_key(
+            PY_INSPECT_ANNOTATIONS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        sources=columnar_batch_collector_for_table_key(
+            PY_INSPECT_SOURCE_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        runtime_state=columnar_batch_collector_for_table_key(
+            PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
     )
+
+
+def _flush_inspect_collectors(collectors: _InspectCollectors) -> None:
+    collectors.objects.flush()
+    collectors.members.flush()
+    collectors.class_mro.flush()
+    collectors.class_attrs.flush()
+    collectors.unwrap.flush()
+    collectors.signatures.flush()
+    collectors.signature_params.flush()
+    collectors.annotations.flush()
+    collectors.sources.flush()
+    collectors.runtime_state.flush()
 
 
 def _ok_status() -> dict[str, object]:
@@ -742,7 +801,7 @@ def _record_object(
         return object_id
     state.seen_objects.add(object_id)
     context = _inspect_context(state, object_id=object_id)
-    state.buffers.objects.append(_object_row(value, context=context, kind=kind))
+    state.collectors.objects.append(_object_row(value, context=context, kind=kind))
     state.object_count += 1
     if inspect.isclass(value):
         _inspect_class(state, cast("type[object]", value), object_id=object_id)
@@ -770,7 +829,7 @@ def _inspect_class_mro(
     try:
         mro_items = inspect.getmro(value)
     except (AttributeError, TypeError) as exc:
-        state.buffers.class_mro.append(
+        state.collectors.class_mro.append(
             {
                 "repo": context.repo,
                 "commit": context.commit,
@@ -788,7 +847,7 @@ def _inspect_class_mro(
         base_object_id = _record_object(state, value=base, kind=base_kind)
         if base_object_id is None:
             base_object_id = _object_id(base, base_kind)
-        state.buffers.class_mro.append(
+        state.collectors.class_mro.append(
             {
                 "repo": context.repo,
                 "commit": context.commit,
@@ -812,7 +871,7 @@ def _inspect_class_attrs(
     try:
         class_attrs = inspect.classify_class_attrs(value)
     except (AttributeError, TypeError) as exc:
-        state.buffers.class_attrs.append(
+        state.collectors.class_attrs.append(
             {
                 "repo": context.repo,
                 "commit": context.commit,
@@ -837,7 +896,7 @@ def _inspect_class_attrs(
         if row is None:
             continue
         value_object_id = row["value_object_id"]
-        state.buffers.class_attrs.append(row)
+        state.collectors.class_attrs.append(row)
         if value_object_id is None:
             continue
         value_obj = getattr(attr, "object", None)
@@ -1022,7 +1081,8 @@ def _inspect_runtime_state(
 ) -> None:
     rows = _runtime_state_rows(state, value=value, object_id=object_id)
     if rows:
-        state.buffers.runtime_state.extend(rows)
+        state.collectors.runtime_state.extend(rows)
+
 
 def _inspect_callable(
     state: _InspectState,
@@ -1031,19 +1091,19 @@ def _inspect_callable(
     object_id: str,
 ) -> None:
     context = _inspect_context(state, object_id=object_id)
-    state.buffers.unwrap.extend(_unwrap_hops(value, context=context))
+    state.collectors.unwrap.extend(_unwrap_hops(value, context=context))
     sig_rows, param_rows = _signature_rows(value, context=context)
-    state.buffers.signatures.extend(sig_rows)
-    state.buffers.signature_params.extend(param_rows)
+    state.collectors.signatures.extend(sig_rows)
+    state.collectors.signature_params.extend(param_rows)
     try:
         annotations = inspect.get_annotations(value, eval_str=state.eval_str)
     except (TypeError, ValueError, NameError) as exc:
         state.warnings.append(f"Inspect annotations failed: {exc}")
         annotations = {}
-    state.buffers.annotations.extend(_annotation_payload(annotations, context=context))
+    state.collectors.annotations.extend(_annotation_payload(annotations, context=context))
     source_row = _source_row(value, context=context)
     if source_row is not None:
-        state.buffers.sources.append(source_row)
+        state.collectors.sources.append(source_row)
 
 
 def _inspect_member(
@@ -1062,7 +1122,7 @@ def _inspect_member(
     is_runtime = _is_runtime_object(value)
     if inspect.isroutine(value) or inspect.isclass(value) or inspect.ismodule(value) or is_runtime:
         value_object_id = _record_object(state, value=value, kind=value_kind)
-    state.buffers.members.append(
+    state.collectors.members.append(
         {
             "repo": state.repo,
             "commit": state.commit,
@@ -1192,28 +1252,29 @@ def _filter_inspect_modules(
 
 
 def _build_payload(state: _InspectState) -> _InspectWorkerPayload:
+    _flush_inspect_collectors(state.collectors)
     return _InspectWorkerPayload(
         warnings=list(state.warnings),
-        object_rows=state.buffers.objects.data,
-        member_rows=state.buffers.members.data,
-        class_mro_rows=state.buffers.class_mro.data,
-        class_attr_rows=state.buffers.class_attrs.data,
-        unwrap_rows=state.buffers.unwrap.data,
-        signature_rows=state.buffers.signatures.data,
-        signature_param_rows=state.buffers.signature_params.data,
-        annotation_rows=state.buffers.annotations.data,
-        source_rows=state.buffers.sources.data,
-        runtime_state_rows=state.buffers.runtime_state.data,
-        object_row_count=state.buffers.objects.row_count,
-        member_row_count=state.buffers.members.row_count,
-        class_mro_row_count=state.buffers.class_mro.row_count,
-        class_attr_row_count=state.buffers.class_attrs.row_count,
-        unwrap_row_count=state.buffers.unwrap.row_count,
-        signature_row_count=state.buffers.signatures.row_count,
-        signature_param_row_count=state.buffers.signature_params.row_count,
-        annotation_row_count=state.buffers.annotations.row_count,
-        source_row_count=state.buffers.sources.row_count,
-        runtime_state_row_count=state.buffers.runtime_state.row_count,
+        object_batches=state.collectors.objects.batches,
+        member_batches=state.collectors.members.batches,
+        class_mro_batches=state.collectors.class_mro.batches,
+        class_attr_batches=state.collectors.class_attrs.batches,
+        unwrap_batches=state.collectors.unwrap.batches,
+        signature_batches=state.collectors.signatures.batches,
+        signature_param_batches=state.collectors.signature_params.batches,
+        annotation_batches=state.collectors.annotations.batches,
+        source_batches=state.collectors.sources.batches,
+        runtime_state_batches=state.collectors.runtime_state.batches,
+        object_row_count=state.collectors.objects.row_count,
+        member_row_count=state.collectors.members.row_count,
+        class_mro_row_count=state.collectors.class_mro.row_count,
+        class_attr_row_count=state.collectors.class_attrs.row_count,
+        unwrap_row_count=state.collectors.unwrap.row_count,
+        signature_row_count=state.collectors.signatures.row_count,
+        signature_param_row_count=state.collectors.signature_params.row_count,
+        annotation_row_count=state.collectors.annotations.row_count,
+        source_row_count=state.collectors.sources.row_count,
+        runtime_state_row_count=state.collectors.runtime_state.row_count,
     )
 
 
@@ -1225,9 +1286,9 @@ def _run_inspect_modules(
     options: InspectExtractOptions,
     warnings: list[str],
 ) -> _InspectWorkerPayload:
-    buffers = _build_inspect_buffers()
+    collectors = _build_inspect_collectors(options)
     state = _InspectState(
-        buffers=buffers,
+        collectors=collectors,
         seen_objects=set(),
         warnings=warnings,
         repo=repo,
@@ -1236,12 +1297,21 @@ def _run_inspect_modules(
         object_limit=options.max_objects,
         eval_str=options.eval_str,
         follow_wrapped=options.follow_wrapped,
+        module_timeout_seconds=options.max_module_seconds,
     )
     for module in modules:
         if state.object_count >= state.object_limit:
             _warn_object_limit(state)
             break
+        start_time = time.monotonic()
         _inspect_module(state, module)
+        _flush_inspect_collectors(state.collectors)
+        elapsed = time.monotonic() - start_time
+        max_seconds = state.module_timeout_seconds
+        if max_seconds is not None and max_seconds > 0 and elapsed > max_seconds:
+            state.warnings.append(
+                f"Inspect module budget exceeded for {module.module_name}: {elapsed:.2f}s"
+            )
     return _build_payload(state)
 
 
@@ -1249,12 +1319,14 @@ def _inspect_worker_entry(
     result_queue: multiprocessing.Queue[object],
     job: _InspectWorkerJob,
 ) -> None:
+    warnings = list(job.seed_warnings)
+    _apply_memory_budget(job.options.max_memory_mb, warnings=warnings)
     payload = _run_inspect_modules(
         job.modules,
         repo=job.repo,
         commit=job.commit,
         options=job.options,
-        warnings=list(job.seed_warnings),
+        warnings=warnings,
     )
     result_queue.put({"ok": True, "payload": payload})
 
@@ -1286,74 +1358,74 @@ def _combine_warnings(base: list[str], extra: list[str]) -> tuple[str, ...]:
     return tuple(combined)
 
 
+def _reader_from_batches(
+    table_key: str,
+    batches: list[pa.RecordBatch],
+) -> pa.RecordBatchReader:
+    if not batches:
+        return empty_reader_for_table(table_key)
+    schema = batches[0].schema
+    return pa.RecordBatchReader.from_batches(schema, batches)
+
+
 def _payload_to_result(
     payload: _InspectWorkerPayload,
     *,
     warnings: list[str] | None = None,
 ) -> InspectExtractResult:
     resolved_warnings = payload.warnings if warnings is None else warnings
-    object_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    object_rows_reader = _reader_from_batches(
         PY_INSPECT_OBJECTS_TABLE_KEY,
-        payload.object_rows,
-        extras_policy="retain",
+        payload.object_batches,
     )
-    member_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    member_rows_reader = _reader_from_batches(
         PY_INSPECT_MEMBERS_TABLE_KEY,
-        payload.member_rows,
-        extras_policy="retain",
+        payload.member_batches,
     )
-    class_mro_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    class_mro_rows_reader = _reader_from_batches(
         PY_INSPECT_CLASS_MRO_TABLE_KEY,
-        payload.class_mro_rows,
-        extras_policy="retain",
+        payload.class_mro_batches,
     )
-    class_attr_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    class_attr_rows_reader = _reader_from_batches(
         PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
-        payload.class_attr_rows,
-        extras_policy="retain",
+        payload.class_attr_batches,
     )
-    unwrap_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    unwrap_rows_reader = _reader_from_batches(
         PY_INSPECT_UNWRAP_TABLE_KEY,
-        payload.unwrap_rows,
-        extras_policy="retain",
+        payload.unwrap_batches,
     )
-    signature_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    signature_rows_reader = _reader_from_batches(
         PY_INSPECT_SIGNATURES_TABLE_KEY,
-        payload.signature_rows,
-        extras_policy="retain",
+        payload.signature_batches,
     )
-    signature_param_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    signature_param_rows_reader = _reader_from_batches(
         PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
-        payload.signature_param_rows,
-        extras_policy="retain",
+        payload.signature_param_batches,
     )
-    annotation_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    annotation_rows_reader = _reader_from_batches(
         PY_INSPECT_ANNOTATIONS_TABLE_KEY,
-        payload.annotation_rows,
-        extras_policy="retain",
+        payload.annotation_batches,
     )
-    source_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    source_rows_reader = _reader_from_batches(
         PY_INSPECT_SOURCE_TABLE_KEY,
-        payload.source_rows,
-        extras_policy="retain",
+        payload.source_batches,
     )
-    runtime_state_rows_reader, _ = record_batch_reader_for_columnar_rows(
+    runtime_state_rows_reader = _reader_from_batches(
         PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
-        payload.runtime_state_rows,
-        extras_policy="retain",
+        payload.runtime_state_batches,
     )
     return InspectExtractResult(
         result=ExecutionResult.ok(warnings=tuple(resolved_warnings)),
-        object_rows=payload.object_rows,
-        member_rows=payload.member_rows,
-        class_mro_rows=payload.class_mro_rows,
-        class_attr_rows=payload.class_attr_rows,
-        unwrap_rows=payload.unwrap_rows,
-        signature_rows=payload.signature_rows,
-        signature_param_rows=payload.signature_param_rows,
-        annotation_rows=payload.annotation_rows,
-        source_rows=payload.source_rows,
-        runtime_state_rows=payload.runtime_state_rows,
+        object_rows={},
+        member_rows={},
+        class_mro_rows={},
+        class_attr_rows={},
+        unwrap_rows={},
+        signature_rows={},
+        signature_param_rows={},
+        annotation_rows={},
+        source_rows={},
+        runtime_state_rows={},
         object_rows_reader=object_rows_reader,
         member_rows_reader=member_rows_reader,
         class_mro_rows_reader=class_mro_rows_reader,
@@ -1415,6 +1487,9 @@ def _run_inspect_subprocess(
     payload, error = _read_worker_payload(result_queue)
     if payload is None:
         error_message = error or "Inspect subprocess failed"
+        exitcode = process.exitcode
+        if exitcode is not None and exitcode != 0:
+            error_message = f"{error_message} (exitcode {exitcode})"
         warnings = _combine_warnings(seed_warnings, [error_message])
         return InspectExtractResult(
             result=ExecutionResult.failed(
@@ -1423,6 +1498,28 @@ def _run_inspect_subprocess(
             )
         )
     return _payload_to_result(payload)
+
+
+def _apply_memory_budget(max_memory_mb: int | None, *, warnings: list[str]) -> None:
+    if max_memory_mb is None or max_memory_mb <= 0:
+        return
+    if resource is None:
+        warnings.append("Inspect memory budget unsupported on this platform")
+        return
+    max_bytes = max_memory_mb * 1024 * 1024
+    limit_applied = False
+    for limit_name in ("RLIMIT_AS", "RLIMIT_DATA"):
+        limit_value = getattr(resource, limit_name, None)
+        if limit_value is None:
+            continue
+        try:
+            resource.setrlimit(limit_value, (max_bytes, max_bytes))
+            limit_applied = True
+            break
+        except (ValueError, OSError) as exc:
+            warnings.append(f"Inspect memory budget failed for {limit_name}: {exc}")
+    if not limit_applied:
+        warnings.append("Inspect memory budget could not be applied")
 
 
 class InspectExtractStep(BaseExtractStep):

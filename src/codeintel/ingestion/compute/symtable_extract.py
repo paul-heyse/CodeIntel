@@ -13,12 +13,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.native.options.ingestion import SymtableExtractOptions
 from codeintel.core.columnar.rows import (
-    ColumnarRowBuffer,
+    ColumnarBatchCollector,
     ColumnarRows,
-    columnar_buffer_for_table_key,
+    columnar_batch_collector_for_table_key,
     empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 LOG = logging.getLogger(__name__)
 
@@ -127,14 +127,14 @@ class _ModuleContext:
 
 
 @dataclass(frozen=True, slots=True)
-class _SymtableBuffers:
-    scopes: ColumnarRowBuffer
-    symbols: ColumnarRowBuffer
-    scope_edges: ColumnarRowBuffer
-    namespace_edges: ColumnarRowBuffer
-    function_partitions: ColumnarRowBuffer
-    bindings: ColumnarRowBuffer
-    resolution_edges: ColumnarRowBuffer
+class _SymtableCollectors:
+    scopes: ColumnarBatchCollector
+    symbols: ColumnarBatchCollector
+    scope_edges: ColumnarBatchCollector
+    namespace_edges: ColumnarBatchCollector
+    function_partitions: ColumnarBatchCollector
+    bindings: ColumnarBatchCollector
+    resolution_edges: ColumnarBatchCollector
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,16 +167,53 @@ def _build_source_index(source_bytes: bytes) -> tuple[str, LineIndexedSource]:
     return source_text, source_index
 
 
-def _build_symtable_buffers() -> _SymtableBuffers:
-    return _SymtableBuffers(
-        scopes=columnar_buffer_for_table_key(PY_SYM_SCOPES_TABLE_KEY),
-        symbols=columnar_buffer_for_table_key(PY_SYM_SYMBOLS_TABLE_KEY),
-        scope_edges=columnar_buffer_for_table_key(PY_SYM_SCOPE_EDGES_TABLE_KEY),
-        namespace_edges=columnar_buffer_for_table_key(PY_SYM_NAMESPACE_EDGES_TABLE_KEY),
-        function_partitions=columnar_buffer_for_table_key(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY),
-        bindings=columnar_buffer_for_table_key(PY_SYM_BINDINGS_TABLE_KEY),
-        resolution_edges=columnar_buffer_for_table_key(PY_SYM_RESOLUTION_EDGES_TABLE_KEY),
+def _build_symtable_collectors(options: SymtableExtractOptions) -> _SymtableCollectors:
+    return _SymtableCollectors(
+        scopes=columnar_batch_collector_for_table_key(
+            PY_SYM_SCOPES_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        symbols=columnar_batch_collector_for_table_key(
+            PY_SYM_SYMBOLS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        scope_edges=columnar_batch_collector_for_table_key(
+            PY_SYM_SCOPE_EDGES_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        namespace_edges=columnar_batch_collector_for_table_key(
+            PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        function_partitions=columnar_batch_collector_for_table_key(
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        bindings=columnar_batch_collector_for_table_key(
+            PY_SYM_BINDINGS_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
+        resolution_edges=columnar_batch_collector_for_table_key(
+            PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
+            batch_size=options.batch_size,
+            extras_policy="retain",
+        ),
     )
+
+def _flush_symtable_collectors(collectors: _SymtableCollectors) -> None:
+    collectors.scopes.flush()
+    collectors.symbols.flush()
+    collectors.scope_edges.flush()
+    collectors.namespace_edges.flush()
+    collectors.function_partitions.flush()
+    collectors.bindings.flush()
+    collectors.resolution_edges.flush()
 
 
 def _parse_symtable(
@@ -545,6 +582,23 @@ def _anchor_for_type_parameters_scope(
     return anchor, 0.7, "type_parameters_owner"
 
 
+def _anchor_for_annotation_scope(
+    scope: _ScopeInfo,
+    anchors: dict[tuple[str, str, int], _AstAnchor],
+    normalized_line: int,
+) -> tuple[_AstAnchor | None, float | None, str | None]:
+    anchor = anchors.get(("FunctionDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        anchor = anchors.get(("AsyncFunctionDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        anchor = anchors.get(("ClassDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        anchor = anchors.get(("TypeAlias", scope.scope_name, normalized_line))
+    if anchor is None:
+        return None, None, None
+    return anchor, 0.6, "annotation_owner"
+
+
 _ScopeAnchorHandler = Callable[
     [_ScopeInfo, dict[tuple[str, str, int], _AstAnchor], int],
     tuple[_AstAnchor | None, float | None, str | None],
@@ -552,6 +606,7 @@ _ScopeAnchorHandler = Callable[
 
 
 _SCOPE_ANCHOR_HANDLERS: dict[str, _ScopeAnchorHandler] = {
+    "ANNOTATION": _anchor_for_annotation_scope,
     "FUNCTION": _anchor_for_function_scope,
     "CLASS": _anchor_for_class_scope,
     "TYPE_ALIAS": _anchor_for_type_alias_scope,
@@ -706,7 +761,7 @@ def _resolution_target(
 
 
 def _append_scope_rows(
-    buffers: _SymtableBuffers,
+    collectors: _SymtableCollectors,
     *,
     context: _ModuleContext,
     scope_index: dict[int, _ScopeInfo],
@@ -714,7 +769,7 @@ def _append_scope_rows(
 ) -> None:
     for info in scope_index.values():
         anchor = anchors.anchors.get(info.scope_id)
-        buffers.scopes.append(
+        collectors.scopes.append(
             {
                 "repo": context.repo,
                 "commit": context.commit,
@@ -739,13 +794,13 @@ def _append_scope_rows(
 
 
 def _append_scope_edges(
-    buffers: _SymtableBuffers,
+    collectors: _SymtableCollectors,
     *,
     context: _ModuleContext,
     scope_edges: list[tuple[str, str]],
 ) -> None:
     for parent_id, child_id in scope_edges:
-        buffers.scope_edges.append(
+        collectors.scope_edges.append(
             {
                 "repo": context.repo,
                 "commit": context.commit,
@@ -758,7 +813,7 @@ def _append_scope_edges(
 
 
 def _append_symbols_and_bindings(
-    buffers: _SymtableBuffers,
+    collectors: _SymtableCollectors,
     *,
     context: _ModuleContext,
     scope_index: dict[int, _ScopeInfo],
@@ -770,7 +825,7 @@ def _append_symbols_and_bindings(
         for symbol in table.get_symbols():
             name = symbol.get_name()
             symbol_id = _symbol_row_id(scope_id, name)
-            buffers.symbols.append(
+            collectors.symbols.append(
                 {
                     "repo": context.repo,
                     "commit": context.commit,
@@ -809,7 +864,7 @@ def _append_symbols_and_bindings(
                 "annotated_here": symbol.is_annotated(),
                 "scoping_class": scoping_class,
             }
-            buffers.bindings.append(binding_row)
+            collectors.bindings.append(binding_row)
             binding_by_scope.setdefault(scope_id, {})[name] = binding_row
 
             if symbol.is_namespace():
@@ -818,7 +873,7 @@ def _append_symbols_and_bindings(
                     child_info = scope_index.get(id(namespace))
                     if child_info is None:
                         continue
-                    buffers.namespace_edges.append(
+                    collectors.namespace_edges.append(
                         {
                             "repo": context.repo,
                             "commit": context.commit,
@@ -833,7 +888,7 @@ def _append_symbols_and_bindings(
                     )
 
         if info.scope_type == "FUNCTION":
-            buffers.function_partitions.append(
+            collectors.function_partitions.append(
                 {
                     "repo": context.repo,
                     "commit": context.commit,
@@ -850,7 +905,7 @@ def _append_symbols_and_bindings(
 
 
 def _append_resolution_edges(
-    buffers: _SymtableBuffers,
+    collectors: _SymtableCollectors,
     *,
     context: _ModuleContext,
     binding_by_scope: dict[str, dict[str, dict[str, object]]],
@@ -872,7 +927,7 @@ def _append_resolution_edges(
             binding_id = str(binding["binding_id"])
             dst_binding_id = f"{scope_id}:unknown" if target is None else target
             edge_id = _edge_id(kind, binding_id, dst_binding_id)
-            buffers.resolution_edges.append(
+            collectors.resolution_edges.append(
                 {
                     "repo": context.repo,
                     "commit": context.commit,
@@ -889,7 +944,7 @@ def _append_resolution_edges(
 
 def _process_module(
     context: _ModuleContext,
-    buffers: _SymtableBuffers,
+    collectors: _SymtableCollectors,
     *,
     warnings: list[str],
 ) -> None:
@@ -921,24 +976,24 @@ def _process_module(
         anchors=anchors,
     )
     _append_scope_rows(
-        buffers,
+        collectors,
         context=context,
         scope_index=scope_index,
         anchors=anchor_bundle,
     )
     _append_scope_edges(
-        buffers,
+        collectors,
         context=context,
         scope_edges=scope_edges,
     )
     binding_by_scope = _append_symbols_and_bindings(
-        buffers,
+        collectors,
         context=context,
         scope_index=scope_index,
     )
     scope_by_id = {info.scope_id: info for info in scope_index.values()}
     _append_resolution_edges(
-        buffers,
+        collectors,
         context=context,
         binding_by_scope=binding_by_scope,
         scope_by_id=scope_by_id,
@@ -947,6 +1002,24 @@ def _process_module(
 
 class SymtableExtractStep(BaseExtractStep):
     """Symtable extraction step with port injection."""
+
+    def __init__(
+        self,
+        discovery: ModuleDiscoveryPort,
+        *,
+        options: SymtableExtractOptions | None = None,
+    ) -> None:
+        """Initialize the symtable extraction step.
+
+        Parameters
+        ----------
+        discovery
+            Discovery port for reading module source.
+        options
+            Symtable extraction options.
+        """
+        super().__init__(discovery)
+        self._options = options or SymtableExtractOptions()
 
     def execute(
         self,
@@ -962,8 +1035,13 @@ class SymtableExtractStep(BaseExtractStep):
         SymtableExtractResult
             Result bundle with row payloads and execution status.
         """
+        options = self._options
+        if not options.enable:
+            return SymtableExtractResult(
+                result=ExecutionResult.skip("Symtable extraction disabled by options")
+            )
         try:
-            buffers = _build_symtable_buffers()
+            collectors = _build_symtable_collectors(options)
         except (KeyError, RuntimeError) as exc:
             return SymtableExtractResult(result=ExecutionResult.failed(str(exc)))
 
@@ -976,52 +1054,25 @@ class SymtableExtractStep(BaseExtractStep):
                 source_text=source_text,
                 source_index=source_index,
             )
-            _process_module(context, buffers, warnings=warnings)
+            _process_module(context, collectors, warnings=warnings)
+            _flush_symtable_collectors(collectors)
 
-        scope_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_SYM_SCOPES_TABLE_KEY,
-            buffers.scopes.data,
-            extras_policy="retain",
-        )
-        symbol_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_SYM_SYMBOLS_TABLE_KEY,
-            buffers.symbols.data,
-            extras_policy="retain",
-        )
-        scope_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_SYM_SCOPE_EDGES_TABLE_KEY,
-            buffers.scope_edges.data,
-            extras_policy="retain",
-        )
-        namespace_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
-            buffers.namespace_edges.data,
-            extras_policy="retain",
-        )
-        function_partition_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
-            buffers.function_partitions.data,
-            extras_policy="retain",
-        )
-        binding_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_SYM_BINDINGS_TABLE_KEY,
-            buffers.bindings.data,
-            extras_policy="retain",
-        )
-        resolution_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
-            buffers.resolution_edges.data,
-            extras_policy="retain",
-        )
+        scope_rows_reader = collectors.scopes.to_reader()
+        symbol_rows_reader = collectors.symbols.to_reader()
+        scope_edge_rows_reader = collectors.scope_edges.to_reader()
+        namespace_edge_rows_reader = collectors.namespace_edges.to_reader()
+        function_partition_rows_reader = collectors.function_partitions.to_reader()
+        binding_rows_reader = collectors.bindings.to_reader()
+        resolution_edge_rows_reader = collectors.resolution_edges.to_reader()
         return SymtableExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            scope_rows=buffers.scopes.data,
-            symbol_rows=buffers.symbols.data,
-            scope_edge_rows=buffers.scope_edges.data,
-            namespace_edge_rows=buffers.namespace_edges.data,
-            function_partition_rows=buffers.function_partitions.data,
-            binding_rows=buffers.bindings.data,
-            resolution_edge_rows=buffers.resolution_edges.data,
+            scope_rows={},
+            symbol_rows={},
+            scope_edge_rows={},
+            namespace_edge_rows={},
+            function_partition_rows={},
+            binding_rows={},
+            resolution_edge_rows={},
             scope_rows_reader=scope_rows_reader,
             symbol_rows_reader=symbol_rows_reader,
             scope_edge_rows_reader=scope_edge_rows_reader,
@@ -1029,13 +1080,13 @@ class SymtableExtractStep(BaseExtractStep):
             function_partition_rows_reader=function_partition_rows_reader,
             binding_rows_reader=binding_rows_reader,
             resolution_edge_rows_reader=resolution_edge_rows_reader,
-            scope_row_count=buffers.scopes.row_count,
-            symbol_row_count=buffers.symbols.row_count,
-            scope_edge_row_count=buffers.scope_edges.row_count,
-            namespace_edge_row_count=buffers.namespace_edges.row_count,
-            function_partition_row_count=buffers.function_partitions.row_count,
-            binding_row_count=buffers.bindings.row_count,
-            resolution_edge_row_count=buffers.resolution_edges.row_count,
+            scope_row_count=collectors.scopes.row_count,
+            symbol_row_count=collectors.symbols.row_count,
+            scope_edge_row_count=collectors.scope_edges.row_count,
+            namespace_edge_row_count=collectors.namespace_edges.row_count,
+            function_partition_row_count=collectors.function_partitions.row_count,
+            binding_row_count=collectors.bindings.row_count,
+            resolution_edge_row_count=collectors.resolution_edges.row_count,
         )
 
     def _iter_python_source_bundles(

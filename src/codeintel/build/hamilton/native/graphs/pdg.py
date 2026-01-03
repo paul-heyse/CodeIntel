@@ -2,94 +2,55 @@
 
 from __future__ import annotations
 
-import polars as pl
+import pyarrow as pa
 
-from codeintel.build.tabular.conversion import table_to_lazyframe, tabular_to_arrow_table
-from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
+from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table
 
 PDG_EDGES_TABLE_KEY = "graph.pdg_edges"
 
 
-def _dfg_edges_frame(dfg_edges: pl.LazyFrame) -> pl.LazyFrame:
-    return dfg_edges.with_columns(
-        pl.lit("DFG").alias("edge_kind"),
-        pl.lit(None).alias("via_succ_block_id"),
-        pl.lit(None).alias("via_edge_kind"),
-    ).select(
-        [
-            "function_goid_h128",
-            "src_block_id",
-            "dst_block_id",
-            "edge_kind",
-            "src_var",
-            "dst_var",
-            "via_phi",
-            "use_kind",
-            "via_succ_block_id",
-            "via_edge_kind",
-        ]
-    )
+def _dfg_edges_table(dfg_edges: pa.Table) -> pa.Table:
+    if dfg_edges.num_rows == 0:
+        return dfg_edges
+    table = dfg_edges.append_column("edge_kind", pa.array(["DFG"] * dfg_edges.num_rows))
+    table = table.append_column("via_succ_block_id", pa.nulls(dfg_edges.num_rows))
+    return table.append_column("via_edge_kind", pa.nulls(dfg_edges.num_rows))
 
 
-def _cdg_edges_frame(cdg_edges: pl.LazyFrame) -> pl.LazyFrame:
-    return cdg_edges.with_columns(
-        pl.lit("CDG").alias("edge_kind"),
-        pl.lit(None).alias("src_var"),
-        pl.lit(None).alias("dst_var"),
-        pl.lit(None).alias("via_phi"),
-        pl.lit(None).alias("use_kind"),
-    ).select(
-        [
-            "function_goid_h128",
-            "src_block_id",
-            "dst_block_id",
-            "edge_kind",
-            "src_var",
-            "dst_var",
-            "via_phi",
-            "use_kind",
-            "via_succ_block_id",
-            "via_edge_kind",
-        ]
-    )
+def _cdg_edges_table(cdg_edges: pa.Table) -> pa.Table:
+    if cdg_edges.num_rows == 0:
+        return cdg_edges
+    table = cdg_edges.append_column("edge_kind", pa.array(["CDG"] * cdg_edges.num_rows))
+    table = table.append_column("src_var", pa.nulls(cdg_edges.num_rows))
+    table = table.append_column("dst_var", pa.nulls(cdg_edges.num_rows))
+    table = table.append_column("via_phi", pa.nulls(cdg_edges.num_rows))
+    return table.append_column("use_kind", pa.nulls(cdg_edges.num_rows))
 
 
 def pdg_edges(
     q__graph__dfg_edges: InferableTabularInput,
     q__graph__cdg_edges: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> InferableTabularInput:
     """Build program dependence edges from DFG and CDG inputs.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for graph.pdg_edges.
+    InferableTabularInput
+        Arrow reader for graph.pdg_edges.
     """
-    dfg_edges = table_to_lazyframe(tabular_to_arrow_table(q__graph__dfg_edges))
-    cdg_edges = table_to_lazyframe(tabular_to_arrow_table(q__graph__cdg_edges))
-
-    dfg_frame = _dfg_edges_frame(dfg_edges)
-    cdg_frame = _cdg_edges_frame(cdg_edges)
-
-    combined = pl.concat([dfg_frame, cdg_frame], how="vertical_relaxed")
-    if not combined.columns:
-        return empty_frame_for_table(PDG_EDGES_TABLE_KEY)
-    combined = dedupe_frame_for_table(combined, table_key=PDG_EDGES_TABLE_KEY)
-    return combined.select(
-        [
-            "function_goid_h128",
-            "src_block_id",
-            "dst_block_id",
-            "edge_kind",
-            "src_var",
-            "dst_var",
-            "via_phi",
-            "use_kind",
-            "via_succ_block_id",
-            "via_edge_kind",
-        ]
-    )
+    dfg_edges = tabular_to_arrow_table(q__graph__dfg_edges)
+    cdg_edges = tabular_to_arrow_table(q__graph__cdg_edges)
+    dfg_table = _dfg_edges_table(dfg_edges)
+    cdg_table = _cdg_edges_table(cdg_edges)
+    tables = [table for table in (dfg_table, cdg_table) if table.num_rows > 0]
+    if not tables:
+        return empty_reader_for_table(PDG_EDGES_TABLE_KEY)
+    combined = pa.concat_tables(tables, promote=True)
+    deduped = dedupe_table_for_table(PDG_EDGES_TABLE_KEY, combined)
+    return pa.RecordBatchReader.from_batches(deduped.schema, deduped.to_batches())
 
 
 __all__ = [

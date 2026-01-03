@@ -21,14 +21,14 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import (
-    MAX_EXPORT_LIMIT,
     AuditRecord,
     ExportCallOptions,
     ExportTarget,
-    build_export_relation,
+    build_export_reader,
     compute_schema_digest,
     default_validation_schemas,
     log_export_error,
+    resolve_export_snapshot,
     resolve_validation_profile,
     select_dataset_tables,
     validate_registry_or_raise,
@@ -46,12 +46,14 @@ from codeintel.build.exports.manifest import (
     write_per_dataset_manifest,
 )
 from codeintel.build.exports.validation import validate_export_files
-from codeintel.build.exports.writers import write_jsonl_records, write_parquet_relation
+from codeintel.build.exports.writers import (
+    write_jsonl_reader,
+    write_parquet_reader,
+)
 from codeintel.core.config.settings import ExportAuditSettings
-from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.errors.schema import SCHEMA_VALIDATION_FAILED
 from codeintel.core.exports.formats import normalize_export_format, suffix_for_export_format
-from codeintel.core.queries.safe import safe_count
+from codeintel.storage.datasets.manifests import load_dataset_manifest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -83,12 +85,12 @@ def export_jsonl_for_table(
     output_path: Path,
     settings: ExportAuditSettings,
 ) -> int:
-    """Export a DuckDB table to JSONL.
+    """Export a dataset snapshot to JSONL.
 
     Parameters
     ----------
     gateway
-        Storage gateway providing the DuckDB connection.
+        Storage gateway providing dataset registry access.
     table_key
         Fully qualified table key to export (schema.table).
     output_path
@@ -103,14 +105,14 @@ def export_jsonl_for_table(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     start = perf_counter()
-    rel = build_export_relation(gateway, table_key, MAX_EXPORT_LIMIT, 0)
     rows_written = 0
     with output_path.open("w", encoding="utf-8") as handle:
-        rows_written = write_jsonl_records(
-            handle,
-            rel=rel,
+        reader = build_export_reader(
+            gateway,
+            table_key,
             batch_size=_EXPORT_RECORD_BATCH_SIZE,
         )
+        rows_written = write_jsonl_reader(handle, reader=reader)
     duration = perf_counter() - start
     write_audit_entry(
         AuditRecord(
@@ -132,12 +134,12 @@ def export_parquet_for_table(
     output_path: Path,
     settings: ExportAuditSettings,
 ) -> int:
-    """Export a DuckDB table to Parquet.
+    """Export a dataset snapshot to Parquet.
 
     Parameters
     ----------
     gateway
-        Storage gateway providing the DuckDB connection.
+        Storage gateway providing dataset registry access.
     table_key
         Fully qualified table key to export (schema.table).
     output_path
@@ -152,11 +154,14 @@ def export_parquet_for_table(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     start = perf_counter()
-    rel = build_export_relation(gateway, table_key, MAX_EXPORT_LIMIT, 0)
-    rows_written = write_parquet_relation(
-        rel=rel,
-        output_path=output_path,
+    reader = build_export_reader(
+        gateway,
+        table_key,
         batch_size=_EXPORT_RECORD_BATCH_SIZE,
+    )
+    rows_written = write_parquet_reader(
+        reader=reader,
+        output_path=output_path,
     )
     duration = perf_counter() - start
     write_audit_entry(
@@ -275,9 +280,13 @@ def _export_dataset(
     schema_digest = compute_schema_digest(target.dataset)
     marker = read_incremental_marker(target.output_path)
 
-    current_row_count: int | None = None
-    if target.dataset is None or not target.dataset.is_view:
-        current_row_count = safe_count(gateway, target.table_name)
+    dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
+    manifest = load_dataset_manifest(
+        dataset_root=dataset_root_dir,
+        table_key=target.table_name,
+        snapshot_id=snapshot_id,
+    )
+    current_row_count = manifest.row_count if manifest is not None else None
 
     criteria = SkipCriteria(
         row_count=current_row_count,
@@ -301,12 +310,8 @@ def _export_dataset(
         )
         data_hash = compute_file_hash(target.output_path)
         completed_at = datetime.now(UTC)
-        final_row_count = (
-            current_row_count
-            if current_row_count is not None
-            else safe_count(gateway, target.table_name)
-        )
-    except (DuckDBError, OSError, ValueError, TypeError) as exc:
+        final_row_count = rows_written if rows_written is not None else current_row_count
+    except (OSError, ValueError, TypeError) as exc:
         log.warning(
             "Failed to export dataset %s (%s) to %s: %s",
             target.dataset_name,
@@ -355,7 +360,7 @@ def export_all_datasets(
     Parameters
     ----------
     gateway
-        Storage gateway providing the DuckDB connection and dataset registry.
+        Storage gateway providing dataset registry access.
     document_output_dir
         Root directory under which dataset artifacts are written.
     fmt

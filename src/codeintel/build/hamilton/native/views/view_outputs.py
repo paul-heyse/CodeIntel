@@ -1,4 +1,4 @@
-"""Hamilton-native view materialization using SQLGlot AST + Polars SQLContext."""
+"""Hamilton-native view materialization using SQLGlot AST + DuckDB + Arrow."""
 
 from __future__ import annotations
 
@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import duckdb
-import polars as pl
-from polars.exceptions import SQLInterfaceError
+import pyarrow as pa
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError, SqlglotError
 
@@ -32,7 +31,12 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
 from codeintel.build.schemas import get_schema_provider
-from codeintel.core.columnar.dataset_scanner import scan_dataset_lazyframe
+from codeintel.build.tabular.conversion import (
+    table_to_reader,
+    tabular_to_arrow_reader,
+    tabular_to_arrow_table,
+)
+from codeintel.core.columnar.dataset_scanner import scan_dataset_reader
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.hamilton import tags as ht
@@ -328,6 +332,27 @@ def _apply_semantic_attr(fn: Callable[..., object], tags: Mapping[str, str]) -> 
         setattr(fn, SEMANTIC_VIEW_TAG_ATTR, dict(tags))
 
 
+def _add_row_index_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    name: str,
+    offset: int,
+) -> pa.RecordBatchReader:
+    if name in reader.schema.names:
+        return reader
+
+    def _iter_batches() -> Iterable[pa.RecordBatch]:
+        current = offset
+        for batch in reader:
+            size = batch.num_rows
+            index_array = pa.array(range(current, current + size), type=pa.int64())
+            current += size
+            yield batch.append_column(name, index_array)
+
+    schema = reader.schema.append(pa.field(name, pa.int64()))
+    return pa.RecordBatchReader.from_batches(schema, _iter_batches())
+
+
 def _view_node_name(table_key: str) -> str:
     return to_node_name(table_key, prefix="view")
 
@@ -349,13 +374,13 @@ def _loader_signature(dataset_param: str) -> inspect.Signature:
             annotation=DatasetRef,
         ),
     ]
-    return inspect.Signature(params, return_annotation=pl.LazyFrame)
+    return inspect.Signature(params, return_annotation=pa.RecordBatchReader)
 
 
-def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pl.LazyFrame]:
+def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pa.RecordBatchReader]:
     dataset_param = dataset_node(table_key)
 
-    def loader(env: BuildEnv, **kwargs: object) -> pl.LazyFrame:
+    def loader(env: BuildEnv, **kwargs: object) -> pa.RecordBatchReader:
         dataset_ref = kwargs.get(dataset_param)
         if not isinstance(dataset_ref, DatasetRef):
             msg = f"Expected DatasetRef for {dataset_param}, got {type(dataset_ref)}"
@@ -382,21 +407,26 @@ def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pl.
         if not snapshot_dir.exists():
             msg = f"Missing dataset snapshot directory: {snapshot_dir}"
             raise FileNotFoundError(msg)
-        frame = scan_dataset_lazyframe(
+        reader = scan_dataset_reader(
             snapshot_dir,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            row_index_name=env.settings.dataset_row_index_name,
-            row_index_offset=env.settings.dataset_row_index_offset,
         )
-        if frame is None:
+        if reader is None:
             msg = f"Missing dataset snapshot directory: {snapshot_dir}"
             raise FileNotFoundError(msg)
-        return frame
+        row_index_name = env.settings.dataset_row_index_name
+        if row_index_name:
+            return _add_row_index_reader(
+                reader,
+                name=row_index_name,
+                offset=env.settings.dataset_row_index_offset,
+            )
+        return reader
 
     loader = set_signature(loader, _loader_signature(dataset_param))
     loader.__name__ = node_name
     loader.__module__ = __name__
-    loader.__doc__ = f"Load {table_key} as a Polars LazyFrame."
+    loader.__doc__ = f"Load {table_key} as an Arrow RecordBatchReader."
     tagged = tag_loader_query(
         domain=VIEWS_DOMAIN,
         target=VIEWS_TARGET_NAME,
@@ -419,20 +449,19 @@ def _view_signature(param_names: Sequence[str]) -> inspect.Signature:
         inspect.Parameter(
             name,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=pl.LazyFrame,
+            annotation=pa.RecordBatchReader,
         )
         for name in param_names
     )
-    return inspect.Signature(params, return_annotation=pl.LazyFrame)
+    return inspect.Signature(params, return_annotation=pa.RecordBatchReader)
 
 
-def _ensure_lazyframe(value: object, *, param_name: str) -> pl.LazyFrame:
-    if isinstance(value, pl.LazyFrame):
-        return value
-    if isinstance(value, pl.DataFrame):
-        return value.lazy()
-    msg = f"Expected LazyFrame for {param_name}, got {type(value)}"
-    raise TypeError(msg)
+def _ensure_reader(value: object, *, param_name: str) -> pa.RecordBatchReader:
+    try:
+        return tabular_to_arrow_reader(value)
+    except TypeError as exc:
+        msg = f"Expected Arrow reader for {param_name}, got {type(value)}"
+        raise TypeError(msg) from exc
 
 
 def _require_dependency(
@@ -448,10 +477,10 @@ def _require_dependency(
 
 
 def _decorate_view_node(
-    fn: Callable[..., pl.LazyFrame],
+    fn: Callable[..., pa.RecordBatchReader],
     *,
     plan: ViewPlan,
-) -> Callable[..., pl.LazyFrame]:
+) -> Callable[..., pa.RecordBatchReader]:
     context = SaverContext(
         domain=VIEWS_DOMAIN,
         target=VIEWS_TARGET_NAME,
@@ -469,62 +498,66 @@ def _decorate_view_node(
     return decorated
 
 
+def _coerce_string_view(table: pa.Table) -> pa.Table:
+    schema = table.schema
+    fields: list[pa.Field] = []
+    changed = False
+    for field in schema:
+        if pa.types.is_string_view(field.type):
+            fields.append(
+                pa.field(
+                    field.name,
+                    pa.string(),
+                    nullable=field.nullable,
+                    metadata=field.metadata,
+                )
+            )
+            changed = True
+        else:
+            fields.append(field)
+    if not changed:
+        return table
+    return table.cast(pa.schema(fields, metadata=schema.metadata))
+
+
 def _execute_view_query(
     *,
     plan: ViewPlan,
-    frames: Mapping[str, pl.LazyFrame],
-) -> pl.LazyFrame:
-    ctx = pl.SQLContext()
-    for table_key, frame in frames.items():
-        ctx.register(table_key, frame)
-    try:
-        result = ctx.execute(plan.sql)
-    except SQLInterfaceError:
-        return _execute_view_query_duckdb(plan=plan, frames=frames)
-    if isinstance(result, pl.LazyFrame):
-        return result
-    return result.lazy()
-
-
-def _execute_view_query_duckdb(
-    *,
-    plan: ViewPlan,
-    frames: Mapping[str, pl.LazyFrame],
-) -> pl.LazyFrame:
+    readers: Mapping[str, pa.RecordBatchReader],
+) -> pa.RecordBatchReader:
     con = duckdb.connect()
     try:
-        for table_key, frame in frames.items():
-            con.register(table_key, frame.collect().to_arrow())
+        for table_key, reader in readers.items():
+            table = tabular_to_arrow_table(reader)
+            table = _coerce_string_view(table)
+            con.register(table_key, table)
         result = con.execute(plan.sql).fetch_arrow_table()
     finally:
         con.close()
-    frame = pl.from_arrow(result)
-    if isinstance(frame, pl.Series):
-        frame = frame.to_frame()
-    return frame.lazy()
+    return table_to_reader(result)
 
 
 def _build_ast_view_node(
     *,
     plan: ViewPlan,
     param_by_table: Mapping[str, str],
-) -> Callable[..., pl.LazyFrame]:
-    def view_fn(env: BuildEnv, **kwargs: object) -> pl.LazyFrame:
+) -> Callable[..., pa.RecordBatchReader]:
+    def view_fn(env: BuildEnv, **kwargs: object) -> pa.RecordBatchReader:
         _ = env
-        frames: dict[str, pl.LazyFrame] = {}
+        readers: dict[str, pa.RecordBatchReader] = {}
         for table_key, param_name in param_by_table.items():
             value = _require_dependency(
                 kwargs.get(param_name),
                 param_name=param_name,
                 table_key=plan.table_key,
             )
-            frames[table_key] = _ensure_lazyframe(value, param_name=param_name)
-        return _execute_view_query(plan=plan, frames=frames)
+            readers[table_key] = _ensure_reader(value, param_name=param_name)
+        return _execute_view_query(plan=plan, readers=readers)
 
     view_fn = set_signature(view_fn, _view_signature(tuple(param_by_table.values())))
     view_fn.__name__ = plan.node_name
     view_fn.__module__ = __name__
-    view_fn.__doc__ = f"Compute {plan.table_key} using Polars SQLContext."
+    view_fn.__doc__ = f"Compute {plan.table_key} using DuckDB over Arrow."
     return _decorate_view_node(view_fn, plan=plan)
 
 
@@ -577,8 +610,8 @@ def view_plan_map() -> dict[str, ViewPlan]:
 
 def _install_source_loaders(
     table_keys: Iterable[str],
-) -> dict[str, Callable[..., pl.LazyFrame]]:
-    loaders: dict[str, Callable[..., pl.LazyFrame]] = {}
+) -> dict[str, Callable[..., pa.RecordBatchReader]]:
+    loaders: dict[str, Callable[..., pa.RecordBatchReader]] = {}
     for table_key in table_keys:
         node_name = _source_node_name(table_key)
         source_loader = _build_source_loader(table_key=table_key, node_name=node_name)
@@ -587,8 +620,10 @@ def _install_source_loaders(
     return loaders
 
 
-def _install_view_nodes(plans: Mapping[str, ViewPlan]) -> dict[str, Callable[..., pl.LazyFrame]]:
-    nodes: dict[str, Callable[..., pl.LazyFrame]] = {}
+def _install_view_nodes(
+    plans: Mapping[str, ViewPlan],
+) -> dict[str, Callable[..., pa.RecordBatchReader]]:
+    nodes: dict[str, Callable[..., pa.RecordBatchReader]] = {}
     for view_key, plan in plans.items():
         param_by_table = {
             dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name

@@ -56,6 +56,7 @@ if TYPE_CHECKING:
         has_error: bool | None
         parse_state: int | None
 
+
 TS_PARSE_MANIFEST_TABLE_KEY = "core.ts_parse_manifest"
 TS_CAPTURES_TABLE_KEY = "core.ts_captures"
 TS_NODES_TABLE_KEY = "core.ts_nodes"

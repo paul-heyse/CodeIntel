@@ -42,8 +42,8 @@ if TYPE_CHECKING:
         field_id: int | None
         literal_kind: NotRequired[str]
 
-    class TreeSitterNodeExtras(TypedDict, total=False):
-        ...
+    class TreeSitterNodeExtras(TypedDict, total=False): ...
+
 
 _TOKEN_PREFIX = "token."
 _TRIVIA_PREFIX = "trivia."

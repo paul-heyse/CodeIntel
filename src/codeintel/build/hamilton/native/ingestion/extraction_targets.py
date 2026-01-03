@@ -18,18 +18,20 @@ The targets share a common pattern:
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import sys
-from dataclasses import dataclass, field
-
-import polars as pl
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.options.ingestion import (
+    AstExtractOptions,
     BytecodeExtractOptions,
     InspectExtractOptions,
+    SymtableExtractOptions,
     SyntaxIndexOptions,
 )
 from codeintel.build.hamilton.native.patterns import (
@@ -47,10 +49,8 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.frames import (
-    empty_lazyframe_for_table,
-    lazyframe_for_ingest_reader,
-)
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.execution.ids import RUN_PREFIX_INGEST, new_run_id
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
@@ -59,6 +59,9 @@ from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from codeintel.ingestion.compute.inspect_extract import InspectExtractStep
 from codeintel.ingestion.compute.symtable_extract import SymtableExtractStep
 from codeintel.ingestion.ports.discovery import ModuleRecord
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +138,7 @@ PY_BC_EXCEPTION_TABLE_KEY = "core.py_bc_exception_table"
 PY_BC_BLOCKS_TABLE_KEY = "core.py_bc_blocks"
 PY_BC_CFG_EDGES_TABLE_KEY = "core.py_bc_cfg_edges"
 PY_BC_DEFUSE_EVENTS_TABLE_KEY = "core.py_bc_defuse_events"
+PY_COMPILER_META_TABLE_KEY = "core.py_compiler_metadata"
 PY_BC_TABLE_KEYS = (
     PY_BC_CODE_UNITS_TABLE_KEY,
     PY_BC_INSTRUCTIONS_TABLE_KEY,
@@ -142,6 +146,7 @@ PY_BC_TABLE_KEYS = (
     PY_BC_BLOCKS_TABLE_KEY,
     PY_BC_CFG_EDGES_TABLE_KEY,
     PY_BC_DEFUSE_EVENTS_TABLE_KEY,
+    PY_COMPILER_META_TABLE_KEY,
 )
 
 PY_INSPECT_OBJECTS_TABLE_KEY = "core.py_inspect_objects"
@@ -172,8 +177,8 @@ PY_INSPECT_TABLE_KEYS = (
 class DocstringsToolOutput(ToolStepOutput):
     """Tool step output for docstrings extraction."""
 
-    rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(DOCSTRINGS_TABLE_KEY)
+    rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(DOCSTRINGS_TABLE_KEY)
     )
     row_count: int = 0
 
@@ -182,11 +187,11 @@ class DocstringsToolOutput(ToolStepOutput):
 class AstToolOutput(ToolStepOutput):
     """Tool step output for AST extraction."""
 
-    ast_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(AST_NODES_TABLE_KEY)
+    ast_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(AST_NODES_TABLE_KEY)
     )
-    metric_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(AST_METRICS_TABLE_KEY)
+    metric_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(AST_METRICS_TABLE_KEY)
     )
     ast_row_count: int = 0
     metric_row_count: int = 0
@@ -196,8 +201,8 @@ class AstToolOutput(ToolStepOutput):
 class CstToolOutput(ToolStepOutput):
     """Tool step output for CST extraction."""
 
-    rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(CST_NODES_TABLE_KEY)
+    rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(CST_NODES_TABLE_KEY)
     )
     row_count: int = 0
 
@@ -206,38 +211,38 @@ class CstToolOutput(ToolStepOutput):
 class SyntaxIndexToolOutput(ToolStepOutput):
     """Tool step output for syntax index extraction."""
 
-    parse_manifest_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PARSE_MANIFEST_TABLE_KEY)
+    parse_manifest_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
     )
-    syntax_spans_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_SPANS_TABLE_KEY)
+    syntax_spans_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_SPANS_TABLE_KEY)
     )
-    syntax_nodes_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_NODES_TABLE_KEY)
+    syntax_nodes_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_NODES_TABLE_KEY)
     )
-    syntax_edges_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_EDGES_TABLE_KEY)
+    syntax_edges_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_EDGES_TABLE_KEY)
     )
-    syntax_scopes_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    syntax_scopes_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_SCOPES_TABLE_KEY)
     )
-    syntax_defs_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_DEFS_TABLE_KEY)
+    syntax_defs_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_DEFS_TABLE_KEY)
     )
-    syntax_refs_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_REFS_TABLE_KEY)
+    syntax_refs_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_REFS_TABLE_KEY)
     )
-    syntax_calls_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_CALLS_TABLE_KEY)
+    syntax_calls_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_CALLS_TABLE_KEY)
     )
-    syntax_call_args_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    syntax_call_args_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
     )
-    syntax_func_params_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    syntax_func_params_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
     )
-    syntax_imports_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    syntax_imports_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_IMPORTS_TABLE_KEY)
     )
     parse_manifest_row_count: int = 0
     syntax_spans_row_count: int = 0
@@ -256,26 +261,26 @@ class SyntaxIndexToolOutput(ToolStepOutput):
 class SymtableToolOutput(ToolStepOutput):
     """Tool step output for symtable extraction."""
 
-    scope_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_SYM_SCOPES_TABLE_KEY)
+    scope_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_SCOPES_TABLE_KEY)
     )
-    symbol_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_SYM_SYMBOLS_TABLE_KEY)
+    symbol_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_SYMBOLS_TABLE_KEY)
     )
-    scope_edge_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY)
+    scope_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY)
     )
-    namespace_edge_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY)
+    namespace_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY)
     )
-    function_partition_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY)
+    function_partition_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY)
     )
-    binding_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_SYM_BINDINGS_TABLE_KEY)
+    binding_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_BINDINGS_TABLE_KEY)
     )
-    resolution_edge_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY)
+    resolution_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY)
     )
     scope_row_count: int = 0
     symbol_row_count: int = 0
@@ -290,24 +295,28 @@ class SymtableToolOutput(ToolStepOutput):
 class BytecodeToolOutput(ToolStepOutput):
     """Tool step output for bytecode extraction."""
 
-    code_unit_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_BC_CODE_UNITS_TABLE_KEY)
+    compiler_meta_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_COMPILER_META_TABLE_KEY)
     )
-    instruction_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY)
+    code_unit_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_CODE_UNITS_TABLE_KEY)
     )
-    exception_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_BC_EXCEPTION_TABLE_KEY)
+    instruction_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY)
     )
-    block_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_BC_BLOCKS_TABLE_KEY)
+    exception_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_EXCEPTION_TABLE_KEY)
     )
-    cfg_edge_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_BC_CFG_EDGES_TABLE_KEY)
+    block_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_BLOCKS_TABLE_KEY)
     )
-    defuse_event_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY)
+    cfg_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_CFG_EDGES_TABLE_KEY)
     )
+    defuse_event_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY)
+    )
+    compiler_meta_row_count: int = 0
     code_unit_row_count: int = 0
     instruction_row_count: int = 0
     exception_row_count: int = 0
@@ -320,35 +329,35 @@ class BytecodeToolOutput(ToolStepOutput):
 class InspectToolOutput(ToolStepOutput):
     """Tool step output for inspect extraction."""
 
-    object_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
+    object_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
     )
-    member_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
+    member_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
     )
-    class_mro_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
+    class_mro_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
     )
-    class_attr_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
+    class_attr_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
     )
-    unwrap_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
+    unwrap_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
     )
-    signature_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
+    signature_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
     )
-    signature_param_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
+    signature_param_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
     )
-    annotation_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
+    annotation_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
     )
-    source_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
+    source_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
     )
-    runtime_state_rows: pl.LazyFrame = field(
-        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
+    runtime_state_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
     )
     object_row_count: int = 0
     member_row_count: int = 0
@@ -430,8 +439,8 @@ def _coerce_ast_output(
     )
     return AstToolOutput(
         result=merged,
-        ast_rows=empty_lazyframe_for_table(AST_NODES_TABLE_KEY),
-        metric_rows=empty_lazyframe_for_table(AST_METRICS_TABLE_KEY),
+        ast_rows=empty_reader_for_table(AST_NODES_TABLE_KEY),
+        metric_rows=empty_reader_for_table(AST_METRICS_TABLE_KEY),
         ast_row_count=0,
         metric_row_count=0,
     )
@@ -461,7 +470,7 @@ def _coerce_cst_output(
     )
     return CstToolOutput(
         result=merged,
-        rows=empty_lazyframe_for_table(CST_NODES_TABLE_KEY),
+        rows=empty_reader_for_table(CST_NODES_TABLE_KEY),
         row_count=0,
     )
 
@@ -510,17 +519,17 @@ def _coerce_syntax_index_output(
     )
     return SyntaxIndexToolOutput(
         result=merged,
-        parse_manifest_rows=empty_lazyframe_for_table(PARSE_MANIFEST_TABLE_KEY),
-        syntax_spans_rows=empty_lazyframe_for_table(SYNTAX_SPANS_TABLE_KEY),
-        syntax_nodes_rows=empty_lazyframe_for_table(SYNTAX_NODES_TABLE_KEY),
-        syntax_edges_rows=empty_lazyframe_for_table(SYNTAX_EDGES_TABLE_KEY),
-        syntax_scopes_rows=empty_lazyframe_for_table(SYNTAX_SCOPES_TABLE_KEY),
-        syntax_defs_rows=empty_lazyframe_for_table(SYNTAX_DEFS_TABLE_KEY),
-        syntax_refs_rows=empty_lazyframe_for_table(SYNTAX_REFS_TABLE_KEY),
-        syntax_calls_rows=empty_lazyframe_for_table(SYNTAX_CALLS_TABLE_KEY),
-        syntax_call_args_rows=empty_lazyframe_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
-        syntax_func_params_rows=empty_lazyframe_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
-        syntax_imports_rows=empty_lazyframe_for_table(SYNTAX_IMPORTS_TABLE_KEY),
+        parse_manifest_rows=empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY),
+        syntax_spans_rows=empty_reader_for_table(SYNTAX_SPANS_TABLE_KEY),
+        syntax_nodes_rows=empty_reader_for_table(SYNTAX_NODES_TABLE_KEY),
+        syntax_edges_rows=empty_reader_for_table(SYNTAX_EDGES_TABLE_KEY),
+        syntax_scopes_rows=empty_reader_for_table(SYNTAX_SCOPES_TABLE_KEY),
+        syntax_defs_rows=empty_reader_for_table(SYNTAX_DEFS_TABLE_KEY),
+        syntax_refs_rows=empty_reader_for_table(SYNTAX_REFS_TABLE_KEY),
+        syntax_calls_rows=empty_reader_for_table(SYNTAX_CALLS_TABLE_KEY),
+        syntax_call_args_rows=empty_reader_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
+        syntax_func_params_rows=empty_reader_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
+        syntax_imports_rows=empty_reader_for_table(SYNTAX_IMPORTS_TABLE_KEY),
         parse_manifest_row_count=0,
         syntax_spans_row_count=0,
         syntax_nodes_row_count=0,
@@ -571,13 +580,13 @@ def _coerce_symtable_output(
     )
     return SymtableToolOutput(
         result=merged,
-        scope_rows=empty_lazyframe_for_table(PY_SYM_SCOPES_TABLE_KEY),
-        symbol_rows=empty_lazyframe_for_table(PY_SYM_SYMBOLS_TABLE_KEY),
-        scope_edge_rows=empty_lazyframe_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY),
-        namespace_edge_rows=empty_lazyframe_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY),
-        function_partition_rows=empty_lazyframe_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY),
-        binding_rows=empty_lazyframe_for_table(PY_SYM_BINDINGS_TABLE_KEY),
-        resolution_edge_rows=empty_lazyframe_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY),
+        scope_rows=empty_reader_for_table(PY_SYM_SCOPES_TABLE_KEY),
+        symbol_rows=empty_reader_for_table(PY_SYM_SYMBOLS_TABLE_KEY),
+        scope_edge_rows=empty_reader_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY),
+        namespace_edge_rows=empty_reader_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY),
+        function_partition_rows=empty_reader_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY),
+        binding_rows=empty_reader_for_table(PY_SYM_BINDINGS_TABLE_KEY),
+        resolution_edge_rows=empty_reader_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY),
         scope_row_count=0,
         symbol_row_count=0,
         scope_edge_row_count=0,
@@ -600,12 +609,14 @@ def _coerce_bytecode_output(
                     warnings,
                     error_message="Bytecode extraction failed",
                 ),
+                compiler_meta_rows=output.compiler_meta_rows,
                 code_unit_rows=output.code_unit_rows,
                 instruction_rows=output.instruction_rows,
                 exception_rows=output.exception_rows,
                 block_rows=output.block_rows,
                 cfg_edge_rows=output.cfg_edge_rows,
                 defuse_event_rows=output.defuse_event_rows,
+                compiler_meta_row_count=output.compiler_meta_row_count,
                 code_unit_row_count=output.code_unit_row_count,
                 instruction_row_count=output.instruction_row_count,
                 exception_row_count=output.exception_row_count,
@@ -622,12 +633,14 @@ def _coerce_bytecode_output(
     )
     return BytecodeToolOutput(
         result=merged,
-        code_unit_rows=empty_lazyframe_for_table(PY_BC_CODE_UNITS_TABLE_KEY),
-        instruction_rows=empty_lazyframe_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY),
-        exception_rows=empty_lazyframe_for_table(PY_BC_EXCEPTION_TABLE_KEY),
-        block_rows=empty_lazyframe_for_table(PY_BC_BLOCKS_TABLE_KEY),
-        cfg_edge_rows=empty_lazyframe_for_table(PY_BC_CFG_EDGES_TABLE_KEY),
-        defuse_event_rows=empty_lazyframe_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY),
+        compiler_meta_rows=empty_reader_for_table(PY_COMPILER_META_TABLE_KEY),
+        code_unit_rows=empty_reader_for_table(PY_BC_CODE_UNITS_TABLE_KEY),
+        instruction_rows=empty_reader_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY),
+        exception_rows=empty_reader_for_table(PY_BC_EXCEPTION_TABLE_KEY),
+        block_rows=empty_reader_for_table(PY_BC_BLOCKS_TABLE_KEY),
+        cfg_edge_rows=empty_reader_for_table(PY_BC_CFG_EDGES_TABLE_KEY),
+        defuse_event_rows=empty_reader_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY),
+        compiler_meta_row_count=0,
         code_unit_row_count=0,
         instruction_row_count=0,
         exception_row_count=0,
@@ -635,6 +648,34 @@ def _coerce_bytecode_output(
         cfg_edge_row_count=0,
         defuse_event_row_count=0,
     )
+
+
+def _resolve_ingest_run_id(env: BuildEnv) -> str:
+    run_context = env.run_context
+    if run_context is not None:
+        return run_context.run_id
+    return new_run_id(RUN_PREFIX_INGEST)
+
+
+def _py_compiler_meta_frame(
+    env: BuildEnv,
+    options: BytecodeExtractOptions,
+) -> pa.RecordBatchReader:
+    run_id = _resolve_ingest_run_id(env)
+    rows = [
+        {
+            "repo": env.repo,
+            "commit": env.commit,
+            "run_id": run_id,
+            "python_version": sys.version.split()[0],
+            "magic_number": importlib.util.MAGIC_NUMBER,
+            "optimize": options.optimize,
+            "dont_inherit": options.dont_inherit,
+            "flags": options.compile_flags,
+        }
+    ]
+    reader, _ = record_batch_reader_for_rows(PY_COMPILER_META_TABLE_KEY, rows)
+    return reader
 
 
 def _coerce_inspect_output(
@@ -679,16 +720,16 @@ def _coerce_inspect_output(
     )
     return InspectToolOutput(
         result=merged,
-        object_rows=empty_lazyframe_for_table(PY_INSPECT_OBJECTS_TABLE_KEY),
-        member_rows=empty_lazyframe_for_table(PY_INSPECT_MEMBERS_TABLE_KEY),
-        class_mro_rows=empty_lazyframe_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY),
-        class_attr_rows=empty_lazyframe_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
-        unwrap_rows=empty_lazyframe_for_table(PY_INSPECT_UNWRAP_TABLE_KEY),
-        signature_rows=empty_lazyframe_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY),
-        signature_param_rows=empty_lazyframe_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
-        annotation_rows=empty_lazyframe_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
-        source_rows=empty_lazyframe_for_table(PY_INSPECT_SOURCE_TABLE_KEY),
-        runtime_state_rows=empty_lazyframe_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
+        object_rows=empty_reader_for_table(PY_INSPECT_OBJECTS_TABLE_KEY),
+        member_rows=empty_reader_for_table(PY_INSPECT_MEMBERS_TABLE_KEY),
+        class_mro_rows=empty_reader_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY),
+        class_attr_rows=empty_reader_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
+        unwrap_rows=empty_reader_for_table(PY_INSPECT_UNWRAP_TABLE_KEY),
+        signature_rows=empty_reader_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY),
+        signature_param_rows=empty_reader_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
+        annotation_rows=empty_reader_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
+        source_rows=empty_reader_for_table(PY_INSPECT_SOURCE_TABLE_KEY),
+        runtime_state_rows=empty_reader_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
         object_row_count=0,
         member_row_count=0,
         class_mro_row_count=0,
@@ -726,7 +767,7 @@ def _coerce_docstrings_output(
     )
     return DocstringsToolOutput(
         result=merged,
-        rows=empty_lazyframe_for_table(DOCSTRINGS_TABLE_KEY),
+        rows=empty_reader_for_table(DOCSTRINGS_TABLE_KEY),
         row_count=0,
     )
 
@@ -757,24 +798,21 @@ def t__ast__run(
     def _execute() -> AstToolOutput:
         get_schema_service()
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        step = AstExtractStep(discovery=discovery)
+        options = load_target_options(
+            env,
+            target_name=AST_TARGET_NAME,
+            options_type=AstExtractOptions,
+        )
+        step = AstExtractStep(discovery=discovery, options=options)
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        ast_frame = lazyframe_for_ingest_reader(
-            AST_NODES_TABLE_KEY,
-            extract_result.ast_rows_reader,
-        )
-        metric_frame = lazyframe_for_ingest_reader(
-            AST_METRICS_TABLE_KEY,
-            extract_result.metric_rows_reader,
-        )
         return AstToolOutput(
             result=extract_result.result,
-            ast_rows=ast_frame,
-            metric_rows=metric_frame,
+            ast_rows=extract_result.ast_rows_reader,
+            metric_rows=extract_result.metric_rows_reader,
             ast_row_count=extract_result.ast_row_count,
             metric_row_count=extract_result.metric_row_count,
         )
@@ -852,16 +890,24 @@ def t__cst__run(
     def _execute() -> CstToolOutput:
         get_schema_service()
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        step = CstExtractStep(discovery=discovery, emit_ast_nodes=False)
+        options = load_target_options(
+            env,
+            target_name=CST_TARGET_NAME,
+            options_type=SyntaxIndexOptions,
+        )
+        step = CstExtractStep(
+            discovery=discovery,
+            emit_ast_nodes=False,
+            batch_size=options.batch_size,
+        )
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_ingest_reader(CST_NODES_TABLE_KEY, extract_result.rows_reader)
         return CstToolOutput(
             result=extract_result.result,
-            rows=frame,
+            rows=extract_result.rows_reader,
             row_count=extract_result.row_count,
         )
 
@@ -940,69 +986,26 @@ def t__syntax_index__run(
         step = CstExtractStep(
             discovery=discovery,
             emit_ast_nodes=options.emit_ast_nodes,
+            batch_size=options.batch_size,
         )
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        parse_manifest_frame = lazyframe_for_ingest_reader(
-            PARSE_MANIFEST_TABLE_KEY,
-            extract_result.parse_manifest_rows_reader,
-        )
-        syntax_spans_frame = lazyframe_for_ingest_reader(
-            SYNTAX_SPANS_TABLE_KEY,
-            extract_result.syntax_spans_rows_reader,
-        )
-        syntax_nodes_frame = lazyframe_for_ingest_reader(
-            SYNTAX_NODES_TABLE_KEY,
-            extract_result.syntax_nodes_rows_reader,
-        )
-        syntax_edges_frame = lazyframe_for_ingest_reader(
-            SYNTAX_EDGES_TABLE_KEY,
-            extract_result.syntax_edges_rows_reader,
-        )
-        syntax_scopes_frame = lazyframe_for_ingest_reader(
-            SYNTAX_SCOPES_TABLE_KEY,
-            extract_result.syntax_scopes_rows_reader,
-        )
-        syntax_defs_frame = lazyframe_for_ingest_reader(
-            SYNTAX_DEFS_TABLE_KEY,
-            extract_result.syntax_defs_rows_reader,
-        )
-        syntax_refs_frame = lazyframe_for_ingest_reader(
-            SYNTAX_REFS_TABLE_KEY,
-            extract_result.syntax_refs_rows_reader,
-        )
-        syntax_calls_frame = lazyframe_for_ingest_reader(
-            SYNTAX_CALLS_TABLE_KEY,
-            extract_result.syntax_calls_rows_reader,
-        )
-        syntax_call_args_frame = lazyframe_for_ingest_reader(
-            SYNTAX_CALL_ARGS_TABLE_KEY,
-            extract_result.syntax_call_args_rows_reader,
-        )
-        syntax_func_params_frame = lazyframe_for_ingest_reader(
-            SYNTAX_FUNC_PARAMS_TABLE_KEY,
-            extract_result.syntax_func_params_rows_reader,
-        )
-        syntax_imports_frame = lazyframe_for_ingest_reader(
-            SYNTAX_IMPORTS_TABLE_KEY,
-            extract_result.syntax_imports_rows_reader,
-        )
         return SyntaxIndexToolOutput(
             result=extract_result.result,
-            parse_manifest_rows=parse_manifest_frame,
-            syntax_spans_rows=syntax_spans_frame,
-            syntax_nodes_rows=syntax_nodes_frame,
-            syntax_edges_rows=syntax_edges_frame,
-            syntax_scopes_rows=syntax_scopes_frame,
-            syntax_defs_rows=syntax_defs_frame,
-            syntax_refs_rows=syntax_refs_frame,
-            syntax_calls_rows=syntax_calls_frame,
-            syntax_call_args_rows=syntax_call_args_frame,
-            syntax_func_params_rows=syntax_func_params_frame,
-            syntax_imports_rows=syntax_imports_frame,
+            parse_manifest_rows=extract_result.parse_manifest_rows_reader,
+            syntax_spans_rows=extract_result.syntax_spans_rows_reader,
+            syntax_nodes_rows=extract_result.syntax_nodes_rows_reader,
+            syntax_edges_rows=extract_result.syntax_edges_rows_reader,
+            syntax_scopes_rows=extract_result.syntax_scopes_rows_reader,
+            syntax_defs_rows=extract_result.syntax_defs_rows_reader,
+            syntax_refs_rows=extract_result.syntax_refs_rows_reader,
+            syntax_calls_rows=extract_result.syntax_calls_rows_reader,
+            syntax_call_args_rows=extract_result.syntax_call_args_rows_reader,
+            syntax_func_params_rows=extract_result.syntax_func_params_rows_reader,
+            syntax_imports_rows=extract_result.syntax_imports_rows_reader,
             parse_manifest_row_count=extract_result.parse_manifest_row_count,
             syntax_spans_row_count=extract_result.syntax_spans_row_count,
             syntax_nodes_row_count=extract_result.syntax_nodes_row_count,
@@ -1107,49 +1110,30 @@ def t__symtable__run(
     def _execute() -> SymtableToolOutput:
         get_schema_service()
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        step = SymtableExtractStep(discovery=discovery)
+        options = load_target_options(
+            env,
+            target_name=SYMTABLE_TARGET_NAME,
+            options_type=SymtableExtractOptions,
+        )
+        if not options.enable:
+            return SymtableToolOutput(
+                result=ExecutionResult.skip("Symtable extraction disabled by options")
+            )
+        step = SymtableExtractStep(discovery=discovery, options=options)
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        scope_frame = lazyframe_for_ingest_reader(
-            PY_SYM_SCOPES_TABLE_KEY,
-            extract_result.scope_rows_reader,
-        )
-        symbol_frame = lazyframe_for_ingest_reader(
-            PY_SYM_SYMBOLS_TABLE_KEY,
-            extract_result.symbol_rows_reader,
-        )
-        scope_edge_frame = lazyframe_for_ingest_reader(
-            PY_SYM_SCOPE_EDGES_TABLE_KEY,
-            extract_result.scope_edge_rows_reader,
-        )
-        namespace_edge_frame = lazyframe_for_ingest_reader(
-            PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
-            extract_result.namespace_edge_rows_reader,
-        )
-        func_partition_frame = lazyframe_for_ingest_reader(
-            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
-            extract_result.function_partition_rows_reader,
-        )
-        binding_frame = lazyframe_for_ingest_reader(
-            PY_SYM_BINDINGS_TABLE_KEY,
-            extract_result.binding_rows_reader,
-        )
-        resolution_frame = lazyframe_for_ingest_reader(
-            PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
-            extract_result.resolution_edge_rows_reader,
-        )
         return SymtableToolOutput(
             result=extract_result.result,
-            scope_rows=scope_frame,
-            symbol_rows=symbol_frame,
-            scope_edge_rows=scope_edge_frame,
-            namespace_edge_rows=namespace_edge_frame,
-            function_partition_rows=func_partition_frame,
-            binding_rows=binding_frame,
-            resolution_edge_rows=resolution_frame,
+            scope_rows=extract_result.scope_rows_reader,
+            symbol_rows=extract_result.symbol_rows_reader,
+            scope_edge_rows=extract_result.scope_edge_rows_reader,
+            namespace_edge_rows=extract_result.namespace_edge_rows_reader,
+            function_partition_rows=extract_result.function_partition_rows_reader,
+            binding_rows=extract_result.binding_rows_reader,
+            resolution_edge_rows=extract_result.resolution_edge_rows_reader,
             scope_row_count=extract_result.scope_row_count,
             symbol_row_count=extract_result.symbol_row_count,
             scope_edge_row_count=extract_result.scope_edge_row_count,
@@ -1247,44 +1231,29 @@ def t__bytecode__run(
             target_name=BYTECODE_TARGET_NAME,
             options_type=BytecodeExtractOptions,
         )
+        if not options.enable:
+            return BytecodeToolOutput(
+                result=ExecutionResult.skip("Bytecode extraction disabled by options")
+            )
+        if options.cache_dir is None:
+            options = replace(options, cache_dir=env.paths.tool_cache / "bytecode")
         step = DisExtractStep(discovery=discovery, options=options)
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        code_unit_frame = lazyframe_for_ingest_reader(
-            PY_BC_CODE_UNITS_TABLE_KEY,
-            extract_result.code_unit_rows_reader,
-        )
-        instruction_frame = lazyframe_for_ingest_reader(
-            PY_BC_INSTRUCTIONS_TABLE_KEY,
-            extract_result.instruction_rows_reader,
-        )
-        exception_frame = lazyframe_for_ingest_reader(
-            PY_BC_EXCEPTION_TABLE_KEY,
-            extract_result.exception_rows_reader,
-        )
-        block_frame = lazyframe_for_ingest_reader(
-            PY_BC_BLOCKS_TABLE_KEY,
-            extract_result.block_rows_reader,
-        )
-        cfg_edge_frame = lazyframe_for_ingest_reader(
-            PY_BC_CFG_EDGES_TABLE_KEY,
-            extract_result.cfg_edge_rows_reader,
-        )
-        defuse_frame = lazyframe_for_ingest_reader(
-            PY_BC_DEFUSE_EVENTS_TABLE_KEY,
-            extract_result.defuse_event_rows_reader,
-        )
+        compiler_meta_frame = _py_compiler_meta_frame(env, options)
         return BytecodeToolOutput(
             result=extract_result.result,
-            code_unit_rows=code_unit_frame,
-            instruction_rows=instruction_frame,
-            exception_rows=exception_frame,
-            block_rows=block_frame,
-            cfg_edge_rows=cfg_edge_frame,
-            defuse_event_rows=defuse_frame,
+            compiler_meta_rows=compiler_meta_frame,
+            code_unit_rows=extract_result.code_unit_rows_reader,
+            instruction_rows=extract_result.instruction_rows_reader,
+            exception_rows=extract_result.exception_rows_reader,
+            block_rows=extract_result.block_rows_reader,
+            cfg_edge_rows=extract_result.cfg_edge_rows_reader,
+            defuse_event_rows=extract_result.defuse_event_rows_reader,
+            compiler_meta_row_count=1,
             code_unit_row_count=extract_result.code_unit_row_count,
             instruction_row_count=extract_result.instruction_row_count,
             exception_row_count=extract_result.exception_row_count,
@@ -1327,6 +1296,7 @@ def t__bytecode__ingest(
         )
 
     payload = {
+        PY_COMPILER_META_TABLE_KEY: t__bytecode__run.compiler_meta_rows,
         PY_BC_CODE_UNITS_TABLE_KEY: t__bytecode__run.code_unit_rows,
         PY_BC_INSTRUCTIONS_TABLE_KEY: t__bytecode__run.instruction_rows,
         PY_BC_EXCEPTION_TABLE_KEY: t__bytecode__run.exception_rows,
@@ -1335,6 +1305,7 @@ def t__bytecode__ingest(
         PY_BC_DEFUSE_EVENTS_TABLE_KEY: t__bytecode__run.defuse_event_rows,
     }
     table_counts = {
+        PY_COMPILER_META_TABLE_KEY: t__bytecode__run.compiler_meta_row_count,
         PY_BC_CODE_UNITS_TABLE_KEY: t__bytecode__run.code_unit_row_count,
         PY_BC_INSTRUCTIONS_TABLE_KEY: t__bytecode__run.instruction_row_count,
         PY_BC_EXCEPTION_TABLE_KEY: t__bytecode__run.exception_row_count,
@@ -1385,58 +1356,18 @@ def t__inspect__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        object_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_OBJECTS_TABLE_KEY,
-            extract_result.object_rows_reader,
-        )
-        member_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_MEMBERS_TABLE_KEY,
-            extract_result.member_rows_reader,
-        )
-        class_mro_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_CLASS_MRO_TABLE_KEY,
-            extract_result.class_mro_rows_reader,
-        )
-        class_attr_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
-            extract_result.class_attr_rows_reader,
-        )
-        unwrap_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_UNWRAP_TABLE_KEY,
-            extract_result.unwrap_rows_reader,
-        )
-        signature_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_SIGNATURES_TABLE_KEY,
-            extract_result.signature_rows_reader,
-        )
-        signature_param_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
-            extract_result.signature_param_rows_reader,
-        )
-        annotation_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_ANNOTATIONS_TABLE_KEY,
-            extract_result.annotation_rows_reader,
-        )
-        source_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_SOURCE_TABLE_KEY,
-            extract_result.source_rows_reader,
-        )
-        runtime_state_frame = lazyframe_for_ingest_reader(
-            PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
-            extract_result.runtime_state_rows_reader,
-        )
         return InspectToolOutput(
             result=extract_result.result,
-            object_rows=object_frame,
-            member_rows=member_frame,
-            class_mro_rows=class_mro_frame,
-            class_attr_rows=class_attr_frame,
-            unwrap_rows=unwrap_frame,
-            signature_rows=signature_frame,
-            signature_param_rows=signature_param_frame,
-            annotation_rows=annotation_frame,
-            source_rows=source_frame,
-            runtime_state_rows=runtime_state_frame,
+            object_rows=extract_result.object_rows_reader,
+            member_rows=extract_result.member_rows_reader,
+            class_mro_rows=extract_result.class_mro_rows_reader,
+            class_attr_rows=extract_result.class_attr_rows_reader,
+            unwrap_rows=extract_result.unwrap_rows_reader,
+            signature_rows=extract_result.signature_rows_reader,
+            signature_param_rows=extract_result.signature_param_rows_reader,
+            annotation_rows=extract_result.annotation_rows_reader,
+            source_rows=extract_result.source_rows_reader,
+            runtime_state_rows=extract_result.runtime_state_rows_reader,
             object_row_count=extract_result.object_row_count,
             member_row_count=extract_result.member_row_count,
             class_mro_row_count=extract_result.class_mro_row_count,
@@ -1544,13 +1475,9 @@ def t__docstrings__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_ingest_reader(
-            DOCSTRINGS_TABLE_KEY,
-            extract_result.rows_reader,
-        )
         return DocstringsToolOutput(
             result=extract_result.result,
-            rows=frame,
+            rows=extract_result.rows_reader,
             row_count=extract_result.row_count,
         )
 
@@ -1705,6 +1632,10 @@ _BYTECODE_TARGET_SPEC = ToolTargetSpec(
     target_name=BYTECODE_TARGET_NAME,
     spec=_INTENSIVE_SPEC,
     tables=(
+        TableOutputSpec(
+            table_key=PY_COMPILER_META_TABLE_KEY,
+            node_name="bytecode__compiler_meta_rows",
+        ),
         TableOutputSpec(
             table_key=PY_BC_CODE_UNITS_TABLE_KEY,
             node_name="bytecode__code_unit_rows",

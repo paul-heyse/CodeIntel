@@ -18,12 +18,16 @@ from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.core.hamilton.records import TargetRunRecord
 from tests._helpers.assertions import expect_true
 from tests._helpers.context import create_test_context
+from tests._helpers.env_options import GatewayOptions
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
 
 
 def _build_env(tmp_path: Path) -> BuildEnv:
-    ctx = create_test_context(tmp_path)
+    ctx = create_test_context(
+        tmp_path,
+        gateway_options=GatewayOptions(ensure_views=False, validate_schema=False),
+    )
     return build_test_env(
         BuildEnvSpec(
             gateway=ctx.gateway,

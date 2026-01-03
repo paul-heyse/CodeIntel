@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -34,16 +34,19 @@ def _write_snapshot_table(
     dataset_root: Path,
     table_key: str,
     commit: str,
-    rows: Sequence[tuple[object, ...]],
-    columns: Sequence[str],
+    rows: Sequence[Mapping[str, object]],
 ) -> None:
-    table = arrow_table_for_rows(table_key, rows, columns=columns)
+    table = arrow_table_for_rows(table_key, rows)
     write_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=commit,
         data=table,
     )
+
+
+def _row_mapping(columns: Sequence[str], values: Sequence[object]) -> dict[str, object]:
+    return dict(zip(columns, values, strict=True))
 
 
 def test_insert_symbol_use_edges_coerces_five_field_rows(test_ctx: TestContext) -> None:
@@ -106,8 +109,7 @@ def test_load_symbol_module_graph_smoke(core_ctx: TestContext) -> None:
         dataset_root,
         "graph.symbol_use_edges",
         core_ctx.commit,
-        [symbol_edge.to_tuple()],
-        columns=SymbolUseEdgeRow.__columns__,
+        [_row_mapping(SymbolUseEdgeRow.__columns__, symbol_edge.to_tuple())],
     )
     modules = [
         ModuleRow(module=MOD_A_FQN, path=MOD_A_PATH, repo=core_ctx.repo, commit=core_ctx.commit),
@@ -117,8 +119,7 @@ def test_load_symbol_module_graph_smoke(core_ctx: TestContext) -> None:
         dataset_root,
         "core.modules",
         core_ctx.commit,
-        [row.to_tuple() for row in modules],
-        columns=ModuleRow.__columns__,
+        [_row_mapping(ModuleRow.__columns__, row.to_tuple()) for row in modules],
     )
 
     graph = nx_views.load_symbol_module_graph(dataset_root, core_ctx.repo, core_ctx.commit)
@@ -128,18 +129,18 @@ def test_load_symbol_module_graph_smoke(core_ctx: TestContext) -> None:
 def test_load_symbol_function_graph_smoke(test_ctx: TestContext) -> None:
     """load_symbol_function_graph normalizes GOIDs and skips invalid/self edges."""
     dataset_root = test_ctx.build_paths.dataset_root_dir
+    columns = SymbolUseEdgeRow.__columns__
     rows = [
-        ("s1", "a.py", "b.py", False, False, Decimal("10"), 20),
-        ("s2", "a.py", "b.py", False, False, Decimal("10"), 20),
-        ("self", "a.py", "a.py", True, True, 30, 30),
-        ("bad", "a.py", "c.py", False, False, None, 40),
+        _row_mapping(columns, ("s1", "a.py", "b.py", False, False, Decimal("10"), 20)),
+        _row_mapping(columns, ("s2", "a.py", "b.py", False, False, Decimal("10"), 20)),
+        _row_mapping(columns, ("self", "a.py", "a.py", True, True, 30, 30)),
+        _row_mapping(columns, ("bad", "a.py", "c.py", False, False, None, 40)),
     ]
     _write_snapshot_table(
         dataset_root,
         "graph.symbol_use_edges",
         test_ctx.commit,
         rows,
-        columns=SymbolUseEdgeRow.__columns__,
     )
 
     graph = nx_views.load_symbol_function_graph(dataset_root, test_ctx.commit)

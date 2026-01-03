@@ -1,14 +1,6 @@
-"""Tests for safe database query helpers.
+"""Tests for parquet-safe query helpers.
 
-This module tests the query helpers from ``codeintel.storage.queries.safe``
-that provide typed access to database operations with proper error handling.
-
-Covers all safe_* functions for 80%+ coverage:
-- safe_count, safe_count_with_scope, safe_table_exists
-- safe_get_columns, safe_count_nulls
-- safe_min_value, safe_max_value
-- safe_count_non_positive, safe_count_duplicates
-- safe_not_null_fraction, safe_count_orphan_refs
+Exercises the parquet dataset query helpers in ``codeintel.storage.queries.parquet``.
 """
 
 from __future__ import annotations
@@ -18,13 +10,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.targets import TargetDescriptor
-from codeintel.storage.queries.safe import (
-    DUCKDB_QUERY_ERRORS,
-    ColumnNotFoundError,
+from codeintel.storage.queries.parquet import (
     ForeignKeyRef,
-    QueryError,
-    TableNotFoundError,
     safe_count,
     safe_count_duplicates,
     safe_count_non_positive,
@@ -37,6 +24,12 @@ from codeintel.storage.queries.safe import (
     safe_not_null_fraction,
     safe_table_exists,
 )
+from codeintel.storage.queries.safe import (
+    DUCKDB_QUERY_ERRORS,
+    ColumnNotFoundError,
+    QueryError,
+    TableNotFoundError,
+)
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -45,20 +38,16 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_true,
 )
-from tests._helpers.catalog import make_target_descriptor
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     SeedIngestionConfig,
-    TargetContextConfig,
-    build_target_context_for_target,
-    seed_ingestion_tables,
+    seed_parquet_ingestion_tables,
+    seed_parquet_modules,
 )
+from tests._helpers.schemas import ensure_schema_service
 
 if TYPE_CHECKING:
     from types import SimpleNamespace
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.storage.gateway import StorageGateway
 
 
 EXPECTED_COUNT_2 = 2
@@ -70,34 +59,22 @@ EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
 
 
-def _make_test_target(name: str = "repo_scan") -> TargetDescriptor:
-    """Create a minimal test target.
-
-    Parameters
-    ----------
-    name
-        Target name to use.
+@pytest.fixture
+def parquet_ctx(ingestion_ctx_bundle: SimpleNamespace) -> SimpleNamespace:
+    """Seed empty core.modules datasets for parquet query tests.
 
     Returns
     -------
-    TargetDescriptor
-        Target instance suitable for test execution.
+    SimpleNamespace
+        Ingestion bundle with dataset and snapshot details.
     """
-    return make_target_descriptor(
-        name=name,
-        module="ingestion",
-        description="Test target",
+    ensure_schema_service()
+    seed_parquet_modules(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
+        [],
     )
-
-
-def _ctx_for_gateway(gateway: StorageGateway, tmp_path: Path) -> BuildEnv:
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
-    return build_target_context_for_target(
-        _make_test_target(),
-        tmp_path,
-        config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
-    )
+    return ingestion_ctx_bundle
 
 
 def test_query_error_attributes() -> None:
@@ -128,9 +105,13 @@ def test_duckdb_query_errors_is_tuple() -> None:
     expect_true(len(DUCKDB_QUERY_ERRORS) > 0)
 
 
-def test_safe_count_existing_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_existing_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_count should return row count for existing tables."""
-    result = safe_count(fresh_gateway, "core.modules")
+    result = safe_count(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.modules",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
 
     if result is None:
         pytest.fail("safe_count returned None for existing table")
@@ -145,72 +126,90 @@ def test_safe_count_existing_table(fresh_gateway: StorageGateway) -> None:
         "",
     ],
 )
-def test_safe_count_invalid_or_missing_table(fresh_gateway: StorageGateway, table_key: str) -> None:
+def test_safe_count_invalid_or_missing_table(parquet_ctx: SimpleNamespace, table_key: str) -> None:
     """safe_count should return None for invalid or missing tables."""
-    result = safe_count(fresh_gateway, table_key)
+    result = safe_count(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key=table_key,
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
 
     expect_is_none(result)
 
 
 def test_safe_count_returns_correct_count(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count should return accurate row counts."""
-    seed_ingestion_tables(
-        ingestion_ctx_bundle.ctx,
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         SeedIngestionConfig(module_paths=["a.py", "b.py"], include_defaults=False),
     )
 
-    result = safe_count(ingestion_ctx_bundle.gateway, "core.modules")
+    result = safe_count(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.modules",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+    )
 
     expect_equal(result, EXPECTED_COUNT_2)
 
 
 def test_safe_count_with_scope_filters_by_snapshot(
     ingestion_ctx_bundle: SimpleNamespace,
-    tmp_path: Path,
 ) -> None:
     """safe_count_with_scope should count only matching repo/commit."""
     bundle = ingestion_ctx_bundle
-    target_repo = bundle.ctx.snapshot.repo
-    target_commit = bundle.ctx.snapshot.commit
-    seed_ingestion_tables(
-        bundle.ctx,
+    target_repo = bundle.snapshot.repo
+    target_commit = bundle.snapshot.commit
+    seed_parquet_ingestion_tables(
+        bundle.dataset_root,
+        bundle.snapshot,
         SeedIngestionConfig(module_paths=["a.py", "b.py"], include_defaults=False),
     )
-    other_ctx = build_target_context_for_target(
-        _make_test_target(),
-        tmp_path,
-        config=TargetContextConfig(
-            repo_root=bundle.repo_root,
-            gateway=bundle.gateway,
-            snapshot=("other/repo", "other-commit"),
-        ),
+    other_snapshot = make_snapshot(
+        repo="other/repo",
+        commit="other-commit",
+        repo_root=bundle.repo_root,
     )
-    seed_ingestion_tables(
-        other_ctx, SeedIngestionConfig(module_paths=["c.py"], include_defaults=False)
+    seed_parquet_ingestion_tables(
+        bundle.dataset_root,
+        other_snapshot,
+        SeedIngestionConfig(module_paths=["c.py"], include_defaults=False),
     )
 
     snapshot = make_snapshot(repo=target_repo, commit=target_commit, repo_root=bundle.repo_root)
-    result = safe_count_with_scope(bundle.gateway, "core.modules", snapshot)
+    result = safe_count_with_scope(
+        dataset_root=bundle.dataset_root,
+        table_key="core.modules",
+        snapshot=snapshot,
+    )
 
     expect_equal(result, EXPECTED_COUNT_2)
 
 
-def test_safe_count_with_scope_nonexistent_table(
-    fresh_gateway: StorageGateway,
-) -> None:
+def test_safe_count_with_scope_nonexistent_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_count_with_scope should return None for nonexistent tables."""
     snapshot = make_snapshot(repo_root=TEST_REPO_ROOT)
-    result = safe_count_with_scope(fresh_gateway, "nonexistent.table", snapshot)
+    result = safe_count_with_scope(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="nonexistent.table",
+        snapshot=snapshot,
+    )
 
     expect_is_none(result)
 
 
-def test_safe_count_with_scope_no_matches(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_with_scope_no_matches(parquet_ctx: SimpleNamespace) -> None:
     """safe_count_with_scope should return 0 when no rows match."""
     snapshot = make_snapshot(
         repo="nonexistent_repo", commit="nonexistent", repo_root=TEST_REPO_ROOT
     )
-    result = safe_count_with_scope(fresh_gateway, "core.modules", snapshot)
+    seed_parquet_modules(parquet_ctx.dataset_root, snapshot, [])
+    result = safe_count_with_scope(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.modules",
+        snapshot=snapshot,
+    )
 
     expect_equal(result, 0)
 
@@ -222,52 +221,86 @@ def test_safe_count_with_scope_no_matches(fresh_gateway: StorageGateway) -> None
         "invalid-key",
     ],
 )
-def test_safe_table_exists_invalid_or_missing(
-    fresh_gateway: StorageGateway, table_key: str
-) -> None:
+def test_safe_table_exists_invalid_or_missing(parquet_ctx: SimpleNamespace, table_key: str) -> None:
     """safe_table_exists should return False for invalid or missing tables."""
-    result = safe_table_exists(fresh_gateway, table_key)
+    result = safe_table_exists(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key=table_key,
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
 
     expect_false(result)
 
 
-def test_safe_count_sql_injection_protection(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_sql_injection_protection(parquet_ctx: SimpleNamespace) -> None:
     """safe_count should handle potential SQL injection attempts safely."""
-    result = safe_count(fresh_gateway, "core.modules; DROP TABLE core.modules;--")
+    result = safe_count(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.modules; DROP TABLE core.modules;--",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
     expect_is_none(result)
 
-    result = safe_count(fresh_gateway, "'; DROP TABLE core.modules;--")
+    result = safe_count(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="'; DROP TABLE core.modules;--",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
     expect_is_none(result)
 
 
-def test_safe_table_exists_sql_injection_protection(
-    fresh_gateway: StorageGateway,
-) -> None:
+def test_safe_table_exists_sql_injection_protection(parquet_ctx: SimpleNamespace) -> None:
     """safe_table_exists should handle potential SQL injection attempts safely."""
-    result = safe_table_exists(fresh_gateway, "core.modules; DROP TABLE core.modules;--")
+    result = safe_table_exists(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.modules; DROP TABLE core.modules;--",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
     expect_false(result)
 
-    expect_true(safe_table_exists(fresh_gateway, "core.modules"))
+    expect_true(
+        safe_table_exists(
+            dataset_root=parquet_ctx.dataset_root,
+            table_key="core.modules",
+            snapshot_id=parquet_ctx.snapshot.commit,
+        )
+    )
 
 
-def test_safe_count_with_special_characters(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_with_special_characters(parquet_ctx: SimpleNamespace) -> None:
     """safe_count should handle special characters in table keys."""
-    result = safe_count(fresh_gateway, "core.table-with-dash")
+    result = safe_count(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.table-with-dash",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
     expect_is_none(result)
 
-    result = safe_count(fresh_gateway, "core.table with space")
+    result = safe_count(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.table with space",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
     expect_is_none(result)
 
 
-def test_safe_count_with_unicode(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_with_unicode(parquet_ctx: SimpleNamespace) -> None:
     """safe_count should handle unicode in table keys."""
-    result = safe_count(fresh_gateway, "core.tableé")
+    result = safe_count(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.tableé",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
     expect_is_none(result)
 
 
-def test_safe_get_columns_existing_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_get_columns_existing_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_get_columns should return column names for existing tables."""
-    result = safe_get_columns(fresh_gateway, "core.modules")
+    result = safe_get_columns(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.modules",
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
 
     expect_is_instance(result, set)
     expect_true(len(result) > 0)
@@ -283,30 +316,41 @@ def test_safe_get_columns_existing_table(fresh_gateway: StorageGateway) -> None:
     ],
 )
 def test_safe_get_columns_nonexistent_or_invalid(
-    fresh_gateway: StorageGateway, table_key: str
+    parquet_ctx: SimpleNamespace, table_key: str
 ) -> None:
     """safe_get_columns should return empty set for nonexistent or invalid tables."""
-    result = safe_get_columns(fresh_gateway, table_key)
+    result = safe_get_columns(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key=table_key,
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
 
     expect_equal(result, set())
 
 
 def test_safe_count_nulls_no_nulls(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count_nulls should return 0 when no NULL values exist."""
-    seed_ingestion_tables(
-        ingestion_ctx_bundle.ctx,
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         SeedIngestionConfig(module_paths=["a.py", "b.py"], include_defaults=False),
     )
 
-    result = safe_count_nulls(ingestion_ctx_bundle.gateway, "core.modules", "module")
+    result = safe_count_nulls(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.modules",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="module",
+    )
 
     expect_equal(result, 0)
 
 
-def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_count_nulls_with_nulls(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count_nulls should count NULL values correctly."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             varchar_tables={
                 "core.test_nulls": [
@@ -320,7 +364,12 @@ def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway, tmp_path: Pa
         ),
     )
 
-    result = safe_count_nulls(fresh_gateway, "core.test_nulls", "value")
+    result = safe_count_nulls(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_nulls",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, EXPECTED_COUNT_2)
 
@@ -333,133 +382,190 @@ def test_safe_count_nulls_with_nulls(fresh_gateway: StorageGateway, tmp_path: Pa
     ],
 )
 def test_safe_count_nulls_invalid_inputs(
-    fresh_gateway: StorageGateway, table_key: str, column: str
+    parquet_ctx: SimpleNamespace, table_key: str, column: str
 ) -> None:
     """safe_count_nulls should return 0 for invalid table or column."""
-    result = safe_count_nulls(fresh_gateway, table_key, column)
+    result = safe_count_nulls(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key=table_key,
+        snapshot_id=parquet_ctx.snapshot.commit,
+        column=column,
+    )
 
     expect_equal(result, 0)
 
 
-def test_safe_min_value_with_data(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_min_value_with_data(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_min_value should return minimum value."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             numeric_tables={"core.test_numeric": [10.5, 5.0, 20.0]},
             include_defaults=False,
         ),
     )
 
-    result = safe_min_value(fresh_gateway, "core.test_numeric", "value")
+    result = safe_min_value(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_numeric",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, EXPECTED_MIN_VALUE)
 
 
-def test_safe_max_value_with_data(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_max_value_with_data(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_max_value should return maximum value."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             numeric_tables={"core.test_numeric2": [10.5, 5.0, 20.0]},
             include_defaults=False,
         ),
     )
 
-    result = safe_max_value(fresh_gateway, "core.test_numeric2", "value")
+    result = safe_max_value(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_numeric2",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, EXPECTED_MAX_VALUE)
 
 
-def test_safe_min_value_empty_table(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_min_value_empty_table(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_min_value should return None for empty table."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             numeric_tables={"core.test_empty_num": []},
             include_defaults=False,
         ),
     )
 
-    result = safe_min_value(fresh_gateway, "core.test_empty_num", "value")
+    result = safe_min_value(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_empty_num",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_is_none(result)
 
 
-def test_safe_max_value_empty_table(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_max_value_empty_table(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_max_value should return None for empty table."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             numeric_tables={"core.test_empty_num2": []},
             include_defaults=False,
         ),
     )
 
-    result = safe_max_value(fresh_gateway, "core.test_empty_num2", "value")
+    result = safe_max_value(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_empty_num2",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_is_none(result)
 
 
-def test_safe_min_value_invalid_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_min_value_invalid_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_min_value should return None for invalid table."""
-    result = safe_min_value(fresh_gateway, "invalid.table", "column")
+    result = safe_min_value(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="invalid.table",
+        snapshot_id=parquet_ctx.snapshot.commit,
+        column="column",
+    )
 
     expect_is_none(result)
 
 
-def test_safe_max_value_invalid_column(fresh_gateway: StorageGateway) -> None:
+def test_safe_max_value_invalid_column(parquet_ctx: SimpleNamespace) -> None:
     """safe_max_value should return None for invalid column."""
-    result = safe_max_value(fresh_gateway, "core.modules", "nonexistent")
+    result = safe_max_value(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="core.modules",
+        snapshot_id=parquet_ctx.snapshot.commit,
+        column="nonexistent",
+    )
 
     expect_is_none(result)
 
 
 def test_safe_count_non_positive_with_negatives(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    ingestion_ctx_bundle: SimpleNamespace,
 ) -> None:
     """safe_count_non_positive should count values <= 0."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             numeric_tables={"core.test_pos": [-5.0, 0.0, 10.0, -2.0]},
             include_defaults=False,
         ),
     )
 
-    result = safe_count_non_positive(fresh_gateway, "core.test_pos", "value")
+    result = safe_count_non_positive(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_pos",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, EXPECTED_COUNT_3)
 
 
 def test_safe_count_non_positive_all_positive(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    ingestion_ctx_bundle: SimpleNamespace,
 ) -> None:
     """safe_count_non_positive should return 0 when all values are positive."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             numeric_tables={"core.test_all_pos": [5.0, 10.0]},
             include_defaults=False,
         ),
     )
 
-    result = safe_count_non_positive(fresh_gateway, "core.test_all_pos", "value")
+    result = safe_count_non_positive(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_all_pos",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, 0)
 
 
-def test_safe_count_non_positive_invalid_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_non_positive_invalid_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_count_non_positive should return 0 for invalid table."""
-    result = safe_count_non_positive(fresh_gateway, "invalid.table", "column")
+    result = safe_count_non_positive(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="invalid.table",
+        snapshot_id=parquet_ctx.snapshot.commit,
+        column="column",
+    )
 
     expect_equal(result, 0)
 
 
-def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_count_duplicates_with_dupes(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count_duplicates should count duplicate values."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             varchar_tables={
                 "core.test_dupes": [
@@ -474,15 +580,21 @@ def test_safe_count_duplicates_with_dupes(fresh_gateway: StorageGateway, tmp_pat
         ),
     )
 
-    result = safe_count_duplicates(fresh_gateway, "core.test_dupes", "name")
+    result = safe_count_duplicates(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_dupes",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="name",
+    )
 
     expect_equal(result, EXPECTED_COUNT_2)
 
 
-def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_count_duplicates_no_dupes(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count_duplicates should return 0 when all values are unique."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             varchar_tables={
                 "core.test_unique": [
@@ -495,37 +607,56 @@ def test_safe_count_duplicates_no_dupes(fresh_gateway: StorageGateway, tmp_path:
         ),
     )
 
-    result = safe_count_duplicates(fresh_gateway, "core.test_unique", "name")
+    result = safe_count_duplicates(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_unique",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="name",
+    )
 
     expect_equal(result, 0)
 
 
-def test_safe_count_duplicates_invalid_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_duplicates_invalid_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_count_duplicates should return 0 for invalid table."""
-    result = safe_count_duplicates(fresh_gateway, "invalid.table", "column")
+    result = safe_count_duplicates(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="invalid.table",
+        snapshot_id=parquet_ctx.snapshot.commit,
+        column="column",
+    )
 
     expect_equal(result, 0)
 
 
-def test_safe_not_null_fraction_all_not_null(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_not_null_fraction_all_not_null(
+    ingestion_ctx_bundle: SimpleNamespace,
+) -> None:
     """safe_not_null_fraction should return 1.0 when all values are non-null."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             varchar_tables={"core.test_frac1": [(1, "a"), (2, "b")]},
             include_defaults=False,
         ),
     )
 
-    result = safe_not_null_fraction(fresh_gateway, "core.test_frac1", "value")
+    result = safe_not_null_fraction(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_frac1",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, EXPECTED_FRACTION_1_0)
 
 
-def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_not_null_fraction_half_null(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_not_null_fraction should return correct fraction."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             varchar_tables={
                 "core.test_frac2": [
@@ -539,52 +670,77 @@ def test_safe_not_null_fraction_half_null(fresh_gateway: StorageGateway, tmp_pat
         ),
     )
 
-    result = safe_not_null_fraction(fresh_gateway, "core.test_frac2", "value")
+    result = safe_not_null_fraction(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_frac2",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, EXPECTED_FRACTION_0_5)
 
 
-def test_safe_not_null_fraction_all_null(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_not_null_fraction_all_null(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_not_null_fraction should return 0.0 when all values are null."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             varchar_tables={"core.test_frac3": [(1, None), (2, None)]},
             include_defaults=False,
         ),
     )
 
-    result = safe_not_null_fraction(fresh_gateway, "core.test_frac3", "value")
+    result = safe_not_null_fraction(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_frac3",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, 0.0)
 
 
-def test_safe_not_null_fraction_empty_table(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_not_null_fraction_empty_table(
+    ingestion_ctx_bundle: SimpleNamespace,
+) -> None:
     """safe_not_null_fraction should return 0.0 for empty table."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             varchar_tables={"core.test_frac_empty": []},
             include_defaults=False,
         ),
     )
 
-    result = safe_not_null_fraction(fresh_gateway, "core.test_frac_empty", "value")
+    result = safe_not_null_fraction(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        table_key="core.test_frac_empty",
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+        column="value",
+    )
 
     expect_equal(result, 0.0)
 
 
-def test_safe_not_null_fraction_invalid_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_not_null_fraction_invalid_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_not_null_fraction should return 0.0 for invalid table."""
-    result = safe_not_null_fraction(fresh_gateway, "invalid.table", "column")
+    result = safe_not_null_fraction(
+        dataset_root=parquet_ctx.dataset_root,
+        table_key="invalid.table",
+        snapshot_id=parquet_ctx.snapshot.commit,
+        column="column",
+    )
 
     expect_equal(result, 0.0)
 
 
-def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_count_orphan_refs_no_orphans(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count_orphan_refs should return 0 when all refs are valid."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             foreign_keys=[
                 (
@@ -605,15 +761,20 @@ def test_safe_count_orphan_refs_no_orphans(fresh_gateway: StorageGateway, tmp_pa
         ref_column="id",
     )
 
-    result = safe_count_orphan_refs(fresh_gateway, fk)
+    result = safe_count_orphan_refs(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        fk=fk,
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+    )
 
     expect_equal(result, 0)
 
 
-def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_safe_count_orphan_refs_with_orphans(ingestion_ctx_bundle: SimpleNamespace) -> None:
     """safe_count_orphan_refs should count orphaned references."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             foreign_keys=[
                 (
@@ -638,17 +799,22 @@ def test_safe_count_orphan_refs_with_orphans(fresh_gateway: StorageGateway, tmp_
         ref_column="id",
     )
 
-    result = safe_count_orphan_refs(fresh_gateway, fk)
+    result = safe_count_orphan_refs(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        fk=fk,
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+    )
 
     expect_equal(result, EXPECTED_COUNT_2)
 
 
 def test_safe_count_orphan_refs_with_nulls_allowed(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    ingestion_ctx_bundle: SimpleNamespace,
 ) -> None:
     """safe_count_orphan_refs should handle NULL values when allow_null=True."""
-    seed_ingestion_tables(
-        _ctx_for_gateway(fresh_gateway, tmp_path),
+    seed_parquet_ingestion_tables(
+        ingestion_ctx_bundle.dataset_root,
+        ingestion_ctx_bundle.snapshot,
         config=SeedIngestionConfig(
             foreign_keys=[
                 (
@@ -674,12 +840,16 @@ def test_safe_count_orphan_refs_with_nulls_allowed(
         allow_null=True,
     )
 
-    result = safe_count_orphan_refs(fresh_gateway, fk)
+    result = safe_count_orphan_refs(
+        dataset_root=ingestion_ctx_bundle.dataset_root,
+        fk=fk,
+        snapshot_id=ingestion_ctx_bundle.snapshot.commit,
+    )
 
     expect_true(result >= 1)
 
 
-def test_safe_count_orphan_refs_invalid_table(fresh_gateway: StorageGateway) -> None:
+def test_safe_count_orphan_refs_invalid_table(parquet_ctx: SimpleNamespace) -> None:
     """safe_count_orphan_refs should return 0 for invalid tables."""
     fk = ForeignKeyRef(
         source_table="invalid.source",
@@ -688,7 +858,11 @@ def test_safe_count_orphan_refs_invalid_table(fresh_gateway: StorageGateway) -> 
         ref_column="id",
     )
 
-    result = safe_count_orphan_refs(fresh_gateway, fk)
+    result = safe_count_orphan_refs(
+        dataset_root=parquet_ctx.dataset_root,
+        fk=fk,
+        snapshot_id=parquet_ctx.snapshot.commit,
+    )
 
     expect_equal(result, 0)
 

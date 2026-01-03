@@ -94,9 +94,7 @@ def create_validation_runner(
     # Register all check classes
     all_checks: list[GraphCheckBase] = [
         # Database integrity checks
-        MissingFunctionGoidsCheck(),
-        CallsiteSpanMismatchCheck(),
-        OrphanModulesCheck(),
+        *(check() for check in ALL_DATABASE_CHECKS),
         # Structure checks
         CallGraphStructureCheck(),
         ImportGraphStructureCheck(),

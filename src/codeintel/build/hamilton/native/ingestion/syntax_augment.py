@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from numbers import Integral
 
 import polars as pl
+import pyarrow as pa
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import materialize_node
@@ -19,15 +20,20 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import (
-    JoinSpec,
-    dedupe_frame_for_table,
-    empty_lazyframe_for_table,
-    rows_to_frame,
+from codeintel.build.tabular.arrow_ops import (
+    align_table_to_contract,
+    arrow_join_lazyframes,
+    dedupe_table_for_table,
 )
+from codeintel.build.tabular.conversion import (
+    reader_to_table,
+    table_to_reader,
+    tabular_to_arrow_table,
+    tabular_to_frame,
+)
+from codeintel.build.tabular.frames import JoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.spans import normalize_byte_span
 
@@ -54,10 +60,10 @@ class _SyntaxNodeIndex:
 
 @dataclass(frozen=True, slots=True)
 class SyntaxAugmentFrames:
-    syntax_nodes: pl.LazyFrame
-    syntax_edges: pl.LazyFrame
-    ts_syntax_node_xref: pl.LazyFrame
-    ts_weld_coverage: pl.LazyFrame
+    syntax_nodes: pa.RecordBatchReader
+    syntax_edges: pa.RecordBatchReader
+    ts_syntax_node_xref: pa.RecordBatchReader
+    ts_weld_coverage: pa.RecordBatchReader
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,6 +426,37 @@ def _ts_payload_sort_key(item: dict[str, object]) -> tuple[int, int]:
     return start_value, end_value
 
 
+def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.RecordBatchReader:
+    try:
+        reader, _ = record_batch_reader_for_rows(table_key, rows)
+        table = reader_to_table(reader)
+    except (KeyError, RuntimeError):
+        if not rows:
+            return pa.RecordBatchReader.from_batches(pa.schema([]), [])
+        table = pa.Table.from_pylist(rows)
+    deduped = dedupe_table_for_table(table_key, table)
+    return table_to_reader(deduped)
+
+
+def _empty_reader(table_key: str) -> pa.RecordBatchReader:
+    try:
+        return empty_reader_for_table(table_key)
+    except (KeyError, RuntimeError):
+        return pa.RecordBatchReader.from_batches(pa.schema([]), [])
+
+
+def _reader_from_frame(table_key: str, frame: pl.DataFrame) -> pa.RecordBatchReader:
+    if frame.is_empty():
+        return _empty_reader(table_key)
+    table = tabular_to_arrow_table(frame)
+    try:
+        aligned = align_table_to_contract(table_key, table)
+    except (KeyError, RuntimeError):
+        aligned = table
+    deduped = dedupe_table_for_table(table_key, aligned)
+    return table_to_reader(deduped)
+
+
 def _ts_nodes_to_syntax_nodes(ts_nodes: pl.DataFrame) -> pl.DataFrame:
     if ts_nodes.is_empty():
         return pl.DataFrame()
@@ -524,33 +561,21 @@ def syntax_augment__frames(
     nodes_rows = syntax_nodes.to_dicts()
     _merge_ts_extras(nodes_rows, inputs.ts_nodes, xref_rows)
 
-    syntax_nodes_frame = dedupe_frame_for_table(
-        rows_to_frame(SYNTAX_NODES_AUGMENTED_TABLE_KEY, nodes_rows),
-        table_key=SYNTAX_NODES_AUGMENTED_TABLE_KEY,
-    )
-    if not syntax_edges.columns:
-        syntax_edges_frame = empty_lazyframe_for_table(SYNTAX_EDGES_AUGMENTED_TABLE_KEY)
+    syntax_nodes_frame = _reader_from_rows(SYNTAX_NODES_AUGMENTED_TABLE_KEY, nodes_rows)
+    if not syntax_edges.columns or syntax_edges.is_empty():
+        syntax_edges_frame = _empty_reader(SYNTAX_EDGES_AUGMENTED_TABLE_KEY)
     else:
-        syntax_edges_frame = dedupe_frame_for_table(
-            syntax_edges.lazy(),
-            table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
-        )
+        syntax_edges_frame = _reader_from_frame(SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
     if syntax_augment__options.emit_ts_xref:
-        xref_frame = dedupe_frame_for_table(
-            rows_to_frame(TS_XREF_TABLE_KEY, xref_rows),
-            table_key=TS_XREF_TABLE_KEY,
-        )
+        xref_frame = _reader_from_rows(TS_XREF_TABLE_KEY, xref_rows)
     else:
-        xref_frame = empty_lazyframe_for_table(TS_XREF_TABLE_KEY)
+        xref_frame = _empty_reader(TS_XREF_TABLE_KEY)
 
     coverage_rows = _weld_coverage_frame(inputs.ts_nodes, xref_rows)
     if coverage_rows.is_empty():
-        coverage_frame = empty_lazyframe_for_table(TS_WELD_COVERAGE_TABLE_KEY)
+        coverage_frame = _empty_reader(TS_WELD_COVERAGE_TABLE_KEY)
     else:
-        coverage_frame = dedupe_frame_for_table(
-            coverage_rows.lazy(),
-            table_key=TS_WELD_COVERAGE_TABLE_KEY,
-        )
+        coverage_frame = _reader_from_frame(TS_WELD_COVERAGE_TABLE_KEY, coverage_rows)
 
     return SyntaxAugmentFrames(
         syntax_nodes=syntax_nodes_frame,
@@ -562,12 +587,12 @@ def syntax_augment__frames(
 
 def syntax_augment__syntax_nodes__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Return canonical syntax nodes with tree-sitter augmentation.
 
     Returns
     -------
-    pl.LazyFrame
+    pa.RecordBatchReader
         Canonical syntax node rows.
     """
     return syntax_augment__frames.syntax_nodes
@@ -575,12 +600,12 @@ def syntax_augment__syntax_nodes__base(
 
 def syntax_augment__syntax_edges__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Return canonical syntax edges with tree-sitter fallback applied.
 
     Returns
     -------
-    pl.LazyFrame
+    pa.RecordBatchReader
         Canonical syntax edge rows.
     """
     return syntax_augment__frames.syntax_edges
@@ -588,12 +613,12 @@ def syntax_augment__syntax_edges__base(
 
 def syntax_augment__ts_syntax_node_xref__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Return tree-sitter xref rows for canonical syntax nodes.
 
     Returns
     -------
-    pl.LazyFrame
+    pa.RecordBatchReader
         Tree-sitter xref rows.
     """
     return syntax_augment__frames.ts_syntax_node_xref
@@ -601,12 +626,12 @@ def syntax_augment__ts_syntax_node_xref__base(
 
 def syntax_augment__ts_weld_coverage__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Return per-file tree-sitter weld coverage rows.
 
     Returns
     -------
-    pl.LazyFrame
+    pa.RecordBatchReader
         Weld coverage rows.
     """
     return syntax_augment__frames.ts_weld_coverage
@@ -627,7 +652,7 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
                 ),
             ),
             node_name="syntax_augment__syntax_nodes",
-            input_type=pl.LazyFrame,
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
@@ -639,21 +664,21 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
                 ),
             ),
             node_name="syntax_augment__syntax_edges",
-            input_type=pl.LazyFrame,
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=TS_XREF_TABLE_KEY,
             base_node="syntax_augment__ts_syntax_node_xref__base",
             save_spec=RelationTableSaveSpec(table_key=TS_XREF_TABLE_KEY),
             node_name="syntax_augment__ts_syntax_node_xref",
-            input_type=pl.LazyFrame,
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=TS_WELD_COVERAGE_TABLE_KEY,
             base_node="syntax_augment__ts_weld_coverage__base",
             save_spec=RelationTableSaveSpec(table_key=TS_WELD_COVERAGE_TABLE_KEY),
             node_name="syntax_augment__ts_weld_coverage",
-            input_type=pl.LazyFrame,
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="syntax_augment__table_materializations",

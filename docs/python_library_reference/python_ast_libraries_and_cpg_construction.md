@@ -16,37 +16,27 @@ Think of these as **three different introspection planes**:
 
 ### Completed
 - [x] dis extraction tables for code units, instructions, exception table, blocks, CFG edges, and def/use events with span anchoring and label mapping.
-- [x] symtable extraction tables for scopes, symbols, scope edges, namespace edges, function partitions, derived bindings, and resolution edges with AST anchors for module/function/class.
-- [x] inspect extraction tables for objects, members (static), unwrap hops, signatures, signature params, annotations, and source using an allowlist + subprocess/budgeted execution.
+- [x] symtable extraction tables for scopes, symbols, scope edges, namespace edges, function partitions, derived bindings, and resolution edges with AST anchors (module/function/class plus annotation/type-alias/type-parameter/type-variable confidence mapping).
+- [x] inspect extraction tables for objects, members (static), unwrap hops, signatures, signature params, annotations, source, and runtime state (frame/traceback/generator/coroutine/asyncgen) using an allowlist + subprocess/budgeted execution.
 - [x] CPG nodes for SCOPE, BINDING, BC_CODE_UNIT, BC_INSTR, CFG_BLOCK, INSPECT_OBJECT, INSPECT_SIGNATURE, and INSPECT_SIGNATURE_PARAM.
-- [x] CPG edges for OWNS_SCOPE/PARENT_SCOPE, BINDS_DEF/BINDS_USE, DEFINES_BINDING/USES_BINDING, REACHES, CFG_*, HAS_SIGNATURE/HAS_PARAM, INSPECT_ANCHORS_AST, INSPECT_SYMBOL, and ARG_TO_PARAM_INSPECT.
+- [x] CPG edges for OWNS_SCOPE/PARENT_SCOPE, BINDS_DEF/BINDS_USE, DEFINES_BINDING/USES_BINDING, REACHES, CFG/DFG stack + memory edges, bytecode callsite edges (to syntax calls + SCIP symbols), HAS_SIGNATURE/HAS_PARAM, ARG_TO_PARAM_INSPECT, INSPECT_ANCHORS_AST, INSPECT_SYMBOL, WRAPS, class MRO/attrs, and runtime-state-to-instruction joins.
 - [x] Validation check for bytecode def/use binding-space mismatches.
+- [x] Run-level compiler metadata on bytecode code units (python version, magic number, optimize, dont_inherit).
 
 ### Remaining checklists
 
 ### DIS / bytecode -> CPG
-- [ ] Emit explicit bytecode-to-AST (or syntax) anchor edges using instruction spans with deterministic fallbacks.
-- [ ] Project callsite nodes from bytecode CALL opcodes and link them to syntax call nodes and SCIP symbols.
-- [ ] Implement stack-effect DFG modeling to emit USE/DEF edges for stack values and intermediate results.
-- [ ] Add memory edges for LOAD_ATTR/STORE_ATTR/LOAD_SUBSCR/STORE_SUBSCR and LOAD_GLOBAL/STORE_GLOBAL keyed to bindings.
-- [ ] Add fixtures that assert stack-effect DFG and callsite wiring on if/loop/try/with patterns.
+- [ ] Expand fixtures to assert stack-effect DFG + callsite wiring on if/loop/try/with patterns (beyond minimal cases).
 
 ### INSPECT overlay
-- [ ] Project unwrap hops into CPG edges (e.g., WRAPS/DECORATES) using py_inspect_unwrap_hops.
-- [ ] Add class and descriptor topology extraction (getmro/classify_class_attrs/getattr_static) and CPG edges.
-- [ ] Add frame/traceback extraction and map FrameInfo positions back to bytecode instructions.
-- [ ] Add generator/coroutine/asyncgen state + locals extraction (get*state/get*locals).
-- [ ] Implement BoundArguments-based call binding to emit BINDS_ARG edges with confidence.
 - [ ] Improve inspect-to-AST anchoring using source spans and confidence metadata (not only qualname joins).
+- [ ] If needed, distinguish DECORATES vs WRAPS edges from unwrap-hop metadata.
 
 ### SYMTABLE
-- [ ] Anchor ANNOTATION/TYPE_ALIAS/TYPE_PARAMETERS/TYPE_VARIABLE scopes to AST spans with confidence metadata.
-- [ ] Project py_sym_namespace_edges into CPG edges for namespace binding structure.
 - [ ] Add tests for type-alias/type-parameter scopes and annotation-only bindings.
 
 ### Cross-cutting and validation
-- [ ] Add run-level compiler metadata (python version, magic number, optimize flags, dont_inherit).
-- [ ] Track anchor coverage metrics for bytecode->AST and inspect->AST joins.
+- [ ] Track anchor coverage metrics for inspect->AST joins (and extend coverage metrics beyond instruction span anchoring as needed).
 - [ ] Expand micro-fixtures for nested try/except/finally/with, comprehensions, and decorators.
 
 ---

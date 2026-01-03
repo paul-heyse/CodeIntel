@@ -7,79 +7,63 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests._helpers.gateway import GatewayFactory
-from tests._helpers.ingestion import (
-    build_ingestion_context_bundle,
-    build_scan_profile,
-    closing_gateway,
-    create_scan_step,
-)
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.orchestration.tooling import tooling_outputs_session
+from tests._helpers.schemas import ensure_schema_service
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from pathlib import Path
 
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.config.primitives import SnapshotRef
     from tests._helpers.orchestration.tooling import ToolingOutputs
 
 
 @pytest.fixture
-def ingestion_gateway_factory() -> GatewayFactory:
-    """Provide a gateway factory with schema/views applied (no macros).
+def ingestion_snapshot(tmp_path_factory: pytest.TempPathFactory) -> SnapshotRef:
+    """Provide a default snapshot reference for ingestion tests.
 
     Returns
     -------
-    GatewayFactory
-        Factory preconfigured for ingestion tests.
+    SnapshotRef
+        Snapshot reference for the test repository.
     """
-    return GatewayFactory()
+    repo_root = tmp_path_factory.mktemp("ingestion-repo")
+    return DEFAULT_VARIANT.to_snapshot(repo_root=repo_root)
 
 
 @pytest.fixture
-def ingestion_gateway() -> Generator[StorageGateway]:
-    """Provide a fresh gateway with schema and views applied (no macros).
+def ingestion_dataset_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Provide a dataset root for parquet-backed ingestion outputs.
 
-    Yields
-    ------
-    StorageGateway
-        Gateway instance opened for tests.
+    Returns
+    -------
+    Path
+        Root directory for parquet datasets.
     """
-    gateway = GatewayFactory().open()
-    with closing_gateway(gateway):
-        yield gateway
+    return tmp_path_factory.mktemp("ingestion-datasets")
 
 
 @pytest.fixture
 def ingestion_ctx_bundle(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[SimpleNamespace]:
-    """Provision a reusable ingestion context with repo, gateway, and scan wiring.
+    ingestion_snapshot: SnapshotRef,
+    ingestion_dataset_root: Path,
+) -> SimpleNamespace:
+    """Provision a reusable ingestion context for parquet-backed tests.
 
-    Yields
-    ------
+    Returns
+    -------
     SimpleNamespace
-        Namespace containing repo_root, gateway, profile, scan_step, storage,
-        discovery, change_detection, ctx, module_paths, and tools.
+        Namespace containing repo_root, snapshot, dataset_root, and build_dir.
     """
-    tmp_root = tmp_path_factory.mktemp("ingestion")
-    bundle = build_ingestion_context_bundle(tmp_root)
-    profile = build_scan_profile(bundle.repo_root)
-    scan_root = tmp_path_factory.mktemp("scan")
-    scan_step, _, _ = create_scan_step(bundle.gateway, bundle.repo_root, scan_root)
-    ctx_ns = SimpleNamespace(
-        repo_root=bundle.repo_root,
-        gateway=bundle.gateway,
-        profile=profile,
-        scan_step=scan_step,
-        storage=bundle.storage,
-        discovery=bundle.discovery,
-        change_detection=bundle.change_detection,
-        ctx=bundle.ctx,
-        module_paths=bundle.module_paths,
-        tools=bundle.tools,
+    repo_root = ingestion_snapshot.repo_root
+    build_dir = ingestion_dataset_root / "build"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    return SimpleNamespace(
+        repo_root=repo_root,
+        snapshot=ingestion_snapshot,
+        dataset_root=ingestion_dataset_root,
+        build_dir=build_dir,
     )
-    with closing_gateway(bundle.gateway):
-        yield ctx_ns
 
 
 @pytest.fixture
@@ -94,10 +78,16 @@ def tooling_outputs(tooling_outputs_session: ToolingOutputs) -> ToolingOutputs:
     return tooling_outputs_session
 
 
+@pytest.fixture(autouse=True)
+def ingestion_schema_service() -> None:
+    """Ensure schema service is available for parquet helpers."""
+    ensure_schema_service()
+
+
 __all__ = [
     "ingestion_ctx_bundle",
-    "ingestion_gateway",
-    "ingestion_gateway_factory",
+    "ingestion_dataset_root",
+    "ingestion_snapshot",
     "tooling_outputs",
     "tooling_outputs_session",
 ]

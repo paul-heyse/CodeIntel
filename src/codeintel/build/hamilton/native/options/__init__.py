@@ -9,6 +9,7 @@ from __future__ import annotations
 from codeintel.build.hamilton.native.options.graphs import (
     CallGraphOptions,
     CfgDfgOptions,
+    CpgOptions,
     GoidBuilderOptions,
     ImportGraphOptions,
     SymbolUsesOptions,
@@ -24,6 +25,7 @@ from codeintel.build.hamilton.native.options.ingestion import (
 __all__ = [
     "CallGraphOptions",
     "CfgDfgOptions",
+    "CpgOptions",
     "GoidBuilderOptions",
     "ImportGraphOptions",
     "ModuleIngestOptions",

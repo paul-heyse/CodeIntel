@@ -66,27 +66,24 @@ def exportable_by_default(table_key: str) -> bool:
     if split is None:
         return False
     schema_prefix, table_name = split
-
-    if schema_prefix == "build":
-        return False
-
-    if schema_prefix == "core":
-        return table_name not in _NON_EXPORTABLE_CORE_TABLES
-
-    if schema_prefix == "graph":
-        return not (table_name == "import_modules" or table_name.startswith("v_"))
-
-    if schema_prefix == "analytics":
+    if schema_prefix in {"build", "docs"}:
+        exportable = False
+    elif schema_prefix == "core":
+        exportable = table_name not in _NON_EXPORTABLE_CORE_TABLES
+    elif schema_prefix == "graph":
+        exportable = not (table_name == "import_modules" or table_name.startswith("v_"))
+    elif schema_prefix == "analytics":
         is_internal_metrics_ext = table_name.endswith("_metrics_ext") and table_name.startswith(
             ("cfg_", "dfg_")
         )
-        return (
+        exportable = (
             table_name not in _NON_EXPORTABLE_ANALYTICS_TABLES
             and not table_name.endswith("_cache")
             and not is_internal_metrics_ext
         )
-
-    return True
+    else:
+        exportable = True
+    return exportable
 
 
 def _default_export_filename(
@@ -112,6 +109,8 @@ def default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str
         return None
     schema_prefix, table_name = split
     if schema_prefix == "build":
+        return None
+    if schema_prefix == "docs":
         return None
     return table_name
 

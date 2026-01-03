@@ -5,7 +5,8 @@ from __future__ import annotations
 import dataclasses
 import sys
 
-import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
@@ -24,7 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import table_to_frame, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -36,39 +37,96 @@ SYMBOL_USES_TARGET_NAME = "symbol_uses"
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
 
 
-def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
+def _and_kleene(
+    left: pa.Array | pa.ChunkedArray,
+    right: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("and_kleene", [left, right])
+
+
+def _non_empty_string_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    is_valid = pc.call_function("is_valid", [values])
+    lengths = pc.call_function("utf8_length", [values])
+    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
+    return _and_kleene(is_valid, non_empty)
+
+
+def _filter_occurrences_table(occurrences_table: pa.Table) -> pa.Table:
+    if occurrences_table.num_rows == 0:
+        return occurrences_table
+    required = {"symbol", "rel_path", "start_line"}
+    if not required.issubset(set(occurrences_table.column_names)):
+        return occurrences_table
+    try:
+        symbol_mask = _non_empty_string_mask(occurrences_table.column("symbol"))
+        path_mask = _non_empty_string_mask(occurrences_table.column("rel_path"))
+        line_mask = pc.call_function("is_valid", [occurrences_table.column("start_line")])
+        mask = _and_kleene(symbol_mask, path_mask)
+        mask = _and_kleene(mask, line_mask)
+        return occurrences_table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return occurrences_table
+
+
+def _filter_modules_table(modules_table: pa.Table) -> pa.Table:
+    if modules_table.num_rows == 0:
+        return modules_table
+    required = {"path", "module"}
+    if not required.issubset(set(modules_table.column_names)):
+        return modules_table
+    try:
+        path_mask = _non_empty_string_mask(modules_table.column("path"))
+        module_mask = _non_empty_string_mask(modules_table.column("module"))
+        mask = _and_kleene(path_mask, module_mask)
+        return modules_table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return modules_table
+
+
+def _filter_goids_table(goids_table: pa.Table) -> pa.Table:
+    if goids_table.num_rows == 0:
+        return goids_table
+    required = {"rel_path", "goid_h128", "start_line"}
+    if not required.issubset(set(goids_table.column_names)):
+        return goids_table
+    try:
+        path_mask = _non_empty_string_mask(goids_table.column("rel_path"))
+        goid_mask = pc.call_function("is_valid", [goids_table.column("goid_h128")])
+        line_mask = pc.call_function("is_valid", [goids_table.column("start_line")])
+        mask = _and_kleene(path_mask, goid_mask)
+        mask = _and_kleene(mask, line_mask)
+        return goids_table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return goids_table
+
+
+def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    if modules_frame.is_empty():
+    if modules_table.num_rows == 0:
         return module_by_path
-    if not {"path", "module"}.issubset(set(modules_frame.columns)):
+    if not {"path", "module"}.issubset(set(modules_table.column_names)):
         return module_by_path
-    data = modules_frame.select(["path", "module"]).to_dict(as_series=False)
-    module_by_path.update(
-        {
-            path: module
-            for path, module in zip(data["path"], data["module"], strict=True)
-            if isinstance(path, str) and isinstance(module, str)
-        }
-    )
+    filtered = _filter_modules_table(modules_table)
+    for row in filtered.to_pylist():
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_by_path[path] = module
     return module_by_path
 
 
 def _goid_resolver(
-    goids_frame: pl.DataFrame,
+    goids_table: pa.Table,
 ) -> SpanResolver[int]:
     resolver = SpanResolver.for_lines(path_normalizer=lambda value: value)
-    if goids_frame.is_empty() or "rel_path" not in goids_frame.columns:
+    if goids_table.num_rows == 0 or "rel_path" not in goids_table.column_names:
         return resolver
-    data = goids_frame.select(["rel_path", "goid_h128", "start_line", "end_line"]).to_dict(
-        as_series=False
-    )
-    for rel_path, goid_raw, start_line, end_line in zip(
-        data["rel_path"],
-        data["goid_h128"],
-        data["start_line"],
-        data["end_line"],
-        strict=True,
-    ):
+    filtered = _filter_goids_table(goids_table)
+    for row in filtered.to_pylist():
+        rel_path = row.get("rel_path")
+        goid_raw = row.get("goid_h128")
+        start_line = row.get("start_line")
+        end_line = row.get("end_line")
         if not isinstance(rel_path, str):
             continue
         goid_value = normalize_decimal_id(goid_raw)
@@ -94,26 +152,23 @@ def _match_goid(resolver: SpanResolver[int], rel_path: str, line: int) -> int | 
     return int(match.payload)
 
 
-def _symbol_occurrences(occurrences_frame: pl.DataFrame) -> list[SymbolOccurrence]:
+def _symbol_occurrences(occurrences_table: pa.Table) -> list[SymbolOccurrence]:
     occurrences: list[SymbolOccurrence] = []
-    if occurrences_frame.is_empty():
+    if occurrences_table.num_rows == 0:
         return occurrences
     required = {"symbol", "rel_path", "start_line"}
-    if not required.issubset(set(occurrences_frame.columns)):
+    if not required.issubset(set(occurrences_table.column_names)):
         return occurrences
-    columns = ["symbol", "rel_path", "start_line"]
-    if "roles" in occurrences_frame.columns:
-        columns.append("roles")
-    data = occurrences_frame.select(columns).to_dict(as_series=False)
-    roles_values = data.get("roles")
-    for idx, (symbol, rel_path, start_line) in enumerate(
-        zip(data["symbol"], data["rel_path"], data["start_line"], strict=True)
-    ):
+    filtered = _filter_occurrences_table(occurrences_table)
+    for row in filtered.to_pylist():
+        symbol = row.get("symbol")
+        rel_path = row.get("rel_path")
+        start_line = row.get("start_line")
         if not isinstance(symbol, str) or not isinstance(rel_path, str):
             continue
         if not isinstance(start_line, int):
             continue
-        roles = parse_symbol_roles(roles_values[idx] if roles_values is not None else None)
+        roles = parse_symbol_roles(row.get("roles"))
         occurrences.append(
             SymbolOccurrence(
                 symbol=symbol,
@@ -182,11 +237,11 @@ def _attach_goids(
     return updated
 
 
-def _symbol_use_frames(
+def _symbol_use_tables(
     q__core__scip_occurrences: InferableTabularInput,
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+) -> tuple[pa.Table, pa.Table, pa.Table]:
     occurrences_table = tabular_to_arrow_table(q__core__scip_occurrences).select(
         ["symbol", "rel_path", "start_line", "roles"]
     )
@@ -194,11 +249,7 @@ def _symbol_use_frames(
     goids_table = tabular_to_arrow_table(q__core__goids).select(
         ["rel_path", "goid_h128", "start_line", "end_line"]
     )
-    return (
-        table_to_frame(occurrences_table),
-        table_to_frame(modules_table),
-        table_to_frame(goids_table),
-    )
+    return occurrences_table, modules_table, goids_table
 
 
 def _definition_maps(
@@ -221,25 +272,25 @@ def symbol_use_edges_compute(
     InferableTabularInput
         Tabular input for computed symbol use edges.
     """
-    occurrences_frame, modules_frame, goids_frame = _symbol_use_frames(
+    occurrences_table, modules_table, goids_table = _symbol_use_tables(
         q__core__scip_occurrences,
         q__core__modules,
         q__core__goids,
     )
-    if occurrences_frame.is_empty():
+    if occurrences_table.num_rows == 0:
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
-    occurrences = _symbol_occurrences(occurrences_frame)
+    occurrences = _symbol_occurrences(occurrences_table)
     if not occurrences:
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
-    module_by_path = _module_by_path(modules_frame)
+    module_by_path = _module_by_path(modules_table)
     def_info_by_symbol, def_path_by_symbol = _definition_maps(occurrences)
     edges = build_use_edges(occurrences, def_path_by_symbol, module_by_path)
     if not edges:
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     use_lines_by_symbol_path = _reference_lines_by_symbol_path(occurrences)
-    goid_resolver = _goid_resolver(goids_frame)
+    goid_resolver = _goid_resolver(goids_table)
     edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_resolver)
     rows = (dataclasses.asdict(row) for row in edges_to_rows(edges))
     reader, _ = record_batch_reader_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)

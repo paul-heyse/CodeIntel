@@ -8,6 +8,8 @@ Check classes implement CheckProtocol from core/validation.
 
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -15,6 +17,7 @@ import polars as pl
 
 from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_reader
 from codeintel.build.graphs.validation.base import GraphCheckBase
+from codeintel.build.hamilton.native.graphs.cpg import instruction_cpg_id
 from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -22,7 +25,6 @@ from codeintel.core.query_results import coerce_int, coerce_str
 from codeintel.core.serialization.payload import decode_payload
 
 if TYPE_CHECKING:
-    import logging
     from collections.abc import Sequence
 
     from codeintel.build.graphs.validation.context import GraphValidationContext
@@ -246,6 +248,96 @@ class BytecodeDefuseBindingSpaceCheck(GraphCheckBase):
             ctx.repo,
             ctx.commit,
             ctx.logger,
+        )
+
+
+class BytecodeLoadFastBindingCheck(GraphCheckBase):
+    """Check LOAD_FAST binding edges resolve to locals or params."""
+
+    check_name: ClassVar[str] = "bytecode_load_fast_binding"
+    check_description: ClassVar[str] = "Detect LOAD_FAST uses without local/param binding edges"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute LOAD_FAST binding checks.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for missing LOAD_FAST binding edges.
+        """
+        _ = self
+        return _warn_missing_defuse_binding_edges_impl(
+            _DefuseBindingCheckRequest(
+                dataset_root_dir=ctx.dataset_root_dir,
+                repo=ctx.repo,
+                commit=ctx.commit,
+                log=ctx.logger,
+                space="local",
+                allowed_binding_kinds={"local", "param"},
+                check_name=self.check_name,
+                detail="LOAD_FAST use missing local/param binding edge",
+            )
+        )
+
+
+class BytecodeLoadDerefBindingCheck(GraphCheckBase):
+    """Check LOAD_DEREF binding edges resolve to free/nonlocal bindings."""
+
+    check_name: ClassVar[str] = "bytecode_load_deref_binding"
+    check_description: ClassVar[str] = "Detect LOAD_DEREF uses without free/nonlocal binding edges"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute LOAD_DEREF binding checks.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for missing LOAD_DEREF binding edges.
+        """
+        _ = self
+        return _warn_missing_defuse_binding_edges_impl(
+            _DefuseBindingCheckRequest(
+                dataset_root_dir=ctx.dataset_root_dir,
+                repo=ctx.repo,
+                commit=ctx.commit,
+                log=ctx.logger,
+                space="free",
+                allowed_binding_kinds={"free_ref", "nonlocal_ref"},
+                check_name=self.check_name,
+                detail="LOAD_DEREF use missing free/nonlocal binding edge",
+            )
+        )
+
+
+class BytecodeLoadGlobalBindingCheck(GraphCheckBase):
+    """Check LOAD_GLOBAL binding edges resolve to module globals."""
+
+    check_name: ClassVar[str] = "bytecode_load_global_binding"
+    check_description: ClassVar[str] = "Detect LOAD_GLOBAL uses without global binding edges"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute LOAD_GLOBAL binding checks.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for missing LOAD_GLOBAL binding edges.
+        """
+        _ = self
+        return _warn_missing_defuse_binding_edges_impl(
+            _DefuseBindingCheckRequest(
+                dataset_root_dir=ctx.dataset_root_dir,
+                repo=ctx.repo,
+                commit=ctx.commit,
+                log=ctx.logger,
+                space="global",
+                allowed_binding_kinds={"global_ref"},
+                check_name=self.check_name,
+                detail="LOAD_GLOBAL use missing global binding edge",
+            )
         )
 
 
@@ -829,6 +921,148 @@ def _warn_defuse_binding_space_mismatch_impl(
     return mismatches
 
 
+@dataclass(frozen=True, slots=True)
+class _DefuseBindingCheckRequest:
+    dataset_root_dir: Path | None
+    repo: str
+    commit: str
+    log: logging.Logger
+    space: str
+    allowed_binding_kinds: set[str]
+    check_name: str
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class _DefuseBindingEventContext:
+    repo: str
+    commit: str
+    space: str
+    allowed_binding_kinds: set[str]
+    check_name: str
+    detail: str
+
+
+def _warn_missing_defuse_binding_edges_impl(
+    request: _DefuseBindingCheckRequest,
+) -> list[dict[str, object]]:
+    if request.dataset_root_dir is None:
+        return []
+    events = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=request.dataset_root_dir,
+            table_key="core.py_bc_defuse_events",
+            snapshot_id=request.commit,
+            columns=(
+                "repo",
+                "commit",
+                "rel_path",
+                "code_unit_id",
+                "instr_id",
+                "event_kind",
+                "space",
+            ),
+            repo=request.repo,
+            commit=request.commit,
+        )
+    )
+    edges = _scan_snapshot_frame(
+        SnapshotScanRequest(
+            dataset_root=request.dataset_root_dir,
+            table_key="graph.cpg_edges",
+            snapshot_id=request.commit,
+            columns=("src_cpg_node_id", "edge_kind", "extras_json", "rel_path"),
+            repo=request.repo,
+            commit=request.commit,
+        )
+    )
+    if events is None or edges is None:
+        return []
+    edges_by_src = _defuse_edges_by_source(edges)
+    missing = _missing_defuse_binding_edges(
+        events,
+        edges_by_src=edges_by_src,
+        context=_DefuseBindingEventContext(
+            repo=request.repo,
+            commit=request.commit,
+            space=request.space,
+            allowed_binding_kinds=request.allowed_binding_kinds,
+            check_name=request.check_name,
+            detail=request.detail,
+        ),
+    )
+    if missing:
+        request.log.warning("Validation: %d %s issues detected", len(missing), request.check_name)
+    return missing
+
+
+def _defuse_edges_by_source(edges: pl.LazyFrame) -> dict[tuple[int, str], set[str]]:
+    edge_rows = edges.filter(pl.col("edge_kind") == "USES_BINDING").collect().to_dicts()
+    edges_by_src: dict[tuple[int, str], set[str]] = {}
+    for row in edge_rows:
+        src_id = normalize_decimal_id(row.get("src_cpg_node_id"))
+        if src_id is None:
+            continue
+        extras = decode_payload(row.get("extras_json"))
+        if not isinstance(extras, dict):
+            continue
+        edge_space = extras.get("space")
+        binding_kind = extras.get("binding_kind")
+        if not isinstance(edge_space, str) or not isinstance(binding_kind, str):
+            continue
+        edges_by_src.setdefault((int(src_id), edge_space), set()).add(binding_kind)
+    return edges_by_src
+
+
+def _missing_defuse_binding_edges(
+    events: pl.LazyFrame,
+    *,
+    edges_by_src: dict[tuple[int, str], set[str]],
+    context: _DefuseBindingEventContext,
+) -> list[dict[str, object]]:
+    missing: list[dict[str, object]] = []
+    for row in (
+        events.filter((pl.col("event_kind") == "USE") & (pl.col("space") == context.space))
+        .collect()
+        .to_dicts()
+    ):
+        rel_path = coerce_str(row.get("rel_path"), ctx=f"{context.check_name}.rel_path")
+        code_unit_id = coerce_str(
+            row.get("code_unit_id"),
+            ctx=f"{context.check_name}.code_unit_id",
+        )
+        instr_id = coerce_str(row.get("instr_id"), ctx=f"{context.check_name}.instr_id")
+        if None in {rel_path, code_unit_id, instr_id}:
+            continue
+        src_id = instruction_cpg_id(
+            repo=context.repo,
+            commit=context.commit,
+            rel_path=rel_path,
+            code_unit_id=code_unit_id,
+            instr_id=instr_id,
+        )
+        binding_kinds = edges_by_src.get((src_id, context.space))
+        if binding_kinds and binding_kinds.intersection(context.allowed_binding_kinds):
+            continue
+        missing.append(
+            {
+                "repo": context.repo,
+                "commit": context.commit,
+                "check_name": context.check_name,
+                "severity": "warning",
+                "path": rel_path,
+                "detail": context.detail,
+                "context": {
+                    "space": context.space,
+                    "allowed_binding_kinds": sorted(context.allowed_binding_kinds),
+                    "code_unit_id": code_unit_id,
+                    "instr_id": instr_id,
+                },
+            }
+        )
+    return missing
+
+
 # =============================================================================
 # All Check Classes (for runner registration)
 # =============================================================================
@@ -841,6 +1075,9 @@ ALL_DATABASE_CHECKS: tuple[type[GraphCheckBase], ...] = (
     SymtableFreevarsCheck,
     BytecodeCfgEdgeIntegrityCheck,
     BytecodeDefuseBindingSpaceCheck,
+    BytecodeLoadFastBindingCheck,
+    BytecodeLoadDerefBindingCheck,
+    BytecodeLoadGlobalBindingCheck,
 )
 
 __all__ = [
@@ -848,6 +1085,9 @@ __all__ = [
     "ALL_DATABASE_CHECKS",
     "BytecodeCfgEdgeIntegrityCheck",
     "BytecodeDefuseBindingSpaceCheck",
+    "BytecodeLoadDerefBindingCheck",
+    "BytecodeLoadFastBindingCheck",
+    "BytecodeLoadGlobalBindingCheck",
     "CallsiteSpanMismatchCheck",
     "MissingFunctionGoidsCheck",
     "OrphanModulesCheck",

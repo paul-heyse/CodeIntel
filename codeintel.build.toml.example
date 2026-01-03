@@ -82,6 +82,10 @@ detect_grpc = false
 # Skip files with no content
 skip_empty_files = true
 
+[ingestion.ast]
+# Target rows per Arrow RecordBatch for AST extraction
+batch_size = 10000
+
 [ingestion.scip]
 # Patterns to include in SCIP indexing
 include_patterns = ["src/**/*.py"]
@@ -95,6 +99,32 @@ run_all_checkers = true
 [ingestion.coverage]
 # Default coverage file location
 coverage_file = ".coverage"
+
+[ingestion.symtable]
+# Enable symtable extraction
+enable = true
+# Target rows per Arrow RecordBatch when streaming
+batch_size = 10000
+
+[ingestion.bytecode]
+# Enable bytecode extraction
+enable = true
+# Emit CFG blocks/edges from dis extraction
+include_cfg = true
+# Emit DEF/USE events for dataflow
+include_defuse = true
+# Target rows per Arrow RecordBatch when streaming
+batch_size = 10000
+# Parallelism for bytecode extraction
+max_workers = 1
+
+[ingestion.inspect]
+# Enable optional inspect overlays (allowlist only)
+enable = false
+# Explicit module allowlist for inspection
+module_allowlist = []
+# Target rows per Arrow RecordBatch when streaming
+batch_size = 10000
 
 # ---------------------------------------------------------------------------
 # Graphs Configuration
@@ -111,6 +141,10 @@ include_indirect = true
 [graphs.import_graph]
 # Include type-only imports
 include_type_imports = true
+
+[graphs.cpg]
+# Emit REACHES edges for bytecode dataflow reachability
+enable_reaches = true
 
 # ---------------------------------------------------------------------------
 # Hamilton Configuration

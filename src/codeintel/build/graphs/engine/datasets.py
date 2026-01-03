@@ -11,7 +11,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, reader_to_table
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
@@ -162,7 +162,7 @@ def scan_snapshot_table(
     reader = scan_snapshot_reader(request)
     if reader is None:
         return None
-    return pa.Table.from_batches(list(reader), schema=reader.schema)
+    return reader_to_table(reader)
 
 
 def scan_snapshot_lazyframe(

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 
 import polars as pl
+import pyarrow as pa
 from polars.exceptions import PolarsError
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -17,15 +19,17 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.arrow_ops import (
+    align_reader_to_contract,
+    arrow_join_lazyframes,
+)
+from codeintel.build.tabular.conversion import lazyframe_to_reader, tabular_to_lazyframe
 from codeintel.build.tabular.frames import (
     JoinSpec,
-    dedupe_frame_for_table,
-    empty_lazyframe_for_table,
     join_validated,
 )
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -91,6 +95,20 @@ def _align_frames_for_concat(frames: list[pl.LazyFrame]) -> list[pl.LazyFrame]:
             resolved = frame.with_columns([pl.lit(None).alias(name) for name in missing])
         aligned.append(resolved.select(all_columns))
     return aligned
+
+
+def _dedupe_for_table(frame: pl.LazyFrame, *, table_key: str) -> pl.LazyFrame:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is None or not schema.primary_key:
+        return frame
+    try:
+        columns = set(frame.collect_schema().names())
+    except PolarsError:
+        return frame
+    key_columns = [name for name in schema.primary_key if name in columns]
+    if not key_columns:
+        return frame
+    return frame.unique(subset=key_columns, keep="first", maintain_order=True)
 
 
 def _occurrence_resolution_frame(
@@ -183,98 +201,16 @@ def _resolve_facts(
     occurrences: pl.LazyFrame,
     *,
     table_key: str,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     fact_columns = list(facts.collect_schema().names())
     if not fact_columns:
-        return empty_lazyframe_for_table(table_key)
+        return empty_reader_for_table(table_key)
     resolved_columns = _ordered_columns(table_key)
-
-    bytes_predicate = pl.col("start_byte").is_not_null() & pl.col("end_byte").is_not_null()
-    facts_with_bytes = facts.filter(bytes_predicate)
-    facts_without_bytes = facts.filter(~bytes_predicate)
-
-    occ_bytes = occurrences.filter(
-        pl.col("occ_start_byte").is_not_null() & pl.col("occ_end_byte").is_not_null()
-    )
-    # Contract: occurrence spans are unique per byte span.
-    bytes_join = join_validated(
-        facts_with_bytes,
-        occ_bytes,
-        spec=JoinSpec(
-            left_on=["repo", "commit", "rel_path", "producer", "start_byte", "end_byte"],
-            right_on=[
-                "repo",
-                "commit",
-                "rel_path",
-                "producer",
-                "occ_start_byte",
-                "occ_end_byte",
-            ],
-            how="left",
-            validate="m:1",
-        ),
-    )
-
-    fallback = bytes_join.filter(pl.col("scip_symbol").is_null()).select(fact_columns)
-    # Contract: occurrence spans are unique per line/col span.
-    line_join = join_validated(
-        facts_without_bytes,
+    matched_bytes, fallback_join, line_join = _resolve_occurrence_joins(
+        facts,
         occurrences,
-        spec=JoinSpec(
-            left_on=[
-                "repo",
-                "commit",
-                "rel_path",
-                "producer",
-                "start_line",
-                "start_col",
-                "end_line",
-                "end_col",
-            ],
-            right_on=[
-                "repo",
-                "commit",
-                "rel_path",
-                "producer",
-                "occ_start_line",
-                "occ_start_col",
-                "occ_end_line",
-                "occ_end_col",
-            ],
-            how="left",
-            validate="m:1",
-        ),
+        fact_columns,
     )
-    fallback_join = join_validated(
-        fallback,
-        occurrences,
-        spec=JoinSpec(
-            left_on=[
-                "repo",
-                "commit",
-                "rel_path",
-                "producer",
-                "start_line",
-                "start_col",
-                "end_line",
-                "end_col",
-            ],
-            right_on=[
-                "repo",
-                "commit",
-                "rel_path",
-                "producer",
-                "occ_start_line",
-                "occ_start_col",
-                "occ_end_line",
-                "occ_end_col",
-            ],
-            how="left",
-            validate="m:1",
-        ),
-    )
-
-    matched_bytes = bytes_join.filter(pl.col("scip_symbol").is_not_null())
     if resolved_columns:
         aligned = [
             _select_for_table(matched_bytes, table_key),
@@ -286,7 +222,85 @@ def _resolve_facts(
     combined = pl.concat(aligned, how="vertical_relaxed")
     if resolved_columns:
         combined = combined.select(resolved_columns)
-    return dedupe_frame_for_table(combined, table_key=table_key)
+    combined = _dedupe_for_table(combined, table_key=table_key)
+    reader = lazyframe_to_reader(combined)
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is None:
+        return reader
+    return align_reader_to_contract(table_key, reader)
+
+
+def _resolve_occurrence_joins(
+    facts: pl.LazyFrame,
+    occurrences: pl.LazyFrame,
+    fact_columns: Sequence[str],
+) -> tuple[pl.LazyFrame, pl.LazyFrame, pl.LazyFrame]:
+    bytes_predicate = pl.col("start_byte").is_not_null() & pl.col("end_byte").is_not_null()
+    facts_with_bytes = facts.filter(bytes_predicate)
+    facts_without_bytes = facts.filter(~bytes_predicate)
+
+    occ_bytes = occurrences.filter(
+        pl.col("occ_start_byte").is_not_null() & pl.col("occ_end_byte").is_not_null()
+    )
+    bytes_join = join_validated(
+        facts_with_bytes,
+        occ_bytes,
+        spec=_occurrence_byte_join_spec(),
+    )
+    fallback = bytes_join.filter(pl.col("scip_symbol").is_null()).select(fact_columns)
+    line_join = _line_join_occurrences(facts_without_bytes, occurrences)
+    fallback_join = _line_join_occurrences(fallback, occurrences)
+    matched_bytes = bytes_join.filter(pl.col("scip_symbol").is_not_null())
+    return matched_bytes, fallback_join, line_join
+
+
+def _line_join_occurrences(left: pl.LazyFrame, occurrences: pl.LazyFrame) -> pl.LazyFrame:
+    return join_validated(left, occurrences, spec=_occurrence_line_join_spec())
+
+
+def _occurrence_byte_join_spec() -> JoinSpec:
+    # Contract: occurrence spans are unique per byte span.
+    return JoinSpec(
+        left_on=["repo", "commit", "rel_path", "producer", "start_byte", "end_byte"],
+        right_on=[
+            "repo",
+            "commit",
+            "rel_path",
+            "producer",
+            "occ_start_byte",
+            "occ_end_byte",
+        ],
+        how="left",
+        validate="m:1",
+    )
+
+
+def _occurrence_line_join_spec() -> JoinSpec:
+    # Contract: occurrence spans are unique per line/col span.
+    return JoinSpec(
+        left_on=[
+            "repo",
+            "commit",
+            "rel_path",
+            "producer",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+        ],
+        right_on=[
+            "repo",
+            "commit",
+            "rel_path",
+            "producer",
+            "occ_start_line",
+            "occ_start_col",
+            "occ_end_line",
+            "occ_end_col",
+        ],
+        how="left",
+        validate="m:1",
+    )
 
 
 def syntax_enrich__occurrence_resolution(
@@ -308,76 +322,80 @@ def syntax_enrich__occurrence_resolution(
 
 def syntax_enrich__defs_resolved__base(
     q__core__syntax_defs: InferableTabularInput,
-    syntax_enrich__occurrence_resolution: pl.LazyFrame,
-) -> pl.LazyFrame:
+    syntax_enrich__occurrence_resolution: InferableTabularInput,
+) -> pa.RecordBatchReader:
     """Build core.syntax_defs_resolved from syntax defs and SCIP welds.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame for core.syntax_defs_resolved.
+    pa.RecordBatchReader
+        Arrow reader for core.syntax_defs_resolved.
     """
     facts = tabular_to_lazyframe(q__core__syntax_defs)
+    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
-        syntax_enrich__occurrence_resolution,
+        occurrences,
         table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
     )
 
 
 def syntax_enrich__refs_resolved__base(
     q__core__syntax_refs: InferableTabularInput,
-    syntax_enrich__occurrence_resolution: pl.LazyFrame,
-) -> pl.LazyFrame:
+    syntax_enrich__occurrence_resolution: InferableTabularInput,
+) -> pa.RecordBatchReader:
     """Build core.syntax_refs_resolved from syntax refs and SCIP welds.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame for core.syntax_refs_resolved.
+    pa.RecordBatchReader
+        Arrow reader for core.syntax_refs_resolved.
     """
     facts = tabular_to_lazyframe(q__core__syntax_refs)
+    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
-        syntax_enrich__occurrence_resolution,
+        occurrences,
         table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
     )
 
 
 def syntax_enrich__calls_resolved__base(
     q__core__syntax_calls: InferableTabularInput,
-    syntax_enrich__occurrence_resolution: pl.LazyFrame,
-) -> pl.LazyFrame:
+    syntax_enrich__occurrence_resolution: InferableTabularInput,
+) -> pa.RecordBatchReader:
     """Build core.syntax_calls_resolved from syntax calls and SCIP welds.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame for core.syntax_calls_resolved.
+    pa.RecordBatchReader
+        Arrow reader for core.syntax_calls_resolved.
     """
     facts = tabular_to_lazyframe(q__core__syntax_calls)
+    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
-        syntax_enrich__occurrence_resolution,
+        occurrences,
         table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
     )
 
 
 def syntax_enrich__imports_resolved__base(
     q__core__syntax_imports: InferableTabularInput,
-    syntax_enrich__occurrence_resolution: pl.LazyFrame,
-) -> pl.LazyFrame:
+    syntax_enrich__occurrence_resolution: InferableTabularInput,
+) -> pa.RecordBatchReader:
     """Build core.syntax_imports_resolved from syntax imports and SCIP welds.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame for core.syntax_imports_resolved.
+    pa.RecordBatchReader
+        Arrow reader for core.syntax_imports_resolved.
     """
     facts = tabular_to_lazyframe(q__core__syntax_imports)
+    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
-        syntax_enrich__occurrence_resolution,
+        occurrences,
         table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,
     )
 
@@ -392,28 +410,28 @@ _SYNTAX_ENRICH_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="syntax_enrich__defs_resolved__base",
             save_spec=RelationTableSaveSpec(table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY),
             node_name="syntax_enrich__defs_resolved",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
             base_node="syntax_enrich__refs_resolved__base",
             save_spec=RelationTableSaveSpec(table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY),
             node_name="syntax_enrich__refs_resolved",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
             base_node="syntax_enrich__calls_resolved__base",
             save_spec=RelationTableSaveSpec(table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY),
             node_name="syntax_enrich__calls_resolved",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,
             base_node="syntax_enrich__imports_resolved__base",
             save_spec=RelationTableSaveSpec(table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY),
             node_name="syntax_enrich__imports_resolved",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="syntax_enrich__table_materializations",

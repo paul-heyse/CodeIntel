@@ -22,12 +22,12 @@ from libcst.helpers import get_full_name_for_node
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.columnar.rows import (
-    ColumnarRowBuffer,
+    ColumnarBatchCollector,
     ColumnarRows,
-    columnar_buffer_for_table_key,
+    columnar_batch_collector_for_table_key,
     empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
 )
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstCollectContext,
@@ -203,20 +203,36 @@ class _ParsedCstModule:
     wrapper: metadata.MetadataWrapper
 
 
-@dataclass(slots=True)
-class _CstBuffers:
-    cst: ColumnarRowBuffer
-    parse_manifest: ColumnarRowBuffer
-    spans: ColumnarRowBuffer
-    syntax_nodes: ColumnarRowBuffer
-    syntax_edges: ColumnarRowBuffer
-    scopes: ColumnarRowBuffer
-    defs: ColumnarRowBuffer
-    refs: ColumnarRowBuffer
-    calls: ColumnarRowBuffer
-    call_args: ColumnarRowBuffer
-    func_params: ColumnarRowBuffer
-    imports: ColumnarRowBuffer
+@dataclass(frozen=True, slots=True)
+class _CstCollectors:
+    cst: ColumnarBatchCollector
+    parse_manifest: ColumnarBatchCollector
+    spans: ColumnarBatchCollector
+    syntax_nodes: ColumnarBatchCollector
+    syntax_edges: ColumnarBatchCollector
+    scopes: ColumnarBatchCollector
+    defs: ColumnarBatchCollector
+    refs: ColumnarBatchCollector
+    calls: ColumnarBatchCollector
+    call_args: ColumnarBatchCollector
+    func_params: ColumnarBatchCollector
+    imports: ColumnarBatchCollector
+
+
+@dataclass(frozen=True, slots=True)
+class _CstReaderBundle:
+    cst: pa.RecordBatchReader
+    parse_manifest: pa.RecordBatchReader
+    spans: pa.RecordBatchReader
+    syntax_nodes: pa.RecordBatchReader
+    syntax_edges: pa.RecordBatchReader
+    scopes: pa.RecordBatchReader
+    defs: pa.RecordBatchReader
+    refs: pa.RecordBatchReader
+    calls: pa.RecordBatchReader
+    call_args: pa.RecordBatchReader
+    func_params: pa.RecordBatchReader
+    imports: pa.RecordBatchReader
 
 
 class CstVisitor(CstCaptureVisitor):
@@ -1716,26 +1732,117 @@ def _parse_manifest_row(
     }
 
 
-def _build_cst_buffers() -> _CstBuffers:
-    return _CstBuffers(
-        cst=columnar_buffer_for_table_key(CST_NODES_TABLE_KEY),
-        parse_manifest=columnar_buffer_for_table_key(PARSE_MANIFEST_TABLE_KEY),
-        spans=columnar_buffer_for_table_key(SYNTAX_SPANS_TABLE_KEY),
-        syntax_nodes=columnar_buffer_for_table_key(SYNTAX_NODES_TABLE_KEY),
-        syntax_edges=columnar_buffer_for_table_key(SYNTAX_EDGES_TABLE_KEY),
-        scopes=columnar_buffer_for_table_key(SYNTAX_SCOPES_TABLE_KEY),
-        defs=columnar_buffer_for_table_key(SYNTAX_DEFS_TABLE_KEY),
-        refs=columnar_buffer_for_table_key(SYNTAX_REFS_TABLE_KEY),
-        calls=columnar_buffer_for_table_key(SYNTAX_CALLS_TABLE_KEY),
-        call_args=columnar_buffer_for_table_key(SYNTAX_CALL_ARGS_TABLE_KEY),
-        func_params=columnar_buffer_for_table_key(SYNTAX_FUNC_PARAMS_TABLE_KEY),
-        imports=columnar_buffer_for_table_key(SYNTAX_IMPORTS_TABLE_KEY),
+def _build_cst_collectors(batch_size: int) -> _CstCollectors:
+    return _CstCollectors(
+        cst=columnar_batch_collector_for_table_key(
+            CST_NODES_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        parse_manifest=columnar_batch_collector_for_table_key(
+            PARSE_MANIFEST_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        spans=columnar_batch_collector_for_table_key(
+            SYNTAX_SPANS_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        syntax_nodes=columnar_batch_collector_for_table_key(
+            SYNTAX_NODES_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        syntax_edges=columnar_batch_collector_for_table_key(
+            SYNTAX_EDGES_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        scopes=columnar_batch_collector_for_table_key(
+            SYNTAX_SCOPES_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        defs=columnar_batch_collector_for_table_key(
+            SYNTAX_DEFS_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        refs=columnar_batch_collector_for_table_key(
+            SYNTAX_REFS_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        calls=columnar_batch_collector_for_table_key(
+            SYNTAX_CALLS_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        call_args=columnar_batch_collector_for_table_key(
+            SYNTAX_CALL_ARGS_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        func_params=columnar_batch_collector_for_table_key(
+            SYNTAX_FUNC_PARAMS_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+        imports=columnar_batch_collector_for_table_key(
+            SYNTAX_IMPORTS_TABLE_KEY,
+            batch_size=batch_size,
+            extras_policy="retain",
+        ),
+    )
+
+def _flush_cst_collectors(collectors: _CstCollectors) -> None:
+    collectors.cst.flush()
+    collectors.parse_manifest.flush()
+    collectors.spans.flush()
+    collectors.syntax_nodes.flush()
+    collectors.syntax_edges.flush()
+    collectors.scopes.flush()
+    collectors.defs.flush()
+    collectors.refs.flush()
+    collectors.calls.flush()
+    collectors.call_args.flush()
+    collectors.func_params.flush()
+    collectors.imports.flush()
+
+
+def _build_cst_readers(collectors: _CstCollectors) -> _CstReaderBundle:
+    cst_reader = collectors.cst.to_reader()
+    parse_manifest_reader = collectors.parse_manifest.to_reader()
+    spans_reader = collectors.spans.to_reader()
+    syntax_nodes_reader = collectors.syntax_nodes.to_reader()
+    syntax_edges_reader = collectors.syntax_edges.to_reader()
+    scopes_reader = collectors.scopes.to_reader()
+    defs_reader = collectors.defs.to_reader()
+    refs_reader = collectors.refs.to_reader()
+    calls_reader = collectors.calls.to_reader()
+    call_args_reader = collectors.call_args.to_reader()
+    func_params_reader = collectors.func_params.to_reader()
+    imports_reader = collectors.imports.to_reader()
+    return _CstReaderBundle(
+        cst=cst_reader,
+        parse_manifest=parse_manifest_reader,
+        spans=spans_reader,
+        syntax_nodes=syntax_nodes_reader,
+        syntax_edges=syntax_edges_reader,
+        scopes=scopes_reader,
+        defs=defs_reader,
+        refs=refs_reader,
+        calls=calls_reader,
+        call_args=call_args_reader,
+        func_params=func_params_reader,
+        imports=imports_reader,
     )
 
 
-def _flush_cst_rows(buffers: _CstBuffers, rows: Iterable[CstRow]) -> None:
+def _flush_cst_rows(collectors: _CstCollectors, rows: Iterable[CstRow]) -> None:
     for rel_path, node_id, kind, span, snippet, parents, qnames in rows:
-        buffers.cst.append(
+        collectors.cst.append(
             {
                 "path": rel_path,
                 "node_id": node_id,
@@ -1781,7 +1888,7 @@ def _parse_module_context(
     *,
     context: _SyntaxContext,
     source_bytes: bytes,
-    buffers: _CstBuffers,
+    collectors: _CstCollectors,
     warnings: list[str],
 ) -> _ParsedCstModule | None:
     source_index, encoding = _build_source_index(source_bytes)
@@ -1795,7 +1902,7 @@ def _parse_module_context(
     try:
         parsed_module = cst.parse_module(source_bytes)
     except (cst.ParserSyntaxError, ValueError, TypeError, RuntimeError) as exc:
-        buffers.parse_manifest.append(
+        collectors.parse_manifest.append(
             _parse_manifest_row(
                 manifest_context,
                 parse_ok=False,
@@ -1824,7 +1931,7 @@ def _parse_module_context(
         libcst_version=libcst_version,
     )
     wrapper = metadata.MetadataWrapper(parsed_module, unsafe_skip_copy=True)
-    buffers.parse_manifest.append(
+    collectors.parse_manifest.append(
         _parse_manifest_row(
             manifest_context,
             parse_ok=True,
@@ -1861,14 +1968,14 @@ def _extract_module_syntax(
     module: ModuleRecord,
     context: _SyntaxContext,
     source_bytes: bytes,
-    buffers: _CstBuffers,
+    collectors: _CstCollectors,
     emit_ast_nodes: bool,
 ) -> list[str]:
     warnings: list[str] = []
     parsed_context = _parse_module_context(
         context=context,
         source_bytes=source_bytes,
-        buffers=buffers,
+        collectors=collectors,
         warnings=warnings,
     )
     if parsed_context is None:
@@ -1974,18 +2081,18 @@ def _extract_module_syntax(
             ),
         )
 
-    _flush_cst_rows(buffers, cst_visitor.rows)
+    _flush_cst_rows(collectors, cst_visitor.rows)
 
-    buffers.spans.extend(syntax_visitor.span_rows)
-    buffers.syntax_nodes.extend(syntax_graph_visitor.node_rows)
-    buffers.syntax_edges.extend(syntax_graph_visitor.edge_rows)
-    buffers.scopes.extend(syntax_visitor.scopes)
-    buffers.defs.extend(syntax_visitor.defs)
-    buffers.refs.extend(syntax_visitor.refs)
-    buffers.calls.extend(syntax_visitor.calls)
-    buffers.call_args.extend(syntax_visitor.call_args)
-    buffers.func_params.extend(syntax_visitor.func_params)
-    buffers.imports.extend(syntax_visitor.imports)
+    collectors.spans.extend(syntax_visitor.span_rows)
+    collectors.syntax_nodes.extend(syntax_graph_visitor.node_rows)
+    collectors.syntax_edges.extend(syntax_graph_visitor.edge_rows)
+    collectors.scopes.extend(syntax_visitor.scopes)
+    collectors.defs.extend(syntax_visitor.defs)
+    collectors.refs.extend(syntax_visitor.refs)
+    collectors.calls.extend(syntax_visitor.calls)
+    collectors.call_args.extend(syntax_visitor.call_args)
+    collectors.func_params.extend(syntax_visitor.func_params)
+    collectors.imports.extend(syntax_visitor.imports)
     return warnings
 
 
@@ -2001,6 +2108,8 @@ class CstExtractStep(BaseExtractStep):
         Discovery port for reading module source.
     emit_ast_nodes
         Whether to merge CPython AST facts into syntax nodes.
+    batch_size
+        Target row count per Arrow RecordBatch when streaming.
     """
 
     def __init__(
@@ -2008,9 +2117,11 @@ class CstExtractStep(BaseExtractStep):
         discovery: ModuleDiscoveryPort,
         *,
         emit_ast_nodes: bool = True,
+        batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
     ) -> None:
         super().__init__(discovery)
         self._emit_ast_nodes = emit_ast_nodes
+        self._batch_size = batch_size
 
     def execute(
         self,
@@ -2036,7 +2147,7 @@ class CstExtractStep(BaseExtractStep):
             Result bundle with row tuples and execution status.
         """
         try:
-            buffers = _build_cst_buffers()
+            collectors = _build_cst_collectors(self._batch_size)
         except (KeyError, RuntimeError) as exc:
             return CstExtractResult(result=ExecutionResult.failed(str(exc)))
 
@@ -2055,116 +2166,58 @@ class CstExtractStep(BaseExtractStep):
                     module=module,
                     context=context,
                     source_bytes=source_bytes,
-                    buffers=buffers,
+                    collectors=collectors,
                     emit_ast_nodes=self._emit_ast_nodes,
                 )
             )
+            _flush_cst_collectors(collectors)
 
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
             repo,
             commit,
-            buffers.cst.row_count,
+            collectors.cst.row_count,
         )
 
-        rows_reader, _ = record_batch_reader_for_columnar_rows(
-            CST_NODES_TABLE_KEY,
-            buffers.cst.data,
-            extras_policy="retain",
-        )
-        parse_manifest_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            PARSE_MANIFEST_TABLE_KEY,
-            buffers.parse_manifest.data,
-            extras_policy="retain",
-        )
-        syntax_spans_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_SPANS_TABLE_KEY,
-            buffers.spans.data,
-            extras_policy="retain",
-        )
-        syntax_nodes_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_NODES_TABLE_KEY,
-            buffers.syntax_nodes.data,
-            extras_policy="retain",
-        )
-        syntax_edges_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_EDGES_TABLE_KEY,
-            buffers.syntax_edges.data,
-            extras_policy="retain",
-        )
-        syntax_scopes_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_SCOPES_TABLE_KEY,
-            buffers.scopes.data,
-            extras_policy="retain",
-        )
-        syntax_defs_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_DEFS_TABLE_KEY,
-            buffers.defs.data,
-            extras_policy="retain",
-        )
-        syntax_refs_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_REFS_TABLE_KEY,
-            buffers.refs.data,
-            extras_policy="retain",
-        )
-        syntax_calls_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_CALLS_TABLE_KEY,
-            buffers.calls.data,
-            extras_policy="retain",
-        )
-        syntax_call_args_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_CALL_ARGS_TABLE_KEY,
-            buffers.call_args.data,
-            extras_policy="retain",
-        )
-        syntax_func_params_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_FUNC_PARAMS_TABLE_KEY,
-            buffers.func_params.data,
-            extras_policy="retain",
-        )
-        syntax_imports_rows_reader, _ = record_batch_reader_for_columnar_rows(
-            SYNTAX_IMPORTS_TABLE_KEY,
-            buffers.imports.data,
-            extras_policy="retain",
-        )
+        readers = _build_cst_readers(collectors)
         return CstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            rows=buffers.cst.data,
-            parse_manifest_rows=buffers.parse_manifest.data,
-            syntax_spans_rows=buffers.spans.data,
-            syntax_nodes_rows=buffers.syntax_nodes.data,
-            syntax_edges_rows=buffers.syntax_edges.data,
-            syntax_scopes_rows=buffers.scopes.data,
-            syntax_defs_rows=buffers.defs.data,
-            syntax_refs_rows=buffers.refs.data,
-            syntax_calls_rows=buffers.calls.data,
-            syntax_call_args_rows=buffers.call_args.data,
-            syntax_func_params_rows=buffers.func_params.data,
-            syntax_imports_rows=buffers.imports.data,
-            rows_reader=rows_reader,
-            parse_manifest_rows_reader=parse_manifest_rows_reader,
-            syntax_spans_rows_reader=syntax_spans_rows_reader,
-            syntax_nodes_rows_reader=syntax_nodes_rows_reader,
-            syntax_edges_rows_reader=syntax_edges_rows_reader,
-            syntax_scopes_rows_reader=syntax_scopes_rows_reader,
-            syntax_defs_rows_reader=syntax_defs_rows_reader,
-            syntax_refs_rows_reader=syntax_refs_rows_reader,
-            syntax_calls_rows_reader=syntax_calls_rows_reader,
-            syntax_call_args_rows_reader=syntax_call_args_rows_reader,
-            syntax_func_params_rows_reader=syntax_func_params_rows_reader,
-            syntax_imports_rows_reader=syntax_imports_rows_reader,
-            row_count=buffers.cst.row_count,
-            parse_manifest_row_count=buffers.parse_manifest.row_count,
-            syntax_spans_row_count=buffers.spans.row_count,
-            syntax_nodes_row_count=buffers.syntax_nodes.row_count,
-            syntax_edges_row_count=buffers.syntax_edges.row_count,
-            syntax_scopes_row_count=buffers.scopes.row_count,
-            syntax_defs_row_count=buffers.defs.row_count,
-            syntax_refs_row_count=buffers.refs.row_count,
-            syntax_calls_row_count=buffers.calls.row_count,
-            syntax_call_args_row_count=buffers.call_args.row_count,
-            syntax_func_params_row_count=buffers.func_params.row_count,
-            syntax_imports_row_count=buffers.imports.row_count,
+            rows={},
+            parse_manifest_rows={},
+            syntax_spans_rows={},
+            syntax_nodes_rows={},
+            syntax_edges_rows={},
+            syntax_scopes_rows={},
+            syntax_defs_rows={},
+            syntax_refs_rows={},
+            syntax_calls_rows={},
+            syntax_call_args_rows={},
+            syntax_func_params_rows={},
+            syntax_imports_rows={},
+            rows_reader=readers.cst,
+            parse_manifest_rows_reader=readers.parse_manifest,
+            syntax_spans_rows_reader=readers.spans,
+            syntax_nodes_rows_reader=readers.syntax_nodes,
+            syntax_edges_rows_reader=readers.syntax_edges,
+            syntax_scopes_rows_reader=readers.scopes,
+            syntax_defs_rows_reader=readers.defs,
+            syntax_refs_rows_reader=readers.refs,
+            syntax_calls_rows_reader=readers.calls,
+            syntax_call_args_rows_reader=readers.call_args,
+            syntax_func_params_rows_reader=readers.func_params,
+            syntax_imports_rows_reader=readers.imports,
+            row_count=collectors.cst.row_count,
+            parse_manifest_row_count=collectors.parse_manifest.row_count,
+            syntax_spans_row_count=collectors.spans.row_count,
+            syntax_nodes_row_count=collectors.syntax_nodes.row_count,
+            syntax_edges_row_count=collectors.syntax_edges.row_count,
+            syntax_scopes_row_count=collectors.scopes.row_count,
+            syntax_defs_row_count=collectors.defs.row_count,
+            syntax_refs_row_count=collectors.refs.row_count,
+            syntax_calls_row_count=collectors.calls.row_count,
+            syntax_call_args_row_count=collectors.call_args.row_count,
+            syntax_func_params_row_count=collectors.func_params.row_count,
+            syntax_imports_row_count=collectors.imports.row_count,
         )
 
     def _iter_python_source_bytes(

@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_relation_plan
 from codeintel.build.schemas import iter_contracts
+from codeintel.build.tabular.arrow_ops import ParquetScanOptions, scan_parquet_dataset
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors.taxonomy import ErrorCode
 from codeintel.core.schemas.hashing import schema_digest
 from codeintel.core.validation.profiles import ValidationProfile
@@ -25,6 +27,8 @@ from codeintel.storage.protocols import ExportRelation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    import pyarrow as pa
 
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -170,6 +174,75 @@ def validate_dataset_manifests_or_raise(gateway: BuildGateway) -> None:
         message = "Dataset manifests missing for parquet-only exports: "
         message += ", ".join(sorted(missing))
         raise ValueError(message)
+
+
+def resolve_export_snapshot(gateway: BuildGateway) -> tuple[Path, str]:
+    """Resolve the dataset root + snapshot id for export reads.
+
+    Parameters
+    ----------
+    gateway
+        BuildGateway providing dataset registry and config access.
+
+    Returns
+    -------
+    tuple[pathlib.Path, str]
+        Dataset root directory and snapshot id.
+
+    Raises
+    ------
+    ValueError
+        If the dataset root or snapshot metadata is missing.
+    """
+    dataset_root_dir = gateway.datasets.dataset_root_dir
+    if dataset_root_dir is None:
+        msg = "Dataset root directory is required for parquet-only exports"
+        raise ValueError(msg)
+    snapshot_id = getattr(gateway.config, "commit", None)
+    if not isinstance(snapshot_id, str) or not snapshot_id:
+        msg = "Snapshot commit is required for parquet-only exports"
+        raise ValueError(msg)
+    return dataset_root_dir, snapshot_id
+
+
+def build_export_reader(
+    gateway: BuildGateway,
+    table_key: str,
+    *,
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+) -> pa.RecordBatchReader:
+    """Return a RecordBatchReader for an exportable dataset snapshot.
+
+    Parameters
+    ----------
+    gateway
+        BuildGateway providing dataset registry access.
+    table_key
+        Fully qualified table key.
+    batch_size
+        Batch size for Arrow readers.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Streaming reader for the dataset snapshot.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the dataset snapshot is missing.
+    """
+    dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
+    reader = scan_parquet_dataset(
+        dataset_root=dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        options=ParquetScanOptions(batch_size=batch_size),
+    )
+    if reader is None:
+        msg = f"Dataset snapshot missing for {table_key}@{snapshot_id}"
+        raise FileNotFoundError(msg)
+    return reader
 
 
 # ---------------------------------------------------------------------------

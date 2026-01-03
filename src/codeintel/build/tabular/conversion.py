@@ -9,7 +9,7 @@ import pyarrow as pa
 import pyarrow.dataset as pa_ds
 
 from codeintel.build.tabular.types import InferableTabularInput, TabularRelation
-from codeintel.core.columnar import LazyFrameStream
+from codeintel.core.columnar import LazyFrameStream, coerce_arrow_reader
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
 
@@ -49,6 +49,17 @@ def table_to_reader(table: pa.Table) -> pa.RecordBatchReader:
         Reader over record batches from the table.
     """
     return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+
+
+def reader_to_table(reader: pa.RecordBatchReader) -> pa.Table:
+    """Materialize a RecordBatchReader into an Arrow Table.
+
+    Returns
+    -------
+    pa.Table
+        Arrow table built from reader batches.
+    """
+    return pa.Table.from_batches(reader, schema=reader.schema)
 
 
 def lazyframe_to_reader(frame: pl.LazyFrame) -> pa.RecordBatchReader:
@@ -141,23 +152,31 @@ def tabular_to_arrow_reader(value: InferableTabularInput) -> pa.RecordBatchReade
     ------
     TypeError
         If the input type cannot be coerced into a RecordBatchReader.
+
+    Notes
+    -----
+    RecordBatchReader inputs are single-consume; materialize to a table or
+    LazyFrame if reuse is required.
     """
+    reader: pa.RecordBatchReader | None = None
     if isinstance(value, pa.RecordBatchReader):
-        return value
-    if isinstance(value, pa.Table):
-        return table_to_reader(value)
-    if isinstance(value, DuckDBRelation):
-        return relation_to_arrow_reader(value)
-    if isinstance(value, pl.LazyFrame):
-        return lazyframe_to_reader(value)
-    if isinstance(value, pl.DataFrame):
-        table = value.to_arrow()
-        return table_to_reader(table)
-    if isinstance(value, Iterable):
-        reader = _record_batch_reader_from_iterable(value)
-        if reader is None:
-            msg = "Unsupported tabular input type: empty iterable"
-            raise TypeError(msg)
+        reader = value
+    elif isinstance(value, pa.Table):
+        reader = table_to_reader(value)
+    elif isinstance(value, DuckDBRelation):
+        reader = relation_to_arrow_reader(value)
+    elif isinstance(value, pl.LazyFrame):
+        reader = lazyframe_to_reader(value)
+    elif isinstance(value, pl.DataFrame):
+        reader = table_to_reader(value.to_arrow())
+    else:
+        reader = coerce_arrow_reader(value, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        if reader is None and isinstance(value, Iterable):
+            reader = _record_batch_reader_from_iterable(value)
+            if reader is None:
+                msg = "Unsupported tabular input type: empty iterable"
+                raise TypeError(msg)
+    if reader is not None:
         return reader
     msg = f"Unsupported tabular input type: {type(value).__name__}"
     raise TypeError(msg)
@@ -175,11 +194,16 @@ def tabular_to_arrow_table(value: InferableTabularInput) -> pa.Table:
     -------
     pa.Table
         Arrow table representation of the input.
+
+    Notes
+    -----
+    RecordBatchReader inputs are single-consume; avoid reusing them after
+    calling this helper.
     """
     if isinstance(value, pa.Table):
         return value
     reader = tabular_to_arrow_reader(value)
-    return pa.Table.from_batches(list(reader), schema=reader.schema)
+    return reader_to_table(reader)
 
 
 def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
@@ -304,6 +328,7 @@ def _coerce_goid_columns_frame(frame: pl.DataFrame) -> pl.DataFrame:
 __all__ = [
     "arrow_reader_to_lazyframe",
     "lazyframe_to_reader",
+    "reader_to_table",
     "relation_to_arrow_reader",
     "relation_to_polars_lazy",
     "table_to_lazyframe",

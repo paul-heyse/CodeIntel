@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
 from typing import TYPE_CHECKING, TypeGuard, cast
 from warnings import warn
 
@@ -176,6 +177,7 @@ def lazyframe_for_rows(
     return frame.lazy()
 
 
+@lru_cache(maxsize=128)
 def _table_schema_for_key(table_key: str) -> TableSchema:
     ensure_storage_contract_catalog()
     provider = get_schema_provider()
