@@ -40,7 +40,6 @@ from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
     SchemaObservationInputs,
     instrument_reader_for_observation,
-    merge_table_schema_hints,
     observe_batches,
     schema_drift_summary,
 )
@@ -87,7 +86,6 @@ from codeintel.core.schemas.resolution import resolve_table_schema
 if TYPE_CHECKING:
     from pyarrow import RecordBatchReader
 
-    from codeintel.build.schemas.observations import SchemaHints
     from codeintel.core.config.settings import ArrowDatasetSettings
     from codeintel.core.manifests import ArrowDatasetManifest
 
@@ -541,21 +539,20 @@ def _resolve_materialization_inputs(
     data: TabularData,
 ) -> _MaterializationInputs:
     tag_sets = _schema_tag_sets_for_table(catalog=ctx.catalog, table_key=ctx.table_key)
+    table_schema = _authoritative_table_schema(ctx.table_key)
     setup = build_observation_setup(
         table_key=ctx.table_key,
         tag_sets=tag_sets,
-        declared_schema=_declared_schema_hint(table_key=ctx.table_key),
+        declared_schema=table_schema,
     )
-    table_schema = _table_schema_for_data(
+    observed_schema = _observed_schema_for_data(
         table_key=ctx.table_key,
         data=data,
-        declared_schema=setup.declared_schema,
-        schema_hints=setup.schema_hints,
     )
     drift_summary = _handle_schema_drift(
         ctx=ctx,
-        inferred=table_schema,
-        baseline=setup.declared_schema,
+        inferred=observed_schema,
+        baseline=table_schema,
     )
     settings_fingerprint = _settings_fingerprint(ctx.env)
     record_build_event(
@@ -1189,33 +1186,30 @@ def _partitioning_from_schema(
     return ds.partitioning(schema=pa.schema(fields))
 
 
-def _table_schema_for_data(
+def _observed_schema_for_data(
     *,
     table_key: str,
     data: TabularData,
-    declared_schema: TableSchema | None,
-    schema_hints: SchemaHints | None,
 ) -> TableSchema:
     if isinstance(data, pl.LazyFrame):
-        inferred = table_schema_from_polars_lazyframe(frame=data, table_key=table_key)
-        return merge_table_schema_hints(
-            inferred,
-            declared_schema,
-            schema_hints=schema_hints,
-        )
+        return table_schema_from_polars_lazyframe(frame=data, table_key=table_key)
     if isinstance(data, pa.RecordBatchReader):
         arrow_reader = cast("RecordBatchReader", data)
-        inferred = table_schema_from_arrow_schema(
+        return table_schema_from_arrow_schema(
             arrow_schema=arrow_reader.schema,
             table_key=table_key,
         )
-        return merge_table_schema_hints(
-            inferred,
-            declared_schema,
-            schema_hints=schema_hints,
-        )
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
     raise TypeError(msg)
+
+
+def _authoritative_table_schema(table_key: str) -> TableSchema:
+    provider = get_schema_provider()
+    schema = provider.get_table_schema(table_key)
+    if schema is None:
+        msg = f"Missing TableSchema for output table {table_key}"
+        raise ValueError(msg)
+    return schema
 
 
 def _resolve_partition_columns(
@@ -1530,14 +1524,6 @@ def _align_reader_to_contract(
         extras_policy=extras_policy_from_schema(contract_schema),
         schema_promote_options=schema_promote_options,
     )
-
-
-def _declared_schema_hint(table_key: str) -> TableSchema | None:
-    try:
-        provider = get_schema_provider()
-    except RuntimeError:
-        return None
-    return provider.get_table_schema(table_key)
 
 
 def _schema_tag_sets_for_table(

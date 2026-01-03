@@ -9,7 +9,6 @@ depend on it without importing build-specific modules.
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
@@ -20,6 +19,7 @@ from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
+from codeintel.core.serialization.msgspec_json import encode_json_bytes
 from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
@@ -317,8 +317,8 @@ class SchemaService:
         schema = self.get_json_schema(table_key)
         if schema is None:
             return None
-        canonical = json.dumps(schema, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        canonical = encode_json_bytes(schema, indent=None)
+        return hashlib.sha256(canonical).hexdigest()
 
     def get_record(self, table_key: str) -> SchemaRecord:
         """Return a SchemaRecord aggregating all schema artifacts.

@@ -862,8 +862,7 @@ def _dataset_manifest_exists(env: BuildEnv, table_key: str) -> bool:
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
     dataset = env.gateway.datasets.by_table_key.get(table_key)
-    dataset_source = getattr(env.gateway.config, "dataset_source", "duckdb")
-    if dataset is not None and not dataset.is_view and dataset_source == "parquet_only":
+    if dataset is not None and not dataset.is_view:
         return _dataset_manifest_exists(env, table_key)
     schema, table = split_table_key(table_key)
     return env.gateway.policy.table_exists(schema=schema, table=table)

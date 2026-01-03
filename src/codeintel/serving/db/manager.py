@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -34,7 +35,7 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.datasets.manifest_index import DatasetManifestIndex, load_dataset_manifests
-from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.gateway.config import StorageConfig, StorageConfigOptions
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 if TYPE_CHECKING:
@@ -48,6 +49,8 @@ if TYPE_CHECKING:
 
 _POOL_CLOSING_ERROR = "Pool is closing"
 _POOL_ACQUIRE_MAX_ATTEMPTS = 3
+_MANIFEST_ROOT_INDEX = 3
+LOG = logging.getLogger(__name__)
 
 
 def _default_export_pool_cfg() -> PoolConfig:
@@ -262,7 +265,13 @@ class ServingDBManager:
             await asyncio.sleep(self.poll_interval_s)
 
     async def _reload_if_needed(self, *, force: bool) -> None:
-        """Reload snapshot if pointer file changed."""
+        """Reload snapshot if pointer file changed.
+
+        Raises
+        ------
+        RuntimeError
+            If dataset manifests are present but the dataset root cannot be resolved.
+        """
         if not self.pointer_path.exists():
             return
 
@@ -284,6 +293,17 @@ class ServingDBManager:
 
         context = _load_snapshot_context(new_ptr, pointer_path=self.pointer_path)
         dataset_root_dir = _dataset_root_dir_from_manifests(context.dataset_manifests)
+        if not context.dataset_manifests.by_table_key:
+            LOG.warning(
+                "Serving snapshot %s has no dataset manifests; parquet-only datasets will be unavailable",
+                new_ptr.run_id,
+            )
+        if dataset_root_dir is None and context.dataset_manifests.by_table_key:
+            msg = (
+                "Serving snapshot dataset manifests are present but the dataset root "
+                "could not be resolved; ensure manifests live under the datasets root."
+            )
+            raise RuntimeError(msg)
         storage_config = _storage_config_for_pointer(
             new_ptr,
             dataset_root_dir=dataset_root_dir,
@@ -417,8 +437,8 @@ def _dataset_root_dir_from_manifests(
     roots: set[Path] = set()
     for entry in dataset_manifests.by_table_key.values():
         parents = entry.manifest_path.parents
-        if len(parents) > 3:
-            roots.add(parents[3])
+        if len(parents) > _MANIFEST_ROOT_INDEX:
+            roots.add(parents[_MANIFEST_ROOT_INDEX])
     if len(roots) == 1:
         return next(iter(roots))
     return None
@@ -429,7 +449,8 @@ def _storage_config_for_pointer(
     *,
     dataset_root_dir: Path | None,
 ) -> StorageConfig:
-    config = StorageConfig.for_readonly(pointer.db_path, dataset_root_dir=dataset_root_dir)
+    options = StorageConfigOptions(dataset_root_dir=dataset_root_dir)
+    config = StorageConfig.for_readonly(pointer.db_path, options=options)
     return replace(config, repo=pointer.repo, commit=pointer.commit)
 
 

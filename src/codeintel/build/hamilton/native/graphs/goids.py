@@ -25,7 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import empty_frame_for_table, rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
@@ -222,8 +222,8 @@ def goids_inputs(
         Collected frames for GOID computation.
     """
     return _GoidsInputs(
-        modules=tabular_to_lazyframe(q__core__modules).collect(),
-        ast_nodes=tabular_to_lazyframe(q__core__ast_nodes).collect(),
+        modules=tabular_to_frame(q__core__modules),
+        ast_nodes=tabular_to_frame(q__core__ast_nodes),
     )
 
 

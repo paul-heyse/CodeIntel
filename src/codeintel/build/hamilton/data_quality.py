@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence, Sized
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
 import polars as pl
 import pyarrow as pa
-import pyarrow.compute as pc
 from hamilton.data_quality.base import DataValidationLevel, DataValidator, ValidationResult
 from polars.exceptions import PolarsError
 
@@ -23,10 +21,9 @@ from codeintel.core.validation.pandera_schema import (
     pandera_schema_for_table,
     resolve_extras_policy,
 )
+from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 
@@ -39,112 +36,10 @@ class _PanderaSchemaProtocol(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class TableSchemaColumnsValidator(DataValidator):
-    """Validate table outputs against declared schema columns."""
-
-    table_key: str
-    enforce_non_nullable: bool = False
-
-    def __init__(
-        self,
-        *,
-        table_key: str,
-        importance: str,
-        enforce_non_nullable: bool = False,
-    ) -> None:
-        object.__setattr__(self, "_importance", DataValidationLevel(importance))
-        object.__setattr__(self, "table_key", table_key)
-        object.__setattr__(self, "enforce_non_nullable", enforce_non_nullable)
-
-    @classmethod
-    def name(cls) -> str:
-        """Return the canonical validator name.
-
-        Returns
-        -------
-        str
-            Validator name identifier.
-        """
-        return "table_schema_columns"
-
-    @staticmethod
-    def applies_to(datatype: type[object]) -> bool:
-        """Return whether the validator applies to the provided type.
-
-        Parameters
-        ----------
-        datatype
-            Dataset type being validated.
-
-        Returns
-        -------
-        bool
-            True when the validator applies.
-        """
-        _ = datatype
-        return True
-
-    def description(self) -> str:
-        """Return a human-readable validator description.
-
-        Returns
-        -------
-        str
-            Validator description for diagnostics.
-        """
-        return f"Validate columns for {self.table_key}"
-
-    def validate(self, dataset: object) -> ValidationResult:
-        """Validate column presence (and optionally nullability).
-
-        Parameters
-        ----------
-        dataset
-            Dataset to validate.
-
-        Returns
-        -------
-        ValidationResult
-            Validation outcome for the dataset.
-        """
-        schema, _ = _resolve_table_schema(self.table_key)
-        if schema is None:
-            return ValidationResult(
-                passes=True,
-                message=f"No declared schema for {self.table_key}",
-            )
-        column_names = _column_names(dataset)
-        if column_names is None:
-            return ValidationResult(
-                passes=True,
-                message=f"Skipping column validation for {type(dataset).__name__}",
-            )
-
-        missing = _missing_columns(column_names, schema)
-        if missing:
-            return ValidationResult(
-                passes=False,
-                message=f"Missing required columns: {', '.join(missing)}",
-                diagnostics={"table_key": self.table_key, "missing_columns": missing},
-            )
-
-        if self.enforce_non_nullable:
-            non_nullable = _non_nullable_columns(schema)
-            nullable_issues = _non_nullable_violations(dataset, non_nullable)
-            if nullable_issues:
-                return ValidationResult(
-                    passes=False,
-                    message=f"Non-nullable columns contain nulls: {', '.join(nullable_issues)}",
-                    diagnostics={
-                        "table_key": self.table_key,
-                        "nullable_violations": nullable_issues,
-                    },
-                )
-
-        return ValidationResult(
-            passes=True,
-            message=f"Schema columns validated for {self.table_key}",
-        )
+class _PanderaValidationContext:
+    schema_obj: _PanderaSchemaProtocol
+    error_types: tuple[type[BaseException], ...]
+    primary_keys: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,10 +47,18 @@ class PanderaSchemaValidator(DataValidator):
     """Validate table outputs with a Pandera schema derived from the contract."""
 
     table_key: str
+    validation_profile: ValidationProfile
 
-    def __init__(self, *, table_key: str, importance: str) -> None:
+    def __init__(
+        self,
+        *,
+        table_key: str,
+        validation_profile: ValidationProfile,
+        importance: str,
+    ) -> None:
         object.__setattr__(self, "_importance", DataValidationLevel(importance))
         object.__setattr__(self, "table_key", table_key)
+        object.__setattr__(self, "validation_profile", validation_profile)
 
     @classmethod
     def name(cls) -> str:
@@ -208,64 +111,70 @@ class PanderaSchemaValidator(DataValidator):
         ValidationResult
             Validation outcome for the dataset.
         """
-        result: ValidationResult
+        prepared = self._prepare_validation()
+        if isinstance(prepared, ValidationResult):
+            return prepared
+        if isinstance(dataset, pa.RecordBatchReader):
+            if prepared.primary_keys:
+                return _validate_pandera_reader_full(
+                    dataset,
+                    context=prepared,
+                    table_key=self.table_key,
+                )
+            return _validate_pandera_reader_stream(
+                dataset,
+                context=prepared,
+                table_key=self.table_key,
+            )
+        frame = _pandera_frame(dataset)
+        if frame is None:
+            return ValidationResult(
+                passes=True,
+                message=f"Skipping Pandera validation for {type(dataset).__name__}",
+            )
+        return _validate_pandera_frame(
+            frame,
+            context=prepared,
+            table_key=self.table_key,
+        )
+
+    def _prepare_validation(self) -> ValidationResult | _PanderaValidationContext:
         if not pandera_available():
-            result = ValidationResult(
+            return ValidationResult(
                 passes=True,
                 message=f"Pandera unavailable for {self.table_key}",
             )
-        else:
-            table_schema, observation = _resolve_table_schema(self.table_key)
-            if table_schema is None:
-                result = ValidationResult(
-                    passes=True,
-                    message=f"No Pandera schema for {self.table_key}",
-                )
-            else:
-                extras_policy = resolve_extras_policy(observation, fallback=DEFAULT_EXTRAS_POLICY)
-                schema = pandera_schema_for_table(
-                    table_schema=table_schema,
-                    observation=observation,
-                    extras_policy=extras_policy,
-                )
-                if schema is None:
-                    result = ValidationResult(
-                        passes=True,
-                        message=f"Pandera unavailable for {self.table_key}",
-                    )
-                else:
-                    frame = _pandera_frame(dataset)
-                    if frame is None:
-                        result = ValidationResult(
-                            passes=True,
-                            message=f"Skipping Pandera validation for {type(dataset).__name__}",
-                        )
-                    else:
-                        error_types = pandera_error_types()
-                        if not error_types:
-                            result = ValidationResult(
-                                passes=True,
-                                message=f"Pandera error types unavailable for {self.table_key}",
-                            )
-                        else:
-                            try:
-                                schema_obj = cast("_PanderaSchemaProtocol", schema)
-                                schema_obj.validate(frame, lazy=True)
-                            except error_types as exc:
-                                diagnostics = pandera_error_diagnostics(
-                                    exc, table_key=self.table_key
-                                )
-                                result = ValidationResult(
-                                    passes=False,
-                                    message=f"Pandera validation failed for {self.table_key}",
-                                    diagnostics=diagnostics,
-                                )
-                            else:
-                                result = ValidationResult(
-                                    passes=True,
-                                    message=f"Pandera validation passed for {self.table_key}",
-                                )
-        return result
+        table_schema, observation = _resolve_table_schema(self.table_key)
+        if table_schema is None:
+            return ValidationResult(
+                passes=True,
+                message=f"No Pandera schema for {self.table_key}",
+            )
+        extras_policy = resolve_extras_policy(observation, fallback=DEFAULT_EXTRAS_POLICY)
+        schema = pandera_schema_for_table(
+            table_schema=table_schema,
+            observation=observation,
+            extras_policy=extras_policy,
+            validation_profile=self.validation_profile,
+        )
+        if schema is None:
+            return ValidationResult(
+                passes=True,
+                message=f"Pandera unavailable for {self.table_key}",
+            )
+        error_types = pandera_error_types()
+        if not error_types:
+            return ValidationResult(
+                passes=True,
+                message=f"Pandera error types unavailable for {self.table_key}",
+            )
+        schema_obj = cast("_PanderaSchemaProtocol", schema)
+        primary_keys = tuple(table_schema.primary_key)
+        return _PanderaValidationContext(
+            schema_obj=schema_obj,
+            error_types=error_types,
+            primary_keys=primary_keys,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,106 +277,6 @@ class TableRowCountValidator(DataValidator):
         )
 
 
-@dataclass(frozen=True, slots=True)
-class TablePrimaryKeyValidator(DataValidator):
-    """Validate primary key uniqueness for table outputs."""
-
-    table_key: str
-    primary_keys: tuple[str, ...]
-
-    def __init__(
-        self,
-        *,
-        table_key: str,
-        primary_keys: Sequence[str],
-        importance: str,
-    ) -> None:
-        object.__setattr__(self, "_importance", DataValidationLevel(importance))
-        object.__setattr__(self, "table_key", table_key)
-        object.__setattr__(self, "primary_keys", tuple(primary_keys))
-
-    @classmethod
-    def name(cls) -> str:
-        """Return the canonical validator name.
-
-        Returns
-        -------
-        str
-            Validator name identifier.
-        """
-        return "table_primary_key_unique"
-
-    @staticmethod
-    def applies_to(datatype: type[object]) -> bool:
-        """Return whether the validator applies to the provided type.
-
-        Parameters
-        ----------
-        datatype
-            Dataset type being validated.
-
-        Returns
-        -------
-        bool
-            True when the validator applies.
-        """
-        _ = datatype
-        return True
-
-    def description(self) -> str:
-        """Return a human-readable validator description.
-
-        Returns
-        -------
-        str
-            Validator description for diagnostics.
-        """
-        return f"Validate primary keys for {self.table_key}"
-
-    def validate(self, dataset: object) -> ValidationResult:
-        """Validate primary key uniqueness for the dataset.
-
-        Parameters
-        ----------
-        dataset
-            Dataset to validate.
-
-        Returns
-        -------
-        ValidationResult
-            Validation outcome for the dataset.
-        """
-        if not self.primary_keys:
-            return ValidationResult(
-                passes=True,
-                message=f"No primary key configured for {self.table_key}",
-            )
-        if dataset is None:
-            return ValidationResult(
-                passes=True,
-                message=f"No rows to validate for {self.table_key}",
-            )
-        unique = _primary_key_unique(dataset, self.primary_keys)
-        if unique is None:
-            return ValidationResult(
-                passes=True,
-                message=f"Skipping primary key validation for {type(dataset).__name__}",
-            )
-        if not unique:
-            return ValidationResult(
-                passes=False,
-                message=f"Primary key uniqueness violated for {self.table_key}",
-                diagnostics={
-                    "table_key": self.table_key,
-                    "primary_keys": list(self.primary_keys),
-                },
-            )
-        return ValidationResult(
-            passes=True,
-            message=f"Primary key validated for {self.table_key}",
-        )
-
-
 def build_table_schema_validators(
     *,
     table_key: str,
@@ -481,7 +290,7 @@ def build_table_schema_validators(
     table_key
         Table key used to resolve schema metadata.
     profile
-        Validation profile name ("lenient" or "strict").
+        Validation profile name ("strict", "lenient", "schema-only", "data-light", "data-strict").
     min_rows
         Optional minimum row count threshold.
 
@@ -497,42 +306,35 @@ def build_table_schema_validators(
     """
     if profile is None:
         return ()
-    normalized = profile.lower()
-    if normalized == "strict":
-        importance = DataValidationLevel.FAIL.value
-        enforce_non_nullable = True
-    elif normalized == "lenient":
-        importance = DataValidationLevel.WARN.value
-        enforce_non_nullable = False
-    else:
+    try:
+        normalized = normalize_validation_profile(profile, default="strict")
+    except ValueError as exc:
         msg = f"Unsupported validation profile: {profile}"
-        raise ValueError(msg)
+        raise ValueError(msg) from exc
 
-    schema, _ = _resolve_table_schema(table_key)
     validators: list[DataValidator] = []
-    if pandera_available():
-        validators.append(PanderaSchemaValidator(table_key=table_key, importance=importance))
+    if normalized in {"strict", "data-strict"}:
+        importance = DataValidationLevel.FAIL.value
+        include_row_count = True
+    elif normalized in {"lenient", "data-light"}:
+        importance = DataValidationLevel.WARN.value
+        include_row_count = True
     else:
-        validators.append(
-            TableSchemaColumnsValidator(
-                table_key=table_key,
-                importance=importance,
-                enforce_non_nullable=enforce_non_nullable,
-            )
+        importance = DataValidationLevel.FAIL.value
+        include_row_count = False
+
+    validators.append(
+        PanderaSchemaValidator(
+            table_key=table_key,
+            validation_profile=normalized,
+            importance=importance,
         )
-    if isinstance(min_rows, int) and min_rows > 0:
+    )
+    if include_row_count and isinstance(min_rows, int) and min_rows > 0:
         validators.append(
             TableRowCountValidator(
                 table_key=table_key,
                 min_rows=min_rows,
-                importance=importance,
-            )
-        )
-    if schema is not None and schema.primary_key and not pandera_available():
-        validators.append(
-            TablePrimaryKeyValidator(
-                table_key=table_key,
-                primary_keys=schema.primary_key,
                 importance=importance,
             )
         )
@@ -550,28 +352,6 @@ def _resolve_table_schema(
     return resolution.table_schema, resolution.observation
 
 
-def _column_names(dataset: object) -> list[str] | None:
-    names: list[str] | None = None
-    if isinstance(dataset, pl.LazyFrame):
-        try:
-            schema = dataset.collect_schema()
-        except PolarsError:
-            names = None
-        else:
-            names = _schema_column_names(schema)
-    elif isinstance(dataset, pl.DataFrame):
-        names = [str(name) for name in dataset.columns]
-    else:
-        schema = getattr(dataset, "schema", None)
-        if schema is not None:
-            names = _schema_column_names(schema)
-        else:
-            columns = getattr(dataset, "columns", None)
-            if isinstance(columns, Sequence):
-                names = [str(name) for name in columns]
-    return names
-
-
 def _pandera_frame(dataset: object) -> pl.LazyFrame | pl.DataFrame | None:
     if isinstance(dataset, (pl.LazyFrame, pl.DataFrame)):
         return dataset
@@ -580,13 +360,6 @@ def _pandera_frame(dataset: object) -> pl.LazyFrame | pl.DataFrame | None:
         return frame if isinstance(frame, pl.DataFrame) else None
     if isinstance(dataset, pa.RecordBatch):
         frame = pl.from_arrow(pa.Table.from_batches([dataset]))
-        return frame if isinstance(frame, pl.DataFrame) else None
-    if isinstance(dataset, pa.RecordBatchReader):
-        try:
-            table = pa.Table.from_batches(list(cast("Iterable[pa.RecordBatch]", dataset)))
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            return None
-        frame = pl.from_arrow(table)
         return frame if isinstance(frame, pl.DataFrame) else None
     return None
 
@@ -620,137 +393,85 @@ def _frame_scalar(dataset: pl.DataFrame) -> int | None:
     return None
 
 
-def _key_list(keys: Sequence[str]) -> list[str]:
-    return [str(key) for key in keys]
-
-
-def _primary_key_unique(dataset: object, keys: Sequence[str]) -> bool | None:
-    if not keys:
-        return True
-    if isinstance(dataset, pl.LazyFrame):
-        return _primary_key_unique_lazy(dataset, keys)
-    if isinstance(dataset, pl.DataFrame):
-        return _primary_key_unique_frame(dataset, keys)
-    if isinstance(dataset, pa.Table):
-        return _primary_key_unique_arrow(dataset, keys)
-    if isinstance(dataset, pa.RecordBatch):
-        table = pa.Table.from_batches([dataset])
-        return _primary_key_unique_arrow(table, keys)
-    return None
-
-
-def _primary_key_unique_lazy(dataset: pl.LazyFrame, keys: Sequence[str]) -> bool | None:
-    total = _row_count(dataset)
-    if total is None:
-        return None
-    key_list = _key_list(keys)
+def _validate_pandera_frame(
+    frame: pl.DataFrame | pl.LazyFrame,
+    *,
+    context: _PanderaValidationContext,
+    table_key: str,
+) -> ValidationResult:
     try:
-        unique_count = dataset.select(pl.col(key_list)).unique().collect().height
-    except PolarsError:
-        return None
-    return unique_count == total
+        context.schema_obj.validate(frame, lazy=True)
+    except context.error_types as exc:
+        diagnostics = pandera_error_diagnostics(exc, table_key=table_key)
+        return ValidationResult(
+            passes=False,
+            message=f"Pandera validation failed for {table_key}",
+            diagnostics=diagnostics.to_dict(),
+        )
+    return ValidationResult(
+        passes=True,
+        message=f"Pandera validation passed for {table_key}",
+    )
 
 
-def _primary_key_unique_frame(dataset: pl.DataFrame, keys: Sequence[str]) -> bool | None:
-    key_list = _key_list(keys)
-    try:
-        unique_count = dataset.unique(subset=key_list).height
-    except PolarsError:
-        return None
-    return unique_count == dataset.height
-
-
-def _primary_key_unique_arrow(table: pa.Table, keys: Sequence[str]) -> bool | None:
-    if not keys:
-        return True
-    key_list = _key_list(keys)
-    try:
-        arrays = [table.column(key).combine_chunks() for key in key_list]
-        struct_arr = pa.StructArray.from_arrays(arrays, names=key_list)
-    except (KeyError, TypeError, ValueError):
-        return None
-    hash_fn = getattr(pc, "hash", None)
-    unique_fn = getattr(pc, "unique", None)
-    if not callable(hash_fn) or not callable(unique_fn):
-        return None
-    try:
-        unique = unique_fn(hash_fn(struct_arr))
-    except (TypeError, ValueError):
-        return None
-    unique_count = _array_length(unique)
-    return None if unique_count is None else table.num_rows == unique_count
-
-
-def _schema_column_names(schema: object) -> list[str]:
-    names_fn = getattr(schema, "names", None)
-    if callable(names_fn):
+def _validate_pandera_reader_stream(
+    reader: pa.RecordBatchReader,
+    *,
+    context: _PanderaValidationContext,
+    table_key: str,
+) -> ValidationResult:
+    for batch_index, batch in enumerate(reader):
+        frame = _pandera_frame(batch)
+        if frame is None:
+            return ValidationResult(
+                passes=True,
+                message=f"Skipping Pandera validation for {type(batch).__name__}",
+            )
         try:
-            names = names_fn()
-        except (TypeError, ValueError):
-            names = None
-        if isinstance(names, Sequence):
-            return [str(name) for name in names]
-        if names is not None:
-            return [str(names)]
-    if isinstance(schema, dict):
-        return [str(name) for name in schema]
-    if isinstance(schema, Sequence):
-        return [str(name) for name in schema]
-    return []
+            context.schema_obj.validate(frame, lazy=True)
+        except context.error_types as exc:
+            diagnostics = pandera_error_diagnostics(exc, table_key=table_key)
+            diagnostics = diagnostics.__replace__(batch_index=batch_index)
+            return ValidationResult(
+                passes=False,
+                message=f"Pandera validation failed for {table_key}",
+                diagnostics=diagnostics.to_dict(),
+            )
+    return ValidationResult(
+        passes=True,
+        message=f"Pandera validation passed for {table_key}",
+    )
 
 
-def _array_length(value: object) -> int | None:
-    if isinstance(value, (pa.Array, pa.ChunkedArray)):
-        return len(cast("Sized", value))
-    return None
-
-
-def _missing_columns(columns: Iterable[str], schema: TableSchema) -> list[str]:
-    present = {str(name) for name in columns}
-    return [col.name for col in schema.columns if col.name not in present]
-
-
-def _non_nullable_columns(schema: TableSchema) -> list[str]:
-    return [col.name for col in schema.columns if not col.nullable]
-
-
-def _non_nullable_violations(dataset: object, columns: Sequence[str]) -> list[str]:
-    if not columns:
-        return []
-    if isinstance(dataset, pl.DataFrame):
-        return _non_nullable_violations_frame(dataset, columns)
-    if isinstance(dataset, pl.LazyFrame):
-        return _non_nullable_violations_lazy(dataset, columns)
-    return []
-
-
-def _non_nullable_violations_lazy(dataset: pl.LazyFrame, columns: Sequence[str]) -> list[str]:
+def _validate_pandera_reader_full(
+    reader: pa.RecordBatchReader,
+    *,
+    context: _PanderaValidationContext,
+    table_key: str,
+) -> ValidationResult:
     try:
-        counts = dataset.select(
-            [pl.col(name).null_count().alias(name) for name in columns]
-        ).collect()
-    except PolarsError:
-        return []
-    return _non_nullable_violations_frame(counts, columns)
-
-
-def _non_nullable_violations_frame(dataset: pl.DataFrame, columns: Sequence[str]) -> list[str]:
-    violations: list[str] = []
-    if dataset.height == 0:
-        return violations
-    for name in columns:
-        if name not in dataset.columns:
-            continue
-        value = dataset[name][0]
-        if isinstance(value, int) and value > 0:
-            violations.append(name)
-    return violations
+        batches = list(reader)
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return ValidationResult(
+            passes=True,
+            message=f"Skipping Pandera validation for {type(reader).__name__}",
+        )
+    table = pa.Table.from_batches(batches, schema=reader.schema)
+    frame = _pandera_frame(table)
+    if frame is None:
+        return ValidationResult(
+            passes=True,
+            message=f"Skipping Pandera validation for {type(table).__name__}",
+        )
+    return _validate_pandera_frame(
+        frame,
+        context=context,
+        table_key=table_key,
+    )
 
 
 __all__ = [
     "PanderaSchemaValidator",
-    "TablePrimaryKeyValidator",
     "TableRowCountValidator",
-    "TableSchemaColumnsValidator",
     "build_table_schema_validators",
 ]

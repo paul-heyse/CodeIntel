@@ -44,6 +44,7 @@ __all__ = [
     "CoreSyntaxScopesRow",
     "CoreSyntaxSpansRow",
     "CoreTsCapturesRow",
+    "CoreTsChangedRangesRow",
     "CoreTsEdgesRow",
     "CoreTsLanguageMetadataRow",
     "CoreTsNodesRow",
@@ -51,7 +52,213 @@ __all__ = [
     "CoreTsSyntaxNodeXrefRow",
     "CoreTsTokensRow",
     "CoreTsTriviaRow",
+    "CoreTsWeldCoverageRow",
+    "PyBcBlockRow",
+    "PyBcCfgEdgeRow",
+    "PyBcCodeUnitRow",
+    "PyBcDefUseEventRow",
+    "PyBcExceptionTableRow",
+    "PyBcInstructionRow",
+    "PyInspectAnnotationRow",
+    "PyInspectMemberRow",
+    "PyInspectObjectRow",
+    "PyInspectSignatureParamRow",
+    "PyInspectSignatureRow",
+    "PyInspectSourceRow",
+    "PyInspectUnwrapHopRow",
+    "PySymBindingRow",
+    "PySymFunctionPartitionsRow",
+    "PySymNamespaceEdgeRow",
+    "PySymResolutionEdgeRow",
+    "PySymScopeEdgeRow",
+    "PySymScopeRow",
+    "PySymSymbolRow",
 ]
+
+
+class SyntaxQualifiedName(TypedDict, total=False):
+    """Qualified name payload for syntax extras."""
+
+    name: str
+    source: str
+
+
+class SyntaxParamExtra(TypedDict, total=False):
+    """Parameter metadata payload for syntax extras."""
+
+    name: str
+    kind: str
+    has_annotation: bool
+    has_default: bool
+    annotation_code: str
+    default_code: str
+
+
+class SyntaxDefExtras(TypedDict, total=False):
+    """Definition extras payload for syntax definitions."""
+
+    container_def_id: str
+    is_async: bool
+    decorators: list[str]
+    bases: list[str]
+    params: list[SyntaxParamExtra]
+    returns_code: str
+    docstring: str
+    qnames: list[SyntaxQualifiedName]
+
+
+class SyntaxReferentExtra(TypedDict, total=False):
+    """Referent payload for syntax reference extras."""
+
+    assignment_name: str
+    assignment_kind: str
+    span_id: str
+    qnames: list[SyntaxQualifiedName]
+
+
+class SyntaxRefExtras(TypedDict, total=False):
+    """Reference extras payload for syntax references."""
+
+    role: str
+    scope_kind: str
+    referents: list[SyntaxReferentExtra]
+    is_annotation: bool
+    is_type_hint: bool
+    qnames: list[SyntaxQualifiedName]
+
+
+class SyntaxCallExtras(TypedDict, total=False):
+    """Callsite extras payload for syntax calls."""
+
+    kw_arg_count: int
+    star_arg_count: int
+    starstar_arg_count: int
+    caller_def_id: str
+    callee_qnames: list[SyntaxQualifiedName]
+
+
+class SyntaxCallArgsExtras(TypedDict, total=False):
+    """Call argument extras payload."""
+
+
+class SyntaxParamDefExtras(TypedDict, total=False):
+    """Parameter definition extras payload for syntax func params."""
+
+    param_kind: str
+    has_annotation: bool
+    has_default: bool
+    annotation_code: str
+    default_code: str
+
+
+class SyntaxImportExtras(TypedDict, total=False):
+    """Import extras payload for syntax imports."""
+
+    stmt_kind: str
+    is_star: bool
+    imported: str
+    asname: str | None
+    module: str
+    relative_level: int
+
+
+class SyntaxNodeAstIgnore(TypedDict, total=False):
+    """Type ignore payload for AST nodes merged into syntax nodes."""
+
+    line: int
+    tag: str
+
+
+class SyntaxNodeAstPayload(TypedDict, total=False):
+    """AST payload for syntax node extras."""
+
+    ast_node_id: str
+    ast_kind: str
+    ast_start_line: int
+    ast_start_col_utf8: int
+    ast_end_line: int
+    ast_end_col_utf8: int
+    ast_start_byte: int
+    ast_end_byte: int
+    match_kind: str
+    ctx: str
+    type_comment: str
+    type_ignores: list[SyntaxNodeAstIgnore]
+    identifier: str
+    attribute: str
+    name: str
+    imported: str
+    asname: str
+    module: str
+    level: int
+    constant_kind: str
+
+
+class SyntaxNodeTsPayload(TypedDict, total=False):
+    """Tree-sitter payload for syntax node extras."""
+
+    ts_node_id: str
+    ts_node_type: str
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    grammar_id: int | None
+    kind_id: int | None
+    parse_state: int | None
+    next_parse_state: int | None
+    is_named: bool
+    is_missing: bool
+    is_error: bool
+    has_error: bool
+    match_kind: str
+
+
+class SyntaxNodeExtras(TypedDict, total=False):
+    """Combined syntax node extras payload."""
+
+    ast_nodes: list[SyntaxNodeAstPayload]
+    ts_nodes: list[SyntaxNodeTsPayload]
+
+
+class TreeSitterCaptureExtras(TypedDict, total=False):
+    """Tree-sitter capture extras payload."""
+
+    query_hash: str
+    pattern_index: int | None
+    capture_index: int | None
+    pattern_count: int
+    capture_count: int
+    field_name: str | None
+    field_id: int | None
+
+
+class TreeSitterNodeExtras(TypedDict, total=False):
+    """Tree-sitter node extras payload."""
+
+
+class TreeSitterParseErrorExtras(TypedDict, total=False):
+    """Tree-sitter parse error extras payload."""
+
+    node_type: str | None
+    has_error: bool | None
+    parse_state: int | None
+
+
+class TreeSitterTokenExtras(TypedDict, total=False):
+    """Tree-sitter token/trivia extras payload."""
+
+    query_hash: str
+    pattern_index: int | None
+    capture_index: int | None
+    capture_name: str
+    pattern_count: int
+    capture_count: int
+    field_name: str | None
+    field_id: int | None
+    literal_kind: str
 
 
 class CoreAstMetricsRow(TypedDict):
@@ -80,10 +287,437 @@ class CoreAstNodesRow(TypedDict):
     decorator_end_line: int | None
     col_offset: int | None
     end_col_offset: int | None
+    start_byte: int | None
+    end_byte: int | None
     parent_qualname: str | None
-    decorators: bytes | None
+    decorators: list[str] | None
     docstring: str | None
+    ctx: str | None
+    type_comment: str | None
+    type_ignores: list[SyntaxNodeAstIgnore] | None
+    identifier: str | None
+    attribute: str | None
+    imported: str | None
+    asname: str | None
+    module: str | None
+    level: int | None
+    constant_kind: str | None
     hash: str
+
+
+class PySymScopeRow(TypedDict):
+    """Row model for core.py_sym_scopes."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    scope_id: str
+    scope_local_id: int | None
+    parent_scope_id: str | None
+    scope_type: str
+    scope_name: str | None
+    qualpath: str | None
+    lineno: int | None
+    is_nested: bool | None
+    is_optimized: bool | None
+    has_children: bool | None
+    anchor_ast_node_id: str | None
+    span_start_byte: int | None
+    span_end_byte: int | None
+    anchor_confidence: float | None
+    anchor_reason: str | None
+
+
+class PySymSymbolRow(TypedDict):
+    """Row model for core.py_sym_symbols."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    scope_id: str
+    symbol_row_id: str
+    name: str
+    is_referenced: bool | None
+    is_assigned: bool | None
+    is_imported: bool | None
+    is_annotated: bool | None
+    is_parameter: bool | None
+    is_local: bool | None
+    is_global: bool | None
+    is_declared_global: bool | None
+    is_nonlocal: bool | None
+    is_free: bool | None
+    is_namespace: bool | None
+    namespace_count: int | None
+
+
+class PySymScopeEdgeRow(TypedDict):
+    """Row model for core.py_sym_scope_edges."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    parent_scope_id: str
+    child_scope_id: str
+    edge_kind: str
+
+
+class PySymNamespaceEdgeRow(TypedDict):
+    """Row model for core.py_sym_namespace_edges."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    scope_id: str
+    symbol_row_id: str
+    name: str
+    child_scope_id: str
+    edge_kind: str
+    is_ambiguous: bool | None
+
+
+class PySymFunctionPartitionsRow(TypedDict):
+    """Row model for core.py_sym_function_partitions."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    scope_id: str
+    parameters: list[str] | None
+    locals: list[str] | None
+    globals: list[str] | None
+    nonlocals: list[str] | None
+    frees: list[str] | None
+
+
+class PySymBindingRow(TypedDict):
+    """Row model for core.py_sym_bindings."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    binding_id: str
+    scope_id: str
+    name: str
+    binding_kind: str
+    declared_here: bool | None
+    referenced_here: bool | None
+    assigned_here: bool | None
+    annotated_here: bool | None
+    scoping_class: str | None
+
+
+class PySymResolutionEdgeRow(TypedDict):
+    """Row model for core.py_sym_resolution_edges."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    edge_id: str
+    src_binding_id: str
+    dst_binding_id: str
+    kind: str
+    confidence: float | None
+    reason: str | None
+
+
+class PyBcCacheInfo(TypedDict, total=False):
+    """Cache payload for bytecode instructions."""
+
+    name: str
+    size: int
+    data: bytes
+
+
+class PyBcPositions(TypedDict, total=False):
+    """Source positions payload for bytecode instructions."""
+
+    lineno: int | None
+    end_lineno: int | None
+    col: int | None
+    end_col: int | None
+
+
+class PyBcCodeUnitRow(TypedDict):
+    """Row model for core.py_bc_code_units."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    code_unit_id: str
+    parent_code_unit_id: str | None
+    qualpath: str | None
+    co_name: str | None
+    co_qualname: str | None
+    kind: str | None
+    co_firstlineno: int | None
+    span_start_byte: int | None
+    span_end_byte: int | None
+    flags: int | None
+    argcount: int | None
+    posonlyargcount: int | None
+    kwonlyargcount: int | None
+    nlocals: int | None
+    stacksize: int | None
+    varnames: list[str] | None
+    names: list[str] | None
+    freevars: list[str] | None
+    cellvars: list[str] | None
+    bytecode_len: int | None
+    exceptiontable_len: int | None
+    python_version: str | None
+    bytecode_magic: bytes | None
+
+
+class PyBcInstructionRow(TypedDict):
+    """Row model for core.py_bc_instructions."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    code_unit_id: str
+    instr_id: str
+    instr_physical_id: str | None
+    instr_index: int | None
+    start_offset: int | None
+    offset: int | None
+    cache_offset: int | None
+    end_offset: int | None
+    ext_arg_len: int | None
+    op_len: int | None
+    cache_len: int | None
+    opcode: int | None
+    opname: str | None
+    baseopcode: int | None
+    baseopname: str | None
+    arg: int | None
+    argrepr: str | None
+    argval_kind: str | None
+    argval_str: str | None
+    argval_int: int | None
+    argval_repr: str | None
+    is_jump_target: bool | None
+    jump_target_offset: int | None
+    jump_target_label: str | None
+    label: str | None
+    starts_line: bool | None
+    line_number: int | None
+    pos: PyBcPositions | None
+    span_start_byte: int | None
+    span_end_byte: int | None
+    cache_info: list[PyBcCacheInfo] | None
+    cache_bytes: bytes | None
+    op_bytes: bytes | None
+
+
+class PyBcExceptionTableRow(TypedDict):
+    """Row model for core.py_bc_exception_table."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    code_unit_id: str
+    exc_entry_index: int
+    start_offset: int | None
+    end_offset: int | None
+    target_offset: int | None
+    depth: int | None
+    lasti: bool | None
+    start_label: str | None
+    end_label: str | None
+    target_label: str | None
+
+
+class PyBcBlockRow(TypedDict):
+    """Row model for core.py_bc_blocks."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    block_id: str
+    code_unit_id: str
+    start_offset: int | None
+    end_offset: int | None
+    start_label: str | None
+    kind: str | None
+    anchor_span_start_byte: int | None
+    anchor_span_end_byte: int | None
+    first_instr_index: int | None
+    last_instr_index: int | None
+
+
+class PyBcCfgEdgeRow(TypedDict):
+    """Row model for core.py_bc_cfg_edges."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    edge_id: str
+    code_unit_id: str
+    src_block_id: str
+    dst_block_id: str
+    kind: str
+    cond_instr_id: str | None
+    exc_entry_index: int | None
+
+
+class PyBcDefUseEventRow(TypedDict):
+    """Row model for core.py_bc_defuse_events."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    event_id: str
+    code_unit_id: str
+    instr_id: str
+    instr_index: int | None
+    event_kind: str
+    space: str | None
+    name: str | None
+    confidence: float | None
+
+
+class InspectValueRef(TypedDict, total=False):
+    """Value reference payload for inspect."""
+
+    kind: str
+    type_qualname: str
+    repr_trunc: str
+    repr_len: int
+    repr_sha256: bytes
+    is_callable: bool
+    is_descriptor: bool
+    is_builtin: bool
+
+
+class InspectOpStatus(TypedDict, total=False):
+    """Status payload for inspect extraction."""
+
+    ok: bool
+    error_type: str
+    error_msg: str
+
+
+class PyInspectObjectRow(TypedDict):
+    """Row model for core.py_inspect_objects."""
+
+    repo: str
+    commit: str
+    mode: str
+    object_id: str
+    object_addr: int | None
+    kind: str | None
+    module_name: str | None
+    qualname: str | None
+    name: str | None
+    type_qualname: str | None
+    is_builtin: bool | None
+    is_callable: bool | None
+    is_descriptor: bool | None
+    has_wrapped: bool | None
+    has_signature_override: bool | None
+    has_annotations: bool | None
+    status: InspectOpStatus | None
+
+
+class PyInspectMemberRow(TypedDict):
+    """Row model for core.py_inspect_members_static."""
+
+    repo: str
+    commit: str
+    mode: str
+    owner_object_id: str
+    owner_kind: str | None
+    attr_name: str
+    value_kind: str | None
+    value_object_id: str | None
+    value_ref: InspectValueRef | None
+    desc_kind: str | None
+    desc_is_data: bool | None
+    desc_is_methoddesc: bool | None
+    desc_is_getset: bool | None
+    desc_is_member: bool | None
+    status: InspectOpStatus | None
+
+
+class PyInspectUnwrapHopRow(TypedDict):
+    """Row model for core.py_inspect_unwrap_hops."""
+
+    repo: str
+    commit: str
+    mode: str
+    root_object_id: str
+    hop: int
+    object_id: str | None
+    has_wrapped: bool | None
+    has_signature_override: bool | None
+    stop_reason: str | None
+    status: InspectOpStatus | None
+
+
+class PyInspectSignatureRow(TypedDict):
+    """Row model for core.py_inspect_signatures."""
+
+    repo: str
+    commit: str
+    mode: str
+    signature_id: str
+    object_id: str
+    variant: str | None
+    follow_wrapped: bool | None
+    eval_str: bool | None
+    effective_object_id: str | None
+    sig_text: str | None
+    sig_format: str | None
+    return_annotation: InspectValueRef | None
+    has_varargs: bool | None
+    has_varkw: bool | None
+    status: InspectOpStatus | None
+
+
+class PyInspectSignatureParamRow(TypedDict):
+    """Row model for core.py_inspect_signature_params."""
+
+    repo: str
+    commit: str
+    mode: str
+    signature_id: str
+    param_index: int
+    name: str | None
+    kind: str | None
+    default_present: bool | None
+    default_value: InspectValueRef | None
+    annotation_present: bool | None
+    annotation_value: InspectValueRef | None
+    status: InspectOpStatus | None
+
+
+class PyInspectAnnotationRow(TypedDict):
+    """Row model for core.py_inspect_annotations_kv."""
+
+    repo: str
+    commit: str
+    mode: str
+    object_id: str
+    eval_str: bool | None
+    key: str
+    value: InspectValueRef | None
+    status: InspectOpStatus | None
+
+
+class PyInspectSourceRow(TypedDict):
+    """Row model for core.py_inspect_source."""
+
+    repo: str
+    commit: str
+    mode: str
+    object_id: str
+    file_name: str | None
+    start_line: int | None
+    line_count: int | None
+    source_sha256: bytes | None
+    source_preview: str | None
+    status: InspectOpStatus | None
 
 
 class CoreCstNodesRow(TypedDict):
@@ -92,10 +726,10 @@ class CoreCstNodesRow(TypedDict):
     path: str
     node_id: str
     kind: str
-    span: bytes
+    span: dict[str, list[int]]
     text_preview: str | None
-    parents: bytes | None
-    qnames: bytes | None
+    parents: list[str] | None
+    qnames: list[str] | None
 
 
 class CoreDocstringsRow(TypedDict):
@@ -113,10 +747,10 @@ class CoreDocstringsRow(TypedDict):
     style: str | None
     short_desc: str | None
     long_desc: str | None
-    params: bytes | None
-    returns: bytes | None
-    raises: bytes | None
-    examples: bytes | None
+    params: list[dict[str, str | None]] | None
+    returns: dict[str, str | None] | None
+    raises: list[dict[str, str | None]] | None
+    examples: list[str] | None
     created_at: datetime
 
 
@@ -212,8 +846,8 @@ class CoreModulesRow(TypedDict):
     repo: str | None
     commit: str | None
     language: str | None
-    tags: bytes | None
-    owners: bytes | None
+    tags: list[str] | None
+    owners: list[str] | None
     row_hash: str | None
 
 
@@ -229,7 +863,7 @@ class CoreParseManifestRow(TypedDict):
     default_indent: str | None
     default_newline: str | None
     has_trailing_newline: bool | None
-    future_imports: bytes | None
+    future_imports: list[str] | None
     parser_backend: str | None
     libcst_version: str | None
     error_kind: str | None
@@ -244,8 +878,8 @@ class CoreRepoMapRow(TypedDict):
 
     repo: str
     commit: str
-    modules: bytes | None
-    overlays: bytes | None
+    modules: dict[str, str] | None
+    overlays: dict[str, str] | None
     generated_at: datetime | None
 
 
@@ -444,7 +1078,7 @@ class CoreSyntaxCallsRow(TypedDict):
     end_byte: int | None
     callee_start_byte: int | None
     callee_end_byte: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxCallExtras | None
 
 
 class CoreSyntaxCallArgsRow(TypedDict):
@@ -466,7 +1100,7 @@ class CoreSyntaxCallArgsRow(TypedDict):
     arg_end_byte: int | None
     arg_span_id: str | None
     arg_expr_node_id: str | None
-    extras_json: bytes | None
+    extras_json: SyntaxCallArgsExtras | None
 
 
 class CoreSyntaxDefsRow(TypedDict):
@@ -487,7 +1121,7 @@ class CoreSyntaxDefsRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxDefExtras | None
 
 
 class CoreSyntaxFuncParamsRow(TypedDict):
@@ -510,7 +1144,7 @@ class CoreSyntaxFuncParamsRow(TypedDict):
     param_end_byte: int | None
     param_span_id: str | None
     param_node_id: str | None
-    extras_json: bytes | None
+    extras_json: SyntaxParamDefExtras | None
 
 
 class CoreSyntaxEdgesRow(TypedDict):
@@ -548,7 +1182,7 @@ class CoreSyntaxImportsRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxImportExtras | None
 
 
 class CoreSyntaxNodesRow(TypedDict):
@@ -569,7 +1203,7 @@ class CoreSyntaxNodesRow(TypedDict):
     start_byte: int | None
     end_byte: int | None
     text_preview: str | None
-    extras_json: bytes | None
+    extras_json: SyntaxNodeExtras | None
 
 
 class CoreSyntaxRefsRow(TypedDict):
@@ -590,7 +1224,7 @@ class CoreSyntaxRefsRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxRefExtras | None
 
 
 class CoreSyntaxCallsResolvedRow(TypedDict):
@@ -627,7 +1261,7 @@ class CoreSyntaxCallsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxCallExtras | None
 
 
 class CoreSyntaxDefsResolvedRow(TypedDict):
@@ -660,7 +1294,7 @@ class CoreSyntaxDefsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxDefExtras | None
 
 
 class CoreSyntaxImportsResolvedRow(TypedDict):
@@ -696,7 +1330,7 @@ class CoreSyntaxImportsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxImportExtras | None
 
 
 class CoreSyntaxRefsResolvedRow(TypedDict):
@@ -729,7 +1363,7 @@ class CoreSyntaxRefsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: bytes | None
+    extras_json: SyntaxRefExtras | None
 
 
 class CoreSyntaxScopesRow(TypedDict):
@@ -782,7 +1416,7 @@ class CoreTsCapturesRow(TypedDict):
     end_col: int
     node_type: str
     text_preview: str | None
-    extras: bytes | None
+    extras: TreeSitterCaptureExtras | None
 
 
 class CoreTsNodesRow(TypedDict):
@@ -809,7 +1443,7 @@ class CoreTsNodesRow(TypedDict):
     parse_state: int | None
     next_parse_state: int | None
     text_preview: str | None
-    extras_json: bytes | None
+    extras_json: TreeSitterNodeExtras | None
 
 
 class CoreTsEdgesRow(TypedDict):
@@ -842,6 +1476,22 @@ class CoreTsParseErrorsRow(TypedDict):
     end_row: int
     end_col: int
     text_preview: str | None
+    extras_json: TreeSitterParseErrorExtras | None
+
+
+class CoreTsChangedRangesRow(TypedDict):
+    """Row model for core.ts_changed_ranges."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
 
 
 class CoreTsTokensRow(TypedDict):
@@ -861,7 +1511,7 @@ class CoreTsTokensRow(TypedDict):
     end_row: int
     end_col: int
     text_preview: str | None
-    extras_json: bytes | None
+    extras_json: TreeSitterTokenExtras | None
 
 
 class CoreTsTriviaRow(TypedDict):
@@ -881,7 +1531,7 @@ class CoreTsTriviaRow(TypedDict):
     end_row: int
     end_col: int
     text_preview: str | None
-    extras_json: bytes | None
+    extras_json: TreeSitterTokenExtras | None
 
 
 class CoreTsLanguageMetadataRow(TypedDict):
@@ -896,6 +1546,18 @@ class CoreTsLanguageMetadataRow(TypedDict):
     field_count: int
     parse_state_count: int
     created_at: datetime
+
+
+class CoreTsWeldCoverageRow(TypedDict):
+    """Row model for core.ts_weld_coverage."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    ts_node_count: int
+    mapped_count: int
+    coverage_ratio: float
 
 
 class CoreTsSyntaxNodeXrefRow(TypedDict):

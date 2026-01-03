@@ -24,7 +24,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import (
     empty_frame_for_table,
     rows_to_frame,
@@ -132,9 +132,9 @@ def external_dependency_calls__base(
     pl.LazyFrame
         Lazy frame containing external dependency call rows.
     """
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    features_frame = tabular_to_lazyframe(q__analytics__function_ast_features).collect()
+    modules_frame = tabular_to_frame(q__core__modules)
+    goids_frame = tabular_to_frame(q__core__goids)
+    features_frame = tabular_to_frame(q__analytics__function_ast_features)
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_frame_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
@@ -172,8 +172,8 @@ def external_dependencies__base(
     pl.LazyFrame
         Lazy frame containing external dependency summary rows.
     """
-    dependency_calls_frame = tabular_to_lazyframe(q__analytics__external_dependency_calls).collect()
-    config_values_frame = tabular_to_lazyframe(q__analytics__config_values).collect()
+    dependency_calls_frame = tabular_to_frame(q__analytics__external_dependency_calls)
+    config_values_frame = tabular_to_frame(q__analytics__config_values)
     result = compute_external_dependencies_pure(
         env.snapshot,
         dependency_calls_frame=dependency_calls_frame,

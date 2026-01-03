@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
@@ -20,8 +21,6 @@ from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as Docs
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
@@ -43,10 +42,10 @@ class ParsedDocstring(TypedDict):
     style: str | None
     short_desc: str | None
     long_desc: str | None
-    params: object
-    returns: object
-    raises: object
-    examples: object
+    params: list[dict[str, str | None]] | None
+    returns: dict[str, str | None] | None
+    raises: list[dict[str, str | None]] | None
+    examples: list[str] | None
 
 
 type DocstringNode = ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
@@ -182,7 +181,7 @@ class DocstringVisitor(ast.NodeVisitor):
 
         lineno = getattr(node, "lineno", None)
         end_lineno = getattr(node, "end_lineno", None)
-        parsed = _parse_docstring(raw_doc)
+        parsed: ParsedDocstring = _parse_docstring(raw_doc)
 
         self.rows.append(
             DocstringRow(

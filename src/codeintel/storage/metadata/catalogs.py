@@ -47,7 +47,10 @@ def _coerce_json_payload(value: object) -> dict[str, Any]:
         decoded = decode_payload(value)
         if isinstance(decoded, Mapping):
             return dict(decoded)
-        raw = value.decode("utf-8") if isinstance(value, (bytes, bytearray, memoryview)) else value
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            raw = bytes(value).decode("utf-8")
+        else:
+            raw = value
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
             return dict(parsed)

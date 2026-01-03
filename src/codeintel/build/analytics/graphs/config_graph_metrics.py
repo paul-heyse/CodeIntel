@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import networkx as nx
+import polars as pl
 
 from codeintel.build.analytics.compute.graphs import (
     build_projection_graph,
@@ -111,8 +112,16 @@ def _projection_rows(
         }
         for src, dst, data in proj.edges(data=True)
     ]
-    node_rows = validate_contract_rows(node_contract.table_key, node_dicts)
-    edge_rows = validate_contract_rows(edge_contract.table_key, edge_dicts)
+    node_rows = validate_contract_rows(
+        node_contract.table_key,
+        node_dicts,
+        validation_profile="schema-only",
+    )
+    edge_rows = validate_contract_rows(
+        edge_contract.table_key,
+        edge_dicts,
+        validation_profile="schema-only",
+    )
     node_serializer = row_serializer_for_table_key(node_contract.table_key)
     edge_serializer = row_serializer_for_table_key(edge_contract.table_key)
     return (
@@ -150,6 +159,13 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
     return str(value) == expected
 
 
+def _matches_optional_scope_expr(column: str, expected: str) -> pl.Expr:
+    col = pl.col(column)
+    col_str = col.cast(pl.Utf8, strict=False)
+    stripped = col_str.str.strip_chars()
+    return col.is_null() | (stripped.str.len_chars() == 0) | (col_str == expected)
+
+
 def _parse_reference_modules(ref_modules: object) -> list[str]:
     if isinstance(ref_modules, list):
         return [str(mod) for mod in ref_modules]
@@ -163,8 +179,117 @@ def _parse_reference_modules(ref_modules: object) -> list[str]:
     return []
 
 
-def build_config_module_bipartite(
+def _normalize_reference_modules(
+    raw: object,
+    *,
+    allowed_modules: set[str] | None,
+) -> list[str]:
+    modules = _parse_reference_modules(raw)
+    if not modules:
+        return []
+    if allowed_modules is None:
+        return modules
+    filtered = [module for module in modules if module in allowed_modules]
+    return filtered or modules
+
+
+def _row_matches_scope(
+    row: Mapping[str, object],
+    *,
+    repo: str | None,
+    commit: str | None,
+) -> bool:
+    if repo is not None and not _matches_optional_scope(row.get("repo"), repo):
+        return False
+    if commit is not None and not _matches_optional_scope(row.get("commit"), commit):
+        return False
+    return True
+
+
+def _add_bipartite_edge(graph: nx.Graph, *, key: str, module: str) -> None:
+    key_node = ("c", key)
+    module_node = ("m", module)
+    if not graph.has_node(key_node):
+        graph.add_node(key_node, bipartite=0)
+    if not graph.has_node(module_node):
+        graph.add_node(module_node, bipartite=1)
+    if graph.has_edge(key_node, module_node):
+        attrs = graph[key_node][module_node]
+        attrs["weight"] = _coerce_edge_weight(attrs.get("weight", 0.0)) + 1.0
+        return
+    graph.add_edge(key_node, module_node, weight=1.0)
+
+
+def _config_bipartite_from_rows(
     config_value_rows: Iterable[Mapping[str, object]],
+    *,
+    allowed_modules: set[str] | None,
+    repo: str | None,
+    commit: str | None,
+) -> nx.Graph:
+    graph = nx.Graph()
+    for row in config_value_rows:
+        if not _row_matches_scope(row, repo=repo, commit=commit):
+            continue
+        key = row.get("key")
+        if key is None:
+            continue
+        modules = _normalize_reference_modules(
+            row.get("reference_modules"),
+            allowed_modules=allowed_modules,
+        )
+        if not modules:
+            continue
+        key_value = str(key)
+        for module_name in modules:
+            _add_bipartite_edge(graph, key=key_value, module=str(module_name))
+    return graph
+
+
+def _config_bipartite_from_frame(
+    frame: pl.DataFrame,
+    *,
+    allowed_modules: set[str] | None,
+    repo: str | None,
+    commit: str | None,
+) -> nx.Graph:
+    graph = nx.Graph()
+    if frame.is_empty():
+        return graph
+    filtered = frame
+    if repo is not None and "repo" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("repo", repo))
+    if commit is not None and "commit" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("commit", commit))
+    has_columns = "key" in filtered.columns and "reference_modules" in filtered.columns
+    if filtered.is_empty() or not has_columns:
+        return graph
+    parsed = filtered.select(
+        pl.col("key").cast(pl.Utf8, strict=False).alias("key"),
+        pl.col("reference_modules")
+        .map_elements(
+            lambda value: _normalize_reference_modules(value, allowed_modules=allowed_modules),
+            return_dtype=pl.List(pl.Utf8),
+        )
+        .alias("modules"),
+    ).filter(pl.col("key").is_not_null())
+    exploded = parsed.explode("modules").filter(pl.col("modules").is_not_null())
+    if exploded.is_empty():
+        return graph
+    edges = exploded.group_by(["key", "modules"]).agg(pl.len().alias("weight"))
+    for key, module, weight in edges.iter_rows():
+        key_node = ("c", str(key))
+        module_node = ("m", str(module))
+        if not graph.has_node(key_node):
+            graph.add_node(key_node, bipartite=0)
+        if not graph.has_node(module_node):
+            graph.add_node(module_node, bipartite=1)
+        graph.add_edge(key_node, module_node, weight=float(weight))
+    return graph
+
+
+def build_config_module_bipartite(
+    config_value_rows: Iterable[Mapping[str, object]] | pl.DataFrame,
     *,
     allowed_modules: set[str] | None = None,
     repo: str | None = None,
@@ -188,37 +313,19 @@ def build_config_module_bipartite(
     nx.Graph
         Undirected bipartite graph with config keys and modules.
     """
-    graph = nx.Graph()
-    for row in config_value_rows:
-        if repo is not None and not _matches_optional_scope(row.get("repo"), repo):
-            continue
-        if commit is not None and not _matches_optional_scope(row.get("commit"), commit):
-            continue
-        key = row.get("key")
-        ref_modules = row.get("reference_modules")
-        if key is None or ref_modules is None:
-            continue
-        key_node = ("c", str(key))
-        if not graph.has_node(key_node):
-            graph.add_node(key_node, bipartite=0)
-        raw_modules = _parse_reference_modules(ref_modules)
-        filtered = (
-            [module for module in raw_modules if module in allowed_modules]
-            if allowed_modules
-            else raw_modules
+    if isinstance(config_value_rows, pl.DataFrame):
+        return _config_bipartite_from_frame(
+            config_value_rows,
+            allowed_modules=allowed_modules,
+            repo=repo,
+            commit=commit,
         )
-        if allowed_modules and raw_modules and not filtered:
-            filtered = raw_modules
-        for module_name in filtered:
-            module_node = ("m", module_name)
-            if not graph.has_node(module_node):
-                graph.add_node(module_node, bipartite=1)
-            if graph.has_edge(key_node, module_node):
-                attrs = graph[key_node][module_node]
-                attrs["weight"] = _coerce_edge_weight(attrs.get("weight", 0.0)) + 1.0
-            else:
-                graph.add_edge(key_node, module_node, weight=1.0)
-    return graph
+    return _config_bipartite_from_rows(
+        config_value_rows,
+        allowed_modules=allowed_modules,
+        repo=repo,
+        commit=commit,
+    )
 
 
 def _projection_payload(
@@ -275,7 +382,7 @@ def compute_config_graph_metrics_result(
     *,
     repo: str,
     commit: str,
-    config_value_rows: Iterable[Mapping[str, object]],
+    config_value_rows: Iterable[Mapping[str, object]] | pl.DataFrame,
     allowed_modules: set[str] | None = None,
     runtime: GraphRuntimeOptions | None = None,
 ) -> ConfigGraphMetricsResult:

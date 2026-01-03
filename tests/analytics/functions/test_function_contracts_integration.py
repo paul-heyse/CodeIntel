@@ -155,8 +155,8 @@ def _seed_docstrings(
     gateway: StorageGateway,
     rel_path: str,
     qualname: str,
-    params: list[dict[str, str]],
-    returns: dict[str, str] | None = None,
+    params: list[dict[str, str | None]],
+    returns: dict[str, str | None] | None = None,
 ) -> None:
     """Seed docstring data for testing.
 
@@ -183,7 +183,7 @@ def _seed_docstrings(
         qualname=qualname,
         kind="function",
         params=params,
-        returns=returns or {},
+        returns=returns,
         raises=[],
         examples=[],
         created_at=now,
@@ -338,8 +338,16 @@ def test_compute_contracts_with_docstring_data(
         rel_path="module.py",
         qualname="with_docs",
         params=[
-            {"name": "x", "desc": "Required parameter, must not be None"},
-            {"name": "y", "desc": "Optional value, may be none"},
+            {
+                "name": "x",
+                "type_name": None,
+                "description": "Required parameter, must not be None",
+            },
+            {
+                "name": "y",
+                "type_name": None,
+                "description": "Optional value, may be none",
+            },
         ],
     )
 
@@ -530,7 +538,7 @@ def test_compute_contracts_confidence_score(
         ctx.gateway,
         rel_path="module.py",
         qualname="well_documented",
-        params=[{"name": "x", "desc": "Input value"}],
+        params=[{"name": "x", "type_name": None, "description": "Input value"}],
     )
     _seed_function_types(
         ctx.gateway,
@@ -784,8 +792,8 @@ def test_compute_contracts_with_doc_return_none(
         fresh_gateway,
         rel_path="module.py",
         qualname="maybe_find",
-        params=[{"name": "x", "desc": "input value"}],
-        returns={"desc": "Returns x or None if not found"},
+        params=[{"name": "x", "type_name": None, "description": "input value"}],
+        returns={"type_name": None, "description": "Returns x or None if not found"},
     )
 
     _build_and_write_contract_rows(

@@ -6,7 +6,6 @@ LibCST concrete syntax trees, using ports for all I/O operations.
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import io
 import json
@@ -220,22 +219,6 @@ class _DefExtrasInput:
     qualified_node: cst.CSTNode | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class _AstSpan:
-    start_line: int
-    start_col_utf8: int
-    end_line: int
-    end_col_utf8: int
-    start_byte: int
-    end_byte: int
-
-
-@dataclass(frozen=True, slots=True)
-class _AstNodeRecord:
-    node_id: str
-    kind: str
-    span: _AstSpan
-    extras: dict[str, object] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1421,195 +1404,6 @@ def _build_access_map(scope_map: Mapping[cst.CSTNode, Scope | None]) -> dict[int
     return access_map
 
 
-def _ast_module_span(source_index: LineIndexedSource) -> _AstSpan:
-    end_byte = len(source_index.source_bytes)
-    if not source_index.lines:
-        return _AstSpan(
-            start_line=0,
-            start_col_utf8=0,
-            end_line=0,
-            end_col_utf8=0,
-            start_byte=0,
-            end_byte=end_byte,
-        )
-    end_line = len(source_index.lines) - 1
-    end_col_utf8 = len(source_index.lines[end_line].encode("utf-8", errors="replace"))
-    return _AstSpan(
-        start_line=0,
-        start_col_utf8=0,
-        end_line=end_line,
-        end_col_utf8=end_col_utf8,
-        start_byte=0,
-        end_byte=end_byte,
-    )
-
-
-def _ast_span_for_node(
-    node: ast.AST,
-    source_index: LineIndexedSource,
-) -> _AstSpan | None:
-    if isinstance(node, ast.Module):
-        return _ast_module_span(source_index)
-    lineno = getattr(node, "lineno", None)
-    col_offset = getattr(node, "col_offset", None)
-    if not isinstance(lineno, int) or not isinstance(col_offset, int):
-        return None
-    end_lineno = getattr(node, "end_lineno", None)
-    end_col_offset = getattr(node, "end_col_offset", None)
-    if not isinstance(end_lineno, int):
-        end_lineno = lineno
-    if not isinstance(end_col_offset, int):
-        end_col_offset = col_offset
-    if end_lineno < lineno:
-        end_lineno = lineno
-        end_col_offset = col_offset
-    start_line = max(lineno - 1, 0)
-    end_line = max(end_lineno - 1, 0)
-    start_byte = source_index.byte_offset_from_utf8(start_line, col_offset)
-    end_byte = source_index.byte_offset_from_utf8(end_line, end_col_offset)
-    if start_byte is None or end_byte is None:
-        return None
-    if end_byte < start_byte:
-        return None
-    return _AstSpan(
-        start_line=start_line,
-        start_col_utf8=col_offset,
-        end_line=end_line,
-        end_col_utf8=end_col_offset,
-        start_byte=start_byte,
-        end_byte=end_byte,
-    )
-
-
-def _ast_type_ignores_payload(module: ast.Module) -> list[dict[str, object]]:
-    payload: list[dict[str, object]] = []
-    for ignore in getattr(module, "type_ignores", []):
-        lineno = getattr(ignore, "lineno", None)
-        if not isinstance(lineno, int):
-            continue
-        tag = getattr(ignore, "tag", None)
-        entry: dict[str, object] = {"line": max(lineno - 1, 0)}
-        if isinstance(tag, str) and tag:
-            entry["tag"] = tag
-        payload.append(entry)
-    return payload
-
-
-def _ast_ctx_payload(node: ast.AST) -> dict[str, object]:
-    ctx = getattr(node, "ctx", None)
-    if ctx is None:
-        return {}
-    return {"ctx": type(ctx).__name__.lower()}
-
-
-def _ast_type_comment_payload(node: ast.AST) -> dict[str, object]:
-    type_comment = getattr(node, "type_comment", None)
-    if isinstance(type_comment, str) and type_comment:
-        return {"type_comment": type_comment}
-    return {}
-
-
-def _ast_module_payload(node: ast.AST) -> dict[str, object]:
-    if isinstance(node, ast.Module):
-        type_ignores = _ast_type_ignores_payload(node)
-        if type_ignores:
-            return {"type_ignores": type_ignores}
-    return {}
-
-
-def _ast_name_payload(node: ast.AST) -> dict[str, object]:
-    if isinstance(node, ast.Name):
-        return {"identifier": node.id}
-    if isinstance(node, ast.Attribute):
-        return {"attribute": node.attr}
-    if isinstance(node, ast.arg):
-        return {"name": node.arg}
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        return {"name": node.name}
-    return {}
-
-
-def _ast_import_payload(node: ast.AST) -> dict[str, object]:
-    if isinstance(node, ast.alias):
-        payload: dict[str, object] = {"imported": node.name}
-        if node.asname is not None:
-            payload["asname"] = node.asname
-        return payload
-    if isinstance(node, ast.ImportFrom):
-        payload = {}
-        if node.module is not None:
-            payload["module"] = node.module
-        if node.level:
-            payload["level"] = node.level
-        return payload
-    return {}
-
-
-def _ast_constant_payload(node: ast.AST) -> dict[str, object]:
-    if isinstance(node, ast.Constant):
-        return {"constant_kind": type(node.value).__name__}
-    return {}
-
-
-def _ast_node_extras(node: ast.AST) -> dict[str, object] | None:
-    extras: dict[str, object] = {}
-    for payload in (
-        _ast_ctx_payload(node),
-        _ast_type_comment_payload(node),
-        _ast_module_payload(node),
-        _ast_name_payload(node),
-        _ast_import_payload(node),
-        _ast_constant_payload(node),
-    ):
-        if payload:
-            extras.update(payload)
-    return extras or None
-
-
-def _collect_ast_nodes(
-    source_text: str,
-    source_index: LineIndexedSource,
-    *,
-    context: _SyntaxContext,
-    warnings: list[str],
-) -> list[_AstNodeRecord]:
-    try:
-        parsed = ast.parse(source_text, type_comments=True)
-    except (SyntaxError, ValueError, TypeError) as exc:
-        message = f"AST parse failed for {context.rel_path}: {exc}"
-        warnings.append(message)
-        log.warning("%s", message)
-        return []
-    records: list[_AstNodeRecord] = []
-    for node in ast.walk(parsed):
-        span = _ast_span_for_node(node, source_index)
-        if span is None:
-            continue
-        node_id = _stable_id(
-            "ast_node",
-            context.repo,
-            context.commit,
-            context.rel_path,
-            type(node).__name__,
-            span.start_line,
-            span.start_col_utf8,
-            span.end_line,
-            span.end_col_utf8,
-            span.start_byte,
-            span.end_byte,
-        )
-        records.append(
-            _AstNodeRecord(
-                node_id=node_id,
-                kind=type(node).__name__,
-                span=span,
-                extras=_ast_node_extras(node),
-            )
-        )
-    records.sort(key=lambda record: (record.span.start_byte, record.span.end_byte, record.kind))
-    return records
-
-
 def _build_syntax_node_index(
     node_rows: Sequence[Mapping[str, object]],
 ) -> _SyntaxNodeIndex:
@@ -1658,7 +1452,7 @@ def _pick_smallest_candidate(
 
 def _match_exact(
     index: _SyntaxNodeIndex,
-    span: _AstSpan,
+    span: AstSpan,
 ) -> tuple[str, str] | None:
     exact_matches = index.exact.get((span.start_byte, span.end_byte))
     candidate = _pick_smallest_candidate(exact_matches or [])
@@ -1669,7 +1463,7 @@ def _match_exact(
 
 def _match_point(
     index: _SyntaxNodeIndex,
-    span: _AstSpan,
+    span: AstSpan,
 ) -> tuple[str, str] | None:
     candidates = _interval_candidates(index.tree.at(span.start_byte))
     candidate = _pick_smallest_candidate(candidates)
@@ -1685,7 +1479,7 @@ def _match_point(
 
 def _match_overlap(
     index: _SyntaxNodeIndex,
-    span: _AstSpan,
+    span: AstSpan,
 ) -> tuple[str, str] | None:
     candidates = _interval_candidates(index.tree.overlap(span.start_byte, span.end_byte))
     containing = [
@@ -1704,7 +1498,7 @@ def _match_overlap(
 
 def _match_syntax_node(
     index: _SyntaxNodeIndex,
-    span: _AstSpan,
+    span: AstSpan,
 ) -> tuple[str, str] | None:
     match = _match_exact(index, span)
     if match is None and span.start_byte == span.end_byte:
@@ -1714,7 +1508,7 @@ def _match_syntax_node(
     return match
 
 
-def _ast_payload(record: _AstNodeRecord, match_kind: str) -> dict[str, object]:
+def _ast_payload(record: AstNodeRecord, match_kind: str) -> dict[str, object]:
     payload: dict[str, object] = {
         "ast_node_id": record.node_id,
         "ast_kind": record.kind,
@@ -1733,7 +1527,7 @@ def _ast_payload(record: _AstNodeRecord, match_kind: str) -> dict[str, object]:
 
 def _merge_ast_into_syntax_nodes(
     syntax_nodes: list[dict[str, object]],
-    ast_nodes: list[_AstNodeRecord],
+    ast_nodes: list[AstNodeRecord],
 ) -> None:
     if not syntax_nodes or not ast_nodes:
         return
@@ -1846,19 +1640,14 @@ def _flush_cst_rows(buffers: _CstBuffers, rows: Iterable[CstRow]) -> None:
         )
 
 
-def _extract_module_syntax(
-    *,
-    module: ModuleRecord,
+def _build_manifest_context(
     context: _SyntaxContext,
-    source_bytes: bytes,
-    buffers: _CstBuffers,
-    emit_ast_nodes: bool,
-) -> list[str]:
-    warnings: list[str] = []
-    source_text, encoding = _decode_source_bytes(source_bytes)
-    source_index = LineIndexedSource(source_text, source_bytes, encoding=encoding)
-    libcst_version = _libcst_version()
-    manifest_context = _ParseManifestContext(
+    *,
+    source_index: LineIndexedSource,
+    encoding: str,
+    libcst_version: str | None,
+) -> _ParseManifestContext:
+    return _ParseManifestContext(
         repo=context.repo,
         commit=context.commit,
         rel_path=context.rel_path,
@@ -1870,6 +1659,31 @@ def _extract_module_syntax(
         has_trailing_newline=None,
         future_imports=None,
         parser_backend=context.producer,
+        libcst_version=libcst_version,
+    )
+
+
+def _build_source_index(source_bytes: bytes) -> tuple[LineIndexedSource, str]:
+    source_text, encoding = _decode_source_bytes(source_bytes)
+    source_index = LineIndexedSource(source_text, source_bytes, encoding=encoding)
+    return source_index, encoding
+
+
+def _extract_module_syntax(
+    *,
+    module: ModuleRecord,
+    context: _SyntaxContext,
+    source_bytes: bytes,
+    buffers: _CstBuffers,
+    emit_ast_nodes: bool,
+) -> list[str]:
+    warnings: list[str] = []
+    source_index, encoding = _build_source_index(source_bytes)
+    libcst_version = _libcst_version()
+    manifest_context = _build_manifest_context(
+        context,
+        source_index=source_index,
+        encoding=encoding,
         libcst_version=libcst_version,
     )
     try:
@@ -1941,12 +1755,27 @@ def _extract_module_syntax(
         source_index=source_index,
         access_map=_build_access_map(scope_map) if scope_map else {},
     )
+    def _ast_node_id(node: object, span: AstSpan) -> str:
+        return _stable_id(
+            "ast_node",
+            context.repo,
+            context.commit,
+            context.rel_path,
+            type(node).__name__,
+            span.start_line,
+            span.start_col_utf8,
+            span.end_line,
+            span.end_col_utf8,
+            span.start_byte,
+            span.end_byte,
+        )
     ast_nodes = (
-        _collect_ast_nodes(
+        collect_ast_nodes(
             source_text,
             source_index,
-            context=context,
+            node_id_factory=_ast_node_id,
             warnings=warnings,
+            source_label=context.rel_path,
         )
         if emit_ast_nodes
         else []

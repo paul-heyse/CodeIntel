@@ -25,6 +25,7 @@ from codeintel.build.graphs.compute.callgraph.types import (
     CallEdge,
     ResolutionResult,
 )
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphEdgesRow as CallGraphEdgeRow,
 )
@@ -270,7 +271,7 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
                 kind="direct" if resolution.callee_goid is not None else "unresolved",
                 resolved_via=resolution.resolved_via,
                 confidence=resolution.confidence,
-                evidence_json=evidence,
+                evidence_json=encode_payload(evidence),
             )
         )
 
@@ -472,7 +473,7 @@ class _AstCallGraphVisitor(ast.NodeVisitor):
                 kind="direct" if resolution.callee_goid is not None else "unresolved",
                 resolved_via=resolution.resolved_via,
                 confidence=resolution.confidence,
-                evidence_json=evidence,
+                evidence_json=encode_payload(evidence),
             )
         )
         self.generic_visit(node)

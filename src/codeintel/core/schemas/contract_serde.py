@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal, cast
 
+import msgspec
+
 from codeintel.config.datasets.primitives import CompositeSchema
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column, TableSchema
@@ -14,6 +16,7 @@ from codeintel.core.schemas.serde import (
     table_schema_from_json_obj,
     table_schema_to_json_obj,
 )
+from codeintel.core.validation.profiles import normalize_validation_profile
 
 
 def _serialize_columns(columns: tuple[Column, ...]) -> list[dict[str, object]]:
@@ -78,6 +81,82 @@ def _parse_composite(value: object) -> CompositeSchema:
     )
 
 
+class DatasetContractPayload(msgspec.Struct, frozen=True):
+    """Serializable DatasetContract payload (msgspec-backed)."""
+
+    table_key: str
+    name: str
+    schema: dict[str, object] | None
+    json_schema_id: str | None
+    jsonl_filename: str | None
+    parquet_filename: str | None
+    is_view: bool = False
+    owner_package: str | None = None
+    tags: list[str] = msgspec.field(default_factory=list)
+    description: str | None = None
+    family: str | None = None
+    owner: str | None = None
+    freshness_sla: str | None = None
+    retention_policy: str | None = None
+    stable_id: str | None = None
+    schema_version: str | None = None
+    upstream_dependencies: list[str] = msgspec.field(default_factory=list)
+    validation_profile: str = "strict"
+    composition: dict[str, object] | None = None
+
+
+def contract_payload_from_contract(contract: DatasetContract) -> DatasetContractPayload:
+    """Build a msgspec payload for a DatasetContract.
+
+    Parameters
+    ----------
+    contract
+        DatasetContract to serialize.
+
+    Returns
+    -------
+    DatasetContractPayload
+        Serializable payload for msgspec encoding.
+    """
+    return DatasetContractPayload(
+        table_key=contract.table_key,
+        name=contract.name,
+        schema=table_schema_to_json_obj(contract.schema) if contract.schema else None,
+        json_schema_id=contract.json_schema_id,
+        jsonl_filename=contract.jsonl_filename,
+        parquet_filename=contract.parquet_filename,
+        is_view=contract.is_view,
+        owner_package=contract.owner_package,
+        tags=sorted(contract.tags),
+        description=contract.description,
+        family=contract.family,
+        owner=contract.owner,
+        freshness_sla=contract.freshness_sla,
+        retention_policy=contract.retention_policy,
+        stable_id=contract.stable_id,
+        schema_version=contract.schema_version,
+        upstream_dependencies=list(contract.upstream_dependencies),
+        validation_profile=contract.validation_profile,
+        composition=_serialize_composite(contract.composition) if contract.composition else None,
+    )
+
+
+def contract_payload_to_json_obj(payload: DatasetContractPayload) -> dict[str, object]:
+    """Return a JSON-serializable mapping for a contract payload.
+
+    Parameters
+    ----------
+    payload
+        Serialized contract payload to convert.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-ready mapping of the contract payload.
+    """
+    return cast("dict[str, object]", msgspec.to_builtins(payload))
+
+
 def contract_to_json_obj(contract: DatasetContract) -> dict[str, object]:
     """Serialize a DatasetContract into a JSON object.
 
@@ -86,30 +165,8 @@ def contract_to_json_obj(contract: DatasetContract) -> dict[str, object]:
     dict[str, object]
         JSON-serializable representation of the dataset contract.
     """
-    payload: dict[str, object] = {
-        "table_key": contract.table_key,
-        "name": contract.name,
-        "json_schema_id": contract.json_schema_id,
-        "jsonl_filename": contract.jsonl_filename,
-        "parquet_filename": contract.parquet_filename,
-        "is_view": contract.is_view,
-        "owner_package": contract.owner_package,
-        "tags": sorted(contract.tags),
-        "description": contract.description,
-        "family": contract.family,
-        "owner": contract.owner,
-        "freshness_sla": contract.freshness_sla,
-        "retention_policy": contract.retention_policy,
-        "stable_id": contract.stable_id,
-        "schema_version": contract.schema_version,
-        "upstream_dependencies": list(contract.upstream_dependencies),
-        "validation_profile": contract.validation_profile,
-    }
-    payload["schema"] = table_schema_to_json_obj(contract.schema) if contract.schema else None
-    payload["composition"] = (
-        _serialize_composite(contract.composition) if contract.composition else None
-    )
-    return payload
+    payload = contract_payload_from_contract(contract)
+    return contract_payload_to_json_obj(payload)
 
 
 def _parse_table_schema(value: object) -> TableSchema | None:
@@ -121,8 +178,46 @@ def _parse_table_schema(value: object) -> TableSchema | None:
     return table_schema_from_json_obj(value)
 
 
-def contract_from_json_obj(obj: Mapping[str, object]) -> DatasetContract:
-    """Parse a DatasetContract from a JSON object.
+def _contract_payload_from_obj(value: object) -> DatasetContractPayload:
+    """Parse a DatasetContractPayload from multiple payload forms.
+
+    Parameters
+    ----------
+    value
+        Raw payload as a mapping, JSON, or msgpack bytes.
+
+    Returns
+    -------
+    DatasetContractPayload
+        Parsed payload object.
+
+    Raises
+    ------
+    TypeError
+        If the payload cannot be decoded or validated.
+    """
+    if isinstance(value, DatasetContractPayload):
+        return value
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        try:
+            return msgspec.msgpack.decode(raw, type=DatasetContractPayload)
+        except msgspec.DecodeError:
+            return msgspec.json.decode(raw, type=DatasetContractPayload)
+    if isinstance(value, str):
+        return msgspec.json.decode(value, type=DatasetContractPayload)
+    if isinstance(value, Mapping):
+        try:
+            return msgspec.convert(value, type=DatasetContractPayload, strict=False)
+        except msgspec.ValidationError as exc:
+            msg = "Invalid DatasetContract payload"
+            raise TypeError(msg) from exc
+    msg = "DatasetContract payload must be a mapping or encoded bytes"
+    raise TypeError(msg)
+
+
+def contract_from_payload(value: object) -> DatasetContract:
+    """Parse a DatasetContract from a msgspec payload.
 
     Returns
     -------
@@ -132,56 +227,64 @@ def contract_from_json_obj(obj: Mapping[str, object]) -> DatasetContract:
     Raises
     ------
     TypeError
-        If required fields are missing or of the wrong type.
+        If the payload is malformed or missing required fields.
     """
-    table_key = obj.get("table_key")
-    name = obj.get("name")
-    if not isinstance(table_key, str) or not isinstance(name, str):
+    payload = _contract_payload_from_obj(value)
+    table_key = payload.table_key
+    name = payload.name
+    if not table_key or not name:
         msg = "DatasetContract requires table_key and name"
         raise TypeError(msg)
-    tags_raw = obj.get("tags", [])
-    tags = frozenset(tags_raw) if isinstance(tags_raw, list) else frozenset()
-    upstream_raw = obj.get("upstream_dependencies", [])
-    upstream = (
-        tuple(item for item in upstream_raw if isinstance(item, str))
-        if isinstance(upstream_raw, list)
-        else ()
-    )
-    validation_profile_raw = obj.get("validation_profile", "strict")
-    if validation_profile_raw == "lenient":
-        validation_profile: Literal["strict", "lenient"] = "lenient"
-    else:
+    tags = frozenset(item for item in payload.tags if isinstance(item, str))
+    upstream = tuple(item for item in payload.upstream_dependencies if isinstance(item, str))
+    try:
+        validation_profile = normalize_validation_profile(
+            payload.validation_profile,
+            default="strict",
+        )
+    except ValueError:
         validation_profile = "strict"
-    owner_package_raw = obj.get("owner_package")
+    owner_package_raw = payload.owner_package
     owner_package = (
         cast("Literal['core','analytics','graphs','qa','docs']", owner_package_raw)
         if isinstance(owner_package_raw, str)
         else None
     )
-    composition_obj = obj.get("composition")
+    composition_obj = payload.composition
     composition = _parse_composite(composition_obj) if composition_obj is not None else None
     return DatasetContract(
         table_key=table_key,
         name=name,
-        schema=_parse_table_schema(obj.get("schema")),
+        schema=_parse_table_schema(payload.schema),
         row_binding=None,
-        json_schema_id=_as_optional_str(obj.get("json_schema_id")),
-        jsonl_filename=_as_optional_str(obj.get("jsonl_filename")),
-        parquet_filename=_as_optional_str(obj.get("parquet_filename")),
-        is_view=_as_bool(obj.get("is_view"), default=False),
+        json_schema_id=_as_optional_str(payload.json_schema_id),
+        jsonl_filename=_as_optional_str(payload.jsonl_filename),
+        parquet_filename=_as_optional_str(payload.parquet_filename),
+        is_view=_as_bool(payload.is_view, default=False),
         owner_package=owner_package,
         tags=tags,
-        description=_as_optional_str(obj.get("description")),
-        family=_as_optional_str(obj.get("family")),
-        owner=_as_optional_str(obj.get("owner")),
-        freshness_sla=_as_optional_str(obj.get("freshness_sla")),
-        retention_policy=_as_optional_str(obj.get("retention_policy")),
-        stable_id=_as_optional_str(obj.get("stable_id")),
-        schema_version=_as_optional_str(obj.get("schema_version")),
+        description=_as_optional_str(payload.description),
+        family=_as_optional_str(payload.family),
+        owner=_as_optional_str(payload.owner),
+        freshness_sla=_as_optional_str(payload.freshness_sla),
+        retention_policy=_as_optional_str(payload.retention_policy),
+        stable_id=_as_optional_str(payload.stable_id),
+        schema_version=_as_optional_str(payload.schema_version),
         upstream_dependencies=upstream,
         validation_profile=validation_profile,
         composition=composition,
     )
+
+
+def contract_from_json_obj(obj: Mapping[str, object]) -> DatasetContract:
+    """Parse a DatasetContract from a JSON object.
+
+    Returns
+    -------
+    DatasetContract
+        Parsed dataset contract instance.
+    """
+    return contract_from_payload(obj)
 
 
 def _as_optional_str(value: object) -> str | None:
@@ -195,6 +298,10 @@ def _as_bool(value: object, *, default: bool) -> bool:
 
 
 __all__ = [
+    "DatasetContractPayload",
     "contract_from_json_obj",
+    "contract_from_payload",
+    "contract_payload_from_contract",
+    "contract_payload_to_json_obj",
     "contract_to_json_obj",
 ]

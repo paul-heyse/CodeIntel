@@ -674,6 +674,33 @@ DATASETS_SCAFFOLD_DRY_RUN = OptionSpec(
     help="Perform validation only without writing files.",
     negative=("--no-dry-run",),
 )
+DATASETS_MIGRATE_TABLE_KEYS = OptionSpec(
+    arg_name="table_keys",
+    names=("--table-key",),
+    help="Dataset table key to migrate (repeatable).",
+)
+DATASETS_MIGRATE_DATASET_ROOT = OptionSpec(
+    arg_name="dataset_root_dir",
+    names=("--dataset-root-dir",),
+    help="Root directory for dataset snapshots.",
+)
+DATASETS_MIGRATE_SNAPSHOT_ID = OptionSpec(
+    arg_name="snapshot_id",
+    names=("--snapshot-id",),
+    help="Snapshot identifier for dataset migration.",
+)
+DATASETS_MIGRATE_OVERWRITE = OptionSpec(
+    arg_name="overwrite",
+    names=("--overwrite",),
+    help="Overwrite existing dataset snapshots.",
+    negative=("--no-overwrite",),
+)
+DATASETS_MIGRATE_DROP_DUCKDB = OptionSpec(
+    arg_name="drop_duckdb_tables",
+    names=("--drop-duckdb-tables",),
+    help="Drop legacy DuckDB tables after successful parquet migration.",
+    negative=("--no-drop-duckdb-tables",),
+)
 
 
 # ---------------------------------------------------------------------------

@@ -73,6 +73,7 @@ from codeintel.cli.errors.results import (
     fail_project_error,
 )
 from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
     build_execution_context,
     compose_cli_runtime_bundle,
     compose_cli_runtime_bundle_with_env,
@@ -1055,7 +1056,7 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         all_targets=ctx.params.get_bool("all_targets"),
         dry_run=ctx.params.get_bool("dry_run"),
         force=_optional_list_param(ctx.params, "force"),
-        validate_outputs=ctx.params.get_bool("validate_outputs"),
+        validate_outputs=ctx.params.get_bool("validate_outputs", default=True),
         publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
         parallel_backend=parallel_backend,
         max_workers=max_workers,
@@ -1166,7 +1167,7 @@ def _bootstrap_suite_plan(
         domain=domain,
         force=None,
         run_mode=RunMode.EXECUTE,
-        validate_outputs=False,
+        validate_outputs=True,
         publish_serving_snapshot=False,
         parallel_backend="sequential",
         max_workers=None,
@@ -1472,7 +1473,7 @@ def _build_run_result(
         runtime_bundle = compose_cli_runtime_bundle(
             runtime=runtime,
             gateway=gateway,
-            config_overrides=config_overrides,
+            options=CliRuntimeComposeOptions(config_overrides=config_overrides),
         )
         goals, error = _resolve_goals_for_params(
             params=params,

@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from codeintel.storage.validation.mode import ContractValidationMode
 
-type DatasetSource = Literal["parquet_only", "duckdb"]
-
-__all__ = ["DatasetSource", "StorageConfig", "StorageConfigOptions"]
+__all__ = ["StorageConfig", "StorageConfigOptions"]
 
 
 def _default_validation_summary_path(db_path: Path) -> Path | None:
@@ -25,7 +22,6 @@ class StorageConfigOptions:
     """Optional overrides for StorageConfig constructors."""
 
     dataset_root_dir: Path | None = None
-    dataset_source: DatasetSource = "parquet_only"
     validation_mode: ContractValidationMode = ContractValidationMode.LENIENT
     validation_summary_path: Path | None = None
     attach_meta: bool = True
@@ -37,7 +33,6 @@ class StorageConfig:
 
     db_path: Path
     dataset_root_dir: Path | None = None
-    dataset_source: DatasetSource = "parquet_only"
     read_only: bool = False
     apply_schema: bool = False
     ensure_views: bool = False
@@ -81,7 +76,6 @@ class StorageConfig:
         return cls(
             db_path=db_path,
             dataset_root_dir=resolved_options.dataset_root_dir,
-            dataset_source=resolved_options.dataset_source,
             read_only=False,
             apply_schema=True,
             ensure_views=False,
@@ -120,7 +114,6 @@ class StorageConfig:
         return cls(
             db_path=db_path,
             dataset_root_dir=resolved_options.dataset_root_dir,
-            dataset_source=resolved_options.dataset_source,
             read_only=True,
             apply_schema=False,
             ensure_views=False,

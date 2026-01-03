@@ -19,6 +19,7 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
 from codeintel.build.tabular.frames import empty_lazyframe_for_table
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
 
 if TYPE_CHECKING:
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
@@ -53,7 +54,7 @@ class DatasetSaveSpec:
     table_key: str
     partition_columns: tuple[str, ...] = ()
     collect_group: str | None = None
-    validation_profile: str | None = "lenient"
+    validation_profile: ValidationProfile | None = "lenient"
     output_role: OutputRole | None = None
     output_name: str | None = None
 
@@ -63,7 +64,7 @@ class RelationTableSaveSpec:
     """Specification for saving a table output."""
 
     table_key: str
-    validation_profile: str | None = "lenient"
+    validation_profile: ValidationProfile | None = "lenient"
     output_role: OutputRole | None = None
     output_name: str | None = None
 
@@ -111,17 +112,21 @@ class _TaggedValidation(check_output_custom):
 
 def _resolve_validation_profile(
     *,
-    default_profile: str | None,
+    default_profile: ValidationProfile | None,
     config_mode: str,
-) -> str | None:
+) -> ValidationProfile | None:
     if not isinstance(config_mode, str):
         return default_profile
     normalized = config_mode.strip().lower()
-    if normalized in {"strict", "lenient"}:
-        return normalized
     if normalized in {"off", "none", ""}:
         return None
-    return default_profile
+    try:
+        return normalize_validation_profile(
+            normalized,
+            default=default_profile or "strict",
+        )
+    except ValueError:
+        return default_profile
 
 
 def _resolve_min_rows(
@@ -141,7 +146,7 @@ def _resolve_min_rows(
 def _validation_from_config(
     *,
     table_key: str,
-    default_profile: str | None,
+    default_profile: ValidationProfile | None,
 ) -> NodeTransformLifecycle:
     def _factory(
         *,

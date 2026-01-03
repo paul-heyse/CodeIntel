@@ -82,13 +82,13 @@ def contract_schema_for_table_key(
     pa.Schema | None
         The resolved contract schema, or None when unavailable.
     """
+    resolved_options = options or ContractSchemaOptions()
     if con is None:
         return _parquet_schema_for_table(
             table_key=table_key,
-            dataset_root_dir=dataset_root_dir,
-            snapshot_id=snapshot_id,
+            dataset_root_dir=resolved_options.dataset_root_dir,
+            snapshot_id=resolved_options.snapshot_id,
         )
-    resolved_options = options or ContractSchemaOptions()
     metadata_schema = _metadata_schema_for_table(
         con,
         table_key=table_key,

@@ -133,6 +133,20 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         include_prefixes=("src/codeintel/core/",),
     ),
     Guardrail(
+        name="core_json_imports",
+        pattern=re.compile(r"(?m)^\\s*(?:from|import)\\s+(?:json|orjson)\\b"),
+        message=(
+            "Core must not import json/orjson outside boundary modules; use "
+            "codeintel.core.helpers.json or msgspec helpers."
+        ),
+        include_prefixes=("src/codeintel/core/",),
+        allow_prefixes=(
+            "src/codeintel/core/helpers/json.py",
+            "src/codeintel/core/exports/",
+            "src/codeintel/core/errors/problem_details.py",
+        ),
+    ),
+    Guardrail(
         name="legacy_macro_helpers",
         pattern=re.compile(r"\b(macro_exists|safe_macro_exists|INGEST_MACRO_TABLES)\b"),
         message="Legacy macro helpers are removed.",
@@ -230,7 +244,7 @@ GUARDRAILS: tuple[Guardrail, ...] = (
     ),
     Guardrail(
         name="core_json_column_types",
-        pattern=re.compile(r"Column\\(\\s*\"[^\"]+\"\\s*,\\s*\"JSON\""),
+        pattern=re.compile(r"Column\(\s*\"[^\"]+\"\s*,\s*\"JSON\""),
         message="Core table schemas must not declare JSON columns; use BLOB or Arrow-native types.",
         include_prefixes=("src/codeintel/core/",),
         allow_prefixes=("tests/",),
@@ -379,6 +393,27 @@ def find_violations(repo_root: Path) -> list[str]:
     return violations
 
 
+def _policy_doc_issues(repo_root: Path) -> list[str]:
+    """Return policy doc violations for the core data format policy.
+
+    Returns
+    -------
+    list[str]
+        Policy doc violation messages.
+    """
+    policy_path = repo_root / "docs" / "core_data_format_policy.md"
+    if not policy_path.exists():
+        return ["docs/core_data_format_policy.md: missing core data format policy document"]
+    text = policy_path.read_text(encoding="utf-8")
+    required_phrases = ("JSON is boundary-only", "Arrow/Parquet")
+    missing = [phrase for phrase in required_phrases if phrase not in text]
+    return (
+        ["docs/core_data_format_policy.md: missing required policy language " + ", ".join(missing)]
+        if missing
+        else []
+    )
+
+
 def _guardrails_storage_config(runtime: ResolvedRuntime) -> StorageConfig:
     """Build a storage config for guardrail checks.
 
@@ -485,6 +520,58 @@ def _coerce_int(value: object) -> int | None:
     return None
 
 
+def _run_runtime_guardrails(
+    *,
+    repo_root: Path,
+) -> tuple[RuntimeBundle | None, GraphValidationResult | None, list[str], str | None]:
+    runtime = resolve_from_params(
+        {"project_root": repo_root, "repo_root": repo_root},
+        allow_fallback=True,
+    )
+    config = _guardrails_storage_config(runtime)
+    try:
+        gateway = open_gateway(config)
+    except (FileNotFoundError, StorageConnectionError):
+        inference_gateway = open_inference_gateway(schema_provider=MappingSchemaProvider({}))
+        try:
+            runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=inference_gateway)
+            configure_contract_service(runtime=runtime_bundle)
+        finally:
+            inference_gateway.close()
+
+        def _seed_contract_catalog(con: DuckDBConnection) -> None:
+            persist_contract_catalog_to_connection(con, inputs={"source": "guardrails"})
+
+        gateway = open_memory_gateway(
+            options=MemoryGatewayOptions(
+                apply_schema=False,
+                ensure_views=False,
+                validate_schema=False,
+                suppress_registry_health_log=True,
+            ),
+            seed_contract_catalog=_seed_contract_catalog,
+        )
+    runtime_bundle: RuntimeBundle | None = None
+    graph_result: GraphValidationResult | None = None
+    observation_issues: list[str] = []
+    error: str | None = None
+    try:
+        runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
+        graph_result = validate_graph(runtime=runtime_bundle, validate_schema=False)
+        observation_issues = _schema_observation_issues(runtime_bundle, gateway=gateway)
+    except ImportError as exc:
+        error = "\n".join(
+            [
+                "Hamilton graph validation could not run due to an import error.",
+                f"{type(exc).__name__}: {exc}",
+                traceback.format_exc(),
+            ]
+        )
+    finally:
+        gateway.close()
+    return runtime_bundle, graph_result, observation_issues, error
+
+
 def _schema_observation_issues(
     runtime_bundle: RuntimeBundle,
     *,
@@ -544,48 +631,18 @@ def main() -> int:
         for line in violations:
             sys.stderr.write(f"{line}\n")
         return 1
-
-    runtime = resolve_from_params(
-        {"project_root": repo_root, "repo_root": repo_root},
-        allow_fallback=True,
-    )
-    config = _guardrails_storage_config(runtime)
-    try:
-        gateway = open_gateway(config)
-    except (FileNotFoundError, StorageConnectionError):
-        inference_gateway = open_inference_gateway(schema_provider=MappingSchemaProvider({}))
-        try:
-            runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=inference_gateway)
-            configure_contract_service(runtime=runtime_bundle)
-        finally:
-            inference_gateway.close()
-
-        def _seed_contract_catalog(con: DuckDBConnection) -> None:
-            persist_contract_catalog_to_connection(con, inputs={"source": "guardrails"})
-
-        gateway = open_memory_gateway(
-            options=MemoryGatewayOptions(
-                apply_schema=False,
-                ensure_views=False,
-                validate_schema=False,
-                suppress_registry_health_log=True,
-            ),
-            seed_contract_catalog=_seed_contract_catalog,
-        )
-    runtime_bundle: RuntimeBundle | None = None
-    graph_result: GraphValidationResult | None = None
-    observation_issues: list[str] = []
-    try:
-        runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
-        graph_result = validate_graph(runtime=runtime_bundle, validate_schema=False)
-        observation_issues = _schema_observation_issues(runtime_bundle, gateway=gateway)
-    except ImportError as exc:
-        sys.stderr.write("Hamilton graph validation could not run due to an import error.\n")
-        sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
-        sys.stderr.write(traceback.format_exc())
+    policy_issues = _policy_doc_issues(repo_root)
+    if policy_issues:
+        for line in policy_issues:
+            sys.stderr.write(f"{line}\n")
         return 1
-    finally:
-        gateway.close()
+
+    runtime_bundle, graph_result, observation_issues, error = _run_runtime_guardrails(
+        repo_root=repo_root
+    )
+    if error is not None:
+        sys.stderr.write(error)
+        return 1
     if graph_result is None:
         sys.stderr.write("Hamilton graph validation did not run.\n")
         return 1

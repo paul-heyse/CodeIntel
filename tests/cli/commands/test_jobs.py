@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.core.result_types import ActionResult, JobInfo, ListResult
+from codeintel.cli.core.result_types import ActionResult, JobInfo, TabularResult
 from codeintel.cli.deps.protocols import JobManagerProtocol
 from codeintel.cli.handlers.jobs import (
     jobs_cancel_handler,
@@ -17,6 +17,8 @@ from codeintel.cli.handlers.jobs import (
 from codeintel.cli.jobs import JobInfo as JobModel
 from codeintel.cli.jobs import JobStatus
 from codeintel.cli.services.jobs import JobService
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.query_results import records_from_arrow_reader
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,
@@ -207,14 +209,14 @@ class TestListJobs:
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
-        expect_is_instance(data, ListResult)
-        expect_equal(data.count, 2)
-        expect_equal(len(data.items), 2)
-
-        job = data.items[0]
-        expect_is_instance(job, JobInfo)
-        expect_equal(job.job_id, "job-001")
-        expect_equal(job.status, "completed")
+        expect_is_instance(data, TabularResult)
+        if isinstance(data, TabularResult):
+            reader = data.stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            records = records_from_arrow_reader(reader)
+            expect_equal(data.metadata.get("count"), 2)
+            expect_equal(len(records), 2)
+            expect_equal(records[0]["job_id"], "job-001")
+            expect_equal(records[0]["status"], "completed")
 
     @staticmethod
     def test_list_filtered_by_status() -> None:
@@ -224,8 +226,12 @@ class TestListJobs:
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
-        expect_equal(data.count, 1)
-        expect_equal(data.items[0].status, "running")
+        expect_is_instance(data, TabularResult)
+        if isinstance(data, TabularResult):
+            reader = data.stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            records = records_from_arrow_reader(reader)
+            expect_equal(data.metadata.get("count"), 1)
+            expect_equal(records[0]["status"], "running")
 
     @staticmethod
     def test_list_with_limit() -> None:
@@ -235,7 +241,9 @@ class TestListJobs:
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
-        expect_equal(data.count, 1)
+        expect_is_instance(data, TabularResult)
+        if isinstance(data, TabularResult):
+            expect_equal(data.metadata.get("count"), 1)
 
 
 class TestGetJobStatus:

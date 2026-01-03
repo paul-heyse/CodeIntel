@@ -18,7 +18,7 @@ from codeintel.build.graphs.compute.imports import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
@@ -86,7 +86,7 @@ def import_graph_analysis(
     ImportAnalysisResult
         Import graph analysis derived from module sources.
     """
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    modules_frame = tabular_to_frame(q__core__modules)
     modules: set[str] = set()
     edges: list[ImportEdge] = []
     repo_root = env.snapshot.repo_root

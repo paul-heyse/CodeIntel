@@ -33,7 +33,7 @@ class BuildRunContextOverrides:
     execution_options: BuildExecutionOptions | None = None
     config_overrides: BuildConfigOverrides | None = None
     force_targets: frozenset[str] | None = None
-    validate_outputs: bool = False
+    validate_outputs: bool = True
     validation_mode: ContractValidationMode | None = None
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None
@@ -53,7 +53,7 @@ class BuildRunContext:
     execution_settings: HamiltonExecutionSettings | None = None
     execution_options: BuildExecutionOptions | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
-    validate_outputs: bool = False
+    validate_outputs: bool = True
     validation_mode: ContractValidationMode | None = None
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None

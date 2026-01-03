@@ -251,7 +251,7 @@ def run_structured_handler[ResultT](
     *args
         Positional arguments for the handler.
     output_format
-        Output format (TEXT or JSON).
+        Output format (TEXT, JSON, or JSONL).
     **kwargs
         Keyword arguments for the handler.
 
@@ -268,7 +268,7 @@ def run_structured_handler[ResultT](
             raise SystemExit(exit_code)
     except ValidationError as exc:
         problem = _exception_to_problem(exc)
-        if output_format == OutputFormat.JSON:
+        if output_format in {OutputFormat.JSON, OutputFormat.JSONL, OutputFormat.ARROW_IPC}:
             sys.stderr.write(problem.to_json())
             sys.stderr.write("\n")
         else:
@@ -276,7 +276,7 @@ def run_structured_handler[ResultT](
         raise SystemExit(exc.exit_code) from exc
     except RuntimeError as exc:
         problem = _exception_to_problem(exc)
-        if output_format == OutputFormat.JSON:
+        if output_format in {OutputFormat.JSON, OutputFormat.JSONL, OutputFormat.ARROW_IPC}:
             sys.stderr.write(problem.to_json())
             sys.stderr.write("\n")
         else:
@@ -301,7 +301,7 @@ def handle_cli_error(
     stderr_writer
         Writer to receive normalized error messages.
     output_format
-        Output format (TEXT for human-readable, JSON for Problem Details).
+        Output format (TEXT for human-readable, JSON/JSONL for Problem Details).
 
     Returns
     -------
@@ -310,7 +310,7 @@ def handle_cli_error(
     """
     problem = _exception_to_problem(exc)
 
-    if output_format == OutputFormat.JSON:
+    if output_format in {OutputFormat.JSON, OutputFormat.JSONL, OutputFormat.ARROW_IPC}:
         stderr_writer.write(problem.to_json())
         stderr_writer.write("\n")
     else:

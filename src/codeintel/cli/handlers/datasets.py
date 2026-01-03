@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,10 +25,13 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDiffResult,
     DatasetLintResult,
-    DatasetListResult,
-    DatasetParquetMigrationResult,
     DatasetScaffoldResult,
     DatasetSnapshotResult,
+    StatusResult,
+    TabularResult,
+)
+from codeintel.cli.core.result_types import (
+    DatasetListResult as _DatasetListResult,
 )
 from codeintel.cli.errors.builder import ProblemBuilder
 from codeintel.cli.errors.results import (
@@ -49,14 +53,16 @@ from codeintel.storage.validation import collect_contract_issues
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from pyarrow import RecordBatchReader
+
     from codeintel.cli.context import CommandContext
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway.protocol import DuckDBRelation
-    from pyarrow import RecordBatchReader
 
 LOG = logging.getLogger(__name__)
+DatasetListResult = _DatasetListResult
 
 
 class DatasetListFn(Protocol):
@@ -89,7 +95,7 @@ DEFAULT_DATASET_DEPS = DatasetDependencies(
 def datasets_list_handler(
     ctx: CommandContext,
     deps: DatasetDependencies | None = None,
-) -> CliResult[DatasetListResult]:
+) -> CliResult[TabularResult]:
     """List datasets with capabilities and optional filters.
 
     Parameters
@@ -104,8 +110,8 @@ def datasets_list_handler(
 
     Returns
     -------
-    CliResult[DatasetListResult]
-        List of datasets.
+    CliResult[TabularResult]
+        Stream of dataset records.
     """
     deps = deps or DEFAULT_DATASET_DEPS
     LOG.info("Listing datasets")
@@ -303,31 +309,52 @@ def _manifest_extras(table_schema: TableSchema) -> dict[str, object]:
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _ParquetMigrationContext:
+    dataset_root_dir: Path
+    snapshot_id: str
+    repo: str
+    commit: str
+    overwrite: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _MigrationSetup:
+    gateway: BuildGateway
+    selected: Sequence[DatasetContract]
+    context: _ParquetMigrationContext
+    drop_duckdb_tables: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _ParquetMetadataContext:
+    table_schema: TableSchema
+    schema_hash_value: str
+    schema_digest_value: str
+    partition_columns: tuple[str, ...]
+    repo: str
+    commit: str
+    snapshot_id: str
+
+
 def _parquet_metadata_payload(
-    *,
-    table_schema: TableSchema,
-    schema_hash_value: str,
-    schema_digest_value: str,
-    partition_columns: tuple[str, ...],
-    repo: str,
-    commit: str,
-    snapshot_id: str,
+    context: _ParquetMetadataContext,
 ) -> dict[str, object]:
-    columns_json = {col.name: col.type for col in table_schema.columns}
-    nullability_json = {col.name: col.nullable for col in table_schema.columns}
+    columns_json = {col.name: col.type for col in context.table_schema.columns}
+    nullability_json = {col.name: col.nullable for col in context.table_schema.columns}
     return {
-        "codeintel.table_key": table_schema.table_key,
-        "codeintel.domain": table_schema.schema,
-        "codeintel.schema_hash": schema_hash_value,
-        "codeintel.schema_digest": schema_digest_value,
+        "codeintel.table_key": context.table_schema.table_key,
+        "codeintel.domain": context.table_schema.schema,
+        "codeintel.schema_hash": context.schema_hash_value,
+        "codeintel.schema_digest": context.schema_digest_value,
         "codeintel.columns_json": columns_json,
         "codeintel.nullability_json": nullability_json,
-        "codeintel.primary_keys_json": list(table_schema.primary_key),
-        "codeintel.partition_columns_json": list(partition_columns),
-        "codeintel.build_id": snapshot_id,
-        "codeintel.repo": repo,
-        "codeintel.commit": commit,
-        "codeintel.snapshot_id": snapshot_id,
+        "codeintel.primary_keys_json": list(context.table_schema.primary_key),
+        "codeintel.partition_columns_json": list(context.partition_columns),
+        "codeintel.build_id": context.snapshot_id,
+        "codeintel.repo": context.repo,
+        "codeintel.commit": context.commit,
+        "codeintel.snapshot_id": context.snapshot_id,
         "codeintel.generated_at": datetime.now(tz=UTC).isoformat(),
         "codeintel.migration_source": "duckdb",
     }
@@ -338,27 +365,75 @@ def _relation_reader(relation: DuckDBRelation) -> RecordBatchReader:
     return adapter.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
 
 
+def _resolve_migration_context(
+    ctx: CommandContext,
+) -> _ParquetMigrationContext | CliResult[StatusResult]:
+    dataset_root_dir = _resolve_dataset_root_dir(ctx)
+    if dataset_root_dir is None:
+        return cast(
+            "CliResult[StatusResult]",
+            fail_missing_required("dataset_root_dir"),
+        )
+    snapshot_id = _resolve_snapshot_id(ctx)
+    if snapshot_id is None:
+        return cast(
+            "CliResult[StatusResult]",
+            fail_missing_required("snapshot_id"),
+        )
+    repo = ctx.runtime.repo if ctx.has_runtime else ""
+    commit = snapshot_id
+    overwrite = ctx.params.get_bool("overwrite")
+    return _ParquetMigrationContext(
+        dataset_root_dir=dataset_root_dir,
+        snapshot_id=snapshot_id,
+        repo=repo,
+        commit=commit,
+        overwrite=overwrite,
+    )
+
+
+def _select_contracts_for_migration(
+    contracts: list[DatasetContract],
+    table_keys: tuple[str, ...] | None,
+) -> tuple[
+    list[DatasetContract],
+    CliResult[StatusResult] | None,
+]:
+    contracts_by_key = {contract.table_key: contract for contract in contracts}
+    if table_keys is None:
+        selected = sorted(contracts_by_key.values(), key=lambda contract: contract.table_key)
+        return selected, None
+    missing = sorted(key for key in table_keys if key not in contracts_by_key)
+    if missing:
+        message = f"Unknown dataset table keys: {', '.join(missing)}"
+        return (
+            [],
+            cast(
+                "CliResult[StatusResult]",
+                fail_invalid_value("table_keys", ",".join(missing), message),
+            ),
+        )
+    selected = [contracts_by_key[key] for key in table_keys]
+    return selected, None
+
+
 def _migrate_dataset(
     *,
     gateway: BuildGateway,
     contract: DatasetContract,
-    dataset_root_dir: Path,
-    snapshot_id: str,
-    repo: str,
-    commit: str,
-    overwrite: bool,
+    context: _ParquetMigrationContext,
 ) -> bool:
     table_schema = contract.schema
     if table_schema is None:
         msg = f"Dataset schema missing for {contract.table_key}"
         raise ValueError(msg)
     snapshot_dir = dataset_snapshot_dir(
-        dataset_root_dir,
+        context.dataset_root_dir,
         table_key=contract.table_key,
-        snapshot_id=snapshot_id,
+        snapshot_id=context.snapshot_id,
     )
     if snapshot_dir.exists():
-        if not overwrite:
+        if not context.overwrite:
             return False
         if not snapshot_dir.is_dir():
             msg = f"Dataset snapshot path is not a directory: {snapshot_dir}"
@@ -369,15 +444,16 @@ def _migrate_dataset(
     schema_hash_value = schema_hash(table_schema)
     schema_digest_value = schema_digest(table_schema)
     partition_columns = _partition_columns_for_schema(table_schema)
-    metadata = _parquet_metadata_payload(
+    metadata_context = _ParquetMetadataContext(
         table_schema=table_schema,
         schema_hash_value=schema_hash_value,
         schema_digest_value=schema_digest_value,
         partition_columns=partition_columns,
-        repo=repo,
-        commit=commit,
-        snapshot_id=snapshot_id,
+        repo=context.repo,
+        commit=context.commit,
+        snapshot_id=context.snapshot_id,
     )
+    metadata = _parquet_metadata_payload(metadata_context)
     options = ArrowDatasetWriteOptions(
         partition_columns=partition_columns,
         schema_hash=schema_hash_value,
@@ -385,62 +461,39 @@ def _migrate_dataset(
         schema_metadata=metadata,
     )
     write_dataset(
-        dataset_root=dataset_root_dir,
+        dataset_root=context.dataset_root_dir,
         table_key=contract.table_key,
-        snapshot_id=snapshot_id,
+        snapshot_id=context.snapshot_id,
         data=reader,
         options=options,
     )
     return True
 
 
-def datasets_migrate_parquet_handler(
-    ctx: CommandContext,
-    deps: DatasetDependencies | None = None,
-) -> CliResult[DatasetParquetMigrationResult]:
-    """Materialize DuckDB-backed datasets as Parquet snapshots."""
-    deps = deps or DEFAULT_DATASET_DEPS
-    dataset_root_dir = _resolve_dataset_root_dir(ctx)
-    if dataset_root_dir is None:
-        return cast(
-            "CliResult[DatasetParquetMigrationResult]",
-            fail_missing_required("dataset_root_dir"),
-        )
-    snapshot_id = _resolve_snapshot_id(ctx)
-    if snapshot_id is None:
-        return cast(
-            "CliResult[DatasetParquetMigrationResult]",
-            fail_missing_required("snapshot_id"),
-        )
-    repo = ctx.runtime.repo if ctx.has_runtime else ""
-    commit = snapshot_id
-    table_keys = _resolve_table_keys(ctx)
-    overwrite = ctx.params.get_bool("overwrite")
+def _migration_failure(
+    *,
+    message_prefix: str,
+    errors: Sequence[str],
+) -> CliResult[StatusResult]:
+    message = f"{message_prefix}: " + "; ".join(errors)
+    problem = ProblemBuilder.operation(
+        OperationErrorCode.DEPENDENCY_FAILED,
+        "datasets.migrate_parquet",
+        message,
+    )
+    return CliResult.fail(problem)
 
-    try:
-        gateway = ctx.gateway
-    except (AttributeError, RuntimeError, ValueError) as exc:
-        return fail_project_error("datasets", str(exc))
 
-    dataset_root_dir.mkdir(parents=True, exist_ok=True)
-    contracts = deps.list_datasets(docs_view="include", read_only="include")
-    contracts_by_key = {contract.table_key: contract for contract in contracts}
-    if table_keys is None:
-        selected = sorted(contracts_by_key.values(), key=lambda contract: contract.table_key)
-    else:
-        missing = sorted(key for key in table_keys if key not in contracts_by_key)
-        if missing:
-            message = f"Unknown dataset table keys: {', '.join(missing)}"
-            return cast(
-                "CliResult[DatasetParquetMigrationResult]",
-                fail_invalid_value("table_keys", ",".join(missing), message),
-            )
-        selected = [contracts_by_key[key] for key in table_keys]
-
+def _run_parquet_migration(
+    *,
+    gateway: BuildGateway,
+    contracts: Sequence[DatasetContract],
+    context: _ParquetMigrationContext,
+) -> tuple[list[str], list[str], list[str]]:
     exported: list[str] = []
     skipped: list[str] = []
     errors: list[str] = []
-    for contract in selected:
+    for contract in contracts:
         if contract.is_view:
             skipped.append(contract.table_key)
             continue
@@ -448,11 +501,7 @@ def datasets_migrate_parquet_handler(
             did_export = _migrate_dataset(
                 gateway=gateway,
                 contract=contract,
-                dataset_root_dir=dataset_root_dir,
-                snapshot_id=snapshot_id,
-                repo=repo,
-                commit=commit,
-                overwrite=overwrite,
+                context=context,
             )
             if did_export:
                 exported.append(contract.table_key)
@@ -460,22 +509,103 @@ def datasets_migrate_parquet_handler(
                 skipped.append(contract.table_key)
         except (duckdb.Error, FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
             errors.append(f"{contract.table_key}: {exc}")
+    return exported, skipped, errors
 
+
+def _drop_legacy_tables(
+    *,
+    gateway: BuildGateway,
+    table_keys: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    dropped: list[str] = []
+    errors: list[str] = []
+    for table_key in table_keys:
+        try:
+            gateway.policy.drop_table(table_key)
+            dropped.append(table_key)
+        except (duckdb.Error, RuntimeError, ValueError) as exc:
+            errors.append(f"{table_key}: {exc}")
+    return dropped, errors
+
+
+def _resolve_migration_setup(
+    ctx: CommandContext,
+    deps: DatasetDependencies,
+) -> _MigrationSetup | CliResult[StatusResult]:
+    table_keys = _resolve_table_keys(ctx)
+    drop_duckdb_tables = ctx.params.get_bool("drop_duckdb_tables")
+    context = _resolve_migration_context(ctx)
+    if isinstance(context, CliResult):
+        return context
+
+    try:
+        gateway = ctx.gateway
+    except (AttributeError, RuntimeError, ValueError) as exc:
+        return fail_project_error("datasets", str(exc))
+
+    context.dataset_root_dir.mkdir(parents=True, exist_ok=True)
+    contracts = deps.list_datasets(docs_view="include", read_only="include")
+    selected, error_result = _select_contracts_for_migration(contracts, table_keys)
+    if error_result is not None:
+        return error_result
+
+    return _MigrationSetup(
+        gateway=gateway,
+        selected=selected,
+        context=context,
+        drop_duckdb_tables=drop_duckdb_tables,
+    )
+
+
+def datasets_migrate_parquet_handler(
+    ctx: CommandContext,
+    deps: DatasetDependencies | None = None,
+) -> CliResult[StatusResult]:
+    """Materialize DuckDB-backed datasets as Parquet snapshots.
+
+    Returns
+    -------
+    CliResult[StatusResult]
+        Parquet migration status result.
+    """
+    deps = deps or DEFAULT_DATASET_DEPS
+    setup = _resolve_migration_setup(ctx, deps)
+    if isinstance(setup, CliResult):
+        return setup
+
+    exported, skipped, errors = _run_parquet_migration(
+        gateway=setup.gateway,
+        contracts=setup.selected,
+        context=setup.context,
+    )
     if errors:
-        message = "Parquet migration failed for datasets: " + "; ".join(errors)
-        problem = ProblemBuilder.operation(
-            OperationErrorCode.DEPENDENCY_FAILED,
-            "datasets.migrate_parquet",
-            message,
+        return _migration_failure(
+            message_prefix="Parquet migration failed for datasets",
+            errors=errors,
         )
-        return CliResult.fail(problem)
+    dropped: list[str] = []
+    if setup.drop_duckdb_tables:
+        dropped, errors = _drop_legacy_tables(
+            gateway=setup.gateway,
+            table_keys=exported,
+        )
+        if errors:
+            return _migration_failure(
+                message_prefix="Parquet cleanup failed for datasets",
+                errors=errors,
+            )
 
     return CliResult.ok(
-        DatasetParquetMigrationResult(
-            dataset_root_dir=str(dataset_root_dir),
-            snapshot_id=snapshot_id,
-            exported=sorted(exported),
-            skipped=sorted(skipped),
+        StatusResult(
+            status="ok",
+            message="Parquet migration completed.",
+            details={
+                "dataset_root_dir": str(setup.context.dataset_root_dir),
+                "snapshot_id": setup.context.snapshot_id,
+                "exported": sorted(exported),
+                "skipped": sorted(skipped),
+                "dropped": sorted(dropped),
+            },
         )
     )
 
@@ -538,7 +668,6 @@ __all__ = [
     "DatasetDiffResult",
     "DatasetLintResult",
     "DatasetListResult",
-    "DatasetParquetMigrationResult",
     "DatasetScaffoldResult",
     "DatasetSnapshotResult",
     "datasets_diff_handler",

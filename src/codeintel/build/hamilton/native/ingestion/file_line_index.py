@@ -19,7 +19,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import (
     empty_frame_for_table,
     rows_to_frame,
@@ -108,7 +108,7 @@ def file_line_index__base(
     polars.LazyFrame
         Lazy frame of line index rows.
     """
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
+    modules_frame = tabular_to_frame(q__core__modules)
     if modules_frame.is_empty():
         return empty_frame_for_table(FILE_LINE_INDEX_TABLE_KEY)
 

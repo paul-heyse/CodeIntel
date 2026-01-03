@@ -20,7 +20,7 @@ def test_insert_rows_normalizes_mapping(fresh_gateway: StorageGateway) -> None:
     row = {
         "repo": "r1",
         "commit": "c1",
-        "modules": [],
+        "modules": {},
         "overlays": None,
         "generated_at": now,
     }
@@ -29,10 +29,7 @@ def test_insert_rows_normalizes_mapping(fresh_gateway: StorageGateway) -> None:
     warehouse.materialize_mappings("core.repo_map", [row])
 
     result = fresh_gateway.con.execute(
-        (
-            "SELECT repo, commit, CAST(modules AS VARCHAR), overlays, generated_at "
-            "FROM core.repo_map WHERE repo = ? AND commit = ?"
-        ),
+        "SELECT repo, commit FROM core.repo_map WHERE repo = ? AND commit = ?",
         ["r1", "c1"],
     ).fetchone()
     if result is None:
@@ -51,7 +48,7 @@ def test_insert_rows_raises_on_missing_column(fresh_gateway: StorageGateway) -> 
                 {
                     "repo": "r1",
                     "commit": "c1",
-                    "modules": [],
+                    "modules": {},
                     "overlays": None,
                 },
             ],

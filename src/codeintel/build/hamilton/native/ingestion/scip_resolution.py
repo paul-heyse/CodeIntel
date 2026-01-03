@@ -22,7 +22,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame, tabular_to_lazyframe
 from codeintel.build.tabular.frames import (
     dedupe_frame_for_table,
     rows_to_frame,
@@ -472,8 +472,8 @@ def scip_resolution__occurrence_syntax_xref__base(
     pl.LazyFrame
         Lazy frame for core.scip_occurrence_syntax_xref.
     """
-    occurrences_frame = tabular_to_lazyframe(q__core__scip_occurrence_span_xref).collect()
-    nodes_frame = tabular_to_lazyframe(q__core__syntax_nodes).collect()
+    occurrences_frame = tabular_to_frame(q__core__scip_occurrence_span_xref)
+    nodes_frame = tabular_to_frame(q__core__syntax_nodes)
     rows = _occurrence_syntax_xref_rows(occurrences_frame, nodes_frame)
     frame = rows_to_frame(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, rows)
     return dedupe_frame_for_table(frame, table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)

@@ -63,7 +63,7 @@ def test_conformance_passes_with_empty_db(fresh_gateway: StorageGateway) -> None
 
 
 def test_conformance_with_sample_rows_enabled(fresh_gateway: StorageGateway) -> None:
-    """Conformance should handle sample_rows=True with generated schemas."""
+    """Conformance should handle sample_rows=True with table contracts."""
     bootstrap_metadata_datasets(fresh_gateway.con)
     load_dataset_registry(fresh_gateway.con)
 
@@ -73,7 +73,7 @@ def test_conformance_with_sample_rows_enabled(fresh_gateway: StorageGateway) -> 
 
 
 def test_conformance_skips_missing_schema(fresh_gateway: StorageGateway) -> None:
-    """Conformance should skip datasets with no available generated schema."""
+    """Conformance should skip datasets with no available table contract."""
     bootstrap_metadata_datasets(fresh_gateway.con)
 
     report = run_conformance(fresh_gateway.con, sample_rows=True)
@@ -82,7 +82,7 @@ def test_conformance_skips_missing_schema(fresh_gateway: StorageGateway) -> None
 
 
 def test_conformance_validates_schema_rows(fresh_gateway: StorageGateway) -> None:
-    """Conformance should validate rows against generated JSON Schema."""
+    """Conformance should validate rows against TableSchema contracts."""
     bootstrap_metadata_datasets(fresh_gateway.con)
     load_dataset_registry(fresh_gateway.con)
 

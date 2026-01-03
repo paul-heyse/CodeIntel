@@ -28,9 +28,6 @@ if TYPE_CHECKING:
     )
 
 
-type DatasetSource = Literal["parquet_only", "duckdb"]
-
-
 class GatewayConfig(Protocol):
     """Protocol for gateway configuration access."""
 
@@ -47,11 +44,6 @@ class GatewayConfig(Protocol):
     @property
     def dataset_root_dir(self) -> Path | None:
         """Return the dataset root directory when configured."""
-        ...
-
-    @property
-    def dataset_source(self) -> DatasetSource:
-        """Return the dataset source policy."""
         ...
 
 
@@ -132,6 +124,11 @@ class PipelineStepRecordProtocol(Protocol):
     @property
     def completed_at(self) -> datetime | None:
         """Step completion timestamp."""
+        ...
+
+    @property
+    def row_counts(self) -> Mapping[str, object] | None:
+        """Row counts recorded for the step."""
         ...
 
     @property
@@ -688,6 +685,16 @@ class GatewayPolicy(Protocol):
         """Delete rows for a repo/commit snapshot."""
         ...
 
+    def drop_table(
+        self,
+        table_key: str,
+        *,
+        if_exists: bool = True,
+        catalog: str | None = None,
+    ) -> None:
+        """Drop a table by table key."""
+        ...
+
     def bulk_insert(
         self,
         table_key: str,
@@ -985,7 +992,6 @@ __all__ = [
     "AssetVersionRecordProtocol",
     "BuildGateway",
     "DatasetRegistryProtocol",
-    "DatasetSource",
     "GatewayAssets",
     "GatewayBuild",
     "GatewayConfig",

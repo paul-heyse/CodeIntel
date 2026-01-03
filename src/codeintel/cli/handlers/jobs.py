@@ -9,7 +9,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
-from codeintel.cli.core.result_types import ActionResult, JobInfo, JobOutputResult, ListResult
+from codeintel.cli.core.columnar import stream_from_items
+from codeintel.cli.core.result_types import ActionResult, JobInfo, JobOutputResult, TabularResult
 from codeintel.cli.errors.results import (
     fail_job_cancel_failed,
     fail_job_not_completed,
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-def jobs_list_handler(ctx: CommandContext) -> CliResult[ListResult[JobInfo]]:
+def jobs_list_handler(ctx: CommandContext) -> CliResult[TabularResult]:
     """List background jobs.
 
     Parameters
@@ -35,8 +36,8 @@ def jobs_list_handler(ctx: CommandContext) -> CliResult[ListResult[JobInfo]]:
 
     Returns
     -------
-    CliResult[ListResult[JobInfo]]
-        List of jobs.
+    CliResult[TabularResult]
+        Stream of jobs.
     """
     status_str = ctx.params.get_str("status")
     limit = ctx.params.get_int("limit", 20)
@@ -59,7 +60,13 @@ def jobs_list_handler(ctx: CommandContext) -> CliResult[ListResult[JobInfo]]:
         for job in jobs
     ]
 
-    return CliResult.ok(ListResult.from_items(items))
+    stream = stream_from_items(items)
+    return CliResult.ok(
+        TabularResult(
+            stream=stream,
+            metadata={"count": len(items)},
+        )
+    )
 
 
 def jobs_status_handler(ctx: CommandContext) -> CliResult[JobInfo]:

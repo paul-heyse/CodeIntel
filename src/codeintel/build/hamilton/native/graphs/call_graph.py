@@ -11,7 +11,7 @@ import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
@@ -229,11 +229,11 @@ def call_graph_nodes_compute(
     polars.LazyFrame
         Lazy frame for computed call graph nodes.
     """
-    goids = tabular_to_lazyframe(q__core__goids).collect()
+    goids = tabular_to_frame(q__core__goids)
     if goids.is_empty():
         return empty_frame_for_table(CALL_GRAPH_NODES_TABLE_KEY)
 
-    modules = tabular_to_lazyframe(q__core__modules).collect()
+    modules = tabular_to_frame(q__core__modules)
     module_by_path = _module_by_path(modules)
 
     function_map: dict[tuple[str, str], _FunctionDefInfo] = {}
@@ -298,11 +298,11 @@ def call_graph_edges_compute(
     InferableTabularInput
         Tabular input for computed call graph edges.
     """
-    goids = tabular_to_lazyframe(q__core__goids).collect()
+    goids = tabular_to_frame(q__core__goids)
     if goids.is_empty():
         return empty_reader_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
-    modules = tabular_to_lazyframe(q__core__modules).collect()
+    modules = tabular_to_frame(q__core__modules)
     module_by_path = _module_by_path(modules)
     goid_by_qualname, local_name_map, goid_language = _call_graph_indices(
         goids,

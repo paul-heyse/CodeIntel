@@ -65,6 +65,8 @@ class ReadPoolWarehouse:
         Path to DuckDB database file.
     cfg
         Pool configuration.
+    storage_config
+        Optional StorageConfig to reuse for read-only connections.
     """
 
     def __init__(

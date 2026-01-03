@@ -18,6 +18,7 @@ import pyarrow as pa
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
 from codeintel.core.schemas.row_models import normalize_row_value
+from codeintel.core.serialization.msgspec import encode_json_line_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -34,6 +35,8 @@ __all__ = [
     "coerce_optional_int",
     "coerce_optional_str",
     "coerce_str",
+    "iter_json_lines_from_arrow_reader",
+    "iter_json_lines_from_relation",
     "iter_records_from_arrow_reader",
     "iter_records_from_relation",
     "iter_tuples_from_arrow_reader",
@@ -441,6 +444,66 @@ def iter_records_from_relation(
     """
     reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     yield from iter_records_from_arrow_reader(
+        reader,
+        columns=columns,
+        cancel_check=cancel_check,
+    )
+
+
+def iter_json_lines_from_arrow_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    columns: Sequence[str] | None = None,
+    cancel_check: Callable[[], None] | None = None,
+) -> Iterator[str]:
+    """Yield JSON Lines strings from a RecordBatchReader.
+
+    Parameters
+    ----------
+    reader
+        Arrow record batch reader to normalize.
+    columns
+        Optional column subset/order to apply before conversion.
+    cancel_check
+        Optional cancellation hook invoked between batches.
+
+    Yields
+    ------
+    str
+        JSON Lines-encoded rows.
+    """
+    for record in iter_records_from_arrow_reader(
+        reader,
+        columns=columns,
+        cancel_check=cancel_check,
+    ):
+        yield encode_json_line_text(record)
+
+
+def iter_json_lines_from_relation(
+    relation: DuckDBRelation,
+    *,
+    columns: Sequence[str] | None = None,
+    cancel_check: Callable[[], None] | None = None,
+) -> Iterator[str]:
+    """Yield JSON Lines strings from a DuckDB relation.
+
+    Parameters
+    ----------
+    relation
+        DuckDB relation to stream.
+    columns
+        Optional column subset/order to apply before conversion.
+    cancel_check
+        Optional cancellation hook invoked between batches.
+
+    Yields
+    ------
+    str
+        JSON Lines-encoded rows.
+    """
+    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    yield from iter_json_lines_from_arrow_reader(
         reader,
         columns=columns,
         cancel_check=cancel_check,

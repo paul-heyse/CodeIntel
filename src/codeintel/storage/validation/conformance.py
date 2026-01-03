@@ -6,13 +6,14 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import duckdb
-import jsonschema
-
-from codeintel.core.errors.schema import SchemaError
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.contracts.json_schema import get_json_schema_for_table_key
 from codeintel.storage.datasets.registry import load_dataset_registry
+from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
+    TableValidationError,
+    validate_record_batch_reader,
+)
 from codeintel.storage.validation.contract import collect_contract_issues
 
 if TYPE_CHECKING:
@@ -57,33 +58,13 @@ class ConformanceReport:
         return not self.issues
 
 
-def _get_generated_schema(table_key: str) -> dict[str, object] | None:
-    """Get a generated JSON Schema for the table key.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-
-    Returns
-    -------
-    dict[str, object] | None
-        Generated JSON Schema, or None if not available.
-    """
-    try:
-        return get_json_schema_for_table_key(table_key)
-    except SchemaError as e:
-        log.debug("Schema lookup failed for %s: %s", table_key, e)
-        return None
-
-
 def _validate_schema_rows(
     con: DuckDBPyConnection,
     registry: DatasetRegistry,
     *,
     sample_size: int = 50,
 ) -> Iterable[ConformanceIssue]:
-    """Validate sampled rows against JSON Schemas when available.
+    """Validate sampled rows against TableSchema contracts.
 
     Parameters
     ----------
@@ -100,35 +81,33 @@ def _validate_schema_rows(
         Issues discovered while validating sampled rows.
     """
     for name, ds in registry.by_name.items():
-        if ds.json_schema_id is None:
-            continue
-        schema = _get_generated_schema(ds.table_key)
-        if schema is None:
-            continue
         if ds.schema is None:
             continue
-        validator = jsonschema.Draft202012Validator(schema)
         try:
             reader = (
                 con.table(ds.table_key)
                 .limit(sample_size)
                 .fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
             )
-        except duckdb.Error as exc:
+        except DuckDBError as exc:
             yield ConformanceIssue(dataset=name, message=f"Failed to sample rows: {exc}")
             continue
-        row_index = 0
-        for batch in reader:
-            for record in batch.to_pylist():
-                errors = sorted(validator.iter_errors(record), key=lambda e: e.path)
-                if errors:
-                    yield ConformanceIssue(
-                        dataset=name,
-                        message=(
-                            f"Row {row_index} failed JSON Schema validation: {errors[0].message}"
-                        ),
-                    )
-                row_index += 1
+        context = ColumnarValidationContext(
+            table_schema=ds.schema,
+            schema_observation=None,
+            validation_profile="strict",
+        )
+        try:
+            validated = validate_record_batch_reader(
+                ds.table_key,
+                reader,
+                context=context,
+                mode="strict",
+            )
+            for _ in validated:
+                pass
+        except TableValidationError as exc:
+            yield ConformanceIssue(dataset=name, message=str(exc))
 
 
 def run_conformance(
@@ -155,7 +134,8 @@ def run_conformance(
     """
     registry = load_dataset_registry(con)
     issues: list[ConformanceIssue] = [
-        ConformanceIssue(dataset=None, message=msg) for msg in collect_contract_issues(con)
+        ConformanceIssue(dataset=None, message=msg)
+        for msg in collect_contract_issues(con, missing_ok=True)
     ]
     if sample_rows:
         issues.extend(

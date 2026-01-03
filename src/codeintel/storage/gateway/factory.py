@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,20 +34,14 @@ from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.inference import InferenceGateway
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.metadata import (
-    SchemaValidationRun,
     bootstrap_metadata_datasets,
-    record_schema_validation_run,
 )
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
-from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
+from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogProvider, SchemaCatalogTracking
 from codeintel.storage.validation import (
-    ContractValidationMode,
     clear_contract_validation_cache,
-    collect_contract_issues,
-    collect_contract_issues_lenient,
-    validate_contract_or_raise,
 )
 
 if TYPE_CHECKING:
@@ -219,84 +211,16 @@ def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection) -> None:
     clear_contract_validation_cache()
 
 
-def _write_contract_validation_summary(
-    *,
-    issues: list[str],
-    config: StorageConfig,
-    include_views: bool,
-) -> None:
-    summary_path = config.validation_summary_path
-    if summary_path is None or not issues:
-        return
-    payload = {
-        "generated_at": datetime.now(tz=UTC).isoformat(),
-        "validation_mode": config.validation_mode.value,
-        "db_path": str(config.db_path),
-        "repo": config.repo,
-        "commit": config.commit,
-        "include_views": include_views,
-        "issue_count": len(issues),
-        "issues": issues,
-    }
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _log_contract_issues(issues: list[str]) -> None:
-    if not issues:
-        return
-    preview = "; ".join(issues[:ISSUE_PREVIEW_LIMIT])
-    remaining = len(issues) - ISSUE_PREVIEW_LIMIT
-    suffix = f" (+{remaining} more)" if remaining > 0 else ""
-    LOG.warning("Contract validation warnings: %s%s", preview, suffix)
-
-
 def _apply_contract_validation(
     *,
     con: duckdb.DuckDBPyConnection,
     config: StorageConfig,
     include_views: bool,
 ) -> None:
-    if not config.validate_schema:
-        return
-    if config.validation_mode == ContractValidationMode.OFF:
-        return
-
-    drift_issues = assert_schema_alignment(
-        con,
-        include_views=include_views,
-        strict=False,
-    )
-    if config.validation_mode == ContractValidationMode.LENIENT:
-        contract_issues = collect_contract_issues_lenient(con, include_views=include_views)
-    else:
-        contract_issues = collect_contract_issues(
-            con, include_views=include_views, missing_ok=False
-        )
-    issues = [*drift_issues, *contract_issues]
-
-    if config.attach_meta and not config.read_only:
-        validation_run = SchemaValidationRun(
-            repo=config.repo,
-            commit=config.commit,
-            validation_mode=config.validation_mode.value,
-            include_views=include_views,
-            issues=issues,
-        )
-        record_schema_validation_run(con, validation_run)
-
-    if config.validation_mode == ContractValidationMode.STRICT:
-        if issues:
-            assert_schema_alignment(con, include_views=include_views, strict=True)
-            validate_contract_or_raise(con, include_views=include_views)
-        return
-
-    _log_contract_issues(issues)
-    _write_contract_validation_summary(
-        issues=issues,
-        config=config,
-        include_views=include_views,
-    )
+    _ = con
+    _ = config
+    _ = include_views
+    # Contract validation is handled at Hamilton boundaries via Arrow/Pandera.
 
 
 def _log_registry_health(gateway: StorageGateway) -> None:

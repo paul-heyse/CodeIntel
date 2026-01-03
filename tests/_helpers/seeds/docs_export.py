@@ -347,7 +347,7 @@ class DocsExportPack:
                 short_desc="demo",
                 long_desc="",
                 params_json=[],
-                returns_json={"type": "str"},
+                returns_json={"type_name": "str", "description": None},
                 raises_json=[],
                 examples_json=[],
                 created_at=now,

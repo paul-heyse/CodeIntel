@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.build.graphs.compute import callgraph as call_resolution
 from codeintel.build.graphs.compute.callgraph import persistence as call_persist
+from codeintel.core.helpers.payload import encode_payload
 from tests._helpers.assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:
@@ -101,7 +102,7 @@ def test_dedupe_includes_repo_commit_scope() -> None:
         "kind": "direct",
         "resolved_via": "local_name",
         "confidence": 1.0,
-        "evidence_json": {},
+        "evidence_json": encode_payload({}),
     }
     edges: list[CallGraphEdgeRow] = [
         edge_base,

@@ -14,6 +14,167 @@ from codeintel.config.datasets.primitives import (
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, TableWritePolicy
 from codeintel.core.schemas.tables.ci_plan_entries import CI_PLAN_ENTRIES_TABLE_SCHEMA
 
+SYNTAX_QNAME_STRUCT = "STRUCT(name VARCHAR, source VARCHAR)"
+SYNTAX_PARAM_STRUCT = (
+    "STRUCT("
+    "name VARCHAR, "
+    "kind VARCHAR, "
+    "has_annotation BOOLEAN, "
+    "has_default BOOLEAN, "
+    "annotation_code VARCHAR, "
+    "default_code VARCHAR"
+    ")"
+)
+SYNTAX_DEF_EXTRAS_STRUCT = (
+    "STRUCT("
+    "container_def_id VARCHAR, "
+    "is_async BOOLEAN, "
+    "decorators LIST(VARCHAR), "
+    "bases LIST(VARCHAR), "
+    f"params LIST({SYNTAX_PARAM_STRUCT}), "
+    "returns_code VARCHAR, "
+    "docstring VARCHAR, "
+    f"qnames LIST({SYNTAX_QNAME_STRUCT})"
+    ")"
+)
+SYNTAX_REFERENT_STRUCT = (
+    "STRUCT("
+    "assignment_name VARCHAR, "
+    "assignment_kind VARCHAR, "
+    "span_id VARCHAR, "
+    f"qnames LIST({SYNTAX_QNAME_STRUCT})"
+    ")"
+)
+SYNTAX_REF_EXTRAS_STRUCT = (
+    "STRUCT("
+    "role VARCHAR, "
+    "scope_kind VARCHAR, "
+    f"referents LIST({SYNTAX_REFERENT_STRUCT}), "
+    "is_annotation BOOLEAN, "
+    "is_type_hint BOOLEAN, "
+    f"qnames LIST({SYNTAX_QNAME_STRUCT})"
+    ")"
+)
+SYNTAX_CALL_EXTRAS_STRUCT = (
+    "STRUCT("
+    "kw_arg_count INTEGER, "
+    "star_arg_count INTEGER, "
+    "starstar_arg_count INTEGER, "
+    "caller_def_id VARCHAR, "
+    f"callee_qnames LIST({SYNTAX_QNAME_STRUCT})"
+    ")"
+)
+SYNTAX_PARAM_DEF_EXTRAS_STRUCT = (
+    "STRUCT("
+    "param_kind VARCHAR, "
+    "has_annotation BOOLEAN, "
+    "has_default BOOLEAN, "
+    "annotation_code VARCHAR, "
+    "default_code VARCHAR"
+    ")"
+)
+SYNTAX_IMPORT_EXTRAS_STRUCT = (
+    "STRUCT("
+    "stmt_kind VARCHAR, "
+    "is_star BOOLEAN, "
+    "imported VARCHAR, "
+    "asname VARCHAR, "
+    "module VARCHAR, "
+    "relative_level INTEGER"
+    ")"
+)
+SYNTAX_CALL_ARGS_EXTRAS_STRUCT = "STRUCT()"
+SYNTAX_NODE_AST_IGNORE_STRUCT = "STRUCT(line INTEGER, tag VARCHAR)"
+SYNTAX_NODE_AST_STRUCT = (
+    "STRUCT("
+    "ast_node_id VARCHAR, "
+    "ast_kind VARCHAR, "
+    "ast_start_line INTEGER, "
+    "ast_start_col_utf8 INTEGER, "
+    "ast_end_line INTEGER, "
+    "ast_end_col_utf8 INTEGER, "
+    "ast_start_byte BIGINT, "
+    "ast_end_byte BIGINT, "
+    "match_kind VARCHAR, "
+    "ctx VARCHAR, "
+    "type_comment VARCHAR, "
+    f"type_ignores LIST({SYNTAX_NODE_AST_IGNORE_STRUCT}), "
+    "identifier VARCHAR, "
+    "attribute VARCHAR, "
+    "name VARCHAR, "
+    "imported VARCHAR, "
+    "asname VARCHAR, "
+    "module VARCHAR, "
+    "level INTEGER, "
+    "constant_kind VARCHAR"
+    ")"
+)
+SYNTAX_NODE_TS_STRUCT = (
+    "STRUCT("
+    "ts_node_id VARCHAR, "
+    "ts_node_type VARCHAR, "
+    "start_byte BIGINT, "
+    "end_byte BIGINT, "
+    "start_row INTEGER, "
+    "start_col INTEGER, "
+    "end_row INTEGER, "
+    "end_col INTEGER, "
+    "grammar_id INTEGER, "
+    "kind_id INTEGER, "
+    "parse_state INTEGER, "
+    "next_parse_state INTEGER, "
+    "is_named BOOLEAN, "
+    "is_missing BOOLEAN, "
+    "is_error BOOLEAN, "
+    "has_error BOOLEAN, "
+    "match_kind VARCHAR"
+    ")"
+)
+SYNTAX_NODE_EXTRAS_STRUCT = (
+    f"STRUCT(ast_nodes LIST({SYNTAX_NODE_AST_STRUCT}), ts_nodes LIST({SYNTAX_NODE_TS_STRUCT}))"
+)
+BC_CACHE_INFO_STRUCT = "STRUCT(name VARCHAR, size INTEGER, data BLOB)"
+BC_POSITIONS_STRUCT = "STRUCT(lineno INTEGER, end_lineno INTEGER, col INTEGER, end_col INTEGER)"
+INSPECT_VALUE_REF_STRUCT = (
+    "STRUCT("
+    "kind VARCHAR, "
+    "type_qualname VARCHAR, "
+    "repr_trunc VARCHAR, "
+    "repr_len INTEGER, "
+    "repr_sha256 BLOB, "
+    "is_callable BOOLEAN, "
+    "is_descriptor BOOLEAN, "
+    "is_builtin BOOLEAN"
+    ")"
+)
+INSPECT_OP_STATUS_STRUCT = "STRUCT(ok BOOLEAN, error_type VARCHAR, error_msg VARCHAR)"
+TS_CAPTURE_EXTRAS_STRUCT = (
+    "STRUCT("
+    "query_hash VARCHAR, "
+    "pattern_index INTEGER, "
+    "capture_index INTEGER, "
+    "pattern_count INTEGER, "
+    "capture_count INTEGER, "
+    "field_name VARCHAR, "
+    "field_id INTEGER"
+    ")"
+)
+TS_NODE_EXTRAS_STRUCT = "STRUCT()"
+TS_PARSE_ERROR_EXTRAS_STRUCT = "STRUCT(node_type VARCHAR, has_error BOOLEAN, parse_state INTEGER)"
+TS_TOKEN_EXTRAS_STRUCT = (
+    "STRUCT("
+    "query_hash VARCHAR, "
+    "pattern_index INTEGER, "
+    "capture_index INTEGER, "
+    "capture_name VARCHAR, "
+    "pattern_count INTEGER, "
+    "capture_count INTEGER, "
+    "field_name VARCHAR, "
+    "field_id INTEGER, "
+    "literal_kind VARCHAR"
+    ")"
+)
+
 AST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="core",
@@ -29,9 +190,21 @@ AST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("decorator_end_line", "INTEGER"),
             Column("col_offset", "INTEGER"),
             Column("end_col_offset", "INTEGER"),
+            Column("start_byte", "BIGINT"),
+            Column("end_byte", "BIGINT"),
             Column("parent_qualname", "VARCHAR"),
-            Column("decorators", "BLOB"),
+            Column("decorators", "LIST(VARCHAR)"),
             Column("docstring", "VARCHAR"),
+            Column("ctx", "VARCHAR"),
+            Column("type_comment", "VARCHAR"),
+            Column("type_ignores", f"LIST({SYNTAX_NODE_AST_IGNORE_STRUCT})"),
+            Column("identifier", "VARCHAR"),
+            Column("attribute", "VARCHAR"),
+            Column("imported", "VARCHAR"),
+            Column("asname", "VARCHAR"),
+            Column("module", "VARCHAR"),
+            Column("level", "INTEGER"),
+            Column("constant_kind", "VARCHAR"),
             Column("hash", "VARCHAR", nullable=False),
         ],
         primary_key=("hash",),
@@ -55,6 +228,439 @@ AST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+PY_SYM_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="core",
+        name="py_sym_scopes",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("scope_id", "VARCHAR", nullable=False),
+            Column("scope_local_id", "INTEGER"),
+            Column("parent_scope_id", "VARCHAR"),
+            Column("scope_type", "VARCHAR", nullable=False),
+            Column("scope_name", "VARCHAR"),
+            Column("qualpath", "VARCHAR"),
+            Column("lineno", "INTEGER"),
+            Column("is_nested", "BOOLEAN"),
+            Column("is_optimized", "BOOLEAN"),
+            Column("has_children", "BOOLEAN"),
+            Column("anchor_ast_node_id", "VARCHAR"),
+            Column("span_start_byte", "BIGINT"),
+            Column("span_end_byte", "BIGINT"),
+            Column("anchor_confidence", "DOUBLE"),
+            Column("anchor_reason", "VARCHAR"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "scope_id"),
+        description="Python symtable scope inventory with anchoring.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_sym_symbols",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("scope_id", "VARCHAR", nullable=False),
+            Column("symbol_row_id", "VARCHAR", nullable=False),
+            Column("name", "VARCHAR", nullable=False),
+            Column("is_referenced", "BOOLEAN"),
+            Column("is_assigned", "BOOLEAN"),
+            Column("is_imported", "BOOLEAN"),
+            Column("is_annotated", "BOOLEAN"),
+            Column("is_parameter", "BOOLEAN"),
+            Column("is_local", "BOOLEAN"),
+            Column("is_global", "BOOLEAN"),
+            Column("is_declared_global", "BOOLEAN"),
+            Column("is_nonlocal", "BOOLEAN"),
+            Column("is_free", "BOOLEAN"),
+            Column("is_namespace", "BOOLEAN"),
+            Column("namespace_count", "INTEGER"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "symbol_row_id"),
+        description="Per-scope symtable symbol flags.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_sym_scope_edges",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("parent_scope_id", "VARCHAR", nullable=False),
+            Column("child_scope_id", "VARCHAR", nullable=False),
+            Column("edge_kind", "VARCHAR", nullable=False),
+        ],
+        primary_key=("repo", "commit", "rel_path", "parent_scope_id", "child_scope_id"),
+        description="Symtable scope tree edges.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_sym_namespace_edges",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("scope_id", "VARCHAR", nullable=False),
+            Column("symbol_row_id", "VARCHAR", nullable=False),
+            Column("name", "VARCHAR", nullable=False),
+            Column("child_scope_id", "VARCHAR", nullable=False),
+            Column("edge_kind", "VARCHAR", nullable=False),
+            Column("is_ambiguous", "BOOLEAN"),
+        ],
+        primary_key=(
+            "repo",
+            "commit",
+            "rel_path",
+            "scope_id",
+            "symbol_row_id",
+            "child_scope_id",
+        ),
+        description="Namespace edges from symtable symbols to child scopes.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_sym_function_partitions",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("scope_id", "VARCHAR", nullable=False),
+            Column("parameters", "LIST(VARCHAR)"),
+            Column("locals", "LIST(VARCHAR)"),
+            Column("globals", "LIST(VARCHAR)"),
+            Column("nonlocals", "LIST(VARCHAR)"),
+            Column("frees", "LIST(VARCHAR)"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "scope_id"),
+        description="Function scope name partitions from symtable.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_sym_bindings",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("binding_id", "VARCHAR", nullable=False),
+            Column("scope_id", "VARCHAR", nullable=False),
+            Column("name", "VARCHAR", nullable=False),
+            Column("binding_kind", "VARCHAR", nullable=False),
+            Column("declared_here", "BOOLEAN"),
+            Column("referenced_here", "BOOLEAN"),
+            Column("assigned_here", "BOOLEAN"),
+            Column("annotated_here", "BOOLEAN"),
+            Column("scoping_class", "VARCHAR"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "binding_id"),
+        description="Symtable-derived binding inventory.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_sym_resolution_edges",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("edge_id", "VARCHAR", nullable=False),
+            Column("src_binding_id", "VARCHAR", nullable=False),
+            Column("dst_binding_id", "VARCHAR", nullable=False),
+            Column("kind", "VARCHAR", nullable=False),
+            Column("confidence", "DOUBLE"),
+            Column("reason", "VARCHAR"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "edge_id"),
+        description="Resolution edges for global/nonlocal/free bindings.",
+    ),
+)
+
+PY_BC_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="core",
+        name="py_bc_code_units",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("code_unit_id", "VARCHAR", nullable=False),
+            Column("parent_code_unit_id", "VARCHAR"),
+            Column("qualpath", "VARCHAR"),
+            Column("co_name", "VARCHAR"),
+            Column("co_qualname", "VARCHAR"),
+            Column("kind", "VARCHAR"),
+            Column("co_firstlineno", "INTEGER"),
+            Column("span_start_byte", "BIGINT"),
+            Column("span_end_byte", "BIGINT"),
+            Column("flags", "INTEGER"),
+            Column("argcount", "INTEGER"),
+            Column("posonlyargcount", "INTEGER"),
+            Column("kwonlyargcount", "INTEGER"),
+            Column("nlocals", "INTEGER"),
+            Column("stacksize", "INTEGER"),
+            Column("varnames", "LIST(VARCHAR)"),
+            Column("names", "LIST(VARCHAR)"),
+            Column("freevars", "LIST(VARCHAR)"),
+            Column("cellvars", "LIST(VARCHAR)"),
+            Column("bytecode_len", "INTEGER"),
+            Column("exceptiontable_len", "INTEGER"),
+            Column("python_version", "VARCHAR"),
+            Column("bytecode_magic", "BLOB"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "code_unit_id"),
+        description="Python bytecode code unit inventory.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_bc_instructions",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("code_unit_id", "VARCHAR", nullable=False),
+            Column("instr_id", "VARCHAR", nullable=False),
+            Column("instr_physical_id", "VARCHAR"),
+            Column("instr_index", "INTEGER"),
+            Column("start_offset", "INTEGER"),
+            Column("offset", "INTEGER"),
+            Column("cache_offset", "INTEGER"),
+            Column("end_offset", "INTEGER"),
+            Column("ext_arg_len", "INTEGER"),
+            Column("op_len", "INTEGER"),
+            Column("cache_len", "INTEGER"),
+            Column("opcode", "INTEGER"),
+            Column("opname", "VARCHAR"),
+            Column("baseopcode", "INTEGER"),
+            Column("baseopname", "VARCHAR"),
+            Column("arg", "INTEGER"),
+            Column("argrepr", "VARCHAR"),
+            Column("argval_kind", "VARCHAR"),
+            Column("argval_str", "VARCHAR"),
+            Column("argval_int", "BIGINT"),
+            Column("argval_repr", "VARCHAR"),
+            Column("is_jump_target", "BOOLEAN"),
+            Column("jump_target_offset", "INTEGER"),
+            Column("jump_target_label", "VARCHAR"),
+            Column("label", "VARCHAR"),
+            Column("starts_line", "BOOLEAN"),
+            Column("line_number", "INTEGER"),
+            Column("pos", BC_POSITIONS_STRUCT),
+            Column("span_start_byte", "BIGINT"),
+            Column("span_end_byte", "BIGINT"),
+            Column("cache_info", f"LIST({BC_CACHE_INFO_STRUCT})"),
+            Column("cache_bytes", "BLOB"),
+            Column("op_bytes", "BLOB"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "code_unit_id", "instr_id"),
+        description="Python bytecode instruction facts.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_bc_exception_table",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("code_unit_id", "VARCHAR", nullable=False),
+            Column("exc_entry_index", "INTEGER", nullable=False),
+            Column("start_offset", "INTEGER"),
+            Column("end_offset", "INTEGER"),
+            Column("target_offset", "INTEGER"),
+            Column("depth", "INTEGER"),
+            Column("lasti", "BOOLEAN"),
+            Column("start_label", "VARCHAR"),
+            Column("end_label", "VARCHAR"),
+            Column("target_label", "VARCHAR"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "code_unit_id", "exc_entry_index"),
+        description="Parsed bytecode exception table entries.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_bc_blocks",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("block_id", "VARCHAR", nullable=False),
+            Column("code_unit_id", "VARCHAR", nullable=False),
+            Column("start_offset", "INTEGER"),
+            Column("end_offset", "INTEGER"),
+            Column("start_label", "VARCHAR"),
+            Column("kind", "VARCHAR"),
+            Column("anchor_span_start_byte", "BIGINT"),
+            Column("anchor_span_end_byte", "BIGINT"),
+            Column("first_instr_index", "INTEGER"),
+            Column("last_instr_index", "INTEGER"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "block_id"),
+        description="Basic block inventory derived from bytecode.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_bc_cfg_edges",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("edge_id", "VARCHAR", nullable=False),
+            Column("code_unit_id", "VARCHAR", nullable=False),
+            Column("src_block_id", "VARCHAR", nullable=False),
+            Column("dst_block_id", "VARCHAR", nullable=False),
+            Column("kind", "VARCHAR", nullable=False),
+            Column("cond_instr_id", "VARCHAR"),
+            Column("exc_entry_index", "INTEGER"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "edge_id"),
+        description="CFG edges derived from bytecode and exception tables.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_bc_defuse_events",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("event_id", "VARCHAR", nullable=False),
+            Column("code_unit_id", "VARCHAR", nullable=False),
+            Column("instr_id", "VARCHAR", nullable=False),
+            Column("instr_index", "INTEGER"),
+            Column("event_kind", "VARCHAR", nullable=False),
+            Column("space", "VARCHAR"),
+            Column("name", "VARCHAR"),
+            Column("confidence", "DOUBLE"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "event_id"),
+        description="Bytecode def/use events for DFG construction.",
+    ),
+)
+
+PY_INSPECT_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="core",
+        name="py_inspect_objects",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("mode", "VARCHAR", nullable=False),
+            Column("object_id", "VARCHAR", nullable=False),
+            Column("object_addr", "BIGINT"),
+            Column("kind", "VARCHAR"),
+            Column("module_name", "VARCHAR"),
+            Column("qualname", "VARCHAR"),
+            Column("name", "VARCHAR"),
+            Column("type_qualname", "VARCHAR"),
+            Column("is_builtin", "BOOLEAN"),
+            Column("is_callable", "BOOLEAN"),
+            Column("is_descriptor", "BOOLEAN"),
+            Column("has_wrapped", "BOOLEAN"),
+            Column("has_signature_override", "BOOLEAN"),
+            Column("has_annotations", "BOOLEAN"),
+            Column("status", INSPECT_OP_STATUS_STRUCT),
+        ],
+        primary_key=("repo", "commit", "object_id"),
+        description="Runtime object inventory from inspect.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_inspect_members_static",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("mode", "VARCHAR", nullable=False),
+            Column("owner_object_id", "VARCHAR", nullable=False),
+            Column("owner_kind", "VARCHAR"),
+            Column("attr_name", "VARCHAR", nullable=False),
+            Column("value_kind", "VARCHAR"),
+            Column("value_object_id", "VARCHAR"),
+            Column("value_ref", INSPECT_VALUE_REF_STRUCT),
+            Column("desc_kind", "VARCHAR"),
+            Column("desc_is_data", "BOOLEAN"),
+            Column("desc_is_methoddesc", "BOOLEAN"),
+            Column("desc_is_getset", "BOOLEAN"),
+            Column("desc_is_member", "BOOLEAN"),
+            Column("status", INSPECT_OP_STATUS_STRUCT),
+        ],
+        primary_key=("repo", "commit", "owner_object_id", "attr_name"),
+        description="Static member enumeration from inspect.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_inspect_unwrap_hops",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("mode", "VARCHAR", nullable=False),
+            Column("root_object_id", "VARCHAR", nullable=False),
+            Column("hop", "INTEGER", nullable=False),
+            Column("object_id", "VARCHAR"),
+            Column("has_wrapped", "BOOLEAN"),
+            Column("has_signature_override", "BOOLEAN"),
+            Column("stop_reason", "VARCHAR"),
+            Column("status", INSPECT_OP_STATUS_STRUCT),
+        ],
+        primary_key=("repo", "commit", "root_object_id", "hop"),
+        description="Wrapper chain hops for callables.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_inspect_signatures",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("mode", "VARCHAR", nullable=False),
+            Column("signature_id", "VARCHAR", nullable=False),
+            Column("object_id", "VARCHAR", nullable=False),
+            Column("variant", "VARCHAR"),
+            Column("follow_wrapped", "BOOLEAN"),
+            Column("eval_str", "BOOLEAN"),
+            Column("effective_object_id", "VARCHAR"),
+            Column("sig_text", "VARCHAR"),
+            Column("sig_format", "VARCHAR"),
+            Column("return_annotation", INSPECT_VALUE_REF_STRUCT),
+            Column("has_varargs", "BOOLEAN"),
+            Column("has_varkw", "BOOLEAN"),
+            Column("status", INSPECT_OP_STATUS_STRUCT),
+        ],
+        primary_key=("repo", "commit", "signature_id"),
+        description="Signature facts extracted via inspect.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_inspect_signature_params",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("mode", "VARCHAR", nullable=False),
+            Column("signature_id", "VARCHAR", nullable=False),
+            Column("param_index", "INTEGER", nullable=False),
+            Column("name", "VARCHAR"),
+            Column("kind", "VARCHAR"),
+            Column("default_present", "BOOLEAN"),
+            Column("default_value", INSPECT_VALUE_REF_STRUCT),
+            Column("annotation_present", "BOOLEAN"),
+            Column("annotation_value", INSPECT_VALUE_REF_STRUCT),
+            Column("status", INSPECT_OP_STATUS_STRUCT),
+        ],
+        primary_key=("repo", "commit", "signature_id", "param_index"),
+        description="Signature parameter inventory.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_inspect_annotations_kv",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("mode", "VARCHAR", nullable=False),
+            Column("object_id", "VARCHAR", nullable=False),
+            Column("eval_str", "BOOLEAN"),
+            Column("key", "VARCHAR", nullable=False),
+            Column("value", INSPECT_VALUE_REF_STRUCT),
+            Column("status", INSPECT_OP_STATUS_STRUCT),
+        ],
+        primary_key=("repo", "commit", "object_id", "key"),
+        description="Annotation key/value facts from inspect.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_inspect_source",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("mode", "VARCHAR", nullable=False),
+            Column("object_id", "VARCHAR", nullable=False),
+            Column("file_name", "VARCHAR"),
+            Column("start_line", "INTEGER"),
+            Column("line_count", "INTEGER"),
+            Column("source_sha256", "BLOB"),
+            Column("source_preview", "VARCHAR"),
+            Column("status", INSPECT_OP_STATUS_STRUCT),
+        ],
+        primary_key=("repo", "commit", "object_id"),
+        description="Source anchoring data for inspect objects.",
+    ),
+)
+
 CST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="core",
@@ -63,10 +669,10 @@ CST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("path", "VARCHAR", nullable=False),
             Column("node_id", "VARCHAR", nullable=False),
             Column("kind", "VARCHAR", nullable=False),
-            Column("span", "BLOB", nullable=False),
+            Column("span", "STRUCT(start LIST(INTEGER), end LIST(INTEGER))", nullable=False),
             Column("text_preview", "VARCHAR"),
-            Column("parents", "BLOB"),
-            Column("qnames", "BLOB"),
+            Column("parents", "LIST(VARCHAR)"),
+            Column("qnames", "LIST(VARCHAR)"),
         ],
         primary_key=("node_id",),
         description="Concrete syntax tree nodes",
@@ -86,7 +692,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("default_indent", "VARCHAR"),
             Column("default_newline", "VARCHAR"),
             Column("has_trailing_newline", "BOOLEAN"),
-            Column("future_imports", "BLOB"),
+            Column("future_imports", "LIST(VARCHAR)"),
             Column("parser_backend", "VARCHAR"),
             Column("libcst_version", "VARCHAR"),
             Column("error_kind", "VARCHAR"),
@@ -120,7 +726,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_NODE_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "node_id"),
         description="Canonical syntax node inventory for CPG stitching.",
@@ -205,7 +811,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_col", "INTEGER", nullable=False),
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "def_id"),
         description="Definition/binding facts extracted from syntax trees.",
@@ -228,7 +834,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_col", "INTEGER", nullable=False),
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_REF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "ref_id"),
         description="Reference/use facts extracted from syntax trees.",
@@ -255,7 +861,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_byte", "BIGINT"),
             Column("callee_start_byte", "BIGINT"),
             Column("callee_end_byte", "BIGINT"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_CALL_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id"),
         description="Callsite facts extracted from syntax trees.",
@@ -279,7 +885,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("arg_end_byte", "BIGINT"),
             Column("arg_span_id", "VARCHAR"),
             Column("arg_expr_node_id", "VARCHAR"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_CALL_ARGS_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id", "arg_ordinal"),
         description="Call argument facts extracted from syntax trees.",
@@ -304,7 +910,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("param_end_byte", "BIGINT"),
             Column("param_span_id", "VARCHAR"),
             Column("param_node_id", "VARCHAR"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_PARAM_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "func_def_id", "param_ordinal"),
         description="Function parameter facts extracted from syntax trees.",
@@ -330,7 +936,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_col", "INTEGER", nullable=False),
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_IMPORT_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "import_id"),
         description="Import facts extracted from syntax trees.",
@@ -368,7 +974,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "def_id"),
         description="Syntax definitions enriched with SCIP resolution metadata.",
@@ -403,7 +1009,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_REF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "ref_id"),
         description="Syntax references enriched with SCIP resolution metadata.",
@@ -442,7 +1048,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_CALL_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id"),
         description="Syntax callsites enriched with SCIP resolution metadata.",
@@ -480,7 +1086,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", SYNTAX_IMPORT_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "import_id"),
         description="Syntax imports enriched with SCIP resolution metadata.",
@@ -505,7 +1111,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_col", "INTEGER", nullable=False),
             Column("node_type", "VARCHAR", nullable=False),
             Column("text_preview", "VARCHAR"),
-            Column("extras", "BLOB"),
+            Column("extras", TS_CAPTURE_EXTRAS_STRUCT),
         ],
         primary_key=(
             "repo",
@@ -548,7 +1154,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("parse_state", "INTEGER"),
             Column("next_parse_state", "INTEGER"),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", TS_NODE_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "node_id"),
         indexes=(
@@ -601,6 +1207,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_row", "INTEGER", nullable=False),
             Column("end_col", "INTEGER", nullable=False),
             Column("text_preview", "VARCHAR"),
+            Column("extras_json", TS_PARSE_ERROR_EXTRAS_STRUCT),
         ],
         primary_key=(
             "repo",
@@ -613,6 +1220,31 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ),
         indexes=(Index("idx_core_ts_parse_errors_path", ("rel_path",)),),
         description="Tree-sitter parse errors and missing nodes.",
+    ),
+    TableSchema(
+        schema="core",
+        name="ts_changed_ranges",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("language", "VARCHAR", nullable=False),
+            Column("start_byte", "BIGINT", nullable=False),
+            Column("end_byte", "BIGINT", nullable=False),
+            Column("start_row", "INTEGER", nullable=False),
+            Column("start_col", "INTEGER", nullable=False),
+            Column("end_row", "INTEGER", nullable=False),
+            Column("end_col", "INTEGER", nullable=False),
+        ],
+        primary_key=(
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "start_byte",
+            "end_byte",
+        ),
+        indexes=(Index("idx_core_ts_changed_ranges_path", ("rel_path",)),),
+        description="Tree-sitter changed ranges for incremental parsing.",
     ),
     TableSchema(
         schema="core",
@@ -631,7 +1263,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_row", "INTEGER", nullable=False),
             Column("end_col", "INTEGER", nullable=False),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", TS_TOKEN_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "token_id"),
         indexes=(
@@ -657,7 +1289,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_row", "INTEGER", nullable=False),
             Column("end_col", "INTEGER", nullable=False),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", "BLOB"),
+            Column("extras_json", TS_TOKEN_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "trivia_id"),
         indexes=(
@@ -681,6 +1313,21 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "language", "abi_version", "semantic_version"),
         description="Tree-sitter language ABI and grammar metadata per run.",
+    ),
+    TableSchema(
+        schema="core",
+        name="ts_weld_coverage",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("language", "VARCHAR", nullable=False),
+            Column("ts_node_count", "INTEGER", nullable=False),
+            Column("mapped_count", "INTEGER", nullable=False),
+            Column("coverage_ratio", "DOUBLE", nullable=False),
+        ],
+        primary_key=("repo", "commit", "rel_path", "language"),
+        indexes=(Index("idx_core_ts_weld_coverage_path", ("rel_path",)),),
+        description="Per-file tree-sitter to syntax-node weld coverage.",
     ),
     TableSchema(
         schema="core",
@@ -730,10 +1377,13 @@ DOCSTRINGS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("style", "VARCHAR"),
             Column("short_desc", "VARCHAR"),
             Column("long_desc", "VARCHAR"),
-            Column("params", "BLOB"),
-            Column("returns", "BLOB"),
-            Column("raises", "BLOB"),
-            Column("examples", "BLOB"),
+            Column(
+                "params",
+                "LIST(STRUCT(name VARCHAR, type_name VARCHAR, description VARCHAR))",
+            ),
+            Column("returns", "STRUCT(type_name VARCHAR, description VARCHAR)"),
+            Column("raises", "LIST(STRUCT(type_name VARCHAR, description VARCHAR))"),
+            Column("examples", "LIST(VARCHAR)"),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         description="Structured docstring facts extracted with griffe",
@@ -750,8 +1400,8 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("repo", "VARCHAR"),
             Column("commit", "VARCHAR"),
             Column("language", "VARCHAR"),
-            Column("tags", "BLOB"),
-            Column("owners", "BLOB"),
+            Column("tags", "LIST(VARCHAR)"),
+            Column("owners", "LIST(VARCHAR)"),
             Column("row_hash", "VARCHAR"),
         ],
         primary_key=("module", "path"),
@@ -793,8 +1443,8 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         columns=[
             Column("repo", "VARCHAR", nullable=False),
             Column("commit", "VARCHAR", nullable=False),
-            Column("modules", "BLOB"),
-            Column("overlays", "BLOB"),
+            Column("modules", "MAP(VARCHAR, VARCHAR)"),
+            Column("overlays", "MAP(VARCHAR, VARCHAR)"),
             Column("generated_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit"),
@@ -2446,6 +3096,9 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *SYNTAX_OVERRIDE_TABLES,
         *SYNTAX_RESOLVED_OVERRIDE_TABLES,
         *TREE_SITTER_OVERRIDE_TABLES,
+        *PY_SYM_OVERRIDE_TABLES,
+        *PY_BC_OVERRIDE_TABLES,
+        *PY_INSPECT_OVERRIDE_TABLES,
         *CI_PLAN_OVERRIDE_TABLES,
         *DATA_MODELS_OVERRIDE_TABLES,
         *DATA_MODEL_USAGE_OVERRIDE_TABLES,
@@ -2495,6 +3148,26 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.file_state",
         "core.modules",
         "core.parse_manifest",
+        "core.py_bc_blocks",
+        "core.py_bc_cfg_edges",
+        "core.py_bc_code_units",
+        "core.py_bc_defuse_events",
+        "core.py_bc_exception_table",
+        "core.py_bc_instructions",
+        "core.py_inspect_annotations_kv",
+        "core.py_inspect_members_static",
+        "core.py_inspect_objects",
+        "core.py_inspect_signature_params",
+        "core.py_inspect_signatures",
+        "core.py_inspect_source",
+        "core.py_inspect_unwrap_hops",
+        "core.py_sym_bindings",
+        "core.py_sym_function_partitions",
+        "core.py_sym_namespace_edges",
+        "core.py_sym_resolution_edges",
+        "core.py_sym_scope_edges",
+        "core.py_sym_scopes",
+        "core.py_sym_symbols",
         "core.repo_map",
         "core.schema_inference_errors",
         "core.scip_diagnostics",
@@ -2515,6 +3188,7 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.syntax_scopes",
         "core.syntax_spans",
         "core.ts_captures",
+        "core.ts_changed_ranges",
         "core.ts_edges",
         "core.ts_language_metadata",
         "core.ts_nodes",
@@ -2522,6 +3196,7 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.ts_syntax_node_xref",
         "core.ts_tokens",
         "core.ts_trivia",
+        "core.ts_weld_coverage",
     }
 )
 
@@ -2575,6 +3250,9 @@ __all__ = [
     "NON_INFERABLE_OUTPUT_KEYS",
     "OUTPUT_TABLE_SCHEMAS",
     "PDG_OVERRIDE_TABLES",
+    "PY_BC_OVERRIDE_TABLES",
+    "PY_INSPECT_OVERRIDE_TABLES",
+    "PY_SYM_OVERRIDE_TABLES",
     "SCHEMA_INFERENCE_ERRORS_OVERRIDE_TABLES",
     "SCIP_OVERRIDE_TABLES",
     "SCIP_RESOLUTION_OVERRIDE_TABLES",

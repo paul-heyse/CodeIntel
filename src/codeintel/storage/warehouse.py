@@ -38,7 +38,10 @@ from codeintel.core.queries.filter_compiler import (
     compile_filter_predicates,
     duckdb_filter_expression,
 )
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.core.validation.mode import ContractValidationMode
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.duckdb_explain import normalize_explain_output
 from codeintel.storage.helpers.table_key import split_table_key
@@ -51,6 +54,10 @@ from codeintel.storage.schema.duckdb_contracts import (
 from codeintel.storage.snapshot_scoping import RepoCommitScope
 from codeintel.storage.staging import registered_temp_relation
 from codeintel.storage.upsert import UpsertSpec
+from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
+    ValidationMode,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -813,11 +820,32 @@ def _write_tabular(
     if isinstance(relation, pa.Table):
         table_row_count = cast("int", relation.num_rows)
     contract_schema = _contract_schema_for_table(gateway, table_key=table_key)
+    validation_mode = _validation_mode(gateway)
+    if isinstance(relation, DuckDBRelation) and (
+        contract_schema is not None or validation_mode != "skip"
+    ):
+        relation = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     if contract_schema is not None:
         relation = _align_tabular_input(
             relation,
             contract_schema=contract_schema,
         )
+    if validation_mode != "skip":
+        context = _validation_context_for_table(gateway, table_key=table_key)
+        if isinstance(relation, pa.Table):
+            relation = validate_table(
+                table_key,
+                relation,
+                context=context,
+                mode=validation_mode,
+            )
+        elif isinstance(relation, pa.RecordBatchReader):
+            relation = validate_record_batch_reader(
+                table_key,
+                relation,
+                context=context,
+                mode=validation_mode,
+            )
     if isinstance(relation, DuckDBRelation):
         return _write_relation(
             gateway=gateway,
@@ -859,6 +887,9 @@ def _contract_schema_for_table(
     *,
     table_key: str,
 ) -> pa.Schema | None:
+    contract = gateway.datasets.by_table_key.get(table_key)
+    if contract is not None and contract.schema is not None:
+        return arrow_contract_for_table_schema(table_schema=contract.schema)
     try:
         dataset_root_dir = getattr(gateway.config, "dataset_root_dir", None)
         snapshot_id = getattr(gateway.config, "commit", None)
@@ -873,6 +904,36 @@ def _contract_schema_for_table(
         )
     except (DuckDBError, RuntimeError, TypeError, ValueError):
         return None
+
+
+def _validation_context_for_table(
+    gateway: StorageGateway,
+    *,
+    table_key: str,
+) -> ColumnarValidationContext:
+    schema_provider = getattr(gateway.policy, "schema_provider", None)
+    observation_provider = getattr(gateway, "schemas", None)
+    resolution = resolve_table_schema(
+        table_key,
+        observation_provider=observation_provider,
+        schema_provider=schema_provider,
+    )
+    dataset = gateway.datasets.by_table_key.get(table_key)
+    validation_profile = dataset.validation_profile if dataset is not None else None
+    return ColumnarValidationContext(
+        table_schema=resolution.table_schema,
+        schema_observation=resolution.observation,
+        validation_profile=validation_profile,
+    )
+
+
+def _validation_mode(gateway: StorageGateway) -> ValidationMode:
+    mode = getattr(gateway.config, "validation_mode", ContractValidationMode.LENIENT)
+    if mode == ContractValidationMode.OFF:
+        return "skip"
+    if mode == ContractValidationMode.LENIENT:
+        return "warn"
+    return "strict"
 
 
 def _align_tabular_input(

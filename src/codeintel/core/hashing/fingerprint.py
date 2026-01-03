@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import hashlib
 
-import orjson
+import msgspec
+
+_JSON_ENCODER = msgspec.json.Encoder(order="deterministic", enc_hook=str)
 
 
 def fingerprint(data: object) -> str:
@@ -117,11 +119,7 @@ def _serialize_compound(data: object) -> str:
         items = [_serialize_value(item) for item in data]
         return f"[{','.join(items)}]"
     if isinstance(data, dict):
-        return orjson.dumps(
-            _make_serializable(data),
-            option=orjson.OPT_SORT_KEYS,
-            default=str,
-        ).decode("utf-8")
+        return _JSON_ENCODER.encode(_make_serializable(data)).decode("utf-8")
     return str(data)
 
 
@@ -142,6 +140,8 @@ def _make_serializable(obj: object) -> object:
         return {str(k): _make_serializable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_make_serializable(item) for item in obj]
+    if isinstance(obj, set):
+        return [_make_serializable(item) for item in sorted(obj, key=str)]
     if isinstance(obj, bytes):
         return obj.decode("utf-8", errors="replace")
     if hasattr(obj, "__dict__"):

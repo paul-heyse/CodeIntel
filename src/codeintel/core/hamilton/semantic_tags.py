@@ -7,12 +7,12 @@ importing build-owned modules.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Literal, Required, TypedDict, TypeVar, Unpack
 
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.tagging_helpers import apply_raw_tags
+from codeintel.core.serialization.msgspec_json import encode_json_text
 
 SEMANTIC_VIEW_TAG_ATTR = "__codeintel_semantic_view_tags__"
 
@@ -105,7 +105,7 @@ def _build_semantic_tags(spec: SemanticViewTagSpec) -> dict[str, str]:
         tags[TAG_SEMANTIC_DESC] = description
     joins = spec.get("joins")
     if joins is not None:
-        tags[TAG_SEMANTIC_JOINS] = json.dumps(joins, sort_keys=True)
+        tags[TAG_SEMANTIC_JOINS] = encode_json_text(joins, indent=None)
     schema_ref = spec.get("schema_ref")
     if schema_ref:
         tags[TAG_SCHEMA_REF] = schema_ref

@@ -593,18 +593,14 @@ class DuckDBPolicyBackend:
         self._catalog = catalog
         return catalog
 
-    def _reject_parquet_only_write(self, table_key: str, *, action: str) -> None:
-        config = getattr(self.gateway, "config", None)
-        dataset_source = getattr(config, "dataset_source", None)
-        if dataset_source != "parquet_only":
-            return
+    def _reject_dataset_write(self, table_key: str, *, action: str) -> None:
         registry = getattr(self.gateway, "datasets", None)
         if not isinstance(registry, DatasetRegistry):
             return
         dataset = registry.by_table_key.get(table_key)
         if dataset is None or dataset.is_view:
             return
-        msg = f"DuckDB {action} disabled for parquet-only dataset: {table_key}"
+        msg = f"DuckDB {action} disabled for parquet-backed dataset: {table_key}"
         raise RuntimeError(msg)
 
     def _qualified_table_ref(
@@ -945,6 +941,38 @@ class DuckDBPolicyBackend:
             )
         )
 
+    def drop_table(
+        self,
+        table_key: str,
+        *,
+        if_exists: bool = True,
+        catalog: str | None = None,
+    ) -> None:
+        """Drop a DuckDB table by table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key to drop.
+        if_exists
+            When True, uses DROP TABLE IF EXISTS.
+        catalog
+            Optional catalog override for the table.
+        """
+        table_schema, table_name = split_table_key(table_key)
+        drop_expr = exp.Drop(
+            this=exp.Table(
+                this=exp.to_identifier(table_name),
+                db=exp.to_identifier(table_schema),
+                catalog=exp.to_identifier(self._resolve_catalog(catalog))
+                if catalog is not None
+                else None,
+            ),
+            kind="TABLE",
+            exists=if_exists,
+        )
+        self._run(drop_expr)
+
     def create_indexes_from_schema(self, table: TableSchema, *, catalog: str | None = None) -> None:
         """Create all indexes defined in a TableSchema.
 
@@ -1027,7 +1055,7 @@ class DuckDBPolicyBackend:
         commit
             Commit identifier.
         """
-        self._reject_parquet_only_write(table_key, action="delete")
+        self._reject_dataset_write(table_key, action="delete")
         schema, table = split_table_key_or_default(table_key, default_schema="main")
         columns = self._get_table_columns(schema, table)
         if not columns:
@@ -1232,7 +1260,7 @@ class DuckDBPolicyBackend:
         RuntimeError
             If the table is missing and creation is disabled.
         """
-        self._reject_parquet_only_write(table_key, action="table creation")
+        self._reject_dataset_write(table_key, action="table creation")
         if self.schema_provider is None:
             msg = "DuckDBPolicyBackend requires schema_provider for ensure_table()"
             raise RuntimeError(msg)
@@ -1372,7 +1400,7 @@ class DuckDBPolicyBackend:
         RuntimeError
             If schema_provider is required to derive columns but is not configured.
         """
-        self._reject_parquet_only_write(table_key, action="bulk insert")
+        self._reject_dataset_write(table_key, action="bulk insert")
         rows_list = list(rows)
         if not rows_list:
             return 0
@@ -1490,7 +1518,7 @@ class DuckDBPolicyBackend:
         RuntimeError
             If schema_provider is required to derive columns but is not configured.
         """
-        self._reject_parquet_only_write(table_key, action="bulk insert")
+        self._reject_dataset_write(table_key, action="bulk insert")
         row_list = list(rows)
         if not row_list:
             return 0
@@ -1638,7 +1666,7 @@ class DuckDBPolicyBackend:
         ValueError
             If table_key is not qualified or conflict_columns is empty.
         """
-        self._reject_parquet_only_write(table_key, action="upsert")
+        self._reject_dataset_write(table_key, action="upsert")
         rows_list = list(rows)
         if not rows_list:
             return 0

@@ -29,7 +29,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import (
     empty_frame_for_table,
     rows_to_frame,
@@ -161,9 +161,9 @@ def entrypoint_module_frames(
         Frame bundle with modules, goids, and AST features.
     """
     return EntrypointModuleFrames(
-        modules_frame=tabular_to_lazyframe(q__core__modules).collect(),
-        goids_frame=tabular_to_lazyframe(q__core__goids).collect(),
-        features_frame=tabular_to_lazyframe(q__analytics__function_ast_features).collect(),
+        modules_frame=tabular_to_frame(q__core__modules),
+        goids_frame=tabular_to_frame(q__core__goids),
+        features_frame=tabular_to_frame(q__analytics__function_ast_features),
     )
 
 
@@ -178,7 +178,7 @@ def entrypoint_test_frames(
         Frame bundle with the test catalog snapshot.
     """
     return EntrypointTestFrames(
-        test_catalog_frame=tabular_to_lazyframe(q__analytics__test_catalog).collect(),
+        test_catalog_frame=tabular_to_frame(q__analytics__test_catalog),
     )
 
 
@@ -194,8 +194,8 @@ def entrypoint_subsystem_frames(
         Frame bundle with subsystem metadata and module mapping.
     """
     return EntrypointSubsystemFrames(
-        subsystems_frame=tabular_to_lazyframe(q__analytics__subsystems).collect(),
-        subsystem_modules_frame=tabular_to_lazyframe(q__analytics__subsystem_modules).collect(),
+        subsystems_frame=tabular_to_frame(q__analytics__subsystems),
+        subsystem_modules_frame=tabular_to_frame(q__analytics__subsystem_modules),
     )
 
 

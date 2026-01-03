@@ -6,18 +6,28 @@ import json
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
-from codeintel.cli.core.result_types import DatasetSummary
+import pyarrow as pa
+
+from codeintel.cli.core.result_types import TabularResult
 from codeintel.cli.core.results import SerializableResult
 from codeintel.cli.handlers.datasets import (
+    DatasetDependencies,
     DatasetDiffResult,
     DatasetLintResult,
-    DatasetListResult,
     DatasetSnapshotResult,
     datasets_diff_handler,
     datasets_lint_handler,
     datasets_list_handler,
+    datasets_migrate_parquet_handler,
     datasets_snapshot_handler,
 )
+from codeintel.core.columnar.stream import stream_from_table
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.query_results import records_from_arrow_reader
+from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.storage.datasets.manifests import dataset_manifest_path
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_not_none,
@@ -35,18 +45,17 @@ def _result_to_dict(result: object) -> dict[str, object]:
 
 
 def test_datasets_list_result_to_dict() -> None:
-    """Verify DatasetsListResult.to_dict returns correct structure."""
-    result = DatasetListResult(
-        datasets=[
-            DatasetSummary(
-                name="test_dataset",
-                table_key="test.table",
-                description="A test dataset",
-                capabilities={"docs_view": False},
-            )
-        ],
-        count=1,
-    )
+    """Verify TabularResult.to_dict returns correct structure."""
+    items = [
+        {
+            "name": "test_dataset",
+            "table_key": "test.table",
+            "description": "A test dataset",
+            "capabilities": {"docs_view": False},
+        }
+    ]
+    table = pa.Table.from_pylist(items)
+    result = TabularResult(stream=stream_from_table(table))
 
     data = _result_to_dict(result)
 
@@ -150,8 +159,13 @@ def test_datasets_list_handler_success(
     expect_is_not_none(result.data)
     data = result.data
     if data is not None:
-        expect_equal(data.count, 1)
-        expect_equal(data.datasets[0].name, "test_dataset")
+        expect_true(isinstance(data, TabularResult))
+        if isinstance(data, TabularResult):
+            reader = data.stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            records = records_from_arrow_reader(reader)
+            expect_equal(len(records), 1)
+            expect_equal(records[0]["name"], "test_dataset")
+            expect_equal(data.metadata.get("count"), 1)
 
 
 def test_datasets_lint_handler_success(
@@ -304,3 +318,118 @@ def test_datasets_diff_handler_no_differences(
         expect_true(not data.has_differences)
         expect_equal(data.added, [])
         expect_equal(data.removed, [])
+
+
+def _test_contract(table_name: str) -> DatasetContract:
+    table_schema = TableSchema(
+        schema="test",
+        name=table_name,
+        columns=[
+            Column(name="repo", type="VARCHAR", nullable=False),
+            Column(name="commit", type="VARCHAR", nullable=False),
+            Column(name="value", type="BIGINT", nullable=False),
+        ],
+        primary_key=(),
+    )
+    return DatasetContract(
+        table_key=table_schema.table_key,
+        name=table_name,
+        schema=table_schema,
+        owner_package="core",
+    )
+
+
+def _seed_migration_table(
+    gateway: StorageGateway,
+    *,
+    table_schema: TableSchema,
+) -> None:
+    gateway.policy.create_schema_if_not_exists(table_schema.schema)
+    gateway.con.execute(f"DROP TABLE IF EXISTS {table_schema.schema}.{table_schema.name}")
+    gateway.con.execute(
+        f"""
+        CREATE TABLE {table_schema.schema}.{table_schema.name} (
+            repo VARCHAR,
+            commit VARCHAR,
+            value BIGINT
+        )
+        """
+    )
+    gateway.con.execute(
+        f"INSERT INTO {table_schema.schema}.{table_schema.name} VALUES (?, ?, ?)",
+        ["repo-1", "commit-1", 1],
+    )
+
+
+def test_datasets_migrate_parquet_handler_writes_manifest(
+    tmp_path: Path, dataset_handler_harness_fixture: DatasetHandlerHarness
+) -> None:
+    """Verify parquet migration writes a dataset manifest."""
+    contract = _test_contract("migrate_metrics")
+    table_schema = cast("TableSchema", contract.schema)
+    _seed_migration_table(
+        dataset_handler_harness_fixture.ctx.gateway,
+        table_schema=table_schema,
+    )
+    dataset_root_dir = tmp_path / "datasets"
+    params = {
+        "dataset_root_dir": str(dataset_root_dir),
+        "snapshot_id": "snap-1",
+        "table_keys": [contract.table_key],
+        "overwrite": True,
+    }
+    deps = DatasetDependencies(
+        list_datasets=lambda **_kwargs: [contract],
+        issue_collector=lambda _con: [],
+    )
+
+    with dataset_handler_harness_fixture.command_context(params) as ctx:
+        result = datasets_migrate_parquet_handler(ctx, deps=deps)
+
+    expect_true(result.success)
+    expect_is_not_none(result.data)
+    manifest_path = dataset_manifest_path(
+        dataset_root=dataset_root_dir,
+        table_key=contract.table_key,
+        snapshot_id="snap-1",
+    )
+    expect_true(manifest_path.is_file())
+    if result.data is not None and result.data.details is not None:
+        expect_equal(result.data.details.get("exported"), [contract.table_key])
+
+
+def test_datasets_migrate_parquet_handler_drops_tables(
+    tmp_path: Path, dataset_handler_harness_fixture: DatasetHandlerHarness
+) -> None:
+    """Verify parquet migration can drop legacy DuckDB tables."""
+    contract = _test_contract("migrate_metrics_drop")
+    table_schema = cast("TableSchema", contract.schema)
+    _seed_migration_table(
+        dataset_handler_harness_fixture.ctx.gateway,
+        table_schema=table_schema,
+    )
+    dataset_root_dir = tmp_path / "datasets-drop"
+    params = {
+        "dataset_root_dir": str(dataset_root_dir),
+        "snapshot_id": "snap-2",
+        "table_keys": [contract.table_key],
+        "overwrite": True,
+        "drop_duckdb_tables": True,
+    }
+    deps = DatasetDependencies(
+        list_datasets=lambda **_kwargs: [contract],
+        issue_collector=lambda _con: [],
+    )
+
+    with dataset_handler_harness_fixture.command_context(params) as ctx:
+        result = datasets_migrate_parquet_handler(ctx, deps=deps)
+
+    expect_true(result.success)
+    expect_true(
+        not dataset_handler_harness_fixture.ctx.gateway.policy.table_exists(
+            schema=table_schema.schema,
+            table=table_schema.name,
+        )
+    )
+    if result.data is not None and result.data.details is not None:
+        expect_equal(result.data.details.get("dropped"), [contract.table_key])

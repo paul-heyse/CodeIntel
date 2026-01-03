@@ -21,7 +21,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -220,11 +220,11 @@ def function_ast_features__base(
     polars.LazyFrame
         Lazy frame with function AST feature columns.
     """
-    goids = tabular_to_lazyframe(q__core__goids).collect()
+    goids = tabular_to_frame(q__core__goids)
     if goids.is_empty():
         return empty_frame_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
 
-    modules = tabular_to_lazyframe(q__core__modules).collect()
+    modules = tabular_to_frame(q__core__modules)
     module_by_path = _module_by_path(modules)
     nodes_by_path, lines_by_path = _load_module_nodes(env, module_by_path)
 

@@ -86,9 +86,17 @@ class DocstringPack:
         now
             Timestamp for created_at fields.
         """
-        params_json = [] if not self.include_params else [{"name": "x", "type": "int"}]
-        returns_json = None if not self.include_returns else {"type": "int", "desc": "Result"}
-        raises_json = [] if not self.include_raises else [{"type": "ValueError"}]
+        params_json = (
+            []
+            if not self.include_params
+            else [{"name": "x", "type_name": "int", "description": None}]
+        )
+        returns_json = (
+            None if not self.include_returns else {"type_name": "int", "description": "Result"}
+        )
+        raises_json = (
+            [] if not self.include_raises else [{"type_name": "ValueError", "description": None}]
+        )
 
         rows = [
             dataclass_row(
@@ -148,7 +156,7 @@ class DocstringPack:
                 params_json=params_json,
                 returns_json=returns_json,
                 raises_json=[],
-                examples_json=[{"code": "helper(5)", "output": "5"}],
+                examples_json=["helper(5) -> 5"],
                 created_at=now,
             ),
         ]

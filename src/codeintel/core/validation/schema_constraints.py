@@ -19,6 +19,11 @@ from codeintel.core.schemas.arrow_gen import (
 )
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.validation.arrow_type_compat import is_compatible_arrow_type
+from codeintel.core.validation.profiles import (
+    ValidationProfile,
+    normalize_validation_profile,
+    resolve_validation_depth,
+)
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
@@ -205,6 +210,7 @@ def validate_parquet_path(
     *,
     table_schema: TableSchema,
     observation: SchemaObservationRecord | None = None,
+    validation_profile: ValidationProfile | None = None,
 ) -> list[str]:
     """Validate a Parquet file against schema constraints.
 
@@ -215,10 +221,15 @@ def validate_parquet_path(
     """
     parquet_file = pq.ParquetFile(path)
     errors = schema_errors(table_schema, parquet_file.schema_arrow)
+    include_data_checks = True
+    if validation_profile is not None:
+        normalized = normalize_validation_profile(validation_profile, default="strict")
+        include_data_checks = resolve_validation_depth(normalized) != "schema-only"
     for batch in parquet_file.iter_batches():
         errors.extend(arrow_batch_errors(batch))
-        errors.extend(nullability_errors_for_batch(table_schema, batch))
-        errors.extend(observation_errors_for_batch(table_schema, batch, observation))
+        if include_data_checks:
+            errors.extend(nullability_errors_for_batch(table_schema, batch))
+            errors.extend(observation_errors_for_batch(table_schema, batch, observation))
     return errors
 
 

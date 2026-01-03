@@ -21,18 +21,22 @@ from codeintel.build.schemas.dataset_service import (
     list_datasets,
 )
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.columnar import stream_from_items
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
     DatasetDescribeResult,
     DatasetFlowResult,
     DatasetInfoResult,
-    DatasetListResult,
     DatasetSummary,
     DatasetVerifyResult,
     ServeStartResult,
+    TabularResult,
 )
 from codeintel.cli.errors.results import fail_dataset_not_found, fail_invalid_value
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
+    compose_cli_runtime_bundle,
+)
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.mcp.server import create_mcp_server
@@ -132,7 +136,7 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
 def dataset_list_handler(
     ctx: CommandContext,
     list_datasets_fn: DatasetListFn | None = None,
-) -> CliResult[DatasetListResult]:
+) -> CliResult[TabularResult]:
     """List datasets from the registry.
 
     Parameters
@@ -147,8 +151,8 @@ def dataset_list_handler(
 
     Returns
     -------
-    CliResult[DatasetListResult]
-        List of datasets.
+    CliResult[TabularResult]
+        Stream of dataset records.
     """
     docs_view_raw = ctx.params.get_str("docs_view") or "include"
     read_only_raw = ctx.params.get_str("read_only") or "include"
@@ -178,7 +182,13 @@ def dataset_list_handler(
         for contract in contracts
     ]
 
-    return CliResult.ok(DatasetListResult(datasets=summaries, count=len(summaries)))
+    stream = stream_from_items(summaries)
+    return CliResult.ok(
+        TabularResult(
+            stream=stream,
+            metadata={"count": len(summaries)},
+        )
+    )
 
 
 def dataset_describe_handler(
@@ -352,7 +362,11 @@ def dataset_info_handler(ctx: CommandContext) -> CliResult[DatasetInfoResult]:
         Schema information.
     """
     table_key = ctx.params.require_str("table_key")
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     return dataset_info_structured(table_key=table_key, runtime=runtime_bundle)
 
 
@@ -405,7 +419,11 @@ def dataset_flow_handler(ctx: CommandContext) -> CliResult[DatasetFlowResult]:
         Flow result with producers and consumers.
     """
     table_key = ctx.params.require_str("table_key")
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     return dataset_flow_structured(table_key=table_key, runtime=runtime_bundle)
 
 
@@ -610,7 +628,6 @@ __all__ = [
     "DatasetDescribeResult",
     "DatasetFlowResult",
     "DatasetInfoResult",
-    "DatasetListResult",
     "DatasetVerifyResult",
     "ServeStartResult",
     "dataset_describe_handler",

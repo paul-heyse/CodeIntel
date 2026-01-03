@@ -84,9 +84,10 @@ class ValidationPack:
                 docstring, hash
             ) VALUES (
                 'pkg/a.py', 'FunctionDef', 'foo', 'pkg.a.foo', 1, 2, 0, 0,
-                'pkg.a', '[]', NULL, 'h1'
+                'pkg.a', ?, NULL, 'h1'
             )
-            """
+            """,
+            [[]],
         )
 
     @staticmethod

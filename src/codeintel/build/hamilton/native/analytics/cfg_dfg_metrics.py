@@ -38,7 +38,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import empty_frame_for_table, rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -340,11 +340,11 @@ def cfg_dfg_metrics_inputs(
         Collected frames for CFG/DFG metrics computation.
     """
     return _CfgDfgMetricsInputs(
-        cfg_blocks=tabular_to_lazyframe(q__graph__cfg_blocks).collect(),
-        cfg_edges=tabular_to_lazyframe(q__graph__cfg_edges).collect(),
-        dfg_edges=tabular_to_lazyframe(q__graph__dfg_edges).collect(),
-        goids=tabular_to_lazyframe(q__core__goids).collect(),
-        modules=tabular_to_lazyframe(q__core__modules).collect(),
+        cfg_blocks=tabular_to_frame(q__graph__cfg_blocks),
+        cfg_edges=tabular_to_frame(q__graph__cfg_edges),
+        dfg_edges=tabular_to_frame(q__graph__dfg_edges),
+        goids=tabular_to_frame(q__core__goids),
+        modules=tabular_to_frame(q__core__modules),
     )
 
 

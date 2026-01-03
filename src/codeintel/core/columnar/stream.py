@@ -7,6 +7,7 @@ from inspect import signature
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import pyarrow as pa
+import pyarrow.dataset as ds
 
 from codeintel.core.columnar.polars_collect import (
     PolarsExecutionOptions,
@@ -14,6 +15,8 @@ from codeintel.core.columnar.polars_collect import (
     collect_lazyframe,
 )
 from codeintel.core.columnar.schema import unify_schema_for_batches
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.duckdb_types import DuckDBRelation
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -139,10 +142,14 @@ class RecordBatchReaderStream:
         if pl is None:  # pragma: no cover
             msg = "polars is required for LazyFrame conversion"
             raise RuntimeError(msg)
-        frame = pl.from_arrow(self.reader)
-        if isinstance(frame, pl.Series):
-            return frame.to_frame().lazy()
-        return frame.lazy()
+        try:
+            dataset = ds.dataset(self.reader)
+        except (ValueError, pa.ArrowInvalid):
+            frame = pl.from_arrow(self.reader)
+            if isinstance(frame, pl.Series):
+                return frame.to_frame().lazy()
+            return frame.lazy()
+        return pl.scan_pyarrow_dataset(dataset)
 
     def to_table(self) -> pa.Table:
         """Materialize the stream into a table.
@@ -323,6 +330,50 @@ def _maybe_inspect(lazyframe: PolarsLazyFrame) -> None:
 ColumnarStreamAdapter = RecordBatchReaderStream | LazyFrameStream
 
 
+def stream_from_reader(reader: pa.RecordBatchReader) -> RecordBatchReaderStream:
+    """Wrap a RecordBatchReader as a ColumnarStream.
+
+    Returns
+    -------
+    RecordBatchReaderStream
+        Columnar stream adapter for the reader.
+    """
+    return RecordBatchReaderStream(reader)
+
+
+def stream_from_table(
+    table: pa.Table,
+    *,
+    batch_size: int | None = None,
+) -> RecordBatchReaderStream:
+    """Wrap an Arrow table as a ColumnarStream.
+
+    Returns
+    -------
+    RecordBatchReaderStream
+        Columnar stream adapter for the table.
+    """
+    batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
+    reader = pa.RecordBatchReader.from_batches(table.schema, batches)
+    return RecordBatchReaderStream(reader)
+
+
+def stream_from_relation(
+    relation: DuckDBRelation,
+    *,
+    batch_size: int | None = None,
+) -> RecordBatchReaderStream:
+    """Wrap a DuckDB relation as a ColumnarStream.
+
+    Returns
+    -------
+    RecordBatchReaderStream
+        Columnar stream adapter for the relation.
+    """
+    reader = relation.fetch_record_batch(batch_size or DEFAULT_ARROW_BATCH_SIZE)
+    return RecordBatchReaderStream(reader)
+
+
 def coerce_arrow_reader(
     value: object,
     *,
@@ -420,4 +471,7 @@ __all__ = [
     "RecordBatchReaderStream",
     "coerce_arrow_reader",
     "coerce_arrow_table",
+    "stream_from_reader",
+    "stream_from_relation",
+    "stream_from_table",
 ]

@@ -13,7 +13,7 @@ from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
@@ -199,11 +199,11 @@ def cfg_dfg_analysis(
     _CfgDfgAnalysis
         Container of CFG blocks/edges and DFG edges rows.
     """
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    goids_frame = tabular_to_frame(q__core__goids)
     if goids_frame.is_empty():
         return _CfgDfgAnalysis(cfg_blocks=(), cfg_edges=(), dfg_edges=())
 
-    ast_nodes_frame = tabular_to_lazyframe(q__core__ast_nodes).collect()
+    ast_nodes_frame = tabular_to_frame(q__core__ast_nodes)
     function_keys_by_path, paths = _collect_ast_function_keys(ast_nodes_frame)
     goids_by_path = _collect_goids_by_path(goids_frame, function_keys_by_path)
     resolved_paths = paths or set(goids_by_path)

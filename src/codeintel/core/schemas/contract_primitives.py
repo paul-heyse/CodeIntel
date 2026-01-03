@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Literal
 
 import msgspec
 
+from codeintel.core.validation.profiles import ValidationProfile
+
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
     from codeintel.core.schemas.row_models import GeneratedRowBinding
@@ -59,7 +61,7 @@ class DatasetContract(msgspec.Struct, frozen=True):
     upstream_dependencies
         Optional tuple of other dataset names this dataset depends on.
     validation_profile
-        Validation strictness level ("strict" or "lenient").
+        Validation profile (e.g., "strict", "lenient", "schema-only").
     composition
         Optional CompositeSchema for profile datasets.
     """
@@ -82,7 +84,7 @@ class DatasetContract(msgspec.Struct, frozen=True):
     stable_id: str | None = None
     schema_version: str | None = None
     upstream_dependencies: tuple[str, ...] = msgspec.field(default_factory=tuple)
-    validation_profile: Literal["strict", "lenient"] = "strict"
+    validation_profile: ValidationProfile = "strict"
     composition: CompositeSchema | None = None
 
     def has_row_binding(self) -> bool:
@@ -124,7 +126,7 @@ class DatasetContract(msgspec.Struct, frozen=True):
         docs_view = self.table_key.startswith("docs.")
         read_only = self.is_view or docs_view or "read_only" in self.tags
         return {
-            "can_validate": self.json_schema_id is not None,
+            "can_validate": self.schema is not None,
             "can_export_jsonl": self.jsonl_filename is not None,
             "can_export_parquet": self.parquet_filename is not None,
             "has_row_binding": self.row_binding is not None,

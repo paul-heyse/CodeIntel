@@ -12,6 +12,7 @@ from codeintel.core.schemas.contract_policy import (
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.service import SchemaService
+from codeintel.core.validation.profiles import ValidationProfile
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema
@@ -42,7 +43,7 @@ class DatasetContractOverrides:
     retention_policy: str | None = None
     upstream_dependencies: tuple[str, ...] = ()
     tags: frozenset[str] = field(default_factory=frozenset)
-    validation_profile: Literal["strict", "lenient"] = "strict"
+    validation_profile: ValidationProfile = "strict"
     stable_id: str | None = None
     schema_version: str | None = None
 

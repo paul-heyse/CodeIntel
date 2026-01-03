@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
+    compose_cli_runtime_bundle,
+)
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.serving.semantic.registry_compiler import (
     SemanticTagValidationError,
@@ -39,7 +42,11 @@ def semantic_compile_handler(ctx: CommandContext) -> CliResult[str]:
     except ResolutionError as exc:
         return fail_execution_failed("semantic", str(exc))
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     schema_index = runtime_bundle.schema_index
     if schema_index is None:
         return fail_execution_failed("semantic", "Schema index unavailable", status=500)

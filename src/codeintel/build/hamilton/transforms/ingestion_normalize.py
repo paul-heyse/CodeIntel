@@ -11,6 +11,8 @@ from codeintel.build.hamilton.transforms.tabular_steps import sort_columns
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.frames import dedupe_frame_for_table
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
+from codeintel.core.columnar.schema_metadata import decode_metadata
+from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
 
 
 def normalize_ingest_frame(
@@ -38,6 +40,11 @@ def normalize_ingest_frame(
     -------
     pl.LazyFrame | None
         Normalized LazyFrame or None if input is None.
+
+    Raises
+    ------
+    ValueError
+        If schema extras are rejected and unexpected columns are present.
     """
     if frame is None:
         return None
@@ -52,10 +59,18 @@ def normalize_ingest_frame(
         resolved_keep_extras = True if keep_extras is None else keep_extras
     else:
         ordered_columns = [str(name) for name in arrow_schema.names]
-        if keep_extras is None:
-            resolved_keep_extras = extras_policy_from_schema(arrow_schema) == "retain"
-        else:
-            resolved_keep_extras = keep_extras
+        extras_policy = extras_policy_from_schema(arrow_schema)
+        extras_column = _extras_column_name(arrow_schema)
+        if extras_policy == "reject":
+            extras = [
+                name
+                for name in _column_names(normalized)
+                if name not in ordered_columns and name != extras_column
+            ]
+            if extras:
+                message = f"Unexpected columns for {table_key}: {', '.join(sorted(extras))}"
+                raise ValueError(message)
+        resolved_keep_extras = extras_policy == "retain"
     if add_missing:
         normalized = _add_missing_columns(normalized, ordered_columns)
     return _reorder_columns(
@@ -96,6 +111,16 @@ def _column_names(frame: pl.LazyFrame) -> list[str]:
     if callable(getattr(schema, "names", None)):
         return [str(name) for name in schema.names()]
     return [str(name) for name in list(schema)]
+
+
+def _extras_column_name(arrow_schema: object) -> str:
+    if not hasattr(arrow_schema, "metadata"):
+        return DEFAULT_EXTRAS_COLUMN
+    metadata = decode_metadata(getattr(arrow_schema, "metadata", None))
+    value = metadata.get("codeintel.extras_column")
+    if isinstance(value, str) and value:
+        return value
+    return DEFAULT_EXTRAS_COLUMN
 
 
 __all__ = ["normalize_ingest_frame"]

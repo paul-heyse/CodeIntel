@@ -17,12 +17,12 @@ if TYPE_CHECKING:
 SUBSYSTEM_PROFILE_CACHE_TABLE_KEY = "analytics.subsystem_profile_cache"
 
 
-def build_subsystem_profile_cache_rows(
+def build_subsystem_profile_cache_frame(
     snapshot: SnapshotRef,
     subsystems_frame: pl.LazyFrame,
     subsystem_graph_metrics_frame: pl.LazyFrame,
-) -> list[SubsystemProfileCacheRow]:
-    """Build cache rows for analytics.subsystem_profile_cache.
+) -> pl.LazyFrame:
+    """Build cache rows for analytics.subsystem_profile_cache as a LazyFrame.
 
     Parameters
     ----------
@@ -35,8 +35,8 @@ def build_subsystem_profile_cache_rows(
 
     Returns
     -------
-    list[SubsystemProfileCacheRow]
-        Cache rows for subsystem profiles.
+    pl.LazyFrame
+        LazyFrame containing subsystem profile cache rows.
     """
     subsystems = _filter_frame_by_snapshot(subsystems_frame, snapshot)
     metrics = _filter_frame_by_snapshot(subsystem_graph_metrics_frame, snapshot)
@@ -46,7 +46,26 @@ def build_subsystem_profile_cache_rows(
         how="left",
     )
     columns = _profile_cache_columns()
-    frame = _ensure_columns(joined, columns)
+    return _ensure_columns(joined, columns)
+
+
+def build_subsystem_profile_cache_rows(
+    snapshot: SnapshotRef,
+    subsystems_frame: pl.LazyFrame,
+    subsystem_graph_metrics_frame: pl.LazyFrame,
+) -> list[SubsystemProfileCacheRow]:
+    """Build cache rows for analytics.subsystem_profile_cache.
+
+    Returns
+    -------
+    list[SubsystemProfileCacheRow]
+        Cache rows for subsystem profiles.
+    """
+    frame = build_subsystem_profile_cache_frame(
+        snapshot,
+        subsystems_frame=subsystems_frame,
+        subsystem_graph_metrics_frame=subsystem_graph_metrics_frame,
+    )
     rows = frame.collect().to_dicts()
     return [cast("SubsystemProfileCacheRow", row) for row in rows]
 
@@ -77,5 +96,6 @@ def _ensure_columns(frame: pl.LazyFrame, columns: tuple[str, ...]) -> pl.LazyFra
 
 
 __all__ = [
+    "build_subsystem_profile_cache_frame",
     "build_subsystem_profile_cache_rows",
 ]

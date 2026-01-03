@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import networkx as nx
+import polars as pl
 from networkx.exception import NetworkXNoPath
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
@@ -252,6 +253,27 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
     return str(value) == expected
 
 
+def _matches_optional_scope_expr(column: str, expected: str) -> pl.Expr:
+    col = pl.col(column)
+    col_str = col.cast(pl.Utf8, strict=False)
+    stripped = col_str.str.strip_chars()
+    return col.is_null() | (stripped.str.len_chars() == 0) | (col_str == expected)
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("repo", repo))
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("commit", commit))
+    return filtered
+
+
 def _config_references_from_rows(
     rows: Sequence[Mapping[str, object]],
     *,
@@ -273,6 +295,32 @@ def _config_references_from_rows(
     return refs
 
 
+def _config_references_from_frame(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, list[tuple[str, str]]]:
+    if frame.is_empty():
+        return {}
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return {}
+    data = filtered.select(["config_path", "key", "reference_paths"]).to_dict(as_series=False)
+    refs: dict[str, list[tuple[str, str]]] = {}
+    for config_path, key, reference_paths in zip(
+        data["config_path"],
+        data["key"],
+        data["reference_paths"],
+        strict=True,
+    ):
+        if config_path is None or key is None:
+            continue
+        for rel_path in _coerce_paths(reference_paths):
+            refs.setdefault(rel_path, []).append((str(key), str(config_path)))
+    return refs
+
+
 def _entrypoints_from_rows(
     rows: Sequence[Mapping[str, object]],
     *,
@@ -286,6 +334,27 @@ def _entrypoints_from_rows(
         if not _matches_optional_scope(row.get("commit"), commit):
             continue
         handler_goid = normalize_decimal_id(row.get("handler_goid_h128"))
+        if handler_goid is not None:
+            entrypoints.add(handler_goid)
+    return entrypoints
+
+
+def _entrypoints_from_frame(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> set[int]:
+    if frame.is_empty():
+        return set()
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return set()
+    if "handler_goid_h128" not in filtered.columns:
+        return set()
+    entrypoints: set[int] = set()
+    for value in filtered.get_column("handler_goid_h128").to_list():
+        handler_goid = normalize_decimal_id(value)
         if handler_goid is not None:
             entrypoints.add(handler_goid)
     return entrypoints
@@ -342,8 +411,8 @@ class ConfigDataFlowInputs:
     """Inputs required to compute config data flow rows."""
 
     snapshot: SnapshotRef
-    config_value_rows: Sequence[Mapping[str, object]]
-    entrypoint_rows: Sequence[Mapping[str, object]]
+    config_value_rows: Sequence[Mapping[str, object]] | pl.DataFrame
+    entrypoint_rows: Sequence[Mapping[str, object]] | pl.DataFrame
     call_graph: nx.DiGraph
     ast_by_goid: dict[int, FunctionAst]
     missing_goids: set[int] | None = None
@@ -365,11 +434,18 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
     ConfigDataFlowResult
         Container with config data flow rows.
     """
-    refs_by_path = _config_references_from_rows(
-        inputs.config_value_rows,
-        repo=inputs.snapshot.repo,
-        commit=inputs.snapshot.commit,
-    )
+    if isinstance(inputs.config_value_rows, pl.DataFrame):
+        refs_by_path = _config_references_from_frame(
+            inputs.config_value_rows,
+            repo=inputs.snapshot.repo,
+            commit=inputs.snapshot.commit,
+        )
+    else:
+        refs_by_path = _config_references_from_rows(
+            inputs.config_value_rows,
+            repo=inputs.snapshot.repo,
+            commit=inputs.snapshot.commit,
+        )
     if not refs_by_path:
         log.info(
             "No config references found for %s@%s; skipping config flow analysis",
@@ -378,11 +454,18 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
         )
         return ConfigDataFlowResult(rows=None)
 
-    entrypoints = _entrypoints_from_rows(
-        inputs.entrypoint_rows,
-        repo=inputs.snapshot.repo,
-        commit=inputs.snapshot.commit,
-    )
+    if isinstance(inputs.entrypoint_rows, pl.DataFrame):
+        entrypoints = _entrypoints_from_frame(
+            inputs.entrypoint_rows,
+            repo=inputs.snapshot.repo,
+            commit=inputs.snapshot.commit,
+        )
+    else:
+        entrypoints = _entrypoints_from_rows(
+            inputs.entrypoint_rows,
+            repo=inputs.snapshot.repo,
+            commit=inputs.snapshot.commit,
+        )
     missing = inputs.missing_goids or set()
     if missing:
         log.debug(

@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.native.patterns.access import (
-    DataAccessSpec,
-    load_access,
-    load_table_spec,
-)
+from codeintel.build.hamilton.native.patterns.access import DataAccessSpec, load_table_spec
 from codeintel.build.hamilton.native.patterns.loaders import load_table
 from codeintel.build.hamilton.native.patterns.materialization_collectors import (
     make_artifact_materializations_collector,
@@ -66,7 +62,6 @@ __all__ = [
     "attach_table_target_template",
     "attach_tool_target_template",
     "finalize_target_from_materializations",
-    "load_access",
     "load_table",
     "load_table_spec",
     "make_artifact_materializations_collector",

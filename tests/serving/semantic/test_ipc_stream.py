@@ -17,6 +17,7 @@ from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.gateway.pool import PoolConfig
 from codeintel.storage.schema import arrow_schema_for_table_key
+from codeintel.storage.schema.duckdb_contracts import ContractSchemaOptions
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.gateway import seed_contract_catalog
@@ -110,11 +111,14 @@ def _load_contract_schema(
     )
     gateway = open_gateway(config)
     try:
+        options = ContractSchemaOptions(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
         schema = arrow_schema_for_table_key(
             gateway.con,
             table_key=table_key,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            options=options,
         )
         if schema is None:
             pytest.fail(f"Expected contract schema for {table_key}")

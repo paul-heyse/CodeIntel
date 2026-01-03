@@ -9,7 +9,10 @@ from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.build.spec import BuildSpecCompileOptions, buildspec_to_json, compile_buildspec
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
+    compose_cli_runtime_bundle,
+)
 from codeintel.cli.resolution.errors import ResolutionError
 
 if TYPE_CHECKING:
@@ -45,7 +48,11 @@ def build_spec_compile_handler(ctx: CommandContext) -> CliResult[str]:
     except ResolutionError as exc:
         return fail_execution_failed("build", str(exc))
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     spec = compile_buildspec(
         catalog=runtime_bundle.catalog,
         provider=get_schema_provider(),

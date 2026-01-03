@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
@@ -18,6 +18,7 @@ from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.generated_rows.core import (
     CoreParseManifestRow,
     CoreTsCapturesRow,
+    CoreTsChangedRangesRow,
     CoreTsEdgesRow,
     CoreTsLanguageMetadataRow,
     CoreTsNodesRow,
@@ -29,19 +30,38 @@ from codeintel.core.spans import normalize_byte_span
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 from codeintel.ingestion.tree_sitter.registry import language_for_path, language_metadata
-from codeintel.ingestion.tree_sitter.runner import run_tree_sitter
+from codeintel.ingestion.tree_sitter.runner import TreeSitterRunOptions, run_tree_sitter
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from tree_sitter import Tree
+    from tree_sitter_language_pack import SupportedLanguage
+
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.tree_sitter.runner import TreeSitterParseError, TreeSitterParseResult
+    from codeintel.ingestion.tree_sitter.runner import (
+        TreeSitterCapture,
+        TreeSitterChangedRange,
+        TreeSitterEdge,
+        TreeSitterNode,
+        TreeSitterParseError,
+        TreeSitterParseResult,
+        TreeSitterToken,
+        TreeSitterTrivia,
+    )
+    from codeintel.core.schemas.generated_rows.core import (
+        TreeSitterCaptureExtras,
+        TreeSitterNodeExtras,
+        TreeSitterParseErrorExtras,
+        TreeSitterTokenExtras,
+    )
 
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
 TS_CAPTURES_TABLE_KEY = "core.ts_captures"
 TS_NODES_TABLE_KEY = "core.ts_nodes"
 TS_EDGES_TABLE_KEY = "core.ts_edges"
 TS_PARSE_ERRORS_TABLE_KEY = "core.ts_parse_errors"
+TS_CHANGED_RANGES_TABLE_KEY = "core.ts_changed_ranges"
 TS_TOKENS_TABLE_KEY = "core.ts_tokens"
 TS_TRIVIA_TABLE_KEY = "core.ts_trivia"
 TS_LANGUAGE_METADATA_TABLE_KEY = "core.ts_language_metadata"
@@ -68,6 +88,9 @@ class TreeSitterIndexResult:
     parse_errors_rows: pa.RecordBatchReader = field(
         default_factory=lambda: empty_reader_for_table(TS_PARSE_ERRORS_TABLE_KEY)
     )
+    changed_ranges_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(TS_CHANGED_RANGES_TABLE_KEY)
+    )
     tokens_rows: pa.RecordBatchReader = field(
         default_factory=lambda: empty_reader_for_table(TS_TOKENS_TABLE_KEY)
     )
@@ -82,6 +105,7 @@ class TreeSitterIndexResult:
     nodes_row_count: int = 0
     edges_row_count: int = 0
     parse_errors_row_count: int = 0
+    changed_ranges_row_count: int = 0
     tokens_row_count: int = 0
     trivia_row_count: int = 0
     language_metadata_row_count: int = 0
@@ -102,13 +126,36 @@ class _TreeSitterBuffers:
     nodes: ColumnarBatchCollector
     edges: ColumnarBatchCollector
     parse_errors: ColumnarBatchCollector
+    changed_ranges: ColumnarBatchCollector
     tokens: ColumnarBatchCollector
     trivia: ColumnarBatchCollector
     language_metadata: ColumnarBatchCollector
 
 
 @dataclass(frozen=True, slots=True)
-class _TreeSitterIndexConfig:
+class _RowContext:
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ProcessModuleContext:
+    module: ModuleRecord
+    repo: str
+    commit: str
+    buffers: _TreeSitterBuffers
+    discovery: ModuleDiscoveryPort
+    config: TreeSitterIndexConfig
+    seen_languages: set[str]
+    created_at: datetime
+    tree_cache: dict[str, Tree]
+    source_cache: dict[str, bytes]
+
+
+@dataclass(frozen=True, slots=True)
+class TreeSitterIndexConfig:
     emit_nodes_edges: bool
     emit_tokens: bool
     emit_trivia: bool
@@ -116,6 +163,17 @@ class _TreeSitterIndexConfig:
     enable_incremental: bool
     match_limit: int
     allow_non_local_patterns: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TreeSitterIndexRunOptions:
+    emit_nodes_edges: bool = True
+    emit_tokens: bool = True
+    emit_trivia: bool = True
+    emit_language_metadata: bool = True
+    enable_incremental: bool = False
+    match_limit: int = 10000
+    allow_non_local_patterns: bool = False
 
 
 def _parse_manifest_row(
@@ -165,7 +223,7 @@ def _language_metadata_row(
     language: str,
     created_at: datetime,
 ) -> CoreTsLanguageMetadataRow:
-    metadata = language_metadata(language)
+    metadata = language_metadata(cast("SupportedLanguage", language))
     return CoreTsLanguageMetadataRow(
         repo=repo,
         commit=commit,
@@ -206,6 +264,11 @@ def _build_buffers() -> _TreeSitterBuffers:
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
             extras_policy="retain",
         ),
+        changed_ranges=columnar_batch_collector_for_table_key(
+            TS_CHANGED_RANGES_TABLE_KEY,
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            extras_policy="retain",
+        ),
         tokens=columnar_batch_collector_for_table_key(
             TS_TOKENS_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
@@ -224,26 +287,23 @@ def _build_buffers() -> _TreeSitterBuffers:
     )
 
 
-def _append_tree_sitter_rows(
-    *,
-    buffers: _TreeSitterBuffers,
-    module: ModuleRecord,
-    parse_result: TreeSitterParseResult,
-    repo: str,
-    commit: str,
-) -> None:
-    capture_rows: list[CoreTsCapturesRow] = []
-    for capture in parse_result.captures:
+def _capture_rows(
+    context: _RowContext,
+    captures: Sequence[TreeSitterCapture],
+) -> list[CoreTsCapturesRow]:
+    rows: list[CoreTsCapturesRow] = []
+    for capture in captures:
         normalized = normalize_byte_span(capture.start_byte, capture.end_byte)
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        capture_rows.append(
+        extras = cast("TreeSitterCaptureExtras | None", capture.extras)
+        rows.append(
             CoreTsCapturesRow(
-                repo=repo,
-                commit=commit,
-                rel_path=module.rel_path,
-                language=parse_result.language,
+                repo=context.repo,
+                commit=context.commit,
+                rel_path=context.rel_path,
+                language=context.language,
                 query_pack=capture.query_pack,
                 capture_name=capture.capture_name,
                 start_byte=start_byte,
@@ -254,23 +314,29 @@ def _append_tree_sitter_rows(
                 end_col=capture.end_col,
                 node_type=capture.node_type,
                 text_preview=capture.text_preview,
-                extras=capture.extras,
+                extras=extras,
             )
         )
-    buffers.captures.extend(capture_rows)
+    return rows
 
-    node_rows: list[CoreTsNodesRow] = []
-    for node in parse_result.nodes:
+
+def _node_rows(
+    context: _RowContext,
+    nodes: Sequence[TreeSitterNode],
+) -> list[CoreTsNodesRow]:
+    rows: list[CoreTsNodesRow] = []
+    for node in nodes:
         normalized = normalize_byte_span(node.start_byte, node.end_byte)
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        node_rows.append(
+        extras_json = cast("TreeSitterNodeExtras | None", node.extras_json)
+        rows.append(
             CoreTsNodesRow(
-                repo=repo,
-                commit=commit,
-                rel_path=module.rel_path,
-                language=parse_result.language,
+                repo=context.repo,
+                commit=context.commit,
+                rel_path=context.rel_path,
+                language=context.language,
                 node_id=node.node_id,
                 node_type=node.node_type,
                 grammar_id=node.grammar_id,
@@ -288,39 +354,53 @@ def _append_tree_sitter_rows(
                 parse_state=node.parse_state,
                 next_parse_state=node.next_parse_state,
                 text_preview=node.text_preview,
-                extras_json=node.extras_json,
+                extras_json=extras_json,
             )
         )
-    buffers.nodes.extend(node_rows)
+    return rows
 
-    edge_rows: list[CoreTsEdgesRow] = [
+
+def _edge_rows(
+    context: _RowContext,
+    edges: Sequence[TreeSitterEdge],
+) -> list[CoreTsEdgesRow]:
+    return [
         CoreTsEdgesRow(
-            repo=repo,
-            commit=commit,
-            rel_path=module.rel_path,
-            language=parse_result.language,
+            repo=context.repo,
+            commit=context.commit,
+            rel_path=context.rel_path,
+            language=context.language,
             parent_node_id=edge.parent_node_id,
             child_node_id=edge.child_node_id,
             field_id=edge.field_id,
             field_name=edge.field_name,
             child_ordinal=edge.child_ordinal,
         )
-        for edge in parse_result.edges
+        for edge in edges
     ]
-    buffers.edges.extend(edge_rows)
 
-    error_rows: list[CoreTsParseErrorsRow] = []
-    for error in parse_result.errors:
+
+def _parse_error_rows(
+    context: _RowContext,
+    errors: Sequence[TreeSitterParseError],
+) -> list[CoreTsParseErrorsRow]:
+    rows: list[CoreTsParseErrorsRow] = []
+    for error in errors:
         normalized = normalize_byte_span(error.start_byte, error.end_byte)
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        error_rows.append(
+        extras: TreeSitterParseErrorExtras = {
+            "node_type": error.node_type,
+            "has_error": error.has_error,
+            "parse_state": error.parse_state,
+        }
+        rows.append(
             CoreTsParseErrorsRow(
-                repo=repo,
-                commit=commit,
-                rel_path=module.rel_path,
-                language=parse_result.language,
+                repo=context.repo,
+                commit=context.commit,
+                rel_path=context.rel_path,
+                language=context.language,
                 error_type=error.error_type,
                 message=error.message,
                 start_byte=start_byte,
@@ -330,22 +410,56 @@ def _append_tree_sitter_rows(
                 end_row=error.end_row,
                 end_col=error.end_col,
                 text_preview=error.text_preview,
+                extras_json=extras,
             )
         )
-    buffers.parse_errors.extend(error_rows)
+    return rows
 
-    token_rows: list[CoreTsTokensRow] = []
-    for token in parse_result.tokens:
+
+def _changed_range_rows(
+    context: _RowContext,
+    ranges: Sequence[TreeSitterChangedRange],
+) -> list[CoreTsChangedRangesRow]:
+    rows: list[CoreTsChangedRangesRow] = []
+    for entry in ranges:
+        normalized = normalize_byte_span(entry.start_byte, entry.end_byte)
+        if normalized is None:
+            continue
+        start_byte, end_byte = normalized
+        rows.append(
+            CoreTsChangedRangesRow(
+                repo=context.repo,
+                commit=context.commit,
+                rel_path=context.rel_path,
+                language=context.language,
+                start_byte=start_byte,
+                end_byte=end_byte,
+                start_row=entry.start_row,
+                start_col=entry.start_col,
+                end_row=entry.end_row,
+                end_col=entry.end_col,
+            )
+        )
+    return rows
+
+
+def _token_rows(
+    context: _RowContext,
+    tokens: Sequence[TreeSitterToken],
+) -> list[CoreTsTokensRow]:
+    rows: list[CoreTsTokensRow] = []
+    for token in tokens:
         normalized = normalize_byte_span(token.start_byte, token.end_byte)
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        token_rows.append(
+        extras_json = cast("TreeSitterTokenExtras | None", token.extras_json)
+        rows.append(
             CoreTsTokensRow(
-                repo=repo,
-                commit=commit,
-                rel_path=module.rel_path,
-                language=parse_result.language,
+                repo=context.repo,
+                commit=context.commit,
+                rel_path=context.rel_path,
+                language=context.language,
                 token_id=token.token_id,
                 token_kind=token.token_kind,
                 node_type=token.node_type,
@@ -356,37 +470,66 @@ def _append_tree_sitter_rows(
                 end_row=token.end_row,
                 end_col=token.end_col,
                 text_preview=token.text_preview,
-                extras_json=token.extras_json,
+                extras_json=extras_json,
             )
         )
-    buffers.tokens.extend(token_rows)
+    return rows
 
-    trivia_rows: list[CoreTsTriviaRow] = []
-    for trivia in parse_result.trivia:
-        normalized = normalize_byte_span(trivia.start_byte, trivia.end_byte)
+
+def _trivia_rows(
+    context: _RowContext,
+    trivia: Sequence[TreeSitterTrivia],
+) -> list[CoreTsTriviaRow]:
+    rows: list[CoreTsTriviaRow] = []
+    for item in trivia:
+        normalized = normalize_byte_span(item.start_byte, item.end_byte)
         if normalized is None:
             continue
         start_byte, end_byte = normalized
-        trivia_rows.append(
+        extras_json = cast("TreeSitterTokenExtras | None", item.extras_json)
+        rows.append(
             CoreTsTriviaRow(
-                repo=repo,
-                commit=commit,
-                rel_path=module.rel_path,
-                language=parse_result.language,
-                trivia_id=trivia.trivia_id,
-                trivia_kind=trivia.trivia_kind,
-                node_type=trivia.node_type,
+                repo=context.repo,
+                commit=context.commit,
+                rel_path=context.rel_path,
+                language=context.language,
+                trivia_id=item.trivia_id,
+                trivia_kind=item.trivia_kind,
+                node_type=item.node_type,
                 start_byte=start_byte,
                 end_byte=end_byte,
-                start_row=trivia.start_row,
-                start_col=trivia.start_col,
-                end_row=trivia.end_row,
-                end_col=trivia.end_col,
-                text_preview=trivia.text_preview,
-                extras_json=trivia.extras_json,
+                start_row=item.start_row,
+                start_col=item.start_col,
+                end_row=item.end_row,
+                end_col=item.end_col,
+                text_preview=item.text_preview,
+                extras_json=extras_json,
             )
         )
-    buffers.trivia.extend(trivia_rows)
+    return rows
+
+
+def _append_tree_sitter_rows(
+    *,
+    buffers: _TreeSitterBuffers,
+    module: ModuleRecord,
+    parse_result: TreeSitterParseResult,
+    repo: str,
+    commit: str,
+) -> None:
+    context = _RowContext(
+        repo=repo,
+        commit=commit,
+        rel_path=module.rel_path,
+        language=parse_result.language,
+    )
+    buffers.captures.extend(_capture_rows(context, parse_result.captures))
+    buffers.nodes.extend(_node_rows(context, parse_result.nodes))
+    buffers.edges.extend(_edge_rows(context, parse_result.edges))
+    buffers.parse_errors.extend(_parse_error_rows(context, parse_result.errors))
+    buffers.changed_ranges.extend(_changed_range_rows(context, parse_result.changed_ranges))
+    buffers.tokens.extend(_token_rows(context, parse_result.tokens))
+    buffers.trivia.extend(_trivia_rows(context, parse_result.trivia))
 
 
 def _module_warnings(
@@ -404,85 +547,97 @@ def _module_warnings(
     return warnings
 
 
-def _process_module(
-    *,
-    module: ModuleRecord,
-    repo: str,
-    commit: str,
-    buffers: _TreeSitterBuffers,
-    discovery: ModuleDiscoveryPort,
-    config: _TreeSitterIndexConfig,
-    seen_languages: set[str],
-    created_at: datetime,
-) -> list[str]:
-    language = language_for_path(module.file_path)
+def _process_module(context: _ProcessModuleContext) -> list[str]:
+    language = language_for_path(context.module.file_path)
     if language is None:
         return []
 
-    source_bytes = discovery.read_module_bytes(module)
+    source_bytes = context.discovery.read_module_bytes(context.module)
     if source_bytes is None:
-        return [f"Tree-sitter skipped {module.rel_path}: unreadable source"]
+        return [f"Tree-sitter skipped {context.module.rel_path}: unreadable source"]
     source_text = source_bytes.decode("utf-8", errors="replace")
     source_index = LineIndexedSource(source_text, source_bytes)
-    context = _ParseManifestContext(
-        repo=repo,
-        commit=commit,
-        rel_path=module.rel_path,
+    manifest_context = _ParseManifestContext(
+        repo=context.repo,
+        commit=context.commit,
+        rel_path=context.module.rel_path,
         source_index=source_index,
     )
     try:
+        old_tree = None
+        old_source_bytes = None
+        if context.config.enable_incremental:
+            old_tree = context.tree_cache.get(context.module.rel_path)
+            old_source_bytes = context.source_cache.get(context.module.rel_path)
+        options = TreeSitterRunOptions(
+            emit_nodes_edges=context.config.emit_nodes_edges,
+            emit_tokens=context.config.emit_tokens,
+            emit_trivia=context.config.emit_trivia,
+            match_limit=context.config.match_limit,
+            allow_non_local_patterns=context.config.allow_non_local_patterns,
+            old_tree=old_tree,
+            old_source_bytes=old_source_bytes,
+        )
         parse_result = run_tree_sitter(
             language=language,
-            rel_path=module.rel_path,
+            rel_path=context.module.rel_path,
             source_bytes=source_bytes,
-            emit_nodes_edges=config.emit_nodes_edges,
-            emit_tokens=config.emit_tokens,
-            emit_trivia=config.emit_trivia,
-            match_limit=config.match_limit,
-            allow_non_local_patterns=config.allow_non_local_patterns,
+            options=options,
         )
     except (RuntimeError, ValueError) as exc:
-        buffers.parse_manifest.append(
+        context.buffers.parse_manifest.append(
             _parse_manifest_row(
-                context,
+                manifest_context,
                 parse_ok=False,
                 error=None,
                 error_kind=type(exc).__name__,
                 error_message=str(exc),
             )
         )
-        return [f"Tree-sitter failed for {module.rel_path}: {exc}"]
+        return [f"Tree-sitter failed for {context.module.rel_path}: {exc}"]
 
     error = parse_result.errors[0] if parse_result.errors and not parse_result.parse_ok else None
-    buffers.parse_manifest.append(
+    context.buffers.parse_manifest.append(
         _parse_manifest_row(
-            context,
+            manifest_context,
             parse_ok=parse_result.parse_ok,
             error=error,
         )
     )
     _append_tree_sitter_rows(
-        buffers=buffers,
-        module=module,
+        buffers=context.buffers,
+        module=context.module,
         parse_result=parse_result,
-        repo=repo,
-        commit=commit,
+        repo=context.repo,
+        commit=context.commit,
     )
-    if config.emit_language_metadata and parse_result.language not in seen_languages:
-        seen_languages.add(parse_result.language)
-        buffers.language_metadata.append(
+    if context.config.enable_incremental and parse_result.tree is not None:
+        context.tree_cache[context.module.rel_path] = parse_result.tree
+        context.source_cache[context.module.rel_path] = source_bytes
+    if (
+        context.config.emit_language_metadata
+        and parse_result.language not in context.seen_languages
+    ):
+        context.seen_languages.add(parse_result.language)
+        context.buffers.language_metadata.append(
             _language_metadata_row(
-                repo=repo,
-                commit=commit,
+                repo=context.repo,
+                commit=context.commit,
                 language=parse_result.language,
-                created_at=created_at,
+                created_at=context.created_at,
             )
         )
-    return _module_warnings(module=module, parse_result=parse_result)
+    return _module_warnings(module=context.module, parse_result=parse_result)
 
 
 class TreeSitterIndexStep(BaseExtractStep):
     """Tree-sitter extraction step with port injection."""
+
+    def __init__(self, discovery: ModuleDiscoveryPort) -> None:
+        """Initialize the step with discovery ports and incremental caches."""
+        super().__init__(discovery)
+        self._tree_cache: dict[str, Tree] = {}
+        self._source_cache: dict[str, bytes] = {}
 
     def execute(
         self,
@@ -490,13 +645,7 @@ class TreeSitterIndexStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-        emit_nodes_edges: bool = True,
-        emit_tokens: bool = True,
-        emit_trivia: bool = True,
-        emit_language_metadata: bool = True,
-        enable_incremental: bool = False,
-        match_limit: int = 10000,
-        allow_non_local_patterns: bool = False,
+        options: TreeSitterIndexRunOptions | None = None,
     ) -> TreeSitterIndexResult:
         """Execute tree-sitter parsing for supported module files.
 
@@ -510,32 +659,37 @@ class TreeSitterIndexStep(BaseExtractStep):
         except (KeyError, RuntimeError) as exc:
             return TreeSitterIndexResult(result=ExecutionResult.failed(str(exc)))
 
-        config = _TreeSitterIndexConfig(
-            emit_nodes_edges=emit_nodes_edges,
-            emit_tokens=emit_tokens,
-            emit_trivia=emit_trivia,
-            emit_language_metadata=emit_language_metadata,
-            enable_incremental=enable_incremental,
-            match_limit=match_limit,
-            allow_non_local_patterns=allow_non_local_patterns,
+        resolved_options = options or TreeSitterIndexRunOptions()
+        config = TreeSitterIndexConfig(
+            emit_nodes_edges=resolved_options.emit_nodes_edges,
+            emit_tokens=resolved_options.emit_tokens,
+            emit_trivia=resolved_options.emit_trivia,
+            emit_language_metadata=resolved_options.emit_language_metadata,
+            enable_incremental=resolved_options.enable_incremental,
+            match_limit=resolved_options.match_limit,
+            allow_non_local_patterns=resolved_options.allow_non_local_patterns,
         )
         created_at = datetime.now(UTC)
         seen_languages: set[str] = set()
         warnings: list[str] = []
-        if enable_incremental:
-            warnings.append("Tree-sitter incremental parsing is not cached; full parse used.")
+        if resolved_options.enable_incremental:
+            warnings.append("Tree-sitter incremental parsing uses in-memory caches only.")
 
         for module in modules:
             warnings.extend(
                 _process_module(
-                    module=module,
-                    repo=repo,
-                    commit=commit,
-                    buffers=buffers,
-                    discovery=self._discovery,
-                    config=config,
-                    seen_languages=seen_languages,
-                    created_at=created_at,
+                    _ProcessModuleContext(
+                        module=module,
+                        repo=repo,
+                        commit=commit,
+                        buffers=buffers,
+                        discovery=self._discovery,
+                        config=config,
+                        seen_languages=seen_languages,
+                        created_at=created_at,
+                        tree_cache=self._tree_cache,
+                        source_cache=self._source_cache,
+                    )
                 )
             )
 
@@ -546,6 +700,7 @@ class TreeSitterIndexStep(BaseExtractStep):
             nodes_rows=buffers.nodes.to_reader(),
             edges_rows=buffers.edges.to_reader(),
             parse_errors_rows=buffers.parse_errors.to_reader(),
+            changed_ranges_rows=buffers.changed_ranges.to_reader(),
             tokens_rows=buffers.tokens.to_reader(),
             trivia_rows=buffers.trivia.to_reader(),
             language_metadata_rows=buffers.language_metadata.to_reader(),
@@ -554,6 +709,7 @@ class TreeSitterIndexStep(BaseExtractStep):
             nodes_row_count=buffers.nodes.row_count,
             edges_row_count=buffers.edges.row_count,
             parse_errors_row_count=buffers.parse_errors.row_count,
+            changed_ranges_row_count=buffers.changed_ranges.row_count,
             tokens_row_count=buffers.tokens.row_count,
             trivia_row_count=buffers.trivia.row_count,
             language_metadata_row_count=buffers.language_metadata.row_count,

@@ -162,6 +162,14 @@ def _coerce_repo_map_modules_cell(value: object) -> dict[str, str]:
         return {}
     if isinstance(value, dict):
         return {str(k): normalize_path(str(v)) for k, v in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, str)):
+        pairs = [
+            item
+            for item in value
+            if isinstance(item, (list, tuple)) and len(item) == EXPECTED_MODULE_TUPLE_LEN
+        ]
+        if len(pairs) == len(value):
+            return {str(k): normalize_path(str(v)) for k, v in pairs}
     if isinstance(value, (bytes, bytearray)):
         value = value.decode("utf-8", errors="replace")
     if isinstance(value, str):

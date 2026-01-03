@@ -22,7 +22,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame, tabular_to_lazyframe
 from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -118,7 +118,7 @@ def subsystem_rows(
     return build_subsystem_rows(
         env.snapshot,
         SubsystemBuildInputs(
-            modules_frame=tabular_to_lazyframe(subsystem_core_frames.modules).collect(),
+            modules_frame=tabular_to_frame(subsystem_core_frames.modules),
             import_graph_edges_frame=tabular_to_lazyframe(
                 subsystem_core_frames.import_graph_edges
             ).collect(),

@@ -23,6 +23,7 @@ from codeintel.cli.options.registry import (
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
+from codeintel.cli.rendering.types import OutputFormat
 
 jobs_app = App(name="jobs", help="Manage background jobs")
 
@@ -32,7 +33,10 @@ JOBS_OUTPUT_PATH: CommandPath = ("jobs", "output")
 JOBS_CANCEL_PATH: CommandPath = ("jobs", "cancel")
 JOBS_CLEANUP_PATH: CommandPath = ("jobs", "cleanup")
 
-_JOBS_LIST_FLAGS_FIELD = shared_flags_field(JOBS_LIST_PATH)
+_JOBS_LIST_FLAGS_FIELD = shared_flags_field(
+    JOBS_LIST_PATH,
+    default_output_format=OutputFormat.JSONL,
+)
 _JOBS_STATUS_FLAGS_FIELD = shared_flags_field(JOBS_STATUS_PATH)
 _JOBS_OUTPUT_FLAGS_FIELD = shared_flags_field(JOBS_OUTPUT_PATH)
 _JOBS_CANCEL_FLAGS_FIELD = shared_flags_field(JOBS_CANCEL_PATH)

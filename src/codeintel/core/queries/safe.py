@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from duckdb import ColumnExpression, ConstantExpression, FunctionExpression
 from sqlglot import exp, parse
-from sqlglot.errors import ParseError
+from sqlglot.errors import ParseError, SqlglotError
 
 from codeintel.core.duckdb_types import (
     DuckDBBinderException,
@@ -47,6 +47,7 @@ from codeintel.core.sqlglot_tools import (
     SELECT_ONLY_DISALLOWED_NODES,
     AstCapabilityConfig,
     AstCapabilityError,
+    canonicalize_expression_duckdb,
     ensure_ast_capability,
     extract_table_refs,
 )
@@ -160,7 +161,10 @@ def assert_select_perimeter(
     root = assert_single_select_statement(sql, enforce_safe_sql=enforce_safe_sql)
     _validate_ingress_tables(root, policy=policy)
     _validate_ingress_functions(root, policy=policy)
-    return root
+    try:
+        return canonicalize_expression_duckdb(root)
+    except (SqlglotError, TypeError, ValueError):
+        return root
 
 
 def _validate_ingress_tables(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:

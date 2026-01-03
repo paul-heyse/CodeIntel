@@ -47,6 +47,15 @@ __all__ = [
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class _ParquetManifestContext:
+    dataset_root_dir: Path
+    table_key: str
+    snapshot_id: str
+    partition_columns: tuple[str, ...]
+    files: tuple[str, ...]
+
+
 def _schema_provider_for_gateway(*, datasets: DatasetRegistry) -> SchemaProvider:
     schemas = {
         table_key: contract.schema
@@ -64,25 +73,23 @@ def _schema_provider_for_gateway(*, datasets: DatasetRegistry) -> SchemaProvider
 def _parquet_relation_for_manifest(
     con: DuckDBConnection,
     *,
-    dataset_root_dir: Path,
-    table_key: str,
-    snapshot_id: str,
-    partition_columns: tuple[str, ...],
-    files: tuple[str, ...],
+    context: _ParquetManifestContext,
 ) -> DuckDBRelation:
     dataset_dir = dataset_snapshot_dir(
-        dataset_root_dir,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
+        context.dataset_root_dir,
+        table_key=context.table_key,
+        snapshot_id=context.snapshot_id,
     )
     if not dataset_dir.is_dir():
-        msg = f"Dataset snapshot directory missing for {table_key}: {dataset_dir}"
+        msg = f"Dataset snapshot directory missing for {context.table_key}: {dataset_dir}"
         raise FileNotFoundError(msg)
-    scan_paths = [str(dataset_dir / file) for file in files] if files else [str(dataset_dir)]
+    scan_paths = (
+        [str(dataset_dir / file) for file in context.files] if context.files else [str(dataset_dir)]
+    )
     return scan_parquet(
         con,
         scan_paths=scan_paths,
-        hive_partitioning=bool(partition_columns),
+        hive_partitioning=bool(context.partition_columns),
         union_by_name=True,
     )
 
@@ -101,10 +108,8 @@ def _relation_for_table_key(
     dataset_root_dir = config.dataset_root_dir
     snapshot_id = config.commit
     if dataset_root_dir is None or snapshot_id is None:
-        if config.dataset_source == "parquet_only":
-            msg = f"Parquet-only datasets require dataset_root_dir and commit (table={table_key})"
-            raise RuntimeError(msg)
-        return _relation_from_table_key(con, table_key)
+        msg = f"Parquet-backed datasets require dataset_root_dir and commit (table={table_key})"
+        raise RuntimeError(msg)
 
     manifest = datasets.dataset_manifest_for_table(table_key)
     if manifest is None:
@@ -114,27 +119,23 @@ def _relation_for_table_key(
             snapshot_id=snapshot_id,
         )
         if manifest is None:
-            if config.dataset_source == "parquet_only":
-                msg = f"Dataset manifest missing for {table_key} at snapshot {snapshot_id}"
-                raise FileNotFoundError(msg)
-            return _relation_from_table_key(con, table_key)
+            msg = f"Dataset manifest missing for {table_key} at snapshot {snapshot_id}"
+            raise FileNotFoundError(msg)
     if manifest.snapshot_id != snapshot_id:
-        if config.dataset_source == "parquet_only":
-            msg = (
-                "Dataset manifest snapshot mismatch for "
-                f"{table_key}: {manifest.snapshot_id} != {snapshot_id}"
-            )
-            raise ValueError(msg)
-        return _relation_from_table_key(con, table_key)
+        msg = (
+            "Dataset manifest snapshot mismatch for "
+            f"{table_key}: {manifest.snapshot_id} != {snapshot_id}"
+        )
+        raise ValueError(msg)
 
-    return _parquet_relation_for_manifest(
-        con,
+    context = _ParquetManifestContext(
         dataset_root_dir=dataset_root_dir,
         table_key=table_key,
         snapshot_id=manifest.snapshot_id,
         partition_columns=manifest.partition_columns or (),
         files=manifest.files,
     )
+    return _parquet_relation_for_manifest(con, context=context)
 
 
 @dataclass(frozen=True)

@@ -30,6 +30,7 @@ from codeintel.cli.options.registry import (
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
+from codeintel.cli.rendering.types import OutputFormat
 
 storage_app = App(
     name="storage",
@@ -48,7 +49,10 @@ _STORAGE_VALIDATE_FLAGS_FIELD = shared_flags_field(STORAGE_VALIDATE_PATH)
 _STORAGE_PROFILE_FLAGS_FIELD = shared_flags_field(STORAGE_PROFILE_PATH)
 _STORAGE_EXPORT_FLAGS_FIELD = shared_flags_field(STORAGE_EXPORT_PATH)
 _STORAGE_IMPORT_FLAGS_FIELD = shared_flags_field(STORAGE_IMPORT_PATH)
-_STORAGE_INGEST_CACHE_LOGS_FLAGS_FIELD = shared_flags_field(STORAGE_INGEST_CACHE_LOGS_PATH)
+_STORAGE_INGEST_CACHE_LOGS_FLAGS_FIELD = shared_flags_field(
+    STORAGE_INGEST_CACHE_LOGS_PATH,
+    default_output_format=OutputFormat.JSONL,
+)
 
 
 @cli_command("storage.validate_macros", handler=validate_macros_handler, config=_STORAGE_CONFIG)

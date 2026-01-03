@@ -31,7 +31,10 @@ from codeintel.cli.errors.results import (
     fail_invalid_targets,
     fail_missing_required,
 )
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
+    compose_cli_runtime_bundle,
+)
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 from codeintel.core.serialization.msgspec_json import encode_json_text
 
@@ -219,7 +222,11 @@ def _compile_manifest(ctx: CommandContext) -> _CompiledManifest:
     )
 
     runtime = ctx.runtime
-    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     schema_index = runtime_bundle.schema_index
     if schema_index is None:
         msg = "Runtime schema_index is required to compile schema manifests"
@@ -254,7 +261,11 @@ def build_schema_inferability_handler(
         Inferability records filtered by the requested selection.
     """
     selection = _parse_selection(ctx)
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     catalog = runtime_bundle.catalog
     records = inferability_inventory(driver=runtime_bundle.driver, catalog=catalog)
     filtered: list[InferabilityInfo] = []

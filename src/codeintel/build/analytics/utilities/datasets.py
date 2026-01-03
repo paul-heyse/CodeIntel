@@ -7,7 +7,10 @@ providers, plus convenience helpers for validating and inserting rows.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -17,7 +20,7 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.utilities.persistence import DeleteScope
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.schemas.primitives import ColumnType
+    from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
 from codeintel.build.schemas import (
     ContractResolutionMode,
@@ -25,9 +28,15 @@ from codeintel.build.schemas import (
     get_contract_for_table_key,
 )
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
-from codeintel.storage.validation.columnar import validate_table
+from codeintel.core.validation.profiles import ValidationProfile
+from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
+    validate_table,
+)
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
@@ -116,6 +125,127 @@ def get_function_ast_features_contract(
     )
 
 
+def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:
+    column_names = table_schema.column_names()
+    if "repo" in column_names and "commit" in column_names:
+        return ("repo", "commit")
+    return ()
+
+
+def _manifest_extras(table_schema: TableSchema) -> dict[str, object]:
+    return {
+        "table_schema": table_schema.to_json_obj(),
+        "write_source": "analytics_insert",
+        "written_at": datetime.now(tz=UTC).isoformat(),
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class _ParquetMetadataContext:
+    table_schema: TableSchema
+    schema_hash_value: str
+    schema_digest_value: str
+    partition_columns: tuple[str, ...]
+    repo: str
+    commit: str
+    snapshot_id: str
+
+
+def _parquet_metadata_payload(
+    *,
+    context: _ParquetMetadataContext,
+) -> dict[str, object]:
+    table_schema = context.table_schema
+    columns_json = {col.name: col.type for col in table_schema.columns}
+    nullability_json = {col.name: col.nullable for col in table_schema.columns}
+    return {
+        "codeintel.table_key": table_schema.table_key,
+        "codeintel.domain": table_schema.schema,
+        "codeintel.schema_hash": context.schema_hash_value,
+        "codeintel.schema_digest": context.schema_digest_value,
+        "codeintel.columns_json": columns_json,
+        "codeintel.nullability_json": nullability_json,
+        "codeintel.primary_keys_json": list(table_schema.primary_key),
+        "codeintel.partition_columns_json": list(context.partition_columns),
+        "codeintel.build_id": context.snapshot_id,
+        "codeintel.repo": context.repo,
+        "codeintel.commit": context.commit,
+        "codeintel.snapshot_id": context.snapshot_id,
+        "codeintel.generated_at": datetime.now(tz=UTC).isoformat(),
+        "codeintel.write_source": "analytics_insert",
+    }
+
+
+def _resolve_parquet_context(
+    gateway: BuildGateway,
+) -> tuple[Path, str, str, str]:
+    config = gateway.config
+    dataset_root_dir = config.dataset_root_dir
+    commit_value = getattr(config, "commit", None)
+    snapshot_id = commit_value if isinstance(commit_value, str) and commit_value else None
+    if dataset_root_dir is None or snapshot_id is None:
+        msg = "Parquet dataset writes require dataset_root_dir and commit metadata"
+        raise RuntimeError(msg)
+    repo_value = getattr(config, "repo", None)
+    repo = repo_value if isinstance(repo_value, str) else ""
+    commit = snapshot_id
+    return dataset_root_dir, snapshot_id, repo, commit
+
+
+def _write_parquet_dataset(
+    *,
+    gateway: BuildGateway,
+    contract: DatasetContract,
+    rows: Sequence[Mapping[str, object]],
+    delete_scope: DeleteScope | None,
+) -> int:
+    table_schema = contract.schema
+    if table_schema is None:
+        msg = f"Dataset schema missing for {contract.table_key}"
+        raise ValueError(msg)
+    if delete_scope is not None and not _table_supports_snapshot_delete(contract.table_key):
+        message = f"Unsupported delete target: {contract.table_key}"
+        raise ValueError(message)
+    normalized = validate_contract_rows(
+        contract.table_key,
+        rows,
+        gateway=gateway,
+        validation_profile=contract.validation_profile,
+    )
+    if not normalized:
+        return 0
+    dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
+    frame = pl.from_dicts(normalized)
+    schema_hash_value = schema_hash(table_schema)
+    schema_digest_value = schema_digest(table_schema)
+    partition_columns = _partition_columns_for_schema(table_schema)
+    metadata = _parquet_metadata_payload(
+        context=_ParquetMetadataContext(
+            table_schema=table_schema,
+            schema_hash_value=schema_hash_value,
+            schema_digest_value=schema_digest_value,
+            partition_columns=partition_columns,
+            repo=repo,
+            commit=commit,
+            snapshot_id=snapshot_id,
+        )
+    )
+    options = ArrowDatasetWriteOptions(
+        partition_columns=partition_columns,
+        schema_hash=schema_hash_value,
+        manifest_extras=_manifest_extras(table_schema),
+        schema_metadata=metadata,
+    )
+    write_dataset(
+        dataset_root=dataset_root_dir,
+        table_key=contract.table_key,
+        snapshot_id=snapshot_id,
+        data=frame.to_arrow(),
+        options=options,
+    )
+    return len(normalized)
+
+
 def insert_analytics_rows(
     gateway: BuildGateway,
     contract: DatasetContract,
@@ -124,10 +254,7 @@ def insert_analytics_rows(
     delete_scope: DeleteScope | None = None,
     scope: str | None = None,
 ) -> int:
-    """Insert rows for a dataset contract using DuckDBPolicyBackend.
-
-    Deletions are routed through DuckDBPolicyBackend for centralized SQL
-    generation.
+    """Persist rows for a dataset contract to parquet datasets.
 
     Parameters
     ----------
@@ -147,33 +274,14 @@ def insert_analytics_rows(
     int
         Number of rows inserted.
 
-    Raises
-    ------
-    ValueError
-        If delete columns cannot be determined for the requested dataset.
-    RuntimeError
-        If dataset writes are disabled for parquet-only datasets.
     """
     _ = scope
-    dataset_source = getattr(gateway.config, "dataset_source", "duckdb")
-    if dataset_source == "parquet_only":
-        msg = "insert_analytics_rows is disabled for parquet-only datasets"
-        raise RuntimeError(msg)
-    backend = gateway.policy
-    backend.ensure_table(contract.table_key)
-
-    if delete_scope is not None:
-        if not _table_supports_snapshot_delete(contract.table_key):
-            message = f"Unsupported delete target: {contract.table_key}"
-            raise ValueError(message)
-
-        backend.delete_for_snapshot(
-            contract.table_key,
-            repo=delete_scope.repo,
-            commit=delete_scope.commit,
-        )
-
-    return backend.bulk_insert_mappings(contract.table_key, rows) if rows else 0
+    return _write_parquet_dataset(
+        gateway=gateway,
+        contract=contract,
+        rows=rows,
+        delete_scope=delete_scope,
+    )
 
 
 def validate_contract_rows(
@@ -181,6 +289,7 @@ def validate_contract_rows(
     rows: Sequence[Mapping[str, object]],
     *,
     gateway: BuildGateway | None = None,
+    validation_profile: ValidationProfile | None = None,
 ) -> list[dict[str, object]]:
     """
     Validate rows for a dataset using Arrow/Polars checks and return normalized dicts.
@@ -206,6 +315,11 @@ def validate_contract_rows(
     )
     table_schema = resolution.table_schema
     observation = resolution.observation
+    resolved_profile = validation_profile
+    if resolved_profile is None and gateway is not None:
+        dataset = gateway.datasets.by_table_key.get(table_key)
+        if dataset is not None:
+            resolved_profile = dataset.validation_profile
     records: list[dict[str, object]]
     if table_schema is None:
         frame = pl.from_dicts(rows)
@@ -222,11 +336,15 @@ def validate_contract_rows(
         for name in missing:
             frame = frame.with_columns(pl.lit(None).alias(name))
         frame = frame.select(expected_columns)
+        context = ColumnarValidationContext(
+            table_schema=table_schema,
+            schema_observation=observation,
+            validation_profile=resolved_profile,
+        )
         validate_table(
             table_key,
             frame.to_arrow(),
-            table_schema=table_schema,
-            schema_observation=observation,
+            context=context,
             mode="strict",
         )
         records = frame.to_dicts()

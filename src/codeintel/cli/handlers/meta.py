@@ -20,7 +20,10 @@ from codeintel.cli.errors.results import (
     fail_invalid_value,
     fail_not_found,
 )
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
+    compose_cli_runtime_bundle,
+)
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.duckdb_types import DuckDBConnection
@@ -57,6 +60,7 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
         runtime_bundle = compose_cli_runtime_bundle(
             runtime=ctx.runtime,
             gateway=inference_gateway,
+            options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
         )
         schema_index = runtime_bundle.schema_index
         if schema_index is None:

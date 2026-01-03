@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.imports.lazy import lazy_getattr
@@ -19,6 +19,7 @@ from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.declared import declared_schema_provider
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.schemas.service import SchemaService
+from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
 from codeintel.core.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -135,15 +136,14 @@ def overrides_from_output_descriptor(output: OutputDescriptor) -> DatasetContrac
     parquet_filename = _optional_tag(tags, "ci.parquet_filename")
     owner = _optional_tag(tags, "ci.dataset_owner")
     validation_profile_raw = _optional_tag(tags, "ci.validation_profile")
-    if validation_profile_raw is None:
-        validation_profile: Literal["strict", "lenient"] = "strict"
-    elif validation_profile_raw == "strict":
-        validation_profile = "strict"
-    elif validation_profile_raw == "lenient":
-        validation_profile = "lenient"
-    else:
+    try:
+        validation_profile: ValidationProfile = normalize_validation_profile(
+            validation_profile_raw,
+            default="strict",
+        )
+    except ValueError as exc:
         msg = f"Invalid validation profile tag: {validation_profile_raw!r}"
-        raise ValueError(msg)
+        raise ValueError(msg) from exc
     return DatasetContractOverrides(
         json_schema_id=json_schema_id,
         jsonl_filename=jsonl_filename,

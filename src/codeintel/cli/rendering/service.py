@@ -21,19 +21,22 @@ Classes
 from __future__ import annotations
 
 import sys
-from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
-import msgspec
 from rich.console import Console
 from rich.theme import Theme
 
+from codeintel.cli.core.result_types import TabularResult
 from codeintel.cli.rendering.types import OutputFormat, RenderContext
+from codeintel.core.columnar.ipc import write_ipc_stream
 from codeintel.core.columnar.stream import ColumnarStream
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.query_results import iter_records_from_arrow_reader, records_from_arrow_reader
-from codeintel.core.serialization.msgspec_json import JSON_ENCODER, encode_json_text
+from codeintel.core.serialization.msgspec import (
+    encode_json_line_text,
+    encode_json_text,
+    to_builtins,
+)
 
 if TYPE_CHECKING:
     from codeintel.cli.core import CliResult
@@ -58,15 +61,6 @@ CODEINTEL_THEME = Theme(
 
 # HTTP status code threshold for internal server errors (5xx)
 _INTERNAL_ERROR_STATUS_THRESHOLD = 500
-
-
-def _encode_hook(value: object) -> object:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, Enum):
-        return value.value
-    msg = f"Unsupported type: {type(value).__name__}"
-    raise TypeError(msg)
 
 
 class RenderingService(Protocol):
@@ -198,7 +192,7 @@ class UnifiedRenderer:
         error
             Problem detail to render.
         """
-        if self._ctx.format in {OutputFormat.JSON, OutputFormat.JSONL}:
+        if self._ctx.format in {OutputFormat.JSON, OutputFormat.JSONL, OutputFormat.ARROW_IPC}:
             self._ctx.err_writer.write(encode_json_text(error.to_dict(), indent=2, newline=True))
         elif self._err_console is not None:
             self._err_console.print(f"[error]Error:[/error] {error.title}")
@@ -221,6 +215,11 @@ class UnifiedRenderer:
         """
         if self._ctx.format == OutputFormat.JSON:
             self._write_json({"status": level, "message": message})
+            return
+        if self._ctx.format == OutputFormat.ARROW_IPC:
+            self._ctx.err_writer.write(
+                encode_json_text({"status": level, "message": message}, indent=2, newline=True)
+            )
             return
 
         if self._console is not None:
@@ -281,6 +280,8 @@ class UnifiedRenderer:
         if self._ctx.format == OutputFormat.JSON:
             # Warnings will be included in result JSON
             return
+        if self._ctx.format == OutputFormat.ARROW_IPC:
+            return
         if self._err_console is not None:
             self._err_console.print(f"[warning]Warning:[/warning] {warning}")
         else:
@@ -288,33 +289,52 @@ class UnifiedRenderer:
 
     def _render_data(self, data: object, metadata: dict[str, object]) -> None:
         """Render data payload."""
+        if isinstance(data, TabularResult):
+            self._render_stream(data.stream, metadata=data.metadata or metadata)
+            return
         if isinstance(data, ColumnarStream):
             self._render_stream(data, metadata=metadata)
             return
         if self._ctx.format == OutputFormat.JSON:
-            output: dict[str, object] = {"data": self._serialize(data)}
-            if metadata:
-                output["metadata"] = metadata
-            self._write_json(output)
-        elif isinstance(data, str):
+            self._render_json_payload(data, metadata=metadata)
+            return
+        self._render_text_payload(data)
+
+    def _render_json_payload(self, data: object, *, metadata: dict[str, object]) -> None:
+        output: dict[str, object] = {"data": self._serialize(data)}
+        if metadata:
+            output["metadata"] = metadata
+        self._write_json(output)
+
+    def _render_text_payload(self, data: object) -> None:
+        if isinstance(data, str):
             self._ctx.writer.write(data)
             if not data.endswith("\n"):
                 self._ctx.writer.write("\n")
-        elif isinstance(data, dict):
+            return
+        if isinstance(data, dict):
             self._render_dict(data)
-        elif isinstance(data, list):
+            return
+        if isinstance(data, list):
             for item in data:
                 self._ctx.writer.write(f"{item}\n")
+            return
+        # Try to convert objects with to_dict to dict for text rendering
+        serialized = self._serialize(data)
+        if isinstance(serialized, dict):
+            self._render_dict(serialized)
         else:
-            # Try to convert objects with to_dict to dict for text rendering
-            serialized = self._serialize(data)
-            if isinstance(serialized, dict):
-                self._render_dict(serialized)
-            else:
-                self._ctx.writer.write(f"{data}\n")
+            self._ctx.writer.write(f"{data}\n")
 
     def _render_stream(self, stream: ColumnarStream, *, metadata: dict[str, object]) -> None:
         reader = stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        if self._ctx.format == OutputFormat.ARROW_IPC:
+            binary_writer = getattr(self._ctx.writer, "buffer", None)
+            if binary_writer is None:
+                msg = "Arrow IPC output requires a binary writer"
+                raise RuntimeError(msg)
+            write_ipc_stream(reader, binary_writer)
+            return
         if self._ctx.format == OutputFormat.JSONL:
             for record in iter_records_from_arrow_reader(reader):
                 self._write_jsonl(record)
@@ -344,9 +364,7 @@ class UnifiedRenderer:
 
     def _write_jsonl(self, obj: object) -> None:
         """Write JSON to stdout as single line (for JSONL)."""
-        encoded = JSON_ENCODER.encode(obj).decode("utf-8")
-        self._ctx.writer.write(encoded)
-        self._ctx.writer.write("\n")
+        self._ctx.writer.write(encode_json_line_text(obj))
 
     @staticmethod
     def _serialize(data: object) -> object:
@@ -361,7 +379,7 @@ class UnifiedRenderer:
         if callable(to_dict):
             return to_dict()
         try:
-            return msgspec.to_builtins(data, enc_hook=_encode_hook)
+            return to_builtins(data)
         except TypeError:
             if hasattr(data, "__dict__") and not isinstance(data, type):
                 return data.__dict__

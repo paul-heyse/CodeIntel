@@ -38,6 +38,9 @@
   `src/codeintel/core/registry/service.py :: RegistryService.from_gateway(...)`
   `src/codeintel/core/registry/service.py :: _DAG_OUTPUT_INVENTORY_PATH`
 
+* **Parquet datasets are the canonical build artifact store**; DuckDB only scans parquet via manifests.
+  `src/codeintel/storage/datasets/` and `src/codeintel/storage/gateway/accessors.py :: _relation_for_table_key(...)`
+
 * **Optional Hamilton UI tracker integration exists in executor** (if adapter is available), including deterministic tags (repo/commit/run_id + decision trace metadata).
   `src/codeintel/build/hamilton/executor.py :: _create_tracker(...)` / `_build_tracker_tags(...)` / `_apply_tracker_constants(...)`
   `src/codeintel/core/config/settings.py :: HamiltonTrackerSettings`
@@ -221,10 +224,15 @@ to the canonical operation ID. Naming rules and alias policy live in:
 
   * `src/codeintel/build/hamilton/boundary_types.py :: MaterializationResult`
   * Saver tags built in: `src/codeintel/build/hamilton/save_to.py :: _build_saver_tags(...)`
-* DuckDB writes:
+* Parquet dataset writes:
+
+  * `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py :: ArrowDatasetSaver.save_data(...)`
+  * `src/codeintel/storage/datasets/arrow_store.py :: write_dataset(...)`
+
+* DuckDB dataset writes (legacy; blocked under parquet-only policy):
 
   * `src/codeintel/build/hamilton/materializers/duckdb_saver.py :: DuckDBIbisTableSaver.save_data(...)`
-  * `src/codeintel/build/hamilton/materializers/duckdb_rows_saver.py :: DuckDBRowsSaver.save_data(...)` (columns resolved via `src/codeintel/build/schemas/column_resolution.py :: resolve_columns(...)`)
+  * `src/codeintel/build/hamilton/materializers/duckdb_rows_saver.py :: DuckDBRowsSaver.save_data(...)`
 * Artifact writes:
 
   * `src/codeintel/build/hamilton/materializers/artifact_saver.py :: FileArtifactSaver`

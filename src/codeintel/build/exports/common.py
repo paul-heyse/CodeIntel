@@ -10,20 +10,18 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_relation_plan
 from codeintel.build.schemas import iter_contracts
-from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
 from codeintel.core.config.settings import ExportAuditSettings
-from codeintel.core.errors.schema import SchemaError
-from codeintel.core.errors.taxonomy import SCHEMA_MISMATCH, ErrorCode
-from codeintel.core.table_key import split_table_key
+from codeintel.core.errors.taxonomy import ErrorCode
+from codeintel.core.schemas.hashing import schema_digest
+from codeintel.core.validation.profiles import ValidationProfile
 from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.exports import ExportAuditRecord as AuditRecord
 from codeintel.storage.protocols import ExportRelation
-from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -115,7 +113,7 @@ class ExportCallOptions:
     validate_exports: bool = True
     schemas: list[str] | None = None
     datasets: list[str] | None = None
-    validation_profile: Literal["strict", "lenient"] | None = None
+    validation_profile: ValidationProfile | None = None
     force_full_export: bool = False
 
 
@@ -125,57 +123,15 @@ class ExportCallOptions:
 
 
 def validate_registry_or_raise(gateway: BuildGateway) -> None:
-    """Validate dataset registry and normalize error type for schema mismatches.
+    """Validate dataset registry by asserting parquet manifests exist.
 
     Parameters
     ----------
     gateway
         BuildGateway providing access to dataset registry.
 
-    Raises
-    ------
-    ValueError
-        If required tables or views are missing from the registry.
-    BuildProblemError
-        If tables exist but their schemas do not match expectations.
     """
-    dataset_source = getattr(gateway.config, "dataset_source", "duckdb")
-    if dataset_source == "parquet_only":
-        validate_dataset_manifests_or_raise(gateway)
-        return
-    missing_tables: list[str] = []
-    for dataset_name, contract in gateway.datasets.by_name.items():
-        schema_name, table_name = split_table_key(contract.table_key)
-        exists = gateway.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [schema_name, table_name],
-        ).fetchone()
-        if exists is None:
-            missing_tables.append(f"{dataset_name} -> {contract.table_key}")
-
-    if missing_tables:
-        message = "Dataset registry missing tables/views: " + ", ".join(sorted(missing_tables))
-        raise ValueError(message)
-
-    try:
-        validate_contract_or_raise(gateway.con)
-    except ValueError as exc:
-        detail = str(exc)
-        log_export_error(
-            SCHEMA_MISMATCH,
-            detail,
-            stage="dataset_registry",
-        )
-        problem = BuildProblemError.from_error_code(
-            error_code=SCHEMA_MISMATCH,
-            detail=detail,
-        ).problem_detail
-        raise BuildProblemError(problem) from exc
+    validate_dataset_manifests_or_raise(gateway)
 
 
 def validate_dataset_manifests_or_raise(gateway: BuildGateway) -> None:
@@ -285,7 +241,7 @@ def select_dataset_tables(
 def resolve_validation_profile(
     options: ExportCallOptions,
     dataset: DatasetContract | None,
-) -> str:
+) -> ValidationProfile:
     """Resolve the validation profile for an export.
 
     Parameters
@@ -298,7 +254,7 @@ def resolve_validation_profile(
     Returns
     -------
     str
-        Validation profile ("strict" or "lenient").
+        Validation profile (e.g., "strict", "lenient", "schema-only").
     """
     if options.validation_profile is not None:
         return options.validation_profile
@@ -308,7 +264,7 @@ def resolve_validation_profile(
 
 
 def compute_schema_digest(dataset: DatasetContract | None) -> str | None:
-    """Compute digest of the generated JSON schema for a dataset.
+    """Compute digest of the TableSchema for a dataset.
 
     Parameters
     ----------
@@ -320,13 +276,9 @@ def compute_schema_digest(dataset: DatasetContract | None) -> str | None:
     str | None
         SHA-256 hex digest, or None if unavailable.
     """
-    if dataset is None or dataset.json_schema_id is None:
+    if dataset is None or dataset.schema is None:
         return None
-    try:
-        return compute_json_schema_digest(dataset.table_key)
-    except SchemaError as e:
-        log.debug("Generated schema digest unavailable for %s: %s", dataset.table_key, e)
-        return None
+    return schema_digest(dataset.schema)
 
 
 # ---------------------------------------------------------------------------
@@ -403,9 +355,11 @@ def default_validation_schemas() -> list[str]:
     Returns
     -------
     list[str]
-        Sorted table keys with JSON Schema validation configured.
+        Sorted table keys with TableSchema validation configured.
     """
-    return sorted(c.table_key for c in iter_contracts() if c.json_schema_id is not None)
+    return sorted(
+        contract.table_key for contract in iter_contracts() if contract.schema is not None
+    )
 
 
 __all__ = [

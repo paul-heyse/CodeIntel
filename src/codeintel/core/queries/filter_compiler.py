@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow.dataset as ds
 from sqlglot import exp
+from sqlglot.errors import SqlglotError
 
 from codeintel.core.duckdb_types import (
     ColumnExpression,
@@ -25,6 +26,7 @@ from codeintel.core.filters import (
 )
 from codeintel.core.helpers.json import normalize_duckdb_json_value
 from codeintel.core.schemas.primitives import ColumnType, column_type_base
+from codeintel.core.sqlglot_tools import canonicalize_expression_duckdb
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -118,7 +120,13 @@ def sqlglot_filter_expression(predicates: Sequence[FilterPredicate]) -> exp.Expr
         Combined SQLGlot predicate, or None when no predicates exist.
     """
     expressions = [_sqlglot_predicate(pred) for pred in predicates]
-    return _combine_sqlglot(expressions)
+    combined = _combine_sqlglot(expressions)
+    if combined is None:
+        return None
+    try:
+        return canonicalize_expression_duckdb(combined)
+    except (SqlglotError, TypeError, ValueError):
+        return combined
 
 
 def duckdb_filter_expression(predicates: Sequence[FilterPredicate]) -> Expression | None:

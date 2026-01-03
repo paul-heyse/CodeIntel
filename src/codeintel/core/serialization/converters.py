@@ -96,7 +96,7 @@ def _serialize_special_type(value: object) -> JsonValue | None:
     return None
 
 
-def deserialize_value(value: JsonValue, target_type: type | None = None) -> object:
+def deserialize_value(value: JsonValue, target_type: object | None = None) -> object:
     """Deserialize a JSON value to Python type.
 
     Parameters
@@ -104,7 +104,7 @@ def deserialize_value(value: JsonValue, target_type: type | None = None) -> obje
     value
         JSON-compatible value to deserialize.
     target_type
-        Optional target type for conversion. If None, returns value as-is.
+        Optional target type (including unions) for conversion. If None, returns value as-is.
 
     Returns
     -------
@@ -128,10 +128,19 @@ def deserialize_value(value: JsonValue, target_type: type | None = None) -> obje
         if value is None:
             return None
         if len(non_none) == 1:
-            return _deserialize_typed_value(value, non_none[0])
+            return _deserialize_target_value(value, non_none[0])
         return value
 
-    return _deserialize_typed_value(value, target_type)
+    return _deserialize_target_value(value, target_type)
+
+
+def _deserialize_target_value(value: JsonValue, target_type: object) -> object:
+    if isinstance(target_type, type):
+        return _deserialize_typed_value(value, target_type)
+    origin = get_origin(target_type)
+    if isinstance(origin, type):
+        return _deserialize_typed_value(value, origin)
+    return value
 
 
 def _deserialize_typed_value(value: JsonValue, target_type: type) -> object:

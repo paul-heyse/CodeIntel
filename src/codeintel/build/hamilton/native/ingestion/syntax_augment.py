@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from numbers import Integral
-from typing import TYPE_CHECKING
 
 import polars as pl
 from intervaltree import IntervalTree
@@ -19,18 +19,14 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import (
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
     rows_to_frame,
 )
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.helpers.payload import decode_payload, encode_payload
 from codeintel.core.spans import normalize_byte_span
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, InferableTabularInput)
 
@@ -41,6 +37,7 @@ PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
 TS_NODES_TABLE_KEY = "core.ts_nodes"
 TS_EDGES_TABLE_KEY = "core.ts_edges"
 TS_XREF_TABLE_KEY = "core.ts_syntax_node_xref"
+TS_WELD_COVERAGE_TABLE_KEY = "core.ts_weld_coverage"
 
 SYNTAX_PRODUCER_LIBCST = "libcst"
 TS_PRODUCER = "tree_sitter"
@@ -66,6 +63,7 @@ class SyntaxAugmentFrames:
     syntax_nodes: pl.LazyFrame
     syntax_edges: pl.LazyFrame
     ts_syntax_node_xref: pl.LazyFrame
+    ts_weld_coverage: pl.LazyFrame
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,11 +105,11 @@ def syntax_augment__inputs(
         Collected input frames for syntax augmentation.
     """
     return _SyntaxAugmentInputs(
-        syntax_nodes=tabular_to_lazyframe(q__core__syntax_nodes).collect(),
-        syntax_edges=tabular_to_lazyframe(q__core__syntax_edges).collect(),
-        ts_nodes=tabular_to_lazyframe(q__core__ts_nodes).collect(),
-        ts_edges=tabular_to_lazyframe(q__core__ts_edges).collect(),
-        parse_manifest=tabular_to_lazyframe(q__core__parse_manifest).collect(),
+        syntax_nodes=tabular_to_frame(q__core__syntax_nodes),
+        syntax_edges=tabular_to_frame(q__core__syntax_edges),
+        ts_nodes=tabular_to_frame(q__core__ts_nodes),
+        ts_edges=tabular_to_frame(q__core__ts_edges),
+        parse_manifest=tabular_to_frame(q__core__parse_manifest),
     )
 
 
@@ -178,7 +176,10 @@ def _interval_candidates(intervals: Iterable[object]) -> list[_SyntaxNodeCandida
 def _containing_intervals(tree: IntervalTree, start: int, end: int) -> list[object]:
     envelop = getattr(tree, "envelop", None)
     if callable(envelop):
-        return list(envelop(start, end))
+        intervals = envelop(start, end)
+        if isinstance(intervals, Iterable):
+            return list(intervals)
+        return []
     return [
         interval
         for interval in tree.overlap(start, end)
@@ -189,7 +190,10 @@ def _containing_intervals(tree: IntervalTree, start: int, end: int) -> list[obje
 def _point_intervals(tree: IntervalTree, point: int) -> list[object]:
     at = getattr(tree, "at", None)
     if callable(at):
-        return list(at(point))
+        intervals = at(point)
+        if isinstance(intervals, Iterable):
+            return list(intervals)
+        return []
     return list(tree.overlap(point, point + 1))
 
 
@@ -268,6 +272,14 @@ def _xref_row_for_ts_node(
     if not isinstance(language, str) or not isinstance(repo, str) or not isinstance(commit, str):
         return None
     producer = producer_by_path.get(rel_path, SYNTAX_PRODUCER_LIBCST)
+    context = _XrefRowContext(
+        repo=repo,
+        commit=commit,
+        rel_path=rel_path,
+        language=language,
+        producer=producer,
+        ts_node_id=ts_node_id,
+    )
     start_byte = ts_row.get("start_byte")
     end_byte = ts_row.get("end_byte")
     normalized = (
@@ -277,12 +289,7 @@ def _xref_row_for_ts_node(
     )
     if normalized is None:
         return _xref_row_payload(
-            repo=repo,
-            commit=commit,
-            rel_path=rel_path,
-            language=language,
-            producer=producer,
-            ts_node_id=ts_node_id,
+            context,
             syntax_node_id=None,
             match_kind="NONE",
             candidate_count=0,
@@ -291,12 +298,7 @@ def _xref_row_for_ts_node(
     index = index_by_path.get(rel_path)
     if index is None:
         return _xref_row_payload(
-            repo=repo,
-            commit=commit,
-            rel_path=rel_path,
-            language=language,
-            producer=producer,
-            ts_node_id=ts_node_id,
+            context,
             syntax_node_id=None,
             match_kind="NONE",
             candidate_count=0,
@@ -307,37 +309,37 @@ def _xref_row_for_ts_node(
         end_byte,
     )
     return _xref_row_payload(
-        repo=repo,
-        commit=commit,
-        rel_path=rel_path,
-        language=language,
-        producer=producer,
-        ts_node_id=ts_node_id,
+        context,
         syntax_node_id=syntax_node_id,
         match_kind=match_kind,
         candidate_count=candidate_count,
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _XrefRowContext:
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    producer: str
+    ts_node_id: str
+
+
 def _xref_row_payload(
+    context: _XrefRowContext,
     *,
-    repo: str,
-    commit: str,
-    rel_path: str,
-    language: str,
-    producer: str,
-    ts_node_id: str,
     syntax_node_id: str | None,
     match_kind: str,
     candidate_count: int,
 ) -> dict[str, object]:
     return {
-        "repo": repo,
-        "commit": commit,
-        "rel_path": rel_path,
-        "language": language,
-        "producer": producer,
-        "ts_node_id": ts_node_id,
+        "repo": context.repo,
+        "commit": context.commit,
+        "rel_path": context.rel_path,
+        "language": context.language,
+        "producer": context.producer,
+        "ts_node_id": context.ts_node_id,
         "syntax_node_id": syntax_node_id,
         "match_kind": match_kind,
         "candidate_count": candidate_count,
@@ -418,15 +420,48 @@ def _apply_ts_payloads(
         if not payload_map:
             continue
         extras = _merge_ts_node_payloads(row.get("extras_json"), payload_map)
-        row["extras_json"] = encode_payload(extras)
+        row["extras_json"] = extras
+
+
+def _weld_coverage_frame(
+    ts_nodes: pl.DataFrame,
+    xref_rows: list[dict[str, object]],
+) -> pl.DataFrame:
+    if ts_nodes.is_empty():
+        return pl.DataFrame()
+    group_keys = ["repo", "commit", "rel_path", "language"]
+    ts_counts = ts_nodes.lazy().group_by(group_keys).agg(pl.len().alias("ts_node_count"))
+    mapped: pl.LazyFrame | None = None
+    if xref_rows:
+        xref_frame = pl.DataFrame(xref_rows)
+        if set(group_keys).issubset(xref_frame.columns):
+            mapped = (
+                xref_frame.lazy()
+                .filter(pl.col("syntax_node_id").is_not_null() & (pl.col("match_kind") != "NONE"))
+                .group_by(group_keys)
+                .agg(pl.len().alias("mapped_count"))
+            )
+    if mapped is None:
+        coverage = ts_counts.with_columns(pl.lit(0).alias("mapped_count"))
+    else:
+        coverage = ts_counts.join(mapped, on=group_keys, how="left").with_columns(
+            pl.col("mapped_count").fill_null(0)
+        )
+    coverage = coverage.with_columns(
+        pl.col("mapped_count").cast(pl.Int64),
+        pl.when(pl.col("ts_node_count") > 0)
+        .then(pl.col("mapped_count") / pl.col("ts_node_count"))
+        .otherwise(pl.lit(0.0))
+        .alias("coverage_ratio"),
+    )
+    return coverage.collect()
 
 
 def _merge_ts_node_payloads(
     extras_raw: object,
     payload_map: dict[str, dict[str, object]],
 ) -> dict[str, object]:
-    existing = decode_payload(extras_raw)
-    extras = dict(existing) if isinstance(existing, dict) else {}
+    extras = dict(extras_raw) if isinstance(extras_raw, Mapping) else {}
     prior = extras.get("ts_nodes")
     merged: dict[str, dict[str, object]] = {}
     if isinstance(prior, list):
@@ -489,6 +524,43 @@ def _ts_edges_to_syntax_edges(ts_edges: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def _filter_libcst_rows(frame: pl.DataFrame, fallback_paths: set[str]) -> pl.DataFrame:
+    if not {"producer", "rel_path"}.issubset(frame.columns):
+        return frame
+    libcst_mask = (pl.col("producer") == SYNTAX_PRODUCER_LIBCST) & (
+        pl.col("rel_path").is_in(fallback_paths)
+    )
+    return frame.filter(~libcst_mask)
+
+
+def _concat_if_non_empty(base: pl.DataFrame, extra: pl.DataFrame) -> pl.DataFrame:
+    if extra.is_empty():
+        return base
+    return pl.concat([base, extra], how="vertical_relaxed")
+
+
+def _apply_fallback_paths(
+    syntax_nodes: pl.DataFrame,
+    syntax_edges: pl.DataFrame,
+    ts_nodes: pl.DataFrame,
+    ts_edges: pl.DataFrame,
+    fallback_paths: set[str],
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    if not fallback_paths:
+        return syntax_nodes, syntax_edges
+    syntax_nodes = _filter_libcst_rows(syntax_nodes, fallback_paths)
+    syntax_edges = _filter_libcst_rows(syntax_edges, fallback_paths)
+    ts_fallback_nodes = _ts_nodes_to_syntax_nodes(
+        ts_nodes.filter(pl.col("rel_path").is_in(fallback_paths))
+    )
+    ts_fallback_edges = _ts_edges_to_syntax_edges(
+        ts_edges.filter(pl.col("rel_path").is_in(fallback_paths))
+    )
+    syntax_nodes = _concat_if_non_empty(syntax_nodes, ts_fallback_nodes)
+    syntax_edges = _concat_if_non_empty(syntax_edges, ts_fallback_edges)
+    return syntax_nodes, syntax_edges
+
+
 def syntax_augment__frames(
     syntax_augment__inputs: _SyntaxAugmentInputs,
     syntax_augment__options: SyntaxAugmentOptions,
@@ -500,53 +572,34 @@ def syntax_augment__frames(
     SyntaxAugmentFrames
         Canonical syntax nodes, edges, and optional tree-sitter xref rows.
     """
-    syntax_nodes = syntax_augment__inputs.syntax_nodes
-    syntax_edges = syntax_augment__inputs.syntax_edges
-    ts_nodes = syntax_augment__inputs.ts_nodes
-    ts_edges = syntax_augment__inputs.ts_edges
-    parse_manifest = syntax_augment__inputs.parse_manifest
-
-    if syntax_augment__options.fallback_on_libcst_failure:
-        fallback_paths = _failure_paths(parse_manifest)
-    else:
-        fallback_paths = set()
-
-    if fallback_paths:
-        node_columns = set(syntax_nodes.columns)
-        edge_columns = set(syntax_edges.columns)
-        if {"producer", "rel_path"}.issubset(node_columns):
-            libcst_mask = (pl.col("producer") == SYNTAX_PRODUCER_LIBCST) & (
-                pl.col("rel_path").is_in(fallback_paths)
-            )
-            syntax_nodes = syntax_nodes.filter(~libcst_mask)
-        if {"producer", "rel_path"}.issubset(edge_columns):
-            libcst_mask = (pl.col("producer") == SYNTAX_PRODUCER_LIBCST) & (
-                pl.col("rel_path").is_in(fallback_paths)
-            )
-            syntax_edges = syntax_edges.filter(~libcst_mask)
-        ts_fallback_nodes = _ts_nodes_to_syntax_nodes(
-            ts_nodes.filter(pl.col("rel_path").is_in(fallback_paths))
-        )
-        ts_fallback_edges = _ts_edges_to_syntax_edges(
-            ts_edges.filter(pl.col("rel_path").is_in(fallback_paths))
-        )
-        if not ts_fallback_nodes.is_empty():
-            syntax_nodes = pl.concat([syntax_nodes, ts_fallback_nodes], how="vertical_relaxed")
-        if not ts_fallback_edges.is_empty():
-            syntax_edges = pl.concat([syntax_edges, ts_fallback_edges], how="vertical_relaxed")
-
-    xref_rows = _xref_rows(ts_nodes=ts_nodes, syntax_nodes=syntax_nodes)
+    inputs = syntax_augment__inputs
+    fallback_paths = (
+        _failure_paths(inputs.parse_manifest)
+        if syntax_augment__options.fallback_on_libcst_failure
+        else set()
+    )
+    syntax_nodes, syntax_edges = _apply_fallback_paths(
+        inputs.syntax_nodes,
+        inputs.syntax_edges,
+        inputs.ts_nodes,
+        inputs.ts_edges,
+        fallback_paths,
+    )
+    xref_rows = _xref_rows(ts_nodes=inputs.ts_nodes, syntax_nodes=syntax_nodes)
     nodes_rows = syntax_nodes.to_dicts()
-    _merge_ts_extras(nodes_rows, ts_nodes, xref_rows)
+    _merge_ts_extras(nodes_rows, inputs.ts_nodes, xref_rows)
 
     syntax_nodes_frame = dedupe_frame_for_table(
         rows_to_frame(SYNTAX_NODES_TABLE_KEY, nodes_rows),
         table_key=SYNTAX_NODES_TABLE_KEY,
     )
-    syntax_edges_frame = dedupe_frame_for_table(
-        syntax_edges.lazy(),
-        table_key=SYNTAX_EDGES_TABLE_KEY,
-    )
+    if not syntax_edges.columns:
+        syntax_edges_frame = empty_lazyframe_for_table(SYNTAX_EDGES_TABLE_KEY)
+    else:
+        syntax_edges_frame = dedupe_frame_for_table(
+            syntax_edges.lazy(),
+            table_key=SYNTAX_EDGES_TABLE_KEY,
+        )
     if syntax_augment__options.emit_ts_xref:
         xref_frame = dedupe_frame_for_table(
             rows_to_frame(TS_XREF_TABLE_KEY, xref_rows),
@@ -555,10 +608,20 @@ def syntax_augment__frames(
     else:
         xref_frame = empty_lazyframe_for_table(TS_XREF_TABLE_KEY)
 
+    coverage_rows = _weld_coverage_frame(inputs.ts_nodes, xref_rows)
+    if coverage_rows.is_empty():
+        coverage_frame = empty_lazyframe_for_table(TS_WELD_COVERAGE_TABLE_KEY)
+    else:
+        coverage_frame = dedupe_frame_for_table(
+            coverage_rows.lazy(),
+            table_key=TS_WELD_COVERAGE_TABLE_KEY,
+        )
+
     return SyntaxAugmentFrames(
         syntax_nodes=syntax_nodes_frame,
         syntax_edges=syntax_edges_frame,
         ts_syntax_node_xref=xref_frame,
+        ts_weld_coverage=coverage_frame,
     )
 
 
@@ -601,6 +664,19 @@ def syntax_augment__ts_syntax_node_xref__base(
     return syntax_augment__frames.ts_syntax_node_xref
 
 
+def syntax_augment__ts_weld_coverage__base(
+    syntax_augment__frames: SyntaxAugmentFrames,
+) -> pl.LazyFrame:
+    """Return per-file tree-sitter weld coverage rows.
+
+    Returns
+    -------
+    pl.LazyFrame
+        Weld coverage rows.
+    """
+    return syntax_augment__frames.ts_weld_coverage
+
+
 _MODULE = sys.modules[__name__]
 _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
     domain="ingestion",
@@ -627,6 +703,13 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
             node_name="syntax_augment__ts_syntax_node_xref",
             input_type=pl.LazyFrame,
         ),
+        TableTargetTableSpec(
+            table_key=TS_WELD_COVERAGE_TABLE_KEY,
+            base_node="syntax_augment__ts_weld_coverage__base",
+            save_spec=RelationTableSaveSpec(table_key=TS_WELD_COVERAGE_TABLE_KEY),
+            node_name="syntax_augment__ts_weld_coverage",
+            input_type=pl.LazyFrame,
+        ),
     ),
     table_materializations_node="syntax_augment__table_materializations",
     anchor_node_name="t__syntax_augment",
@@ -635,6 +718,7 @@ attach_table_target_template(_MODULE, spec=_SYNTAX_AUGMENT_TABLE_TARGET_SPEC)
 syntax_augment__syntax_nodes = _MODULE.syntax_augment__syntax_nodes
 syntax_augment__syntax_edges = _MODULE.syntax_augment__syntax_edges
 syntax_augment__ts_syntax_node_xref = _MODULE.syntax_augment__ts_syntax_node_xref
+syntax_augment__ts_weld_coverage = _MODULE.syntax_augment__ts_weld_coverage
 syntax_augment__table_materializations = _MODULE.syntax_augment__table_materializations
 t__syntax_augment = _MODULE.t__syntax_augment
 
@@ -647,5 +731,7 @@ __all__ = [
     "syntax_augment__table_materializations",
     "syntax_augment__ts_syntax_node_xref",
     "syntax_augment__ts_syntax_node_xref__base",
+    "syntax_augment__ts_weld_coverage",
+    "syntax_augment__ts_weld_coverage__base",
     "t__syntax_augment",
 ]

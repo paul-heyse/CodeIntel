@@ -430,6 +430,7 @@ outputs:
       - "cli.datasets"
     upstream_targets:
       - "syntax_augment"
+      - "tree_sitter_index"
       - "scip_resolution"
       - "goids"
       - "cfg"
@@ -659,10 +660,12 @@ outputs:
       - "core.syntax_nodes"
       - "core.syntax_edges"
       - "core.ts_syntax_node_xref"
+      - "core.ts_weld_coverage"
     contracts:
       - "core.syntax_nodes"
       - "core.syntax_edges"
       - "core.ts_syntax_node_xref"
+      - "core.ts_weld_coverage"
     downstream_consumers:
       - "graphs.cpg"
       - "ingestion.syntax_enrich"
@@ -810,6 +813,7 @@ outputs:
       - "core.ts_nodes"
       - "core.ts_edges"
       - "core.ts_parse_errors"
+      - "core.ts_changed_ranges"
       - "core.ts_tokens"
       - "core.ts_trivia"
       - "core.ts_language_metadata"
@@ -819,6 +823,7 @@ outputs:
       - "core.ts_nodes"
       - "core.ts_edges"
       - "core.ts_parse_errors"
+      - "core.ts_changed_ranges"
       - "core.ts_tokens"
       - "core.ts_trivia"
       - "core.ts_language_metadata"

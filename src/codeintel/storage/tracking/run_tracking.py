@@ -498,8 +498,8 @@ class PipelineRunTracking:
         record
             Step record to persist.
         """
-        row_counts_payload = encode_payload(dict(record.row_counts)) if record.row_counts else None
-        extra_payload = encode_payload(dict(record.extra)) if record.extra else None
+        row_counts_payload = encode_payload(record.row_counts) if record.row_counts else None
+        extra_payload = encode_payload(record.extra) if record.extra else None
 
         columns = [
             "run_id",

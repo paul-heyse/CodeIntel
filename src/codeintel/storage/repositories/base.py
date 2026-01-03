@@ -31,6 +31,7 @@ import pyarrow as pa
 
 from codeintel.core.repository import PagedResult
 from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.core.validation.profiles import ValidationProfile
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
@@ -41,7 +42,10 @@ from codeintel.storage.query_results import (
     iter_records_from_arrow_reader,
     records_from_arrow_reader,
 )
-from codeintel.storage.validation.columnar import validate_record_batch_reader
+from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
+    validate_record_batch_reader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -212,16 +216,22 @@ class BaseRepository:
             table_key,
             observation_provider=self.gateway.schemas,
         )
-        return validate_record_batch_reader(
-            table_key,
-            reader,
+        context = ColumnarValidationContext(
             table_schema=resolution.table_schema,
             schema_observation=resolution.observation,
+            validation_profile=self._validation_profile_for_table(table_key),
         )
+        return validate_record_batch_reader(table_key, reader, context=context)
 
     @staticmethod
     def _has_nested_arrow_types(schema: pa.Schema) -> bool:
         return any(pa.types.is_nested(field.type) for field in schema)
+
+    def _validation_profile_for_table(self, table_key: str) -> ValidationProfile | None:
+        dataset = self.gateway.datasets.by_table_key.get(table_key)
+        if dataset is None:
+            return None
+        return dataset.validation_profile
 
     @staticmethod
     def _predicate_eq(column: str, value: object) -> Expression:

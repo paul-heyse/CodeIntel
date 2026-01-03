@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
     TableValidationError,
     validate_record_batch_reader,
 )
@@ -73,10 +74,11 @@ def assert_table_schema_valid(gateway: StorageGateway, table_key: str) -> None:
         raise AssertionError(message)
     try:
         reader = gateway.con.table(table_key).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        context = ColumnarValidationContext(table_schema=table_schema)
         validated = validate_record_batch_reader(
             table_key,
             reader,
-            table_schema=table_schema,
+            context=context,
             mode="strict",
         )
         for _batch in validated:

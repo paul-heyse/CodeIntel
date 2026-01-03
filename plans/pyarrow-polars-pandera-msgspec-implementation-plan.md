@@ -50,38 +50,26 @@
 - Preserve deterministic output ordering and newline termination.
 
 ### Implementation steps
-1. Add a shared msgspec JSON helper module.
-   - New module: `src/codeintel/core/serialization/msgspec_json.py`.
-   - Define `Encoder` and `Decoder` instances with:
-     - `order="deterministic"`
-     - strict decoding for canonical payloads.
-   - Provide helpers:
-     - `encode_json_bytes(obj: object) -> bytes`
-     - `encode_json_text(obj: object) -> str`
-     - `decode_json_bytes(buf: bytes, *, type: object) -> object`
-
-2. Update manifest serialization.
-   - `src/codeintel/core/manifests.py`:
-     - Replace `orjson` usage in `write_manifest_json`, `_encode_manifest_bytes`,
-       and `_encode_manifest_text`.
-     - Prefer encoding msgspec Structs directly, not hand-built dicts.
-   - Use `msgspec.Struct` options for schema-wire alignment:
-     - `kw_only=True` (clarity for optional fields).
-     - `omit_defaults=True` (reduce payload size).
-     - `forbid_unknown_fields=True` for strict decode (where safe).
-   - Use `msgspec.UNSET` for optional fields that should be omitted rather than
-     emitted as `null`.
-
-3. Update decision trace serialization.
-   - `src/codeintel/build/hamilton/decision_trace.py`:
-     - Replace `orjson.dumps` with msgspec encoder.
-     - Consider `DecisionTraceRecord` to be the canonical wire object, not
-       `DecisionTracePayload` dicts.
-
-4. Backward compatibility for existing JSON files.
-   - For readers that ingest persisted JSON, decode to dict and convert to
-     msgspec Struct via `msgspec.convert` when needed.
-   - Document compatibility expectations and provide a small migration note.
+Completed:
+- Add a shared msgspec JSON helper module.
+  - New module: `src/codeintel/core/serialization/msgspec_json.py`.
+  - Define deterministic encoder/decoder helpers.
+  - Provide helpers:
+    - `encode_json_bytes(obj: object) -> bytes`
+    - `encode_json_text(obj: object) -> str`
+    - `decode_json_bytes(buf: bytes, *, type: object) -> object`
+- Update manifest serialization.
+  - `src/codeintel/core/manifests.py`:
+    - Replace `orjson` usage in manifest read/write helpers.
+    - Prefer encoding msgspec Structs directly.
+  - Use `msgspec.Struct` options for schema-wire alignment:
+    - `kw_only=True`
+    - `omit_defaults=True`
+    - `forbid_unknown_fields=True` with permissive fallback conversion.
+- Update decision trace serialization.
+  - `src/codeintel/build/hamilton/decision_trace.py` now uses msgspec helpers.
+- Backward compatibility for existing JSON files.
+  - Read path tolerates unknown fields via `msgspec.convert` fallback.
 
 ### Acceptance criteria
 - No orjson usage in manifest or decision trace write/read paths.
@@ -95,24 +83,17 @@
 - Keep contract alignment strict unless promotion is explicitly allowed.
 
 ### Implementation steps
-1. Add a promotion policy to settings.
-   - Add `schema_promote_options: Literal["default", "permissive"]` to:
-     - `BuildSettings`
-     - `ArrowDatasetSettings` (if present) or equivalent config layer.
-   - Default to `"permissive"` per user guidance.
-
-2. Apply promotion to schema unification.
-   - `src/codeintel/core/columnar/schema.py`:
-     - Add `promote_options` parameter to `unify_schema_for_batches`.
-     - Default to permissive.
-   - `src/codeintel/core/datasets/scanning.py`:
-     - When `unify_schemas=True`, pass the promotion option.
-
-3. Align contract schema with permissive promotions.
-   - `src/codeintel/core/columnar/schema_alignment.py`:
-     - Replace the current `promote_options: pc.CastOptions | None` with
-       a promotion policy parameter for `pa.unify_schemas`.
-     - Retain explicit casting via `pc.cast` and optional `CastOptions`.
+Completed:
+- Add a promotion policy to settings.
+  - `BuildSettings` and dataset settings include `schema_promote_options` with
+    permissive default.
+  - Environment overrides documented alongside existing schema settings.
+- Apply promotion to schema unification.
+  - `src/codeintel/core/columnar/schema.py` uses `promote_options` for unification.
+  - `src/codeintel/core/datasets/scanning.py` passes the promotion option.
+- Align contract schema with permissive promotions.
+  - `src/codeintel/core/columnar/schema_alignment.py` unifies schemas with
+    the promotion policy while retaining explicit cast options.
 
 ### Acceptance criteria
 - Schema unification succeeds for typical type widenings (int32->int64,
@@ -130,37 +111,30 @@
 - Standardize diagnostics and failure case reporting.
 
 ### Implementation steps
-1. Build a Pandera schema factory.
-   - Add module: `src/codeintel/core/validation/pandera_schema.py`.
-   - Inputs:
-     - `TableSchema`
-     - Optional observation stats (min/max, etc.)
-     - Extras policy (retain/reject/drop)
-   - Outputs:
-     - `pandera.polars.DataFrameSchema` with:
-       - `strict=True` when extras policy is reject.
-       - `strict="filter"` when extras policy retains.
-       - `unique` for primary keys.
-       - `Check.ge`/`Check.le` or `Check.in_range` for min/max.
-       - `nullable` mapped from TableSchema.
-       - `coerce=False` for strict type enforcement.
+Completed:
+- Build a Pandera schema factory.
+  - `src/codeintel/core/validation/pandera_schema.py` added.
+  - Produces `pandera.polars.DataFrameSchema` with strict mode, uniques, and
+    range checks mapped from observations.
+- Preserve streaming behavior in storage validation.
+  - `src/codeintel/storage/validation/columnar.py` now validates
+    `RecordBatchReader` with Pandera when global checks are required.
 
-2. Replace ad-hoc validators with Pandera.
-   - `src/codeintel/build/hamilton/data_quality.py`:
-     - Remove column presence, uniqueness, and range checks implemented outside
-       Pandera.
-     - Use a single Pandera-based validator for schema-level and data-level
-       validation.
-     - Standardize diagnostics based on `SchemaErrors.failure_cases`.
-
-3. Preserve streaming behavior.
-   - Provide two validation modes:
-     - Full-table (LazyFrame) for global checks like uniqueness.
-     - Streaming (RecordBatchReader) for per-batch validation where global
-       checks are not required or are computed separately.
-   - For streaming:
-     - Convert each batch to Polars DataFrame, validate, accumulate diagnostics.
-     - Provide early-exit on first failure when configured.
+Outstanding checklist:
+- Replace ad-hoc validators with Pandera in Hamilton.
+  - [ ] `src/codeintel/build/hamilton/data_quality.py`:
+    - [ ] Remove column presence, uniqueness, and range checks implemented
+      outside Pandera.
+    - [ ] Use a single Pandera-based validator for schema-level and data-level
+      validation.
+    - [ ] Standardize diagnostics based on `SchemaErrors.failure_cases`.
+- Preserve streaming behavior for Hamilton validation.
+  - [ ] Provide two validation modes:
+    - [ ] Full-table (LazyFrame) for global checks like uniqueness.
+    - [ ] Streaming (RecordBatchReader) for per-batch validation when possible.
+  - [ ] For streaming:
+    - [ ] Convert each batch to Polars DataFrame, validate, accumulate diagnostics.
+    - [ ] Provide early-exit on first failure when configured.
 
 ### Acceptance criteria
 - All uniqueness and range checks run through Pandera.
@@ -173,22 +147,16 @@
 - Minimize eager conversion to Polars except when required by Pandera.
 
 ### Implementation steps
-1. Update streaming adapters.
-   - `src/codeintel/core/columnar/stream.py`:
-     - Keep `RecordBatchReader` as the authoritative streaming type.
-     - Ensure LazyFrame streaming uses batch generators without materializing
-       the full dataset.
-
-2. Clarify Polars batch collection types.
-   - `src/codeintel/core/columnar/polars_collect.py`:
-     - Adjust type hints to `Iterable[DataFrame]` where Polars returns a
-       generator.
-     - Avoid eager list conversion.
-
-3. Use Arrow scanners where Polars is not needed.
-   - `src/codeintel/build/graphs/engine/datasets.py`:
-     - Keep Arrow `Scanner` paths for read-heavy operations.
-     - Use Polars only when downstream logic requires Polars expressions.
+Completed:
+- Update streaming adapters.
+  - `src/codeintel/core/columnar/stream.py` keeps `RecordBatchReader` as the
+    authoritative stream and uses Arrow datasets for LazyFrame conversion.
+- Clarify Polars batch collection types.
+  - `src/codeintel/core/columnar/polars_collect.py` returns iterators for
+    batch collection and avoids eager list conversion.
+- Use Arrow scanners where Polars is not needed.
+  - `src/codeintel/build/graphs/engine/datasets.py` applies Arrow-side
+    filtering before falling back to Polars expressions.
 
 ### Acceptance criteria
 - Streaming flows prefer Arrow readers without full materialization.
@@ -217,6 +185,44 @@
 - Maintain a temporary compatibility path that accepts old JSON formats if
   necessary (to be removed after a migration window).
 
+### Pandera rollout for build validation
+Goal: roll Pandera validation across `src/codeintel/build` with clear staging,
+visibility, and rollback controls.
+
+Rollout stages:
+1) Baseline (noop parity)
+   - Keep validation enabled behind existing `ci_validate_outputs` gating.
+   - Emit Pandera diagnostics on failures without changing existing failure
+     behavior (lenient mode logs, strict mode fails).
+   - Ensure the new Pandera path is used for all build datasets via
+     `PanderaSchemaValidator`.
+2) Stage 1 (shadow mode for strict profiles)
+   - For profiles `strict` and `data-strict`, run Pandera validation and log
+     diagnostics even if a legacy path would have passed.
+   - Track failure rates by table key and profile to identify noisy contracts.
+3) Stage 2 (enforce Pandera as source of truth)
+   - Remove or disable remaining ad-hoc checks in Hamilton (already done).
+   - Treat Pandera failures as authoritative for schema/uniqueness/range.
+4) Stage 3 (streaming-first)
+   - Use streaming validation for `RecordBatchReader` when no global checks
+     are required; fall back to full-table validation when primary keys exist.
+   - Document which checks require materialization (uniques).
+5) Stage 4 (stabilize and monitor)
+   - Add error budget dashboards / alerts (if telemetry is enabled).
+   - Confirm failure cases include `failure_cases` in diagnostics for triage.
+
+Operational checklist:
+- Ensure `pandera_available()` is true in build environments (dependency present).
+- Verify `resolve_extras_policy` aligns with build schema expectations.
+- Confirm primary key uniqueness checks route through Pandera (global mode).
+- Confirm range checks are sourced only from observation stats.
+- Validate failure diagnostics include `table_key`, `error`, and `failure_cases`.
+
+Rollback plan:
+- Flip `ci_validate_outputs` or set validation profile to `schema-only` to
+  bypass Pandera checks while keeping build outputs unblocked.
+- Re-enable lenient mode if strict failures are too noisy.
+
 ## Risks and mitigations
 - Pandera validation on streaming data may miss global constraints.
   - Mitigation: split validation into streaming and global phases, and surface
@@ -231,4 +237,3 @@
 - Which validation checks must be global (always full dataset) vs streaming?
 - Do we need a formal migration step for persisted JSON or is best-effort
   backwards compatibility acceptable?
-

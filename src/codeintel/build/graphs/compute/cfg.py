@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow
+from codeintel.core.helpers.payload import encode_payload
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -419,7 +420,7 @@ def cfg_to_rows(
             start_line=default_start if block.start_line == -1 else block.start_line,
             end_line=default_end if block.end_line == -1 else block.end_line,
             kind=block.kind,
-            stmts_json=block.stmt_kinds(),
+            stmts_json=encode_payload(block.stmt_kinds()) or b"",
             in_degree=in_degree.get(block.idx, 0),
             out_degree=out_degree.get(block.idx, 0),
         )

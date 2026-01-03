@@ -7,8 +7,9 @@ Python AST nodes and metrics, using ports for all I/O operations.
 from __future__ import annotations
 
 import ast
-import hashlib
+import io
 import logging
+import tokenize
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -16,9 +17,15 @@ from typing import TYPE_CHECKING
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.infrastructure.ast_facts import (
+    AstNodeRecord,
+    ast_node_id,
+    collect_ast_nodes,
+)
+from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -65,11 +72,10 @@ class AstMetrics:
         return max(self.depths) if self.depths else 0
 
 
-@dataclass
-class AstRowInfo:
-    """Flattened AST row payload."""
+@dataclass(frozen=True)
+class _DefInfo:
+    """Definition metadata for qualname-bearing AST nodes."""
 
-    node_type: str
     name: str | None
     qualname: str | None
     parent_qualname: str | None
@@ -99,7 +105,7 @@ class AstExtractResult:
 
 
 class AstVisitor(ast.NodeVisitor):
-    """Collect Python AST nodes and file metrics."""
+    """Collect AST metrics and definition metadata."""
 
     def __init__(self, rel_path: str, module_name: str) -> None:
         """Initialize visitor.
@@ -113,8 +119,8 @@ class AstVisitor(ast.NodeVisitor):
         """
         self.rel_path = rel_path
         self.module_name = module_name
-        self.ast_rows: list[dict[str, object]] = []
         self.metrics = AstMetrics(rel_path=rel_path)
+        self.def_info_by_node_id: dict[int, _DefInfo] = {}
         self._scope_stack: list[str] = []
         self._depth = 0
 
@@ -128,10 +134,8 @@ class AstVisitor(ast.NodeVisitor):
             node, (ast.If, ast.For, ast.While, ast.Try, ast.With, ast.AsyncWith, ast.AsyncFor)
         ):
             self.metrics.complexity += 1
-        if isinstance(node, ast.FunctionDef):
-            self._record_function(node, is_async=False)
-        elif isinstance(node, ast.AsyncFunctionDef):
-            self._record_function(node, is_async=True)
+        if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+            self._record_function(node)
         elif isinstance(node, ast.ClassDef):
             self._record_class(node)
         elif isinstance(node, ast.Module):
@@ -161,10 +165,9 @@ class AstVisitor(ast.NodeVisitor):
         """Record the module node and reset scope."""
         qualname = self.module_name
         self._scope_stack = []
-        self._record_ast_row(
-            node=node,
-            info=AstRowInfo(
-                node_type="Module",
+        self._store_def_info(
+            node,
+            _DefInfo(
                 name=self.module_name.split(".")[-1],
                 qualname=qualname,
                 parent_qualname=None,
@@ -183,10 +186,9 @@ class AstVisitor(ast.NodeVisitor):
         self._scope_stack.append(name)
         self.metrics.class_count += 1
         dec_start, dec_end = self._decorator_span(node.decorator_list)
-        self._record_ast_row(
-            node=node,
-            info=AstRowInfo(
-                node_type="ClassDef",
+        self._store_def_info(
+            node,
+            _DefInfo(
                 name=name,
                 qualname=qualname,
                 parent_qualname=parent_qual or self.module_name,
@@ -197,21 +199,17 @@ class AstVisitor(ast.NodeVisitor):
             ),
         )
 
-    def _record_function(
-        self, node: ast.FunctionDef | ast.AsyncFunctionDef, *, is_async: bool
-    ) -> None:
+    def _record_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         """Record function or async function definitions and push scope."""
         name = node.name
         parent_qual = self._current_qualname()
         qualname = f"{parent_qual}.{name}" if parent_qual else f"{self.module_name}.{name}"
         self._scope_stack.append(name)
         self.metrics.function_count += 1
-        node_type = "AsyncFunctionDef" if is_async else "FunctionDef"
         dec_start, dec_end = self._decorator_span(node.decorator_list)
-        self._record_ast_row(
-            node=node,
-            info=AstRowInfo(
-                node_type=node_type,
+        self._store_def_info(
+            node,
+            _DefInfo(
                 name=name,
                 qualname=qualname,
                 parent_qualname=parent_qual or self.module_name,
@@ -268,38 +266,88 @@ class AstVisitor(ast.NodeVisitor):
                 end = normalized_end if end is None else max(end, normalized_end)
         return start, end
 
-    def _record_ast_row(
-        self,
-        node: ast.AST,
-        info: AstRowInfo,
-    ) -> None:
-        """Record an AST row for storage."""
-        lineno = self._normalize_line(getattr(node, "lineno", None))
-        end_lineno = self._normalize_line(getattr(node, "end_lineno", None))
-        col = getattr(node, "col_offset", None)
-        end_col = getattr(node, "end_col_offset", None)
-        h = hashlib.blake2b(
-            f"{self.rel_path}:{info.node_type}:{info.qualname}:{lineno}:{end_lineno}".encode(),
-            digest_size=16,
-        ).hexdigest()
-        self.ast_rows.append(
-            {
-                "path": self.rel_path,
-                "node_type": info.node_type,
-                "name": info.name,
-                "qualname": info.qualname,
-                "lineno": lineno,
-                "end_lineno": end_lineno,
-                "decorator_start_line": info.decorator_start_line,
-                "decorator_end_line": info.decorator_end_line,
-                "col_offset": col,
-                "end_col_offset": end_col,
-                "parent_qualname": info.parent_qualname,
-                "decorators": info.decorators,
-                "docstring": info.docstring,
-                "hash": h,
-            }
-        )
+    def _store_def_info(self, node: ast.AST, info: _DefInfo) -> None:
+        self.def_info_by_node_id[id(node)] = info
+
+
+def _coerce_str(value: object) -> str | None:
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _coerce_int(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _coerce_type_ignores(value: object) -> list[dict[str, object]] | None:
+    if not isinstance(value, list):
+        return None
+    entries = [item for item in value if isinstance(item, dict)]
+    return entries or None
+
+
+def _build_ast_rows(
+    module: ModuleRecord,
+    records: list[AstNodeRecord],
+    def_info: dict[int, _DefInfo],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for record in records:
+        info = def_info.get(id(record.node))
+        extras = record.extras or {}
+        name = info.name if info is not None else _coerce_str(extras.get("name"))
+        decorators = info.decorators if info is not None and info.decorators else None
+        docstring = info.docstring if info is not None else None
+        row = {
+            "path": module.rel_path,
+            "node_type": record.kind,
+            "name": name,
+            "qualname": info.qualname if info is not None else None,
+            "lineno": record.span.start_line,
+            "end_lineno": record.span.end_line,
+            "decorator_start_line": info.decorator_start_line if info is not None else None,
+            "decorator_end_line": info.decorator_end_line if info is not None else None,
+            "col_offset": record.span.start_col_utf8,
+            "end_col_offset": record.span.end_col_utf8,
+            "start_byte": record.span.start_byte,
+            "end_byte": record.span.end_byte,
+            "parent_qualname": info.parent_qualname if info is not None else None,
+            "decorators": decorators,
+            "docstring": docstring,
+            "ctx": _coerce_str(extras.get("ctx")),
+            "type_comment": _coerce_str(extras.get("type_comment")),
+            "type_ignores": _coerce_type_ignores(extras.get("type_ignores")),
+            "identifier": _coerce_str(extras.get("identifier")),
+            "attribute": _coerce_str(extras.get("attribute")),
+            "imported": _coerce_str(extras.get("imported")),
+            "asname": _coerce_str(extras.get("asname")),
+            "module": _coerce_str(extras.get("module")),
+            "level": _coerce_int(extras.get("level")),
+            "constant_kind": _coerce_str(extras.get("constant_kind")),
+            "hash": record.node_id,
+        }
+        rows.append(row)
+    return rows
+
+
+def _decode_source_bytes(source_bytes: bytes) -> tuple[str, str]:
+    try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(source_bytes).readline)
+    except SyntaxError:
+        encoding = "utf-8"
+    try:
+        return source_bytes.decode(encoding), encoding
+    except UnicodeDecodeError:
+        return source_bytes.decode(encoding, errors="replace"), encoding
+
+
+def _build_source_index(source_bytes: bytes) -> tuple[str, LineIndexedSource]:
+    source_text, encoding = _decode_source_bytes(source_bytes)
+    source_index = LineIndexedSource(source_text, source_bytes, encoding=encoding)
+    return source_text, source_index
 
 
 def _build_metric_row(metrics: AstMetrics) -> dict[str, object]:
@@ -324,7 +372,8 @@ def _build_metric_row(metrics: AstMetrics) -> dict[str, object]:
 
 def _extract_module_ast(
     module: ModuleRecord,
-    source: str,
+    source_text: str,
+    source_index: LineIndexedSource,
 ) -> ModuleAstResult | None:
     """Extract AST from module source.
 
@@ -332,8 +381,10 @@ def _extract_module_ast(
     ----------
     module
         Module record with metadata.
-    source
-        Module source code.
+    source_text
+        Module source code text.
+    source_index
+        Line index used for span lookups.
 
     Returns
     -------
@@ -341,20 +392,31 @@ def _extract_module_ast(
         Extraction result, or None if parsing fails.
     """
     try:
-        tree = ast.parse(source, filename=str(module.file_path))
-    except (SyntaxError, ValueError) as exc:
+        tree = ast.parse(source_text, filename=str(module.file_path), type_comments=True)
+    except (SyntaxError, ValueError, TypeError) as exc:
         log.warning("Failed to parse %s: %s", module.file_path, exc)
         return None
 
     visitor = AstVisitor(rel_path=module.rel_path, module_name=module.module_name)
     try:
         visitor.visit(tree)
-    except (RecursionError, ValueError) as exc:
+    except (RecursionError, ValueError, TypeError) as exc:
         log.warning("AST visit failed for %s: %s", module.file_path, exc)
         return None
 
+    records = collect_ast_nodes(
+        source_text,
+        source_index,
+        node_id_factory=lambda node, span: ast_node_id(
+            module.rel_path,
+            type(node).__name__,
+            span,
+        ),
+        parsed=tree,
+        source_label=module.rel_path,
+    )
     return ModuleAstResult(
-        ast_rows=visitor.ast_rows,
+        ast_rows=_build_ast_rows(module, records, visitor.def_info_by_node_id),
         metric_row=_build_metric_row(visitor.metrics),
     )
 
@@ -400,9 +462,8 @@ class AstExtractStep(BaseExtractStep):
         except (KeyError, RuntimeError) as exc:
             return AstExtractResult(result=ExecutionResult.failed(str(exc)))
         warnings: list[str] = []
-
-        for module, source in self._iter_python_sources(modules):
-            result = _extract_module_ast(module, source)
+        for module, source_text, source_index in self._iter_python_source_bundles(modules):
+            result = _extract_module_ast(module, source_text, source_index)
             if result is None:
                 warnings.append(f"Failed to extract AST from {module.rel_path}")
                 continue
@@ -428,12 +489,27 @@ class AstExtractStep(BaseExtractStep):
             metric_row_count=metrics_buffer.row_count,
         )
 
+    def _iter_python_source_bundles(
+        self,
+        modules: Sequence[ModuleRecord],
+    ) -> Iterable[tuple[ModuleRecord, str, LineIndexedSource]]:
+        for module in modules:
+            if not module.rel_path.endswith(".py"):
+                continue
+            source_bytes = self._discovery.read_module_bytes(module)
+            if source_bytes is None:
+                source_text = self._discovery.read_module_source(module)
+                if source_text is None:
+                    continue
+                source_bytes = source_text.encode("utf-8", errors="replace")
+            source_text, source_index = _build_source_index(source_bytes)
+            yield module, source_text, source_index
+
 
 __all__ = [
     "AstExtractResult",
     "AstExtractStep",
     "AstMetrics",
-    "AstRowInfo",
     "AstVisitor",
     "ModuleAstResult",
 ]

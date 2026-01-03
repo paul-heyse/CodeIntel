@@ -41,6 +41,7 @@ from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.core.schemas.resolution import ResolvedSchemaProvider, resolve_table_schema
+from codeintel.core.validation.profiles import VALIDATION_PROFILES
 
 _TAG_ONLY_KWARGS = {
     "output_role",
@@ -60,7 +61,6 @@ _METADATA_TAGS: dict[str, str] = {
     "collect_group": "ci.collect_group",
 }
 
-_VALIDATION_PROFILES: frozenset[str] = frozenset({"strict", "lenient"})
 _SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 
 if TYPE_CHECKING:
@@ -632,10 +632,10 @@ def _resolve_metadata_tags(
         if not isinstance(value, str) or not value:
             msg = f"{fn.__qualname__}: {key} must be a non-empty string"
             raise InvalidDecoratorException(msg)
-        if key == "validation_profile" and value not in _VALIDATION_PROFILES:
+        if key == "validation_profile" and value not in VALIDATION_PROFILES:
             msg = (
                 f"{fn.__qualname__}: validation_profile must be one of "
-                f"{sorted(_VALIDATION_PROFILES)}"
+                f"{sorted(VALIDATION_PROFILES)}"
             )
             raise InvalidDecoratorException(msg)
         tags[tag_name] = value

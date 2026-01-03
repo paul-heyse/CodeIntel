@@ -19,7 +19,7 @@ from typing import ClassVar, Literal
 import msgspec
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-OutputFormat = Literal["text", "json"]
+OutputFormat = Literal["text", "json", "jsonl", "arrow-ipc"]
 
 
 class ProgressConfig(msgspec.Struct, frozen=True):

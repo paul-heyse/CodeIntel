@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, make_dataclass
 from decimal import Decimal
 from functools import lru_cache
@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from codeintel.core.helpers.json import normalize_duckdb_json_value
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.helpers.payload import PayloadValue, encode_payload
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import COLUMN_TYPE_REGISTRY, column_type_base
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
@@ -135,6 +135,23 @@ def normalize_row_value(value: object) -> object:
     return value
 
 
+def _coerce_payload_value(
+    value: object,
+) -> PayloadValue | bytes | bytearray | memoryview | None:
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return value
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, Sequence):
+        return value
+    msg = f"Unsupported payload value type: {type(value).__name__}"
+    raise TypeError(msg)
+
+
 def normalize_row_value_for_type(value: object, column_type: ColumnType | None) -> object:
     """Normalize row values with awareness of column types.
 
@@ -157,7 +174,8 @@ def normalize_row_value_for_type(value: object, column_type: ColumnType | None) 
         return normalized
     base = column_type_base(column_type)
     if base == "BLOB":
-        return encode_payload(normalized)
+        payload_value = _coerce_payload_value(normalized)
+        return encode_payload(payload_value)
     if base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
         return normalize_duckdb_json_value(normalized)
     return normalized

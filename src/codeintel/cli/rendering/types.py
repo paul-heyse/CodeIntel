@@ -27,11 +27,14 @@ class OutputFormat(StrEnum):
         Structured JSON object.
     JSONL
         JSON Lines for streaming.
+    ARROW_IPC
+        Arrow IPC stream for columnar output.
     """
 
     TEXT = "text"
     JSON = "json"
     JSONL = "jsonl"
+    ARROW_IPC = "arrow-ipc"
 
 
 JustifyMethod = Literal["left", "center", "right", "full", "default"]

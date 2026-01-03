@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from typing import BinaryIO
 
 import pyarrow as pa
 
@@ -78,4 +79,23 @@ def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
     raise TypeError(msg)
 
 
-__all__ = ["schema_from_ipc_payload", "schema_to_ipc_payload"]
+def write_ipc_stream(reader: pa.RecordBatchReader, writer: BinaryIO) -> None:
+    """Write an Arrow IPC stream to a binary writer.
+
+    Parameters
+    ----------
+    reader
+        RecordBatchReader providing stream batches.
+    writer
+        Binary writer (e.g., sys.stdout.buffer).
+    """
+    sink = pa.output_stream(writer)
+    stream_writer = pa.ipc.new_stream(sink, reader.schema)
+    try:
+        for batch in reader:
+            stream_writer.write_batch(batch)
+    finally:
+        stream_writer.close()
+
+
+__all__ = ["schema_from_ipc_payload", "schema_to_ipc_payload", "write_ipc_stream"]

@@ -8,18 +8,12 @@ JSON serialization.
 
 from __future__ import annotations
 
-import dataclasses
-from dataclasses import dataclass, field, is_dataclass
-from dataclasses import fields as get_fields
-from enum import Enum
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     ClassVar,
     Protocol,
-    TypeGuard,
     TypeVar,
-    cast,
     runtime_checkable,
 )
 
@@ -28,10 +22,7 @@ import msgspec
 from codeintel.core.columnar.stream import ColumnarStream
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.query_results import records_from_arrow_reader
-from codeintel.core.serialization.converters import (
-    serialize_dataclass_to_dict as serialize_result,
-)
-from codeintel.core.serialization.msgspec_json import encode_json_text
+from codeintel.core.serialization.msgspec import encode_json_text, to_builtins
 
 if TYPE_CHECKING:
     from codeintel.cli.errors import ProblemDetail
@@ -40,25 +31,7 @@ if TYPE_CHECKING:
 T_co = TypeVar("T_co", covariant=True)
 
 
-def _encode_hook(value: object) -> object:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, Enum):
-        return value.value
-    msg = f"Unsupported type: {type(value).__name__}"
-    raise TypeError(msg)
-
-
-class _DataclassInstance(Protocol):
-    __dataclass_fields__: ClassVar[dict[str, dataclasses.Field[object]]]
-
-
-class _ResultTypeClass(Protocol):
-    RESULT_TYPE_GENERATED: ClassVar[bool]
-    to_dict: ClassVar[object]
-
-
-class ResultBase(msgspec.Struct, frozen=True):
+class ResultBase(msgspec.Struct):
     """Base class for msgspec-backed CLI result types."""
 
     __include_none_fields__: ClassVar[frozenset[str]] = frozenset()
@@ -73,111 +46,6 @@ class ResultBase(msgspec.Struct, frozen=True):
             Serialized result payload.
         """
         return _serialize_result_struct(self)
-
-
-def result_type[T](cls: type[T]) -> type[T]:
-    """Add auto-generated to_dict() that omits None fields.
-
-    Apply this decorator to frozen dataclasses that serve as result types.
-    The generated `to_dict()` method serializes all fields, recursively
-    handling nested result types and omitting fields with None values.
-
-    Parameters
-    ----------
-    cls
-        The dataclass to enhance with auto-serialization.
-
-    Returns
-    -------
-    type[T]
-        The enhanced dataclass.
-
-    Raises
-    ------
-    TypeError
-        If cls is not a dataclass.
-
-    Examples
-    --------
-    >>> from dataclasses import dataclass
-    >>> from codeintel.cli.core.results import result_type
-    >>> @result_type
-    ... @dataclass(frozen=True)
-    ... class MyResult:
-    ...     name: str
-    ...     count: int
-    ...     details: str | None = None
-    >>> result = MyResult(name="test", count=5)
-    >>> result.to_dict()
-    {'name': 'test', 'count': 5}
-    >>> result2 = MyResult(name="test", count=5, details="info")
-    >>> result2.to_dict()
-    {'name': 'test', 'count': 5, 'details': 'info'}
-    """
-    if not is_dataclass(cls):
-        msg = f"@result_type requires a dataclass, got {cls.__name__}"
-        raise TypeError(msg)
-
-    result_cls = cast("type[_ResultTypeClass]", cls)
-
-    def to_dict(self: _DataclassInstance) -> dict[str, object]:
-        """Auto-generated serialization that omits None fields.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary with non-None field values.
-        """
-        return _serialize_dataclass(self)
-
-    if not hasattr(result_cls, "RESULT_TYPE_GENERATED"):
-        result_cls.RESULT_TYPE_GENERATED = False
-
-    if not hasattr(result_cls, "to_dict") or getattr(result_cls, "RESULT_TYPE_GENERATED", False):
-        result_cls.to_dict = to_dict
-        result_cls.RESULT_TYPE_GENERATED = True
-
-    return cls
-
-
-def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
-    """Return True when value is a dataclass instance (not a class).
-
-    Returns
-    -------
-    bool
-        True if value is a dataclass instance.
-    """
-    return is_dataclass(value) and not isinstance(value, type)
-
-
-def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
-    """Serialize a dataclass instance to dictionary.
-
-    Parameters
-    ----------
-    value
-        Dataclass instance to serialize.
-
-    Returns
-    -------
-    dict[str, object]
-        Dictionary with non-None, non-private field values.
-    """
-    result: dict[str, object] = {}
-
-    for fld in get_fields(value):
-        if fld.name.startswith("_"):
-            continue
-        key_override = fld.metadata.get("result_key")
-        key = key_override if isinstance(key_override, str) else fld.name
-        field_value = getattr(value, fld.name)
-        if field_value is None:
-            if fld.metadata.get("include_none", False):
-                result[key] = None
-            continue
-        result[key] = _serialize_value(field_value)
-    return result
 
 
 def _serialize_result_struct(value: ResultBase) -> dict[str, object]:
@@ -196,7 +64,7 @@ def _serialize_result_struct(value: ResultBase) -> dict[str, object]:
     result: dict[str, object] = {}
     key_map = value.__result_key_map__
     include_none = value.__include_none_fields__
-    for field_info in msgspec.structs.fields(type(value)):
+    for field_info in msgspec.structs.fields(value):
         field_name = field_info.name
         key = key_map.get(field_name, field_name)
         field_value = getattr(value, field_name)
@@ -224,72 +92,15 @@ def _serialize_value(value: object) -> object:
     result: object
     if value is None:
         result = None
-    elif isinstance(value, ResultBase) or isinstance(value, SerializableResult):
+    elif isinstance(value, (ResultBase, SerializableResult)):
         result = value.to_dict()
-    elif _is_dataclass_instance(value):
-        result = _serialize_dataclass(value)
     elif isinstance(value, (list, tuple)):
         result = [_serialize_value(item) for item in value]
     elif isinstance(value, dict):
         result = {key: _serialize_value(item) for key, item in value.items() if item is not None}
     else:
-        result = _serialize_primitive(value)
+        result = to_builtins(value)
     return result
-
-
-def _serialize_primitive(value: object) -> object:
-    """Serialize primitive and special types.
-
-    Parameters
-    ----------
-    value
-        Value to serialize.
-
-    Returns
-    -------
-    object
-        Serialized value.
-    """
-    if isinstance(value, Enum):
-        return value.value
-
-    if isinstance(value, Path):
-        return str(value)
-
-    return value
-
-
-def ensure_serializable[T](cls: type[T]) -> type[T]:
-    """Ensure a result type has to_dict() - add if missing.
-
-    For gradual migration: existing types with manual to_dict() pass through,
-    new types get auto-generated to_dict() via @result_type.
-
-    Parameters
-    ----------
-    cls
-        The class to ensure has serialization.
-
-    Returns
-    -------
-    type[T]
-        The class (possibly enhanced).
-
-    Examples
-    --------
-    >>> from dataclasses import dataclass
-    >>> @dataclass(frozen=True)
-    ... class ExistingResult:
-    ...     value: int
-    ...
-    ...     def to_dict(self) -> dict[str, object]:
-    ...         return {"val": self.value}
-    >>> ensure_serializable(ExistingResult)(1).to_dict()
-    {'val': 1}
-    """
-    if hasattr(cls, "to_dict"):
-        return cls
-    return result_type(cls)
 
 
 @runtime_checkable
@@ -329,9 +140,10 @@ def auto_serialize(data: object) -> object:
 
     Handle different data types with the following precedence:
     1. SerializableResult protocol (call to_dict())
-    2. Dataclass (serialize all fields)
-    3. Objects with __dict__ (use dict directly)
-    4. Return as-is (primitives, lists, dicts)
+    2. ColumnarStream (materialize for JSON output)
+    3. msgspec-compatible values via to_builtins
+    4. Objects with __dict__ (use dict directly)
+    5. Return as-is (primitives, lists, dicts)
 
     Parameters
     ----------
@@ -343,27 +155,17 @@ def auto_serialize(data: object) -> object:
     object
         Serialized representation suitable for JSON.
 
-    Examples
-    --------
-    >>> from dataclasses import dataclass
-    >>> @dataclass
-    ... class Simple:
-    ...     x: int
-    >>> auto_serialize(Simple(42))
-    {'x': 42}
     """
     if isinstance(data, ColumnarStream):
         reader = data.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
         return records_from_arrow_reader(reader)
     if isinstance(data, SerializableResult):
         return data.to_dict()
-    if is_dataclass(data) and not isinstance(data, type):
-        return serialize_result(data)
-    if hasattr(data, "__dict__") and not isinstance(data, type):
-        return data.__dict__
     try:
-        return msgspec.to_builtins(data, enc_hook=_encode_hook)
+        return to_builtins(data)
     except TypeError:
+        if hasattr(data, "__dict__") and not isinstance(data, type):
+            return data.__dict__
         return data
 
 
@@ -505,6 +307,4 @@ __all__ = [
     "ResultBase",
     "SerializableResult",
     "auto_serialize",
-    "ensure_serializable",
-    "result_type",
 ]

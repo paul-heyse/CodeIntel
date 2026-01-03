@@ -14,7 +14,7 @@ from tests._helpers.cli_context import create_cli_test_context
 from tests._helpers.seeds import CORE_PACK
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
     from pathlib import Path
 
     from codeintel.cli.context import CommandContext
@@ -29,7 +29,7 @@ class DatasetHandlerHarness:
     deps: DatasetDependencies
 
     @contextmanager
-    def command_context(self, params: dict[str, object]) -> Iterator[CommandContext]:
+    def command_context(self, params: Mapping[str, object]) -> Iterator[CommandContext]:
         """Yield a CommandContext bound to the underlying gateway.
 
         Yields
@@ -37,7 +37,7 @@ class DatasetHandlerHarness:
         CommandContext
             CommandContext configured for dataset handlers.
         """
-        with self.ctx.command_context(params) as cmd_ctx:
+        with self.ctx.command_context(dict(params)) as cmd_ctx:
             yield cmd_ctx
 
 

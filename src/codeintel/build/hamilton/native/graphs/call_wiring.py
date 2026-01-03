@@ -10,7 +10,7 @@ from intervaltree import IntervalTree
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.helpers.payload import PayloadValue, encode_payload
 
 CALL_WIRING_TARGET_NAME = "call_wiring"
 CPG_CALL_TARGETS_TABLE_KEY = "graph.cpg_call_targets"
@@ -53,8 +53,16 @@ def _pick_best_symbol(
     return best.symbol, confidence, "scip_overlap_best", len(candidates), symbols
 
 
-def _payload_literal(value: object | None) -> pl.Expr:
+def _payload_literal(value: PayloadValue | bytes | bytearray | memoryview | None) -> pl.Expr:
     return pl.lit(encode_payload(value)).cast(pl.Binary)
+
+
+def _rel_path_key(value: object) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, tuple) and value and isinstance(value[0], str):
+        return value[0]
+    return None
 
 
 def _build_occurrence_tree(occ_df: pl.DataFrame | None) -> IntervalTree:
@@ -126,10 +134,17 @@ def _resolve_call_targets(
     calls_by_path = calls.partition_by("rel_path", as_dict=True)
     occs_by_path = occurrences.partition_by("rel_path", as_dict=True)
 
-    for rel_path, calls_df in calls_by_path.items():
-        tree = _build_occurrence_tree(occs_by_path.get(rel_path))
-        for call_row in calls_df.iter_rows(named=True):
-            out_rows.append(_call_target_row(call_row, rel_path=rel_path, tree=tree))
+    for rel_path_key, calls_df in calls_by_path.items():
+        rel_path = _rel_path_key(rel_path_key)
+        if rel_path is None:
+            continue
+        tree = _build_occurrence_tree(occs_by_path.get(rel_path_key))
+        out_rows.extend(
+            [
+                _call_target_row(call_row, rel_path=rel_path, tree=tree)
+                for call_row in calls_df.iter_rows(named=True)
+            ]
+        )
 
     if not out_rows:
         return pl.DataFrame()

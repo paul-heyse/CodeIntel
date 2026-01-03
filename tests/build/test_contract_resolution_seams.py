@@ -22,7 +22,7 @@ from tests._helpers.catalog import make_target_descriptor
 
 
 @dataclass(frozen=True)
-class _StubTargetMetadataProvider(TargetMetadataProvider):
+class _StubTargetMetadataProvider:
     target: TargetDescriptor
     outputs: dict[str, OutputDescriptor]
     artifacts: frozenset[str] = frozenset()
@@ -39,6 +39,9 @@ class _StubTargetMetadataProvider(TargetMetadataProvider):
 
     def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
         return self.outputs.get(table_key)
+
+    def all_table_keys(self) -> frozenset[str]:
+        return frozenset(self.outputs)
 
     def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         if artifact_name in self.artifacts:
@@ -79,7 +82,7 @@ def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
             "ci.jsonl_filename": "custom.jsonl",
         },
     )
-    provider = _StubTargetMetadataProvider(
+    provider: TargetMetadataProvider = _StubTargetMetadataProvider(
         target=target,
         outputs={table_key: output},
     )

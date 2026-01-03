@@ -10,6 +10,7 @@ import pytest
 from codeintel.build.exports import export_all_jsonl, export_all_parquet
 from codeintel.config.datasets.columns import serialize_row
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.helpers.payload import encode_payload
 from tests._helpers import provision_docs_export_ready
 
 if TYPE_CHECKING:
@@ -64,7 +65,7 @@ def test_graph_validation_export(tmp_path: Path) -> None:
         "severity": "warning",
         "rel_path": "pkg/a.py",
         "detail": "1 functions, 0 GOIDs",
-        "metadata": {"function_count": 1, "goid_count": 0},
+        "metadata": encode_payload({"function_count": 1, "goid_count": 0}),
         "created_at": datetime.now(UTC),
     }
     con.execute(

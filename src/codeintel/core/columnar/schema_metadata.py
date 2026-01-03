@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 
 import pyarrow as pa
 
-_JSON_SEPARATORS = (",", ":")
+from codeintel.core.serialization.msgspec_json import JSON_DECODER, JSON_ENCODER
 
 
 def decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
@@ -119,15 +118,15 @@ def merge_field_metadata(
 
 def _decode_metadata_value(raw: str) -> object:
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
+        return JSON_DECODER.decode(raw)
+    except ValueError:
         return raw
 
 
 def _encode_metadata_value(value: object) -> str:
     if isinstance(value, str):
         return value
-    return json.dumps(value, sort_keys=True, separators=_JSON_SEPARATORS)
+    return JSON_ENCODER.encode(value).decode("utf-8")
 
 
 __all__ = [

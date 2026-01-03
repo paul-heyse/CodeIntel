@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
+import msgspec
 
 from codeintel.config.primitives import (
     BuildPaths,
@@ -429,7 +430,11 @@ def _load_serving_settings() -> ServingSettings:
 def _load_variant_settings() -> VariantConfig:
     raw_json = os.environ.get("CODEINTEL_VARIANTS_JSON", "").strip()
     if raw_json:
-        payload = json.loads(raw_json)
+        try:
+            payload = msgspec.json.decode(raw_json)
+        except msgspec.DecodeError as exc:
+            msg = f"CODEINTEL_VARIANTS_JSON must be valid JSON: {exc}"
+            raise ValueError(msg) from exc
         if not isinstance(payload, dict):
             msg = "CODEINTEL_VARIANTS_JSON must decode to an object"
             raise ValueError(msg)
@@ -608,8 +613,8 @@ def _obs_parse_operation_allowlist_overrides() -> tuple[tuple[str, tuple[str, ..
     if not raw:
         return ()
     try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        payload = msgspec.json.decode(raw)
+    except msgspec.DecodeError as exc:
         LOG.warning("Invalid operation allowlist overrides JSON: %s", exc)
         return ()
     if not isinstance(payload, dict):

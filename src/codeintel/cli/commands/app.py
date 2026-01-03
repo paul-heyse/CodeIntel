@@ -77,8 +77,10 @@ def _detect_output_format() -> OutputFormat:
         return OutputFormat.JSON
 
     for i, arg in enumerate(sys.argv[:-1]):
-        if arg == "--output-format" and sys.argv[i + 1].lower() == "json":
-            return OutputFormat.JSON
+        if arg == "--output-format":
+            candidate = sys.argv[i + 1].lower()
+            if candidate in {"json", "jsonl", "arrow-ipc"}:
+                return OutputFormat(candidate)
 
     return OutputFormat.TEXT
 

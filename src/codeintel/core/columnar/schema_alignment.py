@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
+import msgspec
 import pyarrow as pa
 import pyarrow.compute as pc
 
@@ -21,7 +21,7 @@ from codeintel.core.schemas.arrow_gen import (
     ExtrasPolicy,
 )
 
-_JSON_SEPARATORS = (",", ":")
+_JSON_ENCODER = msgspec.json.Encoder(order="deterministic")
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,7 +251,7 @@ def _json_string_value(value: object) -> str | None:
         return None
     if isinstance(value, str):
         return value
-    return json.dumps(value, sort_keys=True, separators=_JSON_SEPARATORS)
+    return _JSON_ENCODER.encode(value).decode("utf-8")
 
 
 def _is_string_array(array: pa.Array) -> bool:

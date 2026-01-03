@@ -36,7 +36,7 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_DFG_CENTRALITY_SAMPLE,
 )
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 
 if TYPE_CHECKING:
     from codeintel.build.tabular.types import InferableTabularInput
@@ -124,10 +124,10 @@ def compute_cfg_metrics_pure(
     does not write. The materialization is handled by the Hamilton native
     module to ensure proper asset catalog tracking.
     """
-    cfg_blocks = tabular_to_lazyframe(cfg_blocks_input).collect()
-    cfg_edges = tabular_to_lazyframe(cfg_edges_input).collect()
-    goids = tabular_to_lazyframe(goids_input).collect()
-    modules = tabular_to_lazyframe(modules_input).collect()
+    cfg_blocks = tabular_to_frame(cfg_blocks_input)
+    cfg_edges = tabular_to_frame(cfg_edges_input)
+    goids = tabular_to_frame(goids_input)
+    modules = tabular_to_frame(modules_input)
     blocks_by_fn, edges_by_fn = load_cfg_blocks(cfg_blocks, cfg_edges)
     metadata = load_function_metadata(goids, modules, repo=snapshot.repo, commit=snapshot.commit)
     metrics_ctx = resolve_graph_context(
@@ -211,9 +211,9 @@ def compute_dfg_metrics_pure(
     does not write. The materialization is handled by the Hamilton native
     module to ensure proper asset catalog tracking.
     """
-    dfg_edges = tabular_to_lazyframe(dfg_edges_input).collect()
-    goids = tabular_to_lazyframe(goids_input).collect()
-    modules = tabular_to_lazyframe(modules_input).collect()
+    dfg_edges = tabular_to_frame(dfg_edges_input)
+    goids = tabular_to_frame(goids_input)
+    modules = tabular_to_frame(modules_input)
     edges_by_fn = load_dfg_edges(dfg_edges)
     metadata = load_function_metadata(goids, modules, repo=repo, commit=commit)
     metrics_ctx = resolve_graph_context(

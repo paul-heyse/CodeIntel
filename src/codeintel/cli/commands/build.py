@@ -236,7 +236,7 @@ class BuildRunCommand:
     validate_outputs: Annotated[
         bool,
         option_param(BUILD_RUN_VALIDATE_OUTPUTS, command_path=BUILD_RUN_PATH),
-    ] = False
+    ] = True
     validation_mode: Annotated[
         str | None,
         option_param(BUILD_RUN_VALIDATION_MODE, command_path=BUILD_RUN_PATH),

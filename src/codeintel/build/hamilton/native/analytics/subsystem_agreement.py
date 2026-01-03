@@ -7,8 +7,7 @@ import sys
 import polars as pl
 
 from codeintel.build.analytics.graphs.subsystem_agreement import (
-    SubsystemAgreementInputs,
-    build_subsystem_agreement_rows,
+    build_subsystem_agreement_frame,
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -21,7 +20,6 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -52,29 +50,17 @@ def subsystem_agreement__base(
     pl.LazyFrame
         Lazy frame containing subsystem agreement rows.
     """
-    subsystem_rows = (
-        tabular_to_lazyframe(q__analytics__subsystem_modules)
-        .select(["repo", "commit", "module", "subsystem_id"])
-        .collect()
-        .to_dicts()
+    subsystem_frame = tabular_to_lazyframe(q__analytics__subsystem_modules).select(
+        ["repo", "commit", "module", "subsystem_id"]
     )
-    metrics_rows = (
-        tabular_to_lazyframe(q__analytics__graph_metrics_modules_ext)
-        .select(["repo", "commit", "module", "import_community_id"])
-        .collect()
-        .to_dicts()
+    metrics_frame = tabular_to_lazyframe(q__analytics__graph_metrics_modules_ext).select(
+        ["repo", "commit", "module", "import_community_id"]
     )
-    rows = build_subsystem_agreement_rows(
-        SubsystemAgreementInputs(
-            repo=env.repo,
-            commit=env.commit,
-            subsystem_module_rows=subsystem_rows,
-            graph_metrics_module_rows=metrics_rows,
-        )
-    )
-    return rows_to_frame(
-        SUBSYSTEM_AGREEMENT_TABLE_KEY,
-        rows,
+    return build_subsystem_agreement_frame(
+        repo=env.repo,
+        commit=env.commit,
+        subsystem_modules=subsystem_frame,
+        graph_metrics_modules=metrics_frame,
     )
 
 

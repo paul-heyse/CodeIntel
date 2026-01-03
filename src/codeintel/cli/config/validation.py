@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from types import ModuleType
 
 
-VALID_OUTPUT_FORMATS = {"text", "json"}
+VALID_OUTPUT_FORMATS = {"text", "json", "jsonl", "arrow-ipc"}
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 MIN_RETRY_ATTEMPTS = 1
 MAX_RETRY_ATTEMPTS = 10
@@ -76,7 +76,7 @@ def _validate_top_level(config: CliConfig) -> list[ConfigValidationError]:
         errors.append(
             ConfigValidationError(
                 path="output_format",
-                message="Must be 'text' or 'json'",
+                message="Must be 'text', 'json', 'jsonl', or 'arrow-ipc'",
                 code="invalid_enum",
                 value=config.output_format,
             )

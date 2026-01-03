@@ -7,9 +7,12 @@ from various input types.
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from typing import Any
+
+import msgspec
+
+_JSON_ENCODER = msgspec.json.Encoder(order="deterministic")
 
 
 def cache_key(*args: object, **kwargs: object) -> str:
@@ -87,18 +90,47 @@ def _serialize_value(value: object) -> str:
     str
         String representation of the value.
     """
+    result: str
     if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float, str)):
-        return str(value)
-    if isinstance(value, (list, tuple)):
+        result = "null"
+    elif isinstance(value, bool):
+        result = "true" if value else "false"
+    elif isinstance(value, (int, float, str)):
+        result = str(value)
+    elif isinstance(value, (list, tuple)):
         items = [_serialize_value(item) for item in value]
-        return f"[{','.join(items)}]"
-    if isinstance(value, dict):
-        return json.dumps(value, sort_keys=True, default=str)
-    return str(value)
+        result = f"[{','.join(items)}]"
+    elif isinstance(value, dict):
+        result = _encode_json(value)
+    else:
+        result = str(value)
+    return result
+
+
+def _encode_json(value: object) -> str:
+    normalized = _normalize_json_value(value)
+    return _JSON_ENCODER.encode(normalized).decode("utf-8")
+
+
+def _normalize_json_value(value: object) -> object:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, bytes):
+        normalized: object = value.decode("utf-8", errors="replace")
+    elif isinstance(value, (list, tuple)):
+        normalized = [_normalize_json_value(item) for item in value]
+    elif isinstance(value, set):
+        normalized = [_normalize_json_value(item) for item in sorted(value, key=str)]
+    elif isinstance(value, dict):
+        items = sorted(value.items(), key=lambda item: str(item[0]))
+        normalized = {str(key): _normalize_json_value(val) for key, val in items}
+    elif hasattr(value, "__dict__"):
+        normalized = _normalize_json_value(vars(value))
+    else:
+        normalized = str(value)
+    return normalized
 
 
 @dataclass(frozen=True)

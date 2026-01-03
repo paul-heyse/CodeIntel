@@ -15,11 +15,13 @@ from time import perf_counter
 from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.columnar import stream_from_items
 from codeintel.cli.core.result_types import (
     CacheLogIngestSummary,
     ProfileStorageResult,
     StorageDatabaseExportResult,
     StorageDatabaseImportResult,
+    TabularResult,
     ValidateMacrosResult,
 )
 from codeintel.cli.errors import ValidationError, validation_error
@@ -30,6 +32,7 @@ from codeintel.cli.errors.results import (
     fail_storage,
     fail_storage_connection,
 )
+from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.services.storage import StorageService
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors.storage import StorageConnectionError
@@ -262,7 +265,9 @@ def profile_storage_handler(
     )
 
 
-def ingest_cache_logs_handler(ctx: CommandContext) -> CliResult[CacheLogIngestSummary]:
+def ingest_cache_logs_handler(
+    ctx: CommandContext,
+) -> CliResult[CacheLogIngestSummary | TabularResult]:
     """Ingest Hamilton cache JSONL logs into DuckDB.
 
     Parameters
@@ -275,8 +280,8 @@ def ingest_cache_logs_handler(ctx: CommandContext) -> CliResult[CacheLogIngestSu
 
     Returns
     -------
-    CliResult[CacheLogIngestSummary]
-        Ingestion summary payload.
+    CliResult[CacheLogIngestSummary | TabularResult]
+        Ingestion summary payload or streamed JSONL file rows.
     """
     db_path = _resolve_storage_db_path(ctx)
     cache_dir = ctx.params.get_path("cache_dir")
@@ -296,15 +301,28 @@ def ingest_cache_logs_handler(ctx: CommandContext) -> CliResult[CacheLogIngestSu
         return fail_missing_required("cache_dir", detail=str(exc))
     except DuckDBError as exc:
         return fail_storage(str(exc))
-    return CliResult.ok(
-        CacheLogIngestSummary(
-            db_path=str(db_path),
-            cache_dir=str(cache_dir) if cache_dir is not None else None,
-            inserted_events=result.inserted_events,
-            run_ids=list(result.run_ids),
-            jsonl_files=list(result.jsonl_files),
-        )
+    summary = CacheLogIngestSummary(
+        db_path=str(db_path),
+        cache_dir=str(cache_dir) if cache_dir is not None else None,
+        inserted_events=result.inserted_events,
+        run_ids=list(result.run_ids),
+        jsonl_files=list(result.jsonl_files),
     )
+    if ctx.output_format == OutputFormat.JSONL:
+        rows = [{"jsonl_file": path} for path in summary.jsonl_files]
+        stream = stream_from_items(rows)
+        return CliResult.ok(
+            TabularResult(
+                stream=stream,
+                metadata={
+                    "db_path": summary.db_path,
+                    "cache_dir": summary.cache_dir,
+                    "inserted_events": summary.inserted_events,
+                    "run_ids": summary.run_ids,
+                },
+            )
+        )
+    return CliResult.ok(summary)
 
 
 def export_database_handler(

@@ -9,7 +9,10 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import TargetOriginInfo, TargetOriginListResult
 from codeintel.cli.errors import ValidationError
 from codeintel.cli.errors.results import fail_invalid_value
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
+    compose_cli_runtime_bundle,
+)
 from codeintel.cli.handlers.tag_filters import filter_targets_by_tags, parse_tag_filters
 
 if TYPE_CHECKING:
@@ -37,7 +40,11 @@ def targets_list_handler(ctx: CommandContext) -> CliResult[TargetOriginListResul
         tag_filter = parse_tag_filters(raw_tags)
     except ValidationError as exc:
         return fail_invalid_value("tag", ",".join(raw_tags or ()), str(exc))
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     targets = _collect_target_origins(
         runtime_bundle,
         show_origin=show_origin,

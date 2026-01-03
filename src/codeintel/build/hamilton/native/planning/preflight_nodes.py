@@ -116,10 +116,12 @@ def _blocked_targets(catalog: DagCatalog, roots: set[str]) -> set[str]:
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
     dataset = env.gateway.datasets.by_table_key.get(table_key)
-    dataset_source = getattr(env.gateway.config, "dataset_source", "duckdb")
-    if dataset is not None and not dataset.is_view and dataset_source == "parquet_only":
+    if dataset is not None and not dataset.is_view:
+        dataset_root_dir = env.paths.dataset_root_dir
+        if dataset_root_dir is None:
+            return False
         manifest_path = dataset_manifest_path(
-            dataset_root=env.paths.dataset_root_dir,
+            dataset_root=dataset_root_dir,
             table_key=table_key,
             snapshot_id=env.commit,
         )

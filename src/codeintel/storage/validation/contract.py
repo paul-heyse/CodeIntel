@@ -5,44 +5,19 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from sqlglot import exp
+import pyarrow as pa
 
-from codeintel.core.schemas.contract_validation import (
-    ContractRegistry,
-    ContractValidationLookups,
-    TableColumnsLookup,
-    TableSchemaLookup,
-    build_contract_registry,
+from codeintel.core.validation.schema_constraints import (
+    schema_errors,
+    schema_metadata_errors,
 )
-from codeintel.core.schemas.contract_validation import (
-    collect_contract_issues as collect_contract_issues_core,
-)
-from codeintel.core.schemas.contract_validation import (
-    validate_contract_or_raise as validate_contract_or_raise_core,
-)
-from codeintel.core.schemas.service import get_schema_service
-from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import iter_contracts
-from codeintel.storage.datasets.registry import (
-    load_dataset_registry,
-)
-from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.datasets.registry import load_dataset_registry
+from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
-
-
-@lru_cache(maxsize=1)
-def _contract_registry() -> ContractRegistry:
-    """Return cached contract registry.
-
-    Returns
-    -------
-    ContractRegistry
-        Cached contract registry instance.
-    """
-    return build_contract_registry(iter_contracts())
 
 
 @lru_cache(maxsize=1)
@@ -59,7 +34,7 @@ def get_binding_required_datasets() -> frozenset[str]:
     """
     return frozenset(
         contract.name
-        for contract in _contract_registry().by_name.values()
+        for contract in iter_contracts()
         if contract.json_schema_id is not None
         and contract.name not in {"data_model_fields", "data_model_relationships"}
     )
@@ -76,38 +51,27 @@ __all__ = [
 
 def clear_contract_validation_cache() -> None:
     """Clear cached contract validation lookups."""
-    _contract_registry.cache_clear()
     get_binding_required_datasets.cache_clear()
 
 
-def _table_columns_lookup(con: DuckDBPyConnection, *, missing_ok: bool) -> TableColumnsLookup:
-    def _lookup(table_key: str) -> list[str] | None:
-        schema_name, table_name = split_table_key(table_key)
-        table_expr = table_expr_from_ref("information_schema.columns")
-        query = (
-            exp.select(exp.column("column_name"))
-            .from_(table_expr)
-            .where(
-                exp.and_(
-                    exp.EQ(this=exp.column("table_schema"), expression=exp.Placeholder()),
-                    exp.EQ(this=exp.column("table_name"), expression=exp.Placeholder()),
-                )
-            )
-            .order_by(exp.Ordered(this=exp.column("ordinal_position")))
-        )
-        reader = con.execute(
-            render_sql_duckdb(query),
-            [schema_name, table_name],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        columns: list[str] = []
-        for batch in reader:
-            values = [str(value) for value in batch.column(0).to_pylist() if value is not None]
-            columns.extend(values)
-        if not columns and missing_ok:
-            return None
-        return columns
-
-    return _lookup
+def _arrow_schema_for_table(
+    con: DuckDBPyConnection,
+    *,
+    table_key: str,
+) -> pa.Schema | None:
+    try:
+        relation = con.table(table_key)
+    except (DuckDBCatalogException, DuckDBError):
+        return None
+    limited = relation
+    limiter = getattr(relation, "limit", None)
+    if callable(limiter):
+        try:
+            limited = limiter(0)
+        except TypeError:
+            limited = relation
+    reader = limited.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return reader.schema
 
 
 def collect_contract_issues(
@@ -118,26 +82,29 @@ def collect_contract_issues(
 ) -> list[str]:
     """Collect contract inconsistencies for the active database.
 
-    JSON schema validation is performed using generated schemas from TableSchema
-    definitions, not file-based schemas (removed in PR-73).
-
     Returns
     -------
     list[str]
         Human-readable list of problems. Empty when the contract is healthy.
     """
     registry = load_dataset_registry(con)
-    contracts = _contract_registry()
-    return collect_contract_issues_core(
-        registry,
-        contracts_by_table_key=contracts.by_table_key,
-        contracts_by_name=contracts.by_name,
-        include_views=include_views,
-        lookups=ContractValidationLookups(
-            table_columns=_table_columns_lookup(con, missing_ok=missing_ok),
-            table_schema=_schema_service_table_lookup(),
-        ),
-    )
+    issues: list[str] = []
+    for contract in registry.by_table_key.values():
+        if contract.is_view and not include_views:
+            continue
+        table_schema = contract.schema
+        if table_schema is None:
+            continue
+        arrow_schema = _arrow_schema_for_table(con, table_key=contract.table_key)
+        if arrow_schema is None:
+            if missing_ok:
+                continue
+            issues.append(f"{contract.table_key}: missing table")
+            continue
+        errors = schema_errors(table_schema, arrow_schema)
+        errors.extend(schema_metadata_errors(arrow_schema))
+        issues.extend(f"{contract.table_key}: {error}" for error in errors)
+    return issues
 
 
 def collect_contract_issues_lenient(
@@ -161,23 +128,8 @@ def validate_contract_or_raise(
     include_views: bool = True,
 ) -> None:
     """Validate dataset contract and raise on any issues."""
-    registry = load_dataset_registry(con)
-    contracts = _contract_registry()
-    validate_contract_or_raise_core(
-        registry,
-        contracts_by_table_key=contracts.by_table_key,
-        contracts_by_name=contracts.by_name,
-        include_views=include_views,
-        lookups=ContractValidationLookups(
-            table_columns=_table_columns_lookup(con, missing_ok=False),
-            table_schema=_schema_service_table_lookup(),
-        ),
-    )
-
-
-def _schema_service_table_lookup() -> TableSchemaLookup | None:
-    try:
-        service = get_schema_service()
-    except RuntimeError:
-        return None
-    return service.get_table_schema
+    issues = collect_contract_issues(con, include_views=include_views, missing_ok=False)
+    if not issues:
+        return
+    message = "Contract validation failed:\n" + "\n".join(f"- {issue}" for issue in issues)
+    raise ValueError(message)

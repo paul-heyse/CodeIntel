@@ -150,13 +150,27 @@ def scan_snapshot_lazyframe(
     dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
     if dataset is None:
         return None
-    frame = pl.scan_pyarrow_dataset(dataset, batch_size=request.batch_size)
-    frame = _filter_frame(
-        frame,
-        dataset.schema,
+    filter_expression = _snapshot_filter_expression(
+        dataset,
         repo=request.repo,
         commit=request.commit,
     )
+    arrow_filtered = False
+    if filter_expression is not None:
+        try:
+            dataset = dataset.filter(filter_expression)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            arrow_filtered = False
+        else:
+            arrow_filtered = True
+    frame = pl.scan_pyarrow_dataset(dataset, batch_size=request.batch_size)
+    if not arrow_filtered:
+        frame = _filter_frame(
+            frame,
+            dataset.schema,
+            repo=request.repo,
+            commit=request.commit,
+        )
     if request.columns is not None:
         resolved_columns = _resolve_columns(dataset, request.columns)
         if resolved_columns is None:

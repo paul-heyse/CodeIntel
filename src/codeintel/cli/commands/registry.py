@@ -10,9 +10,8 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from cyclopts import App
 
 from codeintel.cli.commands.decorators import cli_command
-from codeintel.cli.core import CliResult
+from codeintel.cli.core import CliResult, ResultBase
 from codeintel.cli.core.command import Command
-from codeintel.cli.core.results import result_type
 from codeintel.cli.errors.results import fail_invalid_value, fail_not_found
 from codeintel.cli.options.registry import (
     REGISTRY_INVENTORY_PATH,
@@ -69,9 +68,7 @@ class _RegistryOutputFilters:
     pilot_only: bool
 
 
-@result_type
-@dataclass(frozen=True)
-class DagOutputInfo:
+class DagOutputInfo(ResultBase):
     """Summary information about a DAG output target."""
 
     target: str
@@ -86,9 +83,7 @@ class DagOutputInfo:
     notes: str | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class DagOutputListResult:
+class DagOutputListResult(ResultBase):
     """Result from listing DAG output inventory."""
 
     outputs: list[DagOutputInfo]
@@ -96,9 +91,7 @@ class DagOutputListResult:
     inventory_path: str
 
 
-@result_type
-@dataclass(frozen=True)
-class DagOutputValidateResult:
+class DagOutputValidateResult(ResultBase):
     """Result from validating DAG output inventory."""
 
     inventory_path: str
@@ -108,9 +101,7 @@ class DagOutputValidateResult:
     generated_at: str | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class IngestionToolInfo:
+class IngestionToolInfo(ResultBase):
     """Summary information about an ingestion tool dependency."""
 
     tool_name: str
@@ -129,9 +120,7 @@ class IngestionToolInfo:
     notes: str | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class IngestionToolListResult:
+class IngestionToolListResult(ResultBase):
     """Result from listing ingestion tooling inventory."""
 
     tools: list[IngestionToolInfo]

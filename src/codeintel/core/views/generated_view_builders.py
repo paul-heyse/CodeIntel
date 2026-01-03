@@ -7,7 +7,6 @@ by hand. Regenerate via the view registry compiler when view definitions change.
 from __future__ import annotations
 
 import base64
-import json
 import zlib
 from typing import TYPE_CHECKING, TypedDict
 
@@ -15,6 +14,7 @@ from sqlglot import exp
 from sqlglot import serde as sqlglot_serde
 
 from codeintel.core.hamilton.tagging_helpers import apply_raw_tags
+from codeintel.core.serialization.msgspec_json import JSON_DECODER
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1110,7 +1110,7 @@ _VIEW_REGISTRY_B64 = (
 def _decode_registry() -> object:
     payload = base64.b64decode("".join(_VIEW_REGISTRY_B64))
     decompressed = zlib.decompress(payload)
-    return json.loads(decompressed)
+    return JSON_DECODER.decode(decompressed)
 
 
 def _load_view_specs() -> dict[str, ViewAstSpec]:

@@ -24,7 +24,7 @@ class SharedFlagsProtocol(Protocol):
     run_context: RunContext | None
 
 
-_SHARED_FLAGS_CACHE: dict[CommandPath, type[SharedFlagsProtocol]] = {}
+_SHARED_FLAGS_CACHE: dict[tuple[CommandPath, OutputFormat], type[SharedFlagsProtocol]] = {}
 
 
 def _shared_flags_metadata() -> dict[str, Parameter]:
@@ -36,7 +36,11 @@ def _shared_flags_class_name(command_path: CommandPath) -> str:
     return "SharedFlags_" + "_".join(safe_parts)
 
 
-def shared_flags_type(command_path: CommandPath) -> type[SharedFlagsProtocol]:
+def shared_flags_type(
+    command_path: CommandPath,
+    *,
+    default_output_format: OutputFormat = OutputFormat.TEXT,
+) -> type[SharedFlagsProtocol]:
     """Return a cached SharedFlags dataclass for a command path.
 
     Returns
@@ -44,7 +48,8 @@ def shared_flags_type(command_path: CommandPath) -> type[SharedFlagsProtocol]:
     type[SharedFlagsProtocol]
         Generated SharedFlags dataclass type for the command path.
     """
-    cached = _SHARED_FLAGS_CACHE.get(command_path)
+    cache_key = (command_path, default_output_format)
+    cached = _SHARED_FLAGS_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
@@ -57,7 +62,7 @@ def shared_flags_type(command_path: CommandPath) -> type[SharedFlagsProtocol]:
         (
             "output_format",
             Annotated[OutputFormat, option_param(OUTPUT_FORMAT, command_path=command_path)],
-            field(default=OutputFormat.TEXT),
+            field(default=default_output_format),
         ),
         (
             "json",
@@ -82,11 +87,15 @@ def shared_flags_type(command_path: CommandPath) -> type[SharedFlagsProtocol]:
         frozen=True,
         slots=True,
     )
-    _SHARED_FLAGS_CACHE[command_path] = cast("type[SharedFlagsProtocol]", cls)
+    _SHARED_FLAGS_CACHE[cache_key] = cast("type[SharedFlagsProtocol]", cls)
     return cast("type[SharedFlagsProtocol]", cls)
 
 
-def shared_flags_field(command_path: CommandPath) -> SharedFlagsProtocol:
+def shared_flags_field(
+    command_path: CommandPath,
+    *,
+    default_output_format: OutputFormat = OutputFormat.TEXT,
+) -> SharedFlagsProtocol:
     """Create a SharedFlags field with Cyclopts metadata for nested flattening.
 
     Returns
@@ -94,7 +103,10 @@ def shared_flags_field(command_path: CommandPath) -> SharedFlagsProtocol:
     SharedFlagsProtocol
         Field instance configured for nested parameter flattening.
     """
-    flags_type = shared_flags_type(command_path)
+    flags_type = shared_flags_type(
+        command_path,
+        default_output_format=default_output_format,
+    )
     return field(default_factory=flags_type, metadata=_shared_flags_metadata())
 
 

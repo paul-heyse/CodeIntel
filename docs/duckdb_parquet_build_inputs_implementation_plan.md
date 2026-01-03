@@ -52,93 +52,84 @@ The following paths currently read build-produced datasets through DuckDB tables
   manifest file list, partitioning info, and schema metadata.
 - DuckDB retains only metadata tables (registry, audit, run tracking).
 
+## Status Update (Completed Scope)
+- Default dataset root now resolves to `src/codeintel/storage/datasets` and is
+  configurable via runtime/CLI overrides.
+- StorageConfig now carries parquet-mode options and dataset root context; the
+  config is threaded through gateway creation, CLI gateway openers, pool wiring,
+  and serving DB hot-swap management.
+- Dataset manifests are attached to `DatasetRegistry` when gateways open.
+- Parquet-backed relation resolution is the default for dataset tables, with
+  parquet-only enforcement and manifest-based file list scanning.
+- DuckDB contract schema resolution falls back to dataset manifests when tables
+  are missing.
+- Export validation checks for dataset manifests instead of DuckDB tables.
+- DuckDB dataset writes are blocked under parquet-only policy.
+- Build-side analytics writes now land in parquet datasets with manifest output.
+- Build/serving table existence checks now consult dataset manifests.
+- New CLI command `datasets migrate-parquet` added to materialize parquet
+  snapshots from legacy DuckDB tables.
+- Migration workflow supports optional legacy table drops after export.
+- Serving DB manager warns on missing dataset manifests and fails fast when
+  manifest roots cannot be resolved.
+- Documentation updates landed in `docs/architecture.md` and
+  `docs/dataset_root_configuration.md`.
+- Unit and integration tests cover parquet relation resolution, migration,
+  exports, warehouse reads, and serving snapshot preparation.
+
 ## Implementation Plan
 
 ### Phase 0: Path and Configuration Hardening
-1. Define the canonical dataset root:
-   - Update `src/codeintel/config/primitives.py` to set
-     `BuildPaths.dataset_root_dir` to the storage datasets root.
-   - Add a path override in config / CLI if needed so legacy paths can be
-     explicitly retained during migration.
-2. Extend storage configuration to carry dataset context:
-   - Add `dataset_root_dir` and `snapshot_id` (commit) to
-     `src/codeintel/storage/gateway/config.py:StorageConfig`.
-   - Thread these through gateway open paths in:
-     `src/codeintel/storage/gateway/factory.py`,
-     `src/codeintel/cli/services/storage.py`,
-     `src/codeintel/cli/handlers/_utilities.py`,
-     `src/codeintel/serving/db/manager.py`.
-3. Load dataset manifests into the registry on gateway creation:
-   - Use `codeintel.storage.datasets.manifest_index.load_dataset_manifests`
-     plus `attach_dataset_manifests` to populate
-     `DatasetRegistry.dataset_manifests`.
+- [x] Define the canonical dataset root via `BuildPaths.dataset_root_dir` and
+  provide runtime/CLI overrides.
+- [x] Extend `StorageConfig` with dataset root context and thread through gateway
+  creation, CLI gateway openers, pool wiring, and serving DB manager.
+- [x] Attach dataset manifests to the dataset registry when gateways open.
 
 ### Phase 1: Parquet-Backed Relation Resolution
-1. Create a dataset relation resolver:
-   - New helper in `src/codeintel/storage/datasets` (or
-     `src/codeintel/storage/gateway/relation.py`) to produce
-     `DuckDBRelation` from dataset manifests using
-     `src/codeintel/serving/semantic/duckdb_scan_adapter.py`.
-   - Use manifest file lists and partitioning to configure `from_parquet`.
-2. Update `DuckDBGateway.relation_from_table_key` to prefer parquet:
-   - If the table key exists in `datasets.by_table_key` and a manifest is
-     available, return a parquet scan relation.
-   - If manifest is missing but dataset root exists, resolve a manifest
-     from the dataset snapshot directory.
-   - If no dataset context is present, fall back to `con.table` (metadata
-     and non-build tables).
-3. Add a hard enforcement mode:
-   - Introduce a config flag (e.g., `dataset_source="parquet_only"`) to
-     forbid `con.table` for dataset table keys and raise if manifests are
-     missing. This ensures a hard commit to parquet-backed inputs.
+- [x] Resolve dataset relations from manifests using the parquet scan adapter,
+  including manifest file lists and partitioning metadata.
+- [x] Prefer parquet relations for dataset tables, with fallback to
+  `con.table` only when dataset context is absent.
+- [x] Enforce parquet-only policy to fail fast when manifests are missing.
+- [x] Update build preflight/executor table checks to use manifests.
 
 ### Phase 2: Build Output and Export Alignment
-1. Ensure all build outputs write parquet + manifest:
-   - Standardize on `codeintel.storage.datasets.arrow_store.write_dataset`.
-   - Remove or deprecate direct DuckDB insertion helpers in
-     `src/codeintel/build/analytics/utilities/datasets.py`.
-2. Update export validation to use dataset manifests:
-   - Replace `information_schema` checks in
-     `src/codeintel/build/exports/common.py` with manifest existence checks.
-3. Export pipeline uses parquet-backed relations:
-   - Update `src/codeintel/build/exports/exprs.py` to rely on the new
-     relation resolver (not raw DuckDB tables).
-   - Validate that `build_export_relation_plan` is unchanged in semantics
-     and only switches input source.
+- [x] Block legacy DuckDB dataset writes under parquet-only policy (policy backend
+  enforcement + analytics utility guard).
+- [x] Replace `information_schema` checks with dataset manifest validation in
+  the export pipeline.
+- [x] Export pipeline already uses gateway relations; parquet backing is now
+  inherited from the resolver without semantic changes.
+- [x] Audit remaining build-side write paths for direct DuckDB inserts and
+  migrate them to `write_dataset` with manifest generation.
+- [x] Confirm all build dataset outputs are manifest-backed (no silent skips).
 
 ### Phase 3: Storage and Serving Read Path Updates
-1. Schema resolution from parquet:
-   - In `src/codeintel/storage/schema/duckdb_contracts.py`, fall back to
-     dataset manifest schema when DuckDB tables are absent.
-2. Warehouse and repository queries:
-   - Ensure `src/codeintel/storage/warehouse.py` and repository helpers use
-     parquet-backed relations through the gateway.
-3. Serving snapshot preparation:
-   - Reuse dataset view registration logic from
-     `src/codeintel/storage/serving/snapshot_service.py` to build views that
-     point to parquet scans when needed.
+- [x] DuckDB schema resolution falls back to dataset manifest schema.
+- [x] Warehouse/schema helpers carry dataset root context for parquet lookup.
+- [x] Serving DB manager passes dataset root context into pool storage config.
+- [x] Verify serving snapshot view registration is manifest-aware and points to
+  parquet scans when datasets are present.
+- [x] Add explicit failure messaging when serving opens without manifests under
+  parquet-only policy (serve-time diagnostics).
 
 ### Phase 4: Enforcement, Cleanup, and Migration
-1. Prevent dataset writes to DuckDB:
-   - Add checks in `DuckDBPolicyBackend` to block `ensure_table` /
-     `bulk_insert` for dataset tables when parquet-only mode is enabled.
-2. Migration path for existing DuckDB tables:
-   - Add a one-time export command that materializes parquet datasets from
-     DuckDB tables and writes manifests under the dataset root.
-   - Optionally drop or ignore the DuckDB tables after verification.
-3. Update docs:
-   - Document the parquet-only data path in `docs/architecture.md` and add
-     a short operational guide for dataset root configuration.
+- [x] Prevent dataset writes to DuckDB under parquet-only policy.
+- [x] Add `datasets migrate-parquet` CLI command for one-time DuckDB export.
+- [x] Document parquet-only data path and dataset root configuration.
+- [x] Add CLI docs for migration usage, safeguards, and expected output
+  structure (manifest + parquet layout).
+- [x] Add optional cleanup workflow (archive/drop legacy DuckDB dataset tables)
+  after successful migration verification.
 
 ## Testing and Validation
-- Unit tests:
-  - Parquet-backed relation resolution (scan paths, columns, partitioning).
-  - Manifest loading and error handling in parquet-only mode.
-- Integration tests:
-  - Build export workflow reads from parquet, not DuckDB tables.
-  - Warehouse read APIs function without dataset tables in DuckDB.
-- Regression checks:
-  - Serving snapshot creation succeeds when only parquet datasets exist.
+- [x] Unit: parquet-backed relation resolution (paths, columns, partitioning).
+- [x] Unit: manifest loading + error handling under parquet-only policy.
+- [x] Unit: migration command writes manifest metadata + file lists correctly.
+- [x] Integration: build export workflow reads from parquet, not DuckDB tables.
+- [x] Integration: warehouse read APIs function without dataset tables in DuckDB.
+- [x] Integration: serving snapshot creation succeeds with only parquet datasets.
 
 ## Acceptance Criteria
 - No build dataset is stored in DuckDB tables.
@@ -147,7 +138,7 @@ The following paths currently read build-produced datasets through DuckDB tables
 - Dataset manifests are required and validated for all build datasets.
 
 ## Risks and Mitigations
-- Missing manifests: fail fast in parquet-only mode; add migration tooling.
+- Missing manifests: fail fast under parquet-only policy; add migration tooling.
 - Path transition risk: allow explicit dataset root override during rollout.
 - Performance regressions: tune `from_parquet` options and leverage
   partitioning metadata from manifests.

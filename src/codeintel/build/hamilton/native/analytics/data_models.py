@@ -28,7 +28,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import (
     empty_frame_for_table,
     rows_to_frame,
@@ -111,9 +111,9 @@ def data_model_usage_core_frames(
     q__analytics__data_models: InferableTabularInput,
 ) -> DataModelUsageCoreFrames:
     return DataModelUsageCoreFrames(
-        modules_frame=tabular_to_lazyframe(q__core__modules).collect(),
-        goids_frame=tabular_to_lazyframe(q__core__goids).collect(),
-        data_models_frame=tabular_to_lazyframe(q__analytics__data_models).collect(),
+        modules_frame=tabular_to_frame(q__core__modules),
+        goids_frame=tabular_to_frame(q__core__goids),
+        data_models_frame=tabular_to_frame(q__analytics__data_models),
     )
 
 
@@ -123,9 +123,9 @@ def data_model_usage_subsystem_frames(
     q__analytics__function_types: InferableTabularInput,
 ) -> DataModelUsageSubsystemFrames:
     return DataModelUsageSubsystemFrames(
-        subsystem_modules_frame=tabular_to_lazyframe(q__analytics__subsystem_modules).collect(),
-        subsystems_frame=tabular_to_lazyframe(q__analytics__subsystems).collect(),
-        function_types_frame=tabular_to_lazyframe(q__analytics__function_types).collect(),
+        subsystem_modules_frame=tabular_to_frame(q__analytics__subsystem_modules),
+        subsystems_frame=tabular_to_frame(q__analytics__subsystems),
+        function_types_frame=tabular_to_frame(q__analytics__function_types),
     )
 
 
@@ -163,9 +163,9 @@ def data_models_result(
     DataModelsResult
         Computed data model rows and metadata.
     """
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    docstrings_frame = tabular_to_lazyframe(q__core__docstrings).collect()
+    goids_frame = tabular_to_frame(q__core__goids)
+    modules_frame = tabular_to_frame(q__core__modules)
+    docstrings_frame = tabular_to_frame(q__core__docstrings)
     return compute_data_models_pure(
         env.snapshot,
         goids_frame=goids_frame,

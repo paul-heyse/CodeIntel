@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import replace
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+import msgspec
+
 from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.core.schemas.contract_serde import contract_from_json_obj
+from codeintel.core.schemas.contract_serde import contract_from_payload
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.contracts.catalog_state import (
@@ -50,7 +51,7 @@ def _attach_row_binding(contract: DatasetContract) -> DatasetContract:
     if contract.schema is None:
         return contract
     binding = row_binding_for_table_schema(table_schema=contract.schema)
-    return replace(contract, row_binding=binding)
+    return msgspec.structs.replace(contract, row_binding=binding)
 
 
 def _contracts_from_payload(payload: Mapping[str, object]) -> dict[str, DatasetContract]:
@@ -61,7 +62,7 @@ def _contracts_from_payload(payload: Mapping[str, object]) -> dict[str, DatasetC
     for table_key, contract_obj in contracts_raw.items():
         if not isinstance(table_key, str) or not isinstance(contract_obj, Mapping):
             continue
-        contracts[table_key] = _attach_row_binding(contract_from_json_obj(contract_obj))
+        contracts[table_key] = _attach_row_binding(contract_from_payload(contract_obj))
     return contracts
 
 

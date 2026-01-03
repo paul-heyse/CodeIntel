@@ -25,7 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -177,12 +177,12 @@ def symbol_use_edges_compute(
     InferableTabularInput
         Tabular input for computed symbol use edges.
     """
-    occurrences_frame = tabular_to_lazyframe(q__core__scip_occurrences).collect()
+    occurrences_frame = tabular_to_frame(q__core__scip_occurrences)
     if occurrences_frame.is_empty():
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
+    modules_frame = tabular_to_frame(q__core__modules)
+    goids_frame = tabular_to_frame(q__core__goids)
     occurrences = _symbol_occurrences(occurrences_frame)
     if not occurrences:
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)

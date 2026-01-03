@@ -18,9 +18,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.core.execution import RunKind, TriggerKind
+    from codeintel.core.gateway import PipelineStepRecordProtocol
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection
-    from codeintel.storage.tracking import PipelineRunRecord, PipelineStepRecord
+    from codeintel.storage.tracking import PipelineRunRecord
 
 
 @dataclass(frozen=True)
@@ -116,28 +117,29 @@ def expect_run(record: PipelineRunRecord | None, expected: ExpectedRun) -> Pipel
 
 
 def expect_steps(
-    steps: list[PipelineStepRecord],
+    steps: Sequence[PipelineStepRecordProtocol],
     *,
     expected_count: int | None = None,
     expected_modules: set[str] | None = None,
-) -> list[PipelineStepRecord]:
+) -> list[PipelineStepRecordProtocol]:
     """Validate step collection shape and optionally module membership.
 
     Returns
     -------
-    list[PipelineStepRecord]
+    list[PipelineStepRecordProtocol]
         The provided steps after validation.
     """
+    normalized_steps = list(steps)
     if expected_count is not None:
-        expect_equal(len(steps), expected_count, label="step count")
+        expect_equal(len(normalized_steps), expected_count, label="step count")
     if expected_modules is not None:
-        modules = {step.module for step in steps}
+        modules = {step.module for step in normalized_steps}
         expect_equal(modules, expected_modules, label="step modules")
-    return steps
+    return normalized_steps
 
 
 def expect_step(
-    step: PipelineStepRecord,
+    step: PipelineStepRecordProtocol,
     *,
     name: str | None = None,
     status: str | None = None,
@@ -197,12 +199,12 @@ class RunTrackingHarness:
         *,
         expected_count: int | None = None,
         expected_row_counts: dict[str, int] | None = None,
-    ) -> list[PipelineStepRecord]:
+    ) -> list[PipelineStepRecordProtocol]:
         """Fetch steps and validate shape/row counts.
 
         Returns
         -------
-        list[PipelineStepRecord]
+        list[PipelineStepRecordProtocol]
             Retrieved step records after validation.
         """
         steps = expect_steps(

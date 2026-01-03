@@ -50,6 +50,27 @@ Integrated pipeline (proposed)
 4. CPG assembly uses canonical `core.syntax_nodes` and can optionally consume
    tree-sitter tokens/trivia and error diagnostics.
 
+## 2.1 Current implementation status (as of now)
+
+Implemented
+- Full tree-sitter CST traversal with `TreeCursor`, nodes/edges, and error/missing
+  detection (including `is_error`, `is_missing`, `has_error`, `parse_state`).
+- Query pack linting for rooted/non-local patterns; query packs executed via
+  `QueryCursor` with match-limit support.
+- Tokens/trivia extraction via `tokens.scm` and `trivia.scm`.
+- Canonical weld to `core.syntax_nodes` via `core.ts_syntax_node_xref`.
+- LibCST failure fallback to tree-sitter for canonical syntax nodes/edges.
+- `core.ts_nodes`, `core.ts_edges`, `core.ts_tokens`, `core.ts_trivia`,
+  `core.ts_language_metadata`, `core.ts_syntax_node_xref` tables wired in the
+  Hamilton ingestion pipeline.
+
+Not yet implemented
+- Incremental indexing (tree cache + `Tree.edit` reuse + `changed_ranges`-scoped
+  queries) and optional `core.ts_changed_ranges` table.
+- Parse-error enrichment payloads in `core.ts_parse_errors`.
+- CPG consumption of tree-sitter node flags and token/trivia tables.
+- Weld coverage and query pack acceptance telemetry.
+
 ## 3. Data model extensions
 
 Keep existing tables:
@@ -279,6 +300,31 @@ Phase 5 - CPG consumption
 - Optional: surface tree-sitter node flags and token/trivia data into CPG
   node properties or analytics views.
 
+## 10.1 Remaining scope punch list
+
+Incremental indexing (Phase 4)
+- Add per-file tree cache for a run, and reuse `old_tree` for parse/edit.
+- Apply `Tree.edit` on change events and use `changed_ranges` to scope query packs.
+- Optionally add `core.ts_changed_ranges` table for observability.
+- Add `QueryCursor.set_byte_range` usage where supported.
+
+Query pack metadata and diagnostics
+- Emit `pattern_count` and `capture_count` per pack (or per capture record).
+- Add `field_name`/`field_id` capture metadata when available.
+
+Parse error enrichment
+- Add `extras_json` to `core.ts_parse_errors` with `node_type`, `has_error`,
+  and `parse_state`.
+
+CPG integration (Phase 5)
+- Optionally project tree-sitter flags (`has_error`, `is_missing`,
+  `grammar_id`, `field_name`, `parse_state`) into `graph.cpg_nodes` properties.
+- Optionally expose token/trivia tables in CPG-facing views.
+
+Acceptance checks
+- Track weld coverage by file (percent of ts nodes mapped).
+- Track query `match_limit` exceedances and surface in build warnings.
+
 ## 11. Config toggles
 
 Introduce optional knobs (defaults shown):
@@ -291,4 +337,3 @@ Introduce optional knobs (defaults shown):
 - `tree_sitter.allow_non_local_patterns = false`
 
 These keep the pipeline adaptable without changing the canonical contracts.
-

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import ast
 import sys
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+import networkx as nx
 import polars as pl
 from hamilton.function_modifiers import cache
 
@@ -20,7 +20,6 @@ from codeintel.build.analytics.graphs.config_graph_metrics import (
     ConfigGraphMetricsResult,
     compute_config_graph_metrics_result,
 )
-from codeintel.build.analytics.graphs.graph_metrics import build_call_graph_from_rows
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -148,22 +147,49 @@ def _collect_rows(
     *,
     repo: str | None,
     commit: str | None,
-) -> list[dict[str, object]]:
+) -> pl.DataFrame:
     frame = tabular_to_lazyframe(value)
     available = set(frame.columns)
     if repo is not None and "repo" in available:
         frame = frame.filter(pl.col("repo") == repo)
     if commit is not None and "commit" in available:
         frame = frame.filter(pl.col("commit") == commit)
-    return frame.select(list(columns)).collect().to_dicts()
+    return frame.select(list(columns)).collect()
 
 
-def _matches_optional_scope(value: object, expected: str) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and not value.strip():
-        return True
-    return str(value) == expected
+def _matches_optional_scope_expr(column: str, expected: str) -> pl.Expr:
+    col = pl.col(column)
+    col_str = col.cast(pl.Utf8, strict=False)
+    stripped = col_str.str.strip_chars()
+    return col.is_null() | (stripped.str.len_chars() == 0) | (col_str == expected)
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("repo", repo))
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("commit", commit))
+    return filtered
+
+
+def _allowed_modules_from_frame(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> set[str]:
+    if frame.is_empty() or "module" not in frame.columns:
+        return set()
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return set()
+    return {str(module) for module in filtered.get_column("module").drop_nulls().to_list()}
 
 
 def _coerce_int(value: object) -> int | None:
@@ -185,32 +211,48 @@ def _coerce_int(value: object) -> int | None:
 
 
 def _group_goids_by_path(
-    rows: Iterable[Mapping[str, object]],
+    rows: pl.DataFrame,
     *,
     repo: str,
     commit: str,
 ) -> tuple[dict[str, list[_GoidSpan]], set[int]]:
     grouped: dict[str, list[_GoidSpan]] = {}
     missing: set[int] = set()
-    for row in rows:
-        if not _matches_optional_scope(row.get("repo"), repo):
-            continue
-        if not _matches_optional_scope(row.get("commit"), commit):
-            continue
-        kind = row.get("kind")
+    if rows.is_empty():
+        return grouped, missing
+    filtered = _filter_frame_by_snapshot(rows, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return grouped, missing
+    data = filtered.select(
+        [
+            "goid_h128",
+            "rel_path",
+            "qualname",
+            "kind",
+            "start_line",
+            "end_line",
+        ]
+    ).to_dict(as_series=False)
+    for goid_raw, rel_path, qualname, kind, start_line_raw, end_line_raw in zip(
+        data["goid_h128"],
+        data["rel_path"],
+        data["qualname"],
+        data["kind"],
+        data["start_line"],
+        data["end_line"],
+        strict=True,
+    ):
         if kind is None or str(kind) not in _FUNCTION_KINDS:
             continue
-        goid = normalize_decimal_id(row.get("goid_h128"))
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
-        rel_path = row.get("rel_path")
-        start_line = _coerce_int(row.get("start_line"))
-        end_line = _coerce_int(row.get("end_line"))
+        start_line = _coerce_int(start_line_raw)
+        end_line = _coerce_int(end_line_raw)
         if rel_path is None or start_line is None:
             missing.add(goid)
             continue
         start_line, end_line = normalize_line_span(start_line, end_line)
-        qualname = row.get("qualname")
         span = _GoidSpan(
             goid=goid,
             qualname=str(qualname) if qualname is not None else "",
@@ -221,8 +263,52 @@ def _group_goids_by_path(
     return grouped, missing
 
 
+def _call_graph_from_frames(
+    edges: pl.DataFrame,
+    nodes: pl.DataFrame,
+) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    _add_call_graph_edges(graph, edges)
+    _add_call_graph_nodes(graph, nodes)
+    return graph
+
+
+def _add_call_graph_edges(graph: nx.DiGraph, edges: pl.DataFrame) -> None:
+    if edges.is_empty():
+        return
+    if "caller_goid_h128" not in edges.columns or "callee_goid_h128" not in edges.columns:
+        return
+    callers = edges.get_column("caller_goid_h128").to_list()
+    callees = edges.get_column("callee_goid_h128").to_list()
+    for caller_raw, callee_raw in zip(callers, callees, strict=True):
+        caller = normalize_decimal_id(caller_raw)
+        callee = normalize_decimal_id(callee_raw)
+        if caller is None or callee is None:
+            continue
+        if graph.has_edge(caller, callee):
+            attrs = graph[caller][callee]
+            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+        else:
+            graph.add_edge(caller, callee, weight=1)
+
+
+def _add_call_graph_nodes(graph: nx.DiGraph, nodes: pl.DataFrame) -> None:
+    if nodes.is_empty() or "goid_h128" not in nodes.columns:
+        return
+    goids = nodes.get_column("goid_h128").to_list()
+    kinds = nodes.get_column("kind").to_list() if "kind" in nodes.columns else [None] * len(goids)
+    for goid_raw, kind in zip(goids, kinds, strict=True):
+        node = normalize_decimal_id(goid_raw)
+        if node is None or node in graph:
+            continue
+        attrs: dict[str, object] = {}
+        if kind is not None:
+            attrs["kind"] = str(kind)
+        graph.add_node(node, **attrs)
+
+
 def _function_asts_from_goids(
-    rows: Iterable[Mapping[str, object]],
+    rows: pl.DataFrame,
     *,
     repo: str,
     commit: str,
@@ -319,7 +405,7 @@ def config_data_flow__base(
         repo=None,
         commit=None,
     )
-    call_graph = build_call_graph_from_rows(call_edge_rows, call_node_rows)
+    call_graph = _call_graph_from_frames(call_edge_rows, call_node_rows)
     goid_rows = _collect_rows(
         config_data_flow_frames.goids,
         ("goid_h128", "rel_path", "qualname", "kind", "start_line", "end_line", "repo", "commit"),
@@ -375,13 +461,11 @@ def config_graph_metrics_result(
         repo=env.repo,
         commit=env.commit,
     )
-    allowed_modules = {
-        str(row["module"])
-        for row in module_rows
-        if row.get("module") is not None
-        and _matches_optional_scope(row.get("repo"), env.repo)
-        and _matches_optional_scope(row.get("commit"), env.commit)
-    }
+    allowed_modules = _allowed_modules_from_frame(
+        module_rows,
+        repo=env.repo,
+        commit=env.commit,
+    )
     runtime_options = _graph_runtime_options(env)
     return compute_config_graph_metrics_result(
         repo=env.repo,

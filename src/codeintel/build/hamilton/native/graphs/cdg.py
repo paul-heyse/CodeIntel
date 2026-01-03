@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -22,6 +22,17 @@ class _CdgEdgeRow:
     via_succ_block_id: str
     edge_kind: str
     via_edge_kind: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _CdgEdgeContext:
+    function_goid: int
+    post: dict[int, int]
+    inv_idx: dict[int, int]
+    block_id_by_idx: dict[int, str]
+    edge_kind_by_pair: dict[tuple[int, int], str | None]
+    exit_id: int
+    synthetic_exit: int | None
 
 
 class _PostdominatorConvergenceError(RuntimeError):
@@ -140,40 +151,34 @@ def _ensure_exit_node(
 
 
 def _cdg_edge_rows_for_pair(
-    function_goid: int,
+    context: _CdgEdgeContext,
     *,
     src_idx: int,
     dst_idx: int,
-    post: dict[int, int],
-    inv_idx: dict[int, int],
-    block_id_by_idx: dict[int, str],
-    edge_kind_by_pair: dict[tuple[int, int], str | None],
-    exit_id: int,
-    synthetic_exit: int | None,
 ) -> list[_CdgEdgeRow]:
-    if synthetic_exit is not None and dst_idx == synthetic_exit:
+    if context.synthetic_exit is not None and dst_idx == context.synthetic_exit:
         return []
-    diff = post[dst_idx] & (~post[src_idx])
+    diff = context.post[dst_idx] & (~context.post[src_idx])
     if diff == 0:
         return []
     rows: list[_CdgEdgeRow] = []
     for bit_index in _bit_iter(diff):
-        controlled_idx = inv_idx[bit_index]
-        if controlled_idx == exit_id:
+        controlled_idx = context.inv_idx[bit_index]
+        if controlled_idx == context.exit_id:
             continue
-        src_block_id = block_id_by_idx.get(src_idx)
-        dst_block_id = block_id_by_idx.get(controlled_idx)
-        via_block_id = block_id_by_idx.get(dst_idx)
+        src_block_id = context.block_id_by_idx.get(src_idx)
+        dst_block_id = context.block_id_by_idx.get(controlled_idx)
+        via_block_id = context.block_id_by_idx.get(dst_idx)
         if src_block_id is None or dst_block_id is None or via_block_id is None:
             continue
         rows.append(
             _CdgEdgeRow(
-                function_goid_h128=function_goid,
+                function_goid_h128=context.function_goid,
                 src_block_id=src_block_id,
                 dst_block_id=dst_block_id,
                 via_succ_block_id=via_block_id,
                 edge_kind="CDG",
-                via_edge_kind=edge_kind_by_pair.get((src_idx, dst_idx)),
+                via_edge_kind=context.edge_kind_by_pair.get((src_idx, dst_idx)),
             )
         )
     return rows
@@ -207,22 +212,19 @@ def _cdg_edges_for_function(
     )
     post, idx = _compute_postdom_bitsets(node_ids, succ, exit_id)
     inv_idx = {value: key for key, value in idx.items()}
+    context = _CdgEdgeContext(
+        function_goid=function_goid,
+        post=post,
+        inv_idx=inv_idx,
+        block_id_by_idx=block_id_by_idx,
+        edge_kind_by_pair=edge_kind_by_pair,
+        exit_id=exit_id,
+        synthetic_exit=synthetic_exit,
+    )
 
     rows: list[_CdgEdgeRow] = []
     for src_idx, dst_idx in edges_idx:
-        rows.extend(
-            _cdg_edge_rows_for_pair(
-                function_goid,
-                src_idx=src_idx,
-                dst_idx=dst_idx,
-                post=post,
-                inv_idx=inv_idx,
-                block_id_by_idx=block_id_by_idx,
-                edge_kind_by_pair=edge_kind_by_pair,
-                exit_id=exit_id,
-                synthetic_exit=synthetic_exit,
-            )
-        )
+        rows.extend(_cdg_edge_rows_for_pair(context, src_idx=src_idx, dst_idx=dst_idx))
     return rows
 
 
@@ -237,8 +239,8 @@ def cdg_edges(
     polars.LazyFrame
         Lazy frame for graph.cdg_edges.
     """
-    blocks_frame = tabular_to_lazyframe(q__graph__cfg_blocks).collect()
-    edges_frame = tabular_to_lazyframe(q__graph__cfg_edges).collect()
+    blocks_frame = tabular_to_frame(q__graph__cfg_blocks)
+    edges_frame = tabular_to_frame(q__graph__cfg_edges)
     if blocks_frame.is_empty() or edges_frame.is_empty():
         return empty_frame_for_table(CDG_EDGES_TABLE_KEY)
 

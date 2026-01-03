@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import ast
-import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import msgspec
 import polars as pl
 
 from codeintel.build.analytics.utilities.ast import safe_unparse
@@ -344,19 +344,37 @@ def _function_rows_from_frame(
     if frame is None or frame.is_empty():
         return []
     filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return []
+    data = filtered.select(
+        [
+            "function_goid_h128",
+            "rel_path",
+            "qualname",
+            "start_line",
+            "end_line",
+        ]
+    ).to_dict(as_series=False)
     result: list[tuple[int, str, str, int | None]] = []
-    for row in filtered.iter_rows(named=True):
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
+    for goid_raw, rel_path, qualname, start_line_raw, end_line_raw in zip(
+        data["function_goid_h128"],
+        data["rel_path"],
+        data["qualname"],
+        data["start_line"],
+        data["end_line"],
+        strict=True,
+    ):
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
-        start_line = coerce_optional_int(row.get("start_line"), ctx="core.goids.start_line")
-        end_line = coerce_optional_int(row.get("end_line"), ctx="core.goids.end_line")
+        start_line = coerce_optional_int(start_line_raw, ctx="core.goids.start_line")
+        end_line = coerce_optional_int(end_line_raw, ctx="core.goids.end_line")
         loc = end_line - start_line + 1 if start_line is not None and end_line is not None else None
         result.append(
             (
                 goid,
-                coerce_str(row.get("rel_path"), ctx="core.goids.rel_path"),
-                coerce_str(row.get("qualname"), ctx="core.goids.qualname"),
+                coerce_str(rel_path, ctx="core.goids.rel_path"),
+                coerce_str(qualname, ctx="core.goids.qualname"),
                 loc,
             )
         )
@@ -372,19 +390,52 @@ def _effects_from_frame(
     if frame is None or frame.is_empty():
         return {}
     filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return {}
+    data = filtered.select(
+        [
+            "function_goid_h128",
+            "touches_db",
+            "uses_io",
+            "uses_time",
+            "uses_randomness",
+            "modifies_globals",
+            "modifies_closure",
+            "spawns_threads_or_tasks",
+        ]
+    ).to_dict(as_series=False)
     mapping: dict[int, dict[str, object]] = {}
-    for row in filtered.iter_rows(named=True):
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
+    for (
+        goid_raw,
+        touches_db,
+        uses_io,
+        uses_time,
+        uses_randomness,
+        modifies_globals,
+        modifies_closure,
+        spawns_threads_or_tasks,
+    ) in zip(
+        data["function_goid_h128"],
+        data["touches_db"],
+        data["uses_io"],
+        data["uses_time"],
+        data["uses_randomness"],
+        data["modifies_globals"],
+        data["modifies_closure"],
+        data["spawns_threads_or_tasks"],
+        strict=True,
+    ):
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         mapping[goid] = {
-            "touches_db": bool(row.get("touches_db")),
-            "uses_io": bool(row.get("uses_io")),
-            "uses_time": bool(row.get("uses_time")),
-            "uses_randomness": bool(row.get("uses_randomness")),
-            "modifies_globals": bool(row.get("modifies_globals")),
-            "modifies_closure": bool(row.get("modifies_closure")),
-            "spawns_threads_or_tasks": bool(row.get("spawns_threads_or_tasks")),
+            "touches_db": bool(touches_db),
+            "uses_io": bool(uses_io),
+            "uses_time": bool(uses_time),
+            "uses_randomness": bool(uses_randomness),
+            "modifies_globals": bool(modifies_globals),
+            "modifies_closure": bool(modifies_closure),
+            "spawns_threads_or_tasks": bool(spawns_threads_or_tasks),
         }
     return mapping
 
@@ -398,15 +449,31 @@ def _contracts_from_frame(
     if frame is None or frame.is_empty():
         return {}
     filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return {}
+    data = filtered.select(
+        [
+            "function_goid_h128",
+            "preconditions_json",
+            "raises_json",
+            "param_nullability_json",
+        ]
+    ).to_dict(as_series=False)
     mapping: dict[int, dict[str, object]] = {}
-    for row in filtered.iter_rows(named=True):
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
+    for goid_raw, preconditions, raises, param_nullability in zip(
+        data["function_goid_h128"],
+        data["preconditions_json"],
+        data["raises_json"],
+        data["param_nullability_json"],
+        strict=True,
+    ):
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         mapping[goid] = {
-            "preconditions": _coerce_json(row.get("preconditions_json")) or [],
-            "raises": _coerce_json(row.get("raises_json")) or [],
-            "param_nullability": _coerce_json(row.get("param_nullability_json")) or {},
+            "preconditions": _coerce_json(preconditions) or [],
+            "raises": _coerce_json(raises) or [],
+            "param_nullability": _coerce_json(param_nullability) or {},
         }
     return mapping
 
@@ -420,14 +487,28 @@ def _graph_metrics_from_frame(
     if frame is None or frame.is_empty():
         return {}
     filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return {}
+    data = filtered.select(
+        [
+            "function_goid_h128",
+            "call_fan_in",
+            "call_fan_out",
+        ]
+    ).to_dict(as_series=False)
     mapping: dict[int, dict[str, int]] = {}
-    for row in filtered.iter_rows(named=True):
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
+    for goid_raw, call_fan_in, call_fan_out in zip(
+        data["function_goid_h128"],
+        data["call_fan_in"],
+        data["call_fan_out"],
+        strict=True,
+    ):
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         mapping[goid] = {
-            "call_fan_in": coerce_optional_int(row.get("call_fan_in"), ctx="call_fan_in") or 0,
-            "call_fan_out": coerce_optional_int(row.get("call_fan_out"), ctx="call_fan_out") or 0,
+            "call_fan_in": coerce_optional_int(call_fan_in, ctx="call_fan_in") or 0,
+            "call_fan_out": coerce_optional_int(call_fan_out, ctx="call_fan_out") or 0,
         }
     return mapping
 
@@ -441,11 +522,16 @@ def _module_meta_from_frame(
     if frame is None or frame.is_empty():
         return {}
     filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return {}
+    data = filtered.select(["module", "path", "tags"]).to_dict(as_series=False)
     meta: dict[str, ModuleRecord] = {}
-    for row in filtered.iter_rows(named=True):
-        module = row.get("module")
-        path = row.get("path")
-        tags = row.get("tags")
+    for module, path, tags in zip(
+        data["module"],
+        data["path"],
+        data["tags"],
+        strict=True,
+    ):
         path_value = coerce_optional_str(path, ctx="core.modules.path")
         normalized_path = normalize_path(path_value) if path_value else ""
         normalized_tags = _normalize_tags(tags)
@@ -720,8 +806,8 @@ def _coerce_json(value: object) -> object:
     decoded = decode_payload(value)
     if isinstance(decoded, str):
         try:
-            return json.loads(decoded)
-        except json.JSONDecodeError:
+            return msgspec.json.decode(decoded)
+        except msgspec.DecodeError:
             return decoded
     return decoded
 

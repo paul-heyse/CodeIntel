@@ -216,6 +216,16 @@ class TargetMetadataService:
         """
         return self.system.output_for_table_key(table_key)
 
+    def all_table_keys(self) -> frozenset[str]:
+        """Return all produced table keys declared by the target graph.
+
+        Returns
+        -------
+        frozenset[str]
+            Table keys produced by the target graph.
+        """
+        return self.system.all_table_keys
+
     def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         """Return the target that produces an artifact name.
 
@@ -245,6 +255,10 @@ class TargetMetadataProvider(Protocol):
 
     def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
         """Return output descriptor for a table key."""
+        ...
+
+    def all_table_keys(self) -> frozenset[str]:
+        """Return all produced table keys declared by the target graph."""
         ...
 
     def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
@@ -293,6 +307,16 @@ class LazyTargetMetadataProvider:
             Output descriptor if present, otherwise None.
         """
         return self._resolve().output_for_table_key(table_key)
+
+    def all_table_keys(self) -> frozenset[str]:
+        """Return all produced table keys declared by the target graph.
+
+        Returns
+        -------
+        frozenset[str]
+            Table keys produced by the target graph.
+        """
+        return self._resolve().all_table_keys()
 
     def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         """Return target metadata for an artifact name.

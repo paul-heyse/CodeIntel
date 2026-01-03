@@ -28,6 +28,7 @@ from codeintel.cli.options.registry import (
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
+from codeintel.cli.rendering.types import OutputFormat
 
 graphs_app = App(
     name="graph",
@@ -41,7 +42,10 @@ GRAPH_TARGETS_PLAN_PATH: CommandPath = ("graph", "targets-plan")
 GRAPH_PLUGINS_PATH: CommandPath = ("graph", "plugins")
 GRAPH_TARGETS_PATH: CommandPath = ("graph", "targets")
 
-_GRAPH_TARGETS_LIST_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_LIST_PATH)
+_GRAPH_TARGETS_LIST_FLAGS_FIELD = shared_flags_field(
+    GRAPH_TARGETS_LIST_PATH,
+    default_output_format=OutputFormat.JSONL,
+)
 _GRAPH_TARGETS_PLAN_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_PLAN_PATH)
 _GRAPH_PLUGINS_FLAGS_FIELD = shared_flags_field(GRAPH_PLUGINS_PATH)
 _GRAPH_TARGETS_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_PATH)

@@ -22,7 +22,8 @@ from codeintel.build.analytics.functions.config import (
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.validation.reporters import FunctionValidationReporter
@@ -107,6 +108,7 @@ def _type_row_from_node(
 
     param_stats = compute_param_stats(node)
 
+    param_types = encode_payload(param_stats.param_types) if param_stats.param_types else None
     return {
         "function_goid_h128": meta.goid,
         "urn": meta.urn,
@@ -121,7 +123,7 @@ def _type_row_from_node(
         "total_params": param_stats.total_params,
         "return_type": param_stats.return_type,
         "type_comment": None,
-        "param_types": param_stats.param_types,
+        "param_types": param_types,
         "created_at": ctx.now,
     }
 
@@ -441,7 +443,7 @@ def compute_function_analytics_result_from_tabular(
     FunctionAnalyticsResult
         Container with types_rows and validation reporter.
     """
-    goids_frame = tabular_to_lazyframe(goids_input).collect()
+    goids_frame = tabular_to_frame(goids_input)
     goids_by_file = _load_goids_from_frame(goids_frame, snapshot)
     return _compute_from_goids(goids_by_file, snapshot, options=options)
 

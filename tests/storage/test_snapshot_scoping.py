@@ -15,11 +15,9 @@ def test_maybe_scope_by_repo_commit_adds_filter_when_columns_exist(
     fresh_gateway: StorageGateway,
 ) -> None:
     """maybe_scope_by_repo_commit adds repo+commit filters when snapshot columns exist."""
-    fresh_gateway.con.execute(
-        """
-        INSERT INTO core.repo_map (repo, commit, modules)
-        VALUES ('a/repo', 'c1', '[]'), ('b/repo', 'c2', '[]')
-        """
+    fresh_gateway.con.executemany(
+        "INSERT INTO core.repo_map (repo, commit, modules) VALUES (?, ?, ?)",
+        [("a/repo", "c1", {}), ("b/repo", "c2", {})],
     )
     table = fresh_gateway.relation_from_table_key("core.repo_map")
     scoped = maybe_scope_by_repo_commit(table, repo="a/repo", commit="c1")

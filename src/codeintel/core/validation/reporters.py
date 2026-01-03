@@ -20,10 +20,14 @@ GraphValidationReporter
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TypeVar, cast
 
+import msgspec
+
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFunctionValidationRow as FunctionValidationRow,
 )
@@ -31,10 +35,8 @@ from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphValidationRow as GraphValidationRow,
 )
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.serialization.msgspec import to_builtins
 from codeintel.core.time import utc_now
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
 
 RowT = TypeVar("RowT")
 
@@ -62,6 +64,54 @@ GRAPH_VALIDATION_COLS: tuple[str, ...] = (
     "metadata",
     "created_at",
 )
+
+
+class FunctionValidationFinding(msgspec.Struct, frozen=True):
+    """Structured payload for function validation findings."""
+
+    repo: str
+    commit: str
+    function_goid_h128: int
+    rel_path: str
+    qualname: str
+    issue: str
+    detail: str
+    created_at: datetime
+
+    def to_row(self) -> FunctionValidationRow:
+        """Convert finding into a row mapping for persistence.
+
+        Returns
+        -------
+        FunctionValidationRow
+            Row mapping ready for persistence.
+        """
+        return cast("FunctionValidationRow", to_builtins(self))
+
+
+class GraphValidationFinding(msgspec.Struct, frozen=True):
+    """Structured payload for graph validation findings."""
+
+    repo: str
+    commit: str
+    graph_name: str
+    entity_id: str
+    issue: str
+    severity: str | None
+    rel_path: str | None
+    detail: str
+    metadata: bytes | None
+    created_at: datetime
+
+    def to_row(self) -> GraphValidationRow:
+        """Convert finding into a row mapping for persistence.
+
+        Returns
+        -------
+        GraphValidationRow
+            Row mapping ready for persistence.
+        """
+        return cast("GraphValidationRow", to_builtins(self))
 
 
 @dataclass
@@ -158,17 +208,17 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         elif issue == "unknown_function":
             self.unknown_functions += 1
 
-        row: FunctionValidationRow = {
-            "repo": self.repo,
-            "commit": self.commit,
-            "function_goid_h128": function_goid_h128,
-            "rel_path": rel_path,
-            "qualname": qualname,
-            "issue": issue,
-            "detail": detail,
-            "created_at": gateway_timestamp(),
-        }
-        self.rows.append(row)
+        finding = FunctionValidationFinding(
+            repo=self.repo,
+            commit=self.commit,
+            function_goid_h128=function_goid_h128,
+            rel_path=rel_path,
+            qualname=qualname,
+            issue=issue,
+            detail=detail,
+            created_at=gateway_timestamp(),
+        )
+        self.rows.append(finding.to_row())
 
     def to_rows(self) -> tuple[tuple[object, ...], ...]:
         """Return accumulated rows as tuples without writing.
@@ -234,21 +284,21 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         self.total += 1
         severity = cast("str | None", extras.get("severity") if extras is not None else None)
         rel_path = cast("str | None", extras.get("rel_path") if extras is not None else None)
-        metadata = extras.get("metadata") if extras is not None else None
+        metadata = _encode_metadata(extras.get("metadata") if extras is not None else None)
         entity = entity_id or graph_name
-        row: GraphValidationRow = {
-            "repo": self.repo,
-            "commit": self.commit,
-            "graph_name": graph_name,
-            "entity_id": entity,
-            "issue": issue,
-            "severity": severity,
-            "rel_path": rel_path,
-            "detail": detail,
-            "metadata": metadata,
-            "created_at": gateway_timestamp(),
-        }
-        self.rows.append(row)
+        finding = GraphValidationFinding(
+            repo=self.repo,
+            commit=self.commit,
+            graph_name=graph_name,
+            entity_id=entity,
+            issue=issue,
+            severity=severity,
+            rel_path=rel_path,
+            detail=detail,
+            metadata=metadata,
+            created_at=gateway_timestamp(),
+        )
+        self.rows.append(finding.to_row())
 
     def to_rows(self) -> tuple[tuple[object, ...], ...]:
         """Return accumulated rows as tuples without writing.
@@ -262,6 +312,16 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         """
         serializer = row_serializer_for_table_key(GRAPH_VALIDATION_TABLE_KEY)
         return tuple(serializer(r) for r in self.rows)
+
+
+def _encode_metadata(value: object | None) -> bytes | None:
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return encode_payload(value)
+    if isinstance(value, (str, int, float, bool, Mapping, Sequence)):
+        return encode_payload(value)
+    return encode_payload(str(value))
 
 
 def gateway_timestamp() -> datetime:
@@ -279,7 +339,9 @@ __all__ = [
     "FUNCTION_VALIDATION_COLS",
     "GRAPH_VALIDATION_COLS",
     "BaseValidationReporter",
+    "FunctionValidationFinding",
     "FunctionValidationReporter",
+    "GraphValidationFinding",
     "GraphValidationReporter",
     "gateway_timestamp",
 ]

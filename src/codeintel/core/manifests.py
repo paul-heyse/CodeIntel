@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
+import types
+from collections.abc import Mapping
+from typing import (
+    TYPE_CHECKING,
+    Literal,
+    TypeGuard,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+    overload,
+)
 
 import msgspec
+import msgspec.structs as msgspec_structs
 
 from codeintel.core.serialization.msgspec_json import (
     decode_json_bytes,
@@ -13,10 +26,11 @@ from codeintel.core.serialization.msgspec_json import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
     from codeintel.core.schemas.primitives import TableSchema
+
+T = TypeVar("T")
 
 
 def write_manifest_json(path: Path, payload: object) -> None:
@@ -34,20 +48,123 @@ def write_manifest_json(path: Path, payload: object) -> None:
     path.write_bytes(_encode_manifest_bytes(normalized))
 
 
-def read_manifest_json(path: Path) -> dict[str, object]:
+@overload
+def read_manifest_json(path: Path) -> dict[str, object]: ...
+
+
+@overload
+def read_manifest_json[T](path: Path, *, payload_type: type[T]) -> T: ...
+
+
+def read_manifest_json[T](
+    path: Path,
+    *,
+    payload_type: type[T] | None = None,
+) -> dict[str, object] | T:
     """Read a JSON manifest file.
 
     Parameters
     ----------
     path
         Path to the manifest file.
+    payload_type
+        Optional payload type to decode into.
 
     Returns
     -------
-    dict[str, object]
-        Parsed JSON payload.
+    dict[str, object] | T
+        Parsed JSON payload or a typed manifest instance when requested.
     """
-    return decode_json_bytes(path.read_bytes(), payload_type=dict[str, object])
+    raw = path.read_bytes()
+    if payload_type is None:
+        return decode_json_bytes(raw, payload_type=dict[str, object])
+    return _decode_manifest_payload(raw, payload_type=payload_type)
+
+
+def _decode_manifest_payload[T](payload: bytes, *, payload_type: type[T]) -> T:
+    try:
+        return decode_json_bytes(payload, payload_type=payload_type)
+    except msgspec.ValidationError as exc:
+        builtins = msgspec.json.decode(payload)
+        sanitized = _strip_unknown_fields(builtins, payload_type)
+        try:
+            return msgspec.convert(sanitized, type=payload_type, strict=False)
+        except msgspec.ValidationError as fallback_exc:
+            raise fallback_exc from exc
+
+
+def _strip_unknown_fields(value: object, target_type: object) -> object:
+    origin = get_origin(target_type)
+    if origin is None:
+        if _is_struct_type(target_type):
+            return _strip_struct_fields(value, target_type)
+        return value
+    if origin in {list, tuple, set, frozenset}:
+        return _strip_collection_fields(value, target_type, origin)
+    if origin in {dict, Mapping}:
+        return _strip_mapping_fields(value, target_type)
+    if origin in {Union, types.UnionType}:
+        return _strip_union_fields(value, target_type)
+    return value
+
+
+def _strip_collection_fields(value: object, target_type: object, origin: object) -> object:
+    args = get_args(target_type)
+    item_type = args[0] if args else object
+    if isinstance(value, list):
+        items = [_strip_unknown_fields(item, item_type) for item in value]
+        if origin is tuple:
+            return tuple(items)
+        if origin is set:
+            return set(items)
+        if origin is frozenset:
+            return frozenset(items)
+        return items
+    if origin is tuple and isinstance(value, tuple):
+        return tuple(_strip_unknown_fields(item, item_type) for item in value)
+    return value
+
+
+def _strip_mapping_fields(value: object, target_type: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    args = get_args(target_type)
+    key_type = args[0] if args else object
+    value_type = args[1] if len(args) > 1 else object
+    normalized: dict[object, object] = {}
+    for key, item in value.items():
+        normalized_key = str(key) if key_type is str else key
+        normalized[normalized_key] = _strip_unknown_fields(item, value_type)
+    return normalized
+
+
+def _strip_union_fields(value: object, target_type: object) -> object:
+    if value is None:
+        return None
+    for arg in (arg for arg in get_args(target_type) if arg is not type(None)):
+        if _is_struct_type(arg) and isinstance(value, dict):
+            return _strip_unknown_fields(value, arg)
+        origin = get_origin(arg)
+        if origin is not None:
+            return _strip_unknown_fields(value, arg)
+    return value
+
+
+def _strip_struct_fields(value: object, target_type: type[msgspec.Struct]) -> object:
+    if not isinstance(value, dict):
+        return value
+    fields = msgspec_structs.fields(cast("msgspec.Struct", target_type))
+    allowed = {field.encode_name: field.type for field in fields}
+    normalized: dict[str, object] = {}
+    for key, item in value.items():
+        if key not in allowed:
+            continue
+        normalized[key] = _strip_unknown_fields(item, allowed[key])
+    return normalized
+
+
+def _is_struct_type(target_type: object) -> TypeGuard[type[msgspec.Struct]]:
+    return isinstance(target_type, type) and issubclass(target_type, msgspec.Struct)
 
 
 def _encode_manifest_bytes(payload: object) -> bytes:
@@ -107,88 +224,59 @@ class ManifestBase:
         return path
 
 
-class ExportManifestData(msgspec.Struct, ManifestBase, frozen=True):
+class ManifestStruct(
+    msgspec.Struct,
+    ManifestBase,
+    frozen=True,
+    kw_only=True,
+    omit_defaults=True,
+    forbid_unknown_fields=True,
+):
+    """Base class for manifest payloads with deterministic msgspec defaults."""
+
+
+class ExportManifestData(ManifestStruct, frozen=True):
     """Structured manifest metadata for a single dataset export."""
 
     dataset: str
-    schema_id: str | None
-    schema_version: str | None
-    schema_digest: str | None
     validation_profile: str
     row_count: int
     data_hash: str
     started_at: str
     completed_at: str
+    schema_id: str | None = None
+    schema_version: str | None = None
+    schema_digest: str | None = None
     artifact: str | None = None
     extras: Mapping[str, object] | None = None
 
-    def to_json_obj(self) -> object:
-        """Return a JSON-serializable export manifest payload.
 
-        Returns
-        -------
-        object
-            JSON-serializable export manifest payload.
-        """
-        return self
-
-
-class InferencePlanLoaderOverride(msgspec.Struct, frozen=True):
+class InferencePlanLoaderOverride(ManifestStruct, frozen=True):
     """Loader override mapping for inference execution."""
 
     node: str
     table_key: str
 
-    def to_json_obj(self) -> object:
-        """Return JSON-serializable loader override payload.
 
-        Returns
-        -------
-        object
-            JSON-serializable loader override payload.
-        """
-        return self
-
-
-class InferencePlanDatasetRef(msgspec.Struct, frozen=True):
+class InferencePlanDatasetRef(ManifestStruct, frozen=True):
     """Dataset reference mapping for inference execution."""
 
     param: str
     table_key: str
 
-    def to_json_obj(self) -> object:
-        """Return JSON-serializable dataset reference payload.
 
-        Returns
-        -------
-        object
-            JSON-serializable dataset reference payload.
-        """
-        return self
-
-
-class InferencePlanSeedDataset(msgspec.Struct, frozen=True):
+class InferencePlanSeedDataset(ManifestStruct, frozen=True):
     """Seed dataset settings captured for inference runs."""
 
-    dataset_root_dir: str | None
-    snapshot_id: str | None
     scan_mode: str
     sample_rows: int
     batch_size: int
-    fragment_readahead: int | None
-
-    def to_json_obj(self) -> object:
-        """Return JSON-serializable seed dataset payload.
-
-        Returns
-        -------
-        object
-            JSON-serializable seed dataset payload.
-        """
-        return self
+    dataset_root_dir: str | None = None
+    snapshot_id: str | None = None
+    fragment_readahead: int | None = None
 
 
-class InferencePlanSettings(msgspec.Struct, frozen=True):
+class InferencePlanSettings(ManifestStruct, frozen=True):
     """Runtime settings snapshot used for inference."""
 
     engine_version: str
@@ -198,18 +286,8 @@ class InferencePlanSettings(msgspec.Struct, frozen=True):
     polars_streaming: bool
     polars_streaming_fallback: bool
 
-    def to_json_obj(self) -> object:
-        """Return JSON-serializable settings payload.
 
-        Returns
-        -------
-        object
-            JSON-serializable settings payload.
-        """
-        return self
-
-
-class InferencePlanManifest(msgspec.Struct, ManifestBase, frozen=True):
+class InferencePlanManifest(ManifestStruct, frozen=True):
     """Manifest describing a deterministic inference plan."""
 
     manifest_version: int
@@ -226,18 +304,8 @@ class InferencePlanManifest(msgspec.Struct, ManifestBase, frozen=True):
     settings: InferencePlanSettings
     seed_dataset: InferencePlanSeedDataset | None = None
 
-    def to_json_obj(self) -> object:
-        """Return JSON-serializable inference plan manifest payload.
 
-        Returns
-        -------
-        object
-            JSON-serializable inference plan manifest payload.
-        """
-        return self
-
-
-class ArrowDatasetManifest(msgspec.Struct, ManifestBase, frozen=True):
+class ArrowDatasetManifest(ManifestStruct, frozen=True):
     """Manifest describing an Arrow dataset snapshot."""
 
     dataset_id: str
@@ -251,18 +319,8 @@ class ArrowDatasetManifest(msgspec.Struct, ManifestBase, frozen=True):
     created_at: str | None = None
     extras: Mapping[str, object] | None = None
 
-    def to_json_obj(self) -> object:
-        """Return a JSON-serializable dataset manifest payload.
 
-        Returns
-        -------
-        object
-            JSON-serializable dataset manifest payload.
-        """
-        return self
-
-
-class DatasetSuiteManifest(msgspec.Struct, ManifestBase, frozen=True):
+class DatasetSuiteManifest(ManifestStruct, frozen=True):
     """Manifest describing a suite of dataset snapshots."""
 
     suite_manifest_version: int
@@ -272,16 +330,6 @@ class DatasetSuiteManifest(msgspec.Struct, ManifestBase, frozen=True):
     created_at: str
     dataset_manifest_paths: Mapping[str, str]
     tool_versions: Mapping[str, str] | None = None
-
-    def to_json_obj(self) -> object:
-        """Return a JSON-serializable suite manifest payload.
-
-        Returns
-        -------
-        object
-            JSON-serializable suite manifest payload.
-        """
-        return self
 
     @classmethod
     def from_path(cls, path: Path) -> DatasetSuiteManifest:
@@ -311,7 +359,7 @@ class DatasetSuiteManifest(msgspec.Struct, ManifestBase, frozen=True):
         )
 
 
-class SnapshotDatasetEntry(msgspec.Struct, ManifestBase, frozen=True):
+class SnapshotDatasetEntry(ManifestStruct, frozen=True):
     """Summary pointer to a dataset manifest within a serving snapshot."""
 
     manifest_path: str
@@ -320,18 +368,8 @@ class SnapshotDatasetEntry(msgspec.Struct, ManifestBase, frozen=True):
     row_count: int | None = None
     stats: Mapping[str, object] | None = None
 
-    def to_json_obj(self) -> object:
-        """Return a JSON-serializable dataset entry payload.
 
-        Returns
-        -------
-        object
-            JSON-serializable dataset entry payload.
-        """
-        return self
-
-
-class IncrementalMarker(msgspec.Struct, ManifestBase, frozen=True):
+class IncrementalMarker(ManifestStruct, frozen=True):
     """Metadata persisted to decide if an export can be reused."""
 
     dataset: str
@@ -371,7 +409,7 @@ class IncrementalMarker(msgspec.Struct, ManifestBase, frozen=True):
         return payload
 
 
-class SkipCriteria(msgspec.Struct, frozen=True):
+class SkipCriteria(ManifestStruct, frozen=True):
     """Inputs used to decide whether an export can be reused."""
 
     row_count: int | None
@@ -381,7 +419,7 @@ class SkipCriteria(msgspec.Struct, frozen=True):
     force_full_export: bool
 
 
-class ServingSnapshotManifest(msgspec.Struct, ManifestBase, frozen=True):
+class ServingSnapshotManifest(ManifestStruct, frozen=True):
     """Manifest describing a published serving snapshot.
 
     Parameters
@@ -629,7 +667,7 @@ ManifestDerivationKind = Literal[
 InferenceStatus = Literal["inferred", "override", "disabled", "error", "pending"]
 
 
-class ExportArtifact(msgspec.Struct, ManifestBase, frozen=True):
+class ExportArtifact(ManifestStruct, frozen=True):
     """Specification for an export artifact (Parquet, JSONL, etc.).
 
     Export artifacts represent file outputs tied to table data, enabling
@@ -672,7 +710,7 @@ class ExportArtifact(msgspec.Struct, ManifestBase, frozen=True):
         return result
 
 
-class TableProvenance(msgspec.Struct, ManifestBase, frozen=True):
+class TableProvenance(ManifestStruct, frozen=True):
     """Describe schema provenance for a table or view.
 
     Parameters
@@ -730,7 +768,7 @@ class TableProvenance(msgspec.Struct, ManifestBase, frozen=True):
         return result
 
 
-class ArtifactProvenance(msgspec.Struct, ManifestBase, frozen=True):
+class ArtifactProvenance(ManifestStruct, frozen=True):
     """Describe lineage metadata for an export artifact.
 
     Parameters
@@ -758,7 +796,7 @@ class ArtifactProvenance(msgspec.Struct, ManifestBase, frozen=True):
         }
 
 
-class SchemaManifest(msgspec.Struct, ManifestBase, frozen=True):
+class SchemaManifest(ManifestStruct, frozen=True):
     """Stable manifest of schemas compiled for a build selection.
 
     The manifest captures table schemas, view schemas, and export
@@ -864,6 +902,7 @@ __all__ = [
     "InferenceStatus",
     "ManifestBase",
     "ManifestDerivationKind",
+    "ManifestStruct",
     "SchemaManifest",
     "ServingSnapshotManifest",
     "SkipCriteria",

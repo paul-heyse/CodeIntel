@@ -28,6 +28,7 @@ from codeintel.cli.options.registry import (
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
+from codeintel.cli.rendering.types import OutputFormat
 
 dataset_app = App(
     name="dataset",
@@ -46,7 +47,10 @@ DATASET_INFO_PATH: CommandPath = ("dataset", "info")
 DATASET_FLOW_PATH: CommandPath = ("dataset", "flow")
 DATASET_CONSTRAINTS_PATH: CommandPath = ("dataset", "constraints")
 
-_DATASET_LIST_FLAGS_FIELD = shared_flags_field(DATASET_LIST_PATH)
+_DATASET_LIST_FLAGS_FIELD = shared_flags_field(
+    DATASET_LIST_PATH,
+    default_output_format=OutputFormat.JSONL,
+)
 _DATASET_DESCRIBE_FLAGS_FIELD = shared_flags_field(DATASET_DESCRIBE_PATH)
 _DATASET_VERIFY_FLAGS_FIELD = shared_flags_field(DATASET_VERIFY_PATH)
 _DATASET_INFO_FLAGS_FIELD = shared_flags_field(DATASET_INFO_PATH)

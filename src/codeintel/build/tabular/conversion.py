@@ -78,6 +78,20 @@ def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:
     return _coerce_goid_columns(frame.lazy())
 
 
+def table_to_frame(table: pa.Table) -> pl.DataFrame:
+    """Convert an Arrow Table into a Polars DataFrame.
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame constructed from the Arrow table.
+    """
+    frame = pl.from_arrow(table)
+    if isinstance(frame, pl.Series):
+        frame = frame.to_frame()
+    return _coerce_goid_columns_frame(frame)
+
+
 def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
     """Convert an inferable tabular input to a Polars LazyFrame.
 
@@ -105,13 +119,70 @@ def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
     if isinstance(value, pa.RecordBatchReader):
         return arrow_reader_to_lazyframe(value)
     if isinstance(value, Iterable):
-        batches = list(value)
-        if not batches:
+        reader = _record_batch_reader_from_iterable(value)
+        if reader is None:
             return pl.DataFrame().lazy()
-        reader = pa.RecordBatchReader.from_batches(batches[0].schema, batches)
         return arrow_reader_to_lazyframe(reader)
     msg = f"Unsupported tabular input type: {type(value).__name__}"
     raise TypeError(msg)
+
+
+def tabular_to_frame(value: InferableTabularInput) -> pl.DataFrame:
+    """Convert an inferable tabular input to a Polars DataFrame.
+
+    Parameters
+    ----------
+    value
+        Tabular input to convert.
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame representation of the input.
+
+    Raises
+    ------
+    TypeError
+        If the input type cannot be coerced into a DataFrame.
+    """
+    if isinstance(value, pl.DataFrame):
+        return _coerce_goid_columns_frame(value)
+    if isinstance(value, pl.LazyFrame):
+        return _coerce_goid_columns(value).collect()
+    if isinstance(value, pa.Table):
+        return table_to_frame(value)
+    if isinstance(value, pa.RecordBatchReader):
+        return arrow_reader_to_lazyframe(value).collect()
+    if isinstance(value, Iterable):
+        reader = _record_batch_reader_from_iterable(value)
+        if reader is None:
+            return pl.DataFrame()
+        return arrow_reader_to_lazyframe(reader).collect()
+    msg = f"Unsupported tabular input type: {type(value).__name__}"
+    raise TypeError(msg)
+
+
+def _record_batch_reader_from_iterable(
+    batches: Iterable[pa.RecordBatch],
+) -> pa.RecordBatchReader | None:
+    iterator = iter(batches)
+    try:
+        first = next(iterator)
+    except StopIteration:
+        return None
+    if not isinstance(first, pa.RecordBatch):
+        msg = f"Unsupported tabular input type: {type(first).__name__}"
+        raise TypeError(msg)
+
+    def batch_iter() -> Iterable[pa.RecordBatch]:
+        yield first
+        for batch in iterator:
+            if not isinstance(batch, pa.RecordBatch):
+                msg = f"Unsupported tabular input type: {type(batch).__name__}"
+                raise TypeError(msg)
+            yield batch
+
+    return pa.RecordBatchReader.from_batches(first.schema, batch_iter())
 
 
 def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
@@ -129,10 +200,22 @@ def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
     )
 
 
+def _coerce_goid_columns_frame(frame: pl.DataFrame) -> pl.DataFrame:
+    goid_columns = [
+        col for col in frame.columns if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
+    ]
+    if not goid_columns:
+        return frame
+    return frame.with_columns(
+        [pl.col(name).cast(_GOID_COLUMN_TYPE, strict=False) for name in goid_columns]
+    )
+
+
 __all__ = [
     "arrow_reader_to_lazyframe",
     "relation_to_arrow_reader",
     "relation_to_polars_lazy",
     "table_to_lazyframe",
+    "tabular_to_frame",
     "tabular_to_lazyframe",
 ]

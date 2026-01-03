@@ -12,25 +12,13 @@ import logging
 import os
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
-from codeintel.cli.config.model import (
-    CliConfig,
-    ConfigLoadError,
-    ProgressConfig,
-    ProjectConfigSection,
-    RetryConfig,
-    StorageConfigSection,
-    TelemetryConfig,
-)
+import msgspec
+
+from codeintel.cli.config.model import CliConfig, ConfigLoadError, ConfigValidationError
 from codeintel.cli.config.validation import validate_config
-from codeintel.cli.core.parsing import parse_bool
-
-if TYPE_CHECKING:
-    from codeintel.cli.config.model import (
-        LogLevel,
-        OutputFormat,
-    )
+from codeintel.cli.core.parsing import parse_bool_or_none
 
 LOG = logging.getLogger(__name__)
 
@@ -47,10 +35,6 @@ _ENV_OVERRIDE_KEYS: dict[str, str] = {
     "CODEINTEL_TELEMETRY_ENDPOINT": "telemetry.endpoint",
     "CODEINTEL_TELEMETRY_SERVICE_NAME": "telemetry.service_name",
 }
-
-
-VALID_OUTPUT_FORMATS = {"text", "json"}
-VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 
 def load_config(
@@ -113,7 +97,7 @@ def dict_to_config(
     data: dict[str, object],
     sources: tuple[str, ...] = (),
 ) -> CliConfig:
-    """Convert dictionary to CliConfig with type coercion.
+    """Convert dictionary to CliConfig with strict coercion.
 
     Parameters
     ----------
@@ -126,192 +110,32 @@ def dict_to_config(
     -------
     CliConfig
         Typed configuration instance.
+
+    Raises
+    ------
+    ConfigLoadError
+        If the configuration cannot be coerced into CliConfig.
     """
-    progress = _parse_progress(data)
-    telemetry = _parse_telemetry(data)
-    retry = _parse_retry(data)
-    storage = _parse_storage(data)
-    project = _parse_project(data)
-    output_format_raw = _get_string(data, "output_format", "text")
-    output_format_value: OutputFormat = cast(
-        "OutputFormat",
-        output_format_raw if output_format_raw in VALID_OUTPUT_FORMATS else "text",
-    )
-    log_level_raw = _get_string(data, "log_level", "WARNING")
-    log_level_value: LogLevel = cast(
-        "LogLevel", log_level_raw if log_level_raw in VALID_LOG_LEVELS else "WARNING"
-    )
-
-    return CliConfig(
-        output_format=output_format_value,
-        color=_get_bool(data, "color", default=True),
-        log_level=log_level_value,
-        progress=progress,
-        telemetry=telemetry,
-        retry=retry,
-        storage=storage,
-        project=project,
-        _sources=sources,
-    )
-
-
-def _parse_progress(data: dict[str, object]) -> ProgressConfig:
-    """Parse progress config section.
-
-    Parameters
-    ----------
-    data
-        Raw configuration dictionary.
-
-    Returns
-    -------
-    ProgressConfig
-        Parsed progress configuration.
-    """
-    progress_data = data.get("progress", {})
-    if isinstance(progress_data, dict):
-        return ProgressConfig(
-            enabled=_get_bool(progress_data, "enabled", default=True),
-            threshold=_get_float(progress_data, "threshold", default=2.0),
+    try:
+        config = msgspec.convert(
+            data,
+            type=CliConfig,
+            strict=True,
+            dec_hook=_decode_config_value,
         )
-    return ProgressConfig()
-
-
-def _parse_telemetry(data: dict[str, object]) -> TelemetryConfig:
-    """Parse telemetry config section.
-
-    Parameters
-    ----------
-    data
-        Raw configuration dictionary.
-
-    Returns
-    -------
-    TelemetryConfig
-        Parsed telemetry configuration.
-    """
-    telemetry_data = data.get("telemetry", {})
-    if isinstance(telemetry_data, dict):
-        return TelemetryConfig(
-            enabled=_get_bool(telemetry_data, "enabled", default=True),
-            endpoint=_get_optional_string(telemetry_data, "endpoint"),
-            service_name=_get_string(telemetry_data, "service_name", "codeintel-cli"),
+    except msgspec.ValidationError as exc:
+        error = ConfigValidationError(
+            path="config",
+            message=str(exc),
+            code="invalid_type",
+            value=None,
         )
-    return TelemetryConfig()
+        message = "Configuration coercion failed"
+        raise ConfigLoadError(message, errors=[error]) from exc
 
-
-def _parse_retry(data: dict[str, object]) -> RetryConfig:
-    """Parse retry config section.
-
-    Parameters
-    ----------
-    data
-        Raw configuration dictionary.
-
-    Returns
-    -------
-    RetryConfig
-        Parsed retry configuration.
-    """
-    retry_data = data.get("retry", {})
-    if isinstance(retry_data, dict):
-        return RetryConfig(
-            max_attempts=_get_int(retry_data, "max_attempts", default=3),
-            initial_delay=_get_float(retry_data, "initial_delay", default=0.5),
-            backoff_factor=_get_float(retry_data, "backoff_factor", default=2.0),
-            max_delay=_get_float(retry_data, "max_delay", default=30.0),
-        )
-    return RetryConfig()
-
-
-def _parse_storage(data: dict[str, object]) -> StorageConfigSection:
-    """Parse storage config section.
-
-    Parameters
-    ----------
-    data
-        Raw configuration dictionary.
-
-    Returns
-    -------
-    StorageConfigSection
-        Parsed storage configuration.
-    """
-    storage_data = data.get("storage", {})
-    if isinstance(storage_data, dict):
-        db_path = _get_optional_string(storage_data, "db_path")
-        cache_dir = _get_optional_string(storage_data, "cache_dir")
-        return StorageConfigSection(
-            db_path=Path(db_path) if db_path else None,
-            cache_dir=Path(cache_dir) if cache_dir else None,
-            max_connections=_get_int(storage_data, "max_connections", default=5),
-        )
-    return StorageConfigSection()
-
-
-def _parse_project(data: dict[str, object]) -> ProjectConfigSection:
-    """Parse project config section.
-
-    Parameters
-    ----------
-    data
-        Raw configuration dictionary.
-
-    Returns
-    -------
-    ProjectConfigSection
-        Parsed project configuration.
-    """
-    project_data = data.get("project", {})
-    if isinstance(project_data, dict):
-        root = _get_optional_string(project_data, "root")
-        return ProjectConfigSection(
-            name=_get_optional_string(project_data, "name"),
-            repo=_get_optional_string(project_data, "repo"),
-            root=Path(root) if root else None,
-            commit=_get_optional_string(project_data, "commit"),
-        )
-    return ProjectConfigSection()
-
-
-def _get_string(data: dict[str, object], key: str, default: str) -> str:
-    """Get string value from dict with default.
-
-    Parameters
-    ----------
-    data
-        Dictionary to get value from.
-    key
-        Key to look up.
-    default
-        Default value if not found.
-
-    Returns
-    -------
-    str
-        String value.
-    """
-    value = data.get(key, default)
-    return str(value) if value is not None else default
-
-
-def _get_optional_string(data: dict[str, object], key: str) -> str | None:
-    """Get optional string value from dict.
-
-    Parameters
-    ----------
-    data
-        Dictionary to get value from.
-    key
-        Key to look up.
-
-    Returns
-    -------
-    str | None
-        String value or None.
-    """
-    value = data.get(key)
-    return str(value) if value is not None else None
+    if sources:
+        return config.__replace__(_sources=sources)
+    return config
 
 
 def _load_env_overrides() -> dict[str, object]:
@@ -348,79 +172,25 @@ def _set_nested_override(
     cursor[parts[-1]] = value
 
 
-def _get_bool(data: dict[str, object], key: str, *, default: bool) -> bool:
-    """Get boolean value from dict with default.
-
-    Parameters
-    ----------
-    data
-        Dictionary to get value from.
-    key
-        Key to look up.
-    default
-        Default value if not found.
-
-    Returns
-    -------
-    bool
-        Boolean value.
-    """
-    value = data.get(key, default)
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return parse_bool(value)
-    return bool(value)
-
-
-def _get_int(data: dict[str, object], key: str, *, default: int) -> int:
-    """Get integer value from dict with default.
-
-    Parameters
-    ----------
-    data
-        Dictionary to get value from.
-    key
-        Key to look up.
-    default
-        Default value if not found.
-
-    Returns
-    -------
-    int
-        Integer value.
-    """
-    value = data.get(key, default)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
+def _decode_config_value(target_type: type[object], value: object) -> object:
+    if target_type is Path:
+        if isinstance(value, Path):
+            return value
+        if isinstance(value, str):
+            return Path(value)
+        msg = f"Expected string for path, got {type(value).__name__}"
+        raise TypeError(msg)
+    if target_type is bool and isinstance(value, str):
+        parsed = parse_bool_or_none(value, default=None)
+        if parsed is None:
+            msg = f"Invalid boolean value: {value}"
+            raise ValueError(msg)
+        return parsed
+    if target_type is int and isinstance(value, str):
         return int(value)
-    return default
-
-
-def _get_float(data: dict[str, object], key: str, *, default: float) -> float:
-    """Get float value from dict with default.
-
-    Parameters
-    ----------
-    data
-        Dictionary to get value from.
-    key
-        Key to look up.
-    default
-        Default value if not found.
-
-    Returns
-    -------
-    float
-        Float value.
-    """
-    value = data.get(key, default)
-    if isinstance(value, (int, float)):
+    if target_type is float and isinstance(value, str):
         return float(value)
-    if isinstance(value, str):
-        return float(value)
-    return default
+    return value
 
 
 def config_to_dict(config: CliConfig) -> dict[str, object]:

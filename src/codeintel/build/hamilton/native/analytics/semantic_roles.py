@@ -26,7 +26,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import (
     empty_frame_for_table,
     rows_to_frame,
@@ -87,9 +87,9 @@ def semantic_role_module_frames(
     q__analytics__function_ast_features: InferableTabularInput,
 ) -> SemanticRoleModuleFrames:
     return SemanticRoleModuleFrames(
-        modules_frame=tabular_to_lazyframe(q__core__modules).collect(),
-        goids_frame=tabular_to_lazyframe(q__core__goids).collect(),
-        features_frame=tabular_to_lazyframe(q__analytics__function_ast_features).collect(),
+        modules_frame=tabular_to_frame(q__core__modules),
+        goids_frame=tabular_to_frame(q__core__goids),
+        features_frame=tabular_to_frame(q__analytics__function_ast_features),
     )
 
 
@@ -98,8 +98,8 @@ def semantic_role_effect_frames(
     q__analytics__function_contracts: InferableTabularInput,
 ) -> SemanticRoleEffectFrames:
     return SemanticRoleEffectFrames(
-        function_effects_frame=tabular_to_lazyframe(q__analytics__function_effects).collect(),
-        function_contracts_frame=tabular_to_lazyframe(q__analytics__function_contracts).collect(),
+        function_effects_frame=tabular_to_frame(q__analytics__function_effects),
+        function_contracts_frame=tabular_to_frame(q__analytics__function_contracts),
     )
 
 
@@ -107,7 +107,7 @@ def semantic_role_graph_frames(
     q__analytics__graph_metrics_functions: InferableTabularInput,
 ) -> SemanticRoleGraphFrames:
     return SemanticRoleGraphFrames(
-        graph_metrics_frame=tabular_to_lazyframe(q__analytics__graph_metrics_functions).collect(),
+        graph_metrics_frame=tabular_to_frame(q__analytics__graph_metrics_functions),
     )
 
 

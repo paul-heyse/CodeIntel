@@ -7,12 +7,16 @@ are provided for common patterns.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 import msgspec
 
 from codeintel.cli.core.results import ResultBase
+from codeintel.core.columnar.stream import ColumnarStream
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.query_results import records_from_arrow_reader
 
 if TYPE_CHECKING:
     from codeintel.build.planning.model import PlanTargetEntry
@@ -63,6 +67,37 @@ class ListResult[T](ResultBase):
             Result with items and count.
         """
         return cls(items=items, count=len(items))
+
+
+@dataclass(frozen=True)
+class TabularResult:
+    """Tabular result wrapper for streaming output.
+
+    Parameters
+    ----------
+    stream
+        Columnar stream for the result data.
+    metadata
+        Optional metadata to include with JSON output.
+    """
+
+    stream: ColumnarStream
+    metadata: dict[str, object] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        """Materialize the stream into JSON-friendly output.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary containing data and optional metadata.
+        """
+        reader = self.stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        records = records_from_arrow_reader(reader)
+        payload: dict[str, object] = {"data": records}
+        if self.metadata:
+            payload["metadata"] = self.metadata
+        return payload
 
 
 class JobInfo(ResultBase):
@@ -1203,27 +1238,6 @@ class DatasetDiffResult(ResultBase):
     has_differences: bool
 
 
-class DatasetParquetMigrationResult(ResultBase):
-    """Result from dataset parquet migration command.
-
-    Parameters
-    ----------
-    dataset_root_dir
-        Dataset root directory where snapshots were written.
-    snapshot_id
-        Snapshot identifier used for the parquet datasets.
-    exported
-        Table keys written to parquet.
-    skipped
-        Table keys skipped during migration.
-    """
-
-    dataset_root_dir: str
-    snapshot_id: str
-    exported: list[str]
-    skipped: list[str]
-
-
 class DatasetScaffoldResult(ResultBase):
     """Result from dataset scaffold command.
 
@@ -1440,7 +1454,6 @@ __all__ = [
     "DatasetInfoResult",
     "DatasetLintResult",
     "DatasetListResult",
-    "DatasetParquetMigrationResult",
     "DatasetScaffoldResult",
     "DatasetSnapshotResult",
     "DatasetSummary",
@@ -1481,6 +1494,7 @@ __all__ = [
     "StorageStatusResult",
     "SubsystemDetailResult",
     "SubsystemListResult",
+    "TabularResult",
     "TargetOriginInfo",
     "TargetOriginListResult",
     "ValidateMacrosResult",

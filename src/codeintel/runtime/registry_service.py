@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-_REGISTRY_RESOURCES = Path(files("codeintel.core.registry"))
+_REGISTRY_RESOURCES = Path(str(files("codeintel.core.registry")))
 _DAG_OUTPUT_INVENTORY_PATH = _REGISTRY_RESOURCES / "dag_output_inventory.yaml"
 _INGESTION_TOOLING_INVENTORY_PATH = _REGISTRY_RESOURCES / "ingestion_tooling_inventory.yaml"
 _VALID_MATERIALIZATIONS = {"artifact", "mixed", "table"}

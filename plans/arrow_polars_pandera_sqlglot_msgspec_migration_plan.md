@@ -44,96 +44,136 @@ build/serving (orchestration, registry, runtime composition)
 ## Workstreams
 
 ### Workstream A: Core data-plane and guardrails
-1. Add guardrails to prevent JSON usage in core except for boundary modules.
-   - Forbid `json`/`orjson` usage in `src/codeintel/core` except:
-     - `src/codeintel/core/helpers/json.py`
-     - `src/codeintel/core/exports/*`
-     - `src/codeintel/core/errors/problem_details.py`
-   - Forbid `Column("..._json", "JSON")` in core schema registries.
-2. Add a guardrail that forbids `Table.to_pylist()` in core except exports/tests.
-3. Promote Arrow schema metadata validation to an enforced gate.
-   - Use `schema_metadata_errors` before materialization.
-4. Add a core “data format policy” doc update checkpoint.
+#### Completed
+- [x] Hardened the JSON column guardrail regex in `tools/guardrails.py`.
+- [x] Replaced direct JSON/orjson usage in core utilities with msgspec encoding
+  (`src/codeintel/core/columnar/schema_alignment.py`,
+  `src/codeintel/core/cache/keying.py`,
+  `src/codeintel/core/hashing/fingerprint.py`).
+
+#### Outstanding checklist
+- [ ] Add an import-level guardrail to forbid `json`/`orjson` in `src/codeintel/core`,
+  with an explicit allowlist for boundary modules (`core/helpers/json.py`,
+  `core/exports/*`, `core/errors/problem_details.py`).
+- [ ] Enforce “no JSON columns in core registries” by scanning
+  `src/codeintel/core/schemas/output_registry.py` and
+  `src/codeintel/core/schemas/table_registry.py`.
+- [ ] Add a guardrail that forbids `Table.to_pylist()` in core (allow only
+  exports/tests).
+- [ ] Gate Arrow schema metadata validation (`schema_metadata_errors`) before
+  materialization in storage/build materializers.
+- [ ] Update `docs/core_data_format_policy.md` and add a documentation checkpoint
+  (preflight or CI) to keep policy in sync.
 
 ### Workstream B: msgspec contract/model cutover
-1. Convert manifest and contract models to msgspec Structs.
-   - Target modules:
-     - `src/codeintel/core/manifests.py`
-     - `src/codeintel/core/schemas/contract_primitives.py`
-     - `src/codeintel/core/schemas/contract_serde.py`
-   - Replace `to_json_obj` with msgspec serialization helpers.
-2. Use msgspec JSON schema export for contract schemas.
-   - Replace manual JSON schema generation where applicable.
-3. Introduce msgspec-based decode/encode utilities for boundary parsing.
-   - Prefer `msgspec.json.Decoder(type=..., strict=True)` for inbound.
-4. Add conversion helpers to normalize legacy JSON payloads at ingress only.
+#### Completed
+- [x] Added msgspec payload serialization in
+  `src/codeintel/core/schemas/contract_serde.py`.
+- [x] Updated `src/codeintel/build/meta/contract_catalog.py` to emit msgspec
+  payloads.
+- [x] Updated `src/codeintel/storage/contracts/provider.py` to decode payloads
+  and use `msgspec.structs.replace`.
+- [x] Added msgspec-based payload encode/decode with JSON fallback in
+  `src/codeintel/core/helpers/payload.py` and
+  `src/codeintel/core/helpers/json.py`.
+- [x] Updated analytics read paths to decode BLOB payloads
+  (`src/codeintel/build/hamilton/native/analytics/semantic_roles.py`,
+  `src/codeintel/build/hamilton/native/analytics/entrypoints.py`,
+  `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`).
+
+#### Outstanding checklist
+- [ ] Convert `src/codeintel/core/manifests.py` to msgspec Structs and replace
+  dataclass serializers.
+- [ ] Convert `src/codeintel/core/schemas/contract_primitives.py` to msgspec
+  Structs; remove dataclass-only helpers.
+- [ ] Replace contract JSON schema export with msgspec JSON schema generation
+  where appropriate.
+- [ ] Introduce strict boundary decoders
+  (`msgspec.json.Decoder(type=..., strict=True)`), and centralize ingress
+  normalization to avoid JSON objects after decode.
+- [ ] Add explicit legacy JSON normalization helpers for ingress-only paths.
+- [ ] Update remaining call sites to use `contract_payload_*` helpers.
+- [ ] Add msgspec round-trip tests for contracts/manifests and boundary decoders.
 
 ### Workstream C: Arrow schema and row model migration
-1. Replace JSON columns with Arrow `struct`, `map`, `list`.
-   - Target schemas:
-     - `src/codeintel/core/schemas/output_registry.py`
-     - `src/codeintel/core/schemas/table_registry.py`
-2. Replace `object` JSON row fields with structured types.
-   - Target models:
-     - `src/codeintel/core/schemas/generated_rows/core.py`
-     - `src/codeintel/core/schemas/generated_rows/graph.py`
-     - `src/codeintel/core/schemas/generated_rows/analytics.py`
-3. Add row model Structs (msgspec) for generated rows.
-4. Ensure Arrow schema metadata includes:
-   - `codeintel.schema_hash`
-   - `codeintel.schema_digest`
-   - Dataset provenance keys used in schema alignment.
+#### Completed
+- [x] BLOB payloads are now encoded at write time for callgraph/CFG/tree-sitter
+  ingestion and associated tests (msgspec payloads instead of JSON objects).
+
+#### Outstanding checklist
+- [ ] Replace JSON columns with Arrow `struct`/`map`/`list` in:
+  `src/codeintel/core/schemas/output_registry.py` and
+  `src/codeintel/core/schemas/table_registry.py`.
+- [ ] Regenerate generated row models to match Arrow-native nested types:
+  `src/codeintel/core/schemas/generated_rows/core.py`,
+  `src/codeintel/core/schemas/generated_rows/graph.py`,
+  `src/codeintel/core/schemas/generated_rows/analytics.py`.
+- [ ] Add msgspec Struct row models for generated rows and adapters for
+  typed row construction.
+- [ ] Ensure Arrow schema metadata includes `codeintel.schema_hash`,
+  `codeintel.schema_digest`, and dataset provenance keys.
+- [ ] Add unit tests for Arrow schema metadata validation and row model
+  alignment.
 
 ### Workstream D: Streaming-first Arrow IO
-1. Replace internal table materialization with stream readers.
-   - Prefer `pyarrow.RecordBatchReader.from_stream`.
-2. Use dataset scanners for streaming reads.
-   - `pyarrow.dataset.Scanner.to_batches()` or `.scan_batches()`.
-3. Replace table-wide IO in core with:
-   - `pyarrow.ipc.new_stream` for in-memory streaming transport.
-   - `pyarrow.fs` input/output streams for IO.
-4. Ensure export-only modules can still emit JSON/JSONL.
+#### Outstanding checklist
+- [ ] Audit core table materialization paths and replace table-wide operations
+  with `RecordBatchReader`-based streaming readers.
+- [ ] Replace eager dataset reads with `pyarrow.dataset.Scanner` streaming
+  (`to_batches()` / `scan_batches()`).
+- [ ] Adopt Arrow IPC streaming in core (`pyarrow.ipc.new_stream`) for
+  in-memory transport.
+- [ ] Switch file IO to `pyarrow.fs` streams; ensure no `Table.to_pylist` usage
+  in core.
+- [ ] Verify export-only modules still emit JSON/JSONL without leaking JSON into
+  internal paths.
 
 ### Workstream E: Polars lazy pipeline adoption
-1. Replace eager `DataFrame` operations in core with `LazyFrame`.
-2. Use `scan_parquet`/`scan_ipc` for IO nodes, not `read_*`.
-3. Use streaming sinks:
-   - `LazyFrame.sink_parquet` for outputs.
-   - `collect_batches` only when Python-level batch logic is required.
-4. Add plan inspection gates in debug paths:
-   - `.show_graph(plan_stage="physical", engine="streaming")` where useful.
+#### Outstanding checklist
+- [ ] Inventory core transforms using eager `DataFrame` and migrate to `LazyFrame`.
+- [ ] Replace `read_*` with `scan_parquet`/`scan_ipc` in core IO nodes.
+- [ ] Use streaming sinks (`LazyFrame.sink_parquet`) for outputs; reserve
+  `collect_batches` for unavoidable Python batch logic.
+- [ ] Add plan inspection in debug paths (physical plan, streaming engine).
+- [ ] Add streaming plan tests to confirm non-materialized execution.
 
 ### Workstream F: Pandera contract enforcement
-1. Add contract validation profiles per stage:
-   - Ingest: schema-only
-   - Pre-materialize: schema + data
-   - Export: schema + data (strict)
-2. Implement a core validation engine with backend adapters:
-   - `pandera.polars` as the primary backend.
-3. Add contract compile checks to CI for all registered schemas.
+#### Outstanding checklist
+- [ ] Define contract validation profiles (ingest, pre-materialize, export) and
+  expected strictness per stage.
+- [ ] Implement a core validation engine with `pandera.polars` adapters and
+  explicit streaming-friendly entry points.
+- [ ] Wire validation into dataset materialization boundaries (pre-write and
+  export).
+- [ ] Add CI checks that compile/validate Pandera schemas for all contracts.
+- [ ] Add tests for schema-only vs schema+data validation behavior.
 
 ### Workstream G: SQLGlot canonicalization
-1. Standardize query AST usage in `src/codeintel/core/queries`.
-2. Replace string-only query handling with AST-first:
-   - `parse_one`, `exp`, `transform`, `optimize`.
-3. Make SQL string rendering a storage-only boundary.
-4. Add query diff utilities for introspection (optional).
+#### Outstanding checklist
+- [ ] Standardize AST-first query handling in `src/codeintel/core/queries`.
+- [ ] Replace string-only query handling with SQLGlot AST operations
+  (`parse_one`, `exp`, `transform`, `optimize`).
+- [ ] Restrict SQL string rendering to storage boundaries only.
+- [ ] Add query diff utilities for introspection and regression tests.
 
 ## Migration Sequencing
 
 ### Phase 0: Guardrails and policy
-- Add guardrails in `tools/guardrails.py`.
-- Update `docs/core_data_format_policy.md` to formalize Arrow-first rules.
+- [x] Harden JSON column guardrail regex in `tools/guardrails.py`.
+- [ ] Add JSON import guardrails and `Table.to_pylist` guardrails in core.
+- [ ] Update `docs/core_data_format_policy.md` to formalize Arrow-first rules.
 
 ### Phase 1: msgspec in core contracts
-- Convert manifests/contracts to msgspec.
-- Replace JSON serialization helpers.
-- Update call sites to use msgspec encoding/decoding.
+- [x] Switch contract payload serialization to msgspec.
+- [ ] Convert manifests/contracts to msgspec Structs.
+- [ ] Replace remaining JSON serialization helpers.
+- [ ] Update call sites to use msgspec encoding/decoding consistently.
 
 ### Phase 2: Arrow schema and row models
-- Replace JSON columns with Arrow types.
-- Update generated row models and schema registries.
-- Backfill schema metadata validation.
+- [x] Encode BLOB payloads in ingestion write paths.
+- [ ] Replace JSON columns with Arrow types.
+- [ ] Update generated row models and schema registries.
+- [ ] Backfill schema metadata validation.
 
 ### Phase 3: Streaming IO adoption
 - Replace `to_table`/`to_pylist` paths with batch readers.
@@ -199,10 +239,12 @@ build/serving (orchestration, registry, runtime composition)
   - Mitigation: Add instrumentation around batch processing and plan inspection.
 
 ## Deliverables Checklist
-- Guardrails enforcing Arrow-first and JSON-boundary-only.
-- msgspec-based manifests/contracts in core.
-- Arrow-native row models and schema registries.
-- Streaming-first dataset IO utilities.
-- Polars lazy pipeline conversions.
-- Pandera validation integration.
-- SQLGlot AST canonicalization in core queries.
+- [x] Hardened JSON column guardrail regex (`tools/guardrails.py`).
+- [x] Msgspec payload serialization for contracts (`core/schemas/contract_serde.py`).
+- [ ] Guardrails enforcing Arrow-first and JSON-boundary-only across core.
+- [ ] msgspec-based manifests/contracts in core.
+- [ ] Arrow-native row models and schema registries.
+- [ ] Streaming-first dataset IO utilities.
+- [ ] Polars lazy pipeline conversions.
+- [ ] Pandera validation integration.
+- [ ] SQLGlot AST canonicalization in core queries.

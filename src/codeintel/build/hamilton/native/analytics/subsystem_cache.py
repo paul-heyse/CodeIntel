@@ -6,7 +6,7 @@ import sys
 
 import polars as pl
 
-from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_cache_rows
+from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_cache_frame
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -18,7 +18,6 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -51,8 +50,11 @@ def subsystem_profile_cache__base(
     """
     subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems)
     metrics_frame = tabular_to_lazyframe(q__analytics__subsystem_graph_metrics)
-    rows = build_subsystem_profile_cache_rows(env.snapshot, subsystems_frame, metrics_frame)
-    return rows_to_frame(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY, rows)
+    return build_subsystem_profile_cache_frame(
+        env.snapshot,
+        subsystems_frame=subsystems_frame,
+        subsystem_graph_metrics_frame=metrics_frame,
+    )
 
 
 _MODULE = sys.modules[__name__]

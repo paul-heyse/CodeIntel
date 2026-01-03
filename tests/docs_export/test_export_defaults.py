@@ -17,7 +17,7 @@ def _require(*, condition: bool, message: str) -> None:
 def test_default_validation_schemas_match_dataset_contract() -> None:
     """Default validation schemas should mirror the dataset contract mapping."""
     expected = sorted(
-        contract.table_key for contract in iter_contracts() if contract.json_schema_id is not None
+        contract.table_key for contract in iter_contracts() if contract.schema is not None
     )
     dynamic = sorted(default_validation_schemas())
     _require(

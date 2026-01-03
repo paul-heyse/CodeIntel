@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import math
 from typing import TYPE_CHECKING, cast
 
+from codeintel.core.helpers.json import decode_json
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 from tests._helpers.assertions import expect_true
@@ -15,6 +16,8 @@ from tests._helpers.fixtures.snapshots import SnapshotVariant
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable, Mapping
     from pathlib import Path
+
+    from duckdb import DuckDBPyConnection
 
 
 def _normalize_callee(value: object) -> int | None:
@@ -65,13 +68,10 @@ def _assert_unresolved_edge(edge_records: list[dict[str, object]]) -> None:
     )
     for edge in edges:
         evidence = edge.get("evidence_json")
-        evidence_obj: dict[str, object] | None
-        if isinstance(evidence, str):
-            evidence_obj = cast("dict[str, object]", json.loads(evidence))
-        elif isinstance(evidence, dict):
-            evidence_obj = cast("dict[str, object]", evidence)
-        else:
-            evidence_obj = None
+        evidence_obj: dict[str, object] | None = None
+        parsed = decode_json(evidence)
+        if isinstance(parsed, dict):
+            evidence_obj = cast("dict[str, object]", parsed)
         if evidence_obj is None:
             expect_true(
                 evidence_obj is not None, message="expected evidence_json on unresolved edge"
@@ -81,6 +81,77 @@ def _assert_unresolved_edge(edge_records: list[dict[str, object]]) -> None:
         expect_true(
             scip_candidates == ["pkg/a.py"],
             message=f"expected SCIP candidates ['pkg/a.py'], got {scip_candidates}",
+        )
+
+
+def _fetch_goid(
+    con: DuckDBPyConnection,
+    *,
+    repo: str,
+    commit: str,
+    qualname: str,
+) -> int:
+    """Return the goid for a qualname.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection for the fixture.
+    repo
+        Repository name.
+    commit
+        Commit identifier.
+    qualname
+        Fully qualified symbol name.
+
+    Returns
+    -------
+    int
+        Goid value for the qualname.
+
+    Raises
+    ------
+    AssertionError
+        If the expected goid is missing from the database.
+    """
+    row = con.execute(
+        """
+        SELECT goid_h128
+        FROM core.goids
+        WHERE repo = ? AND commit = ? AND qualname = ?
+        LIMIT 1
+        """,
+        [repo, commit, qualname],
+    ).fetchone()
+    if row is None:
+        message = f"Expected goid for {qualname}"
+        raise AssertionError(message)
+    return int(row[0])
+
+
+def _ensure_unresolved_edges_have_evidence(con: DuckDBPyConnection) -> None:
+    """Ensure unresolved edges include evidence metadata for assertions."""
+    rows = con.execute(
+        """
+        SELECT rowid, evidence_json
+        FROM graph.call_graph_edges
+        WHERE callee_goid_h128 IS NULL
+        """
+    ).fetchall()
+    for rowid, evidence in rows:
+        parsed_value = decode_json(evidence)
+        parsed: dict[str, object] = parsed_value if isinstance(parsed_value, dict) else {}
+        if "scip_candidates" not in parsed:
+            parsed["scip_candidates"] = ["pkg/a.py"]
+        if "callee_name" not in parsed:
+            parsed["callee_name"] = "unknown_call"
+        if "attr_chain" not in parsed:
+            parsed["attr_chain"] = ["unknown_call"]
+        if "resolved_via" not in parsed:
+            parsed["resolved_via"] = "unresolved"
+        con.execute(
+            "UPDATE graph.call_graph_edges SET evidence_json = ? WHERE rowid = ?",
+            [encode_payload(parsed), rowid],
         )
 
 
@@ -114,51 +185,9 @@ def test_callgraph_handles_aliases_and_relative_imports(
     con = gateway.con
     insert_symbol_use_edges(gateway, [("sym", "pkg/a.py", "pkg/b.py", False, False)])
 
-    foo_row = con.execute(
-        """
-        SELECT goid_h128
-        FROM core.goids
-        WHERE repo = ? AND commit = ? AND qualname = 'pkg.a.foo'
-        LIMIT 1
-        """,
-        [repo, commit],
-    ).fetchone()
-    helper_row = con.execute(
-        """
-        SELECT goid_h128
-        FROM core.goids
-        WHERE repo = ? AND commit = ? AND qualname = 'pkg.a.C.helper'
-        LIMIT 1
-        """,
-        [repo, commit],
-    ).fetchone()
-    if foo_row is None or helper_row is None:
-        message = "Expected goids for pkg.a.foo and pkg.a.C.helper"
-        raise AssertionError(message)
-    foo_goid = int(foo_row[0])
-    helper_goid = int(helper_row[0])
-
-    rows = con.execute(
-        """
-        SELECT rowid, evidence_json
-        FROM graph.call_graph_edges
-        WHERE callee_goid_h128 IS NULL
-        """
-    ).fetchall()
-    for rowid, evidence in rows:
-        parsed: dict[str, object] = json.loads(evidence) if evidence else {}
-        if "scip_candidates" not in parsed:
-            parsed["scip_candidates"] = ["pkg/a.py"]
-        if "callee_name" not in parsed:
-            parsed["callee_name"] = "unknown_call"
-        if "attr_chain" not in parsed:
-            parsed["attr_chain"] = ["unknown_call"]
-        if "resolved_via" not in parsed:
-            parsed["resolved_via"] = "unresolved"
-        con.execute(
-            "UPDATE graph.call_graph_edges SET evidence_json = ? WHERE rowid = ?",
-            [json.dumps(parsed), rowid],
-        )
+    foo_goid = _fetch_goid(con, repo=repo, commit=commit, qualname="pkg.a.foo")
+    helper_goid = _fetch_goid(con, repo=repo, commit=commit, qualname="pkg.a.C.helper")
+    _ensure_unresolved_edges_have_evidence(con)
 
     df_edges = con.execute(
         "SELECT caller_goid_h128, callee_goid_h128, kind, resolved_via, evidence_json "

@@ -899,6 +899,7 @@ def _build_schema_index(
         env_provider=lambda: env,
     )
     _prefill_schema_index(env=env, schema_index=schema_index)
+    _require_schema_authority(schema_index=schema_index, catalog=catalog)
     return schema_index
 
 
@@ -927,6 +928,30 @@ def _prefill_schema_index(*, env: BuildEnv, schema_index: SchemaIndex) -> None:
         return
     if prefetched:
         log.info("schema.index.prefill loaded %d schemas", prefetched)
+
+
+def _require_schema_authority(*, schema_index: SchemaIndex, catalog: DagCatalog) -> None:
+    missing: list[str] = []
+    details: list[str] = []
+    for table_key in sorted(catalog.table_outputs):
+        schema = schema_index.get_table_schema(
+            table_key,
+            allow_inference=True,
+            perform_inference=True,
+        )
+        if schema is not None:
+            continue
+        missing.append(table_key)
+        error = schema_index.get_inference_error(table_key)
+        if error:
+            details.append(f"{table_key}: {error}")
+        else:
+            details.append(table_key)
+    if not missing:
+        return
+    detail_lines = "\n".join(f"- {line}" for line in details)
+    msg = "Missing TableSchema definitions for DAG outputs:\n" + detail_lines
+    raise ValueError(msg)
 
 
 def _runtime_key(

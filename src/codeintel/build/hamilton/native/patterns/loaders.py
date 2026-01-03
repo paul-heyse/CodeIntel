@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import polars as pl
 import pyarrow as pa
 
 from codeintel.build.hamilton.env import BuildEnv
@@ -14,15 +15,31 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.naming import dataset_node, to_node_name
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.tagging import tag_loader_query
+from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.core.columnar.schema_alignment import align_reader_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetScanOptions,
-    scan_dataset,
     scan_dataset_reader,
 )
 from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.validation.mode import ContractValidationMode
+from codeintel.core.validation.profiles import ValidationProfile
+from codeintel.core.validation.schema_constraints import schema_errors, schema_metadata_errors
+from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
+    ValidationMode,
+    validate_record_batch_reader,
+)
+
+if TYPE_CHECKING:
+    from codeintel.core.schemas.primitives import TableSchema
+
+log = logging.getLogger(__name__)
 
 
 def _default_loader_name(*, target: str, table_key: str) -> str:
@@ -64,11 +81,62 @@ def _snapshot_dir(
 
 def _scan_options(env: BuildEnv, table_key: str) -> ArrowDatasetScanOptions:
     schema_service = get_schema_service()
+    arrow_schema = schema_service.get_arrow_schema(table_key)
+    if arrow_schema is None:
+        table_schema = schema_service.get_table_schema(table_key)
+        if table_schema is not None:
+            arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
     return ArrowDatasetScanOptions(
         batch_size=DEFAULT_ARROW_BATCH_SIZE,
-        schema=schema_service.get_arrow_schema(table_key),
+        schema=arrow_schema,
         schema_promote_options=env.settings.schema_promote_options,
     )
+
+
+def _contract_schema_for_table(
+    table_key: str,
+) -> tuple[TableSchema, pa.Schema]:
+    schema_service = get_schema_service()
+    table_schema = schema_service.get_table_schema(table_key)
+    if table_schema is None:
+        msg = f"Missing TableSchema for {table_key}"
+        raise ValueError(msg)
+    arrow_schema = schema_service.get_arrow_schema(table_key)
+    if arrow_schema is None:
+        arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+    return table_schema, arrow_schema
+
+
+def _validation_profile_for_table(table_key: str) -> ValidationProfile | None:
+    try:
+        contract = get_contract_for_table_key(table_key)
+    except (KeyError, ValueError, RuntimeError):
+        return None
+    return contract.validation_profile
+
+
+def _validation_mode(env: BuildEnv) -> ValidationMode:
+    if env.validation_mode == ContractValidationMode.OFF:
+        return "skip"
+    if env.validation_mode == ContractValidationMode.LENIENT:
+        return "warn"
+    return "strict"
+
+
+def _handle_schema_errors(
+    *,
+    table_key: str,
+    errors: list[str],
+    mode: ValidationMode,
+) -> None:
+    if not errors or mode == "skip":
+        return
+    if mode == "warn":
+        for error in errors:
+            log.warning("Input schema mismatch for %s: %s", table_key, error)
+        return
+    message = f"Schema mismatch for {table_key}: " + "; ".join(errors)
+    raise ValueError(message)
 
 
 def load_snapshot_tabular(
@@ -100,7 +168,7 @@ def load_snapshot_tabular(
     """
     snapshot_dir = _snapshot_dir(env=env, table_key=table_key, snapshot_id=snapshot_id)
     try:
-        return scan_dataset_reader(
+        reader = scan_dataset_reader(
             dataset_root=env.paths.dataset_root_dir,
             table_key=table_key,
             snapshot_id=snapshot_id,
@@ -112,6 +180,45 @@ def load_snapshot_tabular(
     except (OSError, ValueError, TypeError, pa.ArrowInvalid) as exc:
         msg = f"Dataset snapshot not found: {snapshot_dir}"
         raise FileNotFoundError(msg) from exc
+    table_schema, contract_schema = _contract_schema_for_table(table_key)
+    validation_mode = _validation_mode(env)
+    if validation_mode != "skip":
+        schema_for_errors = reader.schema
+        if contract_schema.metadata is not None:
+            schema_for_errors = reader.schema.with_metadata(contract_schema.metadata)
+        errors = schema_errors(table_schema, schema_for_errors)
+        errors.extend(schema_metadata_errors(reader.schema))
+        _handle_schema_errors(
+            table_key=table_key,
+            errors=errors,
+            mode=validation_mode,
+        )
+    try:
+        aligned = align_reader_to_contract(
+            reader,
+            contract_schema,
+            schema_promote_options=env.settings.schema_promote_options,
+        )
+    except (TypeError, ValueError, pa.ArrowInvalid) as exc:
+        _handle_schema_errors(
+            table_key=table_key,
+            errors=[str(exc)],
+            mode=validation_mode,
+        )
+        return reader
+    if validation_mode == "skip":
+        return aligned
+    context = ColumnarValidationContext(
+        table_schema=table_schema,
+        schema_observation=None,
+        validation_profile=_validation_profile_for_table(table_key),
+    )
+    return validate_record_batch_reader(
+        table_key,
+        aligned,
+        context=context,
+        mode=validation_mode,
+    )
 
 
 def load_snapshot_lazyframe(
@@ -136,26 +243,13 @@ def load_snapshot_lazyframe(
     polars.LazyFrame
         Lazy frame backed by the snapshot dataset.
 
-    Raises
-    ------
-    FileNotFoundError
-        If the dataset snapshot cannot be located on disk.
     """
-    snapshot_dir = _snapshot_dir(env=env, table_key=table_key, snapshot_id=snapshot_id)
-    try:
-        dataset = scan_dataset(
-            dataset_root=env.paths.dataset_root_dir,
-            table_key=table_key,
-            snapshot_id=snapshot_id,
-        )
-    except FileNotFoundError as exc:
-        msg = f"Dataset snapshot not found: {snapshot_dir}"
-        raise FileNotFoundError(msg) from exc
-    try:
-        return pl.scan_pyarrow_dataset(dataset, batch_size=DEFAULT_ARROW_BATCH_SIZE)
-    except (OSError, ValueError, TypeError, pa.ArrowInvalid) as exc:
-        msg = f"Dataset snapshot not found: {snapshot_dir}"
-        raise FileNotFoundError(msg) from exc
+    reader = load_snapshot_tabular(
+        env=env,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    return arrow_reader_to_lazyframe(reader)
 
 
 def load_table(

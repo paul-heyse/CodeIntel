@@ -10,10 +10,12 @@ from codeintel.core.sqlglot_tools import (
     ParseError,
     QuerySummaryConfig,
     canonical_sql_duckdb,
+    canonicalize_expression_duckdb,
     extract_column_lineage_duckdb,
     extract_table_keys_duckdb,
     fingerprint_sql_duckdb,
     parse_one_duckdb,
+    render_sql_duckdb,
     summarize_sql_duckdb,
 )
 from tests._helpers.assertions.expectation_assertions import (
@@ -71,6 +73,15 @@ def test_canonical_sql_is_stable_for_equivalent_sql() -> None:
     a = canonical_sql_duckdb("SELECT 1")
     b = canonical_sql_duckdb("  select 1  ")
     expect_equal(a, b, label="canonical")
+
+
+def test_canonicalize_expression_roundtrip() -> None:
+    """canonicalize_expression_duckdb produces stable rendering."""
+    sql = "select * from core.modules where repo = 'demo'"
+    parsed = parse_one_duckdb(sql)
+    canonical = canonicalize_expression_duckdb(parsed)
+    rendered = render_sql_duckdb(canonical)
+    expect_equal(rendered, canonical_sql_duckdb(sql))
 
 
 def test_extract_column_lineage_maps_output_columns() -> None:

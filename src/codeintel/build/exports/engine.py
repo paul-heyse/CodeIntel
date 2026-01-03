@@ -217,8 +217,8 @@ def _validate_written_exports(
         matching = [p for p in written if p.name.startswith(dataset_name)]
         if not matching:
             continue
-        if dataset.json_schema_id is None:
-            log.info("Skipping validation for %s; no JSON Schema configured", table_key)
+        if dataset.schema is None:
+            log.info("Skipping validation for %s; no TableSchema configured", table_key)
             continue
         profile = resolve_validation_profile(opts, dataset)
         exit_code = validate_export_files(
@@ -226,6 +226,7 @@ def _validate_written_exports(
             matching,
             dataset_name=dataset_name,
             gateway=gateway,
+            validation_profile=profile,
         )
         if exit_code != 0 and profile == "lenient":
             log_export_error(

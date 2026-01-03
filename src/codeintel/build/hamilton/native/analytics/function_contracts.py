@@ -22,7 +22,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -56,10 +56,10 @@ def function_contracts__base(
     pl.LazyFrame
         Lazy frame containing function contract rows.
     """
-    goids_frame = tabular_to_lazyframe(q__core__goids).collect()
-    modules_frame = tabular_to_lazyframe(q__core__modules).collect()
-    docstrings_frame = tabular_to_lazyframe(q__core__docstrings).collect()
-    function_types_frame = tabular_to_lazyframe(q__analytics__function_types).collect()
+    goids_frame = tabular_to_frame(q__core__goids)
+    modules_frame = tabular_to_frame(q__core__modules)
+    docstrings_frame = tabular_to_frame(q__core__docstrings)
+    function_types_frame = tabular_to_frame(q__analytics__function_types)
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,

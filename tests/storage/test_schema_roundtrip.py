@@ -16,6 +16,7 @@ from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.data_models.rows import (
     SymbolUseRow,
 )
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphEdgesRow as CallGraphEdgeRow,
 )
@@ -56,7 +57,7 @@ CALL_GRAPH_EDGE_SAMPLES: list[CallGraphEdgeRow] = [
         "kind": "function",
         "resolved_via": "static",
         "confidence": 0.9,
-        "evidence_json": {"evidence": "value"},
+        "evidence_json": encode_payload({"evidence": "value"}),
     },
     {
         "repo": "charlie",

@@ -11,13 +11,17 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.columnar import stream_from_items
 from codeintel.cli.core.result_types import (
     GraphPlanResult,
     GraphPlanStage,
     GraphTargetInfo,
-    GraphTargetsResult,
+    TabularResult,
 )
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.handlers.runtime_helpers import (
+    CliRuntimeComposeOptions,
+    compose_cli_runtime_bundle,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -45,7 +49,7 @@ class DependencyPolicy(StrEnum):
 
 def graph_targets_list_handler(
     ctx: CommandContext,
-) -> CliResult[GraphTargetsResult]:
+) -> CliResult[TabularResult]:
     """List graph build targets.
 
     Parameters
@@ -56,15 +60,19 @@ def graph_targets_list_handler(
 
     Returns
     -------
-    CliResult[GraphTargetsResult]
-        List of targets.
+    CliResult[TabularResult]
+        Stream of target records.
     """
     names_tuple = ctx.params.get_tuple("names")
     names_set: set[str] | None = set(names_tuple) if names_tuple else None
 
     LOG.info("Listing graph targets (names=%s)", names_set)
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     targets = _filter_graph_targets(runtime_bundle, names_set)
 
     target_infos = _build_target_infos(
@@ -73,10 +81,11 @@ def graph_targets_list_handler(
         description_prefix="Graph target",
     )
 
+    stream = stream_from_items(target_infos)
     return CliResult.ok(
-        GraphTargetsResult(
-            targets=target_infos,
-            count=len(target_infos),
+        TabularResult(
+            stream=stream,
+            metadata={"count": len(target_infos)},
         )
     )
 
@@ -102,7 +111,11 @@ def graph_targets_plan_handler(
 
     LOG.info("Planning graph targets (names=%s)", names_set)
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     targets = _filter_graph_targets(runtime_bundle, names_set)
     stages = _build_plan_stages(runtime_bundle, targets)
 
@@ -116,7 +129,7 @@ def graph_targets_plan_handler(
 
 def graph_plugins_handler(
     ctx: CommandContext,
-) -> CliResult[GraphPlanResult | GraphTargetsResult]:
+) -> CliResult[GraphPlanResult | TabularResult]:
     """List graph plugins or show an execution plan.
 
     Parameters
@@ -126,13 +139,8 @@ def graph_plugins_handler(
 
     Returns
     -------
-    CliResult[GraphPlanResult | GraphTargetsResult]
+    CliResult[GraphPlanResult | TabularResult]
         Planned execution order or plugin list.
-
-    Raises
-    ------
-    ValueError
-        If selection_policy is strict and unknown plugins are requested.
     """
     plan = ctx.params.get_bool("plan")
     names = ctx.params.get_list("names")
@@ -141,62 +149,61 @@ def graph_plugins_handler(
         SelectionPolicy,
         SelectionPolicy.LENIENT,
     )
+    if selection_policy is None:
+        selection_policy = SelectionPolicy.LENIENT
     dependency_policy = ctx.params.get_enum(
         "dependency_policy",
         DependencyPolicy,
         DependencyPolicy.STRICT,
     )
+    if dependency_policy is None:
+        dependency_policy = DependencyPolicy.STRICT
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
-    names_set = set(names) if names else None
-
-    catalog = runtime_bundle.catalog
-    graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
-    available_names = {t.name for t in graph_targets}
-
-    if names_set:
-        unknown = sorted(names_set - available_names)
-        if unknown and selection_policy == SelectionPolicy.STRICT:
-            msg = f"Unknown graph plugins: {unknown}"
-            raise ValueError(msg)
-        graph_targets = [t for t in graph_targets if t.name in names_set]
-
-    if plan:
-        target_names = [t.name for t in graph_targets]
-        ordered = catalog.closure(tuple(target_names)) if target_names else ()
-        if dependency_policy == DependencyPolicy.LENIENT:
-            ordered = tuple(name for name in ordered if name in available_names)
-        stages = [GraphPlanStage(stage=1, targets=list(ordered))]
-        return CliResult.ok(GraphPlanResult(stages=stages, total_targets=len(ordered)))
-
-    target_infos = _build_target_infos(
-        runtime_bundle,
-        graph_targets,
-        description_prefix="Graph plugin",
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
     )
-    return CliResult.ok(GraphTargetsResult(targets=target_infos, count=len(target_infos)))
+    graph_targets, available_names = _select_graph_plugin_targets(
+        runtime_bundle,
+        names,
+        selection_policy,
+    )
+    if plan:
+        return _plan_graph_plugins(
+            runtime_bundle,
+            graph_targets,
+            available_names,
+            dependency_policy,
+        )
+
+    return _list_graph_plugins(runtime_bundle, graph_targets)
 
 
 def graph_targets_handler(
     ctx: CommandContext,
-) -> CliResult[GraphPlanResult | GraphTargetsResult]:
+) -> CliResult[GraphPlanResult | TabularResult]:
     """List graph targets or show an execution plan.
 
     Returns
     -------
-    CliResult[GraphPlanResult | GraphTargetsResult]
+    CliResult[GraphPlanResult | TabularResult]
         Planned execution order or target list.
     """
     plan = ctx.params.get_bool("plan")
     names = ctx.params.get_list("names")
     names_set = set(names) if names else None
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=ctx.runtime,
+        gateway=ctx.gateway,
+        options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+    )
     targets = _filter_graph_targets(runtime_bundle, names_set)
 
     if plan:
         stages = _build_plan_stages(runtime_bundle, targets)
-        return CliResult.ok(
+        return CliResult[GraphPlanResult | TabularResult].ok(
             GraphPlanResult(
                 stages=stages,
                 total_targets=len(stages[0].targets) if stages else 0,
@@ -208,7 +215,13 @@ def graph_targets_handler(
         targets,
         description_prefix="Graph target",
     )
-    return CliResult.ok(GraphTargetsResult(targets=target_infos, count=len(target_infos)))
+    stream = stream_from_items(target_infos)
+    return CliResult[GraphPlanResult | TabularResult].ok(
+        TabularResult(
+            stream=stream,
+            metadata={"count": len(target_infos)},
+        )
+    )
 
 
 def _filter_graph_targets(
@@ -220,6 +233,23 @@ def _filter_graph_targets(
     if names_set:
         targets = [t for t in targets if t.name in names_set]
     return targets
+
+
+def _select_graph_plugin_targets(
+    runtime_bundle: RuntimeBundle,
+    names: list[str],
+    selection_policy: SelectionPolicy,
+) -> tuple[list[TargetDescriptor], set[str]]:
+    graph_targets = [t for t in runtime_bundle.catalog.all_targets if t.module == "graphs"]
+    available_names = {t.name for t in graph_targets}
+    if names:
+        names_set = set(names)
+        unknown = sorted(names_set - available_names)
+        if unknown and selection_policy == SelectionPolicy.STRICT:
+            msg = f"Unknown graph plugins: {unknown}"
+            raise ValueError(msg)
+        graph_targets = [t for t in graph_targets if t.name in names_set]
+    return graph_targets, available_names
 
 
 def _build_target_infos(
@@ -258,12 +288,45 @@ def _build_plan_stages(
     return [GraphPlanStage(stage=1, targets=list(ordered))]
 
 
+def _plan_graph_plugins(
+    runtime_bundle: RuntimeBundle,
+    graph_targets: Iterable[TargetDescriptor],
+    available_names: set[str],
+    dependency_policy: DependencyPolicy,
+) -> CliResult[GraphPlanResult | TabularResult]:
+    target_names = [target.name for target in graph_targets]
+    ordered = runtime_bundle.catalog.closure(tuple(target_names)) if target_names else ()
+    if dependency_policy == DependencyPolicy.LENIENT:
+        ordered = tuple(name for name in ordered if name in available_names)
+    stages = [GraphPlanStage(stage=1, targets=list(ordered))]
+    return CliResult[GraphPlanResult | TabularResult].ok(
+        GraphPlanResult(stages=stages, total_targets=len(ordered))
+    )
+
+
+def _list_graph_plugins(
+    runtime_bundle: RuntimeBundle,
+    graph_targets: Iterable[TargetDescriptor],
+) -> CliResult[GraphPlanResult | TabularResult]:
+    target_infos = _build_target_infos(
+        runtime_bundle,
+        graph_targets,
+        description_prefix="Graph plugin",
+    )
+    stream = stream_from_items(target_infos)
+    return CliResult[GraphPlanResult | TabularResult].ok(
+        TabularResult(
+            stream=stream,
+            metadata={"count": len(target_infos)},
+        )
+    )
+
+
 __all__ = [
     "DependencyPolicy",
     "GraphPlanResult",
     "GraphPlanStage",
     "GraphTargetInfo",
-    "GraphTargetsResult",
     "SelectionPolicy",
     "graph_plugins_handler",
     "graph_targets_handler",

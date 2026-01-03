@@ -18,6 +18,7 @@ from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -30,10 +31,12 @@ SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbol_information"
 GOIDS_TABLE_KEY = "core.goids"
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
+TS_TOKENS_TABLE_KEY = "core.ts_tokens"
+TS_TRIVIA_TABLE_KEY = "core.ts_trivia"
 
 ORDINAL_MOD = 2**31 - 1
 
-_CPG_NODE_COLUMNS = [
+_CPG_NODE_COLUMNS = columns_for_table_key(CPG_NODES_TABLE_KEY) or (
     "repo",
     "commit",
     "cpg_node_id",
@@ -44,9 +47,9 @@ _CPG_NODE_COLUMNS = [
     "start_byte",
     "end_byte",
     "extras_json",
-]
+)
 
-_CPG_EDGE_COLUMNS = [
+_CPG_EDGE_COLUMNS = columns_for_table_key(CPG_EDGES_TABLE_KEY) or (
     "repo",
     "commit",
     "src_cpg_node_id",
@@ -56,7 +59,7 @@ _CPG_EDGE_COLUMNS = [
     "rel_path",
     "ordinal",
     "extras_json",
-]
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,27 @@ class _CpgFlowInputs:
     dfg_edges: pl.LazyFrame
     cfg_blocks: pl.LazyFrame
     cdg_edges: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgNodeCoreInputs:
+    syntax_nodes: InferableTabularInput
+    scip_symbol_information: InferableTabularInput
+    goids: InferableTabularInput
+    ts_tokens: InferableTabularInput
+    ts_trivia: InferableTabularInput
+
+
+@dataclass(frozen=True)
+class _CpgNodeGraphInputs:
+    cfg_blocks: InferableTabularInput
+    import_modules: InferableTabularInput
+
+
+@dataclass(frozen=True)
+class _CpgNodeInputs:
+    core: _CpgNodeCoreInputs
+    graph: _CpgNodeGraphInputs
 
 
 @dataclass(frozen=True)
@@ -133,6 +157,18 @@ def _row_to_payload(row: Mapping[str, object]) -> bytes:
     return encoded
 
 
+def _encode_optional_payload(value: object) -> bytes | None:
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return encode_payload(value)
+    if isinstance(value, Mapping):
+        return encode_payload(dict(value))
+    if isinstance(value, (str, int, float, bool)):
+        return encode_payload(value)
+    return None
+
+
 def _struct_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
     fields = [expr.alias(name) for name, expr in values.items()]
     return pl.struct(fields)
@@ -153,6 +189,10 @@ def _ordinal_expr(table_key: str, values: Mapping[str, pl.Expr]) -> pl.Expr:
 
 
 def _pk_json_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
+    return _struct_expr(values).map_elements(_row_to_payload, return_dtype=pl.Binary)
+
+
+def _payload_json_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
     return _struct_expr(values).map_elements(_row_to_payload, return_dtype=pl.Binary)
 
 
@@ -190,7 +230,9 @@ def _syntax_nodes_to_cpg(syntax_nodes: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("rel_path"),
         pl.col("start_byte"),
         pl.col("end_byte"),
-        pl.lit(None).cast(pl.Binary).alias("extras_json"),
+        pl.col("extras_json")
+        .map_elements(_encode_optional_payload, return_dtype=pl.Binary)
+        .alias("extras_json"),
     ).select(_CPG_NODE_COLUMNS)
 
 
@@ -267,12 +309,147 @@ def _import_modules_to_cpg(import_modules: pl.LazyFrame) -> pl.LazyFrame:
     ).select(_CPG_NODE_COLUMNS)
 
 
-def cpg_nodes(
+def _ts_tokens_to_cpg(tokens: pl.LazyFrame) -> pl.LazyFrame:
+    required = {
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "token_id",
+        "token_kind",
+        "node_type",
+        "start_byte",
+        "end_byte",
+        "text_preview",
+        "extras_json",
+    }
+    if not required.issubset(tokens.columns):
+        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
+    pk_values = {
+        "repo": pl.col("repo"),
+        "commit": pl.col("commit"),
+        "rel_path": pl.col("rel_path"),
+        "language": pl.col("language"),
+        "token_id": pl.col("token_id"),
+    }
+    extras_values = {
+        "token_kind": pl.col("token_kind"),
+        "node_type": pl.col("node_type"),
+        "text_preview": pl.col("text_preview"),
+        "token_extras": pl.col("extras_json"),
+    }
+    return tokens.with_columns(
+        _pk_expr(TS_TOKENS_TABLE_KEY, pk_values).alias("cpg_node_id"),
+        pl.lit("TS_TOKEN").alias("node_kind"),
+        pl.lit(TS_TOKENS_TABLE_KEY).alias("source_table_key"),
+        _pk_json_expr(pk_values).alias("source_pk_json"),
+        pl.col("rel_path"),
+        pl.col("start_byte"),
+        pl.col("end_byte"),
+        _payload_json_expr(extras_values).alias("extras_json"),
+    ).select(_CPG_NODE_COLUMNS)
+
+
+def _ts_trivia_to_cpg(trivia: pl.LazyFrame) -> pl.LazyFrame:
+    required = {
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "trivia_id",
+        "trivia_kind",
+        "node_type",
+        "start_byte",
+        "end_byte",
+        "text_preview",
+        "extras_json",
+    }
+    if not required.issubset(trivia.columns):
+        return empty_frame_for_table(CPG_NODES_TABLE_KEY)
+    pk_values = {
+        "repo": pl.col("repo"),
+        "commit": pl.col("commit"),
+        "rel_path": pl.col("rel_path"),
+        "language": pl.col("language"),
+        "trivia_id": pl.col("trivia_id"),
+    }
+    extras_values = {
+        "trivia_kind": pl.col("trivia_kind"),
+        "node_type": pl.col("node_type"),
+        "text_preview": pl.col("text_preview"),
+        "trivia_extras": pl.col("extras_json"),
+    }
+    return trivia.with_columns(
+        _pk_expr(TS_TRIVIA_TABLE_KEY, pk_values).alias("cpg_node_id"),
+        pl.lit("TS_TRIVIA").alias("node_kind"),
+        pl.lit(TS_TRIVIA_TABLE_KEY).alias("source_table_key"),
+        _pk_json_expr(pk_values).alias("source_pk_json"),
+        pl.col("rel_path"),
+        pl.col("start_byte"),
+        pl.col("end_byte"),
+        _payload_json_expr(extras_values).alias("extras_json"),
+    ).select(_CPG_NODE_COLUMNS)
+
+
+def cpg_nodes__core_inputs(
     q__core__syntax_nodes: InferableTabularInput,
     q__core__scip_symbol_information: InferableTabularInput,
     q__core__goids: InferableTabularInput,
+    q__core__ts_tokens: InferableTabularInput,
+    q__core__ts_trivia: InferableTabularInput,
+) -> _CpgNodeCoreInputs:
+    """Bundle core tables for CPG node assembly.
+
+    Returns
+    -------
+    _CpgNodeCoreInputs
+        Core inputs for CPG node assembly.
+    """
+    return _CpgNodeCoreInputs(
+        syntax_nodes=q__core__syntax_nodes,
+        scip_symbol_information=q__core__scip_symbol_information,
+        goids=q__core__goids,
+        ts_tokens=q__core__ts_tokens,
+        ts_trivia=q__core__ts_trivia,
+    )
+
+
+def cpg_nodes__graph_inputs(
     q__graph__cfg_blocks: InferableTabularInput,
     q__graph__import_modules: InferableTabularInput,
+) -> _CpgNodeGraphInputs:
+    """Bundle graph tables for CPG node assembly.
+
+    Returns
+    -------
+    _CpgNodeGraphInputs
+        Graph inputs for CPG node assembly.
+    """
+    return _CpgNodeGraphInputs(
+        cfg_blocks=q__graph__cfg_blocks,
+        import_modules=q__graph__import_modules,
+    )
+
+
+def cpg_nodes__inputs(
+    cpg_nodes__core_inputs: _CpgNodeCoreInputs,
+    cpg_nodes__graph_inputs: _CpgNodeGraphInputs,
+) -> _CpgNodeInputs:
+    """Bundle inputs for CPG node assembly.
+
+    Returns
+    -------
+    _CpgNodeInputs
+        Combined inputs for CPG node assembly.
+    """
+    return _CpgNodeInputs(
+        core=cpg_nodes__core_inputs,
+        graph=cpg_nodes__graph_inputs,
+    )
+
+
+def cpg_nodes(
+    cpg_nodes__inputs: _CpgNodeInputs,
 ) -> pl.LazyFrame:
     """Build CPG nodes from syntax, symbol, and flow inventories.
 
@@ -281,16 +458,22 @@ def cpg_nodes(
     pl.LazyFrame
         LazyFrame for graph.cpg_nodes.
     """
-    syntax_nodes = tabular_to_lazyframe(q__core__syntax_nodes)
-    scip_symbols = tabular_to_lazyframe(q__core__scip_symbol_information)
-    goids = tabular_to_lazyframe(q__core__goids)
-    cfg_blocks = tabular_to_lazyframe(q__graph__cfg_blocks)
-    import_modules = tabular_to_lazyframe(q__graph__import_modules)
+    core_inputs = cpg_nodes__inputs.core
+    graph_inputs = cpg_nodes__inputs.graph
+    syntax_nodes = tabular_to_lazyframe(core_inputs.syntax_nodes)
+    scip_symbols = tabular_to_lazyframe(core_inputs.scip_symbol_information)
+    goids = tabular_to_lazyframe(core_inputs.goids)
+    ts_tokens = tabular_to_lazyframe(core_inputs.ts_tokens)
+    ts_trivia = tabular_to_lazyframe(core_inputs.ts_trivia)
+    cfg_blocks = tabular_to_lazyframe(graph_inputs.cfg_blocks)
+    import_modules = tabular_to_lazyframe(graph_inputs.import_modules)
 
     frames = [
         _syntax_nodes_to_cpg(syntax_nodes),
         _scip_symbols_to_cpg(scip_symbols),
         _goids_to_cpg(goids),
+        _ts_tokens_to_cpg(ts_tokens),
+        _ts_trivia_to_cpg(ts_trivia),
         _cfg_blocks_to_cpg(cfg_blocks, goids),
         _import_modules_to_cpg(import_modules),
     ]

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from tests._helpers.builders import (
@@ -1228,7 +1229,13 @@ def data_model_usage_row(seed: DataModelUsageSeed) -> tuple[object, ...]:
     tuple[object, ...]
         Row values in repository schema order.
     """
-    return (seed.repo, seed.commit, seed.model_id, seed.goid, list(seed.usage_kinds))
+    return (
+        seed.repo,
+        seed.commit,
+        seed.model_id,
+        seed.goid,
+        encode_payload(list(seed.usage_kinds)),
+    )
 
 
 @dataclass
@@ -1264,7 +1271,7 @@ def data_model_row(seed: DataModelSeed) -> tuple[object, ...]:
         seed.module,
         seed.rel_path,
         seed.model_kind,
-        seed.base_classes_json or [],
+        encode_payload(seed.base_classes_json or []),
         seed.doc_short,
         seed.doc_long,
         seed.created_at or datetime.now(tz=UTC),
@@ -1305,7 +1312,7 @@ def data_model_field_row(seed: DataModelFieldSeed) -> tuple[object, ...]:
         seed.required,
         seed.has_default,
         seed.default_expr,
-        seed.constraints_json or {},
+        encode_payload(seed.constraints_json or {}),
         seed.source,
         seed.rel_path,
         seed.lineno,
@@ -1350,7 +1357,7 @@ def data_model_relationship_row(seed: DataModelRelationshipSeed) -> tuple[object
         seed.relationship_kind,
         seed.multiplicity,
         seed.via,
-        seed.evidence_json or {},
+        encode_payload(seed.evidence_json or {}),
         seed.rel_path,
         seed.lineno,
         seed.created_at or datetime.now(tz=UTC),

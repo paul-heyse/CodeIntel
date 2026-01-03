@@ -115,7 +115,7 @@ class BuildEnv:
     profile: str | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None
-    validate_outputs: bool = False
+    validate_outputs: bool = True
     validation_mode: ContractValidationMode = ContractValidationMode.LENIENT
     fingerprint_policy: FingerprintPolicy = field(
         default_factory=lambda: DEFAULT_FINGERPRINT_POLICY

@@ -10,22 +10,17 @@ import networkx as nx
 import polars as pl
 from hamilton.function_modifiers import cache
 
-from codeintel.build.analytics.compute.row_builders import (
-    build_symbol_module_edges,
-    component_metadata_from_import_rows,
-)
 from codeintel.build.analytics.graphs.config_graph_metrics import (
     build_config_module_bipartite,
 )
 from codeintel.build.analytics.graphs.graph_metrics import (
+    ComponentMeta,
     GraphMetricFilters,
     GraphMetricsInputs,
     GraphMetricsRows,
     SymbolModuleEdges,
-    build_call_graph_from_rows,
     build_graph_metric_filters_from_sets,
     build_graph_metrics_rows,
-    build_import_graph_from_rows,
 )
 from codeintel.build.analytics.graphs.graph_metrics_ext import (
     build_graph_metrics_functions_ext_rows,
@@ -38,10 +33,8 @@ from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
 from codeintel.build.analytics.graphs.symbol_graph_metrics import (
-    build_symbol_function_graph,
     build_symbol_graph_metrics_function_rows,
     build_symbol_graph_metrics_module_rows,
-    build_symbol_module_graph,
 )
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -61,6 +54,7 @@ from codeintel.build.tabular.frames import (
 )
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.query_results import coerce_optional_int
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -163,7 +157,7 @@ class GraphMetricInputs:
     module_names: set[str]
     function_goids: set[int]
     filters: GraphMetricFilters
-    component_meta: dict[str, dict[str, int | bool]] | None
+    component_meta: ComponentMeta | None
     runtime_options: GraphRuntimeOptions
 
 
@@ -206,22 +200,49 @@ def _collect_rows(
     *,
     repo: str | None,
     commit: str | None,
-) -> list[dict[str, object]]:
+) -> pl.DataFrame:
     frame = tabular_to_lazyframe(value)
     available = set(frame.columns)
     if repo is not None and "repo" in available:
         frame = frame.filter(pl.col("repo") == repo)
     if commit is not None and "commit" in available:
         frame = frame.filter(pl.col("commit") == commit)
-    return frame.select(list(columns)).collect().to_dicts()
+    return frame.select(list(columns)).collect()
 
 
-def _matches_optional_scope(value: object, expected: str) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and not value.strip():
-        return True
-    return str(value) == expected
+def _matches_optional_scope_expr(column: str, expected: str) -> pl.Expr:
+    col = pl.col(column)
+    col_str = col.cast(pl.Utf8, strict=False)
+    stripped = col_str.str.strip_chars()
+    return col.is_null() | (stripped.str.len_chars() == 0) | (col_str == expected)
+
+
+def _filter_frame_by_snapshot(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> pl.DataFrame:
+    filtered = frame
+    if "repo" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("repo", repo))
+    if "commit" in filtered.columns:
+        filtered = filtered.filter(_matches_optional_scope_expr("commit", commit))
+    return filtered
+
+
+def _allowed_modules_from_frame(
+    frame: pl.DataFrame,
+    *,
+    repo: str,
+    commit: str,
+) -> set[str]:
+    if frame.is_empty() or "module" not in frame.columns:
+        return set()
+    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.is_empty():
+        return set()
+    return {str(module) for module in filtered.get_column("module").drop_nulls().to_list()}
 
 
 def _load_module_inputs(
@@ -277,7 +298,7 @@ def _load_call_graph(
         repo=None,
         commit=None,
     )
-    return build_call_graph_from_rows(call_edge_rows, call_node_rows)
+    return _call_graph_from_frames(call_edge_rows, call_node_rows)
 
 
 def _load_import_graph(
@@ -297,9 +318,264 @@ def _load_import_graph(
         repo=env.repo,
         commit=env.commit,
     )
-    import_graph = build_import_graph_from_rows(import_edge_rows, import_module_rows)
-    component_meta = component_metadata_from_import_rows(import_module_rows)
-    return import_graph, component_meta
+    return _import_graph_from_frames(import_edge_rows, import_module_rows)
+
+
+def _call_graph_from_frames(
+    edges: pl.DataFrame,
+    nodes: pl.DataFrame,
+) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    _add_call_graph_edges(graph, edges)
+    _add_call_graph_nodes(graph, nodes)
+    return graph
+
+
+def _add_call_graph_edges(graph: nx.DiGraph, edges: pl.DataFrame) -> None:
+    if edges.is_empty():
+        return
+    if "caller_goid_h128" not in edges.columns or "callee_goid_h128" not in edges.columns:
+        return
+    callers = edges.get_column("caller_goid_h128").to_list()
+    callees = edges.get_column("callee_goid_h128").to_list()
+    for caller_raw, callee_raw in zip(callers, callees, strict=True):
+        caller = normalize_decimal_id(caller_raw)
+        callee = normalize_decimal_id(callee_raw)
+        if caller is None or callee is None:
+            continue
+        if graph.has_edge(caller, callee):
+            attrs = graph[caller][callee]
+            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+        else:
+            graph.add_edge(caller, callee, weight=1)
+
+
+def _add_call_graph_nodes(graph: nx.DiGraph, nodes: pl.DataFrame) -> None:
+    if nodes.is_empty() or "goid_h128" not in nodes.columns:
+        return
+    node_ids = nodes.get_column("goid_h128").to_list()
+    kinds = nodes.get_column("kind").to_list() if "kind" in nodes.columns else [None] * len(node_ids)
+    for node_raw, kind in zip(node_ids, kinds, strict=True):
+        node_id = normalize_decimal_id(node_raw)
+        if node_id is None or node_id in graph:
+            continue
+        attrs: dict[str, object] = {}
+        if kind is not None:
+            attrs["kind"] = str(kind)
+        graph.add_node(node_id, **attrs)
+
+
+def _import_graph_from_frames(
+    edges: pl.DataFrame,
+    modules: pl.DataFrame,
+) -> tuple[nx.DiGraph, ComponentMeta | None]:
+    graph = nx.DiGraph()
+    fallback_layer_by_module: dict[str, int] = {}
+    _add_import_edges(graph, edges, fallback_layer_by_module)
+    component_meta = _component_meta_from_import_frame(modules)
+    _apply_import_module_frame(graph, modules, fallback_layer_by_module)
+    return graph, component_meta
+
+
+def _add_import_edges(
+    graph: nx.DiGraph,
+    edges: pl.DataFrame,
+    fallback_layer_by_module: dict[str, int],
+) -> None:
+    if edges.is_empty():
+        return
+    if "src_module" not in edges.columns or "dst_module" not in edges.columns:
+        return
+    sources = edges.get_column("src_module").to_list()
+    targets = edges.get_column("dst_module").to_list()
+    layers = (
+        edges.get_column("module_layer").to_list()
+        if "module_layer" in edges.columns
+        else [None] * len(sources)
+    )
+    for source_raw, target_raw, layer_raw in zip(sources, targets, layers, strict=True):
+        if source_raw is None or target_raw is None:
+            continue
+        source = str(source_raw)
+        target = str(target_raw)
+        layer = coerce_optional_int(layer_raw, ctx="module_layer")
+        if layer is not None:
+            fallback_layer_by_module[source] = layer
+        if graph.has_edge(source, target):
+            attrs = graph[source][target]
+            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+        else:
+            graph.add_edge(source, target, weight=1)
+
+
+def _component_meta_from_import_frame(
+    frame: pl.DataFrame,
+) -> dict[str, dict[str, int | bool]] | None:
+    if frame.is_empty() or "module" not in frame.columns:
+        return None
+    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(
+        as_series=False
+    )
+    comp_id: dict[str, int] = {}
+    in_cycle: dict[str, bool] = {}
+    layer_by_module: dict[str, int] = {}
+    found = False
+    for module, scc_id, component_size, layer in zip(
+        data["module"],
+        data["scc_id"],
+        data["component_size"],
+        data["layer"],
+        strict=True,
+    ):
+        if module is None:
+            continue
+        found = True
+        module_name = str(module)
+        scc_value = coerce_optional_int(scc_id, ctx="scc_id")
+        size_value = coerce_optional_int(component_size, ctx="component_size")
+        layer_value = coerce_optional_int(layer, ctx="layer")
+        comp_id[module_name] = scc_value if scc_value is not None else -1
+        in_cycle[module_name] = bool(size_value and size_value > 1)
+        layer_by_module[module_name] = layer_value if layer_value is not None else 0
+    if not found:
+        return None
+    return {
+        "component_id": comp_id,
+        "in_cycle": in_cycle,
+        "layer": layer_by_module,
+    }
+
+
+def _apply_import_module_frame(
+    graph: nx.DiGraph,
+    frame: pl.DataFrame,
+    fallback_layer_by_module: Mapping[str, int],
+) -> None:
+    if frame.is_empty() or "module" not in frame.columns:
+        return
+    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(
+        as_series=False
+    )
+    for module, scc_id, component_size, layer in zip(
+        data["module"],
+        data["scc_id"],
+        data["component_size"],
+        data["layer"],
+        strict=True,
+    ):
+        if module is None:
+            continue
+        module_name = str(module)
+        attrs: dict[str, object] = {}
+        scc_value = coerce_optional_int(scc_id, ctx="scc_id")
+        size_value = coerce_optional_int(component_size, ctx="component_size")
+        layer_value = coerce_optional_int(layer, ctx="layer")
+        attrs["scc_id"] = scc_value
+        attrs["component_size"] = size_value
+        attrs["layer"] = layer_value
+        if attrs.get("layer") is None and module_name in fallback_layer_by_module:
+            attrs["layer"] = fallback_layer_by_module[module_name]
+        graph.add_node(module_name, **{k: v for k, v in attrs.items() if v is not None})
+
+
+def _map_path_to_module(value: object, module_by_path: Mapping[str, str]) -> str | None:
+    if value is None:
+        return None
+    return module_by_path.get(str(value))
+
+
+def _symbol_module_edges_from_frame(
+    frame: pl.DataFrame,
+    module_by_path: Mapping[str, str],
+) -> SymbolModuleEdges:
+    if frame.is_empty():
+        return set(), {}, {}
+    mapped = frame.select(
+        pl.col("def_path")
+        .map_elements(
+            lambda value: _map_path_to_module(value, module_by_path),
+            return_dtype=pl.Utf8,
+        )
+        .alias("def_module"),
+        pl.col("use_path")
+        .map_elements(
+            lambda value: _map_path_to_module(value, module_by_path),
+            return_dtype=pl.Utf8,
+        )
+        .alias("use_module"),
+    )
+    mapped = mapped.drop_nulls(subset=["def_module", "use_module"]).filter(
+        pl.col("def_module") != pl.col("use_module")
+    )
+    if mapped.is_empty():
+        return set(), {}, {}
+    def_modules = mapped.get_column("def_module").unique().to_list()
+    use_modules = mapped.get_column("use_module").unique().to_list()
+    modules = {str(module) for module in def_modules + use_modules}
+    inbound_rows = mapped.group_by("def_module").agg(pl.col("use_module").unique())
+    outbound_rows = mapped.group_by("use_module").agg(pl.col("def_module").unique())
+    inbound = {str(row[0]): {str(item) for item in row[1]} for row in inbound_rows.iter_rows()}
+    outbound = {str(row[0]): {str(item) for item in row[1]} for row in outbound_rows.iter_rows()}
+    return modules, inbound, outbound
+
+
+def _symbol_module_graph_from_frame(
+    frame: pl.DataFrame,
+    module_by_path: Mapping[str, str],
+) -> nx.Graph:
+    graph = nx.Graph()
+    if frame.is_empty():
+        return graph
+    mapped = frame.select(
+        pl.col("def_path")
+        .map_elements(
+            lambda value: _map_path_to_module(value, module_by_path),
+            return_dtype=pl.Utf8,
+        )
+        .alias("def_module"),
+        pl.col("use_path")
+        .map_elements(
+            lambda value: _map_path_to_module(value, module_by_path),
+            return_dtype=pl.Utf8,
+        )
+        .alias("use_module"),
+    )
+    mapped = mapped.drop_nulls(subset=["def_module", "use_module"]).filter(
+        pl.col("def_module") != pl.col("use_module")
+    )
+    if mapped.is_empty():
+        return graph
+    edges = mapped.group_by(["use_module", "def_module"]).agg(pl.len().alias("weight"))
+    for use_module, def_module, weight in edges.iter_rows():
+        graph.add_edge(str(use_module), str(def_module), weight=int(weight))
+    return graph
+
+
+def _symbol_function_graph_from_frame(
+    frame: pl.DataFrame,
+) -> nx.Graph:
+    graph = nx.Graph()
+    if frame.is_empty():
+        return graph
+    if "def_goid_h128" not in frame.columns or "use_goid_h128" not in frame.columns:
+        return graph
+    normalized = frame.select(
+        pl.col("def_goid_h128")
+        .map_elements(normalize_decimal_id, return_dtype=pl.Int64)
+        .alias("def_goid"),
+        pl.col("use_goid_h128")
+        .map_elements(normalize_decimal_id, return_dtype=pl.Int64)
+        .alias("use_goid"),
+    )
+    normalized = normalized.drop_nulls(subset=["def_goid", "use_goid"]).filter(
+        pl.col("def_goid") != pl.col("use_goid")
+    )
+    if normalized.is_empty():
+        return graph
+    edges = normalized.group_by(["use_goid", "def_goid"]).agg(pl.len().alias("weight"))
+    for use_goid, def_goid, weight in edges.iter_rows():
+        graph.add_edge(int(use_goid), int(def_goid), weight=int(weight))
+    return graph
 
 
 def _load_symbol_graphs(
@@ -312,54 +588,57 @@ def _load_symbol_graphs(
         repo=None,
         commit=None,
     )
-    symbol_module_edges = build_symbol_module_edges(symbol_rows, module_by_path)
-    symbol_module_graph = build_symbol_module_graph(symbol_rows, module_by_path)
-    symbol_function_graph = build_symbol_function_graph(symbol_rows)
+    symbol_module_edges = _symbol_module_edges_from_frame(symbol_rows, module_by_path)
+    symbol_module_graph = _symbol_module_graph_from_frame(symbol_rows, module_by_path)
+    symbol_function_graph = _symbol_function_graph_from_frame(symbol_rows)
     return symbol_module_edges, symbol_module_graph, symbol_function_graph
 
 
 def _module_inputs_from_rows(
-    rows: list[dict[str, object]],
+    rows: pl.DataFrame,
     *,
     repo: str,
     commit: str,
 ) -> tuple[dict[str, str], set[str]]:
     module_by_path: dict[str, str] = {}
     module_names: set[str] = set()
-    for row in rows:
-        module = row.get("module")
-        if module is None:
-            continue
-        if not _matches_optional_scope(row.get("repo"), repo):
-            continue
-        if not _matches_optional_scope(row.get("commit"), commit):
-            continue
-        module_name = str(module)
-        module_names.add(module_name)
-        path = row.get("path")
-        if path is not None:
-            module_by_path[str(path)] = module_name
+    if rows.is_empty():
+        return module_by_path, module_names
+    filtered = _filter_frame_by_snapshot(rows, repo=repo, commit=commit)
+    if filtered.is_empty() or "module" not in filtered.columns:
+        return module_by_path, module_names
+    module_series = filtered.get_column("module").drop_nulls()
+    module_names = {str(module) for module in module_series.to_list()}
+    if "path" in filtered.columns:
+        paths = filtered.get_column("path").to_list()
+        modules = filtered.get_column("module").to_list()
+        for path, module in zip(paths, modules, strict=True):
+            if path is None or module is None:
+                continue
+            module_by_path[str(path)] = str(module)
     return module_by_path, module_names
 
 
-def _function_goids_from_rows(rows: list[dict[str, object]]) -> set[int]:
+def _function_goids_from_rows(rows: pl.DataFrame) -> set[int]:
     function_goids: set[int] = set()
-    for row in rows:
-        kind = row.get("kind")
-        if kind is None or str(kind) not in _FUNCTION_KINDS:
-            continue
-        goid = normalize_decimal_id(row.get("goid_h128"))
+    if rows.is_empty() or "goid_h128" not in rows.columns:
+        return function_goids
+    filtered = rows
+    if "kind" in rows.columns:
+        filtered = rows.filter(pl.col("kind").cast(pl.Utf8, strict=False).is_in(_FUNCTION_KINDS))
+    for value in filtered.get_column("goid_h128").to_list():
+        goid = normalize_decimal_id(value)
         if goid is not None:
             function_goids.add(goid)
     return function_goids
 
 
-def _subsystem_ids_from_rows(rows: list[dict[str, object]]) -> set[str]:
+def _subsystem_ids_from_rows(rows: pl.DataFrame) -> set[str]:
     subsystem_ids: set[str] = set()
-    for row in rows:
-        subsystem_id = row.get("subsystem_id")
-        if subsystem_id is not None:
-            subsystem_ids.add(str(subsystem_id))
+    if rows.is_empty() or "subsystem_id" not in rows.columns:
+        return subsystem_ids
+    for subsystem_id in rows.get_column("subsystem_id").drop_nulls().to_list():
+        subsystem_ids.add(str(subsystem_id))
     return subsystem_ids
 
 
@@ -618,13 +897,11 @@ def graph_stats__base(
         repo=env.repo,
         commit=env.commit,
     )
-    allowed_modules = {
-        str(row["module"])
-        for row in module_rows
-        if row.get("module") is not None
-        and _matches_optional_scope(row.get("repo"), env.repo)
-        and _matches_optional_scope(row.get("commit"), env.commit)
-    }
+    allowed_modules = _allowed_modules_from_frame(
+        module_rows,
+        repo=env.repo,
+        commit=env.commit,
+    )
     config_bipartite = build_config_module_bipartite(
         config_value_rows,
         allowed_modules=allowed_modules,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlglot import diff as sqlglot_diff
 
@@ -65,6 +65,8 @@ class SqlStructuralDiffSummary:
     changed: bool
     actions: dict[str, int]
     parse_error: str | None = None
+    before_ast: list[dict[str, object]] | None = None
+    after_ast: list[dict[str, object]] | None = None
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable representation.
@@ -74,14 +76,24 @@ class SqlStructuralDiffSummary:
         dict[str, object]
             JSON-ready payload with stable keys.
         """
-        return {
+        payload: dict[str, object] = {
             "changed": self.changed,
             "actions": dict(self.actions),
             "parse_error": self.parse_error,
         }
+        if self.before_ast is not None:
+            payload["before_ast"] = self.before_ast
+        if self.after_ast is not None:
+            payload["after_ast"] = self.after_ast
+        return payload
 
 
-def diff_sql_structural(*, before: str, after: str) -> SqlStructuralDiffSummary:
+def diff_sql_structural(
+    *,
+    before: str,
+    after: str,
+    include_ast: bool = False,
+) -> SqlStructuralDiffSummary:
     """Compute a SQLGlot structural diff summary for two SQL strings.
 
     Notes
@@ -102,12 +114,20 @@ def diff_sql_structural(*, before: str, after: str) -> SqlStructuralDiffSummary:
         for action in actions:
             name = type(action).__name__
             counts[name] = counts.get(name, 0) + 1
+        before_payload = _dump_ast(before_ast) if include_ast else None
+        after_payload = _dump_ast(after_ast) if include_ast else None
         return SqlStructuralDiffSummary(
             changed=fingerprint_sql_duckdb(before) != fingerprint_sql_duckdb(after),
             actions=counts,
+            before_ast=before_payload,
+            after_ast=after_payload,
         )
     except (ParseError, ValueError, TypeError) as exc:
-        return SqlStructuralDiffSummary(changed=before != after, actions={}, parse_error=str(exc))
+        return SqlStructuralDiffSummary(
+            changed=before != after,
+            actions={},
+            parse_error=str(exc),
+        )
 
 
 def diff_sql(*, before: str, after: str) -> SqlDiffSummary:
@@ -150,6 +170,8 @@ def diff_view_sql_maps(
     *,
     before: Mapping[str, str],
     after: Mapping[str, str],
+    include_structural: bool = False,
+    include_ast: bool = False,
 ) -> dict[str, dict[str, object]]:
     """Diff two view SQL maps keyed by table_key.
 
@@ -169,24 +191,52 @@ def diff_view_sql_maps(
         before_sql = before_by_lower.get(key, "")
         after_sql = after_by_lower.get(key, "")
         if key not in before_keys:
-            out[key] = {
+            payload: dict[str, object] = {
                 "status": "added",
                 "diff": diff_sql(before="", after=after_sql).to_json_obj(),
             }
+            if include_structural:
+                payload["structural_diff"] = diff_sql_structural(
+                    before="",
+                    after=after_sql,
+                    include_ast=include_ast,
+                ).to_json_obj()
+            out[key] = payload
             continue
         if key not in after_keys:
-            out[key] = {
+            payload = {
                 "status": "removed",
                 "diff": diff_sql(before=before_sql, after="").to_json_obj(),
             }
+            if include_structural:
+                payload["structural_diff"] = diff_sql_structural(
+                    before=before_sql,
+                    after="",
+                    include_ast=include_ast,
+                ).to_json_obj()
+            out[key] = payload
             continue
         summary = diff_sql(before=before_sql, after=after_sql)
-        out[key] = {
+        payload = {
             "status": "changed" if summary.changed else "unchanged",
             "diff": summary.to_json_obj(),
         }
+        if include_structural:
+            payload["structural_diff"] = diff_sql_structural(
+                before=before_sql,
+                after=after_sql,
+                include_ast=include_ast,
+            ).to_json_obj()
+        out[key] = payload
 
     return out
+
+
+def _dump_ast(root: object) -> list[dict[str, object]]:
+    payload = getattr(root, "dump", None)
+    if not callable(payload):
+        return []
+    return cast("list[dict[str, object]]", payload())
 
 
 __all__ = [

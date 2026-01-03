@@ -39,7 +39,7 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
             {
                 "repo": snapshot.repo,
                 "commit": snapshot.commit,
-                "modules": [],
+                "modules": {},
                 "overlays": None,
                 "generated_at": created_at,
             }
@@ -50,7 +50,7 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
 
     original = fresh_gateway.con.execute(
         (
-            "SELECT repo, commit, CAST(modules AS VARCHAR), overlays, generated_at "
+            "SELECT repo, commit, modules, overlays, generated_at "
             "FROM core.repo_map WHERE repo = ? AND commit = ?"
         ),
         [snapshot.repo, snapshot.commit],
@@ -62,14 +62,14 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
         {
             "repo": snapshot.repo,
             "commit": snapshot.commit,
-            "modules": ["new"],
+            "modules": {"new": "path.py"},
             "overlays": None,
             "generated_at": created_at,
         },
         {
             "repo": snapshot.repo,
             "commit": snapshot.commit,
-            "modules": ["dupe"],
+            "modules": {"dupe": "path.py"},
             "overlays": None,
             "generated_at": created_at,
         },
@@ -85,7 +85,7 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
 
     after = fresh_gateway.con.execute(
         (
-            "SELECT repo, commit, CAST(modules AS VARCHAR), overlays, generated_at "
+            "SELECT repo, commit, modules, overlays, generated_at "
             "FROM core.repo_map WHERE repo = ? AND commit = ?"
         ),
         [snapshot.repo, snapshot.commit],
