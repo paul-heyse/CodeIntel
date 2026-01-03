@@ -49,7 +49,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.catalog import FunctionCatalog
+from codeintel.storage.catalog import FunctionCatalog
 from codeintel.storage.query_results import records_from_relation
 from tests._helpers.catalogs import seed_goids_for_snapshot
 from tests._helpers.fakes.graph_runtime import (

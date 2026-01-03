@@ -10,13 +10,14 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlglot import exp
 
+from codeintel.core.helpers.payload import decode_payload, encode_payload
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
-_JSON_PAYLOAD_TYPES = (str, bytes, bytearray)
+_JSON_PAYLOAD_TYPES = (str, bytes, bytearray, memoryview)
 
 
 class CatalogGateway(Protocol):
@@ -43,7 +44,10 @@ def _coerce_json_payload(value: object) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return dict(value)
     if isinstance(value, _JSON_PAYLOAD_TYPES):
-        raw = value.decode("utf-8") if isinstance(value, (bytes, bytearray)) else value
+        decoded = decode_payload(value)
+        if isinstance(decoded, Mapping):
+            return dict(decoded)
+        raw = value.decode("utf-8") if isinstance(value, (bytes, bytearray, memoryview)) else value
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
             return dict(parsed)
@@ -193,8 +197,8 @@ def upsert_canonical_catalog(
 ) -> None:
     """Insert or update a canonical catalog entry."""
     created_at = entry.created_at.astimezone(UTC)
-    payload_json = json.dumps(entry.payload, sort_keys=True)
-    inputs_json = json.dumps(entry.inputs, sort_keys=True) if entry.inputs is not None else None
+    payload_json = encode_payload(entry.payload)
+    inputs_json = encode_payload(entry.inputs) if entry.inputs is not None else None
     table_ref = meta_table_ref("metadata.canonical_catalogs")
     table_expr = table_expr_from_ref(table_ref)
     columns = [

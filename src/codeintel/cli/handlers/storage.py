@@ -10,7 +10,6 @@ is provided, the handler opens a dedicated gateway for that path.
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
 from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
@@ -31,6 +30,7 @@ from codeintel.cli.errors.results import (
     fail_storage,
     fail_storage_connection,
 )
+from codeintel.cli.services.storage import StorageService
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.errors.taxonomy import INVALID_FORMAT
@@ -38,10 +38,7 @@ from codeintel.observability.cache_log_ingest import (
     CacheLogIngestConfigError,
     ingest_cache_log_jsonl,
 )
-from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.contracts.provider import iter_contracts
-from codeintel.storage.gateway import StorageConfig, open_gateway
-from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
@@ -49,8 +46,6 @@ from codeintel.storage.validation import ContractValidationMode
 from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection
@@ -67,51 +62,6 @@ def _resolve_validation_mode(raw: str | None) -> ContractValidationMode:
     except ValueError as exc:
         msg = 'Invalid value for "--validation-mode"'
         raise ValidationError(msg) from exc
-
-
-@contextmanager
-def _readonly_gateway(
-    db_path: Path,
-    *,
-    validation_mode: ContractValidationMode = ContractValidationMode.LENIENT,
-) -> Iterator[StorageGateway]:
-    """Open a read-only gateway with automatic cleanup.
-
-    Parameters
-    ----------
-    db_path
-        Path to the database.
-    validation_mode
-        Contract validation behavior when opening the gateway.
-
-    Yields
-    ------
-    StorageGateway
-        Open gateway that closes on context exit.
-    """
-    gw = open_gateway(StorageConfig.for_readonly(db_path, validation_mode=validation_mode))
-    try:
-        yield gw
-    finally:
-        gw.close()
-
-
-@contextmanager
-def _gateway_for_import(db_path: Path) -> Iterator[MinimalStorageGateway]:
-    cfg = StorageConfig(
-        db_path=db_path,
-        read_only=False,
-        apply_schema=False,
-        ensure_views=False,
-        validate_schema=False,
-    )
-    session = DuckDBSession(cfg)
-    con = session.open()
-    gw = MinimalStorageGateway(con)
-    try:
-        yield gw
-    finally:
-        gw.close()
 
 
 def validate_macros_handler(
@@ -148,9 +98,10 @@ def validate_macros_handler(
 
     if db_path_str is not None:
         db_path = Path(db_path_str)
+        service = StorageService.from_path(db_path, validation_mode=validation_mode)
         try:
-            with _readonly_gateway(
-                db_path,
+            with service.gateway_scope(
+                read_only=True,
                 validation_mode=validation_mode,
             ) as gateway:
                 return _validate_macros(gateway)
@@ -166,7 +117,23 @@ def validate_macros_handler(
                 )
             )
     else:
-        return _validate_macros(ctx.gateway)
+        try:
+            with ctx.storage.gateway_scope(
+                read_only=True,
+                validation_mode=validation_mode,
+            ) as gateway:
+                return _validate_macros(gateway)
+        except StorageConnectionError as exc:
+            LOG.warning("Failed to connect to storage gateway: %s", exc)
+            return CliResult.ok(
+                ValidateMacrosResult(
+                    status="skipped",
+                    missing_ingest=[],
+                    present_ingest=[],
+                    dataset_rows_only=[],
+                    reason=str(exc),
+                )
+            )
 
 
 def _load_table_schema_registry_keys(connection: DuckDBConnection) -> set[str]:
@@ -277,7 +244,8 @@ def profile_storage_handler(
             db_path=db_path,
         )
     else:
-        with _readonly_gateway(db_path) as gateway:
+        service = StorageService.from_path(db_path)
+        with service.gateway_scope(read_only=True) as gateway:
             Warehouse(gateway).profile_views(
                 views=views,
                 output_dir=output_dir,
@@ -357,13 +325,15 @@ def export_database_handler(
 
     if db_path is not None:
         try:
-            session = DuckDBSession(StorageConfig.for_readonly(db_path))
-            con = session.open_reader()
-            gw = MinimalStorageGateway(con)
-            try:
-                gw.export_database(directory=output_dir)
-            finally:
-                gw.close()
+            service = StorageService.from_path(
+                db_path,
+                validation_mode=ContractValidationMode.OFF,
+            )
+            with service.gateway_scope(
+                read_only=True,
+                validation_mode=ContractValidationMode.OFF,
+            ) as gateway:
+                gateway.export_database(directory=output_dir)
         except DuckDBError as exc:
             LOG.warning("Failed to connect to database at %s: %s", db_path, exc)
             return fail_storage_connection(db_path, str(exc))
@@ -401,8 +371,15 @@ def import_database_handler(
 
     if db_path is not None:
         try:
-            with _gateway_for_import(db_path) as gw:
-                gw.import_database(directory=input_dir)
+            service = StorageService.from_path(
+                db_path,
+                validation_mode=ContractValidationMode.OFF,
+            )
+            with service.gateway_scope(
+                read_only=False,
+                validation_mode=ContractValidationMode.OFF,
+            ) as gateway:
+                gateway.import_database(directory=input_dir)
         except DuckDBError as exc:
             LOG.warning("Failed to connect to database at %s: %s", db_path, exc)
             return fail_storage_connection(db_path, str(exc))
@@ -430,11 +407,10 @@ def _resolve_storage_db_path(ctx: CommandContext) -> Path:
     db_path = ctx.params.get_path("db_path")
     if db_path is not None:
         return db_path
+    if ctx.has_storage:
+        return ctx.storage.db_path
     if ctx.has_runtime:
         return ctx.runtime.paths.db_path
-    gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
-    if isinstance(gateway_db_path, (str, Path)):
-        return Path(gateway_db_path)
     return Path(":memory:")
 
 
@@ -450,13 +426,12 @@ def _resolve_jsonl_paths(ctx: CommandContext) -> list[Path] | None:
 
 
 def _select_profile_gateway(ctx: CommandContext, db_path: Path) -> StorageGateway | None:
-    gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
-    if not isinstance(gateway_db_path, (str, Path)):
+    if not ctx.has_storage:
         return None
-    if str(db_path) == ":memory:" or str(gateway_db_path) == str(db_path):
+    if str(db_path) == ":memory:":
         return ctx.gateway
     try:
-        if Path(gateway_db_path).resolve() == db_path.resolve():
+        if ctx.storage.db_path.resolve() == db_path.resolve():
             return ctx.gateway
     except OSError:
         return None

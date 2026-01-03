@@ -18,7 +18,6 @@ from codeintel.build.graphs.compute.goid import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -27,8 +26,10 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import empty_frame_for_table, rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.core.spans import normalize_line_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -37,35 +38,17 @@ GOIDS_TARGET_NAME = "goids"
 GOIDS_TABLE_KEY = "core.goids"
 GOID_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
 
-GOIDS_COLUMNS = (
-    "goid_h128",
-    "urn",
-    "repo",
-    "commit",
-    "rel_path",
-    "language",
-    "kind",
-    "qualname",
-    "start_line",
-    "end_line",
-    "created_at",
-)
-GOID_CROSSWALK_COLUMNS = (
-    "repo",
-    "commit",
-    "goid",
-    "lang",
-    "module_path",
-    "file_path",
-    "start_line",
-    "end_line",
-    "scip_symbol",
-    "ast_qualname",
-    "cst_node_id",
-    "chunk_id",
-    "symbol_id",
-    "updated_at",
-)
+
+def _columns_for_table(table_key: str) -> tuple[str, ...]:
+    columns = columns_for_table_key(table_key)
+    if not columns:
+        msg = f"No schema columns registered for {table_key}"
+        raise ValueError(msg)
+    return tuple(columns)
+
+
+GOIDS_COLUMNS = _columns_for_table(GOIDS_TABLE_KEY)
+GOID_CROSSWALK_COLUMNS = _columns_for_table(GOID_CROSSWALK_TABLE_KEY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,13 +71,12 @@ class _GoidsAnalysis:
 
 def _rows_to_frame(
     rows: tuple[GoidRow | GoidCrosswalkRow, ...],
-    columns: tuple[str, ...],
     table_key: str,
 ) -> pl.LazyFrame:
     if not rows:
         return empty_frame_for_table(table_key)
-    frame = pl.DataFrame([dataclasses.asdict(row) for row in rows], orient="row")
-    return frame.lazy().select(list(columns))
+    row_dicts = [dataclasses.asdict(row) for row in rows]
+    return rows_to_frame(table_key, row_dicts)
 
 
 def _module_lookup(
@@ -312,7 +294,7 @@ def goids__base(goids_analysis: _GoidsAnalysis) -> pl.LazyFrame:
     polars.LazyFrame
         Lazy frame of core.goids rows.
     """
-    return _rows_to_frame(goids_analysis.goid_rows, GOIDS_COLUMNS, GOIDS_TABLE_KEY)
+    return _rows_to_frame(goids_analysis.goid_rows, GOIDS_TABLE_KEY)
 
 
 def goid_crosswalk__base(goids_analysis: _GoidsAnalysis) -> pl.LazyFrame:
@@ -323,11 +305,7 @@ def goid_crosswalk__base(goids_analysis: _GoidsAnalysis) -> pl.LazyFrame:
     polars.LazyFrame
         Lazy frame of core.goid_crosswalk rows.
     """
-    return _rows_to_frame(
-        goids_analysis.crosswalk_rows,
-        GOID_CROSSWALK_COLUMNS,
-        GOID_CROSSWALK_TABLE_KEY,
-    )
+    return _rows_to_frame(goids_analysis.crosswalk_rows, GOID_CROSSWALK_TABLE_KEY)
 
 
 _MODULE = sys.modules[__name__]

@@ -10,6 +10,7 @@ import duckdb
 from sqlglot import exp
 
 from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.sqlglot_tools import table_expr_from_ref
 from codeintel.storage.duckdb_policy_backend import (
     duckdb_default_catalog,
     duckdb_schema_exists,
@@ -20,7 +21,6 @@ from codeintel.storage.helpers.table_key import (
     fully_qualified_table_ref,
     split_table_key,
 )
-from codeintel.storage.sqlglot_tools import table_expr_from_ref
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 

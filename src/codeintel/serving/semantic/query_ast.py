@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.sqlglot_tools import canonicalize_select_duckdb, schema_mapping_for_table_key
 from codeintel.serving.semantic.duckdb_relation_builder import validate_query_ast
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
 from codeintel.storage.datasets.manifest_index import dataset_filter_expression
 from codeintel.storage.datasets.scanning import QueryPlanSpec
-from codeintel.storage.sqlglot_tools import canonicalize_select_duckdb, schema_mapping_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

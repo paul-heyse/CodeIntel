@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from codeintel.core.catalog import CatalogService, FunctionCatalog
+from codeintel.storage.catalog import CatalogService, FunctionCatalog
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 if TYPE_CHECKING:

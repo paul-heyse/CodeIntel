@@ -12,7 +12,13 @@ from codeintel.observability.runtime import (
     bootstrap_observability,
     shutdown_observability,
 )
-from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_is_not_none,
+    expect_true,
+)
+from tests._helpers.cli_context import make_command_context
 
 
 def _find_check(
@@ -55,3 +61,21 @@ def test_telemetry_pipeline_check_reports_flush() -> None:
         expect_equal(result.name, "telemetry_pipeline")
         expect_true(isinstance(result.details, dict))
     shutdown_observability()
+
+
+def test_health_check_handler_output_shape() -> None:
+    """Health check handler should return a structured result payload."""
+    with make_command_context() as ctx:
+        result = health_handler.health_check_handler(ctx)
+
+    expect_true(result.success)
+    data = expect_is_not_none(result.data)
+    expect_is_instance(data, health_handler.HealthCheckResult)
+    expect_true(isinstance(data.checks, list))
+    if data.checks:
+        first = data.checks[0]
+        expect_true(isinstance(first, dict))
+        expect_true("name" in first)
+        expect_true("status" in first)
+        expect_true("message" in first)
+        expect_true("duration_ms" in first)

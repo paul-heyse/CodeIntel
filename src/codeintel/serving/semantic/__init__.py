@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from codeintel.core.registry import RegistryService
+    from codeintel.runtime.registry_service import RegistryService
     from codeintel.serving.semantic.kernel import SemanticQueryKernel
     from codeintel.serving.semantic.models import (
         FilterSpec,
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "FilterSpec": ("codeintel.serving.semantic.models", "FilterSpec"),
-    "RegistryService": ("codeintel.core.registry", "RegistryService"),
+    "RegistryService": ("codeintel.runtime.registry_service", "RegistryService"),
     "SemanticQueryKernel": ("codeintel.serving.semantic.kernel", "SemanticQueryKernel"),
     "SemanticQueryRequest": ("codeintel.serving.semantic.models", "SemanticQueryRequest"),
     "SemanticQueryResponse": ("codeintel.serving.semantic.models", "SemanticQueryResponse"),

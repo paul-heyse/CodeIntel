@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from codeintel.build.schemas.contract_service import (
     ContractResolutionMode,
     ContractResolutionSettings,
+    iter_contracts,
 )
 from codeintel.build.schemas.manifest import (
     ArtifactProvenance,
@@ -26,7 +27,6 @@ from codeintel.build.schemas.provider_unified import (
 )
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.tag_filters import tf_schema_tables
-from codeintel.core.schemas.contract_service import iter_contracts
 from codeintel.core.schemas.declared import declared_schema_provider
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.resolution import ResolvedSchemaProvider

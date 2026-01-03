@@ -32,7 +32,8 @@ from typing import TYPE_CHECKING, Final, cast
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.core.catalog import FunctionCatalog, FunctionSpan
+    from codeintel.core.catalog import FunctionSpan
+    from codeintel.storage.catalog import FunctionCatalog
 
 # ---------------------------------------------------------------------------
 # Constants

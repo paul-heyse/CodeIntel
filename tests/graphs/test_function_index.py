@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.core.catalog import FunctionSpan, FunctionSpanIndex
+from codeintel.core.catalog import FunctionSpan
+from codeintel.storage.catalog import FunctionSpanIndex
 
 EXACT_GOID_FOO = 1
 EXACT_GOID_BAR = 2

@@ -14,7 +14,6 @@ from codeintel.build.analytics.subsystems.materialize import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -24,6 +23,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -50,35 +50,6 @@ SUBSYSTEM_MODULES_CONTRACT = TableContractSpec(
     required_cols=(),
     clip_column=None,
     input_name="subsystem_modules__base",
-)
-
-SUBSYSTEMS_COLUMNS = (
-    "repo",
-    "commit",
-    "subsystem_id",
-    "name",
-    "description",
-    "module_count",
-    "modules_json",
-    "entrypoints_json",
-    "internal_edge_count",
-    "external_edge_count",
-    "fan_in",
-    "fan_out",
-    "function_count",
-    "avg_risk_score",
-    "max_risk_score",
-    "high_risk_function_count",
-    "risk_level",
-    "created_at",
-)
-
-SUBSYSTEM_MODULES_COLUMNS = (
-    "repo",
-    "commit",
-    "subsystem_id",
-    "module",
-    "role",
 )
 
 
@@ -172,7 +143,6 @@ def subsystems__base(subsystem_rows: SubsystemRows) -> pl.LazyFrame:
     return rows_to_frame(
         SUBSYSTEMS_TABLE_KEY,
         subsystem_rows.subsystem_rows,
-        columns=SUBSYSTEMS_COLUMNS,
     )
 
 
@@ -187,7 +157,6 @@ def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pl.LazyFrame:
     return rows_to_frame(
         SUBSYSTEM_MODULES_TABLE_KEY,
         subsystem_rows.membership_rows,
-        columns=SUBSYSTEM_MODULES_COLUMNS,
     )
 
 

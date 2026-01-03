@@ -14,6 +14,7 @@ import polars as pl
 
 from codeintel.build.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.helpers.payload import decode_payload
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
 
@@ -716,12 +717,13 @@ def _decorator_names(decorators: list[ast.expr]) -> list[str]:
 
 
 def _coerce_json(value: object) -> object:
-    if isinstance(value, str):
+    decoded = decode_payload(value)
+    if isinstance(decoded, str):
         try:
-            return json.loads(value)
+            return json.loads(decoded)
         except json.JSONDecodeError:
-            return value
-    return value
+            return decoded
+    return decoded
 
 
 def _normalize_tags(raw: object) -> list[str]:

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 import polars as pl
 
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsSubsystemProfileCacheRow as SubsystemProfileCacheRow,
 )
@@ -13,32 +14,7 @@ from codeintel.core.schemas.generated_rows.analytics import (
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
-PROFILE_CACHE_COLUMNS = (
-    "repo",
-    "commit",
-    "subsystem_id",
-    "name",
-    "description",
-    "module_count",
-    "modules_json",
-    "entrypoints_json",
-    "internal_edge_count",
-    "external_edge_count",
-    "fan_in",
-    "fan_out",
-    "function_count",
-    "avg_risk_score",
-    "max_risk_score",
-    "high_risk_function_count",
-    "risk_level",
-    "import_in_degree",
-    "import_out_degree",
-    "import_pagerank",
-    "import_betweenness",
-    "import_closeness",
-    "import_layer",
-    "created_at",
-)
+SUBSYSTEM_PROFILE_CACHE_TABLE_KEY = "analytics.subsystem_profile_cache"
 
 
 def build_subsystem_profile_cache_rows(
@@ -69,7 +45,8 @@ def build_subsystem_profile_cache_rows(
         on=["repo", "commit", "subsystem_id"],
         how="left",
     )
-    frame = _ensure_columns(joined, PROFILE_CACHE_COLUMNS)
+    columns = _profile_cache_columns()
+    frame = _ensure_columns(joined, columns)
     rows = frame.collect().to_dicts()
     return [cast("SubsystemProfileCacheRow", row) for row in rows]
 
@@ -81,6 +58,14 @@ def _filter_frame_by_snapshot(frame: pl.LazyFrame, snapshot: SnapshotRef) -> pl.
     if "commit" in available:
         frame = frame.filter(pl.col("commit") == snapshot.commit)
     return frame
+
+
+def _profile_cache_columns() -> tuple[str, ...]:
+    columns = columns_for_table_key(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY)
+    if not columns:
+        msg = f"No schema columns registered for {SUBSYSTEM_PROFILE_CACHE_TABLE_KEY}"
+        raise ValueError(msg)
+    return tuple(columns)
 
 
 def _ensure_columns(frame: pl.LazyFrame, columns: tuple[str, ...]) -> pl.LazyFrame:

@@ -217,6 +217,28 @@ class OperationSpec:
         return result
 
 
+@dataclass(frozen=True)
+class OperationAlias:
+    """Alias mapping for legacy operation identifiers.
+
+    Parameters
+    ----------
+    alias_id
+        Legacy operation identifier.
+    target_id
+        Canonical operation identifier.
+    deprecated
+        Whether the alias is deprecated.
+    note
+        Optional deprecation guidance.
+    """
+
+    alias_id: str
+    target_id: str
+    deprecated: bool = True
+    note: str | None = None
+
+
 @dataclass
 class OperationRegistry:
     """Central registry for all CLI operations.
@@ -246,6 +268,8 @@ class OperationRegistry:
     """
 
     _operations: dict[str, OperationSpec] = field(default_factory=dict)
+    _aliases: dict[str, OperationAlias] = field(default_factory=dict)
+    _aliases_by_target: dict[str, set[str]] = field(default_factory=dict)
 
     def register(self, spec: OperationSpec) -> OperationSpec:
         """Register an operation specification.
@@ -268,10 +292,46 @@ class OperationRegistry:
         if spec.operation_id in self._operations:
             msg = f"Operation already registered: {spec.operation_id}"
             raise ValueError(msg)
+        if spec.operation_id in self._aliases:
+            msg = f"Operation ID conflicts with registered alias: {spec.operation_id}"
+            raise ValueError(msg)
 
         self._operations[spec.operation_id] = spec
         LOG.debug("Registered operation: %s", spec.operation_id)
         return spec
+
+    def register_alias(self, alias: OperationAlias) -> OperationAlias:
+        """Register a legacy alias for a canonical operation.
+
+        Parameters
+        ----------
+        alias
+            Alias metadata to register.
+
+        Returns
+        -------
+        OperationAlias
+            Registered alias metadata.
+
+        Raises
+        ------
+        ValueError
+            If alias conflicts with an existing operation, alias, or missing target.
+        """
+        if alias.alias_id in self._operations:
+            msg = f"Alias ID conflicts with operation: {alias.alias_id}"
+            raise ValueError(msg)
+        if alias.alias_id in self._aliases:
+            msg = f"Alias already registered: {alias.alias_id}"
+            raise ValueError(msg)
+        if alias.target_id not in self._operations:
+            msg = f"Alias target not registered: {alias.target_id}"
+            raise ValueError(msg)
+
+        self._aliases[alias.alias_id] = alias
+        self._aliases_by_target.setdefault(alias.target_id, set()).add(alias.alias_id)
+        LOG.debug("Registered alias: %s -> %s", alias.alias_id, alias.target_id)
+        return alias
 
     def get(self, operation_id: str) -> OperationSpec | None:
         """Get an operation specification by ID.
@@ -286,7 +346,13 @@ class OperationRegistry:
         OperationSpec | None
             Specification if found, None otherwise.
         """
-        return self._operations.get(operation_id)
+        spec = self._operations.get(operation_id)
+        if spec is not None:
+            return spec
+        alias = self._aliases.get(operation_id)
+        if alias is None:
+            return None
+        return self._operations.get(alias.target_id)
 
     def require(self, operation_id: str) -> OperationSpec:
         """Get an operation specification, raising if not found.
@@ -306,7 +372,7 @@ class OperationRegistry:
         KeyError
             If operation not found.
         """
-        spec = self._operations.get(operation_id)
+        spec = self.get(operation_id)
         if spec is None:
             msg = f"Operation not found: {operation_id}"
             raise KeyError(msg)
@@ -342,6 +408,52 @@ class OperationRegistry:
 
         return sorted(ops, key=lambda op: op.operation_id)
 
+    def list_aliases(self, *, target_id: str | None = None) -> list[OperationAlias]:
+        """List registered aliases.
+
+        Parameters
+        ----------
+        target_id
+            Optional canonical operation ID to filter aliases.
+
+        Returns
+        -------
+        list[OperationAlias]
+            Registered aliases, sorted by alias ID.
+        """
+        aliases = list(self._aliases.values())
+        if target_id is not None:
+            aliases = [alias for alias in aliases if alias.target_id == target_id]
+        return sorted(aliases, key=lambda alias: alias.alias_id)
+
+    def aliases_for(self, operation_id: str) -> tuple[OperationAlias, ...]:
+        """Return aliases registered for a canonical operation.
+
+        Parameters
+        ----------
+        operation_id
+            Canonical operation identifier.
+
+        Returns
+        -------
+        tuple[OperationAlias, ...]
+            Alias metadata for the canonical operation.
+        """
+        aliases = self._aliases_by_target.get(operation_id, set())
+        if not aliases:
+            return ()
+        return tuple(self._aliases[alias_id] for alias_id in sorted(aliases))
+
+    def is_alias(self, operation_id: str) -> bool:
+        """Return True when operation_id is a registered alias.
+
+        Returns
+        -------
+        bool
+            True if operation_id is a registered alias.
+        """
+        return operation_id in self._aliases
+
     def list_groups(self) -> list[str]:
         """List all operation groups.
 
@@ -369,11 +481,21 @@ class OperationRegistry:
         if operation_id in self._operations:
             del self._operations[operation_id]
             return True
+        if operation_id in self._aliases:
+            alias = self._aliases.pop(operation_id)
+            targets = self._aliases_by_target.get(alias.target_id)
+            if targets is not None:
+                targets.discard(operation_id)
+                if not targets:
+                    self._aliases_by_target.pop(alias.target_id, None)
+            return True
         return False
 
     def clear(self) -> None:
         """Remove all registered operations."""
         self._operations.clear()
+        self._aliases.clear()
+        self._aliases_by_target.clear()
 
     def __len__(self) -> int:
         """Return number of registered operations.
@@ -400,7 +522,7 @@ class OperationRegistry:
         """
         if not isinstance(operation_id, str):
             return False
-        return operation_id in self._operations
+        return operation_id in self._operations or operation_id in self._aliases
 
     def __iter__(self) -> Iterator[str]:
         """
@@ -446,6 +568,7 @@ def get_registry() -> OperationRegistry:
     """
     registry = OperationRegistryHolder.get(OperationRegistry)
     if registry.list_operations():
+        _register_default_aliases(registry)
         return registry
 
     if _BOOTSTRAP_STATE.in_progress:
@@ -455,6 +578,7 @@ def get_registry() -> OperationRegistry:
     try:
         importlib.import_module("codeintel.cli.commands")
         if registry.list_operations():
+            _register_default_aliases(registry)
             return registry
         if _commands_module_is_initializing():
             return registry
@@ -469,7 +593,16 @@ def get_registry() -> OperationRegistry:
     finally:
         _BOOTSTRAP_STATE.in_progress = False
 
+    _register_default_aliases(registry)
     return registry
+
+
+def _register_default_aliases(registry: OperationRegistry) -> None:
+    for alias in _default_aliases():
+        try:
+            registry.register_alias(alias)
+        except ValueError:
+            LOG.debug("Skipping alias registration for %s", alias.alias_id)
 
 
 def register_operation(spec: OperationSpec) -> OperationSpec:
@@ -510,6 +643,40 @@ def register_operation(spec: OperationSpec) -> OperationSpec:
     return get_registry().register(spec)
 
 
+def register_alias(
+    alias_id: str,
+    target_id: str,
+    *,
+    deprecated: bool = True,
+    note: str | None = None,
+) -> OperationAlias:
+    """Register an alias for a canonical operation.
+
+    Parameters
+    ----------
+    alias_id
+        Legacy operation identifier.
+    target_id
+        Canonical operation identifier.
+    deprecated
+        Whether the alias is deprecated.
+    note
+        Optional deprecation guidance.
+
+    Returns
+    -------
+    OperationAlias
+        Registered alias metadata.
+    """
+    alias = OperationAlias(
+        alias_id=alias_id,
+        target_id=target_id,
+        deprecated=deprecated,
+        note=note,
+    )
+    return get_registry().register_alias(alias)
+
+
 def reset_registry() -> None:
     """Reset the global registry (for testing only).
 
@@ -517,6 +684,51 @@ def reset_registry() -> None:
     Do not call in production code.
     """
     OperationRegistryHolder.reset()
+
+
+def _default_aliases() -> tuple[OperationAlias, ...]:
+    return (
+        OperationAlias(
+            alias_id="datasets.list",
+            target_id="dataset.list",
+            note="Use dataset.list.",
+        ),
+        OperationAlias(
+            alias_id="datasets.describe",
+            target_id="dataset.describe",
+            note="Use dataset.describe.",
+        ),
+        OperationAlias(
+            alias_id="datasets.verify",
+            target_id="dataset.verify",
+            note="Use dataset.verify.",
+        ),
+        OperationAlias(
+            alias_id="datasets.info",
+            target_id="dataset.info",
+            note="Use dataset.info.",
+        ),
+        OperationAlias(
+            alias_id="datasets.flow",
+            target_id="dataset.flow",
+            note="Use dataset.flow.",
+        ),
+        OperationAlias(
+            alias_id="datasets.constraints",
+            target_id="dataset.constraints",
+            note="Use dataset.constraints.",
+        ),
+        OperationAlias(
+            alias_id="graphs.targets.list",
+            target_id="graph.targets.list",
+            note="Use graph.targets.list.",
+        ),
+        OperationAlias(
+            alias_id="graphs.targets.plan",
+            target_id="graph.targets.plan",
+            note="Use graph.targets.plan.",
+        ),
+    )
 
 
 def execute_operation(
@@ -566,10 +778,12 @@ def execute_operation(
 
 
 __all__ = [
+    "OperationAlias",
     "OperationRegistry",
     "OperationSpec",
     "execute_operation",
     "get_registry",
+    "register_alias",
     "register_operation",
     "reset_registry",
 ]

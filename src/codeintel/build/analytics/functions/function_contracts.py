@@ -13,11 +13,12 @@ import polars as pl
 
 from codeintel.build.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.helpers.payload import decode_payload
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
@@ -225,12 +226,13 @@ def _type_map_from_frame(
 
 
 def _coerce_json(value: object) -> object:
-    if isinstance(value, str):
+    decoded = decode_payload(value)
+    if isinstance(decoded, str):
         try:
-            return json.loads(value)
+            return json.loads(decoded)
         except json.JSONDecodeError:
-            return value
-    return value
+            return decoded
+    return decoded
 
 
 def _analyze_function(

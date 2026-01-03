@@ -33,6 +33,7 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
+from codeintel.core.serialization.msgspec_json import encode_json_text
 
 if TYPE_CHECKING:
     from codeintel.build.schemas.diff import ManifestDiffResult
@@ -232,7 +233,7 @@ def _compile_manifest(ctx: CommandContext) -> _CompiledManifest:
         ),
         request=request,
     )
-    payload = json.dumps(manifest.to_json_obj(), indent=2, sort_keys=True) + "\n"
+    payload = encode_json_text(manifest.to_json_obj(), indent=2, newline=True)
     return _CompiledManifest(
         payload=payload,
         table_count=len(manifest.tables),

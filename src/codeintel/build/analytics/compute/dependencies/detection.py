@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -34,7 +35,6 @@ from codeintel.build.analytics.utilities.ast import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from codeintel.build.analytics.compute.dependencies.classification import (
         LibraryPattern,
@@ -237,17 +237,14 @@ def build_alias_map(tree: ast.AST) -> dict[str, str]:
 
 
 def build_alias_maps(
-    repo_root: Path,
-    module_map: dict[str, str],
+    trees_by_path: Mapping[str, ast.AST],
 ) -> dict[str, dict[str, str]]:
-    """Build alias maps for all modules in the repository.
+    """Build alias maps for parsed ASTs keyed by relative paths.
 
     Parameters
     ----------
-    repo_root
-        Repository root directory.
-    module_map
-        Mapping of relative paths to module names.
+    trees_by_path
+        Mapping of relative paths to AST trees.
 
     Returns
     -------
@@ -255,17 +252,29 @@ def build_alias_maps(
         Mapping of relative paths to their alias maps.
     """
     alias_maps: dict[str, dict[str, str]] = {}
-    for rel_path in module_map:
-        abs_path = repo_root / rel_path
-        if not abs_path.is_file():
-            continue
+    for rel_path, tree in trees_by_path.items():
+        alias_maps[rel_path] = build_alias_map(tree)
+    return alias_maps
+
+
+def build_alias_maps_from_sources(
+    sources_by_path: Mapping[str, str],
+) -> dict[str, dict[str, str]]:
+    """Build alias maps for raw sources keyed by relative paths.
+
+    Returns
+    -------
+    dict[str, dict[str, str]]
+        Mapping of relative paths to alias maps.
+    """
+    trees: dict[str, ast.AST] = {}
+    for rel_path, source in sources_by_path.items():
         try:
-            source = abs_path.read_text(encoding="utf-8", errors="replace")
             tree = ast.parse(source, filename=rel_path)
-            alias_maps[rel_path] = build_alias_map(tree)
         except (SyntaxError, ValueError):
             continue
-    return alias_maps
+        trees[rel_path] = tree
+    return build_alias_maps(trees)
 
 
 def group_calls_by_library(
@@ -313,5 +322,6 @@ __all__ = [
     "DependencyCallVisitor",
     "build_alias_map",
     "build_alias_maps",
+    "build_alias_maps_from_sources",
     "group_calls_by_library",
 ]

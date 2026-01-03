@@ -246,9 +246,7 @@ def _coerce_methods(raw: str) -> list[str] | None:
     if isinstance(parsed, str):
         return [_normalize_http_method(parsed)]
     if isinstance(parsed, (list, tuple, set)):
-        normalized = [
-            _normalize_http_method(item) for item in parsed if isinstance(item, str)
-        ]
+        normalized = [_normalize_http_method(item) for item in parsed if isinstance(item, str)]
         return [item for item in normalized if item]
     tokens = [token.upper() for token in re.findall(r"\\b[A-Za-z]+\\b", raw)]
     matches = [token for token in tokens if token in _KNOWN_HTTP_METHODS]

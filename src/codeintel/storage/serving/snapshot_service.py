@@ -15,6 +15,7 @@ from codeintel.core.columnar.schema_alignment import (
     extras_policy_from_schema,
 )
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.datasets.manifest_index import (
@@ -28,15 +29,18 @@ from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.schema.duckdb_contracts import contract_schema_for_table_key
+from codeintel.storage.schema.duckdb_contracts import (
+    ContractSchemaOptions,
+    contract_schema_for_table_key,
+)
 from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
 
 DEFAULT_FRAGMENT_READAHEAD = 2
+_MANIFEST_ROOT_INDEX = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,9 +324,15 @@ def _create_dataset_view(
     if current_schema != request.schema:
         _set_schema(con, request.schema)
     try:
+        dataset_root_dir = _dataset_root_from_manifest_path(request.manifest_path)
+        options = ContractSchemaOptions(
+            dataset_root_dir=dataset_root_dir,
+            snapshot_id=request.manifest.snapshot_id,
+        )
         contract_schema = contract_schema_for_table_key(
             con=con,
             table_key=request.table_key,
+            options=options,
         )
         relation = _dataset_read_parquet_relation(
             con=con,
@@ -334,6 +344,11 @@ def _create_dataset_view(
     finally:
         if current_schema != request.schema:
             _set_schema(con, current_schema)
+
+
+def _dataset_root_from_manifest_path(manifest_path: Path) -> Path | None:
+    parents = manifest_path.parents
+    return parents[_MANIFEST_ROOT_INDEX] if len(parents) > _MANIFEST_ROOT_INDEX else None
 
 
 def _dataset_read_parquet_relation(

@@ -7,8 +7,9 @@ avoid storage-layer dependencies on serving code.
 from __future__ import annotations
 
 from codeintel.storage.schema.duckdb_contracts import (
+    ContractSchemaOptions,
     contract_schema_for_table_key,
     table_schema_for_table_key,
 )
 
-__all__ = ["contract_schema_for_table_key", "table_schema_for_table_key"]
+__all__ = ["ContractSchemaOptions", "contract_schema_for_table_key", "table_schema_for_table_key"]

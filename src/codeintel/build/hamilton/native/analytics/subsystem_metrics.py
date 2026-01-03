@@ -17,7 +17,6 @@ from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -27,6 +26,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -42,19 +42,6 @@ SUBSYSTEM_GRAPH_METRICS_CONTRACT = TableContractSpec(
     required_cols=(),
     clip_column=None,
     input_name="subsystem_graph_metrics__base",
-)
-
-SUBSYSTEM_GRAPH_METRICS_COLUMNS = (
-    "repo",
-    "commit",
-    "subsystem_id",
-    "import_in_degree",
-    "import_out_degree",
-    "import_pagerank",
-    "import_betweenness",
-    "import_closeness",
-    "import_layer",
-    "created_at",
 )
 
 
@@ -138,7 +125,6 @@ def subsystem_graph_metrics__base(
     return rows_to_frame(
         SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
         rows,
-        columns=SUBSYSTEM_GRAPH_METRICS_COLUMNS,
     )
 
 

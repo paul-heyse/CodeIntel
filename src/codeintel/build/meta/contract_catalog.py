@@ -5,15 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.schemas.contract_service import (
+    ContractService,
+    get_enriched_contract_service,
+)
 from codeintel.core.duckdb_types import DuckDBConnection
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.contract_serde import contract_to_json_obj
-from codeintel.core.schemas.contract_service import (
-    ContractService as ContractServiceProtocol,
-)
-from codeintel.core.schemas.contract_service import (
-    get_enriched_contract_service,
-)
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 
@@ -40,7 +38,7 @@ class _CatalogConnectionGateway:
     con: DuckDBConnection
 
 
-def _resolve_contract_service() -> ContractServiceProtocol:
+def _resolve_contract_service() -> ContractService:
     return get_enriched_contract_service()
 
 

@@ -193,6 +193,7 @@ class DuckDBQueryEngine:
                         fragment_readahead=ctx.settings.dataset_fragment_readahead,
                         use_threads=ctx.settings.dataset_use_threads,
                         unify_schemas=ctx.settings.dataset_unify_schemas,
+                        schema_promote_options=ctx.settings.dataset_schema_promote_options,
                         metrics_enabled=ctx.settings.dataset_scan_metrics_enabled,
                     ),
                     column_types=spec.column_types,

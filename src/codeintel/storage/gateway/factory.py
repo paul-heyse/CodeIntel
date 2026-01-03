@@ -17,6 +17,7 @@ from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.provider import FallbackSchemaProvider
 from codeintel.core.schemas.resolution import ResolvedArrowSchemaProvider, ResolvedSchemaProvider
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.catalog_state import (
@@ -25,7 +26,11 @@ from codeintel.storage.contracts.catalog_state import (
 )
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
 from codeintel.storage.contracts.schema_provider import clear_schema_provider_cache
-from codeintel.storage.datasets.registry import load_dataset_registry
+from codeintel.storage.datasets.registry import (
+    attach_dataset_manifests,
+    load_dataset_manifests_for_snapshot,
+    load_dataset_registry,
+)
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.inference import InferenceGateway
@@ -38,7 +43,6 @@ from codeintel.storage.metadata import (
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogProvider, SchemaCatalogTracking
 from codeintel.storage.validation import (
     ContractValidationMode,
@@ -51,6 +55,7 @@ from codeintel.storage.validation import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from codeintel.core.manifests import ArrowDatasetManifest
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import SnapshotGatewayResolver, StorageGateway
 
@@ -372,6 +377,19 @@ def open_gateway(
             )
         _maybe_set_schema_service_from_catalog(con)
         datasets = load_dataset_registry(con)
+        if config.dataset_root_dir is not None:
+            dataset_manifests: dict[str, ArrowDatasetManifest] | None = None
+            if config.commit is not None:
+                dataset_manifests = load_dataset_manifests_for_snapshot(
+                    datasets,
+                    dataset_root_dir=config.dataset_root_dir,
+                    snapshot_id=config.commit,
+                )
+            datasets = attach_dataset_manifests(
+                datasets,
+                dataset_root_dir=config.dataset_root_dir,
+                dataset_manifests=dataset_manifests,
+            )
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
         include_views = False
         _apply_contract_validation(

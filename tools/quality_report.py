@@ -233,6 +233,16 @@ def main() -> int:
                 "tools.guardrails",
             ],
         ),
+        CommandSpec(
+            name="cli_registry_preflight",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.cli_registry_preflight",
+            ],
+        ),
         CommandSpec(name="ruff_check", args=["uv", "run", "ruff", "check", "--fix"]),
         CommandSpec(
             name="operation_contracts",

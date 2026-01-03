@@ -22,7 +22,7 @@ from codeintel.build.analytics.compute.dependencies.classification import (
 from codeintel.build.analytics.compute.dependencies.detection import (
     DependencyCallVisitor,
     build_alias_map,
-    build_alias_maps,
+    build_alias_maps_from_sources,
     group_calls_by_library,
 )
 from codeintel.build.analytics.dependencies import load_config_key_map
@@ -170,9 +170,7 @@ def test_severity_scores_constant() -> None:
     expect_in("critical", SEVERITY_SCORES)
 
 
-def test_build_alias_maps_handles_dotted_imports(
-    dependencies_ctx: DependenciesFixture,
-) -> None:
+def test_build_alias_maps_handles_dotted_imports() -> None:
     """Verify alias maps are built for multiple files.
 
     Raises
@@ -180,13 +178,8 @@ def test_build_alias_maps_handles_dotted_imports(
     AssertionError
         If the alias map paths do not match the expected sources.
     """
-    repo_root = dependencies_ctx.ctx.repo_root
     sources = dependency_alias_sources()
-    module_map = {name: f"pkg.{name.removesuffix('.py')}" for name in sources}
-    for name, source in sources.items():
-        (repo_root / name).write_text(source, encoding="utf-8")
-
-    alias_maps = build_alias_maps(repo_root, module_map)
+    alias_maps = build_alias_maps_from_sources(sources)
     expected_paths = sorted(sources)
     actual_paths = sorted(alias_maps)
     if actual_paths != expected_paths:

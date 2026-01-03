@@ -14,28 +14,30 @@ import networkx as nx
 from networkx.exception import NetworkXNoPath
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
+from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
 
 
-CONFIG_DATA_FLOW_COLS = (
-    "repo",
-    "commit",
-    "config_key",
-    "config_path",
-    "function_goid_h128",
-    "usage_kind",
-    "evidence",
-    "call_chain_id",
-    "call_chain",
-    "created_at",
-)
+CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
+
+
+def _columns_for_table(table_key: str) -> tuple[str, ...]:
+    columns = columns_for_table_key(table_key)
+    if not columns:
+        msg = f"No schema columns registered for {table_key}"
+        raise ValueError(msg)
+    return tuple(columns)
+
+
+CONFIG_DATA_FLOW_COLS = _columns_for_table(CONFIG_DATA_FLOW_TABLE_KEY)
 
 log = logging.getLogger(__name__)
 
@@ -411,7 +413,7 @@ def _build_config_flow_rows(
 ) -> list[tuple[object, ...]]:
     max_paths_per_usage = 5
     max_path_length = 10
-    rows_to_insert: list[tuple[object, ...]] = []
+    row_dicts: list[dict[str, object]] = []
     for goid, func_ast in artifacts.ast_by_goid.items():
         rel_path = normalize_path(func_ast.rel_path)
         config_refs = artifacts.refs_by_path.get(rel_path, [])
@@ -443,18 +445,18 @@ def _build_config_flow_rows(
                     chain_id = _call_chain_id(
                         snapshot.repo, snapshot.commit, config_key, usage_kind, chain
                     )
-                    rows_to_insert.append(
-                        (
-                            snapshot.repo,
-                            snapshot.commit,
-                            config_key,
-                            config_path,
-                            goid,
-                            usage_kind,
-                            json.dumps(evidence) if evidence else None,
-                            chain_id,
-                            json.dumps(chain),
-                            now,
-                        )
+                    row_dicts.append(
+                        {
+                            "repo": snapshot.repo,
+                            "commit": snapshot.commit,
+                            "config_key": config_key,
+                            "config_path": config_path,
+                            "function_goid_h128": goid,
+                            "usage_kind": usage_kind,
+                            "evidence_json": evidence if evidence else None,
+                            "call_chain_id": chain_id,
+                            "call_chain_json": list(chain),
+                            "created_at": now,
+                        }
                     )
-    return rows_to_insert
+    return rows_to_tuples_for_table(CONFIG_DATA_FLOW_TABLE_KEY, row_dicts)

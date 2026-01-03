@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.queries.filter_compiler import (
+    FilterCompilerError,
+    arrow_filter_expression,
+    compile_filter_predicates,
+)
 from codeintel.core.schemas.schema_catalog_models import DerivedSettingsPayload
 from codeintel.storage.datasets.contracts import (
     DatasetTuningMetadata,
@@ -28,11 +33,6 @@ from codeintel.storage.datasets.scanning import (
 )
 from codeintel.storage.datasets.scanning import (
     dataset_for_manifest as build_dataset_for_manifest,
-)
-from codeintel.storage.queries.filter_compiler import (
-    FilterCompilerError,
-    arrow_filter_expression,
-    compile_filter_predicates,
 )
 
 if TYPE_CHECKING:

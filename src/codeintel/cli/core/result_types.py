@@ -7,20 +7,26 @@ are provided for common patterns.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from codeintel.cli.core.results import result_type
+import msgspec
+
+from codeintel.cli.core.results import ResultBase
+
+if TYPE_CHECKING:
+    from codeintel.build.planning.model import PlanTargetEntry
+    from codeintel.cli.core.results import SerializableResult
+
+T = TypeVar("T")
 
 
-@result_type
-@dataclass(frozen=True)
-class ListResult[T]:
+class ListResult[T](ResultBase):
     """Generic result type for list operations.
 
     Use this for any command that returns a list of items with a count.
-    The @result_type decorator auto-generates to_dict() that handles
-    nested serialization.
+    The base ResultBase class provides to_dict() that handles nested
+    serialization.
 
     Parameters
     ----------
@@ -31,13 +37,10 @@ class ListResult[T]:
 
     Examples
     --------
-    >>> from dataclasses import dataclass
-    >>> @result_type
-    ... @dataclass(frozen=True)
-    ... class UserInfo:
+    >>> class UserInfo(ResultBase):
     ...     name: str
     ...     active: bool
-    >>> result = ListResult(items=[UserInfo("alice", True)], count=1)
+    >>> result = ListResult(items=[UserInfo(name="alice", active=True)], count=1)
     >>> result.to_dict()
     {'items': [{'name': 'alice', 'active': True}], 'count': 1}
     """
@@ -62,9 +65,57 @@ class ListResult[T]:
         return cls(items=items, count=len(items))
 
 
-@result_type
-@dataclass(frozen=True)
-class ActionResult:
+class JobInfo(ResultBase):
+    """Information about a single background job."""
+
+    job_id: str
+    operation_id: str
+    status: str
+    created_at: str | None
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+
+
+class JobOutputResult(ResultBase):
+    """Result from retrieving job output."""
+
+    job_id: str
+    has_output: bool
+    output: dict[str, Any] | None = None
+
+
+class GraphTargetInfo(ResultBase):
+    """Information about a single graph target."""
+
+    name: str
+    description: str
+    dependencies: list[str]
+    tables: list[str]
+
+
+class GraphTargetsResult(ResultBase):
+    """Result from listing graph targets."""
+
+    targets: list[GraphTargetInfo]
+    count: int
+
+
+class GraphPlanStage(ResultBase):
+    """A stage in the graph execution plan."""
+
+    stage: int
+    targets: list[str]
+
+
+class GraphPlanResult(ResultBase):
+    """Result from planning graph target execution."""
+
+    stages: list[GraphPlanStage]
+    total_targets: int
+
+
+class ActionResult(ResultBase):
     """Result type for action commands (create, delete, update).
 
     Use this for commands that perform an action and report success.
@@ -93,9 +144,7 @@ class ActionResult:
     message: str | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class StatusResult:
+class StatusResult(ResultBase):
     """Result type for status check commands.
 
     Use this for commands that report system or component status.
@@ -121,9 +170,7 @@ class StatusResult:
     details: dict[str, object] | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class ExportResult:
+class ExportResult(ResultBase):
     """Result type for export/generate commands.
 
     Use this for commands that write output to files.
@@ -149,9 +196,7 @@ class ExportResult:
     duration_seconds: float | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class InferabilityInfo:
+class InferabilityInfo(ResultBase):
     """Result type for schema inferability inventory records.
 
     Parameters
@@ -190,9 +235,7 @@ class InferabilityInfo:
     requires_catalog: bool | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class StorageDatabaseExportResult:
+class StorageDatabaseExportResult(ResultBase):
     """Result type for storage database export.
 
     Parameters
@@ -210,9 +253,7 @@ class StorageDatabaseExportResult:
     duration_seconds: float | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class StorageDatabaseImportResult:
+class StorageDatabaseImportResult(ResultBase):
     """Result type for storage database import.
 
     Parameters
@@ -230,8 +271,7 @@ class StorageDatabaseImportResult:
     duration_seconds: float | None = None
 
 
-@dataclass(frozen=True)
-class OperationListResult:
+class OperationListResult(ResultBase):
     """Result from op list command.
 
     Parameters
@@ -245,19 +285,8 @@ class OperationListResult:
     operations: list[dict[str, str | None]]
     count: int
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"operations": self.operations, "count": self.count}
-
-
-@dataclass(frozen=True)
-class OperationCallResult:
+class OperationCallResult(ResultBase):
     """Result from op call command.
 
     Parameters
@@ -271,45 +300,33 @@ class OperationCallResult:
     operation_id: str
     result: dict[str, Any]
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"operation_id": self.operation_id, "result": self.result}
+class DatasetSummary(ResultBase):
+    """Summary metadata for dataset listings."""
+
+    name: str
+    table_key: str
+    description: str | None = None
+    owner_package: str | None = None
+    capabilities: dict[str, bool] = msgspec.field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class DatasetListResult:
+class DatasetListResult(ResultBase):
     """Result from dataset list command.
 
     Parameters
     ----------
     datasets
-        List of dataset metadata dictionaries.
+        List of dataset summaries.
     count
         Total number of datasets.
     """
 
-    datasets: list[dict[str, str | None]]
+    datasets: list[DatasetSummary]
     count: int
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"datasets": self.datasets, "count": self.count}
-
-
-@dataclass(frozen=True)
-class DatasetDescribeResult:
+class DatasetDescribeResult(ResultBase):
     """Result from dataset describe command.
 
     Parameters
@@ -336,34 +353,10 @@ class DatasetDescribeResult:
     name: str
     description: str | None = None
     owner_package: str | None = None
-    upstream_dependencies: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        result: dict[str, object] = {
-            "table_key": self.table_key,
-            "name": self.name,
-            "columns": self.columns,
-        }
-        if self.description:
-            result["description"] = self.description
-        if self.owner_package:
-            result["owner_package"] = self.owner_package
-        if self.row_count is not None:
-            result["row_count"] = self.row_count
-        if self.upstream_dependencies:
-            result["upstream_dependencies"] = self.upstream_dependencies
-        return result
+    upstream_dependencies: list[str] | None = None
 
 
-@dataclass(frozen=True)
-class DatasetVerifyResult:
+class DatasetVerifyResult(ResultBase):
     """Result from dataset verify command.
 
     Parameters
@@ -375,21 +368,10 @@ class DatasetVerifyResult:
     """
 
     verified: bool
-    issues: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"verified": self.verified, "issues": self.issues}
+    issues: list[str] = msgspec.field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class DatasetInfoResult:
+class DatasetInfoResult(ResultBase):
     """Result from dataset info command.
 
     Provides comprehensive schema information for a dataset including
@@ -411,30 +393,13 @@ class DatasetInfoResult:
 
     name: str
     columns: tuple[str, ...]
+    column_count: int
     metadata: dict[str, object]
     json_schema: dict[str, object]
     has_table_schema: bool = True
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "name": self.name,
-            "columns": list(self.columns),
-            "column_count": len(self.columns),
-            "metadata": self.metadata,
-            "json_schema": self.json_schema,
-            "has_table_schema": self.has_table_schema,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetFlowResult:
+class DatasetFlowResult(ResultBase):
     """Result from dataset flow command.
 
     Shows the producer/consumer graph for a dataset, indicating which
@@ -453,26 +418,11 @@ class DatasetFlowResult:
     table_key: str
     producers: list[str]
     consumers: list[str]
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "table_key": self.table_key,
-            "producers": self.producers,
-            "consumers": self.consumers,
-            "producer_count": len(self.producers),
-            "consumer_count": len(self.consumers),
-        }
+    producer_count: int
+    consumer_count: int
 
 
-@dataclass(frozen=True)
-class DatasetConstraintsResult:
+class DatasetConstraintsResult(ResultBase):
     """Result from dataset constraints command.
 
     Shows all constraints extracted from the Pandera schema for a dataset.
@@ -494,24 +444,34 @@ class DatasetConstraintsResult:
     constraint_count: int
     inferred_from: list[str]
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "table_key": self.table_key,
-            "constraints": self.constraints,
-            "constraint_count": self.constraint_count,
-            "inferred_from": self.inferred_from,
-        }
+class ExportMode(StrEnum):
+    """Execution mode for docs export operations."""
+
+    BUILD_SYSTEM = "build_system"
+    DIRECT = "direct"
+    DRY_RUN = "dry_run"
 
 
-@dataclass(frozen=True)
-class BuildStatusResult:
+class DocsExportResult(ResultBase):
+    """Result from docs export operation."""
+
+    status: str
+    validation: str
+    datasets: list[str] | None
+    schemas: list[str] | None
+    mode: ExportMode
+    macro_requirement: str
+
+
+class DocsValidateResult(ResultBase):
+    """Result from docs validation operation."""
+
+    passed: bool
+    issues: list[str]
+
+
+class BuildStatusResult(ResultBase):
     """Result from build status command.
 
     Parameters
@@ -536,32 +496,12 @@ class BuildStatusResult:
     current_count: int
     missing_count: int
     blocked_count: int
-    current: list[str] = field(default_factory=list)
-    missing: list[str] = field(default_factory=list)
-    blocked: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "current": self.current,
-            "missing": self.missing,
-            "blocked": self.blocked,
-            "targets": self.targets,
-            "current_count": self.current_count,
-            "missing_count": self.missing_count,
-            "blocked_count": self.blocked_count,
-        }
+    current: list[str] = msgspec.field(default_factory=list)
+    missing: list[str] = msgspec.field(default_factory=list)
+    blocked: list[str] = msgspec.field(default_factory=list)
 
 
-@result_type
-@dataclass(frozen=True)
-class BuildBootstrapSuiteResult:
+class BuildBootstrapSuiteResult(ResultBase):
     """Result from build bootstrap index suite command.
 
     Parameters
@@ -581,12 +521,11 @@ class BuildBootstrapSuiteResult:
     suite_manifest_path: str
     targets: list[str]
     dataset_manifest_paths: dict[str, str]
-    missing_targets: list[str] = field(default_factory=list)
-    missing_manifests: list[str] = field(default_factory=list)
+    missing_targets: list[str] = msgspec.field(default_factory=list)
+    missing_manifests: list[str] = msgspec.field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class BuildRunResult:
+class BuildRunResult(ResultBase):
     """Result from build run command.
 
     Parameters
@@ -612,29 +551,8 @@ class BuildRunResult:
     cache: dict[str, object] | None = None
     target_tags: dict[str, dict[str, object]] | None = None
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        result: dict[str, object] = {
-            "executed": self.executed,
-            "skipped": self.skipped,
-            "failed": self.failed,
-            "duration_seconds": self.duration_seconds,
-        }
-        if self.cache is not None:
-            result["cache"] = self.cache
-        if self.target_tags is not None:
-            result["target_tags"] = self.target_tags
-        return result
-
-
-@dataclass(frozen=True)
-class BuildPlanResult:
+class BuildPlanResult(ResultBase):
     """Result from build plan command.
 
     Parameters
@@ -644,45 +562,39 @@ class BuildPlanResult:
     closure
         List of target names in dependency closure.
     entries
-        List of plan entry dictionaries with status/reason.
+        List of plan entries with status/reason metadata.
     to_compute
         List of target names that will be computed.
     to_reuse
         List of target names predicted to reuse cached results.
     blocked
         List of target names that are blocked.
+    compute_count
+        Count of targets marked for computation.
+    reuse_count
+        Count of targets predicted to reuse cache.
+    blocked_count
+        Count of targets blocked from execution.
     """
 
     requested: list[str]
     closure: list[str]
-    entries: list[dict[str, object]]
+    entries: list[PlanTargetEntry]
     to_compute: list[str]
     to_reuse: list[str]
     blocked: list[str]
+    compute_count: int = 0
+    reuse_count: int = 0
+    blocked_count: int = 0
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "requested": self.requested,
-            "closure": self.closure,
-            "entries": self.entries,
-            "to_compute": self.to_compute,
-            "to_reuse": self.to_reuse,
-            "blocked": self.blocked,
-            "compute_count": len(self.to_compute),
-            "reuse_count": len(self.to_reuse),
-            "blocked_count": len(self.blocked),
-        }
+    def __post_init__(self) -> None:
+        """Compute summary counts for plan outputs."""
+        msgspec.structs.force_setattr(self, "compute_count", len(self.to_compute))
+        msgspec.structs.force_setattr(self, "reuse_count", len(self.to_reuse))
+        msgspec.structs.force_setattr(self, "blocked_count", len(self.blocked))
 
 
-@dataclass(frozen=True)
-class BuildExplainResult:
+class BuildExplainResult(ResultBase):
     """Result from build explain command.
 
     Parameters
@@ -716,38 +628,23 @@ class BuildExplainResult:
     reads: list[str]
     writes_tables: list[str]
     writes_artifacts: list[str]
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"cache_hit_ratio"})
+
     cache_hit_ratio: float | None
     miss_nodes: list[str]
     summary: str
     io_surface: dict[str, object] | None = None
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        payload: dict[str, object] = {
-            "target": self.target,
-            "predicted_action": self.predicted_action,
-            "block_reasons": self.block_reasons,
-            "dependencies": self.dependencies,
-            "reads": self.reads,
-            "writes_tables": self.writes_tables,
-            "writes_artifacts": self.writes_artifacts,
-            "cache_hit_ratio": self.cache_hit_ratio,
-            "miss_nodes": self.miss_nodes,
-            "summary": self.summary,
-        }
-        if self.io_surface is not None:
-            payload["io_surface"] = self.io_surface
-        return payload
+class BuildGraphResult(ResultBase):
+    """Result type for build graph command."""
+
+    dag_json: str
+    node_count: int
+    edge_count: int
 
 
-@dataclass(frozen=True)
-class SubsystemListResult:
+class SubsystemListResult(ResultBase):
     """Result from subsystem list command.
 
     Parameters
@@ -761,19 +658,8 @@ class SubsystemListResult:
     subsystems: list[dict[str, Any]]
     count: int
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"subsystems": self.subsystems, "count": self.count}
-
-
-@dataclass(frozen=True)
-class ConfigShowResult:
+class ConfigShowResult(ResultBase):
     """Result from config show command.
 
     Parameters
@@ -787,19 +673,8 @@ class ConfigShowResult:
     config: dict[str, Any]
     sources: dict[str, list[str]]
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"config": self.config, "sources": self.sources}
-
-
-@dataclass(frozen=True)
-class DryRunStep:
+class DryRunStep(ResultBase):
     """A single step in a dry-run plan.
 
     Parameters
@@ -819,24 +694,8 @@ class DryRunStep:
     params: dict[str, Any]
     is_prereq: bool = False
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "operation_id": self.operation_id,
-            "description": self.description,
-            "params": self.params,
-            "is_prereq": self.is_prereq,
-        }
-
-
-@dataclass(frozen=True)
-class DryRunResult:
+class DryRunResult(ResultBase):
     """Result from dry-run execution.
 
     Parameters
@@ -854,29 +713,15 @@ class DryRunResult:
     target_operation: str
     steps: list[DryRunStep]
     estimated_duration: str | None = None
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[str] | None = None
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        result: dict[str, object] = {
-            "target_operation": self.target_operation,
-            "steps": [step.to_dict() for step in self.steps],
-        }
-        if self.estimated_duration:
-            result["estimated_duration"] = self.estimated_duration
-        if self.warnings:
-            result["warnings"] = self.warnings
-        return result
+    def __post_init__(self) -> None:
+        """Normalize empty warning lists to omitted values."""
+        if self.warnings is not None and len(self.warnings) == 0:
+            msgspec.structs.force_setattr(self, "warnings", None)
 
 
-@dataclass(frozen=True)
-class BuildTargetInfo:
+class BuildTargetInfo(ResultBase):
     """Information about a build target.
 
     Parameters
@@ -895,29 +740,14 @@ class BuildTargetInfo:
 
     name: str
     status: str
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"last_run"})
+
     last_run: str | None
-    dependencies: list[str] = field(default_factory=list)
-    outputs: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "name": self.name,
-            "status": self.status,
-            "last_run": self.last_run,
-            "dependencies": self.dependencies,
-            "outputs": self.outputs,
-        }
+    dependencies: list[str] = msgspec.field(default_factory=list)
+    outputs: list[str] = msgspec.field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class BuildExecutionResult:
+class BuildExecutionResult(ResultBase):
     """Result from executing a build.
 
     Parameters
@@ -940,25 +770,8 @@ class BuildExecutionResult:
     total_duration_seconds: float
     success: bool = True
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "targets_executed": self.targets_executed,
-            "targets_skipped": self.targets_skipped,
-            "targets_failed": self.targets_failed,
-            "total_duration_seconds": self.total_duration_seconds,
-            "success": self.success,
-        }
-
-
-@dataclass(frozen=True)
-class BuildAssetsResult:
+class BuildAssetsResult(ResultBase):
     """Result from build assets command.
 
     Parameters
@@ -975,23 +788,8 @@ class BuildAssetsResult:
     count: int
     format: str = "table"
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "assets": self.assets,
-            "count": self.count,
-            "format": self.format,
-        }
-
-
-@dataclass(frozen=True)
-class BuildLineageResult:
+class BuildLineageResult(ResultBase):
     """Result from build lineage command."""
 
     asset: str
@@ -1003,22 +801,11 @@ class BuildLineageResult:
     edges: list[dict[str, Any]]
     format: str = "json"
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "asset": self.asset,
-            "asset_kind": self.asset_kind,
-            "root_version_hash": self.root_version_hash,
-            "direction": self.direction,
-            "depth": self.depth,
-            "nodes": self.nodes,
-            "edges": self.edges,
-            "format": self.format,
-        }
 
-
-@dataclass(frozen=True)
-class BuildPromoteResult:
+class BuildPromoteResult(ResultBase):
     """Result from build promote command."""
+
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"note"})
 
     asset: str
     asset_kind: str
@@ -1027,19 +814,8 @@ class BuildPromoteResult:
     note: str | None = None
     format: str = "json"
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "asset": self.asset,
-            "asset_kind": self.asset_kind,
-            "alias": self.alias,
-            "version_hash": self.version_hash,
-            "note": self.note,
-            "format": self.format,
-        }
 
-
-@dataclass(frozen=True)
-class BuildResolveResult:
+class BuildResolveResult(ResultBase):
     """Result from build resolve command."""
 
     asset: str
@@ -1048,19 +824,11 @@ class BuildResolveResult:
     version_hash: str
     format: str = "json"
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "asset": self.asset,
-            "asset_kind": self.asset_kind,
-            "alias": self.alias,
-            "version_hash": self.version_hash,
-            "format": self.format,
-        }
 
-
-@dataclass(frozen=True)
-class BuildDiffResult:
+class BuildDiffResult(ResultBase):
     """Result from build diff command."""
+
+    __result_key_map__: ClassVar[dict[str, str]] = {"from_spec": "from", "to_spec": "to"}
 
     asset: str
     asset_kind: str
@@ -1072,22 +840,19 @@ class BuildDiffResult:
     cached: bool
     format: str = "json"
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "asset": self.asset,
-            "asset_kind": self.asset_kind,
-            "from": self.from_spec,
-            "to": self.to_spec,
-            "from_version_hash": self.from_version_hash,
-            "to_version_hash": self.to_version_hash,
-            "diffs": self.diffs,
-            "cached": self.cached,
-            "format": self.format,
-        }
+
+class BuildImpactResult(ResultBase):
+    """Result of build impact analysis."""
+
+    source_kind: str
+    source_key: str
+    source_version: str | None
+    impacted_assets: list[dict[str, Any]]
+    impacted_targets: list[str]
+    format: str = "json"
 
 
-@dataclass(frozen=True)
-class BuildHistoryResult:
+class BuildHistoryResult(ResultBase):
     """Result from build history command.
 
     Parameters
@@ -1101,26 +866,12 @@ class BuildHistoryResult:
         None when listing multiple runs.
     """
 
-    runs: list[dict[str, Any]]
+    runs: list[SerializableResult]
     count: int
     targets: list[dict[str, Any]] | None = None
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        result: dict[str, object] = {"runs": self.runs, "count": self.count}
-        if self.targets is not None:
-            result["targets"] = self.targets
-        return result
-
-
-@dataclass(frozen=True)
-class BuildPublishSnapshotResult:
+class BuildPublishSnapshotResult(ResultBase):
     """Result from build publish-serving-snapshot command."""
 
     run_id: str
@@ -1133,29 +884,8 @@ class BuildPublishSnapshotResult:
     semantic_layer_version: str
     dataset_count: int
 
-    def to_dict(self) -> dict[str, object]:
-        """Return a JSON-serializable representation of the result.
 
-        Returns
-        -------
-        dict[str, object]
-            Serialized result payload.
-        """
-        return {
-            "run_id": self.run_id,
-            "published_at": self.published_at,
-            "snapshot_manifest_path": self.snapshot_manifest_path,
-            "snapshot_db_path": self.snapshot_db_path,
-            "semantic_registry_path": self.semantic_registry_path,
-            "schema_manifest_path": self.schema_manifest_path,
-            "buildspec_path": self.buildspec_path,
-            "semantic_layer_version": self.semantic_layer_version,
-            "dataset_count": self.dataset_count,
-        }
-
-
-@dataclass(frozen=True)
-class GraphStatsResult:
+class GraphStatsResult(ResultBase):
     """Statistics about a graph.
 
     Parameters
@@ -1178,25 +908,8 @@ class GraphStatsResult:
     components: int
     avg_degree: float
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "node_count": self.node_count,
-            "edge_count": self.edge_count,
-            "density": self.density,
-            "components": self.components,
-            "avg_degree": self.avg_degree,
-        }
-
-
-@dataclass(frozen=True)
-class GraphQueryResult:
+class GraphQueryResult(ResultBase):
     """Result from a graph query.
 
     Parameters
@@ -1207,31 +920,25 @@ class GraphQueryResult:
         Edges between matching nodes.
     query
         The query that was executed.
+    node_count
+        Number of nodes returned.
+    edge_count
+        Number of edges returned.
     """
 
     nodes: list[dict[str, object]]
     edges: list[dict[str, object]]
     query: str
+    node_count: int = 0
+    edge_count: int = 0
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "nodes": self.nodes,
-            "edges": self.edges,
-            "query": self.query,
-            "node_count": len(self.nodes),
-            "edge_count": len(self.edges),
-        }
+    def __post_init__(self) -> None:
+        """Compute node and edge counts."""
+        msgspec.structs.force_setattr(self, "node_count", len(self.nodes))
+        msgspec.structs.force_setattr(self, "edge_count", len(self.edges))
 
 
-@dataclass(frozen=True)
-class DocsStatusResult:
+class DocsStatusResult(ResultBase):
     """Result from docs status command.
 
     Parameters
@@ -1249,26 +956,12 @@ class DocsStatusResult:
     generated_count: int
     pending_count: int
     stale_count: int
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"last_generated"})
+
     last_generated: str | None
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "generated_count": self.generated_count,
-            "pending_count": self.pending_count,
-            "stale_count": self.stale_count,
-            "last_generated": self.last_generated,
-        }
-
-
-@dataclass(frozen=True)
-class DocsGenerateResult:
+class DocsGenerateResult(ResultBase):
     """Result from docs generate command.
 
     Parameters
@@ -1279,31 +972,25 @@ class DocsGenerateResult:
         List of skipped file paths.
     errors
         List of error messages.
+    generated_count
+        Number of generated files.
+    error_count
+        Number of errors encountered.
     """
 
     generated: list[str]
     skipped: list[str]
     errors: list[str]
+    generated_count: int = 0
+    error_count: int = 0
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "generated": self.generated,
-            "skipped": self.skipped,
-            "errors": self.errors,
-            "generated_count": len(self.generated),
-            "error_count": len(self.errors),
-        }
+    def __post_init__(self) -> None:
+        """Compute generated and error counts."""
+        msgspec.structs.force_setattr(self, "generated_count", len(self.generated))
+        msgspec.structs.force_setattr(self, "error_count", len(self.errors))
 
 
-@dataclass(frozen=True)
-class HistoryListResult:
+class HistoryListResult(ResultBase):
     """Result from history list command.
 
     Parameters
@@ -1317,19 +1004,8 @@ class HistoryListResult:
     entries: list[dict[str, Any]]
     count: int
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"entries": self.entries, "count": self.count}
-
-
-@dataclass(frozen=True)
-class HistoryDetailResult:
+class HistoryDetailResult(ResultBase):
     """Result from history detail command.
 
     Parameters
@@ -1353,28 +1029,10 @@ class HistoryDetailResult:
     operation: str
     status: str
     duration_seconds: float
-    details: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "entry_id": self.entry_id,
-            "timestamp": self.timestamp,
-            "operation": self.operation,
-            "status": self.status,
-            "duration_seconds": self.duration_seconds,
-            "details": self.details,
-        }
+    details: dict[str, Any] = msgspec.field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class IdeStatusResult:
+class IdeStatusResult(ResultBase):
     """Result from ide status command.
 
     Parameters
@@ -1389,29 +1047,15 @@ class IdeStatusResult:
         List of relevant extensions.
     """
 
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"ide_type", "workspace_path"})
+
     connected: bool
     ide_type: str | None
     workspace_path: str | None
-    extensions: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "connected": self.connected,
-            "ide_type": self.ide_type,
-            "workspace_path": self.workspace_path,
-            "extensions": self.extensions,
-        }
+    extensions: list[str] = msgspec.field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class IdeConfigResult:
+class IdeConfigResult(ResultBase):
     """Result from ide config command.
 
     Parameters
@@ -1422,22 +1066,13 @@ class IdeConfigResult:
         Settings file path.
     """
 
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"path"})
+
     settings: dict[str, Any]
     path: str | None
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"settings": self.settings, "path": self.path}
-
-
-@dataclass(frozen=True)
-class SubsystemDetailResult:
+class SubsystemDetailResult(ResultBase):
     """Result from subsystem detail command.
 
     Parameters
@@ -1452,34 +1087,25 @@ class SubsystemDetailResult:
         List of dependency subsystems.
     metrics
         Subsystem metrics.
+    module_count
+        Count of modules in the subsystem.
     """
 
     name: str
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"description"})
+
     description: str | None
     modules: list[str]
     dependencies: list[str]
-    metrics: dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = msgspec.field(default_factory=dict)
+    module_count: int = 0
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "name": self.name,
-            "description": self.description,
-            "modules": self.modules,
-            "dependencies": self.dependencies,
-            "metrics": self.metrics,
-            "module_count": len(self.modules),
-        }
+    def __post_init__(self) -> None:
+        """Compute module count."""
+        msgspec.structs.force_setattr(self, "module_count", len(self.modules))
 
 
-@dataclass(frozen=True)
-class StorageStatusResult:
+class StorageStatusResult(ResultBase):
     """Result from storage status command.
 
     Parameters
@@ -1494,29 +1120,15 @@ class StorageStatusResult:
         Database size in bytes.
     """
 
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"database_path"})
+
     connected: bool
     database_path: str | None
     table_count: int
     size_bytes: int
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "connected": self.connected,
-            "database_path": self.database_path,
-            "table_count": self.table_count,
-            "size_bytes": self.size_bytes,
-        }
-
-
-@dataclass(frozen=True)
-class StorageQueryResult:
+class StorageQueryResult(ResultBase):
     """Result from storage query command.
 
     Parameters
@@ -1536,24 +1148,8 @@ class StorageQueryResult:
     row_count: int
     execution_time_ms: float
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "rows": self.rows,
-            "columns": self.columns,
-            "row_count": self.row_count,
-            "execution_time_ms": self.execution_time_ms,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetLintResult:
+class DatasetLintResult(ResultBase):
     """Result from dataset lint command.
 
     Parameters
@@ -1570,23 +1166,8 @@ class DatasetLintResult:
     issue_count: int
     issues: list[str]
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "passed": self.passed,
-            "issue_count": self.issue_count,
-            "issues": self.issues,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetSnapshotResult:
+class DatasetSnapshotResult(ResultBase):
     """Result from dataset snapshot command.
 
     Parameters
@@ -1600,22 +1181,8 @@ class DatasetSnapshotResult:
     output_path: str
     datasets_count: int
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "output_path": self.output_path,
-            "datasets_count": self.datasets_count,
-        }
-
-
-@dataclass(frozen=True)
-class DatasetDiffResult:
+class DatasetDiffResult(ResultBase):
     """Result from dataset diff command.
 
     Parameters
@@ -1635,24 +1202,47 @@ class DatasetDiffResult:
     changed: list[str]
     has_differences: bool
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "added": self.added,
-            "removed": self.removed,
-            "changed": self.changed,
-            "has_differences": self.has_differences,
-        }
+class DatasetParquetMigrationResult(ResultBase):
+    """Result from dataset parquet migration command.
+
+    Parameters
+    ----------
+    dataset_root_dir
+        Dataset root directory where snapshots were written.
+    snapshot_id
+        Snapshot identifier used for the parquet datasets.
+    exported
+        Table keys written to parquet.
+    skipped
+        Table keys skipped during migration.
+    """
+
+    dataset_root_dir: str
+    snapshot_id: str
+    exported: list[str]
+    skipped: list[str]
 
 
-@dataclass(frozen=True)
-class ValidateMacrosResult:
+class DatasetScaffoldResult(ResultBase):
+    """Result from dataset scaffold command.
+
+    Parameters
+    ----------
+    dataset
+        Dataset name or table key scaffolded.
+    status
+        Scaffold status ("created" or "dry_run").
+    registry_check
+        Registry check mode ("enabled" or "disabled").
+    """
+
+    dataset: str
+    status: str
+    registry_check: str
+
+
+class ValidateMacrosResult(ResultBase):
     """Result from macro validation command.
 
     Parameters
@@ -1675,27 +1265,8 @@ class ValidateMacrosResult:
     dataset_rows_only: list[str]
     reason: str | None = None
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        result: dict[str, object] = {
-            "status": self.status,
-            "missing_ingest": self.missing_ingest,
-            "present_ingest": self.present_ingest,
-            "dataset_rows_only": self.dataset_rows_only,
-        }
-        if self.reason:
-            result["reason"] = self.reason
-        return result
-
-
-@dataclass(frozen=True)
-class ProfileStorageResult:
+class ProfileStorageResult(ResultBase):
     """Result from storage profiling command.
 
     Parameters
@@ -1712,23 +1283,8 @@ class ProfileStorageResult:
     output_dir: str
     include_views: bool
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "db_path": self.db_path,
-            "output_dir": self.output_dir,
-            "include_views": self.include_views,
-        }
-
-
-@dataclass(frozen=True)
-class CacheLogIngestSummary:
+class CacheLogIngestSummary(ResultBase):
     """Result from ingesting cache JSONL logs into DuckDB.
 
     Parameters
@@ -1745,31 +1301,16 @@ class CacheLogIngestSummary:
         JSONL files that were ingested.
     """
 
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"cache_dir"})
+
     db_path: str
     cache_dir: str | None
     inserted_events: int
     run_ids: list[str]
     jsonl_files: list[str]
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "db_path": self.db_path,
-            "cache_dir": self.cache_dir,
-            "inserted_events": self.inserted_events,
-            "run_ids": self.run_ids,
-            "jsonl_files": self.jsonl_files,
-        }
-
-
-@dataclass(frozen=True)
-class ServeStartResult:
+class ServeStartResult(ResultBase):
     """Result from server start command.
 
     Parameters
@@ -1790,6 +1331,8 @@ class ServeStartResult:
         Path to database.
     """
 
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset({"host", "port"})
+
     server_type: str
     host: str | None
     port: int | None
@@ -1798,27 +1341,8 @@ class ServeStartResult:
     commit: str
     db_path: str
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "server_type": self.server_type,
-            "host": self.host,
-            "port": self.port,
-            "auto_pipeline": self.auto_pipeline,
-            "repo": self.repo,
-            "commit": self.commit,
-            "db_path": self.db_path,
-        }
-
-
-@dataclass(frozen=True)
-class HealthCheckResult:
+class HealthCheckResult(ResultBase):
     """Result from health check command.
 
     Parameters
@@ -1835,24 +1359,8 @@ class HealthCheckResult:
     overall_status: str
     total_duration_ms: float
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
 
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "checks": self.checks,
-            "overall_status": self.overall_status,
-            "total_duration_ms": self.total_duration_ms,
-        }
-
-
-@result_type
-@dataclass(frozen=True)
-class PluginModuleInfo:
+class PluginModuleInfo(ResultBase):
     """Module metadata for a plugin pack."""
 
     import_path: str
@@ -1860,9 +1368,7 @@ class PluginModuleInfo:
     content_hash: str | None
 
 
-@result_type
-@dataclass(frozen=True)
-class PluginPackInfo:
+class PluginPackInfo(ResultBase):
     """Summary metadata for a plugin pack."""
 
     name: str
@@ -1877,9 +1383,7 @@ class PluginPackInfo:
     capabilities: list[str]
 
 
-@result_type
-@dataclass(frozen=True)
-class PluginPackDetail:
+class PluginPackDetail(ResultBase):
     """Detailed metadata for a plugin pack."""
 
     name: str
@@ -1895,9 +1399,7 @@ class PluginPackDetail:
     entry_point: str | None
 
 
-@result_type
-@dataclass(frozen=True)
-class TargetOriginInfo:
+class TargetOriginInfo(ResultBase):
     """Origin metadata for a runtime target."""
 
     target: str
@@ -1908,9 +1410,7 @@ class TargetOriginInfo:
     tags: dict[str, object] | None = None
 
 
-@result_type
-@dataclass(frozen=True)
-class TargetOriginListResult:
+class TargetOriginListResult(ResultBase):
     """Result from listing runtime targets with provenance."""
 
     targets: list[TargetOriginInfo]
@@ -1923,7 +1423,9 @@ __all__ = [
     "BuildBootstrapSuiteResult",
     "BuildExecutionResult",
     "BuildExplainResult",
+    "BuildGraphResult",
     "BuildHistoryResult",
+    "BuildImpactResult",
     "BuildPlanResult",
     "BuildPublishSnapshotResult",
     "BuildRunResult",
@@ -1938,20 +1440,32 @@ __all__ = [
     "DatasetInfoResult",
     "DatasetLintResult",
     "DatasetListResult",
+    "DatasetParquetMigrationResult",
+    "DatasetScaffoldResult",
     "DatasetSnapshotResult",
+    "DatasetSummary",
     "DatasetVerifyResult",
+    "DocsExportResult",
     "DocsGenerateResult",
     "DocsStatusResult",
+    "DocsValidateResult",
     "DryRunResult",
     "DryRunStep",
+    "ExportMode",
     "ExportResult",
+    "GraphPlanResult",
+    "GraphPlanStage",
     "GraphQueryResult",
     "GraphStatsResult",
+    "GraphTargetInfo",
+    "GraphTargetsResult",
     "HealthCheckResult",
     "HistoryDetailResult",
     "HistoryListResult",
     "IdeConfigResult",
     "IdeStatusResult",
+    "JobInfo",
+    "JobOutputResult",
     "ListResult",
     "OperationCallResult",
     "OperationListResult",

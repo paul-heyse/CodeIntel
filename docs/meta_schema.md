@@ -287,7 +287,7 @@ Modify: `src/codeintel/build/target_metadata.py::get_target_metadata_service()`
   * `env.gateway.schemas.prefill_schema_index(schema_index)` **when an env/gateway exists**
   * If you can’t access gateway here (you currently don’t), do it in:
 
-    * `BuildRunContext.build_env(...load_schema_service...)` or
+    * `BuildRunContext.build_env()` or
     * `HamiltonBuildExecutor._build_runtime(...)` right after gateway is available.
 * This ensures inference is “db-cached”: schema inference becomes a fallback, not the steady-state.
 

@@ -13,7 +13,7 @@ from codeintel.core.paths import normalize_path
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 

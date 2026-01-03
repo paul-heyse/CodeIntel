@@ -14,13 +14,16 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from sqlglot import exp
 
-from codeintel.core.time import utc_now
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.helpers.json import (
+from codeintel.core.gateway import PipelineStepRecordProtocol
+from codeintel.core.helpers.json import (
     decode_json_dict,
     deserialize_str_tuple,
     serialize_str_sequence,
 )
+from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
+from codeintel.core.time import utc_now
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import (
     coerce_datetime,
@@ -31,7 +34,6 @@ from codeintel.storage.query_results import (
     coerce_str,
     iter_tuples_from_arrow_reader,
 )
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -485,7 +487,7 @@ class PipelineRunTracking:
             pipeline_name=str(pipeline_name) if pipeline_name else None,
         )
 
-    def record_step(self, record: PipelineStepRecord) -> None:
+    def record_step(self, record: PipelineStepRecordProtocol) -> None:
         """Insert or replace a pipeline step record.
 
         Can be called once at the end of a step, or twice (at start with
@@ -496,8 +498,8 @@ class PipelineRunTracking:
         record
             Step record to persist.
         """
-        row_counts_json = dict(record.row_counts) if record.row_counts else None
-        extra_json = dict(record.extra) if record.extra else None
+        row_counts_payload = encode_payload(dict(record.row_counts)) if record.row_counts else None
+        extra_payload = encode_payload(dict(record.extra)) if record.extra else None
 
         columns = [
             "run_id",
@@ -525,12 +527,12 @@ class PipelineRunTracking:
                 record.started_at,
                 record.completed_at,
                 record.status,
-                row_counts_json,
-                extra_json,
+                row_counts_payload,
+                extra_payload,
             ],
         )
 
-    def fetch_steps(self, run_id: str) -> list[PipelineStepRecord]:
+    def fetch_steps(self, run_id: str) -> Sequence[PipelineStepRecordProtocol]:
         """Fetch all step records for a run.
 
         Parameters

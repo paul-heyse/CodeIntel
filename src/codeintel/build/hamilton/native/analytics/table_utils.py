@@ -1,4 +1,7 @@
-"""Shared helpers for analytics table construction."""
+"""Deprecated wrapper for analytics table helpers.
+
+Use codeintel.build.tabular.frames instead.
+"""
 
 from __future__ import annotations
 

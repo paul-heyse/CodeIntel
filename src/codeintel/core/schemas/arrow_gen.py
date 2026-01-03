@@ -63,6 +63,7 @@ _ARROW_TYPE_MAP: dict[str, pa.DataType] = {
     "BIGINT": pa.int64(),
     "DOUBLE": pa.float64(),
     "VARCHAR": pa.string(),
+    "BLOB": pa.binary(),
     "JSON": pa.string(),
     "TIMESTAMP": pa.timestamp("us"),
     "TIMESTAMPTZ": pa.timestamp("us", tz="UTC"),
@@ -138,6 +139,12 @@ _SQLGLOT_STRING_TYPES = _sqlglot_types(
     "TINYTEXT",
     "FIXEDSTRING",
     "UUID",
+)
+_SQLGLOT_BINARY_TYPES = _sqlglot_types(
+    "BINARY",
+    "VARBINARY",
+    "BLOB",
+    "BYTEA",
 )
 _SQLGLOT_JSON_TYPES = _sqlglot_types(
     "JSON",
@@ -419,6 +426,10 @@ def _arrow_string_type(_: exp.DataType) -> pa.DataType:
     return pa.string()
 
 
+def _arrow_binary_type(_: exp.DataType) -> pa.DataType:
+    return pa.binary()
+
+
 def _arrow_timestamp_type(_: exp.DataType) -> pa.DataType:
     return pa.timestamp("us")
 
@@ -457,6 +468,7 @@ def _build_sqlglot_type_handlers() -> dict[exp.DataType.Type, ArrowTypeHandler]:
     _add_type_handlers(handlers, _SQLGLOT_DECIMAL_TYPES, _arrow_decimal_type_from_sqlglot)
     _add_type_handlers(handlers, _SQLGLOT_FLOAT_TYPES, _arrow_float64_type)
     _add_type_handlers(handlers, _SQLGLOT_STRING_TYPES, _arrow_string_type)
+    _add_type_handlers(handlers, _SQLGLOT_BINARY_TYPES, _arrow_binary_type)
     _add_type_handlers(handlers, _SQLGLOT_JSON_TYPES, _arrow_string_type)
     _add_type_handlers(handlers, _SQLGLOT_TIMESTAMPTZ_TYPES, _arrow_timestamptz_type)
     _add_type_handlers(handlers, _SQLGLOT_TIMESTAMP_TYPES, _arrow_timestamp_type)

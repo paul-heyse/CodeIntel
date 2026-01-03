@@ -24,6 +24,14 @@ builder, hooks, and telemetry).
 - One row/JSON serialization path, with JSON native in DuckDB and encoded only at
   export boundaries.
 
+## Consolidated Utilities (current)
+- Columnar frames + schema alignment: `src/codeintel/build/tabular/frames.py`.
+- Graph metrics primitives: `src/codeintel/build/graphs/compute/metrics/**`.
+- Analytics pure compute: `src/codeintel/build/analytics/compute/**`.
+- Schema-driven row ordering: `src/codeintel/build/analytics/compute/row_builders/**`.
+- Lazy import helpers: `src/codeintel/core/imports/lazy.py`.
+- Type coercion: `src/codeintel/core/query_results.py`.
+
 ## Codebase-Wide Consolidation Scope
 This plan now targets shared architecture across `src/codeintel/build`,
 `src/codeintel/cli`, `src/codeintel/storage`, and `src/codeintel/serving`.

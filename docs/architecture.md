@@ -42,6 +42,34 @@
   `src/codeintel/build/hamilton/executor.py :: _create_tracker(...)` / `_build_tracker_tags(...)` / `_apply_tracker_constants(...)`
   `src/codeintel/core/config/settings.py :: HamiltonTrackerSettings`
 
+## 1.1 Layering model (compute → orchestration → Hamilton-native)
+
+**Compute (pure, IO-free)**
+- Canonical locations: `src/codeintel/build/graphs/compute/**`,
+  `src/codeintel/build/analytics/compute/**`.
+- Operates on in-memory inputs only (no filesystem or gateway access).
+
+**Orchestration (IO + compute coordination)**
+- Canonical locations: `src/codeintel/build/analytics/**`,
+  `src/codeintel/build/graphs/runtime/**`.
+- Loads inputs (storage/files), builds contexts, and calls compute helpers.
+
+**Hamilton-native (materialization + DAG glue)**
+- Canonical location: `src/codeintel/build/hamilton/native/**`.
+- Owns IO, dataset materialization, and DAG-specific wiring.
+
+**Columnar utilities (single source of truth)**
+- Canonical location: `src/codeintel/build/tabular/**`.
+- Shared frame creation + schema alignment across analytics and ingestion.
+
+## 1.2 CLI operation registry and canonical IDs
+
+The CLI is handler-first: operations are registered once, and commands map flags
+to the canonical operation ID. Naming rules and alias policy live in:
+
+- `docs/cli_operations.md`
+- `plans/cli-handler-canonicalization-plan.md`
+
 # 2) Repository map (build-focused)
 
 ## 2.1 `src/codeintel/build/` (top-level)
@@ -219,10 +247,7 @@
 
   * CLI entrypoint: `src/codeintel/cli/handlers/build.py :: build_run_handler(...)` → `_execute_build_hamilton(...)`
   * Env assembly: `src/codeintel/build/run_context.py :: BuildRunContext.build_env(...)`
-
-    * Loads registry when enabled: `src/codeintel/core/registry/service.py :: RegistryService.from_gateway(...)`
-    * Ensures schema service cache is initialized: `src/codeintel/build/schemas/service.py :: get_schema_service(...)`
-    * Wraps gateway in StorageFacade: `src/codeintel/storage/facade.py :: StorageFacade.from_gateway(...)`
+    (merges config + variants; no eager registry or schema service loading)
   * Execution: `src/codeintel/build/hamilton/executor.py :: HamiltonBuildExecutor._execute_dag(...)` uses `inputs={"env": execution_env, "graph": graph}`
 * Native target execution helper:
 
@@ -245,8 +270,8 @@
   * `src/codeintel/cli/handlers/build.py :: build_run_handler(...)` → `_execute_build_hamilton(...)`
 * Env assembly:
 
-  * `src/codeintel/build/run_context.py :: BuildRunContext.build_env(load_catalogs=True, load_schema_service=True)`
-  * Populates: `registry=RegistryService.from_gateway(...)`, `storage=StorageFacade.from_gateway(...)`, `fingerprint_policy=DEFAULT_FINGERPRINT_POLICY`, `execution_context=self.execution_context`. `src/codeintel/build/run_context.py :: BuildRunContext.build_env(...)`
+  * `src/codeintel/build/run_context.py :: BuildRunContext.build_env()`
+  * Populates BuildEnv from config/settings/variants; registry remains optional and lazy-resolved.
 * Execution:
 
   * `src/codeintel/build/hamilton/executor.py :: HamiltonBuildExecutor.run(...)` computes closure and calls `_execute_dag(...)`

@@ -31,6 +31,18 @@ class QueryPack:
     query_text: str
 
 
+@dataclass(frozen=True)
+class LanguageMetadata:
+    """Tree-sitter language ABI metadata."""
+
+    name: SupportedLanguage
+    abi_version: int
+    semantic_version: str
+    node_kind_count: int
+    field_count: int
+    parse_state_count: int
+
+
 _PACKS_ROOT = Path(__file__).resolve().parent / "packs"
 
 _LANGUAGE_SPECS: tuple[LanguageSpec, ...] = (
@@ -137,10 +149,31 @@ def load_query_packs(language: SupportedLanguage) -> tuple[QueryPack, ...]:
     )
 
 
+def language_metadata(language: SupportedLanguage) -> LanguageMetadata:
+    """Return metadata for a tree-sitter language.
+
+    Returns
+    -------
+    LanguageMetadata
+        ABI and grammar metadata for the language.
+    """
+    ts_language = load_language(language)
+    return LanguageMetadata(
+        name=language,
+        abi_version=int(ts_language.abi_version),
+        semantic_version=str(ts_language.semantic_version),
+        node_kind_count=int(ts_language.node_kind_count),
+        field_count=int(ts_language.field_count),
+        parse_state_count=int(ts_language.parse_state_count),
+    )
+
+
 __all__ = [
+    "LanguageMetadata",
     "LanguageSpec",
     "QueryPack",
     "language_for_path",
+    "language_metadata",
     "load_language",
     "load_parser",
     "load_query_packs",

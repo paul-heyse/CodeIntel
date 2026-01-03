@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     import logging
 
     from codeintel.build.graphs.validation.context import GraphValidationContext
-    from codeintel.core.catalog import FunctionCatalog
     from codeintel.core.validation import ValidationSeverity
+    from codeintel.storage.catalog import FunctionCatalog
 
 
 # =============================================================================

@@ -15,7 +15,9 @@ if TYPE_CHECKING:
 __all__ = [
     "ModuleIngestOptions",
     "ScipIngestOptions",
+    "SyntaxAugmentOptions",
     "SyntaxIndexOptions",
+    "TreeSitterIndexOptions",
 ]
 
 
@@ -118,3 +120,50 @@ class SyntaxIndexOptions:
     """
 
     emit_ast_nodes: bool = True
+
+
+@dataclass(frozen=True)
+class TreeSitterIndexOptions:
+    """Configuration options for tree-sitter indexing.
+
+    Attributes
+    ----------
+    emit_nodes_edges
+        Whether to emit full tree-sitter CST nodes/edges.
+    emit_tokens
+        Whether to emit token-level captures.
+    emit_trivia
+        Whether to emit trivia-level captures (comments).
+    emit_language_metadata
+        Whether to emit language ABI metadata rows.
+    enable_incremental
+        Whether to enable incremental parsing with cached trees when available.
+    match_limit
+        Match limit for query execution.
+    allow_non_local_patterns
+        Whether to allow non-local query patterns.
+    """
+
+    emit_nodes_edges: bool = True
+    emit_tokens: bool = True
+    emit_trivia: bool = True
+    emit_language_metadata: bool = True
+    enable_incremental: bool = False
+    match_limit: int = 10000
+    allow_non_local_patterns: bool = False
+
+
+@dataclass(frozen=True)
+class SyntaxAugmentOptions:
+    """Configuration options for syntax augmentation.
+
+    Attributes
+    ----------
+    emit_ts_xref
+        Whether to emit tree-sitter to syntax-node xref rows.
+    fallback_on_libcst_failure
+        Whether to use tree-sitter nodes/edges for LibCST failures.
+    """
+
+    emit_ts_xref: bool = True
+    fallback_on_libcst_failure: bool = True

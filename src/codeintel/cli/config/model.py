@@ -13,19 +13,16 @@ Use CliConfig.from_sources() which delegates to config.load_config().
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Literal
 
-_PATH = Path
-
+import msgspec
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 OutputFormat = Literal["text", "json"]
 
 
-@dataclass(frozen=True)
-class ProgressConfig:
+class ProgressConfig(msgspec.Struct, frozen=True):
     """Progress display configuration.
 
     Parameters
@@ -40,8 +37,7 @@ class ProgressConfig:
     threshold: float = 2.0
 
 
-@dataclass(frozen=True)
-class TelemetryConfig:
+class TelemetryConfig(msgspec.Struct, frozen=True):
     """Telemetry and observability configuration.
 
     Parameters
@@ -59,8 +55,7 @@ class TelemetryConfig:
     service_name: str = "codeintel-cli"
 
 
-@dataclass(frozen=True)
-class RetryConfig:
+class RetryConfig(msgspec.Struct, frozen=True):
     """Retry policy configuration.
 
     Parameters
@@ -81,8 +76,7 @@ class RetryConfig:
     max_delay: float = 30.0
 
 
-@dataclass(frozen=True)
-class StorageConfigSection:
+class StorageConfigSection(msgspec.Struct, frozen=True):
     """Storage backend configuration.
 
     Parameters
@@ -100,8 +94,7 @@ class StorageConfigSection:
     max_connections: int = 5
 
 
-@dataclass(frozen=True)
-class ProjectConfigSection:
+class ProjectConfigSection(msgspec.Struct, frozen=True):
     """Project identification configuration.
 
     Parameters
@@ -122,8 +115,7 @@ class ProjectConfigSection:
     commit: str | None = None
 
 
-@dataclass(frozen=True)
-class CliConfig:
+class CliConfig(msgspec.Struct, frozen=True):
     """Complete CLI configuration - single source of truth.
 
     This model:
@@ -164,12 +156,12 @@ class CliConfig:
     color: bool = True
     log_level: LogLevel = "WARNING"
 
-    progress: ProgressConfig = field(default_factory=ProgressConfig)
-    telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
-    retry: RetryConfig = field(default_factory=RetryConfig)
-    storage: StorageConfigSection = field(default_factory=StorageConfigSection)
-    project: ProjectConfigSection = field(default_factory=ProjectConfigSection)
-    _sources: tuple[str, ...] = field(default=(), repr=False, compare=False)
+    progress: ProgressConfig = msgspec.field(default_factory=ProgressConfig)
+    telemetry: TelemetryConfig = msgspec.field(default_factory=TelemetryConfig)
+    retry: RetryConfig = msgspec.field(default_factory=RetryConfig)
+    storage: StorageConfigSection = msgspec.field(default_factory=StorageConfigSection)
+    project: ProjectConfigSection = msgspec.field(default_factory=ProjectConfigSection)
+    _sources: tuple[str, ...] = msgspec.field(default_factory=tuple)
 
     SCHEMA_ID: ClassVar[str] = "https://codeintel.dev/schemas/cli-config.json"
     SCHEMA_TITLE: ClassVar[str] = "CodeIntel CLI Configuration"
@@ -186,8 +178,7 @@ class CliConfig:
         return list(self._sources)
 
 
-@dataclass(frozen=True)
-class ConfigValidationError:
+class ConfigValidationError(msgspec.Struct, frozen=True):
     """Configuration validation error.
 
     Parameters

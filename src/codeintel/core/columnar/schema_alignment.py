@@ -11,7 +11,9 @@ from typing import cast
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_metadata import decode_metadata
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
@@ -29,7 +31,8 @@ class _AlignmentContext:
     extras_policy: ExtrasPolicy
     extras_column: str
     extra_fields: set[str]
-    promote_options: pc.CastOptions | None
+    schema_promote_options: SchemaPromoteOptions
+    cast_options: pc.CastOptions | None
 
 
 def align_reader_to_contract(
@@ -37,7 +40,8 @@ def align_reader_to_contract(
     contract_schema: pa.Schema,
     *,
     extras_policy: ExtrasPolicy | None = None,
-    promote_options: pc.CastOptions | None = None,
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+    cast_options: pc.CastOptions | None = None,
 ) -> pa.RecordBatchReader:
     """Align a RecordBatchReader to a contract schema.
 
@@ -50,8 +54,10 @@ def align_reader_to_contract(
     extras_policy
         Policy for handling extra columns (retain, reject, drop). When None,
         resolve from Arrow schema metadata.
-    promote_options
-        Optional casting options to allow explicit type promotion.
+    schema_promote_options
+        Promotion policy for schema unification.
+    cast_options
+        Optional cast options to allow explicit type promotion.
 
     Returns
     -------
@@ -76,7 +82,8 @@ def align_reader_to_contract(
         extras_policy=resolved_policy,
         extras_column=extras_column,
         extra_fields=extra_fields,
-        promote_options=promote_options,
+        schema_promote_options=schema_promote_options,
+        cast_options=cast_options,
     )
     target_schema = _target_schema(
         contract_schema=contract_schema,
@@ -128,13 +135,12 @@ def _target_schema(
     context: _AlignmentContext,
 ) -> pa.Schema:
     base_schema = contract_schema
-    if context.promote_options is not None:
-        unified = pa.unify_schemas(
-            [contract_schema, incoming_schema],
-            promote_options=context.promote_options,
-        )
-        resolved_fields = [_resolved_field(field, unified) for field in contract_schema]
-        base_schema = pa.schema(resolved_fields, metadata=contract_schema.metadata)
+    unified = _unify_schemas(
+        [contract_schema, incoming_schema],
+        promote_options=context.schema_promote_options,
+    )
+    resolved_fields = [_resolved_field(field, unified) for field in contract_schema]
+    base_schema = pa.schema(resolved_fields, metadata=contract_schema.metadata)
     if context.extras_column in base_schema.names:
         return base_schema
     if context.extras_policy != "retain" or not context.extra_fields:
@@ -163,11 +169,11 @@ def _align_batch(
         extras_array = _extras_array(batch, context.extra_fields)
     for field in target_schema:
         if field.name == context.extras_column and extras_array is not None:
-            arrays.append(_coerce_array(field, extras_array, context.promote_options))
+            arrays.append(_coerce_array(field, extras_array, context.cast_options))
             continue
         if field.name in batch_schema.names:
             index = batch_schema.get_field_index(field.name)
-            arrays.append(_coerce_array(field, batch.column(index), context.promote_options))
+            arrays.append(_coerce_array(field, batch.column(index), context.cast_options))
             continue
         arrays.append(pa.nulls(batch.num_rows, type=field.type))
     return pa.record_batch(arrays, schema=target_schema)
@@ -177,36 +183,36 @@ def _extras_array(batch: pa.RecordBatch, extra_fields: set[str]) -> pa.Array:
     extras_columns: dict[str, list[object]] = {}
     for name in sorted(extra_fields):
         index = batch.schema.get_field_index(name)
-        extras_columns[name] = batch.column(index).to_pylist()
-    payload: list[str | None] = []
+        extras_columns[name] = _array_values(batch.column(index))
+    payload: list[bytes | None] = []
     for row_index in range(batch.num_rows):
         row_payload = {name: values[row_index] for name, values in extras_columns.items()}
         if all(value is None for value in row_payload.values()):
             payload.append(None)
         else:
-            payload.append(json.dumps(row_payload, sort_keys=True, separators=_JSON_SEPARATORS))
-    return pa.array(payload, type=pa.string())
+            payload.append(encode_payload(row_payload))
+    return pa.array(payload, type=pa.binary())
 
 
 def _cast_array(
     array: pa.Array,
     target_type: pa.DataType,
-    promote_options: pc.CastOptions | None,
+    cast_options: pc.CastOptions | None,
 ) -> pa.Array:
     if array.type == target_type:
         return array
-    if promote_options is None:
+    if cast_options is None:
         return pc.cast(array, target_type)
-    return pc.cast(array, target_type, options=promote_options)
+    return pc.cast(array, target_type, options=cast_options)
 
 
 def _coerce_array(
     field: pa.Field,
     array: pa.Array,
-    promote_options: pc.CastOptions | None,
+    cast_options: pc.CastOptions | None,
 ) -> pa.Array:
     try:
-        return _cast_array(array, field.type, promote_options)
+        return _cast_array(array, field.type, cast_options)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         if _is_json_field(field) and pa.types.is_string(field.type):
             return _json_string_array(array)
@@ -217,6 +223,17 @@ def _coerce_array(
         raise
 
 
+def _unify_schemas(
+    schemas: list[pa.Schema],
+    *,
+    promote_options: SchemaPromoteOptions,
+) -> pa.Schema:
+    try:
+        return pa.unify_schemas(schemas, promote_options=promote_options)
+    except TypeError:
+        return pa.unify_schemas(schemas)
+
+
 def _is_json_field(field: pa.Field) -> bool:
     metadata = decode_metadata(field.metadata)
     return metadata.get("codeintel.column_type") == "JSON"
@@ -224,7 +241,7 @@ def _is_json_field(field: pa.Field) -> bool:
 
 def _json_string_array(array: pa.Array) -> pa.Array:
     return pa.array(
-        [_json_string_value(value) for value in array.to_pylist()],
+        [_json_string_value(_scalar_py(value)) for value in array],
         type=pa.string(),
     )
 
@@ -246,7 +263,8 @@ def _timestamp_string_array(
     target_type: pa.TimestampType,
 ) -> pa.Array | None:
     values: list[datetime | None] = []
-    for raw in array.to_pylist():
+    for value in array:
+        raw = _scalar_py(value)
         if raw is None:
             values.append(None)
             continue
@@ -257,6 +275,17 @@ def _timestamp_string_array(
             return None
         values.append(parsed)
     return pa.array(values, type=target_type)
+
+
+def _scalar_py(value: object) -> object:
+    as_py = getattr(value, "as_py", None)
+    if callable(as_py):
+        return as_py()
+    return value
+
+
+def _array_values(array: pa.Array) -> list[object]:
+    return [_scalar_py(value) for value in array]
 
 
 def _parse_iso_timestamp(value: str, target_type: pa.TimestampType) -> datetime | None:
@@ -279,7 +308,7 @@ def _parse_iso_timestamp(value: str, target_type: pa.TimestampType) -> datetime 
 
 
 def _extras_field(name: str) -> pa.Field:
-    return pa.field(name, pa.string(), nullable=True)
+    return pa.field(name, pa.binary(), nullable=True)
 
 
 def _extra_field_names(

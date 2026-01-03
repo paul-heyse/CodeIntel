@@ -43,15 +43,16 @@ import sqlglot.expressions as exp
 
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
+from codeintel.core.helpers.json import normalize_duckdb_json_value
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.contracts.provider import is_view as is_view_contract
+from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.duckdb.catalog import (
     duckdb_default_catalog,
     duckdb_schema_exists,
     is_valid_catalog_identifier,
 )
-from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import (
     fully_qualified_table_ref,
     split_table_key,
@@ -592,6 +593,20 @@ class DuckDBPolicyBackend:
         self._catalog = catalog
         return catalog
 
+    def _reject_parquet_only_write(self, table_key: str, *, action: str) -> None:
+        config = getattr(self.gateway, "config", None)
+        dataset_source = getattr(config, "dataset_source", None)
+        if dataset_source != "parquet_only":
+            return
+        registry = getattr(self.gateway, "datasets", None)
+        if not isinstance(registry, DatasetRegistry):
+            return
+        dataset = registry.by_table_key.get(table_key)
+        if dataset is None or dataset.is_view:
+            return
+        msg = f"DuckDB {action} disabled for parquet-only dataset: {table_key}"
+        raise RuntimeError(msg)
+
     def _qualified_table_ref(
         self,
         schema: str,
@@ -1012,6 +1027,7 @@ class DuckDBPolicyBackend:
         commit
             Commit identifier.
         """
+        self._reject_parquet_only_write(table_key, action="delete")
         schema, table = split_table_key_or_default(table_key, default_schema="main")
         columns = self._get_table_columns(schema, table)
         if not columns:
@@ -1216,6 +1232,7 @@ class DuckDBPolicyBackend:
         RuntimeError
             If the table is missing and creation is disabled.
         """
+        self._reject_parquet_only_write(table_key, action="table creation")
         if self.schema_provider is None:
             msg = "DuckDBPolicyBackend requires schema_provider for ensure_table()"
             raise RuntimeError(msg)
@@ -1355,6 +1372,7 @@ class DuckDBPolicyBackend:
         RuntimeError
             If schema_provider is required to derive columns but is not configured.
         """
+        self._reject_parquet_only_write(table_key, action="bulk insert")
         rows_list = list(rows)
         if not rows_list:
             return 0
@@ -1472,6 +1490,7 @@ class DuckDBPolicyBackend:
         RuntimeError
             If schema_provider is required to derive columns but is not configured.
         """
+        self._reject_parquet_only_write(table_key, action="bulk insert")
         row_list = list(rows)
         if not row_list:
             return 0
@@ -1619,6 +1638,7 @@ class DuckDBPolicyBackend:
         ValueError
             If table_key is not qualified or conflict_columns is empty.
         """
+        self._reject_parquet_only_write(table_key, action="upsert")
         rows_list = list(rows)
         if not rows_list:
             return 0

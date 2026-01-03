@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.core.catalog import FunctionSpanIndex
+    from codeintel.storage.catalog import FunctionSpanIndex
 
 
 @dataclass(frozen=True)

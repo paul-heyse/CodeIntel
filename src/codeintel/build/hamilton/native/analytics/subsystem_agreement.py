@@ -12,7 +12,6 @@ from codeintel.build.analytics.graphs.subsystem_agreement import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -22,6 +21,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -37,16 +37,6 @@ SUBSYSTEM_AGREEMENT_CONTRACT = TableContractSpec(
     required_cols=(),
     clip_column=None,
     input_name="subsystem_agreement__base",
-)
-
-SUBSYSTEM_AGREEMENT_COLUMNS = (
-    "repo",
-    "commit",
-    "module",
-    "subsystem_id",
-    "import_community_id",
-    "agrees",
-    "created_at",
 )
 
 
@@ -85,7 +75,6 @@ def subsystem_agreement__base(
     return rows_to_frame(
         SUBSYSTEM_AGREEMENT_TABLE_KEY,
         rows,
-        columns=SUBSYSTEM_AGREEMENT_COLUMNS,
     )
 
 

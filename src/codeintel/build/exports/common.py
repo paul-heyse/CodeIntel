@@ -20,6 +20,7 @@ from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.errors.schema import SchemaError
 from codeintel.core.errors.taxonomy import SCHEMA_MISMATCH, ErrorCode
 from codeintel.core.table_key import split_table_key
+from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.exports import ExportAuditRecord as AuditRecord
 from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.validation import validate_contract_or_raise
@@ -138,6 +139,10 @@ def validate_registry_or_raise(gateway: BuildGateway) -> None:
     BuildProblemError
         If tables exist but their schemas do not match expectations.
     """
+    dataset_source = getattr(gateway.config, "dataset_source", "duckdb")
+    if dataset_source == "parquet_only":
+        validate_dataset_manifests_or_raise(gateway)
+        return
     missing_tables: list[str] = []
     for dataset_name, contract in gateway.datasets.by_name.items():
         schema_name, table_name = split_table_key(contract.table_key)
@@ -171,6 +176,44 @@ def validate_registry_or_raise(gateway: BuildGateway) -> None:
             detail=detail,
         ).problem_detail
         raise BuildProblemError(problem) from exc
+
+
+def validate_dataset_manifests_or_raise(gateway: BuildGateway) -> None:
+    """Validate that dataset manifests exist for parquet-backed datasets.
+
+    Parameters
+    ----------
+    gateway
+        BuildGateway providing dataset registry access.
+
+    Raises
+    ------
+    ValueError
+        If dataset root or snapshot metadata is missing, or manifests are absent.
+    """
+    dataset_root_dir = gateway.datasets.dataset_root_dir
+    if dataset_root_dir is None:
+        msg = "Dataset root directory is required for parquet-only exports"
+        raise ValueError(msg)
+    snapshot_id = getattr(gateway.config, "commit", None)
+    if not isinstance(snapshot_id, str) or not snapshot_id:
+        msg = "Snapshot commit is required for parquet-only exports"
+        raise ValueError(msg)
+    missing: list[str] = []
+    for dataset in gateway.datasets.by_table_key.values():
+        if dataset.is_view:
+            continue
+        manifest_path = dataset_manifest_path(
+            dataset_root=dataset_root_dir,
+            table_key=dataset.table_key,
+            snapshot_id=snapshot_id,
+        )
+        if not manifest_path.is_file():
+            missing.append(dataset.table_key)
+    if missing:
+        message = "Dataset manifests missing for parquet-only exports: "
+        message += ", ".join(sorted(missing))
+        raise ValueError(message)
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +421,7 @@ __all__ = [
     "resolve_dataset_table",
     "resolve_validation_profile",
     "select_dataset_tables",
+    "validate_dataset_manifests_or_raise",
     "validate_registry_or_raise",
     "write_audit_entry",
 ]

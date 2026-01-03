@@ -1,24 +1,25 @@
 """Graph analytics target commands.
 
 Provide commands for listing graph build targets and their execution plans
-using the Command[T] pattern. These commands now use the build registry
-instead of plugin-era registries.
+using the handler-based operation registry.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from enum import StrEnum
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from cyclopts import App
 
-from codeintel.cli.commands.decorators import cli_command
-from codeintel.cli.core import CliResult
-from codeintel.cli.core.command import Command
-from codeintel.cli.core.results import result_type
-from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
+from codeintel.cli.handlers.graphs import (
+    DependencyPolicy,
+    SelectionPolicy,
+    graph_plugins_handler,
+    graph_targets_handler,
+    graph_targets_list_handler,
+    graph_targets_plan_handler,
+)
 from codeintel.cli.options.registry import (
     GRAPH_DEPENDENCY_POLICY,
     GRAPH_NAMES,
@@ -28,15 +29,12 @@ from codeintel.cli.options.registry import (
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
-if TYPE_CHECKING:
-    from codeintel.cli.context import CommandContext
-
-LOG = logging.getLogger(__name__)
-
 graphs_app = App(
     name="graph",
     help="Graph analytics target commands.",
 )
+
+_GRAPH_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 GRAPH_TARGETS_LIST_PATH: CommandPath = ("graph", "targets-list")
 GRAPH_TARGETS_PLAN_PATH: CommandPath = ("graph", "targets-plan")
@@ -49,101 +47,11 @@ _GRAPH_PLUGINS_FLAGS_FIELD = shared_flags_field(GRAPH_PLUGINS_PATH)
 _GRAPH_TARGETS_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_PATH)
 
 
-@result_type
-@dataclass(frozen=True)
-class GraphTargetInfo:
-    """Information about a single graph build target.
-
-    Parameters
-    ----------
-    name
-        Target name.
-    description
-        Target description.
-    dependencies
-        Target dependencies.
-    tables
-        Tables this target produces.
-    """
-
-    name: str
-    description: str
-    dependencies: list[str]
-    tables: list[str]
-
-
-@result_type
-@dataclass(frozen=True)
-class GraphTargetsResult:
-    """Result from listing graph build targets.
-
-    Parameters
-    ----------
-    targets
-        List of target information.
-    count
-        Total count of targets.
-    """
-
-    targets: list[GraphTargetInfo]
-    count: int
-
-
-@result_type
-@dataclass(frozen=True)
-class GraphPlanStage:
-    """A stage in the graph execution plan.
-
-    Parameters
-    ----------
-    stage
-        Stage number.
-    targets
-        Targets to execute in this stage.
-    """
-
-    stage: int
-    targets: list[str]
-
-
-@result_type
-@dataclass(frozen=True)
-class GraphPlanResult:
-    """Result from planning graph target execution.
-
-    Parameters
-    ----------
-    stages
-        List of execution stages in dependency order.
-    total_targets
-        Total number of targets.
-    """
-
-    stages: list[GraphPlanStage]
-    total_targets: int
-
-
-class SelectionPolicy(StrEnum):
-    """Policy for handling unknown plugin names."""
-
-    LENIENT = "lenient"
-    STRICT = "strict"
-
-
-class DependencyPolicy(StrEnum):
-    """Policy for handling missing/implicit dependencies."""
-
-    LENIENT = "lenient"
-    STRICT = "strict"
-
-
-@cli_command("graph.targets.list", require_storage=True)
+@cli_command("graph.targets.list", handler=graph_targets_list_handler, config=_GRAPH_CONFIG)
 @graphs_app.command(name="targets-list")
 @dataclass(frozen=True)
-class GraphTargetsList(Command[GraphTargetsResult]):
+class GraphTargetsListCommand:
     """List graph build targets."""
-
-    __operation_id__ = "graph.targets.list"
 
     names: Annotated[
         list[str] | None,
@@ -151,55 +59,12 @@ class GraphTargetsList(Command[GraphTargetsResult]):
     ] = None
     flags: SharedFlagsProtocol = _GRAPH_TARGETS_LIST_FLAGS_FIELD
 
-    def execute(self, ctx: CommandContext) -> CliResult[GraphTargetsResult]:
-        """Execute graph targets listing.
 
-        Parameters
-        ----------
-        ctx
-            Command context.
-
-        Returns
-        -------
-        CliResult[GraphTargetsResult]
-            List of targets.
-        """
-        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
-        names_set = set(self.names) if self.names else None
-
-        LOG.info("Listing graph targets (names=%s)", names_set)
-
-        catalog = runtime_bundle.catalog
-        targets = [t for t in catalog.all_targets if t.module == "graphs"]
-
-        if names_set:
-            targets = [t for t in targets if t.name in names_set]
-
-        target_infos = [
-            GraphTargetInfo(
-                name=t.name,
-                description=t.description or f"Graph target: {t.name}",
-                dependencies=list(t.dependencies),
-                tables=[output.key for output in catalog.table_outputs_by_target.get(t.name, ())],
-            )
-            for t in targets
-        ]
-
-        return CliResult.ok(
-            GraphTargetsResult(
-                targets=target_infos,
-                count=len(target_infos),
-            )
-        )
-
-
-@cli_command("graph.targets.plan", require_storage=True)
+@cli_command("graph.targets.plan", handler=graph_targets_plan_handler, config=_GRAPH_CONFIG)
 @graphs_app.command(name="targets-plan")
 @dataclass(frozen=True)
-class GraphTargetsPlan(Command[GraphPlanResult]):
+class GraphTargetsPlanCommand:
     """Display an execution plan for graph targets in dependency order."""
-
-    __operation_id__ = "graph.targets.plan"
 
     names: Annotated[
         list[str] | None,
@@ -207,55 +72,12 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
     ] = None
     flags: SharedFlagsProtocol = _GRAPH_TARGETS_PLAN_FLAGS_FIELD
 
-    def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult]:
-        """Execute graph targets planning.
 
-        Parameters
-        ----------
-        ctx
-            Command context.
-
-        Returns
-        -------
-        CliResult[GraphPlanResult]
-            Execution plan in topological order.
-        """
-        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
-
-        LOG.info("Planning graph targets (names=%s)", self.names)
-
-        catalog = runtime_bundle.catalog
-        graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
-
-        if self.names:
-            names_set = set(self.names)
-            graph_targets = [t for t in graph_targets if t.name in names_set]
-
-        target_names = [t.name for t in graph_targets]
-        ordered = catalog.closure(tuple(target_names)) if target_names else ()
-
-        stages = [
-            GraphPlanStage(
-                stage=1,
-                targets=list(ordered),
-            )
-        ]
-
-        return CliResult.ok(
-            GraphPlanResult(
-                stages=stages,
-                total_targets=len(ordered),
-            )
-        )
-
-
-@cli_command("graph.plugins", require_storage=True)
+@cli_command("graph.plugins", handler=graph_plugins_handler, config=_GRAPH_CONFIG)
 @graphs_app.command(name="plugins")
 @dataclass(frozen=True)
-class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
+class GraphPluginsCommand:
     """List graph plugins or show an execution plan; use --plan for ordering."""
-
-    __operation_id__ = "graph.plugins"
 
     plan: Annotated[
         bool,
@@ -275,83 +97,12 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
     ] = DependencyPolicy.STRICT
     flags: SharedFlagsProtocol = _GRAPH_PLUGINS_FLAGS_FIELD
 
-    def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
-        """List plugins or show plan.
 
-        Parameters
-        ----------
-        ctx
-            Command context (unused).
-
-        Raises
-        ------
-        ValueError
-            When ``selection_policy`` is strict and unknown plugin names are provided.
-
-        Returns
-        -------
-        CliResult[GraphPlanResult | GraphTargetsResult]
-            Either the planned execution order or the plugin list.
-        """
-        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
-        names_set = set(self.names) if self.names else None
-
-        catalog = runtime_bundle.catalog
-        graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
-
-        available_names = {t.name for t in graph_targets}
-
-        if names_set:
-            unknown = sorted(names_set - available_names)
-            if unknown and self.selection_policy == SelectionPolicy.STRICT:
-                msg = f"Unknown graph plugins: {unknown}"
-                raise ValueError(msg)
-            graph_targets = [t for t in graph_targets if t.name in names_set]
-
-        if self.plan:
-            target_names = [t.name for t in graph_targets]
-            ordered = catalog.closure(tuple(target_names)) if target_names else ()
-
-            if self.dependency_policy == DependencyPolicy.LENIENT:
-                ordered = tuple(name for name in ordered if name in available_names)
-
-            stages = [
-                GraphPlanStage(
-                    stage=1,
-                    targets=list(ordered),
-                )
-            ]
-            return CliResult.ok(
-                GraphPlanResult(
-                    stages=stages,
-                    total_targets=len(ordered),
-                )
-            )
-
-        target_infos = [
-            GraphTargetInfo(
-                name=t.name,
-                description=t.description or f"Graph plugin: {t.name}",
-                dependencies=list(t.dependencies),
-                tables=[output.key for output in catalog.table_outputs_by_target.get(t.name, ())],
-            )
-            for t in graph_targets
-        ]
-        return CliResult.ok(
-            GraphTargetsResult(
-                targets=target_infos,
-                count=len(target_infos),
-            )
-        )
-
-
-@cli_command("graph.targets", require_storage=True)
+@cli_command("graph.targets", handler=graph_targets_handler, config=_GRAPH_CONFIG)
 @graphs_app.command(name="targets")
 @dataclass(frozen=True)
-class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
+class GraphTargetsCommand:
     """List graph targets or show execution plan; use --plan for ordering."""
-
-    __operation_id__ = "graph.targets"
 
     plan: Annotated[
         bool,
@@ -363,71 +114,13 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
     ] = None
     flags: SharedFlagsProtocol = _GRAPH_TARGETS_FLAGS_FIELD
 
-    def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
-        """List targets or show plan.
-
-        Parameters
-        ----------
-        ctx
-            Command context (unused).
-
-        Returns
-        -------
-        CliResult[GraphPlanResult | GraphTargetsResult]
-            Either the planned execution order or the target list.
-        """
-        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
-        names_set = set(self.names) if self.names else None
-
-        catalog = runtime_bundle.catalog
-        graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
-
-        if names_set:
-            graph_targets = [t for t in graph_targets if t.name in names_set]
-
-        if self.plan:
-            target_names = [t.name for t in graph_targets]
-            ordered = catalog.closure(tuple(target_names)) if target_names else ()
-            stages = [
-                GraphPlanStage(
-                    stage=1,
-                    targets=list(ordered),
-                )
-            ]
-            return CliResult.ok(
-                GraphPlanResult(
-                    stages=stages,
-                    total_targets=len(ordered),
-                )
-            )
-
-        target_infos = [
-            GraphTargetInfo(
-                name=t.name,
-                description=t.description or f"Graph target: {t.name}",
-                dependencies=list(t.dependencies),
-                tables=[output.key for output in catalog.table_outputs_by_target.get(t.name, ())],
-            )
-            for t in graph_targets
-        ]
-        return CliResult.ok(
-            GraphTargetsResult(
-                targets=target_infos,
-                count=len(target_infos),
-            )
-        )
-
 
 __all__ = [
     "DependencyPolicy",
-    "GraphPlanResult",
-    "GraphPlanStage",
-    "GraphPlugins",
-    "GraphTargetInfo",
-    "GraphTargets",
-    "GraphTargetsList",
-    "GraphTargetsPlan",
-    "GraphTargetsResult",
+    "GraphPluginsCommand",
+    "GraphTargetsCommand",
+    "GraphTargetsListCommand",
+    "GraphTargetsPlanCommand",
     "SelectionPolicy",
     "graphs_app",
 ]

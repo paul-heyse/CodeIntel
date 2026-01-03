@@ -15,16 +15,18 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Self
 
 from codeintel.cli.config import load_config
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.cli.resolution.params import RuntimeParams
 from codeintel.cli.services.jobs import JobService
 from codeintel.cli.services.params import ParamService
 from codeintel.cli.services.runtime import RuntimeService
 from codeintel.cli.services.storage import StorageService
 from codeintel.core.execution.ids import new_uuid_hex
+from codeintel.storage.validation import ContractValidationMode
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -180,7 +182,11 @@ class CommandContext:
         return self._storage is not None
 
     @contextmanager
-    def write_gateway(self) -> Iterator[StorageGateway]:
+    def write_gateway(
+        self,
+        *,
+        validation_mode: ContractValidationMode | None = None,
+    ) -> Iterator[StorageGateway]:
         """Context manager for write-enabled gateway.
 
         Yields
@@ -188,7 +194,7 @@ class CommandContext:
         StorageGateway
             Write-enabled gateway closed on exit.
         """
-        with self.storage.write_gateway() as gw:
+        with self.storage.write_gateway(validation_mode=validation_mode) as gw:
             yield gw
 
     def close(self) -> None:
@@ -395,6 +401,11 @@ class CommandContextBuilder:
 
         params = _merge_project_params(config, self._params)
         param_service = ParamService(params)
+        runtime_params = RuntimeParams.from_dict(params)
+        if self._project_root is not None:
+            runtime_params = replace(runtime_params, project_root=self._project_root)
+        if self._db_path is not None:
+            runtime_params = replace(runtime_params, db_path=self._db_path)
 
         job_service = JobService()
 
@@ -406,7 +417,7 @@ class CommandContextBuilder:
         try:
             if self._require_runtime:
                 runtime_service = RuntimeService(
-                    param_service,
+                    runtime_params,
                     project_root=self._project_root,
                     db_path=self._db_path,
                 )

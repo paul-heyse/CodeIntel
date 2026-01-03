@@ -9,10 +9,25 @@ from __future__ import annotations
 import logging
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import networkx as nx
 from networkx.exception import NetworkXError
+
+from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
+from codeintel.build.graphs.compute.metrics.paths import (
+    compute_avg_shortest_path_from_source,
+    compute_reachable_nodes,
+)
+from codeintel.build.graphs.compute.metrics.types import (
+    CentralityBundle,
+)
+from codeintel.build.graphs.compute.metrics.types import (
+    DominanceMetrics as DominanceSummary,
+)
+
+if TYPE_CHECKING:
+    from codeintel.build.graphs.runtime.context import GraphContext
 
 NodeT = TypeVar("NodeT", bound=Hashable)
 
@@ -262,8 +277,142 @@ def compute_all_dominance(
     }
 
 
+def cfg_dominance_metrics(graph: nx.DiGraph, entry_idx: int) -> DominanceSummary:
+    """Compute dominator tree depth and frontier sizes for a CFG.
+
+    Returns
+    -------
+    DominanceSummary
+        Dominance depth and frontier sizes for CFG nodes.
+    """
+    idoms = compute_dominator_tree(graph, entry_idx)
+    dom_depth = compute_dominator_depths(idoms)
+    frontiers = compute_dominance_frontier(graph, entry_idx)
+    frontier_sizes = {node: len(frontiers.get(node, frozenset())) for node in graph.nodes}
+    height = max(dom_depth.values()) if dom_depth else None
+
+    return DominanceSummary(
+        depth=dom_depth,
+        frontier_sizes=frontier_sizes,
+        tree_height=height,
+    )
+
+
+def cfg_centralities(
+    graph: nx.DiGraph,
+    entry_idx: int,
+    *,
+    ctx: GraphContext,
+) -> tuple[CentralityBundle, DominanceSummary]:
+    """Compute CFG centralities and dominance metrics.
+
+    Returns
+    -------
+    tuple[CentralityBundle, DominanceSummary]
+        Centrality bundle and dominance summary for the CFG.
+    """
+    dominance = cfg_dominance_metrics(graph, entry_idx)
+    centrality = centrality_directed(
+        graph,
+        ctx,
+        weight=None,
+        include_eigen=True,
+    )
+    return centrality, dominance
+
+
+def cfg_longest_path_length(
+    graph: nx.DiGraph,
+    entry_idx: int,
+    *,
+    is_dag: bool | None = None,
+) -> int:
+    """Compute the longest path length for a CFG.
+
+    Returns
+    -------
+    int
+        Longest path length from the entry node.
+    """
+    if graph.number_of_nodes() == 0:
+        return 0
+
+    if is_dag is None:
+        is_dag = nx.is_directed_acyclic_graph(graph)
+
+    if is_dag:
+        try:
+            reachable = nx.descendants(graph, entry_idx) | {entry_idx}
+            subgraph = graph.subgraph(reachable).copy()
+        except NetworkXError:
+            return 0
+        return compute_cfg_longest_path(nx.DiGraph(subgraph))
+
+    return compute_cfg_longest_path(graph)
+
+
+def cfg_avg_shortest_path_length(graph: nx.DiGraph, entry_idx: int) -> float:
+    """Return the average shortest path length from the entry block.
+
+    Returns
+    -------
+    float
+        Average shortest path length from the entry node.
+    """
+    return compute_avg_shortest_path_from_source(graph, entry_idx)
+
+
+def cfg_reachable_nodes(graph: nx.DiGraph, entry_idx: int) -> set[Any]:
+    """Return the set of nodes reachable from the entry node.
+
+    Returns
+    -------
+    set[Any]
+        Reachable nodes in the CFG.
+    """
+    return set(compute_reachable_nodes(graph, entry_idx))
+
+
+def build_cfg_graph(
+    blocks: list[tuple[int, str, int, int]],
+    edges: list[tuple[int, int, str]],
+) -> tuple[nx.DiGraph, int, int]:
+    """Build a control-flow graph from block and edge tuples.
+
+    Returns
+    -------
+    tuple[nx.DiGraph, int, int]
+        Graph, entry node id, and exit node id.
+    """
+    graph = nx.DiGraph()
+    entry_idx = None
+    exit_idx = None
+    out_deg_map: dict[int, int] = {}
+    for idx, kind, in_deg, out_deg in blocks:
+        graph.add_node(idx, kind=kind, in_degree=in_deg, out_degree=out_deg)
+        if kind == "entry":
+            entry_idx = idx
+        if kind == "exit":
+            exit_idx = idx
+        out_deg_map[idx] = out_deg
+    for src, dst, edge_type in edges:
+        graph.add_edge(src, dst, edge_type=edge_type)
+    if entry_idx is None and graph.nodes:
+        entry_idx = min(int(str(node)) for node in graph.nodes)
+    if exit_idx is None:
+        exits = [node for node, deg in out_deg_map.items() if deg == 0]
+        exit_idx = exits[0] if exits else (entry_idx if entry_idx is not None else 0)
+    return graph, entry_idx or 0, exit_idx or 0
+
+
 __all__ = [
     "DominanceMetrics",
+    "build_cfg_graph",
+    "cfg_avg_shortest_path_length",
+    "cfg_centralities",
+    "cfg_dominance_metrics",
+    "cfg_longest_path_length",
+    "cfg_reachable_nodes",
     "compute_all_dominance",
     "compute_cfg_longest_path",
     "compute_dominance_frontier",

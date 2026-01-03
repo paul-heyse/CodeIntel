@@ -36,11 +36,11 @@ def _schema_service() -> SchemaService | None:
             "Callable[[], SchemaService]",
             lazy_getattr("codeintel.build.schemas.service", "get_schema_service"),
         )
-    except Exception:
+    except (AttributeError, ImportError, ModuleNotFoundError):
         return None
     try:
         return getter()
-    except Exception:
+    except (RuntimeError, TypeError):
         return None
 
 
@@ -114,7 +114,13 @@ def empty_frame_for_table(table_key: str, *, columns: ColumnsSpec = None) -> pl.
 
 
 def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
-    """Backward-compatible alias for empty_frame_for_table."""
+    """Backward-compatible alias for empty_frame_for_table.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Empty LazyFrame aligned to the table schema.
+    """
     return empty_frame_for_table(table_key)
 
 
@@ -234,7 +240,13 @@ def lazyframe_for_ingest_columns(
     table_key: str,
     columns: ColumnsSpec,
 ) -> pl.LazyFrame:
-    """Build a LazyFrame for ingest sources, retaining extra fields."""
+    """Build a LazyFrame for ingest sources, retaining extra fields.
+
+    Returns
+    -------
+    polars.LazyFrame
+        LazyFrame retaining extra ingest columns.
+    """
     return lazyframe_for_table_columns(
         table_key,
         columns,
@@ -248,7 +260,13 @@ def dedupe_frame_for_table(
     table_key: str,
     prefer_columns: tuple[str, ...] | None = None,
 ) -> pl.LazyFrame:
-    """Deduplicate rows for a table based on its primary key."""
+    """Deduplicate rows for a table based on its primary key.
+
+    Returns
+    -------
+    polars.LazyFrame
+        LazyFrame with duplicate primary-key rows removed.
+    """
     schema_service = _schema_service()
     schema = schema_service.get_table_schema(table_key) if schema_service is not None else None
     if schema is None or not schema.primary_key:
@@ -262,7 +280,13 @@ def dedupe_frame_for_table(
 
 
 def to_records(frame: pl.DataFrame | pl.LazyFrame | pa.Table) -> list[dict[str, Any]]:
-    """Convert a columnar frame into a list of dictionaries."""
+    """Convert a columnar frame into a list of dictionaries.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Row dictionaries converted from the input frame.
+    """
     if isinstance(frame, pa.Table):
         resolved = pl.from_arrow(frame)
         if isinstance(resolved, pl.Series):

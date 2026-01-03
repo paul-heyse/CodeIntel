@@ -10,6 +10,7 @@ from typing import Annotated
 
 from cyclopts import App
 
+from codeintel.build.schemas.dataset_service import DocsFilterMode, ReadOnlyFilterMode
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ops import (
     dataset_constraints_handler,
@@ -19,7 +20,12 @@ from codeintel.cli.handlers.ops import (
     dataset_list_handler,
     dataset_verify_handler,
 )
-from codeintel.cli.options.registry import DATASET_TABLE_KEY
+from codeintel.cli.options.registry import (
+    DATASET_TABLE_KEY,
+    DATASETS_DOCS_VIEW,
+    DATASETS_MAX_DESCRIPTION,
+    DATASETS_READ_ONLY,
+)
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
@@ -52,8 +58,20 @@ _DATASET_CONSTRAINTS_FLAGS_FIELD = shared_flags_field(DATASET_CONSTRAINTS_PATH)
 @dataset_app.command(name="list")
 @dataclass
 class DatasetListCommand:
-    """List datasets from the registry."""
+    """List datasets from the registry with optional filters."""
 
+    docs_view: Annotated[
+        DocsFilterMode,
+        option_param(DATASETS_DOCS_VIEW, command_path=DATASET_LIST_PATH),
+    ] = "include"
+    read_only: Annotated[
+        ReadOnlyFilterMode,
+        option_param(DATASETS_READ_ONLY, command_path=DATASET_LIST_PATH),
+    ] = "include"
+    max_description: Annotated[
+        int,
+        option_param(DATASETS_MAX_DESCRIPTION, command_path=DATASET_LIST_PATH),
+    ] = 80
     flags: SharedFlagsProtocol = _DATASET_LIST_FLAGS_FIELD
 
 

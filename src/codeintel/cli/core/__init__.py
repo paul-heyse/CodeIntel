@@ -17,7 +17,7 @@ from codeintel.cli.core.parsing import (
     parse_bool_or_none,
     parse_cli_value,
 )
-from codeintel.cli.core.results import CliResult, result_type
+from codeintel.cli.core.results import CliResult, ResultBase, result_type
 from codeintel.core.serialization.converters import (
     serialize_dataclass_to_dict as serialize_result,
 )
@@ -25,6 +25,7 @@ from codeintel.core.serialization.converters import (
 __all__ = [
     "CliResult",
     "Command",
+    "ResultBase",
     "is_truthy_string",
     "parse_bool",
     "parse_bool_or_none",

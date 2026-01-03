@@ -82,12 +82,7 @@ class BuildRunContext:
             return config
         return BuildConfigStack.from_base(config, overrides=overrides)
 
-    def build_env(
-        self,
-        *,
-        load_catalogs: bool = True,
-        load_schema_service: bool = True,
-    ) -> BuildEnv:
+    def build_env(self) -> BuildEnv:
         """Construct BuildEnv with merged configuration and options.
 
         Returns
@@ -104,9 +99,7 @@ class BuildRunContext:
         variants = variant_config_from_build_config(stacked)
         if self.execution_context is not None:
             variants = self.execution_context.variants
-        _ = load_catalogs
         registry_service = None
-        _ = load_schema_service
         validation_mode = self.validation_mode or ContractValidationMode.LENIENT
         return BuildEnv(
             gateway=self.gateway,

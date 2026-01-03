@@ -124,7 +124,7 @@ from codeintel.cli.options.registry import (
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
-from codeintel.core.registry.service import DagOutputSpec, RegistryService
+from codeintel.runtime.registry_service import DagOutputSpec, RegistryService
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext

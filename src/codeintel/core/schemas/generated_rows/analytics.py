@@ -135,9 +135,9 @@ class AnalyticsConfigDataFlowRow(TypedDict):
     config_path: str
     function_goid_h128: int
     usage_kind: str
-    evidence_json: object | None
+    evidence_json: bytes | None
     call_chain_id: str
-    call_chain_json: object | None
+    call_chain_json: bytes | None
     created_at: datetime
 
 
@@ -199,8 +199,8 @@ class AnalyticsConfigValuesRow(TypedDict):
     config_path: str
     format: str
     key: str
-    reference_paths: object | None
-    reference_modules: object | None
+    reference_paths: bytes | None
+    reference_modules: bytes | None
     reference_count: int
 
 
@@ -215,7 +215,7 @@ class AnalyticsDataModelFieldsRow(TypedDict):
     required: bool
     has_default: bool
     default_expr: str | None
-    constraints_json: object
+    constraints_json: bytes
     source: str
     rel_path: str
     lineno: int | None
@@ -235,7 +235,7 @@ class AnalyticsDataModelRelationshipsRow(TypedDict):
     relationship_kind: str
     multiplicity: str | None
     via: str | None
-    evidence_json: object | None
+    evidence_json: bytes | None
     rel_path: str
     lineno: int | None
     created_at: datetime
@@ -248,9 +248,9 @@ class AnalyticsDataModelUsageRow(TypedDict):
     commit: str
     model_id: str
     function_goid_h128: int
-    usage_kinds_json: object
-    evidence_json: object | None
-    context_json: object | None
+    usage_kinds_json: bytes
+    evidence_json: bytes | None
+    context_json: bytes | None
     created_at: datetime
 
 
@@ -265,7 +265,7 @@ class AnalyticsDataModelsRow(TypedDict):
     module: str
     rel_path: str
     model_kind: str
-    base_classes_json: object | None
+    base_classes_json: bytes | None
     doc_short: str | None
     doc_long: str | None
     created_at: datetime
@@ -367,17 +367,17 @@ class AnalyticsEntrypointsRow(TypedDict):
     handler_qualname: str
     http_method: str | None
     route_path: str | None
-    status_codes: object | None
+    status_codes: bytes | None
     auth_required: bool | None
     command_name: str | None
-    arguments_schema: object | None
+    arguments_schema: bytes | None
     schedule: str | None
     trigger: str | None
-    extra: object | None
+    extra: bytes | None
     subsystem_id: str | None
     subsystem_name: str | None
-    tags: object | None
-    owners: object | None
+    tags: bytes | None
+    owners: bytes | None
     tests_touching: int | None
     failing_tests: int | None
     slow_tests: int | None
@@ -401,9 +401,9 @@ class AnalyticsExternalDependenciesRow(TypedDict):
     risk_score: float | None
     function_count: int
     callsite_count: int
-    modules_json: object
-    usage_modes: object
-    config_keys: object | None
+    modules_json: bytes
+    usage_modes: bytes
+    config_keys: bytes | None
     risk_level: str | None
     created_at: datetime
 
@@ -427,8 +427,8 @@ class AnalyticsExternalDependencyCallsRow(TypedDict):
     module: str
     qualname: str
     callsite_count: int
-    modes: object
-    evidence_json: object | None
+    modes: bytes
+    evidence_json: bytes | None
     created_at: datetime
 
 
@@ -448,14 +448,14 @@ class AnalyticsFunctionAstFeaturesRow(TypedDict):
     uses_concurrency_lib: bool
     uses_threading: bool
     uses_asyncio_lib: bool
-    http_client_libs: object
-    http_server_libs: object
-    db_libs: object
-    message_libs: object
+    http_client_libs: bytes
+    http_server_libs: bytes
+    db_libs: bytes
+    message_libs: bytes
     config_read_count: int
     feature_flag_count: int
-    decorators: object
-    libraries_used: object
+    decorators: bytes
+    libraries_used: bytes
     created_at: datetime
 
 
@@ -465,10 +465,10 @@ class AnalyticsFunctionContractsRow(TypedDict):
     repo: str
     commit: str
     function_goid_h128: int
-    preconditions_json: object | None
-    postconditions_json: object | None
-    raises_json: object | None
-    param_nullability_json: object | None
+    preconditions_json: bytes | None
+    postconditions_json: bytes | None
+    raises_json: bytes | None
+    param_nullability_json: bytes | None
     return_nullability: str | None
     contract_confidence: float | None
     created_at: datetime
@@ -490,7 +490,7 @@ class AnalyticsFunctionEffectsRow(TypedDict):
     spawns_threads_or_tasks: bool
     has_transitive_effects: bool
     purity_confidence: float | None
-    effects_json: object | None
+    effects_json: bytes | None
     created_at: datetime
 
 
@@ -510,7 +510,7 @@ class AnalyticsFunctionTypesRow(TypedDict):
     total_params: int | None
     return_type: str | None
     type_comment: str | None
-    param_types: object | None
+    param_types: bytes | None
     created_at: datetime | None
 
 
@@ -644,7 +644,7 @@ class AnalyticsGraphValidationRow(TypedDict):
     severity: str | None
     rel_path: str | None
     detail: str
-    metadata: object | None
+    metadata: bytes | None
     created_at: datetime
 
 
@@ -664,7 +664,7 @@ class AnalyticsSemanticRolesFunctionsRow(TypedDict):
     role: str | None
     framework: str | None
     role_confidence: float | None
-    role_sources_json: object | None
+    role_sources_json: bytes | None
     created_at: datetime
 
 
@@ -676,7 +676,7 @@ class AnalyticsSemanticRolesModulesRow(TypedDict):
     module: str
     role: str | None
     role_confidence: float | None
-    role_sources_json: object | None
+    role_sources_json: bytes | None
     created_at: datetime
 
 
@@ -739,8 +739,8 @@ class AnalyticsSubsystemProfileCacheRow(TypedDict):
     name: str | None
     description: str | None
     module_count: int | None
-    modules_json: object | None
-    entrypoints_json: object | None
+    modules_json: bytes | None
+    entrypoints_json: bytes | None
     internal_edge_count: int | None
     external_edge_count: int | None
     fan_in: int | None
@@ -768,8 +768,8 @@ class AnalyticsSubsystemsRow(TypedDict):
     name: str
     description: str | None
     module_count: int
-    modules_json: object
-    entrypoints_json: object | None
+    modules_json: bytes
+    entrypoints_json: bytes | None
     internal_edge_count: int
     external_edge_count: int
     fan_in: int
@@ -825,9 +825,9 @@ class AnalyticsTagsIndexRow(TypedDict):
 
     tag: str
     description: str | None
-    includes: object | None
-    excludes: object | None
-    matches: object | None
+    includes: bytes | None
+    excludes: bytes | None
+    matches: bytes | None
 
 
 class AnalyticsTestCatalogRow(TypedDict):
@@ -843,7 +843,7 @@ class AnalyticsTestCatalogRow(TypedDict):
     kind: str | None
     status: str | None
     duration_ms: float | None
-    markers: object | None
+    markers: bytes | None
     parametrized: bool | None
     flaky: bool | None
     created_at: datetime | None

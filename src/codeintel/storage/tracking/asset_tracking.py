@@ -11,9 +11,18 @@ from typing import TYPE_CHECKING, Any
 
 from sqlglot import exp
 
+from codeintel.core.gateway import (
+    AssetLineageEdgeRecordProtocol,
+    AssetVersionEventRecordProtocol,
+    AssetVersionRecordProtocol,
+    RunAssetVersionRecordProtocol,
+    RunEnvironmentRecordProtocol,
+)
+from codeintel.core.helpers.json import decode_json_dict
+from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.query_results import (
     coerce_optional_datetime,
     coerce_optional_int,
@@ -21,7 +30,6 @@ from codeintel.storage.query_results import (
     coerce_str,
     iter_tuples_from_arrow_reader,
 )
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
@@ -220,7 +228,7 @@ class AssetTracking:
         aliased.set("alias", exp.TableAlias(this=exp.to_identifier(alias)))
         return aliased
 
-    def record_asset_versions_batch(self, records: Sequence[AssetVersionRecord]) -> int:
+    def record_asset_versions_batch(self, records: Sequence[AssetVersionRecordProtocol]) -> int:
         """Upsert multiple asset version records.
 
         Returns
@@ -241,7 +249,7 @@ class AssetTracking:
                 r.row_count,
                 r.bytes,
                 r.created_at or now,
-                r.meta or {},
+                encode_payload(r.meta or {}),
             )
             for r in records
         ]
@@ -271,7 +279,10 @@ class AssetTracking:
             ),
         )
 
-    def record_asset_version_events_batch(self, records: Sequence[AssetVersionEventRecord]) -> int:
+    def record_asset_version_events_batch(
+        self,
+        records: Sequence[AssetVersionEventRecordProtocol],
+    ) -> int:
         """Upsert run-scoped asset version events.
 
         Returns
@@ -298,7 +309,7 @@ class AssetTracking:
                 r.input_hash,
                 r.options_hash,
                 r.recorded_at or now,
-                r.meta or {},
+                encode_payload(r.meta or {}),
             )
             for r in records
         ]
@@ -340,7 +351,10 @@ class AssetTracking:
             ),
         )
 
-    def record_run_asset_versions_batch(self, records: Sequence[RunAssetVersionRecord]) -> int:
+    def record_run_asset_versions_batch(
+        self,
+        records: Sequence[RunAssetVersionRecordProtocol],
+    ) -> int:
         """Upsert mappings from run_id to resolved asset versions.
 
         Returns
@@ -363,7 +377,7 @@ class AssetTracking:
                 r.target,
                 r.resolution_kind,
                 r.recorded_at or now,
-                r.meta or {},
+                encode_payload(r.meta or {}),
             )
             for r in records
         ]
@@ -395,7 +409,10 @@ class AssetTracking:
             ),
         )
 
-    def record_lineage_edges_batch(self, edges: Sequence[AssetLineageEdgeRecord]) -> int:
+    def record_lineage_edges_batch(
+        self,
+        edges: Sequence[AssetLineageEdgeRecordProtocol],
+    ) -> int:
         """Upsert lineage edges between asset versions.
 
         Returns
@@ -417,7 +434,7 @@ class AssetTracking:
                 e.upstream_version,
                 e.edge_kind,
                 e.created_at or now,
-                e.meta or {},
+                encode_payload(e.meta or {}),
             )
             for e in edges
         ]
@@ -983,7 +1000,7 @@ class AssetTracking:
             return None
         return str(row[0])
 
-    def record_run_environment(self, record: RunEnvironmentRecord) -> None:
+    def record_run_environment(self, record: RunEnvironmentRecordProtocol) -> None:
         """Record the environment for a build run.
 
         Parameters

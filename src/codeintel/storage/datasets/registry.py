@@ -8,12 +8,13 @@ from typing import TYPE_CHECKING, cast
 from sqlglot import exp
 
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import get_contract_for_table_key
+from codeintel.storage.datasets.manifests import load_dataset_manifest
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -32,6 +33,7 @@ __all__ = [
     "describe_all_datasets",
     "describe_dataset",
     "list_dataset_specs",
+    "load_dataset_manifests_for_snapshot",
     "load_dataset_registry",
 ]
 
@@ -369,6 +371,44 @@ def attach_dataset_manifests(
         dataset_root_dir=dataset_root_dir,
         dataset_manifests=dict(dataset_manifests or {}),
     )
+
+
+def load_dataset_manifests_for_snapshot(
+    registry: DatasetRegistry,
+    *,
+    dataset_root_dir: Path,
+    snapshot_id: str,
+) -> dict[str, ArrowDatasetManifest]:
+    """Load dataset manifests for a snapshot from the dataset root.
+
+    Parameters
+    ----------
+    registry
+        Dataset registry with table keys and contracts.
+    dataset_root_dir
+        Root directory for Arrow dataset snapshots.
+    snapshot_id
+        Snapshot identifier for the manifests.
+
+    Returns
+    -------
+    dict[str, ArrowDatasetManifest]
+        Mapping of table_key to manifest payloads that were found on disk.
+    """
+    manifests: dict[str, ArrowDatasetManifest] = {}
+    if not dataset_root_dir.is_dir():
+        return manifests
+    for table_key, dataset in registry.by_table_key.items():
+        if dataset.is_view:
+            continue
+        manifest = load_dataset_manifest(
+            dataset_root=dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+        if manifest is not None:
+            manifests[table_key] = manifest
+    return manifests
 
 
 def dataset_for_name(registry: DatasetRegistry, name: str) -> DatasetContract:

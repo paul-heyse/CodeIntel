@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from codeintel.storage.sqlglot_tools import (
+from codeintel.core.sqlglot_tools import (
     ParseError,
     QuerySummaryConfig,
     canonical_sql_duckdb,

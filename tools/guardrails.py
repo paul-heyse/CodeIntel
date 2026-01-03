@@ -127,6 +127,12 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         message="Legacy SQL builder usage is forbidden; use DuckDBPolicyBackend or Ibis.",
     ),
     Guardrail(
+        name="core_layer_imports",
+        pattern=re.compile(r"(?m)^\\s*(?:from|import)\\s+codeintel\\.(?:storage|build|serving)\\b"),
+        message="Core must not import build/storage/serving modules.",
+        include_prefixes=("src/codeintel/core/",),
+    ),
+    Guardrail(
         name="legacy_macro_helpers",
         pattern=re.compile(r"\b(macro_exists|safe_macro_exists|INGEST_MACRO_TABLES)\b"),
         message="Legacy macro helpers are removed.",
@@ -211,6 +217,23 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         ),
         include_prefixes=("src/codeintel/",),
         allow_prefixes=TAG_GUARDRAIL_ALLOW_PREFIXES,
+    ),
+    Guardrail(
+        name="core_to_pylist",
+        pattern=re.compile(r"\.to_pylist\("),
+        message="Core must not materialize Arrow arrays via to_pylist; use streaming-safe access.",
+        include_prefixes=("src/codeintel/core/",),
+        allow_prefixes=(
+            "src/codeintel/core/exports/",
+            "tests/",
+        ),
+    ),
+    Guardrail(
+        name="core_json_column_types",
+        pattern=re.compile(r"Column\\(\\s*\"[^\"]+\"\\s*,\\s*\"JSON\""),
+        message="Core table schemas must not declare JSON columns; use BLOB or Arrow-native types.",
+        include_prefixes=("src/codeintel/core/",),
+        allow_prefixes=("tests/",),
     ),
     Guardrail(
         name="direct_hamilton_schema_modifier",

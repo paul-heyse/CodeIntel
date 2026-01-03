@@ -10,11 +10,13 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 from sqlglot import exp
 
+from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
 from codeintel.core.filters import FilterOpError, validate_filter_value
+from codeintel.core.helpers.json import normalize_duckdb_json_value
 from codeintel.core.schemas.primitives import column_type_base
 from codeintel.core.schemas.type_mappings import complex_type_mapping
 from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
@@ -37,7 +39,6 @@ from codeintel.storage.duckdb_types import (
     FunctionExpression,
     duckdb_type_for_column_type,
 )
-from codeintel.storage.helpers.json import normalize_duckdb_json_value
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -65,6 +66,7 @@ class RelationScanOptions:
     fragment_readahead: int | None = DEFAULT_FRAGMENT_READAHEAD
     use_threads: bool | None = None
     unify_schemas: bool = False
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     metrics_enabled: bool = False
 
 
@@ -659,6 +661,7 @@ def _scan_dataset(
         schema=schema,
         columns=projection_columns,
         unify_schemas=context.scan_options.unify_schemas,
+        schema_promote_options=context.scan_options.schema_promote_options,
     )
     scanner = dataset_scanner_for_entry(
         entry,
@@ -670,6 +673,7 @@ def _scan_dataset(
             reader,
             schema,
             extras_policy=extras_policy_from_schema(schema),
+            schema_promote_options=context.scan_options.schema_promote_options,
         )
         try:
             return scan_arrow(con, source=aligned)

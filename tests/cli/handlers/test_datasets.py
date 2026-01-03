@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from codeintel.cli.core.result_types import DatasetSummary
+from codeintel.cli.core.results import SerializableResult
 from codeintel.cli.handlers.datasets import (
     DatasetDiffResult,
     DatasetLintResult,
@@ -28,21 +30,25 @@ if TYPE_CHECKING:
     from tests.cli.handlers.conftest import DatasetHandlerHarness
 
 
+def _result_to_dict(result: object) -> dict[str, object]:
+    return cast("SerializableResult", result).to_dict()
+
+
 def test_datasets_list_result_to_dict() -> None:
     """Verify DatasetsListResult.to_dict returns correct structure."""
     result = DatasetListResult(
         datasets=[
-            {
-                "name": "test_dataset",
-                "table_key": "test.table",
-                "category": "",
-                "description": "A test dataset",
-            }
+            DatasetSummary(
+                name="test_dataset",
+                table_key="test.table",
+                description="A test dataset",
+                capabilities={"docs_view": False},
+            )
         ],
         count=1,
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_equal(data["count"], 1)
     datasets = data["datasets"]
@@ -60,7 +66,7 @@ def test_dataset_lint_result_to_dict() -> None:
         issues=[],
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_true(data["passed"])
     expect_equal(data["issue_count"], 0)
@@ -75,7 +81,7 @@ def test_dataset_lint_result_with_issues_to_dict() -> None:
         issues=["Missing column: id", "Invalid type for column: name"],
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_true(not data["passed"])
     expect_equal(data["issue_count"], 2)
@@ -92,7 +98,7 @@ def test_dataset_snapshot_result_to_dict() -> None:
         datasets_count=5,
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_equal(data["output_path"], "build/snapshot.json")
     expect_equal(data["datasets_count"], 5)
@@ -107,7 +113,7 @@ def test_dataset_diff_result_to_dict() -> None:
         has_differences=True,
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_equal(data["added"], ["new_dataset"])
     expect_equal(data["removed"], ["old_dataset"])
@@ -124,7 +130,7 @@ def test_dataset_diff_result_no_differences() -> None:
         has_differences=False,
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_true(not data["has_differences"])
     expect_equal(data["added"], [])
@@ -145,7 +151,7 @@ def test_datasets_list_handler_success(
     data = result.data
     if data is not None:
         expect_equal(data.count, 1)
-        expect_equal(data.datasets[0]["name"], "test_dataset")
+        expect_equal(data.datasets[0].name, "test_dataset")
 
 
 def test_datasets_lint_handler_success(
@@ -285,7 +291,7 @@ def test_datasets_diff_handler_no_differences(
     with dataset_handler_harness_fixture.command_context(
         {"baseline_path": str(baseline_path)}
     ) as ctx:
-        contract = deps.contracts_provider(ctx)["test_dataset"]
+        contract = deps.list_datasets(docs_view="include", read_only="include")[0]
         baseline_path.write_text(
             json.dumps([{"name": contract.name, "table_key": contract.table_key}]),
             encoding="utf-8",

@@ -14,14 +14,15 @@ from typing import TYPE_CHECKING
 from sqlglot import exp
 
 from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 from codeintel.core.schemas.serde import table_schema_from_json_obj
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import is_view, iter_contracts
-from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.bootstrap import (
     replace_dataset_dataflow_edges,
@@ -33,7 +34,6 @@ from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_fr
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -313,7 +313,7 @@ def _collect_schema_rows(
             context.schema_versions[schema_digest] = (
                 schema_digest,
                 computed_hash,
-                normalize_duckdb_json_value(schema_json),
+                encode_payload(schema_json),
                 None,
                 context.now,
             )

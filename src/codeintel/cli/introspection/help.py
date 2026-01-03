@@ -17,6 +17,7 @@ from rich.table import Table
 from codeintel.cli.introspection.discovery import (
     get_operation_info,
     list_all_operations,
+    list_operation_aliases,
     list_operations_by_group,
     search_operations,
 )
@@ -78,6 +79,10 @@ class HelpRenderer:
         table.add_row("Requires Graph Runtime", "Yes" if info.require_graph_runtime else "No")
         if info.tags:
             table.add_row("Tags", ", ".join(info.tags))
+        aliases = list_operation_aliases(info.operation_id)
+        if aliases:
+            alias_ids = ", ".join(alias.alias_id for alias in aliases)
+            table.add_row("Aliases", alias_ids)
         self.console.print(table)
         self.console.print()
 
@@ -133,8 +138,11 @@ class HelpRenderer:
             table.add_column("Operation ID", style="cyan")
             table.add_column("Group")
             table.add_column("Description")
+            table.add_column("Aliases")
             for info in sorted(operations, key=lambda x: x.operation_id):
-                table.add_row(info.operation_id, info.group, info.description)
+                aliases = list_operation_aliases(info.operation_id)
+                alias_text = ", ".join(alias.alias_id for alias in aliases) if aliases else ""
+                table.add_row(info.operation_id, info.group, info.description, alias_text)
             self.console.print(table)
 
     def render_search_results(self, query: str) -> None:
@@ -202,6 +210,9 @@ def render_help_text(
     writer.write(f"Requires Graph Runtime: {'Yes' if info.require_graph_runtime else 'No'}\n")
     if info.tags:
         writer.write(f"Tags: {', '.join(info.tags)}\n")
+    aliases = list_operation_aliases(info.operation_id)
+    if aliases:
+        writer.write(f"Aliases: {', '.join(alias.alias_id for alias in aliases)}\n")
 
     writer.write("\nUsage:\n")
     parts = info.operation_id.split(".")

@@ -33,17 +33,18 @@ from codeintel.core.columnar import (
     extras_policy_from_schema,
 )
 from codeintel.core.filters import FilterSpecInput
-from codeintel.core.schemas.hashing import schema_hash
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
-from codeintel.storage.duckdb_explain import normalize_explain_output
-from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.queries.filter_compiler import (
+from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
     compile_filter_predicates,
     duckdb_filter_expression,
 )
+from codeintel.core.schemas.hashing import schema_hash
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
+from codeintel.storage.duckdb_explain import normalize_explain_output
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.schema.duckdb_contracts import (
+    ContractSchemaOptions,
     contract_schema_for_table_key,
     table_schema_for_table_key,
 )
@@ -200,7 +201,7 @@ class Warehouse:
         """
         try:
             relation = self.gateway.relation_from_table_key(table_key)
-        except DuckDBError:
+        except (DuckDBError, FileNotFoundError, RuntimeError, ValueError):
             return False
 
         if snapshot is None:
@@ -859,7 +860,17 @@ def _contract_schema_for_table(
     table_key: str,
 ) -> pa.Schema | None:
     try:
-        return contract_schema_for_table_key(con=gateway.con, table_key=table_key)
+        dataset_root_dir = getattr(gateway.config, "dataset_root_dir", None)
+        snapshot_id = getattr(gateway.config, "commit", None)
+        options = ContractSchemaOptions(
+            dataset_root_dir=dataset_root_dir,
+            snapshot_id=snapshot_id,
+        )
+        return contract_schema_for_table_key(
+            con=gateway.con,
+            table_key=table_key,
+            options=options,
+        )
     except (DuckDBError, RuntimeError, TypeError, ValueError):
         return None
 

@@ -29,11 +29,13 @@ __all__ = [
     "CoreScipSymbolInformationRow",
     "CoreScipSymbolRelationshipsRow",
     "CoreScipSymbolsRow",
+    "CoreSyntaxCallArgsRow",
     "CoreSyntaxCallsResolvedRow",
     "CoreSyntaxCallsRow",
     "CoreSyntaxDefsResolvedRow",
     "CoreSyntaxDefsRow",
     "CoreSyntaxEdgesRow",
+    "CoreSyntaxFuncParamsRow",
     "CoreSyntaxImportsResolvedRow",
     "CoreSyntaxImportsRow",
     "CoreSyntaxNodesRow",
@@ -42,7 +44,13 @@ __all__ = [
     "CoreSyntaxScopesRow",
     "CoreSyntaxSpansRow",
     "CoreTsCapturesRow",
+    "CoreTsEdgesRow",
+    "CoreTsLanguageMetadataRow",
+    "CoreTsNodesRow",
     "CoreTsParseErrorsRow",
+    "CoreTsSyntaxNodeXrefRow",
+    "CoreTsTokensRow",
+    "CoreTsTriviaRow",
 ]
 
 
@@ -73,7 +81,7 @@ class CoreAstNodesRow(TypedDict):
     col_offset: int | None
     end_col_offset: int | None
     parent_qualname: str | None
-    decorators: object | None
+    decorators: bytes | None
     docstring: str | None
     hash: str
 
@@ -84,10 +92,10 @@ class CoreCstNodesRow(TypedDict):
     path: str
     node_id: str
     kind: str
-    span: object
+    span: bytes
     text_preview: str | None
-    parents: object | None
-    qnames: object | None
+    parents: bytes | None
+    qnames: bytes | None
 
 
 class CoreDocstringsRow(TypedDict):
@@ -105,10 +113,10 @@ class CoreDocstringsRow(TypedDict):
     style: str | None
     short_desc: str | None
     long_desc: str | None
-    params: object | None
-    returns: object | None
-    raises: object | None
-    examples: object | None
+    params: bytes | None
+    returns: bytes | None
+    raises: bytes | None
+    examples: bytes | None
     created_at: datetime
 
 
@@ -187,7 +195,7 @@ class CoreIngestRunsRow(TypedDict):
     status: str
     error_kind: str | None
     error_message: str | None
-    datasets: object | None
+    datasets: bytes | None
     modules_total: int | None
     modules_changed: int | None
     modules_deleted: int | None
@@ -204,8 +212,8 @@ class CoreModulesRow(TypedDict):
     repo: str | None
     commit: str | None
     language: str | None
-    tags: object | None
-    owners: object | None
+    tags: bytes | None
+    owners: bytes | None
     row_hash: str | None
 
 
@@ -221,7 +229,7 @@ class CoreParseManifestRow(TypedDict):
     default_indent: str | None
     default_newline: str | None
     has_trailing_newline: bool | None
-    future_imports: object | None
+    future_imports: bytes | None
     parser_backend: str | None
     libcst_version: str | None
     error_kind: str | None
@@ -236,8 +244,8 @@ class CoreRepoMapRow(TypedDict):
 
     repo: str
     commit: str
-    modules: object | None
-    overlays: object | None
+    modules: bytes | None
+    overlays: bytes | None
     generated_at: datetime | None
 
 
@@ -422,6 +430,7 @@ class CoreSyntaxCallsRow(TypedDict):
     rel_path: str
     producer: str
     call_id: str
+    call_node_id: str | None
     scope_id: str
     span_id: str
     callee_span_id: str | None
@@ -433,7 +442,31 @@ class CoreSyntaxCallsRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
-    extras_json: object | None
+    callee_start_byte: int | None
+    callee_end_byte: int | None
+    extras_json: bytes | None
+
+
+class CoreSyntaxCallArgsRow(TypedDict):
+    """Row model for core.syntax_call_args."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    call_id: str
+    arg_ordinal: int
+    arg_kind: str
+    arg_name: str | None
+    arg_start_line: int
+    arg_start_col: int
+    arg_end_line: int
+    arg_end_col: int
+    arg_start_byte: int | None
+    arg_end_byte: int | None
+    arg_span_id: str | None
+    arg_expr_node_id: str | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxDefsRow(TypedDict):
@@ -454,7 +487,30 @@ class CoreSyntaxDefsRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
-    extras_json: object | None
+    extras_json: bytes | None
+
+
+class CoreSyntaxFuncParamsRow(TypedDict):
+    """Row model for core.syntax_func_params."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    producer: str
+    func_def_id: str
+    param_def_id: str | None
+    param_ordinal: int
+    param_kind: str
+    param_name: str
+    param_start_line: int
+    param_start_col: int
+    param_end_line: int
+    param_end_col: int
+    param_start_byte: int | None
+    param_end_byte: int | None
+    param_span_id: str | None
+    param_node_id: str | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxEdgesRow(TypedDict):
@@ -492,7 +548,7 @@ class CoreSyntaxImportsRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
-    extras_json: object | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxNodesRow(TypedDict):
@@ -513,7 +569,7 @@ class CoreSyntaxNodesRow(TypedDict):
     start_byte: int | None
     end_byte: int | None
     text_preview: str | None
-    extras_json: object | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxRefsRow(TypedDict):
@@ -534,7 +590,7 @@ class CoreSyntaxRefsRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
-    extras_json: object | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxCallsResolvedRow(TypedDict):
@@ -545,6 +601,7 @@ class CoreSyntaxCallsResolvedRow(TypedDict):
     rel_path: str
     producer: str
     call_id: str
+    call_node_id: str | None
     scope_id: str
     span_id: str
     callee_span_id: str | None
@@ -556,6 +613,8 @@ class CoreSyntaxCallsResolvedRow(TypedDict):
     end_col: int
     start_byte: int | None
     end_byte: int | None
+    callee_start_byte: int | None
+    callee_end_byte: int | None
     scip_symbol: str | None
     scip_occurrence_id: str | None
     scip_roles: int | None
@@ -568,7 +627,7 @@ class CoreSyntaxCallsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: object | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxDefsResolvedRow(TypedDict):
@@ -601,7 +660,7 @@ class CoreSyntaxDefsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: object | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxImportsResolvedRow(TypedDict):
@@ -637,7 +696,7 @@ class CoreSyntaxImportsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: object | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxRefsResolvedRow(TypedDict):
@@ -670,7 +729,7 @@ class CoreSyntaxRefsResolvedRow(TypedDict):
     syntax_node_id: str | None
     match_kind: str | None
     candidate_count: int | None
-    extras_json: object | None
+    extras_json: bytes | None
 
 
 class CoreSyntaxScopesRow(TypedDict):
@@ -723,7 +782,48 @@ class CoreTsCapturesRow(TypedDict):
     end_col: int
     node_type: str
     text_preview: str | None
-    extras: object | None
+    extras: bytes | None
+
+
+class CoreTsNodesRow(TypedDict):
+    """Row model for core.ts_nodes."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    node_id: str
+    node_type: str
+    grammar_id: int | None
+    kind_id: int | None
+    is_named: bool
+    is_missing: bool
+    is_error: bool
+    has_error: bool
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    parse_state: int | None
+    next_parse_state: int | None
+    text_preview: str | None
+    extras_json: bytes | None
+
+
+class CoreTsEdgesRow(TypedDict):
+    """Row model for core.ts_edges."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    parent_node_id: str
+    child_node_id: str
+    field_id: int | None
+    field_name: str | None
+    child_ordinal: int
 
 
 class CoreTsParseErrorsRow(TypedDict):
@@ -742,3 +842,71 @@ class CoreTsParseErrorsRow(TypedDict):
     end_row: int
     end_col: int
     text_preview: str | None
+
+
+class CoreTsTokensRow(TypedDict):
+    """Row model for core.ts_tokens."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    token_id: str
+    token_kind: str
+    node_type: str
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    text_preview: str | None
+    extras_json: bytes | None
+
+
+class CoreTsTriviaRow(TypedDict):
+    """Row model for core.ts_trivia."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    trivia_id: str
+    trivia_kind: str
+    node_type: str
+    start_byte: int
+    end_byte: int
+    start_row: int
+    start_col: int
+    end_row: int
+    end_col: int
+    text_preview: str | None
+    extras_json: bytes | None
+
+
+class CoreTsLanguageMetadataRow(TypedDict):
+    """Row model for core.ts_language_metadata."""
+
+    repo: str
+    commit: str
+    language: str
+    abi_version: int
+    semantic_version: str
+    node_kind_count: int
+    field_count: int
+    parse_state_count: int
+    created_at: datetime
+
+
+class CoreTsSyntaxNodeXrefRow(TypedDict):
+    """Row model for core.ts_syntax_node_xref."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    producer: str
+    ts_node_id: str
+    syntax_node_id: str | None
+    match_kind: str
+    candidate_count: int

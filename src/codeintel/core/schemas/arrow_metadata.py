@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pyarrow as pa
 
+from codeintel.core.columnar.schema_metadata import decode_metadata
+
 __all__ = [
     "arrow_schema_digest",
     "arrow_schema_hash",
@@ -43,10 +45,6 @@ def arrow_schema_digest(schema: pa.Schema) -> str | None:
 
 
 def _schema_metadata_value(schema: pa.Schema, key: str) -> str | None:
-    metadata = schema.metadata
-    if not metadata:
-        return None
-    raw = metadata.get(key.encode("utf-8"))
-    if raw is None:
-        return None
-    return raw.decode("utf-8")
+    metadata = decode_metadata(schema.metadata)
+    value = metadata.get(key)
+    return value if isinstance(value, str) else None

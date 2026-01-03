@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from sqlglot import diff as sqlglot_diff
 
-from codeintel.storage.sqlglot_tools import (
+from codeintel.core.sqlglot_tools import (
     ParseError,
     canonicalize_expression_duckdb,
     extract_table_keys_duckdb,

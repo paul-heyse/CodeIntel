@@ -67,8 +67,20 @@ class ReadPoolWarehouse:
         Pool configuration.
     """
 
-    def __init__(self, db_path: Path, cfg: PoolConfig) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        cfg: PoolConfig,
+        *,
+        storage_config: StorageConfig | None = None,
+    ) -> None:
         self._db_path = db_path
+        if storage_config is None:
+            storage_config = StorageConfig.for_readonly(db_path)
+        elif storage_config.db_path != db_path:
+            msg = "StorageConfig db_path does not match pool db_path"
+            raise ValueError(msg)
+        self._storage_config = storage_config
         self._cfg = cfg
         self._available: LifoQueue[Warehouse] = LifoQueue()
         self._lock = threading.Lock()
@@ -87,11 +99,11 @@ class ReadPoolWarehouse:
 
     def _open(self) -> Warehouse:
         session = DuckDBSession(
-            StorageConfig.for_readonly(self._db_path),
+            self._storage_config,
             duckdb_config=self._connect_config(),
         )
         con = session.open_reader()
-        gateway = MinimalStorageGateway(con)
+        gateway = MinimalStorageGateway(con, config=self._storage_config)
         return Warehouse(gateway=cast("StorageGateway", gateway))
 
     def _init_handles(self) -> None:

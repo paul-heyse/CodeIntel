@@ -28,6 +28,7 @@ from codeintel.build.analytics.utilities.ast import (
 )
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path, path_to_module
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
@@ -37,51 +38,17 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
 
-DATA_MODELS_COLS = [
-    "repo",
-    "commit",
-    "model_id",
-    "goid_h128",
-    "model_name",
-    "module",
-    "rel_path",
-    "model_kind",
-    "base_classes_json",
-    "doc_short",
-    "doc_long",
-    "created_at",
-]
-DATA_MODEL_FIELDS_COLS = [
-    "repo",
-    "commit",
-    "model_id",
-    "field_name",
-    "field_type",
-    "required",
-    "has_default",
-    "default_expr",
-    "constraints_json",
-    "source",
-    "rel_path",
-    "lineno",
-    "created_at",
-]
-DATA_MODEL_RELATIONSHIPS_COLS = [
-    "repo",
-    "commit",
-    "source_model_id",
-    "target_model_id",
-    "target_module",
-    "target_model_name",
-    "field_name",
-    "relationship_kind",
-    "multiplicity",
-    "via",
-    "evidence_json",
-    "rel_path",
-    "lineno",
-    "created_at",
-]
+def _columns_for_table(table_key: str) -> list[str]:
+    columns = columns_for_table_key(table_key)
+    if not columns:
+        msg = f"No schema columns registered for {table_key}"
+        raise ValueError(msg)
+    return list(columns)
+
+
+DATA_MODELS_COLS = _columns_for_table("analytics.data_models")
+DATA_MODEL_FIELDS_COLS = _columns_for_table("analytics.data_model_fields")
+DATA_MODEL_RELATIONSHIPS_COLS = _columns_for_table("analytics.data_model_relationships")
 
 log = logging.getLogger(__name__)
 

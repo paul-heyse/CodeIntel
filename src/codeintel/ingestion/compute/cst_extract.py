@@ -54,6 +54,8 @@ SYNTAX_SCOPES_TABLE_KEY = "core.syntax_scopes"
 SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
 SYNTAX_REFS_TABLE_KEY = "core.syntax_refs"
 SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
+SYNTAX_CALL_ARGS_TABLE_KEY = "core.syntax_call_args"
+SYNTAX_FUNC_PARAMS_TABLE_KEY = "core.syntax_func_params"
 SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
 
 SYNTAX_PRODUCER = "libcst"
@@ -106,6 +108,8 @@ class CstExtractResult:
     syntax_defs_rows: ColumnarRows = field(default_factory=dict)
     syntax_refs_rows: ColumnarRows = field(default_factory=dict)
     syntax_calls_rows: ColumnarRows = field(default_factory=dict)
+    syntax_call_args_rows: ColumnarRows = field(default_factory=dict)
+    syntax_func_params_rows: ColumnarRows = field(default_factory=dict)
     syntax_imports_rows: ColumnarRows = field(default_factory=dict)
     row_count: int = 0
     parse_manifest_row_count: int = 0
@@ -116,6 +120,8 @@ class CstExtractResult:
     syntax_defs_row_count: int = 0
     syntax_refs_row_count: int = 0
     syntax_calls_row_count: int = 0
+    syntax_call_args_row_count: int = 0
+    syntax_func_params_row_count: int = 0
     syntax_imports_row_count: int = 0
 
 
@@ -154,6 +160,8 @@ class _CstBuffers:
     defs: ColumnarRowBuffer
     refs: ColumnarRowBuffer
     calls: ColumnarRowBuffer
+    call_args: ColumnarRowBuffer
+    func_params: ColumnarRowBuffer
     imports: ColumnarRowBuffer
 
 
@@ -400,6 +408,8 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         self.defs: list[dict[str, object]] = []
         self.refs: list[dict[str, object]] = []
         self.calls: list[dict[str, object]] = []
+        self.call_args: list[dict[str, object]] = []
+        self.func_params: list[dict[str, object]] = []
         self.imports: list[dict[str, object]] = []
         self._span_ids: set[str] = set()
         self._scope_stack: list[ScopeFrame] = []
@@ -595,9 +605,50 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
             self._scope_stack.pop()
 
     def _record_params(self, params: cst.Parameters) -> None:
-        for param, param_kind in self._iter_params(params):
+        for ordinal, (param, param_kind) in enumerate(self._iter_params(params)):
             extras = self._param_def_extras(param, param_kind)
-            self._record_named_def(param.name, param.name.value, "param", extras=extras)
+            def_id = self._record_named_def(param.name, param.name.value, "param", extras=extras)
+            span = self._span_for_node(param.name)
+            if def_id is None or span is None:
+                continue
+            func_def_id = self._container_def_id(param)
+            if func_def_id is None:
+                continue
+            span_id = self._ensure_span(span, "identifier")
+            node_id = _stable_id(
+                "syntax_node",
+                self.rel_path,
+                self.producer,
+                type(param.name).__name__,
+                span.start_line,
+                span.start_col,
+                span.end_line,
+                span.end_col,
+                span.start_byte,
+                span.end_byte,
+            )
+            self.func_params.append(
+                {
+                    "repo": self.repo,
+                    "commit": self.commit,
+                    "rel_path": self.rel_path,
+                    "producer": self.producer,
+                    "func_def_id": func_def_id,
+                    "param_def_id": def_id,
+                    "param_ordinal": ordinal,
+                    "param_kind": param_kind,
+                    "param_name": param.name.value,
+                    "param_start_line": span.start_line,
+                    "param_start_col": span.start_col,
+                    "param_end_line": span.end_line,
+                    "param_end_col": span.end_col,
+                    "param_start_byte": span.start_byte,
+                    "param_end_byte": span.end_byte,
+                    "param_span_id": span_id,
+                    "param_node_id": node_id,
+                    "extras_json": extras,
+                }
+            )
 
     @staticmethod
     def _iter_params(params: cst.Parameters) -> Iterable[tuple[cst.Param, str]]:
@@ -717,11 +768,27 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
         if span is None:
             return
         span_id = self._ensure_span(span, "call_expr")
+        call_node_id = _stable_id(
+            "syntax_node",
+            self.rel_path,
+            self.producer,
+            type(node).__name__,
+            span.start_line,
+            span.start_col,
+            span.end_line,
+            span.end_col,
+            span.start_byte,
+            span.end_byte,
+        )
         callee_span_id = None
         callee_text = self._node_text(node.func)
         callee_span = self._span_for_node(node.func)
+        callee_start_byte = None
+        callee_end_byte = None
         if callee_span is not None:
             callee_span_id = self._ensure_span(callee_span, "callee_expr")
+            callee_start_byte = callee_span.start_byte
+            callee_end_byte = callee_span.end_byte
         call_id = _stable_id(
             "call",
             self.repo,
@@ -741,6 +808,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "rel_path": self.rel_path,
                 "producer": self.producer,
                 "call_id": call_id,
+                "call_node_id": call_node_id,
                 "scope_id": scope_id,
                 "span_id": span_id,
                 "callee_span_id": callee_span_id,
@@ -752,9 +820,63 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
+                "callee_start_byte": callee_start_byte,
+                "callee_end_byte": callee_end_byte,
                 "extras_json": extras,
             }
         )
+        self._record_call_args(call_id, node)
+
+    def _record_call_args(self, call_id: str, node: cst.Call) -> None:
+        for ordinal, arg in enumerate(node.args):
+            span = self._span_for_node(arg.value)
+            if span is None:
+                continue
+            span_id = self._ensure_span(span, "arg_expr")
+            node_id = _stable_id(
+                "syntax_node",
+                self.rel_path,
+                self.producer,
+                type(arg.value).__name__,
+                span.start_line,
+                span.start_col,
+                span.end_line,
+                span.end_col,
+                span.start_byte,
+                span.end_byte,
+            )
+            arg_kind, arg_name = self._arg_kind_and_name(arg)
+            self.call_args.append(
+                {
+                    "repo": self.repo,
+                    "commit": self.commit,
+                    "rel_path": self.rel_path,
+                    "producer": self.producer,
+                    "call_id": call_id,
+                    "arg_ordinal": ordinal,
+                    "arg_kind": arg_kind,
+                    "arg_name": arg_name,
+                    "arg_start_line": span.start_line,
+                    "arg_start_col": span.start_col,
+                    "arg_end_line": span.end_line,
+                    "arg_end_col": span.end_col,
+                    "arg_start_byte": span.start_byte,
+                    "arg_end_byte": span.end_byte,
+                    "arg_span_id": span_id,
+                    "arg_expr_node_id": node_id,
+                    "extras_json": None,
+                }
+            )
+
+    @staticmethod
+    def _arg_kind_and_name(arg: cst.Arg) -> tuple[str, str | None]:
+        if arg.star == "**":
+            return "kwargs", None
+        if arg.star == "*":
+            return "starargs", None
+        if isinstance(arg.keyword, cst.Name):
+            return "keyword", arg.keyword.value
+        return "positional", None
 
     def _record_import_alias(
         self,
@@ -1311,9 +1433,7 @@ def _ast_module_span(source_index: LineIndexedSource) -> _AstSpan:
             end_byte=end_byte,
         )
     end_line = len(source_index.lines) - 1
-    end_col_utf8 = len(
-        source_index.lines[end_line].encode("utf-8", errors="replace")
-    )
+    end_col_utf8 = len(source_index.lines[end_line].encode("utf-8", errors="replace"))
     return _AstSpan(
         start_line=0,
         start_col_utf8=0,
@@ -1705,6 +1825,8 @@ def _build_cst_buffers() -> _CstBuffers:
         defs=columnar_buffer_for_table_key(SYNTAX_DEFS_TABLE_KEY),
         refs=columnar_buffer_for_table_key(SYNTAX_REFS_TABLE_KEY),
         calls=columnar_buffer_for_table_key(SYNTAX_CALLS_TABLE_KEY),
+        call_args=columnar_buffer_for_table_key(SYNTAX_CALL_ARGS_TABLE_KEY),
+        func_params=columnar_buffer_for_table_key(SYNTAX_FUNC_PARAMS_TABLE_KEY),
         imports=columnar_buffer_for_table_key(SYNTAX_IMPORTS_TABLE_KEY),
     )
 
@@ -1851,6 +1973,8 @@ def _extract_module_syntax(
     buffers.defs.extend(syntax_visitor.defs)
     buffers.refs.extend(syntax_visitor.refs)
     buffers.calls.extend(syntax_visitor.calls)
+    buffers.call_args.extend(syntax_visitor.call_args)
+    buffers.func_params.extend(syntax_visitor.func_params)
     buffers.imports.extend(syntax_visitor.imports)
     return warnings
 
@@ -1944,6 +2068,8 @@ class CstExtractStep(BaseExtractStep):
             syntax_defs_rows=buffers.defs.data,
             syntax_refs_rows=buffers.refs.data,
             syntax_calls_rows=buffers.calls.data,
+            syntax_call_args_rows=buffers.call_args.data,
+            syntax_func_params_rows=buffers.func_params.data,
             syntax_imports_rows=buffers.imports.data,
             row_count=buffers.cst.row_count,
             parse_manifest_row_count=buffers.parse_manifest.row_count,
@@ -1954,6 +2080,8 @@ class CstExtractStep(BaseExtractStep):
             syntax_defs_row_count=buffers.defs.row_count,
             syntax_refs_row_count=buffers.refs.row_count,
             syntax_calls_row_count=buffers.calls.row_count,
+            syntax_call_args_row_count=buffers.call_args.row_count,
+            syntax_func_params_row_count=buffers.func_params.row_count,
             syntax_imports_row_count=buffers.imports.row_count,
         )
 

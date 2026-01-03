@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import msgspec
-import orjson
+
+from codeintel.core.serialization.msgspec_json import (
+    decode_json_bytes,
+    encode_json_bytes,
+    encode_json_text,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -25,11 +30,11 @@ def write_manifest_json(path: Path, payload: object) -> None:
         JSON-serializable manifest payload.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(_encode_manifest_bytes(payload))
+    normalized = payload.to_json_obj() if isinstance(payload, ManifestBase) else payload
+    path.write_bytes(_encode_manifest_bytes(normalized))
 
 
-def read_manifest_json(path: Path) -> dict[str, Any]:
+def read_manifest_json(path: Path) -> dict[str, object]:
     """Read a JSON manifest file.
 
     Parameters
@@ -39,10 +44,10 @@ def read_manifest_json(path: Path) -> dict[str, Any]:
 
     Returns
     -------
-    dict[str, Any]
+    dict[str, object]
         Parsed JSON payload.
     """
-    return cast("dict[str, Any]", orjson.loads(path.read_bytes()))
+    return decode_json_bytes(path.read_bytes(), payload_type=dict[str, object])
 
 
 def _encode_manifest_bytes(payload: object) -> bytes:
@@ -53,7 +58,7 @@ def _encode_manifest_bytes(payload: object) -> bytes:
     bytes
         JSON-encoded manifest payload with stable formatting.
     """
-    return orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2) + b"\n"
+    return encode_json_bytes(payload, indent=2, newline=True)
 
 
 def _encode_manifest_text(payload: object) -> str:
@@ -64,15 +69,21 @@ def _encode_manifest_text(payload: object) -> str:
     str
         JSON-encoded manifest payload with stable formatting.
     """
-    return orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2).decode("utf-8")
+    return encode_json_text(payload, indent=2, newline=False)
 
 
 class ManifestBase:
     """Mixin for deterministic manifest serialization."""
 
-    def to_json_obj(self) -> dict[str, object]:
-        """Return a JSON-serializable representation."""
-        raise NotImplementedError
+    def to_json_obj(self) -> object:
+        """Return a JSON-serializable representation.
+
+        Returns
+        -------
+        object
+            JSON-serializable payload.
+        """
+        return self
 
     def to_json(self) -> str:
         """Serialize the manifest to a deterministic JSON string.
@@ -92,7 +103,7 @@ class ManifestBase:
         Path
             Path to the written manifest file.
         """
-        write_manifest_json(path, self.to_json_obj())
+        write_manifest_json(path, self)
         return path
 
 
@@ -100,7 +111,6 @@ class ExportManifestData(msgspec.Struct, ManifestBase, frozen=True):
     """Structured manifest metadata for a single dataset export."""
 
     dataset: str
-    artifact: str | None
     schema_id: str | None
     schema_version: str | None
     schema_digest: str | None
@@ -109,32 +119,18 @@ class ExportManifestData(msgspec.Struct, ManifestBase, frozen=True):
     data_hash: str
     started_at: str
     completed_at: str
-    extras: Mapping[str, Any] | None = None
+    artifact: str | None = None
+    extras: Mapping[str, object] | None = None
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return a JSON-serializable export manifest payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable export manifest payload.
         """
-        payload: dict[str, object] = {
-            "dataset": self.dataset,
-            "schema_id": self.schema_id,
-            "schema_version": self.schema_version,
-            "schema_digest": self.schema_digest,
-            "validation_profile": self.validation_profile,
-            "row_count": self.row_count,
-            "data_hash": self.data_hash,
-            "started_at": self.started_at,
-            "completed_at": self.completed_at,
-        }
-        if self.artifact is not None:
-            payload["artifact"] = self.artifact
-        if self.extras:
-            payload["extras"] = dict(self.extras)
-        return payload
+        return self
 
 
 class InferencePlanLoaderOverride(msgspec.Struct, frozen=True):
@@ -143,15 +139,15 @@ class InferencePlanLoaderOverride(msgspec.Struct, frozen=True):
     node: str
     table_key: str
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return JSON-serializable loader override payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable loader override payload.
         """
-        return {"node": self.node, "table_key": self.table_key}
+        return self
 
 
 class InferencePlanDatasetRef(msgspec.Struct, frozen=True):
@@ -160,15 +156,15 @@ class InferencePlanDatasetRef(msgspec.Struct, frozen=True):
     param: str
     table_key: str
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return JSON-serializable dataset reference payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable dataset reference payload.
         """
-        return {"param": self.param, "table_key": self.table_key}
+        return self
 
 
 class InferencePlanSeedDataset(msgspec.Struct, frozen=True):
@@ -181,22 +177,15 @@ class InferencePlanSeedDataset(msgspec.Struct, frozen=True):
     batch_size: int
     fragment_readahead: int | None
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return JSON-serializable seed dataset payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable seed dataset payload.
         """
-        return {
-            "dataset_root_dir": self.dataset_root_dir,
-            "snapshot_id": self.snapshot_id,
-            "scan_mode": self.scan_mode,
-            "sample_rows": self.sample_rows,
-            "batch_size": self.batch_size,
-            "fragment_readahead": self.fragment_readahead,
-        }
+        return self
 
 
 class InferencePlanSettings(msgspec.Struct, frozen=True):
@@ -209,22 +198,15 @@ class InferencePlanSettings(msgspec.Struct, frozen=True):
     polars_streaming: bool
     polars_streaming_fallback: bool
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return JSON-serializable settings payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable settings payload.
         """
-        return {
-            "engine_version": self.engine_version,
-            "polars_profile": self.polars_profile,
-            "polars_inspect": self.polars_inspect,
-            "polars_query_opt_flags": list(self.polars_query_opt_flags),
-            "polars_streaming": self.polars_streaming,
-            "polars_streaming_fallback": self.polars_streaming_fallback,
-        }
+        return self
 
 
 class InferencePlanManifest(msgspec.Struct, ManifestBase, frozen=True):
@@ -241,34 +223,18 @@ class InferencePlanManifest(msgspec.Struct, ManifestBase, frozen=True):
     qparams: tuple[str, ...]
     loader_overrides: tuple[InferencePlanLoaderOverride, ...]
     dataset_refs: tuple[InferencePlanDatasetRef, ...]
-    seed_dataset: InferencePlanSeedDataset | None
     settings: InferencePlanSettings
+    seed_dataset: InferencePlanSeedDataset | None = None
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return JSON-serializable inference plan manifest payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable inference plan manifest payload.
         """
-        payload: dict[str, object] = {
-            "manifest_version": self.manifest_version,
-            "run_id": self.run_id,
-            "repo": self.repo,
-            "commit": self.commit,
-            "repo_root": self.repo_root,
-            "generated_at": self.generated_at,
-            "table_keys": list(self.table_keys),
-            "targets": list(self.targets),
-            "qparams": list(self.qparams),
-            "loader_overrides": [entry.to_json_obj() for entry in self.loader_overrides],
-            "dataset_refs": [entry.to_json_obj() for entry in self.dataset_refs],
-            "settings": self.settings.to_json_obj(),
-        }
-        if self.seed_dataset is not None:
-            payload["seed_dataset"] = self.seed_dataset.to_json_obj()
-        return payload
+        return self
 
 
 class ArrowDatasetManifest(msgspec.Struct, ManifestBase, frozen=True):
@@ -277,40 +243,23 @@ class ArrowDatasetManifest(msgspec.Struct, ManifestBase, frozen=True):
     dataset_id: str
     snapshot_id: str
     table_key: str
-    schema_hash: str | None
     partition_columns: tuple[str, ...]
     files: tuple[str, ...]
+    schema_hash: str | None = None
     row_count: int | None = None
-    stats: Mapping[str, Any] | None = None
+    stats: Mapping[str, object] | None = None
     created_at: str | None = None
-    extras: Mapping[str, Any] | None = None
+    extras: Mapping[str, object] | None = None
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return a JSON-serializable dataset manifest payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable dataset manifest payload.
         """
-        payload: dict[str, object] = {
-            "dataset_id": self.dataset_id,
-            "snapshot_id": self.snapshot_id,
-            "table_key": self.table_key,
-            "partition_columns": list(self.partition_columns),
-            "files": list(self.files),
-        }
-        if self.schema_hash is not None:
-            payload["schema_hash"] = self.schema_hash
-        if self.row_count is not None:
-            payload["row_count"] = self.row_count
-        if self.stats:
-            payload["stats"] = dict(self.stats)
-        if self.created_at is not None:
-            payload["created_at"] = self.created_at
-        if self.extras:
-            payload["extras"] = dict(self.extras)
-        return payload
+        return self
 
 
 class DatasetSuiteManifest(msgspec.Struct, ManifestBase, frozen=True):
@@ -324,25 +273,15 @@ class DatasetSuiteManifest(msgspec.Struct, ManifestBase, frozen=True):
     dataset_manifest_paths: Mapping[str, str]
     tool_versions: Mapping[str, str] | None = None
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return a JSON-serializable suite manifest payload.
 
         Returns
         -------
-        dict[str, object]
-            JSON-serializable manifest payload.
+        object
+            JSON-serializable suite manifest payload.
         """
-        payload: dict[str, object] = {
-            "suite_manifest_version": self.suite_manifest_version,
-            "suite_kind": self.suite_kind,
-            "repo": self.repo,
-            "commit": self.commit,
-            "created_at": self.created_at,
-            "dataset_manifest_paths": dict(self.dataset_manifest_paths),
-        }
-        if self.tool_versions:
-            payload["tool_versions"] = dict(self.tool_versions)
-        return payload
+        return self
 
     @classmethod
     def from_path(cls, path: Path) -> DatasetSuiteManifest:
@@ -376,30 +315,20 @@ class SnapshotDatasetEntry(msgspec.Struct, ManifestBase, frozen=True):
     """Summary pointer to a dataset manifest within a serving snapshot."""
 
     manifest_path: str
-    schema_hash: str | None
     partition_columns: tuple[str, ...]
+    schema_hash: str | None = None
     row_count: int | None = None
-    stats: Mapping[str, Any] | None = None
+    stats: Mapping[str, object] | None = None
 
-    def to_json_obj(self) -> dict[str, object]:
+    def to_json_obj(self) -> object:
         """Return a JSON-serializable dataset entry payload.
 
         Returns
         -------
-        dict[str, object]
+        object
             JSON-serializable dataset entry payload.
         """
-        payload: dict[str, object] = {
-            "manifest_path": self.manifest_path,
-            "partition_columns": list(self.partition_columns),
-        }
-        if self.schema_hash is not None:
-            payload["schema_hash"] = self.schema_hash
-        if self.row_count is not None:
-            payload["row_count"] = self.row_count
-        if self.stats:
-            payload["stats"] = dict(self.stats)
-        return payload
+        return self
 
 
 class IncrementalMarker(msgspec.Struct, ManifestBase, frozen=True):
@@ -410,7 +339,7 @@ class IncrementalMarker(msgspec.Struct, ManifestBase, frozen=True):
     schema_version: str | None
     validation_profile: str
     schema_digest: str | None = None
-    extras: Mapping[str, Any] | None = None
+    extras: Mapping[str, object] | None = None
     exported_at: str | None = None
 
     def to_json_obj(self) -> dict[str, object]:
@@ -549,8 +478,18 @@ class ServingSnapshotManifest(msgspec.Struct, ManifestBase, frozen=True):
                 raw_entry,
                 table_key=str(table_key),
             )
-        data["datasets"] = datasets
-        return cls(**data)
+        return cls(
+            run_id=_require_str(data, "run_id"),
+            repo=_require_str(data, "repo"),
+            commit=_require_str(data, "commit"),
+            published_at=_require_str(data, "published_at"),
+            db_path=_require_str(data, "db_path"),
+            semantic_registry_path=_require_str(data, "semantic_registry_path"),
+            schema_manifest_path=_require_str(data, "schema_manifest_path"),
+            buildspec_path=_require_str(data, "buildspec_path"),
+            semantic_layer_version=_require_str(data, "semantic_layer_version"),
+            datasets=datasets,
+        )
 
 
 def _parse_snapshot_dataset_entry(

@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.sqlglot_tools import fingerprint_sql_duckdb_safe
+from codeintel.core.sqlglot_tools import fingerprint_sql_duckdb_safe
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence

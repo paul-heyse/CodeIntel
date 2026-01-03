@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, Self
+from typing import TYPE_CHECKING, Literal, Protocol, Self
 
 from codeintel.core.duckdb_types import DuckDBConnection, DuckDBRelation
+from codeintel.core.ports.export import ExportRelation
 
 if TYPE_CHECKING:
     from codeintel.core.build_manifest import BuildRunRecord, BuildStatus, OutputManifest
@@ -24,18 +26,9 @@ if TYPE_CHECKING:
         SchemaVersionRecord,
         TableSchemaRegistryRecord,
     )
-    from codeintel.storage.exports.service import ExportAuditRecord
-    from codeintel.storage.protocols import ExportRelation
-    from codeintel.storage.tracking import ModuleKind, PipelineStepRecord, StepStatus
-    from codeintel.storage.tracking.asset_tracking import (
-        AssetLineageEdgeRecord,
-        AssetVersionEventRecord,
-        AssetVersionRecord,
-        RunAssetVersionRecord,
-        RunEnvironmentRecord,
-    )
-    from codeintel.storage.tracking.build_tracking import ScipRunRecord
-    from codeintel.storage.tracking.schema_catalog import PersistSchemaManifestResult, SchemaIndex
+
+
+type DatasetSource = Literal["parquet_only", "duckdb"]
 
 
 class GatewayConfig(Protocol):
@@ -49,6 +42,16 @@ class GatewayConfig(Protocol):
     @property
     def db_path(self) -> str | Path:
         """Return the configured database path."""
+        ...
+
+    @property
+    def dataset_root_dir(self) -> Path | None:
+        """Return the dataset root directory when configured."""
+        ...
+
+    @property
+    def dataset_source(self) -> DatasetSource:
+        """Return the dataset source policy."""
         ...
 
 
@@ -87,6 +90,10 @@ class DatasetRegistryProtocol(Protocol):
     def resolve_table_key(self, name: str) -> str:
         """Resolve dataset name into a fully qualified table key."""
         ...
+
+
+ModuleKind = Literal["ingestion", "graphs", "analytics", "export", "views", "build"]
+StepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 
 
 class PipelineStepRecordProtocol(Protocol):
@@ -152,6 +159,518 @@ class AssetLineageEdgeProtocol(Protocol):
         ...
 
 
+class AssetVersionRecordProtocol(Protocol):
+    """Minimal asset version record fields for persistence."""
+
+    @property
+    def asset_kind(self) -> str:
+        """Asset kind identifier."""
+        ...
+
+    @property
+    def asset_key(self) -> str:
+        """Asset key identifier."""
+        ...
+
+    @property
+    def version_hash(self) -> str:
+        """Content hash for the asset version."""
+        ...
+
+    @property
+    def schema_hash(self) -> str | None:
+        """Schema hash for the asset version."""
+        ...
+
+    @property
+    def row_count(self) -> int | None:
+        """Row count for the asset version."""
+        ...
+
+    @property
+    def bytes(self) -> int | None:
+        """Byte size for the asset version."""
+        ...
+
+    @property
+    def created_at(self) -> datetime | None:
+        """Creation timestamp for the asset version."""
+        ...
+
+    @property
+    def meta(self) -> Mapping[str, object] | None:
+        """Optional metadata for the asset version."""
+        ...
+
+
+class AssetVersionEventRecordProtocol(Protocol):
+    """Minimal asset version event fields for persistence."""
+
+    @property
+    def run_id(self) -> str:
+        """Run identifier."""
+        ...
+
+    @property
+    def repo(self) -> str:
+        """Repository identifier."""
+        ...
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        ...
+
+    @property
+    def asset_kind(self) -> str:
+        """Asset kind identifier."""
+        ...
+
+    @property
+    def asset_key(self) -> str:
+        """Asset key identifier."""
+        ...
+
+    @property
+    def version_hash(self) -> str:
+        """Asset version hash."""
+        ...
+
+    @property
+    def target(self) -> str | None:
+        """Optional target name."""
+        ...
+
+    @property
+    def impl_kind(self) -> str | None:
+        """Optional implementation kind."""
+        ...
+
+    @property
+    def status(self) -> str:
+        """Event status."""
+        ...
+
+    @property
+    def location(self) -> str | None:
+        """Optional location information."""
+        ...
+
+    @property
+    def input_hash(self) -> str | None:
+        """Optional input hash."""
+        ...
+
+    @property
+    def options_hash(self) -> str | None:
+        """Optional options hash."""
+        ...
+
+    @property
+    def recorded_at(self) -> datetime | None:
+        """Event timestamp."""
+        ...
+
+    @property
+    def meta(self) -> Mapping[str, object] | None:
+        """Optional event metadata."""
+        ...
+
+
+class RunAssetVersionRecordProtocol(Protocol):
+    """Minimal run-to-asset version linkage fields."""
+
+    @property
+    def run_id(self) -> str:
+        """Run identifier."""
+        ...
+
+    @property
+    def repo(self) -> str:
+        """Repository identifier."""
+        ...
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        ...
+
+    @property
+    def asset_kind(self) -> str:
+        """Asset kind identifier."""
+        ...
+
+    @property
+    def asset_key(self) -> str:
+        """Asset key identifier."""
+        ...
+
+    @property
+    def version_hash(self) -> str:
+        """Asset version hash."""
+        ...
+
+    @property
+    def resolution_kind(self) -> str:
+        """Resolution kind label."""
+        ...
+
+    @property
+    def recorded_at(self) -> datetime | None:
+        """Recorded timestamp."""
+        ...
+
+    @property
+    def target(self) -> str | None:
+        """Optional target name."""
+        ...
+
+    @property
+    def meta(self) -> Mapping[str, object] | None:
+        """Optional linkage metadata."""
+        ...
+
+
+class AssetLineageEdgeRecordProtocol(Protocol):
+    """Minimal lineage edge fields for persistence."""
+
+    @property
+    def downstream_kind(self) -> str:
+        """Downstream asset kind."""
+        ...
+
+    @property
+    def downstream_key(self) -> str:
+        """Downstream asset key."""
+        ...
+
+    @property
+    def downstream_version(self) -> str:
+        """Downstream asset version hash."""
+        ...
+
+    @property
+    def upstream_kind(self) -> str:
+        """Upstream asset kind."""
+        ...
+
+    @property
+    def upstream_key(self) -> str:
+        """Upstream asset key."""
+        ...
+
+    @property
+    def upstream_version(self) -> str:
+        """Upstream asset version hash."""
+        ...
+
+    @property
+    def edge_kind(self) -> str:
+        """Edge kind label."""
+        ...
+
+    @property
+    def created_at(self) -> datetime | None:
+        """Edge creation timestamp."""
+        ...
+
+    @property
+    def meta(self) -> Mapping[str, object] | None:
+        """Optional edge metadata."""
+        ...
+
+
+class RunEnvironmentRecordProtocol(Protocol):
+    """Minimal run environment fields for persistence."""
+
+    @property
+    def run_id(self) -> str:
+        """Run identifier."""
+        ...
+
+    @property
+    def python_version(self) -> str:
+        """Python version string."""
+        ...
+
+    @property
+    def os_name(self) -> str:
+        """Operating system name."""
+        ...
+
+    @property
+    def os_version(self) -> str:
+        """Operating system version."""
+        ...
+
+    @property
+    def tool_versions(self) -> Mapping[str, str] | None:
+        """Optional tool version mapping."""
+        ...
+
+    @property
+    def config_hash(self) -> str | None:
+        """Optional configuration hash."""
+        ...
+
+    @property
+    def git_dirty(self) -> bool:
+        """Whether git state was dirty."""
+        ...
+
+    @property
+    def captured_at(self) -> datetime | None:
+        """Captured timestamp."""
+        ...
+
+
+class ScipRunIdentityProtocol(Protocol):
+    """Identity fields for SCIP telemetry."""
+
+    @property
+    def run_id(self) -> str:
+        """Run identifier."""
+        ...
+
+    @property
+    def repo(self) -> str:
+        """Repository identifier."""
+        ...
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        ...
+
+    @property
+    def mode(self) -> str:
+        """SCIP mode."""
+        ...
+
+    @property
+    def options_hash(self) -> str | None:
+        """Options hash."""
+        ...
+
+    @property
+    def tool_version(self) -> str | None:
+        """Tool version string."""
+        ...
+
+
+class ScipRunCountsProtocol(Protocol):
+    """Count fields for SCIP telemetry."""
+
+    @property
+    def total_modules(self) -> int:
+        """Total module count."""
+        ...
+
+    @property
+    def changed_modules(self) -> int:
+        """Changed module count."""
+        ...
+
+    @property
+    def deleted_modules(self) -> int:
+        """Deleted module count."""
+        ...
+
+    @property
+    def changed_ratio(self) -> float | None:
+        """Changed ratio."""
+        ...
+
+    @property
+    def batch_size(self) -> int | None:
+        """Batch size."""
+        ...
+
+    @property
+    def batch_count(self) -> int:
+        """Batch count."""
+        ...
+
+    @property
+    def decision(self) -> str | None:
+        """Decision label."""
+        ...
+
+    @property
+    def ratio_gate_applied(self) -> bool | None:
+        """Whether ratio gate was applied."""
+        ...
+
+    @property
+    def ratio_gate_min_modules(self) -> int | None:
+        """Minimum modules for ratio gate."""
+        ...
+
+    @property
+    def ratio_gate_min_changed(self) -> int | None:
+        """Minimum changed modules for ratio gate."""
+        ...
+
+
+class ScipRunHashStatsProtocol(Protocol):
+    """Hashing fields for SCIP telemetry."""
+
+    @property
+    def hash_source(self) -> str | None:
+        """Hash source label."""
+        ...
+
+    @property
+    def hash_source_breakdown(self) -> str | None:
+        """Hash source breakdown."""
+        ...
+
+    @property
+    def hash_reused(self) -> int:
+        """Reused hash count."""
+        ...
+
+    @property
+    def hash_computed(self) -> int:
+        """Computed hash count."""
+        ...
+
+
+class ScipRunTimingProtocol(Protocol):
+    """Timing fields for SCIP telemetry."""
+
+    @property
+    def plan_ms(self) -> float | None:
+        """Planning duration in ms."""
+        ...
+
+    @property
+    def hash_ms(self) -> float | None:
+        """Hashing duration in ms."""
+        ...
+
+    @property
+    def tool_ms(self) -> float | None:
+        """Tool execution duration in ms."""
+        ...
+
+    @property
+    def parse_ms(self) -> float | None:
+        """Parsing duration in ms."""
+        ...
+
+    @property
+    def merge_ms(self) -> float | None:
+        """Merge duration in ms."""
+        ...
+
+    @property
+    def write_ms(self) -> float | None:
+        """Write duration in ms."""
+        ...
+
+    @property
+    def total_ms(self) -> float | None:
+        """Total duration in ms."""
+        ...
+
+
+class ScipRunOutcomeProtocol(Protocol):
+    """Outcome fields for SCIP telemetry."""
+
+    @property
+    def status(self) -> str:
+        """Run status."""
+        ...
+
+    @property
+    def error_summary(self) -> str | None:
+        """Error summary."""
+        ...
+
+    @property
+    def output_scip(self) -> str | None:
+        """Output SCIP path."""
+        ...
+
+    @property
+    def recorded_at(self) -> datetime:
+        """Recorded timestamp."""
+        ...
+
+
+class ScipRunRecordProtocol(
+    ScipRunIdentityProtocol,
+    ScipRunCountsProtocol,
+    ScipRunHashStatsProtocol,
+    ScipRunTimingProtocol,
+    ScipRunOutcomeProtocol,
+    Protocol,
+):
+    """Minimal SCIP telemetry fields for persistence."""
+
+
+class ExportAuditRecordProtocol(Protocol):
+    """Export audit record attributes for logging."""
+
+    @property
+    def table_name(self) -> str:
+        """Table name for the export."""
+        ...
+
+    @property
+    def macro(self) -> str:
+        """Macro name for the export."""
+        ...
+
+    @property
+    def rows(self) -> int | None:
+        """Row count for the export."""
+        ...
+
+    @property
+    def duration_s(self) -> float:
+        """Duration in seconds for the export."""
+        ...
+
+    @property
+    def output_path(self) -> Path:
+        """Output path for the export."""
+        ...
+
+
+class PersistSchemaManifestResultProtocol(Protocol):
+    """Schema manifest persistence result attributes."""
+
+    @property
+    def catalog_hash(self) -> str:
+        """Catalog hash for the manifest."""
+        ...
+
+    @property
+    def tables(self) -> int:
+        """Number of tables in the manifest."""
+        ...
+
+    @property
+    def views(self) -> int:
+        """Number of views in the manifest."""
+        ...
+
+
+class SchemaIndexProtocol(Protocol):
+    """Minimal schema index interface for prefill operations."""
+
+    def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None:
+        """Prefill the schema index cache."""
+        ...
+
+    @property
+    def inferable_table_keys(self) -> AbstractSet[str]:
+        """Return inferable table keys."""
+        ...
+
+
 class GatewayPolicy(Protocol):
     """Protocol for policy-backed operations."""
 
@@ -204,7 +723,7 @@ class GatewaySchemas(Protocol):
         manifest: SchemaManifest,
         *,
         request: SchemaCatalogRequest,
-    ) -> PersistSchemaManifestResult:
+    ) -> PersistSchemaManifestResultProtocol:
         """Persist a schema manifest record."""
         ...
 
@@ -238,7 +757,7 @@ class GatewaySchemas(Protocol):
 
     def prefill_schema_index(
         self,
-        schema_index: SchemaIndex,
+        schema_index: SchemaIndexProtocol,
         *,
         table_keys: Sequence[str] | None = None,
     ) -> int:
@@ -266,23 +785,32 @@ class GatewaySchemas(Protocol):
 class GatewayAssets(Protocol):
     """Protocol for asset tracking access."""
 
-    def record_run_environment(self, record: RunEnvironmentRecord) -> None:
+    def record_run_environment(self, record: RunEnvironmentRecordProtocol) -> None:
         """Persist run environment telemetry."""
         ...
 
-    def record_asset_versions_batch(self, records: Sequence[AssetVersionRecord]) -> int:
+    def record_asset_versions_batch(self, records: Sequence[AssetVersionRecordProtocol]) -> int:
         """Persist asset version records in batch."""
         ...
 
-    def record_asset_version_events_batch(self, records: Sequence[AssetVersionEventRecord]) -> int:
+    def record_asset_version_events_batch(
+        self,
+        records: Sequence[AssetVersionEventRecordProtocol],
+    ) -> int:
         """Persist asset version event records in batch."""
         ...
 
-    def record_run_asset_versions_batch(self, records: Sequence[RunAssetVersionRecord]) -> int:
+    def record_run_asset_versions_batch(
+        self,
+        records: Sequence[RunAssetVersionRecordProtocol],
+    ) -> int:
         """Persist run asset version records in batch."""
         ...
 
-    def record_lineage_edges_batch(self, edges: Sequence[AssetLineageEdgeRecord]) -> int:
+    def record_lineage_edges_batch(
+        self,
+        edges: Sequence[AssetLineageEdgeRecordProtocol],
+    ) -> int:
         """Persist lineage edge records in batch."""
         ...
 
@@ -337,7 +865,7 @@ class GatewayBuild(Protocol):
         """Persist a build manifest payload."""
         ...
 
-    def record_scip_run(self, record: ScipRunRecord) -> None:
+    def record_scip_run(self, record: ScipRunRecordProtocol) -> None:
         """Record a SCIP execution run."""
         ...
 
@@ -345,11 +873,11 @@ class GatewayBuild(Protocol):
 class GatewayRuns(Protocol):
     """Protocol for pipeline run tracking."""
 
-    def record_step(self, record: PipelineStepRecord) -> None:
+    def record_step(self, record: PipelineStepRecordProtocol) -> None:
         """Persist a pipeline step record."""
         ...
 
-    def fetch_steps(self, run_id: str) -> list[PipelineStepRecord]:
+    def fetch_steps(self, run_id: str) -> Sequence[PipelineStepRecordProtocol]:
         """Return pipeline step records for a run."""
         ...
 
@@ -363,7 +891,7 @@ class GatewayExports(Protocol):
 
     def write_export_audit(
         self,
-        record: ExportAuditRecord,
+        record: ExportAuditRecordProtocol,
         *,
         settings: ExportAuditSettings,
         sql: str | None = None,
@@ -451,8 +979,13 @@ class BuildGateway(Protocol):
 
 
 __all__ = [
+    "AssetLineageEdgeProtocol",
+    "AssetLineageEdgeRecordProtocol",
+    "AssetVersionEventRecordProtocol",
+    "AssetVersionRecordProtocol",
     "BuildGateway",
     "DatasetRegistryProtocol",
+    "DatasetSource",
     "GatewayAssets",
     "GatewayBuild",
     "GatewayConfig",
@@ -460,4 +993,7 @@ __all__ = [
     "GatewayPolicy",
     "GatewayRuns",
     "GatewaySchemas",
+    "RunAssetVersionRecordProtocol",
+    "RunEnvironmentRecordProtocol",
+    "ScipRunRecordProtocol",
 ]

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from codeintel.cli.core.results import SerializableResult
 from codeintel.cli.errors import ValidationError
 from codeintel.cli.handlers.docs import (
     DocsDependencies,
@@ -23,6 +24,10 @@ if TYPE_CHECKING:
     from tests.cli.handlers.conftest import DocsHandlerHarness
 
 
+def _result_to_dict(result: object) -> dict[str, object]:
+    return cast("SerializableResult", result).to_dict()
+
+
 def test_docs_export_result_to_dict() -> None:
     """Verify DocsExportResult.to_dict returns correct structure."""
     result = DocsExportResult(
@@ -34,7 +39,7 @@ def test_docs_export_result_to_dict() -> None:
         mode=ExportMode.BUILD_SYSTEM,
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_equal(data["status"], "ok")
     expect_equal(data["validation"], "required")
@@ -55,10 +60,10 @@ def test_docs_export_result_with_none_datasets() -> None:
         mode=ExportMode.DIRECT,
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
-    expect_equal(data["datasets"], None)
-    expect_equal(data["schemas"], None)
+    expect_true("datasets" not in data)
+    expect_true("schemas" not in data)
 
 
 def test_docs_validate_result_to_dict() -> None:
@@ -68,7 +73,7 @@ def test_docs_validate_result_to_dict() -> None:
         issues=[],
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_true(data["passed"])
     expect_equal(data["issues"], [])
@@ -81,7 +86,7 @@ def test_docs_validate_result_with_issues() -> None:
         issues=["Missing export file", "Invalid schema"],
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_true(not data["passed"])
     issues = data["issues"]

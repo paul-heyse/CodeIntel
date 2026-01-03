@@ -41,6 +41,7 @@ def _json_schema_type_for_column_type(col_type: ColumnType) -> dict[str, Any]:
         "DOUBLE": {"type": "number"},
         "DECIMAL": {"type": "number"},
         "VARCHAR": {"type": "string"},
+        "BLOB": {"type": "string", "contentEncoding": "base64"},
         "JSON": {},  # Any valid JSON value
         "TIMESTAMP": {"type": "string", "format": "date-time"},
         "TIMESTAMPTZ": {"type": "string", "format": "date-time"},

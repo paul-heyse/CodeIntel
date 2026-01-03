@@ -9,7 +9,6 @@ JSON serialization.
 from __future__ import annotations
 
 import dataclasses
-import json
 from dataclasses import dataclass, field, is_dataclass
 from dataclasses import fields as get_fields
 from enum import Enum
@@ -24,15 +23,30 @@ from typing import (
     runtime_checkable,
 )
 
+import msgspec
+
+from codeintel.core.columnar.stream import ColumnarStream
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.query_results import records_from_arrow_reader
 from codeintel.core.serialization.converters import (
     serialize_dataclass_to_dict as serialize_result,
 )
+from codeintel.core.serialization.msgspec_json import encode_json_text
 
 if TYPE_CHECKING:
     from codeintel.cli.errors import ProblemDetail
 
 
 T_co = TypeVar("T_co", covariant=True)
+
+
+def _encode_hook(value: object) -> object:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Enum):
+        return value.value
+    msg = f"Unsupported type: {type(value).__name__}"
+    raise TypeError(msg)
 
 
 class _DataclassInstance(Protocol):
@@ -42,6 +56,23 @@ class _DataclassInstance(Protocol):
 class _ResultTypeClass(Protocol):
     RESULT_TYPE_GENERATED: ClassVar[bool]
     to_dict: ClassVar[object]
+
+
+class ResultBase(msgspec.Struct, frozen=True):
+    """Base class for msgspec-backed CLI result types."""
+
+    __include_none_fields__: ClassVar[frozenset[str]] = frozenset()
+    __result_key_map__: ClassVar[dict[str, str]] = {}
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the result type to a dict with optional key overrides.
+
+        Returns
+        -------
+        dict[str, object]
+            Serialized result payload.
+        """
+        return _serialize_result_struct(self)
 
 
 def result_type[T](cls: type[T]) -> type[T]:
@@ -138,10 +169,40 @@ def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
     for fld in get_fields(value):
         if fld.name.startswith("_"):
             continue
+        key_override = fld.metadata.get("result_key")
+        key = key_override if isinstance(key_override, str) else fld.name
         field_value = getattr(value, fld.name)
         if field_value is None:
+            if fld.metadata.get("include_none", False):
+                result[key] = None
             continue
-        result[fld.name] = _serialize_value(field_value)
+        result[key] = _serialize_value(field_value)
+    return result
+
+
+def _serialize_result_struct(value: ResultBase) -> dict[str, object]:
+    """Serialize a msgspec Struct result type to dictionary.
+
+    Parameters
+    ----------
+    value
+        Result type instance to serialize.
+
+    Returns
+    -------
+    dict[str, object]
+        Dictionary with non-None field values.
+    """
+    result: dict[str, object] = {}
+    key_map = value.__result_key_map__
+    include_none = value.__include_none_fields__
+    for field_info in msgspec.structs.fields(type(value)):
+        field_name = field_info.name
+        key = key_map.get(field_name, field_name)
+        field_value = getattr(value, field_name)
+        if field_value is None and field_name not in include_none:
+            continue
+        result[key] = _serialize_value(field_value)
     return result
 
 
@@ -160,22 +221,20 @@ def _serialize_value(value: object) -> object:
     object
         Serialized value suitable for JSON.
     """
+    result: object
     if value is None:
-        return None
-
-    if _is_dataclass_instance(value):
-        return _serialize_dataclass(value)
-
-    if isinstance(value, (list, tuple)):
-        return [_serialize_value(item) for item in value]
-
-    if isinstance(value, dict):
-        return {k: _serialize_value(v) for k, v in value.items() if v is not None}
-
-    if isinstance(value, SerializableResult):
-        return value.to_dict()
-
-    return _serialize_primitive(value)
+        result = None
+    elif isinstance(value, ResultBase) or isinstance(value, SerializableResult):
+        result = value.to_dict()
+    elif _is_dataclass_instance(value):
+        result = _serialize_dataclass(value)
+    elif isinstance(value, (list, tuple)):
+        result = [_serialize_value(item) for item in value]
+    elif isinstance(value, dict):
+        result = {key: _serialize_value(item) for key, item in value.items() if item is not None}
+    else:
+        result = _serialize_primitive(value)
+    return result
 
 
 def _serialize_primitive(value: object) -> object:
@@ -293,16 +352,19 @@ def auto_serialize(data: object) -> object:
     >>> auto_serialize(Simple(42))
     {'x': 42}
     """
+    if isinstance(data, ColumnarStream):
+        reader = data.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        return records_from_arrow_reader(reader)
     if isinstance(data, SerializableResult):
         return data.to_dict()
-
     if is_dataclass(data) and not isinstance(data, type):
         return serialize_result(data)
-
     if hasattr(data, "__dict__") and not isinstance(data, type):
         return data.__dict__
-
-    return data
+    try:
+        return msgspec.to_builtins(data, enc_hook=_encode_hook)
+    except TypeError:
+        return data
 
 
 @dataclass
@@ -386,7 +448,7 @@ class CliResult[T_co]:
         str
             JSON representation of the result.
         """
-        return json.dumps(self.to_dict(), indent=indent, default=str)
+        return encode_json_text(self.to_dict(), indent=indent)
 
     @classmethod
     def ok(cls, data: T_co, *, metadata: dict[str, object] | None = None) -> CliResult[T_co]:
@@ -440,6 +502,7 @@ class CliResult[T_co]:
 
 __all__ = [
     "CliResult",
+    "ResultBase",
     "SerializableResult",
     "auto_serialize",
     "ensure_serializable",

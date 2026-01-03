@@ -5,14 +5,13 @@ Decision trace payloads are audit artifacts and must not drive control flow.
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 import msgspec
-import orjson
 
 from codeintel.build.manifest.records import CacheEventStatus, CacheManifestEntry
+from codeintel.core.serialization.msgspec_json import decode_json_bytes, encode_json_bytes
 
 DECISION_TRACE_TARGET_NAME = "decision_trace"
 DECISION_TRACE_ARTIFACT_NAME = "build_decision_trace"
@@ -50,32 +49,11 @@ class DecisionTraceRecord(msgspec.Struct, frozen=True):
     status: CacheEventStatus
     cache_key: str | None
     cache_version: str | None
+    data_version: str | None
     cache_path: str | None
     duration_ms: float | None
     size_bytes: int | None
-    recorded_at: datetime
-
-    def to_dict(self) -> DecisionTracePayload:
-        """Return a JSON-ready dictionary.
-
-        Returns
-        -------
-        dict[str, object]
-            JSON-serializable mapping for this record.
-        """
-        return {
-            "index": self.index,
-            "node_name": self.node_name,
-            "target": self.target,
-            "status": self.status,
-            "cache_key": self.cache_key,
-            "cache_version": self.cache_version,
-            "data_version": self.cache_version,
-            "cache_path": self.cache_path,
-            "duration_ms": self.duration_ms,
-            "size_bytes": self.size_bytes,
-            "recorded_at": self.recorded_at.isoformat(),
-        }
+    recorded_at: str
 
 
 def build_decision_trace(entries: Sequence[CacheManifestEntry]) -> list[DecisionTraceRecord]:
@@ -96,10 +74,11 @@ def build_decision_trace(entries: Sequence[CacheManifestEntry]) -> list[Decision
                 status=entry.status,
                 cache_key=entry.cache_key,
                 cache_version=entry.cache_version,
+                data_version=entry.cache_version,
                 cache_path=entry.cache_path,
                 duration_ms=entry.duration_ms,
                 size_bytes=entry.size_bytes,
-                recorded_at=entry.recorded_at,
+                recorded_at=entry.recorded_at.isoformat(),
             )
         )
     return records
@@ -115,7 +94,8 @@ def build_decision_trace_payload(
     list[dict[str, object]]
         JSON-serializable decision trace payload.
     """
-    return [record.to_dict() for record in build_decision_trace(entries)]
+    payload = msgspec.to_builtins(build_decision_trace(entries))
+    return cast("list[DecisionTracePayload]", payload)
 
 
 def default_decision_trace_path(build_dir: Path) -> Path:
@@ -131,10 +111,9 @@ def default_decision_trace_path(build_dir: Path) -> Path:
 
 def write_decision_trace(path: Path, entries: Sequence[CacheManifestEntry]) -> None:
     """Write decision trace JSON to the provided path."""
-    payload = build_decision_trace_payload(entries)
+    payload = build_decision_trace(entries)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload_bytes = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2)
-    path.write_bytes(payload_bytes + b"\n")
+    path.write_bytes(encode_json_bytes(payload, indent=2, newline=True))
 
 
 def read_decision_trace(path: Path) -> list[DecisionTracePayload]:
@@ -150,11 +129,20 @@ def read_decision_trace(path: Path) -> list[DecisionTracePayload]:
     TypeError
         If the payload is not a list.
     """
-    data = orjson.loads(path.read_bytes())
-    if not isinstance(data, list):
-        msg = f"Decision trace payload must be a list, got {type(data)}"
+    raw = path.read_bytes()
+    try:
+        records = decode_json_bytes(raw, payload_type=list[DecisionTraceRecord])
+    except msgspec.ValidationError as exc:
+        data = decode_json_bytes(raw, payload_type=list[DecisionTracePayload])
+        if not isinstance(data, list):
+            msg = f"Decision trace payload must be a list, got {type(data)}"
+            raise TypeError(msg) from exc
+        return data
+    payload = msgspec.to_builtins(records)
+    if not isinstance(payload, list):
+        msg = f"Decision trace payload must be a list, got {type(payload)}"
         raise TypeError(msg)
-    return cast("list[DecisionTracePayload]", data)
+    return cast("list[DecisionTracePayload]", payload)
 
 
 __all__ = [

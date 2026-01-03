@@ -62,11 +62,12 @@ def _snapshot_dir(
     )
 
 
-def _scan_options(table_key: str) -> ArrowDatasetScanOptions:
+def _scan_options(env: BuildEnv, table_key: str) -> ArrowDatasetScanOptions:
     schema_service = get_schema_service()
     return ArrowDatasetScanOptions(
         batch_size=DEFAULT_ARROW_BATCH_SIZE,
         schema=schema_service.get_arrow_schema(table_key),
+        schema_promote_options=env.settings.schema_promote_options,
     )
 
 
@@ -103,7 +104,7 @@ def load_snapshot_tabular(
             dataset_root=env.paths.dataset_root_dir,
             table_key=table_key,
             snapshot_id=snapshot_id,
-            options=_scan_options(table_key),
+            options=_scan_options(env, table_key),
         )
     except FileNotFoundError as exc:
         msg = f"Dataset snapshot not found: {snapshot_dir}"

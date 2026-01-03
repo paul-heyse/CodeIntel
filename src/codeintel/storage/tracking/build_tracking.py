@@ -16,16 +16,18 @@ from typing import TYPE_CHECKING, Any, cast
 from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
-from codeintel.core.time import utc_now
-from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.helpers.json import (
+from codeintel.core.gateway import ScipRunRecordProtocol
+from codeintel.core.helpers.json import (
     decode_json_dict,
     deserialize_str_tuple,
     serialize_str_sequence,
 )
+from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
+from codeintel.core.time import utc_now
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
@@ -667,10 +669,10 @@ class BuildTracking:
         rows: list[tuple[object, ...]] = []
 
         for rec in records:
-            row_counts_json = dict(rec.row_counts) if rec.row_counts else {}
-            drift_summaries_json = {
-                table_key: dict(summary) for table_key, summary in rec.drift_summaries.items()
-            }
+            row_counts_payload = encode_payload(dict(rec.row_counts) if rec.row_counts else {})
+            drift_summaries_payload = encode_payload(
+                {table_key: dict(summary) for table_key, summary in rec.drift_summaries.items()}
+            )
             rows.append(
                 (
                     run_id,
@@ -682,8 +684,8 @@ class BuildTracking:
                     rec.input_hash,
                     rec.options_hash,
                     rec.duration_ms,
-                    row_counts_json,
-                    drift_summaries_json,
+                    row_counts_payload,
+                    drift_summaries_payload,
                     rec.error,
                     recorded_at,
                 )
@@ -799,7 +801,7 @@ class BuildTracking:
                 r.completed_at,
                 r.duration_ms,
                 r.error,
-                r.tags or {},
+                encode_payload(r.tags or {}),
             )
             for r in records
         ]
@@ -821,7 +823,7 @@ class BuildTracking:
             ),
         )
 
-    def record_scip_run(self, record: ScipRunRecord) -> None:
+    def record_scip_run(self, record: ScipRunRecordProtocol) -> None:
         """Upsert a SCIP telemetry record into build.scip_runs."""
         self._backend.ensure_table("build.scip_runs", create_if_missing=True)
         self._backend.upsert(

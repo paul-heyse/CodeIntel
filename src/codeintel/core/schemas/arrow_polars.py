@@ -11,7 +11,7 @@ import pyarrow as pa
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.arrow_gen import ARROW_SCHEMA_CONTRACT_VERSION, EXTRAS_POLICIES
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
-from codeintel.storage.helpers.table_key import split_table_key, validate_table_key
+from codeintel.core.table_key import split_table_key, validate_table_key
 
 
 def table_schema_from_arrow_schema(
@@ -207,7 +207,7 @@ def _column_type_from_arrow_type(dtype: pa.DataType) -> ColumnType:
     - timestamp -> TIMESTAMP/TIMESTAMPTZ
     - date/time/duration -> TIMESTAMP
     - string/string_view -> VARCHAR
-    - binary/binary_view -> VARCHAR
+    - binary/binary_view -> BLOB
     - list/struct/map/union -> LIST/STRUCT/MAP/UNION types
 
     Returns
@@ -277,7 +277,7 @@ def _string_column_type(dtype: pa.DataType) -> ColumnType | None:
 def _binary_column_type(dtype: pa.DataType) -> ColumnType | None:
     if not _is_binary_type(dtype):
         return None
-    return "VARCHAR"
+    return "BLOB"
 
 
 def _dictionary_column_type(dtype: pa.DataType) -> ColumnType | None:

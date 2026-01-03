@@ -1,7 +1,5 @@
-"""Canonical registry services for discovery across build and serving."""
+"""Registry data assets for runtime discovery."""
 
 from __future__ import annotations
 
-from codeintel.core.registry.service import RegistryService
-
-__all__ = ["RegistryService"]
+__all__: list[str] = []

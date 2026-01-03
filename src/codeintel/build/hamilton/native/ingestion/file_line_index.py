@@ -12,10 +12,6 @@ import polars as pl
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -24,6 +20,10 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 
 log = logging.getLogger(__name__)
@@ -32,16 +32,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FILE_LINE_INDEX_TARGET_NAME = "file_line_index"
 FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
-
-FILE_LINE_INDEX_COLUMNS = (
-    "repo",
-    "commit",
-    "rel_path",
-    "line",
-    "start_byte",
-    "end_byte",
-    "encoding",
-)
 
 
 def _resolve_module_paths(modules_frame: pl.DataFrame) -> dict[str, str | None]:
@@ -149,7 +139,7 @@ def file_line_index__base(
             )
         )
 
-    return rows_to_frame(FILE_LINE_INDEX_TABLE_KEY, rows, columns=FILE_LINE_INDEX_COLUMNS)
+    return rows_to_frame(FILE_LINE_INDEX_TABLE_KEY, rows)
 
 
 _MODULE = sys.modules[__name__]

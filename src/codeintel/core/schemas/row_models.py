@@ -13,8 +13,6 @@ Row models are derived from ``TableSchema`` and avoid pandas-specific types.
 
 from __future__ import annotations
 
-import ast
-import json
 import math
 import re
 from collections.abc import Callable, Mapping
@@ -25,6 +23,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from codeintel.core.helpers.json import normalize_duckdb_json_value
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import COLUMN_TYPE_REGISTRY, column_type_base
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
@@ -135,35 +135,6 @@ def normalize_row_value(value: object) -> object:
     return value
 
 
-def _coerce_json_container(value: object) -> object:
-    if isinstance(value, set):
-        return sorted(value)
-    if isinstance(value, tuple):
-        return list(value)
-    return value
-
-
-def _parse_json_value(raw: str) -> object | None:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        try:
-            return ast.literal_eval(raw)
-        except (SyntaxError, ValueError):
-            return None
-
-
-def _normalize_json_value(value: object) -> object:
-    if value is None:
-        return None
-    normalized = _coerce_json_container(value)
-    if isinstance(normalized, str):
-        parsed = _parse_json_value(normalized)
-        if parsed is not None:
-            normalized = parsed
-    return _coerce_json_container(normalized)
-
-
 def normalize_row_value_for_type(value: object, column_type: ColumnType | None) -> object:
     """Normalize row values with awareness of column types.
 
@@ -185,8 +156,10 @@ def normalize_row_value_for_type(value: object, column_type: ColumnType | None) 
     if column_type is None:
         return normalized
     base = column_type_base(column_type)
+    if base == "BLOB":
+        return encode_payload(normalized)
     if base in {"JSON", "STRUCT", "MAP", "LIST", "UNION"}:
-        return _normalize_json_value(normalized)
+        return normalize_duckdb_json_value(normalized)
     return normalized
 
 

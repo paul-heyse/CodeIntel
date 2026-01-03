@@ -1,7 +1,7 @@
 """Tests for CatalogService resource provider.
 
 This module tests the CatalogService from
-`codeintel.core.catalog`, including:
+`codeintel.storage.catalog`, including:
 
 - Resource protocol compliance
 - Catalog delegation
@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from codeintel.core.catalog import CatalogService, FunctionCatalog, FunctionSpan
+from codeintel.core.catalog import FunctionSpan
 from codeintel.core.resources import ResourceRegistry
+from codeintel.storage.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,

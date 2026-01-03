@@ -16,19 +16,10 @@ from codeintel.build.analytics.data_models.compute import (
     DataModelsResult,
     compute_data_models_pure,
 )
-from codeintel.build.analytics.data_models.core import (
-    DATA_MODEL_FIELDS_COLS,
-    DATA_MODEL_RELATIONSHIPS_COLS,
-    DATA_MODELS_COLS,
-)
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -38,6 +29,10 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -190,7 +185,6 @@ def data_models__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
     return rows_to_frame(
         DATA_MODELS_TABLE_KEY,
         data_models_result.model_rows,
-        columns=DATA_MODELS_COLS,
     )
 
 
@@ -205,7 +199,6 @@ def data_model_fields__base(data_models_result: DataModelsResult) -> pl.LazyFram
     return rows_to_frame(
         DATA_MODEL_FIELDS_TABLE_KEY,
         data_models_result.field_rows,
-        columns=DATA_MODEL_FIELDS_COLS,
     )
 
 
@@ -220,7 +213,6 @@ def data_model_relationships__base(data_models_result: DataModelsResult) -> pl.L
     return rows_to_frame(
         DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
         data_models_result.relationship_rows,
-        columns=DATA_MODEL_RELATIONSHIPS_COLS,
     )
 
 

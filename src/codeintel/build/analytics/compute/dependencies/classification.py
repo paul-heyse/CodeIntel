@@ -72,10 +72,8 @@ class DependencyModePattern:
             True if pattern matches.
         """
         method_matches = self.method is not None and method == self.method
-        prefix_matches = (
-            self.method_prefix is not None
-            and method is not None
-            and method.startswith(self.method_prefix)
+        prefix_matches = self.method_prefix is not None and target.startswith(
+            str(self.method_prefix)
         )
         target_matches = self.match is not None and self.match in target
 
@@ -152,15 +150,10 @@ def classify_modes(
     >>> modes
     ['read']
     """
-    modes: list[str] = []
-    matched_pattern: DependencyModePattern | None = None
-
     for matcher in pattern.matchers:
         if matcher.matches(method, target):
-            modes.extend(matcher.modes)
-            matched_pattern = matched_pattern or matcher
-
-    return sorted(set(modes)) if modes else ["unknown"], matched_pattern
+            return sorted(set(matcher.modes)), matcher
+    return ["unknown"], None
 
 
 def severity_score(severity: str | None) -> float | None:
@@ -201,21 +194,20 @@ def risk_score(severity: str | None, criticality: float | None) -> float | None:
     Returns
     -------
     float | None
-        Risk score (severity_score * criticality) or None if either is missing.
+        Risk score (severity_score * criticality) or None if severity is unknown.
 
     Examples
     --------
     >>> risk_score("high", 3.0)
     9.0
-    >>> risk_score("low", None) is None
-    True
+    >>> risk_score("low", None)
+    1.0
     """
     base = severity_score(severity)
     if base is None:
         return None
-    if criticality is None:
-        return None
-    return base * criticality
+    multiplier = criticality if criticality is not None else 1.0
+    return base * multiplier
 
 
 def risk_level(modes: set[str], callsite_count: int) -> str:
@@ -238,13 +230,13 @@ def risk_level(modes: set[str], callsite_count: int) -> str:
     >>> risk_level({"write", "query"}, 5)
     'high'
     >>> risk_level({"read"}, 5)
-    'low'
+    'medium'
     >>> risk_level({"read"}, 15)
     'medium'
     """
     if "admin" in modes or "write" in modes:
         return "high"
-    if callsite_count >= CALLSITE_MEDIUM_THRESHOLD:
+    if callsite_count > CALLSITE_MEDIUM_THRESHOLD or "read" in modes:
         return "medium"
     return "low"
 

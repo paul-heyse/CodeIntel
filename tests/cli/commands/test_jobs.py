@@ -1,24 +1,19 @@
-"""Test jobs commands using Command[T] pattern.
-
-Validate that the new pattern commands produce correct results
-with fake dependencies.
-"""
+"""Test jobs handlers with fake dependencies."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.commands.jobs import (
-    CancelJob,
-    CleanupJobs,
-    GetJobOutput,
-    GetJobStatus,
-    JobInfo,
-    ListJobs,
-)
-from codeintel.cli.core.result_types import ActionResult, ListResult
+from codeintel.cli.core.result_types import ActionResult, JobInfo, ListResult
 from codeintel.cli.deps.protocols import JobManagerProtocol
+from codeintel.cli.handlers.jobs import (
+    jobs_cancel_handler,
+    jobs_cleanup_handler,
+    jobs_list_handler,
+    jobs_output_handler,
+    jobs_status_handler,
+)
 from codeintel.cli.jobs import JobInfo as JobModel
 from codeintel.cli.jobs import JobStatus
 from codeintel.cli.services.jobs import JobService
@@ -181,7 +176,11 @@ class FakeJobManager(JobManagerProtocol):
 
 
 @contextmanager
-def job_context(jobs: JobManagerProtocol | None = None) -> Iterator[CommandContext]:
+def job_context(
+    params: dict[str, object] | None = None,
+    *,
+    jobs: JobManagerProtocol | None = None,
+) -> Iterator[CommandContext]:
     """Create CommandContext with a configured JobService.
 
     Yields
@@ -192,7 +191,7 @@ def job_context(jobs: JobManagerProtocol | None = None) -> Iterator[CommandConte
     fake_manager = jobs or FakeJobManager()
     job_service = JobService(manager=fake_manager)
 
-    with make_command_context({}, operation_id="test.jobs") as ctx:
+    with make_command_context(params or {}, operation_id="test.jobs") as ctx:
         ctx.jobs = job_service
         yield ctx
 
@@ -203,9 +202,8 @@ class TestListJobs:
     @staticmethod
     def test_list_all_jobs() -> None:
         """List all jobs returns expected structure."""
-        cmd = ListJobs(limit=20)
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"limit": 20}) as ctx:
+            result = jobs_list_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -221,9 +219,8 @@ class TestListJobs:
     @staticmethod
     def test_list_filtered_by_status() -> None:
         """Filter jobs by status works."""
-        cmd = ListJobs(status="running", limit=20)
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"status": "running", "limit": 20}) as ctx:
+            result = jobs_list_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -233,9 +230,8 @@ class TestListJobs:
     @staticmethod
     def test_list_with_limit() -> None:
         """Limit parameter is respected."""
-        cmd = ListJobs(limit=1)
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"limit": 1}) as ctx:
+            result = jobs_list_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -248,9 +244,8 @@ class TestGetJobStatus:
     @staticmethod
     def test_get_existing_job() -> None:
         """Get status of existing job returns details."""
-        cmd = GetJobStatus(job_id="job-001")
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"job_id": "job-001"}) as ctx:
+            result = jobs_status_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -262,9 +257,8 @@ class TestGetJobStatus:
     @staticmethod
     def test_get_nonexistent_job() -> None:
         """Get status of nonexistent job returns error."""
-        cmd = GetJobStatus(job_id="nonexistent")
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"job_id": "nonexistent"}) as ctx:
+            result = jobs_status_handler(ctx)
 
         expect_true(not result.success)
         error = expect_is_not_none(result.error)
@@ -277,9 +271,8 @@ class TestGetJobOutput:
     @staticmethod
     def test_get_completed_job_output() -> None:
         """Get output of completed job returns data."""
-        cmd = GetJobOutput(job_id="job-001")
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"job_id": "job-001"}) as ctx:
+            result = jobs_output_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -289,9 +282,8 @@ class TestGetJobOutput:
     @staticmethod
     def test_get_running_job_output() -> None:
         """Get output of running job returns error."""
-        cmd = GetJobOutput(job_id="job-002")
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"job_id": "job-002"}) as ctx:
+            result = jobs_output_handler(ctx)
 
         expect_true(not result.success)
         expect_is_not_none(result.error)
@@ -299,9 +291,8 @@ class TestGetJobOutput:
     @staticmethod
     def test_get_nonexistent_job_output() -> None:
         """Get output of nonexistent job returns error."""
-        cmd = GetJobOutput(job_id="nonexistent")
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"job_id": "nonexistent"}) as ctx:
+            result = jobs_output_handler(ctx)
 
         expect_true(not result.success)
 
@@ -312,9 +303,8 @@ class TestCancelJob:
     @staticmethod
     def test_cancel_running_job() -> None:
         """Cancel running job succeeds."""
-        cmd = CancelJob(job_id="job-002")
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"job_id": "job-002"}) as ctx:
+            result = jobs_cancel_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -325,9 +315,8 @@ class TestCancelJob:
     @staticmethod
     def test_cancel_completed_job() -> None:
         """Cancel completed job fails."""
-        cmd = CancelJob(job_id="job-001")
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"job_id": "job-001"}) as ctx:
+            result = jobs_cancel_handler(ctx)
 
         expect_true(not result.success)
 
@@ -338,9 +327,8 @@ class TestCleanupJobs:
     @staticmethod
     def test_cleanup_default_age() -> None:
         """Cleanup with default age works."""
-        cmd = CleanupJobs()
         with job_context() as ctx:
-            result = cmd.execute(ctx)
+            result = jobs_cleanup_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)
@@ -351,9 +339,8 @@ class TestCleanupJobs:
     @staticmethod
     def test_cleanup_custom_age() -> None:
         """Cleanup with custom age works."""
-        cmd = CleanupJobs(max_age_days=30)
-        with job_context() as ctx:
-            result = cmd.execute(ctx)
+        with job_context({"max_age_days": 30}) as ctx:
+            result = jobs_cleanup_handler(ctx)
 
         expect_true(result.success)
         data = expect_is_not_none(result.data)

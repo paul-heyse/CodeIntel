@@ -151,8 +151,14 @@ def insert_analytics_rows(
     ------
     ValueError
         If delete columns cannot be determined for the requested dataset.
+    RuntimeError
+        If dataset writes are disabled for parquet-only datasets.
     """
     _ = scope
+    dataset_source = getattr(gateway.config, "dataset_source", "duckdb")
+    if dataset_source == "parquet_only":
+        msg = "insert_analytics_rows is disabled for parquet-only datasets"
+        raise RuntimeError(msg)
     backend = gateway.policy
     backend.ensure_table(contract.table_key)
 

@@ -15,11 +15,11 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
-from codeintel.core.duckdb_types import ColumnExpression, DuckDBRelation, Expression
-from codeintel.core.schemas.contract_service import (
+from codeintel.build.schemas.contract_service import (
     column_order_for_table_key,
     get_contract_for_table_key,
 )
+from codeintel.core.duckdb_types import ColumnExpression, DuckDBRelation, Expression
 
 if TYPE_CHECKING:
     from codeintel.core.gateway import BuildGateway

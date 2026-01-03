@@ -26,9 +26,6 @@ from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.tabular.frames import (
-    lazyframe_for_ingest_columns,
-)
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.hamilton.native.patterns import (
@@ -56,6 +53,9 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.build.tabular.frames import (
+    lazyframe_for_ingest_columns,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import columnar_row_count, record_batch_reader_for_rows
 from codeintel.core.config.settings import ObservabilitySettings

@@ -24,10 +24,6 @@ import polars as pl
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.tabular.frames import (
-    empty_lazyframe_for_table,
-    lazyframe_for_ingest_columns,
-)
 from codeintel.build.hamilton.native.options.ingestion import SyntaxIndexOptions
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
@@ -44,6 +40,10 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.frames import (
+    empty_lazyframe_for_table,
+    lazyframe_for_ingest_columns,
+)
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
@@ -82,6 +82,8 @@ SYNTAX_SCOPES_TABLE_KEY = "core.syntax_scopes"
 SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
 SYNTAX_REFS_TABLE_KEY = "core.syntax_refs"
 SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
+SYNTAX_CALL_ARGS_TABLE_KEY = "core.syntax_call_args"
+SYNTAX_FUNC_PARAMS_TABLE_KEY = "core.syntax_func_params"
 SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
 SYNTAX_INDEX_TABLE_KEYS = (
     PARSE_MANIFEST_TABLE_KEY,
@@ -92,6 +94,8 @@ SYNTAX_INDEX_TABLE_KEYS = (
     SYNTAX_DEFS_TABLE_KEY,
     SYNTAX_REFS_TABLE_KEY,
     SYNTAX_CALLS_TABLE_KEY,
+    SYNTAX_CALL_ARGS_TABLE_KEY,
+    SYNTAX_FUNC_PARAMS_TABLE_KEY,
     SYNTAX_IMPORTS_TABLE_KEY,
 )
 
@@ -158,6 +162,12 @@ class SyntaxIndexToolOutput(ToolStepOutput):
     syntax_calls_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(SYNTAX_CALLS_TABLE_KEY)
     )
+    syntax_call_args_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    )
+    syntax_func_params_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    )
     syntax_imports_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(SYNTAX_IMPORTS_TABLE_KEY)
     )
@@ -169,6 +179,8 @@ class SyntaxIndexToolOutput(ToolStepOutput):
     syntax_defs_row_count: int = 0
     syntax_refs_row_count: int = 0
     syntax_calls_row_count: int = 0
+    syntax_call_args_row_count: int = 0
+    syntax_func_params_row_count: int = 0
     syntax_imports_row_count: int = 0
 
 
@@ -296,6 +308,8 @@ def _coerce_syntax_index_output(
                 syntax_defs_rows=output.syntax_defs_rows,
                 syntax_refs_rows=output.syntax_refs_rows,
                 syntax_calls_rows=output.syntax_calls_rows,
+                syntax_call_args_rows=output.syntax_call_args_rows,
+                syntax_func_params_rows=output.syntax_func_params_rows,
                 syntax_imports_rows=output.syntax_imports_rows,
                 parse_manifest_row_count=output.parse_manifest_row_count,
                 syntax_spans_row_count=output.syntax_spans_row_count,
@@ -305,6 +319,8 @@ def _coerce_syntax_index_output(
                 syntax_defs_row_count=output.syntax_defs_row_count,
                 syntax_refs_row_count=output.syntax_refs_row_count,
                 syntax_calls_row_count=output.syntax_calls_row_count,
+                syntax_call_args_row_count=output.syntax_call_args_row_count,
+                syntax_func_params_row_count=output.syntax_func_params_row_count,
                 syntax_imports_row_count=output.syntax_imports_row_count,
             )
         return output
@@ -324,6 +340,8 @@ def _coerce_syntax_index_output(
         syntax_defs_rows=empty_lazyframe_for_table(SYNTAX_DEFS_TABLE_KEY),
         syntax_refs_rows=empty_lazyframe_for_table(SYNTAX_REFS_TABLE_KEY),
         syntax_calls_rows=empty_lazyframe_for_table(SYNTAX_CALLS_TABLE_KEY),
+        syntax_call_args_rows=empty_lazyframe_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
+        syntax_func_params_rows=empty_lazyframe_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
         syntax_imports_rows=empty_lazyframe_for_table(SYNTAX_IMPORTS_TABLE_KEY),
         parse_manifest_row_count=0,
         syntax_spans_row_count=0,
@@ -333,6 +351,8 @@ def _coerce_syntax_index_output(
         syntax_defs_row_count=0,
         syntax_refs_row_count=0,
         syntax_calls_row_count=0,
+        syntax_call_args_row_count=0,
+        syntax_func_params_row_count=0,
         syntax_imports_row_count=0,
     )
 
@@ -609,6 +629,14 @@ def t__syntax_index__run(
             SYNTAX_CALLS_TABLE_KEY,
             extract_result.syntax_calls_rows,
         )
+        syntax_call_args_frame = lazyframe_for_ingest_columns(
+            SYNTAX_CALL_ARGS_TABLE_KEY,
+            extract_result.syntax_call_args_rows,
+        )
+        syntax_func_params_frame = lazyframe_for_ingest_columns(
+            SYNTAX_FUNC_PARAMS_TABLE_KEY,
+            extract_result.syntax_func_params_rows,
+        )
         syntax_imports_frame = lazyframe_for_ingest_columns(
             SYNTAX_IMPORTS_TABLE_KEY,
             extract_result.syntax_imports_rows,
@@ -623,6 +651,8 @@ def t__syntax_index__run(
             syntax_defs_rows=syntax_defs_frame,
             syntax_refs_rows=syntax_refs_frame,
             syntax_calls_rows=syntax_calls_frame,
+            syntax_call_args_rows=syntax_call_args_frame,
+            syntax_func_params_rows=syntax_func_params_frame,
             syntax_imports_rows=syntax_imports_frame,
             parse_manifest_row_count=extract_result.parse_manifest_row_count,
             syntax_spans_row_count=extract_result.syntax_spans_row_count,
@@ -632,6 +662,8 @@ def t__syntax_index__run(
             syntax_defs_row_count=extract_result.syntax_defs_row_count,
             syntax_refs_row_count=extract_result.syntax_refs_row_count,
             syntax_calls_row_count=extract_result.syntax_calls_row_count,
+            syntax_call_args_row_count=extract_result.syntax_call_args_row_count,
+            syntax_func_params_row_count=extract_result.syntax_func_params_row_count,
             syntax_imports_row_count=extract_result.syntax_imports_row_count,
         )
 
@@ -677,6 +709,8 @@ def t__syntax_index__ingest(
         SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_rows,
         SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_rows,
         SYNTAX_CALLS_TABLE_KEY: t__syntax_index__run.syntax_calls_rows,
+        SYNTAX_CALL_ARGS_TABLE_KEY: t__syntax_index__run.syntax_call_args_rows,
+        SYNTAX_FUNC_PARAMS_TABLE_KEY: t__syntax_index__run.syntax_func_params_rows,
         SYNTAX_IMPORTS_TABLE_KEY: t__syntax_index__run.syntax_imports_rows,
     }
     table_counts = {
@@ -688,6 +722,8 @@ def t__syntax_index__ingest(
         SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_row_count,
         SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_row_count,
         SYNTAX_CALLS_TABLE_KEY: t__syntax_index__run.syntax_calls_row_count,
+        SYNTAX_CALL_ARGS_TABLE_KEY: t__syntax_index__run.syntax_call_args_row_count,
+        SYNTAX_FUNC_PARAMS_TABLE_KEY: t__syntax_index__run.syntax_func_params_row_count,
         SYNTAX_IMPORTS_TABLE_KEY: t__syntax_index__run.syntax_imports_row_count,
     }
     return IngestStep(
@@ -801,6 +837,10 @@ _SYNTAX_INDEX_TARGET_SPEC = ToolTargetSpec(
     spec=_INTENSIVE_SPEC,
     tables=(
         TableOutputSpec(
+            table_key=PARSE_MANIFEST_TABLE_KEY,
+            node_name="syntax_index__parse_manifest_rows",
+        ),
+        TableOutputSpec(
             table_key=SYNTAX_NODES_TABLE_KEY,
             node_name="syntax_index__node_rows",
         ),
@@ -827,6 +867,14 @@ _SYNTAX_INDEX_TARGET_SPEC = ToolTargetSpec(
         TableOutputSpec(
             table_key=SYNTAX_CALLS_TABLE_KEY,
             node_name="syntax_index__call_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_CALL_ARGS_TABLE_KEY,
+            node_name="syntax_index__call_arg_rows",
+        ),
+        TableOutputSpec(
+            table_key=SYNTAX_FUNC_PARAMS_TABLE_KEY,
+            node_name="syntax_index__func_param_rows",
         ),
         TableOutputSpec(
             table_key=SYNTAX_IMPORTS_TABLE_KEY,

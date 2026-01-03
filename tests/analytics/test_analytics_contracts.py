@@ -14,7 +14,6 @@ from codeintel.build.analytics.utilities.datasets import (
 )
 from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.build.schemas import iter_contracts_by_table_key
-from codeintel.core.catalog import FunctionCatalog
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFunctionTypesRow as FunctionTypesRow,
 )
@@ -30,6 +29,7 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
+from codeintel.storage.catalog import FunctionCatalog
 from tests._helpers import TestScenario
 from tests._helpers.analytics_domain import make_graph_metric_function_row
 from tests._helpers.catalogs import ensure_catalog_with_goids

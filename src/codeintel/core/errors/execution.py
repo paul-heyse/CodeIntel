@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.core.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.types.result import PluginExecutionRecord

@@ -13,10 +13,6 @@ from codeintel.build.graphs.validation.runner import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -25,6 +21,10 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.frames import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.validation.reporters import GraphValidationReporter
 

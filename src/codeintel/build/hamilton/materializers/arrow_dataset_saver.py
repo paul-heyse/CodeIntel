@@ -51,6 +51,7 @@ from codeintel.core.columnar import (
     extras_policy_from_schema,
 )
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
+from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.config.settings import BuildSettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import (
@@ -421,7 +422,11 @@ def _materialize_dataset(
 
     arrow_input = _coerce_arrow_input(normalized)
     observed_reader = instrument_reader_for_observation(
-        _align_reader_to_contract(arrow_input, contract_schema=plan.contract_schema),
+        _align_reader_to_contract(
+            arrow_input,
+            contract_schema=plan.contract_schema,
+            schema_promote_options=ctx.env.settings.schema_promote_options,
+        ),
         accumulator=plan.observation,
     )
     manifest = write_dataset(
@@ -729,7 +734,11 @@ def _write_profiled_dataset(
     observation: SchemaObservationAccumulator | None,
 ) -> ArrowDatasetManifest:
     reader = _reader_from_frame(frame)
-    aligned = _align_reader_to_contract(reader, contract_schema=contract_schema)
+    aligned = _align_reader_to_contract(
+        reader,
+        contract_schema=contract_schema,
+        schema_promote_options=ctx.build_settings.schema_promote_options,
+    )
     return _write_dataset_from_reader(ctx=ctx, reader=aligned, observation=observation)
 
 
@@ -742,7 +751,11 @@ def _write_contract_dataset(
     query_opt_flags: object | None,
 ) -> ArrowDatasetManifest:
     reader = _lazyframe_reader(ctx=ctx, data=data, query_opt_flags=query_opt_flags)
-    aligned = _align_reader_to_contract(reader, contract_schema=contract_schema)
+    aligned = _align_reader_to_contract(
+        reader,
+        contract_schema=contract_schema,
+        schema_promote_options=ctx.build_settings.schema_promote_options,
+    )
     return _write_dataset_from_reader(ctx=ctx, reader=aligned, observation=observation)
 
 
@@ -1507,6 +1520,7 @@ def _align_reader_to_contract(
     reader: ArrowDatasetInput,
     *,
     contract_schema: pa.Schema | None,
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS,
 ) -> ArrowDatasetInput:
     if contract_schema is None:
         return reader
@@ -1514,6 +1528,7 @@ def _align_reader_to_contract(
         reader,
         contract_schema,
         extras_policy=extras_policy_from_schema(contract_schema),
+        schema_promote_options=schema_promote_options,
     )
 
 

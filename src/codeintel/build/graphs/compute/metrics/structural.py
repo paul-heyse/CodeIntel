@@ -9,10 +9,19 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
 from networkx.exception import NetworkXError
+
+from codeintel.build.graphs.compute.metrics.community import detect_communities_greedy
+from codeintel.build.graphs.compute.metrics.paths import count_simple_paths
+from codeintel.build.graphs.compute.metrics.types import (
+    StructuralMetrics as StructuralSummary,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 
@@ -226,12 +235,76 @@ def compute_all_structural(
     }
 
 
+def structural_metrics(
+    graph: nx.Graph,
+    *,
+    weight: str | None = "weight",
+    community_limit: int | None = None,
+) -> StructuralSummary:
+    """Compute structural metrics for undirected graphs.
+
+    Returns
+    -------
+    StructuralSummary
+        Structural metric summary for the graph.
+    """
+    node_count = graph.number_of_nodes()
+    if node_count == 0:
+        return StructuralSummary(
+            clustering={},
+            triangles={},
+            core_number={},
+            constraint={},
+            effective_size={},
+            community_id={},
+        )
+
+    clustering = compute_clustering_coefficient(graph)
+    triangles = compute_triangles(graph)
+    core_number = compute_core_number(graph)
+    constraint_vals = compute_constraint(graph)
+    effective_size_vals = compute_effective_size(graph)
+
+    community_id_map: dict[Any, int] = {}
+    if community_limit is None or node_count <= community_limit:
+        community_id_map = detect_communities_greedy(graph, weight=weight)
+
+    return StructuralSummary(
+        clustering=clustering,
+        triangles=triangles,
+        core_number=core_number,
+        constraint=constraint_vals,
+        effective_size=effective_size_vals,
+        community_id=community_id_map,
+    )
+
+
+def bounded_simple_path_count(
+    graph: nx.DiGraph,
+    sources: Iterable[Any],
+    targets: Iterable[Any],
+    *,
+    max_paths: int,
+    cutoff: int,
+) -> int:
+    """Count simple paths between sources and targets with hard limits.
+
+    Returns
+    -------
+    int
+        Count of simple paths, bounded by max_paths and cutoff.
+    """
+    return count_simple_paths(graph, sources, targets, max_paths=max_paths, cutoff=cutoff)
+
+
 __all__ = [
     "StructuralMetrics",
+    "bounded_simple_path_count",
     "compute_all_structural",
     "compute_clustering_coefficient",
     "compute_constraint",
     "compute_core_number",
     "compute_effective_size",
     "compute_triangles",
+    "structural_metrics",
 ]

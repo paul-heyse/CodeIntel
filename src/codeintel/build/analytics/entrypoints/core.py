@@ -7,6 +7,9 @@ The pure compute functions are available in ``codeintel.build.analytics.entrypoi
 
 The Hamilton native module is at:
 ``codeintel.build.hamilton.native.analytics.entrypoints``
+
+Runtime filesystem scanning helpers live in:
+``codeintel.build.analytics.entrypoints.runtime``
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
+from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
@@ -29,53 +33,25 @@ from codeintel.core.query_results import (
     coerce_optional_str,
     coerce_str,
 )
-from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 
-ENTRYPOINTS_COLS = [
-    "repo",
-    "commit",
-    "entrypoint_id",
-    "kind",
-    "framework",
-    "handler_goid_h128",
-    "handler_urn",
-    "handler_rel_path",
-    "handler_module",
-    "handler_qualname",
-    "http_method",
-    "route_path",
-    "status_codes",
-    "auth_required",
-    "command_name",
-    "arguments_schema",
-    "schedule",
-    "trigger",
-    "extra",
-    "subsystem_id",
-    "subsystem_name",
-    "tags",
-    "owners",
-    "tests_touching",
-    "failing_tests",
-    "slow_tests",
-    "flaky_tests",
-    "last_test_status",
-    "created_at",
-]
-ENTRYPOINT_TESTS_COLS = [
-    "repo",
-    "commit",
-    "entrypoint_id",
-    "test_id",
-    "test_goid_h128",
-    "status",
-    "duration_ms",
-    "created_at",
-]
+ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
+ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
+
+
+def _columns_for_table(table_key: str) -> list[str]:
+    columns = columns_for_table_key(table_key)
+    if not columns:
+        msg = f"No schema columns registered for {table_key}"
+        raise ValueError(msg)
+    return list(columns)
+
+
+ENTRYPOINTS_COLS = _columns_for_table(ENTRYPOINTS_TABLE_KEY)
+ENTRYPOINT_TESTS_COLS = _columns_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-    from pathlib import Path
+    from collections.abc import Iterable, Mapping
 
     from codeintel.build.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.build.analytics.compute.entrypoints.detection import (
@@ -83,8 +59,8 @@ if TYPE_CHECKING:
         EntryPointCandidate,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
+    from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
@@ -106,6 +82,15 @@ class TestMeta:
     status: str | None
     duration_ms: float | None
     flaky: bool | None
+
+
+@dataclass(frozen=True)
+class EntrypointModuleSource:
+    """In-memory module source for entrypoint detection."""
+
+    rel_path: str
+    module: str
+    source: str
 
 
 @dataclass(frozen=True)
@@ -162,29 +147,27 @@ class EntrypointContextInputs:
     subsystems_frame: pl.DataFrame | None = None
 
 
-def _collect_entrypoint_rows(
+def collect_entrypoint_rows(
     *,
     context: EntryPointContext,
-    repo_root: Path,
+    module_sources: Iterable[EntrypointModuleSource],
     settings: DetectorSettings,
-    scan_profile: ScanProfile | None,
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
+    """Collect entrypoint rows from in-memory module sources.
+
+    Returns
+    -------
+    tuple[list[tuple[object, ...]], list[tuple[object, ...]]]
+        Entry point rows and entrypoint-test edge rows.
+    """
     entrypoint_rows: list[tuple[object, ...]] = []
     test_rows: list[tuple[object, ...]] = []
 
-    for record in FilesystemDiscoveryAdapter.iter_modules(
-        context.module_map,
-        repo_root,
-        logger=log,
-        scan_profile=scan_profile,
-    ):
-        source = FilesystemDiscoveryAdapter.read_module_source(record)
-        if source is None:
-            continue
+    for module_source in module_sources:
         candidates = detect_entrypoints(
-            source,
-            rel_path=record.rel_path,
-            module=record.module_name,
+            module_source.source,
+            rel_path=module_source.rel_path,
+            module=module_source.module,
             settings=settings,
         )
         for cand in candidates:
@@ -275,36 +258,39 @@ def _materialize_candidate(
         }
         extra_payload = {**extra_payload, "ast_features": feature_summary}
 
-    entrypoint_row = (
-        ctx.repo,
-        ctx.commit,
-        entrypoint_id,
-        cand.kind,
-        cand.framework,
-        _decimal(goid),
-        urn,
-        rel_path,
-        module_info.module,
-        cand.qualname,
-        cand.http_method,
-        cand.route_path,
-        cand.status_codes,
-        cand.auth_required,
-        cand.command_name,
-        cand.arguments_schema,
-        cand.schedule,
-        cand.trigger,
-        _normalize_json(extra_payload),
-        subsystem_id,
-        subsystem_name,
-        _normalize_json(module_info.tags),
-        _normalize_json(module_info.owners),
-        summary.tests_touching,
-        summary.failing_tests,
-        summary.slow_tests,
-        summary.flaky_tests,
-        summary.last_test_status,
-        ctx.now,
+    entrypoint_row = row_tuple_for_table(
+        ENTRYPOINTS_TABLE_KEY,
+        {
+            "repo": ctx.repo,
+            "commit": ctx.commit,
+            "entrypoint_id": entrypoint_id,
+            "kind": cand.kind,
+            "framework": cand.framework,
+            "handler_goid_h128": _decimal(goid),
+            "handler_urn": urn,
+            "handler_rel_path": rel_path,
+            "handler_module": module_info.module,
+            "handler_qualname": cand.qualname,
+            "http_method": cand.http_method,
+            "route_path": cand.route_path,
+            "status_codes": cand.status_codes,
+            "auth_required": cand.auth_required,
+            "command_name": cand.command_name,
+            "arguments_schema": cand.arguments_schema,
+            "schedule": cand.schedule,
+            "trigger": cand.trigger,
+            "extra": _normalize_json(extra_payload),
+            "subsystem_id": subsystem_id,
+            "subsystem_name": subsystem_name,
+            "tags": _normalize_json(module_info.tags),
+            "owners": _normalize_json(module_info.owners),
+            "tests_touching": summary.tests_touching,
+            "failing_tests": summary.failing_tests,
+            "slow_tests": summary.slow_tests,
+            "flaky_tests": summary.flaky_tests,
+            "last_test_status": summary.last_test_status,
+            "created_at": ctx.now,
+        },
     )
     return entrypoint_row, edge_rows
 

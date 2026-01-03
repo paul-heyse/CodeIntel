@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.storage.schema.duckdb_contracts import contract_schema_for_table_key
+from codeintel.storage.schema.duckdb_contracts import (
+    ContractSchemaOptions,
+    contract_schema_for_table_key,
+)
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -18,9 +21,7 @@ def arrow_schema_for_table_key(
     con: DuckDBPyConnection,
     *,
     table_key: str,
-    repo: str | None = None,
-    commit: str | None = None,
-    pii_by_column: Mapping[str, str] | None = None,
+    options: ContractSchemaOptions | None = None,
 ) -> pa.Schema | None:
     """Render a PyArrow schema enriched with metadata for a table key.
 
@@ -30,12 +31,8 @@ def arrow_schema_for_table_key(
         DuckDB connection used to load registry metadata and lineage.
     table_key
         Fully qualified table key (schema.table).
-    repo
-        Optional repository identifier for lineage lookups.
-    commit
-        Optional commit hash for lineage lookups.
-    pii_by_column
-        Optional mapping of column name to PII classification labels.
+    options
+        Optional contract schema lookup options.
 
     Returns
     -------
@@ -45,9 +42,7 @@ def arrow_schema_for_table_key(
     return contract_schema_for_table_key(
         con=con,
         table_key=table_key,
-        repo=repo,
-        commit=commit,
-        pii_by_column=pii_by_column,
+        options=options,
     )
 
 
@@ -58,6 +53,8 @@ class RegistryArrowSchemaProvider:
     con: DuckDBPyConnection
     repo: str | None = None
     commit: str | None = None
+    dataset_root_dir: Path | None = None
+    snapshot_id: str | None = None
 
     def get_arrow_schema(self, table_key: str) -> pa.Schema | None:
         """Return Arrow schema for the table key.
@@ -67,12 +64,13 @@ class RegistryArrowSchemaProvider:
         pa.Schema | None
             Arrow schema for the table when available.
         """
-        return arrow_schema_for_table_key(
-            self.con,
-            table_key=table_key,
+        options = ContractSchemaOptions(
             repo=self.repo,
             commit=self.commit,
+            dataset_root_dir=self.dataset_root_dir,
+            snapshot_id=self.snapshot_id,
         )
+        return arrow_schema_for_table_key(self.con, table_key=table_key, options=options)
 
 
 def arrow_schema_hash(schema: pa.Schema) -> str | None:

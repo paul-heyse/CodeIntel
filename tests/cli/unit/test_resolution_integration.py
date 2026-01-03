@@ -27,6 +27,37 @@ def test_resolution_from_explicit_params() -> None:
     expect_equal(runtime.commit, "abc123def456789")
 
 
+def test_resolution_from_project_config(tmp_path: Path) -> None:
+    """Test runtime resolution from codeintel.yaml."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    db_dir = project_dir / "build" / "db"
+    db_dir.mkdir(parents=True)
+
+    config_file = project_dir / "codeintel.yaml"
+    config_file.write_text("repo: test/repo\nstorage:\n  db_path: build/db/codeintel.duckdb\n")
+
+    runtime = resolve_from_params({"project_root": project_dir})
+    expect_equal(runtime.repo, "test/repo")
+    expect_equal(runtime.db_path, db_dir / "codeintel.duckdb")
+
+
+def test_resolution_from_env_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test runtime resolution uses CODEINTEL_REPO fallback."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    monkeypatch.setenv("CODEINTEL_REPO", "env/repo")
+
+    runtime = resolve_from_params(
+        {
+            "repo_root": repo_root,
+            "commit": "abc123def456789",
+        }
+    )
+    expect_equal(runtime.repo, "env/repo")
+
+
 def test_resolution_missing_params_raises_error() -> None:
     """Test resolution fails with missing params."""
     with pytest.raises(ResolutionError):

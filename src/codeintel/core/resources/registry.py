@@ -134,7 +134,7 @@ class ResourceRegistry:
     Example
     -------
     >>> from codeintel.core.resources import ResourceRegistry
-    >>> from codeintel.core.catalog import CatalogService
+    >>> from codeintel.storage.catalog import CatalogService
     >>> registry = ResourceRegistry()
     >>> registry.register(CatalogService, CatalogService(catalog))
     >>> provider = registry.get(CatalogService)

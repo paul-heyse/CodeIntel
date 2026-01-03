@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.execution import RunContext
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.core.gateway import BuildGateway
 
 log = logging.getLogger(__name__)
 
@@ -230,7 +230,7 @@ class PluginExecutionContext:
     Use `ctx.scratch` for sharing data between plugins in a run.
     """
 
-    gateway: StorageGateway
+    gateway: BuildGateway
     snapshot: SnapshotRef
     run_id: str | None = None
 
@@ -441,12 +441,13 @@ class PluginExecutionContextBuilder:
 
     Example
     -------
+    >>> from codeintel.storage.catalog import CatalogService
     >>> builder = PluginExecutionContextBuilder(gateway, snapshot, run_id)
     >>> builder = builder.with_resource(CatalogService, CatalogService(catalog))
     >>> ctx = builder.build()
     """
 
-    gateway: StorageGateway
+    gateway: BuildGateway
     snapshot: SnapshotRef
     run_id: str
     _configs: dict[type[Any], object] = field(default_factory=dict)

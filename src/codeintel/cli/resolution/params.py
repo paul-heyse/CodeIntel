@@ -7,6 +7,7 @@ runtime parameters across all CLI operations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -167,16 +168,7 @@ class RuntimeParams:
         >>> params.repo
         'org/repo'
         """
-        backend_raw = data.get("backend", {})
-        backend = (
-            BackendFlags(
-                use_gpu=_get_bool(backend_raw, "use_gpu", default=False),
-                backend=_get_str(backend_raw, "backend", default="auto"),
-                strict=_get_bool(backend_raw, "strict", default=False),
-            )
-            if isinstance(backend_raw, dict)
-            else BackendFlags()
-        )
+        backend = _parse_backend_flags(data)
 
         return cls(
             project_root=_to_path(data.get("project_root")),
@@ -240,6 +232,77 @@ def _to_path(value: object) -> Path | None:
     if isinstance(value, Path):
         return value
     return Path(str(value))
+
+
+def _normalize_flag(value: object | None) -> str | None:
+    """Normalize enum-like or scalar values to lowercase strings.
+
+    Parameters
+    ----------
+    value
+        Value to normalize.
+
+    Returns
+    -------
+    str | None
+        Normalized string or None if empty.
+    """
+    if value is None:
+        return None
+    candidate = value.value if isinstance(value, Enum) else value
+    normalized = str(candidate).strip().lower()
+    if not normalized:
+        return None
+    if "." in normalized:
+        normalized = normalized.rsplit(".", maxsplit=1)[-1]
+    return normalized or None
+
+
+def _backend_from_nx_flags(
+    nx_backend: object | None,
+    nx_gpu_mode: object | None,
+) -> BackendFlags:
+    backend = _normalize_flag(nx_backend) or "auto"
+    gpu_mode = _normalize_flag(nx_gpu_mode) or "disabled"
+    if gpu_mode not in {"disabled", "enabled", "strict"}:
+        gpu_mode = "disabled"
+    return BackendFlags(
+        use_gpu=gpu_mode in {"enabled", "strict"},
+        backend=backend,
+        strict=gpu_mode == "strict",
+    )
+
+
+def _parse_backend_flags(data: dict[str, Any]) -> BackendFlags:
+    backend_raw = data.get("backend")
+    if isinstance(backend_raw, dict):
+        return BackendFlags(
+            use_gpu=_get_bool(backend_raw, "use_gpu", default=False),
+            backend=_get_str(backend_raw, "backend", default="auto"),
+            strict=_get_bool(backend_raw, "strict", default=False),
+        )
+
+    if backend_raw is not None:
+        backend_value = _normalize_flag(backend_raw) or "auto"
+        return BackendFlags(
+            use_gpu=_get_bool(data, "use_gpu", default=False),
+            backend=backend_value,
+            strict=_get_bool(data, "strict", default=False),
+        )
+
+    nx_backend = data.get("nx_backend")
+    nx_gpu_mode = data.get("nx_gpu_mode")
+    if nx_backend is not None or nx_gpu_mode is not None:
+        return _backend_from_nx_flags(nx_backend, nx_gpu_mode)
+
+    if "use_gpu" in data or "strict" in data:
+        return BackendFlags(
+            use_gpu=_get_bool(data, "use_gpu", default=False),
+            backend="auto",
+            strict=_get_bool(data, "strict", default=False),
+        )
+
+    return BackendFlags()
 
 
 def _to_str(value: object) -> str | None:

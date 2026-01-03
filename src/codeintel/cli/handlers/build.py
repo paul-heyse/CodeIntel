@@ -50,7 +50,9 @@ from codeintel.cli.core.result_types import (
     BuildBootstrapSuiteResult,
     BuildDiffResult,
     BuildExplainResult,
+    BuildGraphResult,
     BuildHistoryResult,
+    BuildImpactResult,
     BuildLineageResult,
     BuildPlanResult,
     BuildPromoteResult,
@@ -59,6 +61,7 @@ from codeintel.cli.core.result_types import (
     BuildRunResult,
     BuildStatusResult,
 )
+from codeintel.cli.core.results import auto_serialize
 from codeintel.cli.errors import ValidationError
 from codeintel.cli.errors.results import (
     fail_build_run_not_found,
@@ -69,7 +72,6 @@ from codeintel.cli.errors.results import (
     fail_invalid_value,
     fail_project_error,
 )
-from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.runtime_helpers import (
     build_execution_context,
     compose_cli_runtime_bundle,
@@ -81,7 +83,6 @@ from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.manifests import DatasetSuiteManifest, ServingSnapshotManifest
-from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.time import utc_now
 from codeintel.observability.runtime import flush_observability
@@ -96,6 +97,7 @@ from codeintel.observability.teardown import (
     emit_teardown_telemetry,
 )
 from codeintel.runtime.compose import compose_runtime
+from codeintel.runtime.registry_service import RegistryService
 from codeintel.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
@@ -638,23 +640,8 @@ def _execute_build_outcome(
     runtime: ResolvedRuntime,
     execution: BuildExecutionArgs,
     *,
-    gateway: StorageGateway | None,
+    gateway: StorageGateway,
 ) -> _BuildExecutionOutcome | None:
-    if gateway is None:
-        with runtime_gateway(
-            runtime,
-            read_only=False,
-            validation_mode=execution.validation_mode,
-        ) as runtime_gateway_obj:
-            outcome = _execute_build_hamilton(runtime, runtime_gateway_obj, execution)
-            _maybe_publish_serving_snapshot(
-                runtime,
-                execution,
-                outcome,
-                gateway=runtime_gateway_obj,
-            )
-            return outcome
-
     outcome = _execute_build_hamilton(runtime, gateway, execution)
     _maybe_publish_serving_snapshot(
         runtime,
@@ -1279,7 +1266,7 @@ def build_bootstrap_index_suite_handler(
     except ResolutionError as exc:
         return fail_project_error("build", str(exc))
 
-    with runtime_gateway(context.runtime, read_only=False) as gateway:
+    with ctx.storage.write_gateway(validation_mode=ContractValidationMode.LENIENT) as gateway:
         plan = _bootstrap_suite_plan(context, gateway=gateway)
         if isinstance(plan, CliResult):
             return plan
@@ -1480,7 +1467,7 @@ def _build_run_result(
     except ResolutionError as exc:
         return fail_project_error("build", str(exc)), runtime, goals
 
-    with ctx.storage.write_gateway() as gateway:
+    with ctx.storage.write_gateway(validation_mode=params.validation_mode) as gateway:
         config_overrides = _plugin_overrides_from_params(params)
         runtime_bundle = compose_cli_runtime_bundle(
             runtime=runtime,
@@ -1754,7 +1741,7 @@ def _execute_and_format_result(
     runtime: ResolvedRuntime,
     execution: BuildExecutionArgs,
     *,
-    gateway: StorageGateway | None = None,
+    gateway: StorageGateway,
     telemetry_state: _BuildRunTelemetryState | None = None,
     format_options: _BuildRunFormatOptions | None = None,
 ) -> CliResult[BuildRunResult]:
@@ -1767,7 +1754,7 @@ def _execute_and_format_result(
     execution
         BuildExecutionArgs capturing mode, validation, and goal selection.
     gateway
-        Optional pre-opened gateway to reuse for execution.
+        Pre-opened gateway to reuse for execution.
     telemetry_state
         Optional telemetry state to populate with execution metadata.
     format_options
@@ -1966,7 +1953,7 @@ def build_history_handler(
 
         return CliResult.ok(
             BuildHistoryResult(
-                runs=[record.to_dict()],
+                runs=[record],
                 count=1,
                 targets=run_targets,
             )
@@ -1976,7 +1963,7 @@ def build_history_handler(
 
     return CliResult.ok(
         BuildHistoryResult(
-            runs=[r.to_dict() for r in runs],
+            runs=list(runs),
             count=len(runs),
         )
     )
@@ -2024,15 +2011,6 @@ def build_publish_serving_snapshot_handler(
         dataset_count=len(manifest.datasets),
     )
     return CliResult.ok(result)
-
-
-@dataclass(frozen=True)
-class BuildGraphResult:
-    """Result type for build graph command."""
-
-    dag_json: str
-    node_count: int
-    edge_count: int
 
 
 def build_graph_handler(
@@ -2130,7 +2108,10 @@ def build_plan_handler(
 
     plan_args = _parse_plan_args(ctx)
 
-    with runtime_gateway(runtime, read_only=False) as gateway:
+    with ctx.storage.gateway_scope(
+        read_only=False,
+        validation_mode=ContractValidationMode.LENIENT,
+    ) as gateway:
         planning_context = _compose_planning_context(
             runtime=runtime,
             gateway=gateway,
@@ -2175,7 +2156,7 @@ def build_plan_handler(
     result = BuildPlanResult(
         requested=list(plan.request.requested_targets),
         closure=list(plan.closure),
-        entries=[entry.to_dict() for entry in plan.entries],
+        entries=list(plan.entries),
         to_compute=to_compute,
         to_reuse=to_reuse,
         blocked=blocked,
@@ -2183,7 +2164,7 @@ def build_plan_handler(
 
     if plan_args.output_file:
         Path(plan_args.output_file).write_text(
-            _json.dumps(result.to_dict(), indent=2),
+            _json.dumps(auto_serialize(result), indent=2),
             encoding="utf-8",
         )
         LOG.info("build.plan.written path=%s", plan_args.output_file)
@@ -2324,7 +2305,10 @@ def build_explain_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    with runtime_gateway(runtime, read_only=False) as gateway:
+    with ctx.storage.gateway_scope(
+        read_only=False,
+        validation_mode=ContractValidationMode.LENIENT,
+    ) as gateway:
         force_targets = frozenset(ctx.params.get_list("force") or ())
         planning_context = _compose_planning_context(
             runtime=runtime,
@@ -3008,18 +2992,6 @@ def build_impact_handler(ctx: CommandContext) -> CliResult[BuildImpactResult]:
             format=output_format,
         )
     )
-
-
-@dataclass(frozen=True)
-class BuildImpactResult:
-    """Result of build impact analysis."""
-
-    source_kind: str
-    source_key: str
-    source_version: str | None
-    impacted_assets: list[dict[str, Any]]
-    impacted_targets: list[str]
-    format: str = "json"
 
 
 __all__ = [

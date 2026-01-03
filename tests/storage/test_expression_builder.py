@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 
 from codeintel.core.filters import FilterSpecInput
-from codeintel.storage.duckdb_types import Expression
-from codeintel.storage.queries.filter_compiler import (
+from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
     compile_filter_predicates,
     duckdb_filter_expression,
 )
+from codeintel.storage.duckdb_types import Expression
 
 pytestmark = pytest.mark.no_runtime_env
 

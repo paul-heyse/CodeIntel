@@ -15,7 +15,7 @@ Hexagonal Architecture (Ports, Compute):
 - compute/: Pure stateless computation functions (no I/O)
 
 Consolidated Domain Packages:
-- core.catalog: Function catalog (spans, metadata, service)
+- storage.catalog: Function catalog (spans, metadata, service)
 - validation/: Graph validation checks, findings, and orchestration
 - engine/: Graph engine protocol, NetworkX implementation, and views
 
@@ -59,8 +59,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from codeintel.build.graphs import compute, ports
     from codeintel.build.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
-    from codeintel.core.catalog import CatalogService, FunctionSpan
+    from codeintel.core.catalog import FunctionSpan
     from codeintel.core.resources import ResourceRegistry
+    from codeintel.storage.catalog import CatalogService
 
 __all__ = [
     "CatalogService",
@@ -74,7 +75,7 @@ __all__ = [
 ]
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
-    "CatalogService": ("codeintel.core.catalog", "CatalogService"),
+    "CatalogService": ("codeintel.storage.catalog", "CatalogService"),
     "FunctionSpan": ("codeintel.core.catalog", "FunctionSpan"),
     "GraphEngine": ("codeintel.build.graphs.engine", "GraphEngine"),
     "GraphKind": ("codeintel.build.graphs.engine", "GraphKind"),

@@ -7,7 +7,7 @@ providing a single source of truth for operation metadata.
 
 from __future__ import annotations
 
-from codeintel.cli.execution.registry import OperationSpec, get_registry
+from codeintel.cli.execution.registry import OperationAlias, OperationSpec, get_registry
 
 
 def get_operation_info(operation_id: str) -> OperationSpec | None:
@@ -98,10 +98,44 @@ def list_all_operations(*, include_hidden: bool = False) -> list[OperationSpec]:
     return registry.list_operations(include_hidden=include_hidden)
 
 
+def list_operation_aliases(operation_id: str) -> list[OperationAlias]:
+    """List aliases for a canonical operation.
+
+    Parameters
+    ----------
+    operation_id
+        Operation identifier (canonical or alias).
+
+    Returns
+    -------
+    list[OperationAlias]
+        Alias metadata for the canonical operation.
+    """
+    registry = get_registry()
+    spec = registry.get(operation_id)
+    if spec is None:
+        return []
+    return registry.list_aliases(target_id=spec.operation_id)
+
+
+def list_all_aliases() -> list[OperationAlias]:
+    """List all registered operation aliases.
+
+    Returns
+    -------
+    list[OperationAlias]
+        Alias metadata for all registered aliases.
+    """
+    return get_registry().list_aliases()
+
+
 __all__ = [
+    "OperationAlias",
     "OperationSpec",
     "get_operation_info",
+    "list_all_aliases",
     "list_all_operations",
+    "list_operation_aliases",
     "list_operations_by_group",
     "search_operations",
 ]

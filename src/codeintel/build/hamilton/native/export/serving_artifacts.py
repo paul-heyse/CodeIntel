@@ -30,7 +30,6 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.tabular.frames import lazyframe_for_table_columns
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -56,6 +55,7 @@ from codeintel.build.schemas.compile import (
 from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
+from codeintel.build.tabular.frames import lazyframe_for_table_columns
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.execution.ids import new_run_id

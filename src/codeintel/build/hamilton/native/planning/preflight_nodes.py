@@ -10,6 +10,7 @@ from codeintel.build.planning.preflight import (
     missing_input_issues,
     optional_inputs_for_targets,
 )
+from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.table_key import split_table_key
 
 
@@ -114,6 +115,15 @@ def _blocked_targets(catalog: DagCatalog, roots: set[str]) -> set[str]:
 
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
+    dataset = env.gateway.datasets.by_table_key.get(table_key)
+    dataset_source = getattr(env.gateway.config, "dataset_source", "duckdb")
+    if dataset is not None and not dataset.is_view and dataset_source == "parquet_only":
+        manifest_path = dataset_manifest_path(
+            dataset_root=env.paths.dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=env.commit,
+        )
+        return manifest_path.is_file()
     schema, table = split_table_key(table_key)
     return env.gateway.policy.table_exists(schema=schema, table=table)
 

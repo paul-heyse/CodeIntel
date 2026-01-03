@@ -5,14 +5,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard
+from typing import TYPE_CHECKING, Literal, TypeGuard
 
 import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.core.columnar.ipc import schema_from_ipc_payload
 from codeintel.core.execution.ids import new_uuid_str
+from codeintel.core.gateway import SchemaIndexProtocol
 from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.helpers.json import decode_json_dict
+from codeintel.core.helpers.payload import encode_payload
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.schema_catalog_models import (
     ColumnStatsEntry,
@@ -29,10 +32,10 @@ from codeintel.core.schemas.schema_catalog_models import (
     TableSchemaRegistryRecord,
 )
 from codeintel.core.schemas.serde import table_schema_from_json_obj
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.gateway.protocol import DuckDBError
-from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import (
     build_catalog_entry,
     load_latest_canonical_catalog_from_connection,
@@ -40,7 +43,6 @@ from codeintel.storage.metadata.catalogs import (
 )
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.tracking.schema_catalog_compile import (
     arrow_contract_renderer_cache,
     compile_schema_catalog_batches,
@@ -50,21 +52,12 @@ from codeintel.storage.views.diff import diff_sql_structural
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
-    from collections.abc import Set as AbstractSet
 
     from duckdb import DuckDBPyConnection
 
     from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway.protocol import ConfigurableGateway
-
-    class SchemaIndex(Protocol):
-        """Protocol for schema index consumers without build-layer imports."""
-
-        @property
-        def inferable_table_keys(self) -> AbstractSet[str]: ...
-
-        def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None: ...
 
 
 def _combine_conditions(conditions: Sequence[exp.Expression]) -> exp.Expression | None:
@@ -605,8 +598,8 @@ class SchemaCatalogTracking:
             (
                 record.schema_digest,
                 record.schema_hash,
-                normalize_duckdb_json_value(record.schema_json),
-                normalize_duckdb_json_value(record.renderer_cache)
+                encode_payload(record.schema_json),
+                encode_payload(record.renderer_cache)
                 if record.renderer_cache is not None
                 else None,
                 record.created_at or now,
@@ -656,18 +649,12 @@ class SchemaCatalogTracking:
                 record.schema_digest,
                 record.schema_hash,
                 record.arrow_schema_ipc_b64,
-                normalize_duckdb_json_value(record.column_stats)
-                if record.column_stats is not None
-                else None,
-                normalize_duckdb_json_value(record.dataset_stats)
-                if record.dataset_stats is not None
-                else None,
-                normalize_duckdb_json_value(record.derived_settings)
+                encode_payload(record.column_stats) if record.column_stats is not None else None,
+                encode_payload(record.dataset_stats) if record.dataset_stats is not None else None,
+                encode_payload(record.derived_settings)
                 if record.derived_settings is not None
                 else None,
-                normalize_duckdb_json_value(record.drift_summary)
-                if record.drift_summary is not None
-                else None,
+                encode_payload(record.drift_summary) if record.drift_summary is not None else None,
                 record.observed_at or now,
             )
             for record in records
@@ -1296,16 +1283,16 @@ class SchemaCatalogTracking:
 
     def prefill_schema_index(
         self,
-        schema_index: SchemaIndex,
+        schema_index: SchemaIndexProtocol,
         *,
         table_keys: Sequence[str] | None = None,
     ) -> int:
-        """Prefill SchemaIndex cache with persisted inferred schemas.
+        """Prefill schema index cache with persisted inferred schemas.
 
         Parameters
         ----------
         schema_index
-            SchemaIndex instance to prefill.
+            Schema index instance to prefill.
         table_keys
             Optional table keys to restrict the prefill query.
 
@@ -1530,7 +1517,7 @@ class SchemaCatalogTracking:
                 continue
             merged = dict(renderer_cache) if renderer_cache else {}
             merged.update(payload)
-            updates.append((normalize_duckdb_json_value(merged), digest))
+            updates.append((encode_payload(merged), digest))
 
         if not updates:
             return 0

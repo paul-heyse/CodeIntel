@@ -12,9 +12,9 @@ import polars as pl
 from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id

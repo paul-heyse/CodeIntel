@@ -1,22 +1,22 @@
 """Contract primitives for dataset metadata.
 
-This module defines the core dataclasses used for dataset contracts.
+This module defines the core structs used for dataset contracts.
 These are intentionally lightweight and have no dependencies on other
 parts of the config/datasets infrastructure.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
+
+import msgspec
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
     from codeintel.core.schemas.row_models import GeneratedRowBinding
 
 
-@dataclass(frozen=True)
-class DatasetContract:
+class DatasetContract(msgspec.Struct, frozen=True):
     """Metadata describing a logical dataset backed by a DuckDB table or view.
 
     Parameters
@@ -73,7 +73,7 @@ class DatasetContract:
     parquet_filename: str | None = None
     is_view: bool = False
     owner_package: Literal["core", "analytics", "graphs", "qa", "docs"] | None = None
-    tags: frozenset[str] = field(default_factory=frozenset)
+    tags: frozenset[str] = msgspec.field(default_factory=frozenset)
     description: str | None = None
     family: str | None = None
     owner: str | None = None
@@ -81,7 +81,7 @@ class DatasetContract:
     retention_policy: str | None = None
     stable_id: str | None = None
     schema_version: str | None = None
-    upstream_dependencies: tuple[str, ...] = ()
+    upstream_dependencies: tuple[str, ...] = msgspec.field(default_factory=tuple)
     validation_profile: Literal["strict", "lenient"] = "strict"
     composition: CompositeSchema | None = None
 

@@ -14,7 +14,6 @@ from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, 
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -24,6 +23,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)

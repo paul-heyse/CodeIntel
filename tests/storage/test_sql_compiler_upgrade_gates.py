@@ -11,9 +11,9 @@ import duckdb
 from sqlglot import parse_one
 
 from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.sqlglot_tools import semantic_diff_sql_duckdb
 from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.schema_roundtrip import create_table_ast
-from codeintel.storage.sqlglot_tools import semantic_diff_sql_duckdb
 from tests._helpers.assertions.expectation_assertions import expect_true
 from tests._helpers.schemas import ensure_production_schemas
 

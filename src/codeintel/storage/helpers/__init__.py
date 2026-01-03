@@ -26,7 +26,7 @@ For profiling view plans, use `codeintel.storage.warehouse.Warehouse.profile_vie
 
 from __future__ import annotations
 
-from codeintel.storage.helpers.json import (
+from codeintel.core.helpers.json import (
     decode_json,
     decode_json_dict,
     decode_json_list,

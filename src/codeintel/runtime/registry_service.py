@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -27,8 +28,9 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-_DAG_OUTPUT_INVENTORY_PATH = Path(__file__).with_name("dag_output_inventory.yaml")
-_INGESTION_TOOLING_INVENTORY_PATH = Path(__file__).with_name("ingestion_tooling_inventory.yaml")
+_REGISTRY_RESOURCES = Path(files("codeintel.core.registry"))
+_DAG_OUTPUT_INVENTORY_PATH = _REGISTRY_RESOURCES / "dag_output_inventory.yaml"
+_INGESTION_TOOLING_INVENTORY_PATH = _REGISTRY_RESOURCES / "ingestion_tooling_inventory.yaml"
 _VALID_MATERIALIZATIONS = {"artifact", "mixed", "table"}
 _VALID_TOOL_KINDS = {"binary", "library", "python_module"}
 

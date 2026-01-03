@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum, StrEnum
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,6 +15,7 @@ from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports import ExportCallOptions, ExportOptions, run_validated_exports
 from codeintel.build.settings import get_build_settings
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import DocsExportResult, DocsValidateResult, ExportMode
 from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
 from codeintel.cli.errors.taxonomy import validation_error
@@ -29,87 +30,6 @@ if TYPE_CHECKING:
     from codeintel.core.gateway import BuildGateway
 
 LOG = logging.getLogger(__name__)
-
-
-class ExportMode(StrEnum):
-    """Execution mode for docs export operations."""
-
-    BUILD_SYSTEM = "build_system"
-    DIRECT = "direct"
-    DRY_RUN = "dry_run"
-
-
-@dataclass(frozen=True)
-class DocsExportResult:
-    """Result from docs export operation.
-
-    Parameters
-    ----------
-    status
-        Export status (ok, dry_run, failed).
-    validation
-        Validation mode used.
-    datasets
-        Datasets exported (or None for all).
-    schemas
-        Schemas exported (or None for all).
-    mode
-        Execution mode (build_system, direct, dry_run).
-    """
-
-    status: str
-    validation: str
-    datasets: list[str] | None
-    schemas: list[str] | None
-    mode: ExportMode
-    macro_requirement: str
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        mode_value = self.mode.value if isinstance(self.mode, ExportMode) else str(self.mode)
-        return {
-            "status": self.status,
-            "validation": self.validation,
-            "datasets": self.datasets,
-            "schemas": self.schemas,
-            "mode": mode_value,
-            "macro_requirement": self.macro_requirement,
-        }
-
-
-@dataclass(frozen=True)
-class DocsValidateResult:
-    """Result from docs validation operation.
-
-    Parameters
-    ----------
-    passed
-        Whether validation passed.
-    issues
-        List of validation issues.
-    """
-
-    passed: bool
-    issues: list[str]
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "passed": self.passed,
-            "issues": self.issues,
-        }
 
 
 @dataclass(frozen=True)

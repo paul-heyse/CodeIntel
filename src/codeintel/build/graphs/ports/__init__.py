@@ -12,13 +12,13 @@ Data Types
 
 Usage
 -----
-For dependency injection, use service classes from ``core.catalog`` or
+For dependency injection, use service classes from ``storage.catalog`` or
 `BuildGateway` implementations directly.
 
 Example
 -------
 ```python
-from codeintel.core.catalog import CatalogService
+from codeintel.storage.catalog import CatalogService
 from codeintel.core.gateway import BuildGateway
 
 

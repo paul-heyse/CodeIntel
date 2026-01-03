@@ -24,6 +24,13 @@ from codeintel.core.exports import (
     iter_ipc_stream,
 )
 from codeintel.core.schemas.hashing import schema_digest
+from codeintel.core.sqlglot_tools import (
+    extract_column_lineage_duckdb,
+    extract_table_keys_duckdb,
+    fingerprint_expression_duckdb,
+    render_sql_duckdb,
+    semantic_diff_sql_duckdb,
+)
 from codeintel.serving.errors import LineageMetadataMissingError, SearchIndexMissingError
 from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.meta.service import build_kernel_meta_payload
@@ -34,7 +41,10 @@ from codeintel.serving.search.engine import (
     is_fts_available,
 )
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
-from codeintel.serving.semantic.duckdb_contracts import contract_schema_for_table_key
+from codeintel.serving.semantic.duckdb_contracts import (
+    ContractSchemaOptions,
+    contract_schema_for_table_key,
+)
 from codeintel.serving.semantic.engines.duckdb_engine import DuckDBQueryEngine
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.engines.registry import QueryEngineRegistry, build_engine_registry
@@ -68,13 +78,6 @@ from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.query_results import (
     iter_records_from_arrow_reader,
     records_from_arrow_reader,
-)
-from codeintel.storage.sqlglot_tools import (
-    extract_column_lineage_duckdb,
-    extract_table_keys_duckdb,
-    fingerprint_expression_duckdb,
-    render_sql_duckdb,
-    semantic_diff_sql_duckdb,
 )
 
 if TYPE_CHECKING:
@@ -251,11 +254,24 @@ def _contract_schema_for_table(
     pointer: ServingSnapshotPointer,
     table_key: str,
 ) -> pa.Schema | None:
+    dataset_root_dir = (
+        getattr(warehouse.gateway.config, "dataset_root_dir", None)
+        if warehouse is not None
+        else None
+    )
+    snapshot_id = (
+        getattr(warehouse.gateway.config, "commit", None) if warehouse is not None else None
+    )
+    options = ContractSchemaOptions(
+        repo=pointer.repo,
+        commit=pointer.commit,
+        dataset_root_dir=dataset_root_dir,
+        snapshot_id=snapshot_id,
+    )
     return contract_schema_for_table_key(
         con=warehouse.gateway.con if warehouse is not None else None,
         table_key=table_key,
-        repo=pointer.repo,
-        commit=pointer.commit,
+        options=options,
     )
 
 
@@ -901,6 +917,7 @@ class SemanticQueryKernel:
                             reader,
                             contract_schema,
                             extras_policy=extras_policy_from_schema(contract_schema),
+                            schema_promote_options=self.settings.dataset_schema_promote_options,
                         )
                     metadata = _build_ipc_metadata(
                         _IpcMetadataInput(
@@ -967,6 +984,7 @@ class SemanticQueryKernel:
                     reader,
                     export_context.contract_schema,
                     extras_policy=extras_policy_from_schema(export_context.contract_schema),
+                    schema_promote_options=self.settings.dataset_schema_promote_options,
                 )
             metadata = _build_ipc_metadata(
                 _IpcMetadataInput(

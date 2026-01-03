@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 import polars as pl
 
-from codeintel.core.catalog import CatalogService, build_function_catalog_from_rows
+from codeintel.storage.catalog import CatalogService, build_function_catalog_from_rows
 
 _FUNCTION_KINDS = {"function", "method"}
 

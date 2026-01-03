@@ -16,7 +16,9 @@ from codeintel.build.hamilton.native.options.graphs import (
 from codeintel.build.hamilton.native.options.ingestion import (
     ModuleIngestOptions,
     ScipIngestOptions,
+    SyntaxAugmentOptions,
     SyntaxIndexOptions,
+    TreeSitterIndexOptions,
 )
 
 __all__ = [
@@ -27,5 +29,7 @@ __all__ = [
     "ModuleIngestOptions",
     "ScipIngestOptions",
     "SymbolUsesOptions",
+    "SyntaxAugmentOptions",
     "SyntaxIndexOptions",
+    "TreeSitterIndexOptions",
 ]

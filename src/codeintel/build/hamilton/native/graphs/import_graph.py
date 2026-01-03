@@ -17,9 +17,9 @@ from codeintel.build.graphs.compute.imports import (
     collect_import_edges,
 )
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module

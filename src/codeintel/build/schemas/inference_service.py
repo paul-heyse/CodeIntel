@@ -47,6 +47,7 @@ from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularInput
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.config.settings import (
     BuildSettings,
     ExportAuditSettings,
@@ -844,7 +845,7 @@ def _inference_env(*, gateway: BuildGateway, force_targets: frozenset[str]) -> B
         execution_options=BuildExecutionOptions(profile="schema_inference"),
         force_targets=force_targets,
     )
-    return context.build_env(load_catalogs=False, load_schema_service=False)
+    return context.build_env()
 
 
 def _dulwich_snapshot() -> SnapshotRef | None:
@@ -1379,23 +1380,68 @@ def _lazyframe_for_diagnostics(value: InferableTabularInput) -> pl.LazyFrame | N
     return None
 
 
-def _safe_polars_explain(frame: pl.LazyFrame) -> str | None:
+def _polars_plan_kwargs(
+    func: object,
+    *,
+    streaming: bool,
+    query_opt_flags: object | None,
+) -> dict[str, object]:
+    try:
+        signature = inspect.signature(func)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return {}
+    kwargs: dict[str, object] = {}
+    if "engine" in signature.parameters and streaming:
+        kwargs["engine"] = "streaming"
+    elif "streaming" in signature.parameters:
+        kwargs["streaming"] = streaming
+    if query_opt_flags is not None:
+        if "optimization_flags" in signature.parameters:
+            kwargs["optimization_flags"] = query_opt_flags
+        elif "query_opt_flags" in signature.parameters:
+            kwargs["query_opt_flags"] = query_opt_flags
+        elif "optimizations" in signature.parameters:
+            kwargs["optimizations"] = query_opt_flags
+    return kwargs
+
+
+def _safe_polars_explain(
+    frame: pl.LazyFrame,
+    *,
+    streaming: bool,
+    query_opt_flags: object | None,
+) -> str | None:
     explain_fn = getattr(frame, "explain", None)
     if not callable(explain_fn):
         return None
     try:
-        result = explain_fn()
+        kwargs = _polars_plan_kwargs(
+            explain_fn,
+            streaming=streaming,
+            query_opt_flags=query_opt_flags,
+        )
+        result = explain_fn(**kwargs)
     except (PolarsError, TypeError, ValueError):
         return None
     return result if isinstance(result, str) else None
 
 
-def _safe_polars_profile(frame: pl.LazyFrame) -> str | None:
+def _safe_polars_profile(
+    frame: pl.LazyFrame,
+    *,
+    streaming: bool,
+    query_opt_flags: object | None,
+) -> str | None:
     profile_fn = getattr(frame, "profile", None)
     if not callable(profile_fn):
         return None
     try:
-        result = profile_fn()
+        kwargs = _polars_plan_kwargs(
+            profile_fn,
+            streaming=streaming,
+            query_opt_flags=query_opt_flags,
+        )
+        result = profile_fn(**kwargs)
     except (PolarsError, TypeError, ValueError):
         return None
     to_string = getattr(result, "to_string", None)
@@ -1421,12 +1467,21 @@ def _log_inference_diagnostics(
     frame = _lazyframe_for_diagnostics(value)
     if frame is None:
         return
+    query_opt_flags = resolve_query_opt_flags(settings.polars_query_opt_flags)
     if settings.polars_inspect:
-        explain = _safe_polars_explain(frame)
+        explain = _safe_polars_explain(
+            frame,
+            streaming=settings.polars_streaming,
+            query_opt_flags=query_opt_flags,
+        )
         if explain:
             LOG.debug("polars_inference_explain table=%s plan=%s", table_key, explain)
     if settings.polars_profile:
-        profile_repr = _safe_polars_profile(frame)
+        profile_repr = _safe_polars_profile(
+            frame,
+            streaming=settings.polars_streaming,
+            query_opt_flags=query_opt_flags,
+        )
         if profile_repr:
             LOG.info("polars_inference_profile table=%s profile=%s", table_key, profile_repr)
 
@@ -1536,7 +1591,7 @@ def _emit_inference_plan_manifest(
         ),
     )
     path = _inference_manifest_path(env, run_id=resolved_run_id)
-    write_manifest_json(path, manifest.to_json_obj())
+    write_manifest_json(path, manifest)
     return path, resolved_run_id
 
 

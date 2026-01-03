@@ -30,7 +30,6 @@ from codeintel.build.graphs.runtime.context import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -40,6 +39,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import empty_frame_for_table, rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -116,130 +116,6 @@ DFG_FUNCTION_METRICS_EXT_CONTRACT = TableContractSpec(
     input_name="dfg_function_metrics_ext__base",
 )
 
-CFG_FUNCTION_METRICS_COLUMNS = (
-    "function_goid_h128",
-    "repo",
-    "commit",
-    "rel_path",
-    "module",
-    "qualname",
-    "cfg_block_count",
-    "cfg_edge_count",
-    "cfg_has_cycles",
-    "cfg_scc_count",
-    "cfg_longest_path_len",
-    "cfg_avg_shortest_path_len",
-    "cfg_branching_factor_mean",
-    "cfg_branching_factor_max",
-    "cfg_linear_block_fraction",
-    "cfg_dom_tree_height",
-    "cfg_dominance_frontier_size_mean",
-    "cfg_dominance_frontier_size_max",
-    "cfg_loop_count",
-    "cfg_loop_nesting_depth_max",
-    "cfg_bc_betweenness_max",
-    "cfg_bc_betweenness_mean",
-    "cfg_bc_closeness_mean",
-    "cfg_bc_eigenvector_max",
-    "created_at",
-    "metrics_version",
-)
-CFG_BLOCK_METRICS_COLUMNS = (
-    "function_goid_h128",
-    "repo",
-    "commit",
-    "block_idx",
-    "is_entry",
-    "is_exit",
-    "is_branch",
-    "is_join",
-    "dom_depth",
-    "dominates_exit",
-    "bc_betweenness",
-    "bc_closeness",
-    "bc_eigenvector",
-    "in_loop_scc",
-    "loop_header",
-    "loop_nesting_depth",
-    "created_at",
-    "metrics_version",
-)
-CFG_FUNCTION_METRICS_EXT_COLUMNS = (
-    "function_goid_h128",
-    "repo",
-    "commit",
-    "unreachable_block_count",
-    "loop_header_count",
-    "true_edge_count",
-    "false_edge_count",
-    "back_edge_count",
-    "exception_edge_count",
-    "fallthrough_edge_count",
-    "loop_edge_count",
-    "entry_exit_simple_paths",
-    "created_at",
-    "metrics_version",
-)
-DFG_FUNCTION_METRICS_COLUMNS = (
-    "function_goid_h128",
-    "repo",
-    "commit",
-    "rel_path",
-    "module",
-    "qualname",
-    "dfg_block_count",
-    "dfg_edge_count",
-    "dfg_phi_edge_count",
-    "dfg_symbol_count",
-    "dfg_component_count",
-    "dfg_scc_count",
-    "dfg_has_cycles",
-    "dfg_longest_chain_len",
-    "dfg_avg_shortest_path_len",
-    "dfg_avg_in_degree",
-    "dfg_avg_out_degree",
-    "dfg_max_in_degree",
-    "dfg_max_out_degree",
-    "dfg_branchy_block_fraction",
-    "dfg_bc_betweenness_max",
-    "dfg_bc_betweenness_mean",
-    "dfg_bc_eigenvector_max",
-    "created_at",
-    "metrics_version",
-)
-DFG_BLOCK_METRICS_COLUMNS = (
-    "function_goid_h128",
-    "repo",
-    "commit",
-    "block_idx",
-    "dfg_in_degree",
-    "dfg_out_degree",
-    "dfg_phi_in_degree",
-    "dfg_phi_out_degree",
-    "dfg_bc_betweenness",
-    "dfg_bc_closeness",
-    "dfg_bc_eigenvector",
-    "dfg_in_chain",
-    "dfg_in_scc",
-    "created_at",
-    "metrics_version",
-)
-DFG_FUNCTION_METRICS_EXT_COLUMNS = (
-    "function_goid_h128",
-    "repo",
-    "commit",
-    "data_flow_edge_count",
-    "intra_block_edge_count",
-    "use_kind_phi_count",
-    "use_kind_data_flow_count",
-    "use_kind_intra_block_count",
-    "use_kind_other_count",
-    "phi_edge_ratio",
-    "entry_exit_simple_paths",
-    "created_at",
-    "metrics_version",
-)
-
 
 @dataclass(frozen=True, slots=True)
 class _CfgDfgMetricsAnalysis:
@@ -258,13 +134,11 @@ class _CfgDfgMetricsInputs:
 
 def _rows_to_frame(
     rows: tuple[tuple[object, ...], ...],
-    columns: tuple[str, ...],
     table_key: str,
 ) -> pl.LazyFrame:
     if not rows:
         return empty_frame_for_table(table_key)
-    frame = pl.DataFrame(rows, schema=list(columns), orient="row")
-    return frame.lazy()
+    return rows_to_frame(table_key, rows)
 
 
 def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
@@ -535,7 +409,6 @@ def cfg_function_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis)
     """
     return _rows_to_frame(
         cfg_dfg_metrics_analysis.cfg.fn_rows,
-        CFG_FUNCTION_METRICS_COLUMNS,
         CFG_FUNCTION_METRICS_TABLE_KEY,
     )
 
@@ -550,7 +423,6 @@ def cfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) ->
     """
     return _rows_to_frame(
         cfg_dfg_metrics_analysis.cfg.block_rows,
-        CFG_BLOCK_METRICS_COLUMNS,
         CFG_BLOCK_METRICS_TABLE_KEY,
     )
 
@@ -567,7 +439,6 @@ def cfg_function_metrics_ext__base(
     """
     return _rows_to_frame(
         cfg_dfg_metrics_analysis.cfg.ext_rows,
-        CFG_FUNCTION_METRICS_EXT_COLUMNS,
         CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
     )
 
@@ -582,7 +453,6 @@ def dfg_function_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis)
     """
     return _rows_to_frame(
         cfg_dfg_metrics_analysis.dfg.fn_rows,
-        DFG_FUNCTION_METRICS_COLUMNS,
         DFG_FUNCTION_METRICS_TABLE_KEY,
     )
 
@@ -597,7 +467,6 @@ def dfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) ->
     """
     return _rows_to_frame(
         cfg_dfg_metrics_analysis.dfg.block_rows,
-        DFG_BLOCK_METRICS_COLUMNS,
         DFG_BLOCK_METRICS_TABLE_KEY,
     )
 
@@ -614,7 +483,6 @@ def dfg_function_metrics_ext__base(
     """
     return _rows_to_frame(
         cfg_dfg_metrics_analysis.dfg.ext_rows,
-        DFG_FUNCTION_METRICS_EXT_COLUMNS,
         DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
     )
 

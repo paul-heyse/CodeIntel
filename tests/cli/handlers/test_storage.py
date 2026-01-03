@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from codeintel.cli.core.results import SerializableResult
 from codeintel.cli.handlers.storage import (
     ProfileStorageResult,
     ValidateMacrosResult,
@@ -23,6 +24,10 @@ if TYPE_CHECKING:
     from tests.cli.handlers.conftest import StorageHandlerHarness
 
 HTTP_BAD_REQUEST = 400
+
+
+def _result_to_dict(result: object) -> dict[str, object]:
+    return cast("SerializableResult", result).to_dict()
 
 
 def test_validate_macros_handler_returns_ok_when_valid(
@@ -83,7 +88,7 @@ def test_validate_macros_result_to_dict() -> None:
         dataset_rows_only=[],
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_equal(data["status"], "valid")
     expect_equal(data["missing_ingest"], [])
@@ -98,7 +103,7 @@ def test_profile_storage_result_to_dict() -> None:
         include_views=True,
     )
 
-    data = result.to_dict()
+    data = _result_to_dict(result)
 
     expect_equal(data["db_path"], "/path/to/db")
     expect_equal(data["output_dir"], "/path/to/output")

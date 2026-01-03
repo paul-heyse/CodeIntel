@@ -53,7 +53,7 @@ def write_dataset_manifest(path: Path, manifest: ArrowDatasetManifest) -> Path:
     Path
         Path to the written manifest file.
     """
-    write_manifest_json(path, manifest.to_json_obj())
+    write_manifest_json(path, manifest)
     return path
 
 

@@ -12,6 +12,11 @@ from typing import Literal, cast
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError, SqlglotError
 
+from codeintel.core.sqlglot_tools import (
+    QuerySummaryConfig,
+    fingerprint_sql_duckdb_safe,
+    summarize_sql_duckdb,
+)
 from codeintel.observability.attribute_sanitizer import truncate_str
 from codeintel.observability.semconv_keys import (
     CODEINTEL_DB_STATEMENT_SHA256,
@@ -21,11 +26,6 @@ from codeintel.observability.semconv_keys import (
     DB_QUERY_TEXT,
     DB_STATEMENT,
     DB_SYSTEM_NAME,
-)
-from codeintel.storage.sqlglot_tools import (
-    QuerySummaryConfig,
-    fingerprint_sql_duckdb_safe,
-    summarize_sql_duckdb,
 )
 
 SQLStatementMode = Literal["full", "hash", "operation", "none"]

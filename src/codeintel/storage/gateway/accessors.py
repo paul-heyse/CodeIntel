@@ -8,11 +8,15 @@ to preserve a single I/O boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.provider import FallbackSchemaProvider, MappingSchemaProvider
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.serving.semantic.duckdb_scan_adapter import scan_parquet
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.datasets.manifests import load_dataset_manifest
+from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
@@ -25,7 +29,6 @@ from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from pathlib import Path
 
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.datasets import DatasetRegistry
@@ -56,6 +59,82 @@ def _schema_provider_for_gateway(*, datasets: DatasetRegistry) -> SchemaProvider
     except RuntimeError:
         return fallback
     return FallbackSchemaProvider(primary=service.table_provider, fallback=fallback)
+
+
+def _parquet_relation_for_manifest(
+    con: DuckDBConnection,
+    *,
+    dataset_root_dir: Path,
+    table_key: str,
+    snapshot_id: str,
+    partition_columns: tuple[str, ...],
+    files: tuple[str, ...],
+) -> DuckDBRelation:
+    dataset_dir = dataset_snapshot_dir(
+        dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    if not dataset_dir.is_dir():
+        msg = f"Dataset snapshot directory missing for {table_key}: {dataset_dir}"
+        raise FileNotFoundError(msg)
+    scan_paths = [str(dataset_dir / file) for file in files] if files else [str(dataset_dir)]
+    return scan_parquet(
+        con,
+        scan_paths=scan_paths,
+        hive_partitioning=bool(partition_columns),
+        union_by_name=True,
+    )
+
+
+def _relation_for_table_key(
+    con: DuckDBConnection,
+    *,
+    table_key: str,
+    datasets: DatasetRegistry,
+    config: StorageConfig,
+) -> DuckDBRelation:
+    dataset = datasets.by_table_key.get(table_key)
+    if dataset is None or dataset.is_view:
+        return _relation_from_table_key(con, table_key)
+
+    dataset_root_dir = config.dataset_root_dir
+    snapshot_id = config.commit
+    if dataset_root_dir is None or snapshot_id is None:
+        if config.dataset_source == "parquet_only":
+            msg = f"Parquet-only datasets require dataset_root_dir and commit (table={table_key})"
+            raise RuntimeError(msg)
+        return _relation_from_table_key(con, table_key)
+
+    manifest = datasets.dataset_manifest_for_table(table_key)
+    if manifest is None:
+        manifest = load_dataset_manifest(
+            dataset_root=dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+        if manifest is None:
+            if config.dataset_source == "parquet_only":
+                msg = f"Dataset manifest missing for {table_key} at snapshot {snapshot_id}"
+                raise FileNotFoundError(msg)
+            return _relation_from_table_key(con, table_key)
+    if manifest.snapshot_id != snapshot_id:
+        if config.dataset_source == "parquet_only":
+            msg = (
+                "Dataset manifest snapshot mismatch for "
+                f"{table_key}: {manifest.snapshot_id} != {snapshot_id}"
+            )
+            raise ValueError(msg)
+        return _relation_from_table_key(con, table_key)
+
+    return _parquet_relation_for_manifest(
+        con,
+        dataset_root_dir=dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=manifest.snapshot_id,
+        partition_columns=manifest.partition_columns or (),
+        files=manifest.files,
+    )
 
 
 @dataclass(frozen=True)
@@ -370,7 +449,12 @@ class DuckDBGateway:
         DuckDBRelation
             Relation bound to the requested table/view.
         """
-        return _relation_from_table_key(self.con, table_key)
+        return _relation_for_table_key(
+            self.con,
+            table_key=table_key,
+            datasets=self.datasets,
+            config=self.config,
+        )
 
     def export_database(self, *, directory: Path) -> None:
         """Export the database to a directory via DuckDB EXPORT DATABASE."""

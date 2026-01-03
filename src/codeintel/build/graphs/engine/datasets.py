@@ -55,7 +55,7 @@ def resolve_dataset_root(
     """
     if dataset_root_dir is not None:
         return dataset_root_dir
-    candidate = snapshot.repo_root / "Document Output" / "datasets"
+    candidate = snapshot.repo_root / "src" / "codeintel" / "storage" / "datasets"
     if candidate.is_dir():
         return candidate
     return None

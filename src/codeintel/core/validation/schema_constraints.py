@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -12,7 +12,11 @@ import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.columnar.schema_metadata import decode_metadata
-from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
+from codeintel.core.schemas.arrow_gen import (
+    ARROW_SCHEMA_METADATA_KEYS,
+    DEFAULT_EXTRAS_COLUMN,
+    EXTRAS_POLICIES,
+)
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.validation.arrow_type_compat import is_compatible_arrow_type
 
@@ -239,6 +243,128 @@ def iter_reader_batch_errors(
         yield batch_index, errors
 
 
+def schema_metadata_errors(schema: pa.Schema, *, allow_unknown_keys: bool = False) -> list[str]:
+    """Return schema metadata validation errors for Arrow schemas.
+
+    Parameters
+    ----------
+    schema
+        Arrow schema to inspect.
+    allow_unknown_keys
+        When False, emit errors for unknown ``codeintel.*`` metadata keys.
+
+    Returns
+    -------
+    list[str]
+        Human-readable metadata validation errors.
+    """
+    metadata = decode_metadata(schema.metadata)
+    errors: list[str] = []
+    if not allow_unknown_keys:
+        errors.extend(_unknown_schema_metadata_errors(metadata))
+    errors.extend(_schema_metadata_type_errors(metadata))
+    return errors
+
+
+def _unknown_schema_metadata_errors(metadata: Mapping[str, object]) -> list[str]:
+    return [
+        f"Unknown schema metadata key: {key}"
+        for key in metadata
+        if key.startswith("codeintel.") and key not in ARROW_SCHEMA_METADATA_KEYS
+    ]
+
+
+def _schema_metadata_type_errors(metadata: Mapping[str, object]) -> list[str]:
+    errors: list[str] = []
+    errors.extend(
+        _string_metadata_errors(
+            metadata,
+            (
+                "codeintel.table_key",
+                "codeintel.schema_hash",
+                "codeintel.schema_digest",
+                "codeintel.schema_contract_version",
+                "codeintel.extras_column",
+                "codeintel.description",
+            ),
+        )
+    )
+    extras_policy = metadata.get("codeintel.extras_policy")
+    if extras_policy is not None:
+        if not isinstance(extras_policy, str):
+            errors.append(
+                "Arrow schema metadata codeintel.extras_policy must be a string, "
+                f"got {type(extras_policy)}"
+            )
+        elif extras_policy not in EXTRAS_POLICIES:
+            errors.append(
+                "Arrow schema metadata codeintel.extras_policy must be one of "
+                f"{sorted(EXTRAS_POLICIES)}, got {extras_policy!r}"
+            )
+    primary_key = metadata.get("codeintel.primary_key")
+    if primary_key is not None and not _is_str_sequence(primary_key):
+        errors.append(
+            "Arrow schema metadata codeintel.primary_key must be a sequence of strings, "
+            f"got {type(primary_key)}"
+        )
+    errors.extend(
+        _mapping_metadata_errors(
+            metadata,
+            (
+                "codeintel.extras_schema",
+                "codeintel.provenance",
+            ),
+        )
+    )
+    return errors
+
+
+def _string_metadata_errors(
+    metadata: Mapping[str, object],
+    keys: Sequence[str],
+) -> list[str]:
+    errors: list[str] = []
+    for key in keys:
+        value = metadata.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            continue
+        errors.append(f"Arrow schema metadata {key} must be a string, got {type(value)}")
+    return errors
+
+
+def _mapping_metadata_errors(
+    metadata: Mapping[str, object],
+    keys: Sequence[str],
+) -> list[str]:
+    errors: list[str] = []
+    for key in keys:
+        value = metadata.get(key)
+        if value is None:
+            continue
+        if _is_str_mapping(value):
+            continue
+        errors.append(
+            f"Arrow schema metadata {key} must be a mapping with string keys, got {type(value)}"
+        )
+    return errors
+
+
+def _is_str_sequence(value: object) -> bool:
+    if isinstance(value, (str, bytes, bytearray)):
+        return False
+    if not isinstance(value, Sequence):
+        return False
+    return all(isinstance(item, str) for item in value)
+
+
+def _is_str_mapping(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return all(isinstance(key, str) for key in value)
+
+
 def _column_stats_lookup(
     observation: SchemaObservationRecord | None,
 ) -> Mapping[str, Mapping[str, object]]:
@@ -289,15 +415,25 @@ def _any_out_of_range(
 def _any_true(values: pa.Array | pa.ChunkedArray) -> bool:
     any_fn = getattr(pc, "any", None)
     if callable(any_fn):
-        result = any_fn(values)
-        as_py = getattr(result, "as_py", None)
-        if callable(as_py):
-            return bool(as_py() or False)
+        try:
+            result = any_fn(values)
+        except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
+            result = None
+        if result is not None:
+            as_py = getattr(result, "as_py", None)
+            if callable(as_py):
+                return bool(as_py() or False)
     if isinstance(values, pa.ChunkedArray):
         return any(_any_true(chunk) for chunk in values.chunks)
     try:
-        return any(values.to_pylist())
-    except (TypeError, pa.ArrowInvalid):
+        for value in values:
+            as_py = getattr(value, "as_py", None)
+            resolved = as_py() if callable(as_py) else value
+            if resolved:
+                return True
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
+        return False
+    else:
         return False
 
 

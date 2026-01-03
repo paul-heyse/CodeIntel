@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.core.execution import ExecutionContext, RunContext
     from codeintel.core.gateway import BuildGateway
-    from codeintel.core.registry import RegistryService
+    from codeintel.runtime.registry_service import RegistryService
 
 
 @dataclass(frozen=True)

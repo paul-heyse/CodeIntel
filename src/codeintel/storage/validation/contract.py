@@ -21,13 +21,13 @@ from codeintel.core.schemas.contract_validation import (
     validate_contract_or_raise as validate_contract_or_raise_core,
 )
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.datasets.registry import (
     load_dataset_registry,
 )
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection

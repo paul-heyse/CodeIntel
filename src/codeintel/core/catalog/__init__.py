@@ -1,7 +1,8 @@
-"""Unified function catalog for CodeIntel.
+"""Unified function catalog primitives for CodeIntel.
 
-This module provides the canonical function span and catalog types
-used across graphs and analytics modules.
+This module provides the canonical function span and catalog protocols
+shared across graphs and analytics modules. Storage-backed catalog
+implementations live in ``codeintel.storage.catalog``.
 
 Examples
 --------
@@ -18,29 +19,11 @@ from __future__ import annotations
 
 from codeintel.core.catalog.function_span import FunctionSpan
 from codeintel.core.catalog.protocol import CatalogProtocol, CatalogProviderProtocol
-from codeintel.core.catalog.service import (
-    CatalogService,
-    FunctionCatalog,
-    FunctionCatalogProvider,
-    FunctionSpanIndex,
-    build_function_catalog_from_rows,
-    load_function_catalog,
-    load_function_index,
-    load_function_spans,
-)
 from codeintel.core.catalog.span_index import SpanIndex
 
 __all__ = [
     "CatalogProtocol",
     "CatalogProviderProtocol",
-    "CatalogService",
-    "FunctionCatalog",
-    "FunctionCatalogProvider",
     "FunctionSpan",
-    "FunctionSpanIndex",
     "SpanIndex",
-    "build_function_catalog_from_rows",
-    "load_function_catalog",
-    "load_function_index",
-    "load_function_spans",
 ]

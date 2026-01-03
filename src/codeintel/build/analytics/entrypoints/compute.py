@@ -21,11 +21,16 @@ from codeintel.build.analytics.entrypoints.core import (
     ENTRYPOINTS_COLS,
     EntrypointContextInputs,
     _build_entrypoint_context,
-    _collect_entrypoint_rows,
+    collect_entrypoint_rows,
 )
 
 if TYPE_CHECKING:
-    from codeintel.build.analytics.entrypoints.core import EntrypointBuildInputs
+    from collections.abc import Sequence
+
+    from codeintel.build.analytics.entrypoints.core import (
+        EntrypointBuildInputs,
+        EntrypointModuleSource,
+    )
     from codeintel.config.primitives import SnapshotRef
 
 
@@ -55,6 +60,7 @@ def compute_entrypoints_pure(
     snapshot: SnapshotRef,
     inputs: EntrypointBuildInputs,
     context_inputs: EntrypointContextInputs,
+    module_sources: Sequence[EntrypointModuleSource],
 ) -> EntrypointsResult:
     """Compute entrypoints without writing to database.
 
@@ -69,6 +75,8 @@ def compute_entrypoints_pure(
         Bundled inputs containing catalog, module map, features, and settings.
     context_inputs
         Optional frames and overrides used to build the entrypoint context.
+    module_sources
+        Module sources to scan for entrypoints.
 
     Returns
     -------
@@ -77,9 +85,9 @@ def compute_entrypoints_pure(
 
     Notes
     -----
-    This function is a pure transformation that reads from the database but
-    does not write. The materialization is handled by the Hamilton native
-    module to ensure proper asset catalog tracking.
+    This function is a pure transformation that reads from provided frames
+    and in-memory sources but does not write. The materialization is handled
+    by the Hamilton native module to ensure proper asset catalog tracking.
 
     The detection identifies:
     - HTTP endpoints (FastAPI, Flask, Django, etc.)
@@ -110,11 +118,10 @@ def compute_entrypoints_pure(
         return EntrypointsResult(entrypoint_rows=(), test_rows=())
 
     effective_settings = inputs.settings or DetectorSettings()
-    entrypoint_rows, test_rows = _collect_entrypoint_rows(
+    entrypoint_rows, test_rows = collect_entrypoint_rows(
         context=entrypoint_context,
-        repo_root=snapshot.repo_root,
+        module_sources=module_sources,
         settings=effective_settings,
-        scan_profile=inputs.scan_profile,
     )
 
     log.info(

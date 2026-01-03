@@ -10,28 +10,13 @@ from typing import TYPE_CHECKING
 
 from intervaltree import IntervalTree
 
+from codeintel.core.paths import normalize_path
 from codeintel.core.spans import to_half_open_span
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
     from codeintel.core.catalog.function_span import FunctionSpan
-
-
-def normalize_path(path: str) -> str:
-    """Normalize a relative path for consistent lookups.
-
-    Parameters
-    ----------
-    path
-        Relative file path.
-
-    Returns
-    -------
-    str
-        Normalized path with forward slashes.
-    """
-    return path.replace("\\", "/").lstrip("./")
 
 
 def _qualname_matches(full: str, candidate: str) -> bool:

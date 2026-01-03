@@ -27,6 +27,18 @@ from sqlglot.errors import ParseError
 
 from codeintel.core.errors.storage import ColumnNotFoundError, QueryError, TableNotFoundError
 from codeintel.core.filters import FilterSpecInput
+from codeintel.core.queries.filter_compiler import (
+    FilterCompilerError,
+    compile_filter_predicates,
+    duckdb_filter_expression,
+)
+from codeintel.core.sqlglot_tools import (
+    SELECT_ONLY_DISALLOWED_NODES,
+    AstCapabilityConfig,
+    AstCapabilityError,
+    ensure_ast_capability,
+    extract_table_refs,
+)
 from codeintel.storage.duckdb_types import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -37,19 +49,7 @@ from codeintel.storage.duckdb_types import (
     DuckDBProgrammingError,
 )
 from codeintel.storage.helpers.table_key import is_valid_table_key
-from codeintel.storage.queries.filter_compiler import (
-    FilterCompilerError,
-    compile_filter_predicates,
-    duckdb_filter_expression,
-)
 from codeintel.storage.query_results import coerce_int, coerce_optional_float
-from codeintel.storage.sqlglot_tools import (
-    SELECT_ONLY_DISALLOWED_NODES,
-    AstCapabilityConfig,
-    AstCapabilityError,
-    ensure_ast_capability,
-    extract_table_refs,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence

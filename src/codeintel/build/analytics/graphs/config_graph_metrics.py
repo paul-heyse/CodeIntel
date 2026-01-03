@@ -21,6 +21,7 @@ from codeintel.build.analytics.utilities.datasets import validate_contract_rows
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
@@ -30,47 +31,24 @@ if TYPE_CHECKING:
     from codeintel.build.graphs.runtime.context import GraphContext
 
 
-CONFIG_GRAPH_METRICS_KEYS_COLS = (
-    "repo",
-    "commit",
-    "config_key",
-    "degree",
-    "weighted_degree",
-    "betweenness",
-    "closeness",
-    "community_id",
-    "created_at",
-)
+CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY = "analytics.config_graph_metrics_keys"
+CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.config_graph_metrics_modules"
+CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY = "analytics.config_projection_key_edges"
+CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY = "analytics.config_projection_module_edges"
 
-CONFIG_GRAPH_METRICS_MODULES_COLS = (
-    "repo",
-    "commit",
-    "module_path",
-    "degree",
-    "weighted_degree",
-    "betweenness",
-    "closeness",
-    "community_id",
-    "created_at",
-)
 
-CONFIG_PROJECTION_KEY_EDGES_COLS = (
-    "repo",
-    "commit",
-    "src_config_key",
-    "dst_config_key",
-    "weight",
-    "created_at",
-)
+def _columns_for_table(table_key: str) -> tuple[str, ...]:
+    columns = columns_for_table_key(table_key)
+    if not columns:
+        msg = f"No schema columns registered for {table_key}"
+        raise ValueError(msg)
+    return tuple(columns)
 
-CONFIG_PROJECTION_MODULE_EDGES_COLS = (
-    "repo",
-    "commit",
-    "src_module_path",
-    "dst_module_path",
-    "weight",
-    "created_at",
-)
+
+CONFIG_GRAPH_METRICS_KEYS_COLS = _columns_for_table(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY)
+CONFIG_GRAPH_METRICS_MODULES_COLS = _columns_for_table(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY)
+CONFIG_PROJECTION_KEY_EDGES_COLS = _columns_for_table(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY)
+CONFIG_PROJECTION_MODULE_EDGES_COLS = _columns_for_table(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY)
 
 NODE_ID_INDEX = 2
 
@@ -367,12 +345,12 @@ def compute_config_graph_metrics_result(
         graph_ctx=ctx,
     )
     key_targets = ProjectionTargets(
-        node_table_key="analytics.config_graph_metrics_keys",
-        edge_table_key="analytics.config_projection_key_edges",
+        node_table_key=CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY,
+        edge_table_key=CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY,
     )
     module_targets = ProjectionTargets(
-        node_table_key="analytics.config_graph_metrics_modules",
-        edge_table_key="analytics.config_projection_module_edges",
+        node_table_key=CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY,
+        edge_table_key=CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY,
     )
 
     key_rows, key_edges = _projection_payload(

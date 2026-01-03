@@ -8,10 +8,6 @@ import polars as pl
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import (
-    dedupe_frame_for_table,
-    empty_lazyframe_for_table,
-)
 from codeintel.build.hamilton.native.patterns import (
     RelationTableSaveSpec,
     TableTargetSpec,
@@ -21,6 +17,10 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import (
+    dedupe_frame_for_table,
+    empty_lazyframe_for_table,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -41,7 +41,8 @@ def _select_for_table(frame: pl.LazyFrame, table_key: str) -> pl.LazyFrame:
     columns = _ordered_columns(table_key)
     if not columns:
         return frame
-    missing = [name for name in columns if name not in frame.columns]
+    existing = set(frame.collect_schema().names())
+    missing = [name for name in columns if name not in existing]
     if missing:
         frame = frame.with_columns([pl.lit(None).alias(name) for name in missing])
     return frame.select(columns)
@@ -109,6 +110,7 @@ def _resolve_facts(
     fact_columns = list(facts.collect_schema().names())
     if not fact_columns:
         return empty_lazyframe_for_table(table_key)
+    resolved_columns = _ordered_columns(table_key)
 
     bytes_predicate = pl.col("start_byte").is_not_null() & pl.col("end_byte").is_not_null()
     facts_with_bytes = facts.filter(bytes_predicate)
@@ -182,12 +184,15 @@ def _resolve_facts(
     )
 
     matched_bytes = bytes_join.filter(pl.col("scip_symbol").is_not_null())
-    combined = pl.concat(
-        [matched_bytes, fallback_join, line_join],
-        how="vertical_relaxed",
-    )
-    resolved = _select_for_table(combined, table_key)
-    return dedupe_frame_for_table(resolved, table_key=table_key)
+    aligned = [
+        _select_for_table(matched_bytes, table_key),
+        _select_for_table(fallback_join, table_key),
+        _select_for_table(line_join, table_key),
+    ]
+    combined = pl.concat(aligned, how="vertical_relaxed")
+    if resolved_columns:
+        combined = combined.select(resolved_columns)
+    return dedupe_frame_for_table(combined, table_key=table_key)
 
 
 def syntax_enrich__occurrence_resolution(

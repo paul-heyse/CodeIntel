@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.repositories.base import BaseRepository
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -8,10 +8,10 @@ from uuid import uuid4
 
 from sqlglot import exp
 
+from codeintel.core.helpers.payload import encode_payload
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
-from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -47,7 +47,7 @@ def record_schema_validation_run(
     validation_id = uuid4().hex
     issue_count = len(run.issues)
     status = "passed" if issue_count == 0 else "failed"
-    issues_payload = normalize_duckdb_json_value(run.issues) if run.issues else None
+    issues_payload = encode_payload(run.issues) if run.issues else None
     run_ref = meta_table_ref("metadata.schema_validation_runs")
     columns = [
         "validation_id",

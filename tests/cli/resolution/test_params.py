@@ -74,6 +74,32 @@ def test_runtime_params_from_dict() -> None:
     expect_true(params.backend.use_gpu)
 
 
+def test_runtime_params_from_dict_use_gpu() -> None:
+    """Verify from_dict honors top-level GPU flags."""
+    data = {
+        "use_gpu": True,
+    }
+
+    params = RuntimeParams.from_dict(data)
+
+    expect_true(params.backend.use_gpu)
+    expect_equal(params.backend.backend, "auto")
+
+
+def test_runtime_params_from_dict_nx_flags() -> None:
+    """Verify from_dict maps NetworkX flags to backend flags."""
+    data = {
+        "nx_backend": "nx-cugraph",
+        "nx_gpu_mode": "strict",
+    }
+
+    params = RuntimeParams.from_dict(data)
+
+    expect_equal(params.backend.backend, "nx-cugraph")
+    expect_true(params.backend.use_gpu)
+    expect_true(params.backend.strict)
+
+
 def test_runtime_params_to_dict() -> None:
     """Verify to_dict creates dictionary from params."""
     params = RuntimeParams(

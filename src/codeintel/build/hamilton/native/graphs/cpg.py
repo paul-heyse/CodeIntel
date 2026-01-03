@@ -5,17 +5,19 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
+from functools import partial
 
 import polars as pl
 
 from codeintel.build.graphs.compute.goid import DECIMAL_38_MAX
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import empty_frame_for_table
-from codeintel.build.tabular.frames import dedupe_frame_for_table
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.helpers.payload import encode_payload
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -57,6 +59,42 @@ _CPG_EDGE_COLUMNS = [
 ]
 
 
+@dataclass(frozen=True)
+class _CpgSymbolInputs:
+    syntax_edges: pl.LazyFrame
+    occ_syntax: pl.LazyFrame
+    occ_span: pl.LazyFrame
+    symbol_rels: pl.LazyFrame
+    symbol_goid: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgFlowInputs:
+    goids: pl.LazyFrame
+    cfg_edges: pl.LazyFrame
+    dfg_edges: pl.LazyFrame
+    cfg_blocks: pl.LazyFrame
+    cdg_edges: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgLinkInputs:
+    call_edges: pl.LazyFrame
+    import_edges: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgCallWiringInputs:
+    call_edges: pl.LazyFrame
+    arg_to_param_edges: pl.LazyFrame
+    ret_to_call_edges: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgSyntaxNodeInputs:
+    syntax_nodes: pl.LazyFrame
+
+
 def _stable_int_hash(
     payload: object,
     *,
@@ -78,6 +116,23 @@ def _stable_ordinal(table_key: str, payload: Mapping[str, object]) -> int:
     return _stable_int_hash(wrapped, digest_size=8, modulus=ORDINAL_MOD)
 
 
+def _stable_cpg_id_from_row(table_key: str, row: Mapping[str, object]) -> int:
+    return _stable_cpg_id(table_key, row)
+
+
+def _stable_ordinal_from_row(table_key: str, row: Mapping[str, object]) -> int:
+    return _stable_ordinal(table_key, row)
+
+
+def _row_to_payload(row: Mapping[str, object]) -> bytes:
+    payload = dict(row)
+    encoded = encode_payload(payload)
+    if encoded is None:
+        msg = "Expected payload encoding to return bytes"
+        raise ValueError(msg)
+    return encoded
+
+
 def _struct_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
     fields = [expr.alias(name) for name, expr in values.items()]
     return pl.struct(fields)
@@ -85,20 +140,20 @@ def _struct_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
 
 def _pk_expr(table_key: str, values: Mapping[str, pl.Expr]) -> pl.Expr:
     return _struct_expr(values).map_elements(
-        lambda row: _stable_cpg_id(table_key, row),
+        partial(_stable_cpg_id_from_row, table_key),
         return_dtype=pl.Object,
     )
 
 
 def _ordinal_expr(table_key: str, values: Mapping[str, pl.Expr]) -> pl.Expr:
     return _struct_expr(values).map_elements(
-        lambda row: _stable_ordinal(table_key, row),
+        partial(_stable_ordinal_from_row, table_key),
         return_dtype=pl.Int64,
     )
 
 
 def _pk_json_expr(values: Mapping[str, pl.Expr]) -> pl.Expr:
-    return _struct_expr(values).map_elements(lambda row: dict(row), return_dtype=pl.Object)
+    return _struct_expr(values).map_elements(_row_to_payload, return_dtype=pl.Binary)
 
 
 def _select_node_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
@@ -113,6 +168,10 @@ def _select_edge_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
     if missing:
         frame = frame.with_columns([pl.lit(None).alias(name) for name in missing])
     return frame.select(_CPG_EDGE_COLUMNS)
+
+
+def _syntax_node_keys(syntax_nodes: pl.LazyFrame) -> pl.LazyFrame:
+    return syntax_nodes.select("repo", "commit", "rel_path", "producer", "node_id")
 
 
 def _syntax_nodes_to_cpg(syntax_nodes: pl.LazyFrame) -> pl.LazyFrame:
@@ -131,7 +190,7 @@ def _syntax_nodes_to_cpg(syntax_nodes: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("rel_path"),
         pl.col("start_byte"),
         pl.col("end_byte"),
-        pl.lit(None).alias("extras_json"),
+        pl.lit(None).cast(pl.Binary).alias("extras_json"),
     ).select(_CPG_NODE_COLUMNS)
 
 
@@ -149,7 +208,7 @@ def _scip_symbols_to_cpg(symbols: pl.LazyFrame) -> pl.LazyFrame:
         pl.lit(None).alias("rel_path"),
         pl.lit(None).alias("start_byte"),
         pl.lit(None).alias("end_byte"),
-        pl.lit(None).alias("extras_json"),
+        pl.lit(None).cast(pl.Binary).alias("extras_json"),
     ).select(_CPG_NODE_COLUMNS)
 
 
@@ -163,7 +222,7 @@ def _goids_to_cpg(goids: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("rel_path"),
         pl.lit(None).alias("start_byte"),
         pl.lit(None).alias("end_byte"),
-        pl.lit(None).alias("extras_json"),
+        pl.lit(None).cast(pl.Binary).alias("extras_json"),
     ).select(_CPG_NODE_COLUMNS)
 
 
@@ -186,7 +245,7 @@ def _cfg_blocks_to_cpg(cfg_blocks: pl.LazyFrame, goids: pl.LazyFrame) -> pl.Lazy
         pl.col("file_path").alias("rel_path"),
         pl.lit(None).alias("start_byte"),
         pl.lit(None).alias("end_byte"),
-        pl.lit(None).alias("extras_json"),
+        pl.lit(None).cast(pl.Binary).alias("extras_json"),
     ).select(_CPG_NODE_COLUMNS)
 
 
@@ -204,7 +263,7 @@ def _import_modules_to_cpg(import_modules: pl.LazyFrame) -> pl.LazyFrame:
         pl.lit(None).alias("rel_path"),
         pl.lit(None).alias("start_byte"),
         pl.lit(None).alias("end_byte"),
-        pl.lit(None).alias("extras_json"),
+        pl.lit(None).cast(pl.Binary).alias("extras_json"),
     ).select(_CPG_NODE_COLUMNS)
 
 
@@ -264,7 +323,7 @@ def _syntax_edges_to_cpg(syntax_edges: pl.LazyFrame) -> pl.LazyFrame:
         pl.lit("SYNTAX").alias("edge_layer"),
         pl.col("rel_path"),
         pl.col("child_ordinal").alias("ordinal"),
-        pl.lit(None).alias("extras_json"),
+        pl.lit(None).cast(pl.Binary).alias("extras_json"),
     ).select(_CPG_EDGE_COLUMNS)
 
 
@@ -333,10 +392,10 @@ def _scip_occurrence_edges_to_cpg(
         "commit": pl.col("commit"),
         "symbol": pl.col("scip_symbol"),
     }
-    is_def = pl.col("is_definition").fill_null(False)
-    is_import = pl.col("is_import").fill_null(False)
-    is_write = pl.col("is_write").fill_null(False)
-    is_read = pl.col("is_read").fill_null(False)
+    is_def = pl.col("is_definition").fill_null(value=False)
+    is_import = pl.col("is_import").fill_null(value=False)
+    is_write = pl.col("is_write").fill_null(value=False)
+    is_read = pl.col("is_read").fill_null(value=False)
     edge_kind = (
         pl.when(is_def)
         .then(pl.lit("DEFINES"))
@@ -401,7 +460,7 @@ def _scip_symbol_relationships_to_cpg(symbol_rels: pl.LazyFrame) -> pl.LazyFrame
         pl.lit("SYMBOL").alias("edge_layer"),
         pl.lit(None).alias("rel_path"),
         ordinal.alias("ordinal"),
-        pl.lit(None).alias("extras_json"),
+        pl.lit(None).cast(pl.Binary).alias("extras_json"),
     ).select(_CPG_EDGE_COLUMNS)
 
 
@@ -538,9 +597,8 @@ def _cfg_edges_to_cpg(
     dst_blocks = blocks.rename(
         {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
     )
-    joined = (
-        cfg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left")
-        .join(dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left")
+    joined = cfg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left").join(
+        dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left"
     )
     src_pk = {
         "function_goid_h128": pl.col("function_goid_h128"),
@@ -601,9 +659,8 @@ def _dfg_edges_to_cpg(
     dst_blocks = blocks.rename(
         {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
     )
-    joined = (
-        dfg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left")
-        .join(dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left")
+    joined = dfg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left").join(
+        dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left"
     )
     src_pk = {
         "function_goid_h128": pl.col("function_goid_h128"),
@@ -649,18 +706,377 @@ def _dfg_edges_to_cpg(
     )
 
 
-def cpg_edges(
+def _cdg_edges_to_cpg(
+    cdg_edges: pl.LazyFrame,
+    cfg_blocks: pl.LazyFrame,
+    goids: pl.LazyFrame,
+) -> pl.LazyFrame:
+    goid_ctx = goids.select(
+        pl.col("goid_h128").alias("function_goid_h128"),
+        "repo",
+        "commit",
+    )
+    blocks = cfg_blocks.join(goid_ctx, on="function_goid_h128", how="left").select(
+        "function_goid_h128",
+        "block_id",
+        "block_idx",
+        "repo",
+        "commit",
+        pl.col("file_path").alias("rel_path"),
+    )
+    src_blocks = blocks.rename(
+        {"block_id": "src_block_id", "block_idx": "src_block_idx", "rel_path": "src_path"}
+    )
+    dst_blocks = blocks.rename(
+        {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
+    )
+    joined = cdg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left").join(
+        dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left"
+    )
+    src_pk = {
+        "function_goid_h128": pl.col("function_goid_h128"),
+        "block_idx": pl.col("src_block_idx"),
+    }
+    dst_pk = {
+        "function_goid_h128": pl.col("function_goid_h128"),
+        "block_idx": pl.col("dst_block_idx"),
+    }
+    extras = _pk_json_expr(
+        {
+            "via_succ_block_id": pl.col("via_succ_block_id"),
+            "via_edge_kind": pl.col("via_edge_kind"),
+        }
+    )
+    ordinal = _ordinal_expr(
+        "graph.cdg_edges",
+        {
+            "function_goid_h128": pl.col("function_goid_h128"),
+            "src_block_id": pl.col("src_block_id"),
+            "dst_block_id": pl.col("dst_block_id"),
+            "via_succ_block_id": pl.col("via_succ_block_id"),
+        },
+    )
+    rel_path = pl.coalesce([pl.col("src_path"), pl.col("dst_path")])
+    return (
+        joined.filter(pl.col("src_block_idx").is_not_null())
+        .filter(pl.col("dst_block_idx").is_not_null())
+        .with_columns(
+            _pk_expr(CFG_BLOCKS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
+            _pk_expr(CFG_BLOCKS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
+            pl.col("edge_kind").fill_null("CDG").alias("edge_kind"),
+            pl.lit("FLOW").alias("edge_layer"),
+            rel_path.alias("rel_path"),
+            ordinal.alias("ordinal"),
+            extras.alias("extras_json"),
+        )
+        .select(_CPG_EDGE_COLUMNS)
+    )
+
+
+def _call_wiring_calls_to_cpg(
+    call_edges: pl.LazyFrame,
+    cfg_blocks: pl.LazyFrame,
+    syntax_nodes: pl.LazyFrame,
+) -> pl.LazyFrame:
+    syntax_keys = _syntax_node_keys(syntax_nodes).rename(
+        {
+            "rel_path": "call_rel_path",
+            "producer": "call_producer",
+            "node_id": "call_node_id",
+        }
+    )
+    blocks = cfg_blocks.select("function_goid_h128", "block_id", "block_idx")
+    joined = (
+        call_edges.join(
+            syntax_keys,
+            on=["repo", "commit", "call_node_id"],
+            how="left",
+        )
+        .join(
+            blocks,
+            left_on="callee_entry_block_id",
+            right_on="block_id",
+            how="left",
+        )
+        .drop(["block_id"])
+    )
+    src_pk = {
+        "repo": pl.col("repo"),
+        "commit": pl.col("commit"),
+        "rel_path": pl.col("call_rel_path"),
+        "producer": pl.col("call_producer"),
+        "node_id": pl.col("call_node_id"),
+    }
+    dst_pk = {
+        "function_goid_h128": pl.col("function_goid_h128"),
+        "block_idx": pl.col("block_idx"),
+    }
+    extras = _pk_json_expr(
+        {
+            "call_id": pl.col("call_id"),
+            "confidence": pl.col("confidence"),
+        }
+    )
+    ordinal = _ordinal_expr(
+        "graph.cpg_edges_calls",
+        {"call_id": pl.col("call_id"), "callee_entry_block_id": pl.col("callee_entry_block_id")},
+    )
+    return (
+        joined.filter(pl.col("call_node_id").is_not_null())
+        .filter(pl.col("block_idx").is_not_null())
+        .with_columns(
+            _pk_expr(SYNTAX_NODES_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
+            _pk_expr(CFG_BLOCKS_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
+            pl.col("edge_kind").fill_null("CALLS").alias("edge_kind"),
+            pl.lit("FLOW").alias("edge_layer"),
+            pl.col("call_rel_path").alias("rel_path"),
+            ordinal.alias("ordinal"),
+            extras.alias("extras_json"),
+        )
+        .select(_CPG_EDGE_COLUMNS)
+    )
+
+
+def _call_wiring_arg_to_param_to_cpg(
+    arg_edges: pl.LazyFrame,
+    syntax_nodes: pl.LazyFrame,
+) -> pl.LazyFrame:
+    syntax_keys = _syntax_node_keys(syntax_nodes)
+    src_keys = syntax_keys.rename(
+        {
+            "rel_path": "src_rel_path",
+            "producer": "src_producer",
+            "node_id": "src_arg_node_id",
+        }
+    )
+    dst_keys = syntax_keys.rename(
+        {
+            "rel_path": "dst_rel_path",
+            "producer": "dst_producer",
+            "node_id": "dst_param_node_id",
+        }
+    )
+    joined = arg_edges.join(src_keys, on=["repo", "commit", "src_arg_node_id"], how="left").join(
+        dst_keys, on=["repo", "commit", "dst_param_node_id"], how="left"
+    )
+    src_pk = {
+        "repo": pl.col("repo"),
+        "commit": pl.col("commit"),
+        "rel_path": pl.col("src_rel_path"),
+        "producer": pl.col("src_producer"),
+        "node_id": pl.col("src_arg_node_id"),
+    }
+    dst_pk = {
+        "repo": pl.col("repo"),
+        "commit": pl.col("commit"),
+        "rel_path": pl.col("dst_rel_path"),
+        "producer": pl.col("dst_producer"),
+        "node_id": pl.col("dst_param_node_id"),
+    }
+    extras = _pk_json_expr(
+        {
+            "call_id": pl.col("call_id"),
+            "arg_ordinal": pl.col("arg_ordinal"),
+            "param_ordinal": pl.col("param_ordinal"),
+            "arg_name": pl.col("arg_name"),
+            "param_name": pl.col("param_name"),
+            "confidence": pl.col("confidence"),
+        }
+    )
+    ordinal = _ordinal_expr(
+        "graph.cpg_edges_arg_to_param",
+        {
+            "call_id": pl.col("call_id"),
+            "arg_ordinal": pl.col("arg_ordinal"),
+            "param_ordinal": pl.col("param_ordinal"),
+            "src_arg_node_id": pl.col("src_arg_node_id"),
+            "dst_param_node_id": pl.col("dst_param_node_id"),
+        },
+    )
+    return (
+        joined.filter(pl.col("src_arg_node_id").is_not_null())
+        .filter(pl.col("dst_param_node_id").is_not_null())
+        .with_columns(
+            _pk_expr(SYNTAX_NODES_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
+            _pk_expr(SYNTAX_NODES_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
+            pl.col("edge_kind").fill_null("ARG_TO_PARAM").alias("edge_kind"),
+            pl.lit("FLOW").alias("edge_layer"),
+            pl.col("src_rel_path").alias("rel_path"),
+            ordinal.alias("ordinal"),
+            extras.alias("extras_json"),
+        )
+        .select(_CPG_EDGE_COLUMNS)
+    )
+
+
+def _call_wiring_ret_to_call_to_cpg(
+    ret_edges: pl.LazyFrame,
+    cfg_blocks: pl.LazyFrame,
+    syntax_nodes: pl.LazyFrame,
+) -> pl.LazyFrame:
+    syntax_keys = _syntax_node_keys(syntax_nodes).rename(
+        {
+            "rel_path": "call_rel_path",
+            "producer": "call_producer",
+            "node_id": "call_node_id",
+        }
+    )
+    blocks = cfg_blocks.select("function_goid_h128", "block_id", "block_idx")
+    joined = (
+        ret_edges.join(
+            syntax_keys,
+            on=["repo", "commit", "call_node_id"],
+            how="left",
+        )
+        .join(
+            blocks,
+            left_on="exit_block_id",
+            right_on="block_id",
+            how="left",
+        )
+        .drop(["block_id"])
+    )
+    src_pk = {
+        "function_goid_h128": pl.col("function_goid_h128"),
+        "block_idx": pl.col("block_idx"),
+    }
+    dst_pk = {
+        "repo": pl.col("repo"),
+        "commit": pl.col("commit"),
+        "rel_path": pl.col("call_rel_path"),
+        "producer": pl.col("call_producer"),
+        "node_id": pl.col("call_node_id"),
+    }
+    extras = _pk_json_expr(
+        {
+            "call_id": pl.col("call_id"),
+            "confidence": pl.col("confidence"),
+            "summary": pl.col("extras_json"),
+        }
+    )
+    ordinal = _ordinal_expr(
+        "graph.cpg_edges_ret_to_call",
+        {"call_id": pl.col("call_id"), "exit_block_id": pl.col("exit_block_id")},
+    )
+    return (
+        joined.filter(pl.col("call_node_id").is_not_null())
+        .filter(pl.col("block_idx").is_not_null())
+        .with_columns(
+            _pk_expr(CFG_BLOCKS_TABLE_KEY, src_pk).alias("src_cpg_node_id"),
+            _pk_expr(SYNTAX_NODES_TABLE_KEY, dst_pk).alias("dst_cpg_node_id"),
+            pl.col("edge_kind").fill_null("RET_TO_CALL").alias("edge_kind"),
+            pl.lit("FLOW").alias("edge_layer"),
+            pl.col("call_rel_path").alias("rel_path"),
+            ordinal.alias("ordinal"),
+            extras.alias("extras_json"),
+        )
+        .select(_CPG_EDGE_COLUMNS)
+    )
+
+
+def cpg_edge_symbol_inputs(
     q__core__syntax_edges: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_symbol_relationships: InferableTabularInput,
     q__core__scip_symbol_goid_xref: InferableTabularInput,
+) -> _CpgSymbolInputs:
+    """Collect symbol-layer inputs for CPG edge assembly.
+
+    Returns
+    -------
+    _CpgSymbolInputs
+        Symbol inputs for CPG edge assembly.
+    """
+    return _CpgSymbolInputs(
+        syntax_edges=tabular_to_lazyframe(q__core__syntax_edges),
+        occ_syntax=tabular_to_lazyframe(q__core__scip_occurrence_syntax_xref),
+        occ_span=tabular_to_lazyframe(q__core__scip_occurrence_span_xref),
+        symbol_rels=tabular_to_lazyframe(q__core__scip_symbol_relationships),
+        symbol_goid=tabular_to_lazyframe(q__core__scip_symbol_goid_xref),
+    )
+
+
+def cpg_edge_flow_inputs(
     q__core__goids: InferableTabularInput,
-    q__graph__call_graph_edges: InferableTabularInput,
-    q__graph__import_graph_edges: InferableTabularInput,
     q__graph__cfg_edges: InferableTabularInput,
     q__graph__dfg_edges: InferableTabularInput,
     q__graph__cfg_blocks: InferableTabularInput,
+    q__graph__cdg_edges: InferableTabularInput,
+) -> _CpgFlowInputs:
+    """Collect flow-layer inputs for CPG edge assembly.
+
+    Returns
+    -------
+    _CpgFlowInputs
+        Flow inputs for CPG edge assembly.
+    """
+    return _CpgFlowInputs(
+        goids=tabular_to_lazyframe(q__core__goids),
+        cfg_edges=tabular_to_lazyframe(q__graph__cfg_edges),
+        dfg_edges=tabular_to_lazyframe(q__graph__dfg_edges),
+        cfg_blocks=tabular_to_lazyframe(q__graph__cfg_blocks),
+        cdg_edges=tabular_to_lazyframe(q__graph__cdg_edges),
+    )
+
+
+def cpg_edge_link_inputs(
+    q__graph__call_graph_edges: InferableTabularInput,
+    q__graph__import_graph_edges: InferableTabularInput,
+) -> _CpgLinkInputs:
+    """Collect graph-link inputs for CPG edge assembly.
+
+    Returns
+    -------
+    _CpgLinkInputs
+        Graph-link inputs for CPG edge assembly.
+    """
+    return _CpgLinkInputs(
+        call_edges=tabular_to_lazyframe(q__graph__call_graph_edges),
+        import_edges=tabular_to_lazyframe(q__graph__import_graph_edges),
+    )
+
+
+def cpg_edge_call_wiring_inputs(
+    q__graph__cpg_edges_calls: InferableTabularInput,
+    q__graph__cpg_edges_arg_to_param: InferableTabularInput,
+    q__graph__cpg_edges_ret_to_call: InferableTabularInput,
+) -> _CpgCallWiringInputs:
+    """Collect call wiring inputs for CPG edge assembly.
+
+    Returns
+    -------
+    _CpgCallWiringInputs
+        Call wiring inputs for CPG edge assembly.
+    """
+    return _CpgCallWiringInputs(
+        call_edges=tabular_to_lazyframe(q__graph__cpg_edges_calls),
+        arg_to_param_edges=tabular_to_lazyframe(q__graph__cpg_edges_arg_to_param),
+        ret_to_call_edges=tabular_to_lazyframe(q__graph__cpg_edges_ret_to_call),
+    )
+
+
+def cpg_edge_syntax_node_inputs(
+    q__core__syntax_nodes: InferableTabularInput,
+) -> _CpgSyntaxNodeInputs:
+    """Collect syntax node inputs for CPG edge assembly.
+
+    Returns
+    -------
+    _CpgSyntaxNodeInputs
+        Syntax node inputs for CPG edge assembly.
+    """
+    return _CpgSyntaxNodeInputs(
+        syntax_nodes=tabular_to_lazyframe(q__core__syntax_nodes),
+    )
+
+
+def cpg_edges(
+    cpg_edge_symbol_inputs: _CpgSymbolInputs,
+    cpg_edge_flow_inputs: _CpgFlowInputs,
+    cpg_edge_link_inputs: _CpgLinkInputs,
+    cpg_edge_call_wiring_inputs: _CpgCallWiringInputs,
+    cpg_edge_syntax_node_inputs: _CpgSyntaxNodeInputs,
 ) -> pl.LazyFrame:
     """Build CPG edges from syntax, symbol, and flow sources.
 
@@ -669,27 +1085,36 @@ def cpg_edges(
     pl.LazyFrame
         LazyFrame for graph.cpg_edges.
     """
-    syntax_edges = tabular_to_lazyframe(q__core__syntax_edges)
-    occ_syntax = tabular_to_lazyframe(q__core__scip_occurrence_syntax_xref)
-    occ_span = tabular_to_lazyframe(q__core__scip_occurrence_span_xref)
-    symbol_rels = tabular_to_lazyframe(q__core__scip_symbol_relationships)
-    symbol_goid = tabular_to_lazyframe(q__core__scip_symbol_goid_xref)
-    goids = tabular_to_lazyframe(q__core__goids)
-    call_edges = tabular_to_lazyframe(q__graph__call_graph_edges)
-    import_edges = tabular_to_lazyframe(q__graph__import_graph_edges)
-    cfg_edges = tabular_to_lazyframe(q__graph__cfg_edges)
-    dfg_edges = tabular_to_lazyframe(q__graph__dfg_edges)
-    cfg_blocks = tabular_to_lazyframe(q__graph__cfg_blocks)
+    cfg_blocks = cpg_edge_flow_inputs.cfg_blocks
+    syntax_nodes = cpg_edge_syntax_node_inputs.syntax_nodes
 
     frames = [
-        _syntax_edges_to_cpg(syntax_edges),
-        _scip_occurrence_edges_to_cpg(occ_syntax, occ_span),
-        _scip_symbol_relationships_to_cpg(symbol_rels),
-        _scip_symbol_goid_edges_to_cpg(symbol_goid),
-        _call_graph_edges_to_cpg(call_edges),
-        _import_graph_edges_to_cpg(import_edges),
-        _cfg_edges_to_cpg(cfg_edges, cfg_blocks, goids),
-        _dfg_edges_to_cpg(dfg_edges, cfg_blocks, goids),
+        _syntax_edges_to_cpg(cpg_edge_symbol_inputs.syntax_edges),
+        _scip_occurrence_edges_to_cpg(
+            cpg_edge_symbol_inputs.occ_syntax,
+            cpg_edge_symbol_inputs.occ_span,
+        ),
+        _scip_symbol_relationships_to_cpg(cpg_edge_symbol_inputs.symbol_rels),
+        _scip_symbol_goid_edges_to_cpg(cpg_edge_symbol_inputs.symbol_goid),
+        _call_graph_edges_to_cpg(cpg_edge_link_inputs.call_edges),
+        _import_graph_edges_to_cpg(cpg_edge_link_inputs.import_edges),
+        _cfg_edges_to_cpg(cpg_edge_flow_inputs.cfg_edges, cfg_blocks, cpg_edge_flow_inputs.goids),
+        _dfg_edges_to_cpg(cpg_edge_flow_inputs.dfg_edges, cfg_blocks, cpg_edge_flow_inputs.goids),
+        _cdg_edges_to_cpg(cpg_edge_flow_inputs.cdg_edges, cfg_blocks, cpg_edge_flow_inputs.goids),
+        _call_wiring_calls_to_cpg(
+            cpg_edge_call_wiring_inputs.call_edges,
+            cfg_blocks,
+            syntax_nodes,
+        ),
+        _call_wiring_arg_to_param_to_cpg(
+            cpg_edge_call_wiring_inputs.arg_to_param_edges,
+            syntax_nodes,
+        ),
+        _call_wiring_ret_to_call_to_cpg(
+            cpg_edge_call_wiring_inputs.ret_to_call_edges,
+            cfg_blocks,
+            syntax_nodes,
+        ),
     ]
     combined = pl.concat(frames, how="vertical_relaxed")
     if combined.columns:

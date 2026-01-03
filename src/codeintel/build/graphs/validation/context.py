@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.graphs.engine import GraphEngine
     from codeintel.build.graphs.runtime import GraphRuntime
-    from codeintel.core.catalog import FunctionCatalog
+    from codeintel.storage.catalog import FunctionCatalog
 
 log = logging.getLogger(__name__)
 

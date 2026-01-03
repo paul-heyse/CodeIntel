@@ -105,7 +105,7 @@ class CliPathsInput(BaseModel):
     document_output_dir : Path | None
         Directory for final datasets (defaults to repo_root / 'Document Output').
     dataset_root_dir : Path | None
-        Directory for Arrow datasets (defaults to document_output_dir / 'datasets').
+        Directory for Arrow datasets (defaults to repo_root / 'src/codeintel/storage/datasets').
 
     Example
     -------
@@ -133,7 +133,10 @@ class CliPathsInput(BaseModel):
     )
     dataset_root_dir: Path | None = Field(
         default=None,
-        description="Directory for Arrow datasets (defaults to document_output_dir / 'datasets')",
+        description=(
+            "Directory for Arrow datasets (defaults to repo_root / "
+            "'src/codeintel/storage/datasets')"
+        ),
     )
 
     @field_validator(
@@ -191,7 +194,7 @@ class CliPathsInput(BaseModel):
 
         dataset_root_dir = self.dataset_root_dir
         if dataset_root_dir is None:
-            dataset_root_dir = (doc_dir / "datasets").resolve()
+            dataset_root_dir = (repo_root / "src" / "codeintel" / "storage" / "datasets").resolve()
         elif not dataset_root_dir.is_absolute():
             dataset_root_dir = (repo_root / dataset_root_dir).resolve()
 
@@ -244,7 +247,9 @@ class CliPathsInput(BaseModel):
             Internal paths configuration.
         """
         doc_dir = self.document_output_dir or (self.repo_root / "Document Output")
-        dataset_root_dir = self.dataset_root_dir or (doc_dir / "datasets")
+        dataset_root_dir = self.dataset_root_dir or (
+            self.repo_root / "src" / "codeintel" / "storage" / "datasets"
+        )
         overrides = BuildPathOverrides(
             db_path=self.db_path,
             document_output_dir=doc_dir,

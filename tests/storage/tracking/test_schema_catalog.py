@@ -12,10 +12,10 @@ from codeintel.build.schemas.inference_service import SchemaInferenceService
 from codeintel.build.schemas.manifest import SchemaManifest, TableProvenance
 from codeintel.build.schemas.schema_index import SchemaDerivation, SchemaIndex
 from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.helpers.json import decode_json_dict
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
-from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest

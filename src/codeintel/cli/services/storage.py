@@ -12,18 +12,38 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Self
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.validation import ContractValidationMode
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from codeintel.cli.services.runtime import RuntimeService
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
+
+
+def default_validation_summary_path(db_path: Path) -> Path | None:
+    """Return the default contract validation summary path.
+
+    Parameters
+    ----------
+    db_path
+        Database path.
+
+    Returns
+    -------
+    Path | None
+        Summary path or None for in-memory databases.
+    """
+    if str(db_path) == ":memory:":
+        return None
+    name = f"{db_path.stem}.contract_validation.json"
+    return db_path.with_name(name)
 
 
 class StorageService:
@@ -71,45 +91,61 @@ class StorageService:
         runtime: RuntimeService | None = None,
         *,
         db_path: Path | None = None,
+        validation_mode: ContractValidationMode = ContractValidationMode.OFF,
     ) -> None:
         """Initialize storage service."""
         self._runtime = runtime
         self._explicit_db_path = db_path
+        self._validation_mode = validation_mode
         self._gateway: StorageGateway | None = None
         self._owns_gateway = True
         self._closed = False
 
     @classmethod
-    def from_runtime(cls, runtime: RuntimeService) -> StorageService:
+    def from_runtime(
+        cls,
+        runtime: RuntimeService,
+        *,
+        validation_mode: ContractValidationMode = ContractValidationMode.OFF,
+    ) -> StorageService:
         """Create from RuntimeService.
 
         Parameters
         ----------
         runtime
             Runtime service for path resolution.
+        validation_mode
+            Contract validation behavior for opened gateways.
 
         Returns
         -------
         StorageService
             Configured storage service.
         """
-        return cls(runtime=runtime)
+        return cls(runtime=runtime, validation_mode=validation_mode)
 
     @classmethod
-    def from_path(cls, db_path: Path) -> StorageService:
+    def from_path(
+        cls,
+        db_path: Path,
+        *,
+        validation_mode: ContractValidationMode = ContractValidationMode.OFF,
+    ) -> StorageService:
         """Create with explicit database path.
 
         Parameters
         ----------
         db_path
             Database file path.
+        validation_mode
+            Contract validation behavior for opened gateways.
 
         Returns
         -------
         StorageService
             Configured storage service.
         """
-        return cls(db_path=db_path)
+        return cls(db_path=db_path, validation_mode=validation_mode)
 
     @classmethod
     def from_gateway(cls, gateway: StorageGateway) -> StorageService:
@@ -151,7 +187,10 @@ class StorageService:
             raise RuntimeError(msg)
 
         if self._gateway is None:
-            self._gateway = self._open_gateway(read_only=True)
+            self._gateway = self._open_gateway(
+                read_only=True,
+                validation_mode=self._validation_mode,
+            )
         return self._gateway
 
     @property
@@ -187,7 +226,12 @@ class StorageService:
         return self._gateway is not None and not self._closed
 
     @contextmanager
-    def gateway_scope(self, *, read_only: bool = True) -> Iterator[StorageGateway]:
+    def gateway_scope(
+        self,
+        *,
+        read_only: bool = True,
+        validation_mode: ContractValidationMode | None = None,
+    ) -> Iterator[StorageGateway]:
         """Context manager for explicit gateway lifecycle.
 
         Use this when you need a gateway with a specific lifecycle that
@@ -197,6 +241,8 @@ class StorageService:
         ----------
         read_only
             Whether to open in read-only mode.
+        validation_mode
+            Contract validation behavior when opening the gateway.
 
         Yields
         ------
@@ -208,7 +254,10 @@ class StorageService:
         >>> with service.gateway_scope(read_only=False) as gw:
         ...     gw.execute("INSERT INTO test VALUES (1)")
         """
-        gateway = self._open_gateway(read_only=read_only)
+        gateway = self._open_gateway(
+            read_only=read_only,
+            validation_mode=validation_mode or self._validation_mode,
+        )
         if not read_only:
             gateway.policy.ensure_schemas_preserve()
         try:
@@ -217,10 +266,19 @@ class StorageService:
             gateway.close()
 
     @contextmanager
-    def write_gateway(self) -> Iterator[StorageGateway]:
+    def write_gateway(
+        self,
+        *,
+        validation_mode: ContractValidationMode | None = None,
+    ) -> Iterator[StorageGateway]:
         """Context manager for write-enabled gateway.
 
         Convenience method for write operations.
+
+        Parameters
+        ----------
+        validation_mode
+            Contract validation behavior when opening the gateway.
 
         Yields
         ------
@@ -232,7 +290,10 @@ class StorageService:
         >>> with service.write_gateway() as gw:
         ...     gw.execute("CREATE TABLE test (id INT)")
         """
-        with self.gateway_scope(read_only=False) as gw:
+        with self.gateway_scope(
+            read_only=False,
+            validation_mode=validation_mode,
+        ) as gw:
             yield gw
 
     def close(self) -> None:
@@ -253,21 +314,61 @@ class StorageService:
 
         self._closed = True
 
-    def _open_gateway(self, *, read_only: bool) -> StorageGateway:
+    def _open_gateway(
+        self,
+        *,
+        read_only: bool,
+        validation_mode: ContractValidationMode,
+    ) -> StorageGateway:
         """Open a new gateway.
 
         Parameters
         ----------
         read_only
             Whether to open in read-only mode.
+        validation_mode
+            Contract validation behavior when opening the gateway.
 
         Returns
         -------
         StorageGateway
             Open gateway.
         """
-        config = StorageConfig(db_path=self.db_path, read_only=read_only)
+        config = self._build_config(
+            read_only=read_only,
+            validation_mode=validation_mode,
+        )
         return open_gateway(config)
+
+    def _build_config(
+        self,
+        *,
+        read_only: bool,
+        validation_mode: ContractValidationMode,
+    ) -> StorageConfig:
+        dataset_root_dir: Path | None = None
+        snapshot_id: str | None = None
+        repo: str | None = None
+        if self._runtime is not None:
+            runtime = self._runtime.runtime
+            dataset_root_dir = runtime.paths.dataset_root_dir
+            snapshot_id = runtime.commit
+            repo = runtime.repo
+        validation_summary_path = (
+            None
+            if validation_mode is ContractValidationMode.OFF
+            else default_validation_summary_path(self.db_path)
+        )
+        return StorageConfig(
+            db_path=self.db_path,
+            dataset_root_dir=dataset_root_dir,
+            read_only=read_only,
+            validate_schema=validation_mode is not ContractValidationMode.OFF,
+            validation_mode=validation_mode,
+            validation_summary_path=validation_summary_path,
+            repo=repo,
+            commit=snapshot_id,
+        )
 
     def __enter__(self) -> Self:
         """Enter context manager.
@@ -291,4 +392,5 @@ class StorageService:
 
 __all__ = [
     "StorageService",
+    "default_validation_summary_path",
 ]

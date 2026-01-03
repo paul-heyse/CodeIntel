@@ -7,7 +7,6 @@ from parsed AST nodes without any database or file I/O.
 from __future__ import annotations
 
 import ast
-import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -44,15 +43,15 @@ class BasicBlock:
     start_line: int = -1
     end_line: int = -1
 
-    def to_json(self) -> str:
-        """Serialize statements to JSON for debugging.
+    def stmt_kinds(self) -> list[str]:
+        """Return statement type names for this block.
 
         Returns
         -------
-        str
-            JSON list of statement type names.
+        list[str]
+            Statement type names in evaluation order.
         """
-        return json.dumps([type(s).__name__ for s in self.stmts])
+        return [type(stmt).__name__ for stmt in self.stmts]
 
 
 @dataclass(frozen=True)
@@ -420,7 +419,7 @@ def cfg_to_rows(
             start_line=default_start if block.start_line == -1 else block.start_line,
             end_line=default_end if block.end_line == -1 else block.end_line,
             kind=block.kind,
-            stmts_json=block.to_json(),
+            stmts_json=block.stmt_kinds(),
             in_degree=in_degree.get(block.idx, 0),
             out_degree=out_degree.get(block.idx, 0),
         )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import dataclass
 
@@ -11,8 +10,6 @@ from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.build.analytics.entrypoints.compute import (
-    ENTRYPOINT_TESTS_COLS,
-    ENTRYPOINTS_COLS,
     EntrypointsResult,
     compute_entrypoints_pure,
 )
@@ -20,13 +17,10 @@ from codeintel.build.analytics.entrypoints.core import (
     EntrypointBuildInputs,
     EntrypointContextInputs,
 )
+from codeintel.build.analytics.entrypoints.runtime import load_entrypoint_module_sources
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -36,8 +30,14 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.helpers.json import decode_json_list
+from codeintel.core.helpers.payload import decode_payload
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -91,15 +91,11 @@ class EntrypointSubsystemFrames:
 
 
 def _parse_json_list(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        if isinstance(parsed, list):
-            return [str(item) for item in parsed]
+    decoded = decode_payload(value)
+    if isinstance(decoded, list):
+        return [str(item) for item in decoded]
+    if isinstance(decoded, str):
+        return [str(item) for item in decode_json_list(decoded)]
     return []
 
 
@@ -229,6 +225,11 @@ def entrypoints_result(
         module_map=module_map,
         features_map=_features_by_goid(entrypoint_module_frames.features_frame),
     )
+    module_sources = load_entrypoint_module_sources(
+        module_map,
+        env.snapshot.repo_root,
+        scan_profile=inputs.scan_profile,
+    )
     context_inputs = EntrypointContextInputs(
         modules_frame=entrypoint_module_frames.modules_frame,
         test_catalog_frame=entrypoint_test_frames.test_catalog_frame,
@@ -239,6 +240,7 @@ def entrypoints_result(
         env.snapshot,
         inputs,
         context_inputs,
+        module_sources,
     )
 
 
@@ -253,7 +255,6 @@ def entrypoints__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:
     return rows_to_frame(
         ENTRYPOINTS_TABLE_KEY,
         entrypoints_result.entrypoint_rows,
-        columns=ENTRYPOINTS_COLS,
     )
 
 
@@ -270,7 +271,6 @@ def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pl.LazyFram
     return rows_to_frame(
         ENTRYPOINT_TESTS_TABLE_KEY,
         entrypoints_result.test_rows,
-        columns=ENTRYPOINT_TESTS_COLS,
     )
 
 

@@ -7,7 +7,7 @@ from inspect import signature
 from typing import TYPE_CHECKING, TypedDict, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable
 
     from polars import DataFrame, LazyFrame
 
@@ -64,12 +64,12 @@ def collect_batches(
     *,
     batch_size: int,
     options: PolarsExecutionOptions,
-) -> Sequence[PolarsDataFrame]:
+) -> Iterable[PolarsDataFrame]:
     """Collect a LazyFrame into batches with typed option handling.
 
     Returns
     -------
-    Sequence[polars.DataFrame]
+    Iterable[polars.DataFrame]
         Collected DataFrame batches.
     """
     collect_target = cast("Callable[..., object]", lazyframe.collect_batches)
@@ -156,8 +156,8 @@ def _collect_callable(
 
 def _collect_batches_callable(
     func: object,
-) -> Callable[..., Sequence[PolarsDataFrame]]:
-    return cast("Callable[..., Sequence[PolarsDataFrame]]", func)
+) -> Callable[..., Iterable[PolarsDataFrame]]:
+    return cast("Callable[..., Iterable[PolarsDataFrame]]", func)
 
 
 __all__ = ["PolarsExecutionOptions", "collect_batches", "collect_lazyframe"]

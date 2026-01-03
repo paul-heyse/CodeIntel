@@ -41,7 +41,7 @@ class CFGBlockRow:
     kind
         Block kind (entry, body, exit, loop_head, etc.).
     stmts_json
-        Statements as JSON string.
+        Statements as msgpack-encoded payload.
     in_degree
         Number of incoming edges.
     out_degree
@@ -56,7 +56,7 @@ class CFGBlockRow:
     start_line: int
     end_line: int
     kind: str
-    stmts_json: str | object
+    stmts_json: bytes
     in_degree: int
     out_degree: int
 

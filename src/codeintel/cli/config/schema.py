@@ -1,6 +1,6 @@
 """JSON Schema 2020-12 generation from typed models.
 
-Generate JSON Schema from Python dataclass type annotations,
+Generate JSON Schema from msgspec Structs (preferred) and dataclasses,
 ensuring the schema is always in sync with the model.
 """
 
@@ -10,6 +10,8 @@ import json
 from dataclasses import MISSING, fields, is_dataclass
 from pathlib import Path
 from typing import Literal, Union, get_args, get_origin, get_type_hints
+
+import msgspec
 
 
 def generate_schema(model_class: type) -> dict[str, object]:
@@ -25,6 +27,9 @@ def generate_schema(model_class: type) -> dict[str, object]:
     dict[str, object]
         JSON Schema 2020-12 document.
     """
+    if issubclass(model_class, msgspec.Struct):
+        schema = msgspec.json.schema(model_class)
+        return _strip_private_properties(schema)
     schema: dict[str, object] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": getattr(model_class, "SCHEMA_ID", f"urn:codeintel:{model_class.__name__}"),
@@ -47,6 +52,23 @@ def generate_schema(model_class: type) -> dict[str, object]:
         props[f.name] = prop
 
     schema["properties"] = props
+    return schema
+
+
+def _strip_private_properties(schema: dict[str, object]) -> dict[str, object]:
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        private_keys = [key for key in properties if key.startswith("_")]
+        for key in private_keys:
+            properties.pop(key, None)
+        required = schema.get("required")
+        if isinstance(required, list):
+            schema["required"] = [key for key in required if key not in private_keys]
+    defs = schema.get("$defs")
+    if isinstance(defs, dict):
+        for value in defs.values():
+            if isinstance(value, dict):
+                _strip_private_properties(value)
     return schema
 
 

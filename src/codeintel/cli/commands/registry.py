@@ -28,15 +28,15 @@ from codeintel.cli.options.registry import (
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 from codeintel.config.models import ToolsConfig
-from codeintel.core.registry.service import (
+from codeintel.core.tools.names import ToolName
+from codeintel.core.tools.resolver import ToolResolveConfig, resolve_tool
+from codeintel.runtime.registry_service import (
     DagOutputInventory,
     DagOutputSpec,
     IngestionToolInventory,
     IngestionToolSpec,
     RegistryService,
 )
-from codeintel.core.tools.names import ToolName
-from codeintel.core.tools.resolver import ToolResolveConfig, resolve_tool
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext

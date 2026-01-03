@@ -6,7 +6,7 @@ subsystems so callers can rely on a single import surface.
 
 from __future__ import annotations
 
-from codeintel.build.analytics.utilities.lazy_module import lazy_callable, make_lazy_getattr
+from codeintel.core.imports.lazy import lazy_callable, make_lazy_getattr
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "ConfigDataFlowResult": (

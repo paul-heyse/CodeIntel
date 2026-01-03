@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.gateway import ExportAuditRecordProtocol
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.protocols.duckdb_relation import adapt_duckdb_relation
@@ -81,7 +82,7 @@ class ExportService:
 
     def write_export_audit(
         self,
-        record: ExportAuditRecord,
+        record: ExportAuditRecordProtocol,
         *,
         settings: ExportAuditSettings,
         sql: str | None = None,
@@ -150,7 +151,7 @@ def build_export_relation(
 
 
 def write_export_audit(
-    record: ExportAuditRecord,
+    record: ExportAuditRecordProtocol,
     *,
     context: ExportAuditContext,
     sql: str | None = None,

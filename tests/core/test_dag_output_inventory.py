@@ -8,7 +8,7 @@ from textwrap import dedent, indent
 import pytest
 
 from codeintel.build.schemas import configure_schema_service, get_schema_provider
-from codeintel.core.registry.service import DagOutputInventory, RegistryService
+from codeintel.runtime.registry_service import DagOutputInventory, RegistryService
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,

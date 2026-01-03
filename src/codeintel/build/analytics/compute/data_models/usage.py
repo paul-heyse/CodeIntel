@@ -28,6 +28,7 @@ from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_str
+from codeintel.core.schemas.generated_rows import columns_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -37,17 +38,18 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
 
-DATA_MODEL_USAGE_COLS = [
-    "repo",
-    "commit",
-    "model_id",
-    "function_goid_h128",
-    "usage_kinds_json",
-    "evidence_json",
-    "context_json",
-    "created_at",
-]
 DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
+
+
+def _columns_for_table(table_key: str) -> list[str]:
+    columns = columns_for_table_key(table_key)
+    if not columns:
+        msg = f"No schema columns registered for {table_key}"
+        raise ValueError(msg)
+    return list(columns)
+
+
+DATA_MODEL_USAGE_COLS = _columns_for_table(DATA_MODEL_USAGE_TABLE_KEY)
 
 log = logging.getLogger(__name__)
 
@@ -651,9 +653,9 @@ def _build_usage_rows(
                     "commit": commit,
                     "model_id": model_id,
                     "function_goid_h128": goid,
-                    "usage_kinds_json": json.dumps(sorted(kinds)),
-                    "evidence_json": json.dumps(evidence_map),
-                    "context_json": json.dumps(context) if context else None,
+                    "usage_kinds_json": sorted(kinds),
+                    "evidence_json": dict(evidence_map),
+                    "context_json": dict(context) if context else None,
                     "created_at": now,
                 }
             )

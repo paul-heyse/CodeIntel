@@ -371,6 +371,24 @@ def _validate_table_key(*, table_key: str, node_name: str, strict: bool) -> None
             raise RuntimeError(msg) from exc
 
 
+def _compatible_table_output(existing: OutputDescriptor, candidate: OutputDescriptor) -> bool:
+    return (
+        existing.kind == candidate.kind
+        and existing.key == candidate.key
+        and existing.role == candidate.role
+        and existing.sink == candidate.sink
+        and existing.artifact_path_template == candidate.artifact_path_template
+    )
+
+
+def _table_output_sort_key(output: OutputDescriptor) -> tuple[str, str]:
+    return (output.producer_target, output.saver_node)
+
+
+def _prefer_table_output(left: OutputDescriptor, right: OutputDescriptor) -> OutputDescriptor:
+    return min(left, right, key=_table_output_sort_key)
+
+
 def _record_table_output(
     *,
     output: OutputDescriptor,
@@ -379,10 +397,17 @@ def _record_table_output(
 ) -> None:
     if output.role != "contract":
         return
-    if output.key in table_outputs:
-        msg = f"Duplicate contract table output: {output.key}"
-        raise RuntimeError(msg)
-    table_outputs[output.key] = output
+    existing = table_outputs.get(output.key)
+    if existing is None:
+        table_outputs[output.key] = output
+    else:
+        if not _compatible_table_output(existing, output):
+            msg = (
+                f"Duplicate contract table output: {output.key} "
+                f"({existing.producer_target} vs {output.producer_target})"
+            )
+            raise RuntimeError(msg)
+        table_outputs[output.key] = _prefer_table_output(existing, output)
     table_by_target.setdefault(output.producer_target, []).append(output)
 
 

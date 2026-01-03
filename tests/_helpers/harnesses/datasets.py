@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.schemas.dataset_service import DocsFilterMode, ReadOnlyFilterMode
 from codeintel.cli.handlers.datasets import DatasetDependencies
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.validation import collect_contract_issues
@@ -18,19 +19,6 @@ if TYPE_CHECKING:
 
     from codeintel.cli.context import CommandContext
     from tests._helpers.cli_context import CliTestContext
-
-
-@dataclass
-class _Runtime:
-    """Lightweight runtime stub exposing gateway and root."""
-
-    gateway: object
-    root: object
-
-    @property
-    def runtime(self) -> _Runtime:
-        """Return self to satisfy CommandContext.runtime access."""
-        return self
 
 
 @dataclass
@@ -50,10 +38,6 @@ class DatasetHandlerHarness:
             CommandContext configured for dataset handlers.
         """
         with self.ctx.command_context(params) as cmd_ctx:
-            cmd_ctx.__dict__["_runtime"] = _Runtime(
-                gateway=self.ctx.gateway,
-                root=self.ctx.repo_root,
-            )
             yield cmd_ctx
 
 
@@ -77,12 +61,16 @@ def dataset_handler_harness(tmp_path: Path) -> Iterator[DatasetHandlerHarness]:
         owner_package="core",
     )
 
-    def _build_runtime(_ctx: object) -> _Runtime:
-        return _Runtime(gateway=ctx.gateway, root=ctx.repo_root)
+    def _list_datasets(
+        *,
+        docs_view: DocsFilterMode = "include",
+        read_only: ReadOnlyFilterMode = "include",
+    ) -> list[DatasetContract]:
+        _ = (docs_view, read_only)
+        return [contract]
 
     deps = DatasetDependencies(
-        runtime_builder=_build_runtime,
-        contracts_provider=lambda _ctx: {contract.name: contract},
+        list_datasets=_list_datasets,
         issue_collector=collect_contract_issues,
     )
     harness = DatasetHandlerHarness(ctx=ctx, deps=deps)

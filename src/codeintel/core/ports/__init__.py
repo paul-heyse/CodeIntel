@@ -26,6 +26,12 @@ def handle_result(result: QueryResult) -> int:
 
 from __future__ import annotations
 
+from codeintel.core.ports.export import (
+    ExportRelation,
+    RecordBatch,
+    RecordBatchReader,
+    ResultStream,
+)
 from codeintel.core.ports.storage import (
     BatchResult,
     MutableQueryResult,
@@ -35,7 +41,11 @@ from codeintel.core.ports.storage import (
 
 __all__ = [
     "BatchResult",
+    "ExportRelation",
     "MutableQueryResult",
     "QueryResult",
+    "RecordBatch",
+    "RecordBatchReader",
+    "ResultStream",
     "StoragePort",
 ]

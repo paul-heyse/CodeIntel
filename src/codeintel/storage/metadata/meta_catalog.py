@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
+from codeintel.core.sqlglot_tools import render_sql_duckdb
 from codeintel.storage.constants import META_CATALOG_NAME, META_DB_FILENAME
 from codeintel.storage.duckdb.catalog import is_valid_catalog_identifier
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref
-from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection

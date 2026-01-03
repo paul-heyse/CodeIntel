@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.build.exports.common import ExportCallOptions
+from codeintel.build.exports.common import ExportCallOptions, validate_dataset_manifests_or_raise
 from codeintel.build.exports.jsonl import export_all_jsonl
 from codeintel.build.exports.parquet import export_all_parquet
 from codeintel.core.config.settings import ExportAuditSettings
@@ -26,6 +26,10 @@ def _validate_dataset_contract(gateway: BuildGateway) -> None:
     gateway
         BuildGateway with active connection.
     """
+    dataset_source = getattr(gateway.config, "dataset_source", "duckdb")
+    if dataset_source == "parquet_only":
+        validate_dataset_manifests_or_raise(gateway)
+        return
     validate_contract_or_raise(gateway.con)
 
 

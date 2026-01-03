@@ -1,111 +1,61 @@
-"""Type coercion helpers for analytics pipelines.
+"""Deprecated wrapper for type coercion helpers.
 
-This module provides safe type conversion functions that return None
-when conversion is not possible, avoiding exceptions in data processing.
+Use codeintel.core.query_results instead.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
-
-
-@runtime_checkable
-class _SupportsInt(Protocol):
-    def __int__(self) -> int: ...
-
-
-@runtime_checkable
-class _SupportsIndex(Protocol):
-    def __index__(self) -> int: ...
-
-
-@runtime_checkable
-class _SupportsFloat(Protocol):
-    def __float__(self) -> float: ...
-
-
-def _int_from_object(value: object) -> int | None:
-    if isinstance(value, _SupportsInt):
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-    if isinstance(value, _SupportsIndex):
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def _float_from_object(value: object) -> float | None:
-    if isinstance(value, _SupportsFloat):
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-    return None
+from codeintel.core.query_results import (
+    ScalarCoercionError,
+    coerce_optional_float,
+    coerce_optional_int,
+    coerce_str,
+)
 
 
 def optional_str(value: object | None) -> str | None:
     """Return a string representation or None.
 
-    Parameters
-    ----------
-    value
-        Value to convert to string.
-
     Returns
     -------
     str | None
-        Converted string or None when input is missing.
+        String value when coercion succeeds, otherwise None.
     """
-    return str(value) if value is not None else None
+    if value is None:
+        return None
+    try:
+        return coerce_str(value, ctx="analytics.optional_str")
+    except ScalarCoercionError:
+        return str(value)
 
 
 def optional_int(value: object | None) -> int | None:
     """Return an integer or None when value is not provided.
 
-    Parameters
-    ----------
-    value
-        Value to convert to integer.
-
     Returns
     -------
     int | None
-        Converted integer or None when input is missing or invalid.
+        Integer value when coercion succeeds, otherwise None.
     """
     if value is None:
         return None
-    # Handle bool first (before int check since bool is subclass of int)
     if isinstance(value, bool):
         return int(value)
-    # Handle numeric types directly
     if isinstance(value, (int, float)):
         return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip()) if value.strip() else None
-        except ValueError:
-            return None
-    return _int_from_object(value)
+    try:
+        return coerce_optional_int(value, ctx="analytics.optional_int")
+    except ScalarCoercionError:
+        return None
 
 
 def int_or_default(value: object | None, default: int = 0) -> int:
     """Return an integer, falling back to default when value is falsy.
 
-    Parameters
-    ----------
-    value
-        Value to convert to integer.
-    default
-        Default value to return when conversion fails.
-
     Returns
     -------
     int
-        Integer value or default when empty.
+        Coerced integer or the default value.
     """
     converted = optional_int(value)
     return converted if converted is not None else default
@@ -114,44 +64,30 @@ def int_or_default(value: object | None, default: int = 0) -> int:
 def optional_float(value: object | None) -> float | None:
     """Return a float or None when value is not provided.
 
-    Parameters
-    ----------
-    value
-        Value to convert to float.
-
     Returns
     -------
     float | None
-        Converted float or None when input is missing or invalid.
+        Float value when coercion succeeds, otherwise None.
     """
     if value is None:
         return None
-    # Handle bool first (before int check since bool is subclass of int)
     if isinstance(value, bool):
         return float(int(value))
-    # Handle numeric types directly
     if isinstance(value, (int, float)):
         return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value.strip()) if value.strip() else None
-        except ValueError:
-            return None
-    return _float_from_object(value)
+    try:
+        return coerce_optional_float(value, ctx="analytics.optional_float")
+    except ScalarCoercionError:
+        return None
 
 
 def optional_bool(value: object | None) -> bool | None:
     """Return a boolean or None when value is not provided.
 
-    Parameters
-    ----------
-    value
-        Value to convert to boolean.
-
     Returns
     -------
     bool | None
-        Converted boolean or None when input is missing or invalid.
+        Boolean value when coercion succeeds, otherwise None.
     """
     if value is None:
         return None

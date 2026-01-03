@@ -11,13 +11,13 @@ tables by the build system.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 
 
 log = logging.getLogger(__name__)
+
+DATA_MODELS_TABLE_KEY = "analytics.data_models"
+DATA_MODEL_FIELDS_TABLE_KEY = "analytics.data_model_fields"
+DATA_MODEL_RELATIONSHIPS_TABLE_KEY = "analytics.data_model_relationships"
 
 
 @dataclass(frozen=True)
@@ -90,23 +94,24 @@ def _build_model_rows(
     list[tuple[object, ...]]
         Row tuples matching DATA_MODELS_COLS.
     """
-    return [
-        (
-            snapshot.repo,
-            snapshot.commit,
-            model.model_id,
-            model.goid,
-            model.model_name,
-            model.module,
-            model.rel_path,
-            model.model_kind,
-            json.dumps(model.base_classes),
-            model.doc_short,
-            model.doc_long,
-            now,
-        )
+    rows = [
+        {
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "model_id": model.model_id,
+            "goid_h128": model.goid,
+            "model_name": model.model_name,
+            "module": model.module,
+            "rel_path": model.rel_path,
+            "model_kind": model.model_kind,
+            "base_classes_json": list(model.base_classes),
+            "doc_short": model.doc_short,
+            "doc_long": model.doc_long,
+            "created_at": now,
+        }
         for model in models
     ]
+    return rows_to_tuples_for_table(DATA_MODELS_TABLE_KEY, rows)
 
 
 def _build_field_rows(
@@ -130,25 +135,26 @@ def _build_field_rows(
     list[tuple[object, ...]]
         Row tuples matching DATA_MODEL_FIELDS_COLS.
     """
-    return [
-        (
-            snapshot.repo,
-            snapshot.commit,
-            model.model_id,
-            field_spec.name,
-            field_spec.type,
-            field_spec.required,
-            field_spec.has_default,
-            field_spec.default_expr,
-            json.dumps(field_spec.constraints),
-            field_spec.source,
-            model.rel_path,
-            field_spec.lineno,
-            now,
-        )
+    rows = [
+        {
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "model_id": model.model_id,
+            "field_name": field_spec.name,
+            "field_type": field_spec.type,
+            "required": field_spec.required,
+            "has_default": field_spec.has_default,
+            "default_expr": field_spec.default_expr,
+            "constraints_json": dict(field_spec.constraints),
+            "source": field_spec.source,
+            "rel_path": model.rel_path,
+            "lineno": field_spec.lineno,
+            "created_at": now,
+        }
         for model in models
         for field_spec in model.fields
     ]
+    return rows_to_tuples_for_table(DATA_MODEL_FIELDS_TABLE_KEY, rows)
 
 
 def _build_relationship_rows(
@@ -172,26 +178,27 @@ def _build_relationship_rows(
     list[tuple[object, ...]]
         Row tuples matching DATA_MODEL_RELATIONSHIPS_COLS.
     """
-    return [
-        (
-            snapshot.repo,
-            snapshot.commit,
-            model.model_id,
-            rel.target_model_id,
-            rel.target_module,
-            rel.target_model_name,
-            rel.field_name,
-            rel.kind,
-            rel.multiplicity,
-            rel.via,
-            json.dumps(rel.evidence) if rel.evidence else None,
-            rel.rel_path,
-            rel.lineno,
-            now,
-        )
+    rows = [
+        {
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "source_model_id": model.model_id,
+            "target_model_id": rel.target_model_id,
+            "target_module": rel.target_module,
+            "target_model_name": rel.target_model_name,
+            "field_name": rel.field_name,
+            "relationship_kind": rel.kind,
+            "multiplicity": rel.multiplicity,
+            "via": rel.via,
+            "evidence_json": rel.evidence if rel.evidence else None,
+            "rel_path": rel.rel_path,
+            "lineno": rel.lineno,
+            "created_at": now,
+        }
         for model in models
         for rel in model.relationships
     ]
+    return rows_to_tuples_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY, rows)
 
 
 def load_data_models_inputs(

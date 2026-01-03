@@ -61,6 +61,7 @@ from codeintel.build.schemas.compile import (
     SchemaManifestRequest,
     compile_schema_manifest,
 )
+from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -847,7 +848,23 @@ def _execution_input_mapping(inputs: ExecutionInputs) -> dict[str, object]:
     return execution_input_mapping(inputs)
 
 
+def _dataset_manifest_exists(env: BuildEnv, table_key: str) -> bool:
+    dataset_root_dir = env.paths.dataset_root_dir
+    if dataset_root_dir is None:
+        return False
+    manifest_path = dataset_manifest_path(
+        dataset_root=dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=env.commit,
+    )
+    return manifest_path.is_file()
+
+
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
+    dataset = env.gateway.datasets.by_table_key.get(table_key)
+    dataset_source = getattr(env.gateway.config, "dataset_source", "duckdb")
+    if dataset is not None and not dataset.is_view and dataset_source == "parquet_only":
+        return _dataset_manifest_exists(env, table_key)
     schema, table = split_table_key(table_key)
     return env.gateway.policy.table_exists(schema=schema, table=table)
 

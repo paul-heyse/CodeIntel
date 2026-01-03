@@ -8,7 +8,6 @@ from collections.abc import Iterable
 import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import lazyframe_for_table_columns
 from codeintel.build.hamilton.native.patterns.savers import (
     ArtifactSaveSpec,
     RelationTableSaveSpec,
@@ -23,6 +22,7 @@ from codeintel.build.hamilton.native.planning.plan_targets import (
     PLAN_DOMAIN,
 )
 from codeintel.build.planning.model import PLAN_SCHEMA_VERSION, BuildPlan
+from codeintel.build.tabular.frames import lazyframe_for_table_columns
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.schemas.tables.ci_plan_entries import CI_PLAN_ENTRIES_TABLE_KEY
 

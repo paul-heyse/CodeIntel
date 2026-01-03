@@ -62,8 +62,8 @@ if TYPE_CHECKING:
         GraphValidationOptions,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.core.validation.runner import CheckProtocol, ValidationReport
+    from codeintel.storage.catalog import FunctionCatalogProvider
 
 
 # =============================================================================

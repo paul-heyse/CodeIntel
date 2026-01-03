@@ -375,8 +375,7 @@ def _impact_payload(
     calls_in_payloads = call_response.related.get("calls_in", [])
     calls_out_payloads = call_response.related.get("calls_out", [])
     transitive_payloads = [
-        _build_edge_payload(edge, context)
-        for edge in slice_result.outgoing + slice_result.incoming
+        _build_edge_payload(edge, context) for edge in slice_result.outgoing + slice_result.incoming
     ]
     related = {
         "edges": transitive_payloads,

@@ -11,9 +11,11 @@ Provide caching to avoid repeated resolution within a command execution.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
 import codeintel.cli.resolution.runtime as resolution_runtime
+from codeintel.cli.resolution.params import RuntimeParams
 from codeintel.cli.services.params import ParamService
 
 if TYPE_CHECKING:
@@ -73,7 +75,7 @@ class RuntimeService:
 
     def __init__(
         self,
-        params: ParamService | Mapping[str, object] | None = None,
+        params: ParamService | Mapping[str, object] | RuntimeParams | None = None,
         *,
         project_root: Path | None = None,
         db_path: Path | None = None,
@@ -81,16 +83,27 @@ class RuntimeService:
     ) -> None:
         """Initialize runtime service."""
         if params is None:
-            self._params: dict[str, object] = {}
+            raw_params: dict[str, object] = {}
+            runtime_params = RuntimeParams()
+        elif isinstance(params, RuntimeParams):
+            runtime_params = params
+            raw_params = self._runtime_params_to_dict(runtime_params)
         elif isinstance(params, ParamService):
-            self._params = dict(params.raw)
+            raw_params = dict(params.raw)
+            runtime_params = RuntimeParams.from_dict(raw_params)
         else:
-            self._params = dict(params)
+            raw_params = dict(params)
+            runtime_params = RuntimeParams.from_dict(raw_params)
 
         if project_root is not None:
-            self._params["project_root"] = project_root
+            raw_params["project_root"] = project_root
+            runtime_params = replace(runtime_params, project_root=project_root)
         if db_path is not None:
-            self._params["db_path"] = db_path
+            raw_params["db_path"] = db_path
+            runtime_params = replace(runtime_params, db_path=db_path)
+
+        self._params = raw_params
+        self._runtime_params = runtime_params
 
         self._allow_fallback = allow_fallback
         self._resolved: ResolvedRuntime | None = None
@@ -185,6 +198,17 @@ class RuntimeService:
         return dict(self._params)
 
     @property
+    def runtime_params(self) -> RuntimeParams:
+        """Return canonical runtime parameters.
+
+        Returns
+        -------
+        RuntimeParams
+            Canonical runtime parameters derived from inputs.
+        """
+        return self._runtime_params
+
+    @property
     def db_path(self) -> Path:
         """Get database path.
 
@@ -213,6 +237,23 @@ class RuntimeService:
         """
         self._resolved = None
 
+    @staticmethod
+    def _runtime_params_to_dict(params: RuntimeParams) -> dict[str, object]:
+        return {
+            "project_root": params.project_root,
+            "repo": params.repo,
+            "commit": params.commit,
+            "db_path": params.db_path,
+            "build_dir": params.build_dir,
+            "repo_root": params.repo_root,
+            "document_output_dir": params.document_output_dir,
+            "backend": {
+                "use_gpu": params.backend.use_gpu,
+                "backend": params.backend.backend,
+                "strict": params.backend.strict,
+            },
+        }
+
     def _resolve(self) -> ResolvedRuntime:
         """Perform resolution.
 
@@ -223,7 +264,8 @@ class RuntimeService:
         """
         LOG.debug("Resolving runtime with params: %s", list(self._params.keys()))
         return resolution_runtime.resolve_from_params(
-            self._params, allow_fallback=self._allow_fallback
+            self._runtime_params,
+            allow_fallback=self._allow_fallback,
         )
 
 

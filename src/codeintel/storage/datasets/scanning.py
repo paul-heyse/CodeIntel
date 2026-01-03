@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.manifests import ArrowDatasetManifest
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ class DatasetScanOptions:
     schema: pa.Schema | None = None
     columns: Sequence[str] | None = None
     unify_schemas: bool = False
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     metrics_enabled: bool = False
 
 
@@ -130,7 +132,11 @@ def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanne
     return _scanner_with_schema(dataset, scan_kwargs)
 
 
-def unify_dataset_schema(dataset: ds.Dataset) -> pa.Schema | None:
+def unify_dataset_schema(
+    dataset: ds.Dataset,
+    *,
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+) -> pa.Schema | None:
     """Return a unified schema for a dataset when fragments diverge.
 
     Returns
@@ -151,9 +157,12 @@ def unify_dataset_schema(dataset: ds.Dataset) -> pa.Schema | None:
     if len(schemas) == 1:
         return schemas[0]
     try:
-        return pa.unify_schemas(schemas)
+        return pa.unify_schemas(schemas, promote_options=schema_promote_options)
     except (TypeError, ValueError, pa.ArrowInvalid):
-        return dataset.schema
+        try:
+            return pa.unify_schemas(schemas)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            return dataset.schema
 
 
 def _dataset_fragments(dataset: ds.Dataset) -> Iterable[ds.Fragment] | None:
@@ -184,7 +193,10 @@ def _resolve_scan_schema(
 ) -> pa.Schema | None:
     schema = options.schema
     if schema is None and options.unify_schemas:
-        return unify_dataset_schema(dataset)
+        return unify_dataset_schema(
+            dataset,
+            schema_promote_options=options.schema_promote_options,
+        )
     return schema
 
 

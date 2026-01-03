@@ -16,6 +16,7 @@ from codeintel.config.primitives import (
     ScanProfiles,
     SnapshotRef,
 )
+from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.config.settings import (
     ArrowDatasetSettings,
     BatchProcessorSettings,
@@ -85,6 +86,22 @@ def _resolve_export_audit_table_enabled() -> bool:
     return os.environ.get("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 
 
+def _parse_schema_promote_options(
+    value: str | None,
+    *,
+    default: SchemaPromoteOptions,
+) -> SchemaPromoteOptions:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized == "default":
+        return "default"
+    if normalized == "permissive":
+        return "permissive"
+    LOG.warning("Unsupported schema promote option %s; using %s", value, default)
+    return default
+
+
 def _load_build_settings() -> BuildSettings:
     def optional_int(name: str) -> int | None:
         if not is_set(name):
@@ -107,6 +124,10 @@ def _load_build_settings() -> BuildSettings:
     polars_flags = split_csv(get_str("CODEINTEL_BUILD_POLARS_QUERY_OPT_FLAGS", default=None))
     dataset_row_index_name = optional_str("CODEINTEL_BUILD_DATASET_ROW_INDEX_NAME")
     dataset_row_index_offset = optional_int("CODEINTEL_BUILD_DATASET_ROW_INDEX_OFFSET")
+    schema_promote_options = _parse_schema_promote_options(
+        get_str("CODEINTEL_BUILD_SCHEMA_PROMOTE_OPTIONS", default=None),
+        default=DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+    )
     return BuildSettings(
         engine_version=_resolve_engine_version(),
         export_audit=ExportAuditSettings(
@@ -136,6 +157,7 @@ def _load_build_settings() -> BuildSettings:
         polars_streaming_fallback=polars_streaming_fallback
         if polars_streaming_fallback is not None
         else True,
+        schema_promote_options=schema_promote_options,
         dataset_row_index_name=dataset_row_index_name,
         dataset_row_index_offset=dataset_row_index_offset
         if dataset_row_index_offset is not None
@@ -215,6 +237,10 @@ def _load_serving_settings() -> ServingSettings:
     )
     cors_origins = split_csv(get_str("CODEINTEL_SERVE_CORS_ORIGINS", default=None))
     trusted_hosts = split_csv(get_str("CODEINTEL_SERVE_TRUSTED_HOSTS", default=None))
+    dataset_schema_promote_options = _parse_schema_promote_options(
+        get_str("CODEINTEL_SERVE_DATASET_SCHEMA_PROMOTE_OPTIONS", default=None),
+        default=DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+    )
 
     return ServingSettings(
         serve_dir=serve_dir,
@@ -263,6 +289,7 @@ def _load_serving_settings() -> ServingSettings:
             "CODEINTEL_SERVE_DATASET_UNIFY_SCHEMAS",
             default=False,
         ),
+        dataset_schema_promote_options=dataset_schema_promote_options,
         ipc_enable_options=get_required_bool("CODEINTEL_SERVE_IPC_ENABLE_OPTIONS", default=False),
         ipc_compression=get_str("CODEINTEL_SERVE_IPC_COMPRESSION", default=None),
         ipc_use_threads=get_required_bool("CODEINTEL_SERVE_IPC_USE_THREADS", default=True),

@@ -24,6 +24,7 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.config import ConfigService
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.cli.resolution.params import RuntimeParams
 
 
 def make_root_app() -> App:
@@ -237,6 +238,17 @@ def get_verbose(cli: RuntimeCLI) -> int:
     return cli.verbose
 
 
+def get_runtime_params(cli: RuntimeCLI) -> RuntimeParams:
+    """Convert RuntimeCLI to canonical RuntimeParams.
+
+    Returns
+    -------
+    RuntimeParams
+        Canonical runtime parameters derived from CLI flags.
+    """
+    return RuntimeParams.from_cyclopts(cli)
+
+
 def get_output_format(
     cli: OutputFormatCLI, *, default: OutputFormat = OutputFormat.TEXT
 ) -> OutputFormat:
@@ -267,6 +279,7 @@ __all__ = [
     "RuntimeCliError",
     "Verbose",
     "get_output_format",
+    "get_runtime_params",
     "get_verbose",
     "make_root_app",
     "output_field",

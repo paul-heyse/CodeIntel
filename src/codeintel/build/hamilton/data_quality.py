@@ -12,21 +12,22 @@ import pyarrow.compute as pc
 from hamilton.data_quality.base import DataValidationLevel, DataValidator, ValidationResult
 from polars.exceptions import PolarsError
 
-try:
-    import pandera.polars as pandera_polars
-    from pandera.errors import SchemaError, SchemaErrors
-except ImportError:  # pragma: no cover - optional dependency
-    pandera_polars = None
-    SchemaError = None
-    SchemaErrors = None
-
 from codeintel.build.schemas import get_schema_provider
+from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_POLICY
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.resolution import resolve_table_schema
-from codeintel.core.schemas.type_mappings import polars_type_from_column_type
+from codeintel.core.validation.pandera_schema import (
+    pandera_available,
+    pandera_error_diagnostics,
+    pandera_error_types,
+    pandera_schema_for_table,
+    resolve_extras_policy,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 
 class _PanderaSchemaProtocol(Protocol):
@@ -106,7 +107,7 @@ class TableSchemaColumnsValidator(DataValidator):
         ValidationResult
             Validation outcome for the dataset.
         """
-        schema = _resolve_table_schema(self.table_key)
+        schema, _ = _resolve_table_schema(self.table_key)
         if schema is None:
             return ValidationResult(
                 passes=True,
@@ -207,43 +208,64 @@ class PanderaSchemaValidator(DataValidator):
         ValidationResult
             Validation outcome for the dataset.
         """
-        if not _pandera_available():
-            return ValidationResult(
+        result: ValidationResult
+        if not pandera_available():
+            result = ValidationResult(
                 passes=True,
                 message=f"Pandera unavailable for {self.table_key}",
             )
-        schema = _pandera_schema_for_table(self.table_key)
-        if schema is None:
-            return ValidationResult(
-                passes=True,
-                message=f"No Pandera schema for {self.table_key}",
-            )
-        frame = _pandera_frame(dataset)
-        if frame is None:
-            return ValidationResult(
-                passes=True,
-                message=f"Skipping Pandera validation for {type(dataset).__name__}",
-            )
-        error_types = _pandera_error_types()
-        if not error_types:
-            return ValidationResult(
-                passes=True,
-                message=f"Pandera error types unavailable for {self.table_key}",
-            )
-        try:
-            schema_obj = cast("_PanderaSchemaProtocol", schema)
-            schema_obj.validate(frame, lazy=True)
-        except error_types as exc:
-            diagnostics = _pandera_error_diagnostics(exc, table_key=self.table_key)
-            return ValidationResult(
-                passes=False,
-                message=f"Pandera validation failed for {self.table_key}",
-                diagnostics=diagnostics,
-            )
-        return ValidationResult(
-            passes=True,
-            message=f"Pandera validation passed for {self.table_key}",
-        )
+        else:
+            table_schema, observation = _resolve_table_schema(self.table_key)
+            if table_schema is None:
+                result = ValidationResult(
+                    passes=True,
+                    message=f"No Pandera schema for {self.table_key}",
+                )
+            else:
+                extras_policy = resolve_extras_policy(observation, fallback=DEFAULT_EXTRAS_POLICY)
+                schema = pandera_schema_for_table(
+                    table_schema=table_schema,
+                    observation=observation,
+                    extras_policy=extras_policy,
+                )
+                if schema is None:
+                    result = ValidationResult(
+                        passes=True,
+                        message=f"Pandera unavailable for {self.table_key}",
+                    )
+                else:
+                    frame = _pandera_frame(dataset)
+                    if frame is None:
+                        result = ValidationResult(
+                            passes=True,
+                            message=f"Skipping Pandera validation for {type(dataset).__name__}",
+                        )
+                    else:
+                        error_types = pandera_error_types()
+                        if not error_types:
+                            result = ValidationResult(
+                                passes=True,
+                                message=f"Pandera error types unavailable for {self.table_key}",
+                            )
+                        else:
+                            try:
+                                schema_obj = cast("_PanderaSchemaProtocol", schema)
+                                schema_obj.validate(frame, lazy=True)
+                            except error_types as exc:
+                                diagnostics = pandera_error_diagnostics(
+                                    exc, table_key=self.table_key
+                                )
+                                result = ValidationResult(
+                                    passes=False,
+                                    message=f"Pandera validation failed for {self.table_key}",
+                                    diagnostics=diagnostics,
+                                )
+                            else:
+                                result = ValidationResult(
+                                    passes=True,
+                                    message=f"Pandera validation passed for {self.table_key}",
+                                )
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,19 +508,16 @@ def build_table_schema_validators(
         msg = f"Unsupported validation profile: {profile}"
         raise ValueError(msg)
 
-    schema = _resolve_table_schema(table_key)
-    validators: list[DataValidator] = [
-        TableSchemaColumnsValidator(
-            table_key=table_key,
-            importance=importance,
-            enforce_non_nullable=enforce_non_nullable,
-        ),
-    ]
-    if _pandera_available():
+    schema, _ = _resolve_table_schema(table_key)
+    validators: list[DataValidator] = []
+    if pandera_available():
+        validators.append(PanderaSchemaValidator(table_key=table_key, importance=importance))
+    else:
         validators.append(
-            PanderaSchemaValidator(
+            TableSchemaColumnsValidator(
                 table_key=table_key,
                 importance=importance,
+                enforce_non_nullable=enforce_non_nullable,
             )
         )
     if isinstance(min_rows, int) and min_rows > 0:
@@ -509,7 +528,7 @@ def build_table_schema_validators(
                 importance=importance,
             )
         )
-    if schema is not None and schema.primary_key:
+    if schema is not None and schema.primary_key and not pandera_available():
         validators.append(
             TablePrimaryKeyValidator(
                 table_key=table_key,
@@ -520,13 +539,15 @@ def build_table_schema_validators(
     return tuple(validators)
 
 
-def _resolve_table_schema(table_key: str) -> TableSchema | None:
+def _resolve_table_schema(
+    table_key: str,
+) -> tuple[TableSchema | None, SchemaObservationRecord | None]:
     try:
         provider = get_schema_provider()
     except RuntimeError:
         provider = None
     resolution = resolve_table_schema(table_key, schema_provider=provider)
-    return resolution.table_schema
+    return resolution.table_schema, resolution.observation
 
 
 def _column_names(dataset: object) -> list[str] | None:
@@ -549,62 +570,6 @@ def _column_names(dataset: object) -> list[str] | None:
             if isinstance(columns, Sequence):
                 names = [str(name) for name in columns]
     return names
-
-
-def _pandera_available() -> bool:
-    return pandera_polars is not None and SchemaErrors is not None and SchemaError is not None
-
-
-def _pandera_error_types() -> tuple[type[BaseException], ...]:
-    types: list[type[BaseException]] = []
-    if SchemaErrors is not None:
-        types.append(SchemaErrors)
-    if SchemaError is not None:
-        types.append(SchemaError)
-    return tuple(types)
-
-
-def _pandera_error_diagnostics(exc: BaseException, *, table_key: str) -> dict[str, object]:
-    diagnostics: dict[str, object] = {"table_key": table_key, "error": str(exc)}
-    failure_cases = getattr(exc, "failure_cases", None)
-    if isinstance(failure_cases, pl.DataFrame):
-        diagnostics["failure_cases"] = failure_cases.head(50).to_dicts()
-    elif failure_cases is not None:
-        diagnostics["failure_cases"] = str(failure_cases)
-    return diagnostics
-
-
-def _pandera_dtype(polars_type: object | None) -> type | str | None:
-    if isinstance(polars_type, str):
-        return polars_type
-    if isinstance(polars_type, type):
-        return polars_type
-    dtype_type = getattr(polars_type, "__class__", None)
-    if isinstance(dtype_type, type):
-        return dtype_type
-    return None
-
-
-def _pandera_schema_for_table(table_key: str) -> object | None:
-    if pandera_polars is None:
-        return None
-    schema = _resolve_table_schema(table_key)
-    if schema is None:
-        return None
-    columns: dict[str, object] = {}
-    for column in schema.columns:
-        polars_type = polars_type_from_column_type(column.type)
-        dtype = _pandera_dtype(polars_type) or pl.Object
-        columns[column.name] = pandera_polars.Column(
-            dtype=dtype,
-            nullable=column.nullable,
-            required=True,
-        )
-    return pandera_polars.DataFrameSchema(
-        columns,
-        strict="filter",
-        coerce=False,
-    )
 
 
 def _pandera_frame(dataset: object) -> pl.LazyFrame | pl.DataFrame | None:

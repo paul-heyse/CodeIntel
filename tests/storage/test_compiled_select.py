@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.storage.sqlglot_tools import extract_table_keys_duckdb, fingerprint_sql_duckdb
+from codeintel.core.sqlglot_tools import extract_table_keys_duckdb, fingerprint_sql_duckdb
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
 

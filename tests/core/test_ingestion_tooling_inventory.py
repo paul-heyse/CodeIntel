@@ -7,7 +7,7 @@ from textwrap import dedent, indent
 
 import pytest
 
-from codeintel.core.registry.service import IngestionToolInventory, RegistryService
+from codeintel.runtime.registry_service import IngestionToolInventory, RegistryService
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,

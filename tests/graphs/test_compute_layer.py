@@ -74,7 +74,8 @@ from codeintel.build.graphs.compute.symbols import (
     parse_symbol_roles,
 )
 from codeintel.build.graphs.ports.parsing import ParsedModule
-from codeintel.core.catalog import FunctionSpan, FunctionSpanIndex
+from codeintel.core.catalog import FunctionSpan
+from codeintel.storage.catalog import FunctionSpanIndex
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,

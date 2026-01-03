@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import json
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -22,7 +21,7 @@ from codeintel.core.query_results import coerce_int
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
@@ -348,7 +347,7 @@ def _build_effect_rows(
                 "spawns_threads_or_tasks": analysis.spawns_threads_or_tasks,
                 "has_transitive_effects": bool(transitive_targets),
                 "purity_confidence": purity_confidence,
-                "effects_json": json.dumps(_effects_payload(analysis, transitive_targets)),
+                "effects_json": _effects_payload(analysis, transitive_targets),
                 "created_at": now,
             }
         )

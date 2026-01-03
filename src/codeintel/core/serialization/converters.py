@@ -6,10 +6,12 @@ JSON-compatible values and back.
 
 from __future__ import annotations
 
+import types
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
+from typing import Union, get_args, get_origin
 
 # Type alias for JSON-compatible values
 type JsonValue = str | int | float | bool | dict[str, JsonValue] | list[JsonValue] | None
@@ -119,12 +121,16 @@ def deserialize_value(value: JsonValue, target_type: type | None = None) -> obje
     if value is None or target_type is None:
         return value
 
-    # Handle optional types (e.g., str | None)
-    origin = getattr(target_type, "__origin__", None)
-    if origin is type(None):
-        return None
+    origin = get_origin(target_type)
+    if origin is Union or origin is types.UnionType:
+        args = get_args(target_type)
+        non_none = [arg for arg in args if arg is not type(None)]
+        if value is None:
+            return None
+        if len(non_none) == 1:
+            return _deserialize_typed_value(value, non_none[0])
+        return value
 
-    # Try to deserialize as special type
     return _deserialize_typed_value(value, target_type)
 
 

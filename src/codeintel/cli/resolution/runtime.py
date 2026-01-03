@@ -6,7 +6,7 @@ unified implementation that handles:
 2. Fallback to explicit CLI parameters
 3. Construction of ResolvedRuntime with all necessary configuration
 
-The primary API is `resolve_from_params()` which takes a params dict directly.
+The primary API is `resolve_from_params()` which accepts a params mapping or RuntimeParams.
 """
 
 from __future__ import annotations
@@ -14,11 +14,12 @@ from __future__ import annotations
 import configparser
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from codeintel.cli.config.service import build_config_from_options
 from codeintel.cli.project._project import (
     ProjectConfig,
     ProjectNotFoundError,
@@ -28,19 +29,10 @@ from codeintel.cli.project._project import (
     load_project_config,
 )
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.cli.resolution.params import RuntimeParams
 from codeintel.cli.resolution.types import ResolvedRuntime
-from codeintel.config.models import (
-    CliConfigOptions,
-    CliPathsInput,
-    CodeIntelConfig,
-    RepoConfig,
-    ToolsConfig,
-)
-from codeintel.config.primitives import (
-    GraphBackendConfig,
-    GraphFeatureFlags,
-    SnapshotRef,
-)
+from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig, ToolsConfig
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.runtime.loader import RuntimeInputs, build_runtime_primitives
 from codeintel.serving.config import ServingConfig
 
@@ -218,21 +210,35 @@ _MSG_MISSING_PARAMS = (
 )
 
 
-@dataclass(frozen=True)
-class _ConfigParams:
-    """Internal dataclass for config building parameters."""
+def _runtime_params_to_dict(params: RuntimeParams) -> dict[str, object]:
+    return {
+        "project_root": params.project_root,
+        "repo": params.repo,
+        "commit": params.commit,
+        "db_path": params.db_path,
+        "build_dir": params.build_dir,
+        "repo_root": params.repo_root,
+        "document_output_dir": params.document_output_dir,
+        "backend": {
+            "use_gpu": params.backend.use_gpu,
+            "backend": params.backend.backend,
+            "strict": params.backend.strict,
+        },
+    }
 
-    repo: str
-    commit: str
-    repo_root: Path
-    db_path: Path
-    build_dir: Path
-    document_output_dir: Path | None
-    use_gpu: bool
+
+def _normalize_runtime_params(
+    params: Mapping[str, object] | Mapping[str, str] | RuntimeParams,
+) -> tuple[RuntimeParams, dict[str, object]]:
+    if isinstance(params, RuntimeParams):
+        return params, _runtime_params_to_dict(params)
+
+    raw = dict(params)
+    return RuntimeParams.from_dict(raw), raw
 
 
 def resolve_from_params(
-    params: Mapping[str, object] | Mapping[str, str],
+    params: Mapping[str, object] | Mapping[str, str] | RuntimeParams,
     *,
     allow_fallback: bool | None = None,
 ) -> ResolvedRuntime:
@@ -244,7 +250,7 @@ def resolve_from_params(
     Parameters
     ----------
     params
-        Parameters dict with keys like project_root, repo, commit, db_path, etc.
+        Parameters mapping or RuntimeParams with keys like project_root, repo, commit, db_path, etc.
     allow_fallback
         When True, attempt fallback to explicit params when no project file.
         When False, raise immediately when project file is missing.
@@ -266,9 +272,11 @@ def resolve_from_params(
     >>> runtime.db_path
     PosixPath('build/db/codeintel.duckdb')
     """
-    project_root_raw = params.get("project_root")
-    project_root = _to_path_or_none(project_root_raw)
-    fallback_enabled = _should_allow_fallback(params) if allow_fallback is None else allow_fallback
+    runtime_params, _ = _normalize_runtime_params(params)
+    project_root = _to_path_or_none(runtime_params.project_root)
+    fallback_enabled = (
+        _should_allow_fallback(runtime_params) if allow_fallback is None else allow_fallback
+    )
 
     missing_project_error: ProjectNotFoundError | None = None
     try:
@@ -278,23 +286,22 @@ def resolve_from_params(
             raise ResolutionError(_MSG_NO_PROJECT_NO_FALLBACK) from exc
         missing_project_error = exc
 
-    resolved_params = dict(params)
     selection: _FallbackSelection | None = None
-    if resolved_params.get("repo_root") is None:
+    if runtime_params.repo_root is None:
         base = project_root or Path.cwd()
         selection = _select_fallback_repo_root(base)
         if selection is None:
             raise ResolutionError(_MSG_NO_PROJECT_NO_SOURCE) from missing_project_error
-        resolved_params["repo_root"] = selection.repo_root
+        runtime_params = replace(runtime_params, repo_root=selection.repo_root)
 
-    runtime = _resolve_from_params_dict(resolved_params)
+    runtime = _resolve_from_runtime_params(runtime_params)
     if selection is not None:
         _log_fallback_selection(selection, runtime)
     return runtime
 
 
-def _should_allow_fallback(params: Mapping[str, object] | Mapping[str, str]) -> bool:
-    return bool(params.get("repo") or params.get("commit") or params.get("db_path"))
+def _should_allow_fallback(params: RuntimeParams) -> bool:
+    return bool(params.repo or params.commit or params.db_path)
 
 
 def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
@@ -380,43 +387,26 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
     )
 
 
-def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) -> ResolvedRuntime:
-    """Resolve from explicit CLI parameters.
+def _resolve_from_runtime_params(params: RuntimeParams) -> ResolvedRuntime:
+    repo_root = params.repo_root or Path.cwd()
+    repo, commit = _extract_required_params(params, repo_root=repo_root)
 
-    Parameters
-    ----------
-    params
-        Parameters dict with keys like repo, commit, db_path, etc.
+    db_path = params.db_path or Path("build/db/codeintel.duckdb")
+    build_dir = params.build_dir or Path("build")
+    document_output_dir = params.document_output_dir
 
-    Returns
-    -------
-    ResolvedRuntime
-        Runtime resolved from explicit parameters.
+    paths_cfg = CliPathsInput(
+        repo_root=repo_root,
+        build_dir=build_dir,
+        db_path=db_path,
+        document_output_dir=document_output_dir,
+    )
 
-    Notes
-    -----
-    Propagates ResolutionError from _extract_required_params_dict if required
-    parameters (repo, commit) are missing.
-    """
-    repo_root = _to_path_with_default(params.get("repo_root"), Path.cwd())
-    repo, commit = _extract_required_params_dict(params, repo_root=repo_root)
-
-    db_path = _to_path_with_default(params.get("db_path"), Path("build/db/codeintel.duckdb"))
-    build_dir = _to_path_with_default(params.get("build_dir"), Path("build"))
-    document_output_dir = _to_path_or_none(params.get("document_output_dir"))
-
-    use_gpu_raw = params.get("use_gpu", False)
-    use_gpu = bool(use_gpu_raw) if use_gpu_raw is not None else False
-    config = _build_config(
-        _ConfigParams(
-            repo=repo,
-            commit=commit,
-            repo_root=repo_root,
-            db_path=db_path,
-            build_dir=build_dir,
-            document_output_dir=document_output_dir,
-            use_gpu=use_gpu,
-        )
+    config = build_config_from_options(
+        repo=repo,
+        commit=commit,
+        paths_cfg=paths_cfg,
+        backend=params.backend,
     )
     config = _apply_default_scip_project_name(config, repo)
 
@@ -450,8 +440,13 @@ def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) 
     )
 
 
-def _extract_required_params_dict(
-    params: Mapping[str, object] | Mapping[str, str],
+def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) -> ResolvedRuntime:
+    runtime_params, _ = _normalize_runtime_params(params)
+    return _resolve_from_runtime_params(runtime_params)
+
+
+def _extract_required_params(
+    params: RuntimeParams,
     *,
     repo_root: Path,
 ) -> tuple[str, str]:
@@ -474,8 +469,8 @@ def _extract_required_params_dict(
     ResolutionError
         If required parameters are missing.
     """
-    repo = params.get("repo")
-    commit = params.get("commit")
+    repo = params.repo
+    commit = params.commit
     resolved_root = repo_root.resolve()
 
     if repo is None:
@@ -492,42 +487,6 @@ def _extract_required_params_dict(
         raise ResolutionError(_MSG_MISSING_PARAMS, missing_params=["repo"])
 
     return str(repo), str(commit)
-
-
-def _build_config(params: _ConfigParams) -> CodeIntelConfig:
-    """Build CodeIntelConfig from parameters.
-
-    Parameters
-    ----------
-    params
-        Configuration parameters dataclass.
-
-    Returns
-    -------
-    CodeIntelConfig
-        Constructed configuration.
-    """
-    paths_cfg = CliPathsInput(
-        repo_root=params.repo_root,
-        build_dir=params.build_dir,
-        db_path=params.db_path,
-        document_output_dir=params.document_output_dir,
-    )
-
-    repo_cfg = RepoConfig(repo=params.repo, commit=params.commit)
-
-    backend = GraphBackendConfig(use_gpu=params.use_gpu)
-
-    options = CliConfigOptions(
-        graph_backend=backend,
-        graph_features=GraphFeatureFlags(),
-    )
-
-    return CodeIntelConfig.from_cli_args(
-        repo_cfg=repo_cfg,
-        paths_cfg=paths_cfg,
-        options=options,
-    )
 
 
 def _log_fallback_selection(

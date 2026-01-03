@@ -10,7 +10,6 @@ from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.analytics.parsing.compute import get_validation_rows
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -19,6 +18,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.frames import rows_to_frame
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, FunctionAnalyticsResult)
 

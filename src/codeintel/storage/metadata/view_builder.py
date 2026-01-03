@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref
-from codeintel.storage.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection

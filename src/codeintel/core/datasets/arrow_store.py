@@ -496,6 +496,7 @@ def _apply_dictionary_options(
             )
         if options.unify_dictionaries:
             table = _unify_dictionaries(table)
+            table = _combine_chunks(table)
         return table
     if isinstance(data, pa.RecordBatchReader) and options.dictionary_encode:
         LOG.debug("Dictionary encode skipped for stream input")
@@ -578,6 +579,16 @@ def _unify_dictionaries(table: pa.Table) -> pa.Table:
         return table
     try:
         return unify()
+    except pa.ArrowInvalid:
+        return table
+
+
+def _combine_chunks(table: pa.Table) -> pa.Table:
+    combine = getattr(table, "combine_chunks", None)
+    if not callable(combine):
+        return table
+    try:
+        return combine()
     except pa.ArrowInvalid:
         return table
 

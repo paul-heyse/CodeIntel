@@ -95,7 +95,7 @@ class BaseValidationOptions(BaseOptions):
                 if self.severity_overrides is not None
                 else defaults.severity_overrides
             ),
-            hard_fail=self.hard_fail if self.hard_fail else defaults.hard_fail,
+            hard_fail=self.hard_fail,
             max_findings_per_rule=(
                 self.max_findings_per_rule
                 if self.max_findings_per_rule is not None

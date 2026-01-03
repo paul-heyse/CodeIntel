@@ -13,15 +13,10 @@ from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.graphs.config_data_flow import (
-    CONFIG_DATA_FLOW_COLS,
     ConfigDataFlowInputs,
     compute_config_data_flow_result,
 )
 from codeintel.build.analytics.graphs.config_graph_metrics import (
-    CONFIG_GRAPH_METRICS_KEYS_COLS,
-    CONFIG_GRAPH_METRICS_MODULES_COLS,
-    CONFIG_PROJECTION_KEY_EDGES_COLS,
-    CONFIG_PROJECTION_MODULE_EDGES_COLS,
     ConfigGraphMetricsResult,
     compute_config_graph_metrics_result,
 )
@@ -30,10 +25,6 @@ from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -43,6 +34,10 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
@@ -352,7 +347,6 @@ def config_data_flow__base(
     return rows_to_frame(
         CONFIG_DATA_FLOW_TABLE_KEY,
         result.rows,
-        columns=CONFIG_DATA_FLOW_COLS,
     )
 
 
@@ -413,7 +407,6 @@ def config_graph_metrics_keys__base(
     return rows_to_frame(
         CONFIG_GRAPH_KEYS_TABLE_KEY,
         config_graph_metrics_result.key_rows,
-        columns=CONFIG_GRAPH_METRICS_KEYS_COLS,
     )
 
 
@@ -432,7 +425,6 @@ def config_graph_metrics_modules__base(
     return rows_to_frame(
         CONFIG_GRAPH_MODULES_TABLE_KEY,
         config_graph_metrics_result.module_rows,
-        columns=CONFIG_GRAPH_METRICS_MODULES_COLS,
     )
 
 
@@ -451,7 +443,6 @@ def config_projection_key_edges__base(
     return rows_to_frame(
         CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
         config_graph_metrics_result.key_edge_rows,
-        columns=CONFIG_PROJECTION_KEY_EDGES_COLS,
     )
 
 
@@ -470,7 +461,6 @@ def config_projection_module_edges__base(
     return rows_to_frame(
         CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
         config_graph_metrics_result.module_edge_rows,
-        columns=CONFIG_PROJECTION_MODULE_EDGES_COLS,
     )
 
 

@@ -4,6 +4,10 @@ This module provides utilities for encoding and decoding JSON data stored
 in DuckDB columns. DuckDB may return JSON data as strings, dicts, or lists
 depending on the query context.
 
+These helpers are boundary-focused: use them only for DuckDB JSON columns or
+ingestion inputs. Internal pipelines should prefer Arrow/Parquet data and avoid
+passing JSON objects through core logic.
+
 All functions handle None values gracefully and provide sensible defaults
 on parse failures.
 """
@@ -13,6 +17,8 @@ from __future__ import annotations
 import ast
 import json
 from typing import TYPE_CHECKING
+
+import msgspec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -57,6 +63,10 @@ def decode_json(value: object) -> object:
         return []
     if isinstance(value, (dict, list)):
         return value
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        decoded = _decode_bytes_payload(value)
+        parsed = _coerce_decoded_payload(decoded)
+        return parsed if isinstance(parsed, (dict, list)) else []
     if not isinstance(value, str):
         return []
 
@@ -165,6 +175,25 @@ def _parse_json_value(raw: str) -> object | None:
             return None
 
 
+def _decode_bytes_payload(value: bytes | bytearray | memoryview) -> object | None:
+    raw = bytes(value)
+    try:
+        return msgspec.msgpack.decode(raw)
+    except msgspec.DecodeError:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        return _parse_json_value(text)
+
+
+def _coerce_decoded_payload(value: object | None) -> object | None:
+    if isinstance(value, str):
+        parsed = _parse_json_value(value)
+        return parsed if parsed is not None else value
+    return value
+
+
 def normalize_duckdb_json_value(value: object) -> object:
     """Normalize a Python value for DuckDB JSON column insertion.
 
@@ -184,6 +213,9 @@ def normalize_duckdb_json_value(value: object) -> object:
     """
     if value is None:
         return None
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        decoded = _decode_bytes_payload(value)
+        return _coerce_json_container(_coerce_decoded_payload(decoded))
     normalized = _coerce_json_container(value)
     if isinstance(normalized, str):
         parsed = _parse_json_value(normalized)

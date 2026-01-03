@@ -10,7 +10,7 @@ import asyncio
 import contextlib
 import json
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,13 +23,13 @@ from codeintel.config.primitives import (
 )
 from codeintel.core.execution import ExecutionContext, new_run_context
 from codeintel.core.manifests import ServingSnapshotManifest
-from codeintel.core.registry import RegistryService
 from codeintel.core.runtime.loader import (
     RuntimeInputs,
     build_runtime_primitives,
     load_execution_context,
 )
 from codeintel.core.tools import ToolBinaries
+from codeintel.runtime.registry_service import RegistryService
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.storage.backend import DuckDBSession
@@ -282,11 +282,24 @@ class ServingDBManager:
             self._ready_event.set()
             return
 
-        new_pool = ReadPoolWarehouse(new_ptr.db_path, self.pool_cfg)
-        new_export_pool = ReadPoolWarehouse(new_ptr.db_path, self.export_pool_cfg)
+        context = _load_snapshot_context(new_ptr, pointer_path=self.pointer_path)
+        dataset_root_dir = _dataset_root_dir_from_manifests(context.dataset_manifests)
+        storage_config = _storage_config_for_pointer(
+            new_ptr,
+            dataset_root_dir=dataset_root_dir,
+        )
+        new_pool = ReadPoolWarehouse(
+            new_ptr.db_path,
+            self.pool_cfg,
+            storage_config=storage_config,
+        )
+        new_export_pool = ReadPoolWarehouse(
+            new_ptr.db_path,
+            self.export_pool_cfg,
+            storage_config=storage_config,
+        )
         old_pool = self._pool
         old_export_pool = self._export_pool
-        context = _load_snapshot_context(new_ptr, pointer_path=self.pointer_path)
         self._pool = new_pool
         self._export_pool = new_export_pool
         self._pointer = new_ptr
@@ -396,6 +409,28 @@ def _inventory_table_keys(
     keys = set(dataset_manifests.table_keys())
     keys.update(view.table_key for view in registry.views)
     return tuple(sorted(keys))
+
+
+def _dataset_root_dir_from_manifests(
+    dataset_manifests: DatasetManifestIndex,
+) -> Path | None:
+    roots: set[Path] = set()
+    for entry in dataset_manifests.by_table_key.values():
+        parents = entry.manifest_path.parents
+        if len(parents) > 3:
+            roots.add(parents[3])
+    if len(roots) == 1:
+        return next(iter(roots))
+    return None
+
+
+def _storage_config_for_pointer(
+    pointer: ServingSnapshotPointer,
+    *,
+    dataset_root_dir: Path | None,
+) -> StorageConfig:
+    config = StorageConfig.for_readonly(pointer.db_path, dataset_root_dir=dataset_root_dir)
+    return replace(config, repo=pointer.repo, commit=pointer.commit)
 
 
 def _load_inventory_from_duckdb(

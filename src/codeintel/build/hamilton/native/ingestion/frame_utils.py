@@ -1,4 +1,7 @@
-"""Helpers for building columnar ingestion frames."""
+"""Deprecated wrapper for ingestion frame helpers.
+
+Use codeintel.build.tabular.frames instead.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +17,13 @@ from codeintel.build.tabular.frames import (
 
 
 def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
-    """Return an empty LazyFrame using the table schema."""
+    """Return an empty LazyFrame using the table schema.
+
+    Returns
+    -------
+    polars.LazyFrame
+        Empty LazyFrame aligned to the table schema.
+    """
     return empty_frame_for_table(table_key)
 
 

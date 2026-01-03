@@ -40,11 +40,6 @@ from codeintel.build.hamilton.helpers import (
     get_module_paths_from_env,
     paths_to_modules,
 )
-from codeintel.build.tabular.frames import (
-    dedupe_frame_for_table,
-    empty_lazyframe_for_table,
-    lazyframe_for_ingest_columns,
-)
 from codeintel.build.hamilton.native.ingestion.pipelines import (
     mutate_ingest_rows,
     pipe_ingest_rows,
@@ -73,6 +68,11 @@ from codeintel.build.hamilton.transforms.ingestion_normalize import normalize_in
 from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.build.tabular.frames import (
+    dedupe_frame_for_table,
+    empty_lazyframe_for_table,
+    lazyframe_for_ingest_columns,
+)
 from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (

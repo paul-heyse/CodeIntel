@@ -6,6 +6,7 @@ import json
 from io import StringIO
 
 from codeintel.cli.core import CliResult
+from codeintel.cli.core.result_types import JobInfo, ListResult
 from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.rendering import (
     OutputFormat,
@@ -120,6 +121,39 @@ def test_render_result_success() -> None:
     expect_equal(exit_code, 0)
     output = json.loads(out.getvalue())
     expect_equal(output["data"]["key"], "value")
+
+
+def test_render_result_nested_result_types() -> None:
+    """Verify renderer serializes nested result types."""
+    out = StringIO()
+    err = StringIO()
+    ctx = RenderContext(
+        format=OutputFormat.JSON,
+        color=False,
+        writer=out,
+        err_writer=err,
+        is_tty=False,
+    )
+    renderer = UnifiedRenderer(ctx)
+
+    payload = ListResult.from_items(
+        [
+            JobInfo(
+                job_id="job-001",
+                operation_id="jobs.list",
+                status="completed",
+                created_at="2024-01-01T00:00:00Z",
+            )
+        ]
+    )
+    result: CliResult[ListResult[JobInfo]] = CliResult.ok(payload)
+
+    exit_code = renderer.render_result(result)
+
+    expect_equal(exit_code, 0)
+    output = json.loads(out.getvalue())
+    expect_equal(output["data"]["count"], 1)
+    expect_equal(output["data"]["items"][0]["job_id"], "job-001")
 
 
 def test_render_result_failure() -> None:

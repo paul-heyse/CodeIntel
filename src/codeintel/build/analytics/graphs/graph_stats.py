@@ -11,22 +11,10 @@ from codeintel.build.analytics.compute.graphs import (
     build_projection_graph,
     global_graph_stats,
 )
+from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
-_GRAPH_STATS_COLUMNS: tuple[str, ...] = (
-    "graph_name",
-    "repo",
-    "commit",
-    "node_count",
-    "edge_count",
-    "weak_component_count",
-    "scc_count",
-    "component_layers",
-    "avg_clustering",
-    "diameter_estimate",
-    "avg_shortest_path_estimate",
-    "created_at",
-)
+GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
 
 
 @dataclass(frozen=True)
@@ -96,19 +84,22 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
     for name, graph in graphs.items():
         stats = global_graph_stats(graph)
         rows.append(
-            (
-                name,
-                inputs.repo,
-                inputs.commit,
-                stats.node_count,
-                stats.edge_count,
-                stats.weak_component_count,
-                stats.scc_count,
-                stats.component_layers,
-                stats.avg_clustering,
-                stats.diameter_estimate,
-                stats.avg_shortest_path_estimate,
-                now,
+            row_tuple_for_table(
+                GRAPH_STATS_TABLE_KEY,
+                {
+                    "graph_name": name,
+                    "repo": inputs.repo,
+                    "commit": inputs.commit,
+                    "node_count": stats.node_count,
+                    "edge_count": stats.edge_count,
+                    "weak_component_count": stats.weak_component_count,
+                    "scc_count": stats.scc_count,
+                    "component_layers": stats.component_layers,
+                    "avg_clustering": stats.avg_clustering,
+                    "diameter_estimate": stats.diameter_estimate,
+                    "avg_shortest_path_estimate": stats.avg_shortest_path_estimate,
+                    "created_at": now,
+                },
             )
         )
 

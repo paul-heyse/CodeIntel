@@ -7,19 +7,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
 import uvicorn
 
-from codeintel.build.schemas import (
-    ContractResolutionMode,
-    ContractResolutionSettings,
-    get_contract_for_table_key,
-    get_schema_service,
-    iter_contracts,
-    iter_contracts_by_table_key,
+from codeintel.build.schemas import get_schema_service
+from codeintel.build.schemas.dataset_service import (
+    DocsFilterMode,
+    ReadOnlyFilterMode,
+    constraints_summary,
+    describe_dataset,
+    flow,
+    list_datasets,
 )
-from codeintel.build.schemas.constraints import extract_constraints_from_table_schema
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -27,10 +27,11 @@ from codeintel.cli.core.result_types import (
     DatasetFlowResult,
     DatasetInfoResult,
     DatasetListResult,
+    DatasetSummary,
     DatasetVerifyResult,
     ServeStartResult,
 )
-from codeintel.cli.errors.results import fail_dataset_not_found
+from codeintel.cli.errors.results import fail_dataset_not_found, fail_invalid_value
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.http.app import create_serving_app
@@ -39,12 +40,53 @@ from codeintel.serving.settings import get_serving_settings
 from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
-    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.cli.context import CommandContext
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 LOG = logging.getLogger(__name__)
+
+_FILTER_VALUES = frozenset({"include", "exclude", "only"})
+_ELLIPSIS_LEN = 3
+
+
+class DatasetListFn(Protocol):
+    """Callable protocol for dataset list implementations."""
+
+    def __call__(
+        self,
+        *,
+        docs_view: DocsFilterMode,
+        read_only: ReadOnlyFilterMode,
+    ) -> list[DatasetContract]:
+        """List dataset contracts with filter controls."""
+        ...
+
+
+def _truncate_description(description: str | None, *, max_length: int | None) -> str | None:
+    if description is None:
+        return None
+    if max_length is None or max_length <= 0:
+        return description
+    if len(description) <= max_length:
+        return description
+    if max_length <= _ELLIPSIS_LEN:
+        return description[:max_length]
+    return description[: max_length - _ELLIPSIS_LEN].rstrip() + "..."
+
+
+def _dataset_summary_from_contract(
+    contract: DatasetContract,
+    *,
+    max_description: int | None,
+) -> DatasetSummary:
+    return DatasetSummary(
+        name=contract.name,
+        table_key=contract.table_key,
+        description=_truncate_description(contract.description, max_length=max_description),
+        owner_package=contract.owner_package,
+        capabilities=dict(contract.capabilities()),
+    )
 
 
 def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeResult]:
@@ -60,12 +102,7 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
     CliResult[DatasetDescribeResult]
         Dataset details.
     """
-    contracts = dict(
-        iter_contracts_by_table_key(
-            settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)
-        )
-    )
-    contract = contracts.get(table_key)
+    contract = describe_dataset(table_key)
     if contract is None:
         return fail_dataset_not_found(table_key)
 
@@ -75,6 +112,10 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
         {"name": col.name, "type": col.type, "nullable": col.nullable} for col in columns
     ]
 
+    upstream_dependencies = (
+        list(contract.upstream_dependencies) if contract.upstream_dependencies else None
+    )
+
     return CliResult.ok(
         DatasetDescribeResult(
             table_key=contract.table_key,
@@ -83,41 +124,61 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
             name=contract.name,
             description=contract.description,
             owner_package=contract.owner_package,
-            upstream_dependencies=list(contract.upstream_dependencies),
+            upstream_dependencies=upstream_dependencies,
         )
     )
 
 
-def dataset_list_handler(ctx: CommandContext) -> CliResult[DatasetListResult]:
+def dataset_list_handler(
+    ctx: CommandContext,
+    list_datasets_fn: DatasetListFn | None = None,
+) -> CliResult[DatasetListResult]:
     """List datasets from the registry.
 
     Parameters
     ----------
     ctx
-        Command context.
+        Command context with params:
+        - docs_view: Filter for docs view datasets (include/exclude/only).
+        - read_only: Filter for read-only datasets (include/exclude/only).
+        - max_description: Optional description truncation length.
+    list_datasets_fn
+        Optional override for dataset contract listing.
 
     Returns
     -------
     CliResult[DatasetListResult]
         List of datasets.
     """
-    _ = ctx
-    contracts = sorted(
-        iter_contracts(settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)),
-        key=lambda contract: contract.name,
-    )
+    docs_view_raw = ctx.params.get_str("docs_view") or "include"
+    read_only_raw = ctx.params.get_str("read_only") or "include"
+    if docs_view_raw not in _FILTER_VALUES:
+        return fail_invalid_value(
+            "docs_view",
+            docs_view_raw,
+            'Valid values: "include", "exclude", "only".',
+        )
+    if read_only_raw not in _FILTER_VALUES:
+        return fail_invalid_value(
+            "read_only",
+            read_only_raw,
+            'Valid values: "include", "exclude", "only".',
+        )
 
-    dataset_dicts: list[dict[str, str | None]] = [
-        {
-            "name": contract.name,
-            "table_key": contract.table_key,
-            "is_view": str(contract.is_view),
-            "owner_package": contract.owner_package,
-        }
+    docs_view = cast("DocsFilterMode", docs_view_raw)
+    read_only = cast("ReadOnlyFilterMode", read_only_raw)
+
+    max_description_raw = ctx.params.get_int("max_description", default=0)
+    max_description = max_description_raw if max_description_raw > 0 else None
+
+    resolved_list_datasets = list_datasets_fn or list_datasets
+    contracts = resolved_list_datasets(docs_view=docs_view, read_only=read_only)
+    summaries = [
+        _dataset_summary_from_contract(contract, max_description=max_description)
         for contract in contracts
     ]
 
-    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(dataset_dicts)))
+    return CliResult.ok(DatasetListResult(datasets=summaries, count=len(summaries)))
 
 
 def dataset_describe_handler(
@@ -224,25 +285,6 @@ def _downstream_consumers_for_contract(
     return tuple(sorted(set(consumers)))
 
 
-def _flow_targets_for_table_key(
-    table_key: str,
-    *,
-    catalog: DagCatalog,
-) -> tuple[list[str], list[str]]:
-    surfaces = catalog.io_surfaces
-
-    producers: set[str] = set()
-    consumers: set[str] = set()
-    for target_name, surface in surfaces.items():
-        for write in surface.table_writes:
-            if write.table_key == table_key:
-                producers.add(target_name)
-        for read in surface.reads:
-            if read.table_key == table_key:
-                consumers.add(target_name)
-    return sorted(producers), sorted(consumers)
-
-
 def dataset_info_structured(
     *,
     table_key: str,
@@ -269,9 +311,8 @@ def dataset_info_structured(
         Schema information including columns, metadata, and JSON schema.
     """
     _ = runtime
-    try:
-        contract = get_contract_for_table_key(table_key)
-    except KeyError:
+    contract = describe_dataset(table_key)
+    if contract is None:
         return fail_dataset_not_found(table_key)
 
     schema_service = get_schema_service()
@@ -279,9 +320,7 @@ def dataset_info_structured(
     table_schema = record.table_schema
     columns = tuple(table_schema.column_names()) if table_schema is not None else ()
 
-    contracts = list(
-        iter_contracts(settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL))
-    )
+    contracts = list_datasets(docs_view="include", read_only="include")
     downstream = _downstream_consumers_for_contract(
         contract_name=contract.name, contracts=contracts
     )
@@ -290,6 +329,7 @@ def dataset_info_structured(
         DatasetInfoResult(
             name=contract.table_key,
             columns=columns,
+            column_count=len(columns),
             metadata=_metadata_to_dict(contract, downstream_consumers=downstream),
             json_schema=record.json_schema or {},
             has_table_schema=table_schema is not None,
@@ -335,17 +375,17 @@ def dataset_flow_structured(
     CliResult[DatasetFlowResult]
         Flow result with producers and consumers.
     """
-    try:
-        _ = get_contract_for_table_key(table_key)
-    except KeyError:
+    if describe_dataset(table_key) is None:
         return fail_dataset_not_found(table_key)
-    producers, consumers = _flow_targets_for_table_key(table_key, catalog=runtime.catalog)
+    producers, consumers = flow(table_key, catalog=runtime.catalog)
 
     return CliResult.ok(
         DatasetFlowResult(
             table_key=table_key,
             producers=producers,
             consumers=consumers,
+            producer_count=len(producers),
+            consumer_count=len(consumers),
         )
     )
 
@@ -385,12 +425,9 @@ def dataset_constraints_structured(*, table_key: str) -> CliResult[DatasetConstr
     CliResult[DatasetConstraintsResult]
         Constraint information including kind, column, and expression.
     """
-    schema_service = get_schema_service()
-    table_schema = schema_service.get_table_schema(table_key)
-    if table_schema is None:
+    constraint_set = constraints_summary(table_key)
+    if constraint_set is None:
         return fail_dataset_not_found(table_key)
-
-    constraint_set = extract_constraints_from_table_schema(table_schema)
 
     constraints: list[dict[str, object]] = [
         {

@@ -64,6 +64,9 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.native.ingestion.scip_resolution import (
         t__scip_resolution,
     )
+    from codeintel.build.hamilton.native.ingestion.syntax_augment import (
+        t__syntax_augment,
+    )
     from codeintel.build.hamilton.native.ingestion.syntax_enrich import (
         t__syntax_enrich,
     )
@@ -107,6 +110,7 @@ _LAZY_IMPORTS = {
     "t__scip_proto__run": "codeintel.build.hamilton.native.ingestion.scip_proto",
     "t__scip_resolution": "codeintel.build.hamilton.native.ingestion.scip_resolution",
     "t__syntax_enrich": "codeintel.build.hamilton.native.ingestion.syntax_enrich",
+    "t__syntax_augment": "codeintel.build.hamilton.native.ingestion.syntax_augment",
     "t__syntax_index": "codeintel.build.hamilton.native.ingestion.extraction_targets",
     "t__syntax_index__ingest": "codeintel.build.hamilton.native.ingestion.extraction_targets",
     "t__syntax_index__run": "codeintel.build.hamilton.native.ingestion.extraction_targets",
@@ -175,6 +179,7 @@ __all__: list[str] = [
     "t__scip_proto",
     "t__scip_proto__run",
     "t__scip_resolution",
+    "t__syntax_augment",
     "t__syntax_enrich",
     "t__syntax_index",
     "t__syntax_index__ingest",

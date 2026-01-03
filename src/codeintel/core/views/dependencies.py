@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
-from codeintel.storage.sqlglot_tools import extract_table_keys_duckdb
+from codeintel.core.sqlglot_tools import extract_table_keys_duckdb
 
 __all__ = [
     "build_dependency_graph_from_sql",

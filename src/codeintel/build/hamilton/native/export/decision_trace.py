@@ -5,8 +5,6 @@ Decision trace payloads are audit outputs, not execution control inputs.
 
 from __future__ import annotations
 
-import json
-
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
@@ -15,7 +13,7 @@ from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
     DECISION_TRACE_TARGET_NAME,
-    build_decision_trace_payload,
+    build_decision_trace,
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
@@ -29,6 +27,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.manifest.reader import CacheManifestReader
+from codeintel.core.serialization.msgspec_json import encode_json_text
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
@@ -57,8 +56,8 @@ def decision_trace__content(env: BuildEnv, catalog: DagCatalog) -> str | None:
         return None
     reader = CacheManifestReader(env.gateway)
     entries = reader.fetch(run_context.run_id)
-    payload = build_decision_trace_payload(entries)
-    return f"{json.dumps(payload, indent=2)}\n"
+    payload = build_decision_trace(entries)
+    return encode_json_text(payload, indent=2, newline=True)
 
 
 @codeintel_target(domain="export", target=DECISION_TRACE_TARGET_NAME)

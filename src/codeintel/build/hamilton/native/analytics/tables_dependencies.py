@@ -2,27 +2,20 @@
 
 from __future__ import annotations
 
-import json
 import sys
 
 import polars as pl
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
+from codeintel.build.analytics.compute.dependencies.compute import ExternalDependencyInputs
 from codeintel.build.analytics.dependencies.compute import (
-    EXTERNAL_DEPENDENCIES_COLS,
-    EXTERNAL_DEPENDENCY_CALLS_COLS,
     compute_dependency_calls_pure,
     compute_external_dependencies_pure,
 )
-from codeintel.build.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -32,8 +25,14 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import (
+    empty_frame_for_table,
+    rows_to_frame,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.helpers.json import decode_json_list
+from codeintel.core.helpers.payload import decode_payload
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -63,15 +62,11 @@ EXTERNAL_DEPENDENCY_CALLS_CONTRACT = TableContractSpec(
 
 
 def _parse_json_list(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        if isinstance(parsed, list):
-            return [str(item) for item in parsed]
+    decoded = decode_payload(value)
+    if isinstance(decoded, list):
+        return [str(item) for item in decoded]
+    if isinstance(decoded, str):
+        return [str(item) for item in decode_json_list(decoded)]
     return []
 
 
@@ -162,7 +157,6 @@ def external_dependency_calls__base(
     return rows_to_frame(
         EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
         result.rows,
-        columns=EXTERNAL_DEPENDENCY_CALLS_COLS,
     )
 
 
@@ -188,7 +182,6 @@ def external_dependencies__base(
     return rows_to_frame(
         EXTERNAL_DEPENDENCIES_TABLE_KEY,
         result.rows,
-        columns=EXTERNAL_DEPENDENCIES_COLS,
     )
 
 

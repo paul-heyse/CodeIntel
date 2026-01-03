@@ -295,7 +295,7 @@ class BuildPaths:
 
     @classmethod
     def from_repo_root(
-        cls,
+        cls: type[Self],
         repo_root: Path,
         build_dir: Path | None = None,
     ) -> Self:
@@ -303,6 +303,8 @@ class BuildPaths:
 
         Parameters
         ----------
+        cls
+            BuildPaths class to construct.
         repo_root
             Root directory of the repository.
         build_dir
@@ -316,11 +318,12 @@ class BuildPaths:
         resolved_root = repo_root.resolve()
         resolved_build = (build_dir or resolved_root / "build").resolve()
         document_output_dir = resolved_root / "Document Output"
+        dataset_root_dir = _default_dataset_root_dir(resolved_root)
         return cls(
             build_dir=resolved_build,
             db_path=resolved_build / "db" / "codeintel.duckdb",
             document_output_dir=document_output_dir,
-            dataset_root_dir=document_output_dir / "datasets",
+            dataset_root_dir=dataset_root_dir,
             scip_dir=resolved_build / "scip",
             pytest_report=resolved_build / "test-results" / "pytest-report.json",
             tool_cache=resolved_build / ".tool_cache",
@@ -329,7 +332,7 @@ class BuildPaths:
 
     @classmethod
     def from_explicit(
-        cls,
+        cls: type[Self],
         *,
         build_dir: Path,
         overrides: BuildPathOverrides | None = None,
@@ -338,6 +341,8 @@ class BuildPaths:
 
         Parameters
         ----------
+        cls
+            BuildPaths class to construct.
         build_dir
             Root build directory (required).
         overrides
@@ -355,13 +360,12 @@ class BuildPaths:
         document_output_dir = (
             normalized.document_output_dir or resolved_build.parent / "Document Output"
         ).resolve()
+        dataset_root_dir = _default_dataset_root_dir(resolved_build.parent)
         return cls(
             build_dir=resolved_build,
             db_path=(normalized.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
             document_output_dir=document_output_dir,
-            dataset_root_dir=(
-                normalized.dataset_root_dir or document_output_dir / "datasets"
-            ).resolve(),
+            dataset_root_dir=(normalized.dataset_root_dir or dataset_root_dir).resolve(),
             scip_dir=(normalized.scip_dir or resolved_build / "scip").resolve(),
             pytest_report=(
                 normalized.pytest_report or resolved_build / "test-results" / "pytest-report.json"
@@ -374,7 +378,7 @@ class BuildPaths:
 
     @classmethod
     def from_layout(
-        cls,
+        cls: type[Self],
         *,
         repo_root: Path,
         overrides: BuildLayoutOptions | None = None,
@@ -384,6 +388,8 @@ class BuildPaths:
 
         Parameters
         ----------
+        cls
+            BuildPaths class to construct.
         repo_root
             Root directory of the repository.
         overrides
@@ -402,13 +408,12 @@ class BuildPaths:
         document_output_dir = (
             layout.document_output_dir or resolved_root / "Document Output"
         ).resolve()
+        dataset_root_dir = _default_dataset_root_dir(resolved_root)
         paths = cls(
             build_dir=resolved_build,
             db_path=(layout.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
             document_output_dir=document_output_dir,
-            dataset_root_dir=(
-                layout.dataset_root_dir or document_output_dir / "datasets"
-            ).resolve(),
+            dataset_root_dir=(layout.dataset_root_dir or dataset_root_dir).resolve(),
             scip_dir=(resolved_build / "scip").resolve(),
             pytest_report=(resolved_build / "test-results" / "pytest-report.json").resolve(),
             tool_cache=(resolved_build / ".tool_cache").resolve(),
@@ -429,6 +434,17 @@ class BuildPaths:
                 }
             )
         return paths
+
+
+def _default_dataset_root_dir(repo_root: Path) -> Path:
+    """Return the default dataset root directory under the repo.
+
+    Returns
+    -------
+    Path
+        Default dataset root directory for the repository.
+    """
+    return repo_root / "src" / "codeintel" / "storage" / "datasets"
 
 
 @dataclass(frozen=True)

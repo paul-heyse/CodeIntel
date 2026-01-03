@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -13,6 +15,8 @@ from codeintel.core.columnar.schema_metadata import (
 )
 from codeintel.core.schemas.arrow_gen import ArrowSchemaMetadata, arrow_schema_from_table_schema
 from codeintel.core.schemas.type_mappings import normalize_table_schema_types
+from codeintel.storage.datasets.manifest_index import DatasetManifestEntry, dataset_schema_for_entry
+from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.duckdb_types import (
     DuckDBCatalogException,
     DuckDBConnection,
@@ -54,13 +58,22 @@ def table_schema_for_table_key(
     return normalize_table_schema_types(schema)
 
 
+@dataclass(frozen=True, slots=True)
+class ContractSchemaOptions:
+    """Options for resolving contract schemas."""
+
+    repo: str | None = None
+    commit: str | None = None
+    dataset_root_dir: Path | None = None
+    snapshot_id: str | None = None
+    pii_by_column: Mapping[str, str] | None = None
+
+
 def contract_schema_for_table_key(
     *,
     con: DuckDBConnection | None,
     table_key: str,
-    repo: str | None = None,
-    commit: str | None = None,
-    pii_by_column: Mapping[str, str] | None = None,
+    options: ContractSchemaOptions | None = None,
 ) -> pa.Schema | None:
     """Return a contract schema for a table key from DuckDB.
 
@@ -70,15 +83,25 @@ def contract_schema_for_table_key(
         The resolved contract schema, or None when unavailable.
     """
     if con is None:
-        return None
+        return _parquet_schema_for_table(
+            table_key=table_key,
+            dataset_root_dir=dataset_root_dir,
+            snapshot_id=snapshot_id,
+        )
+    resolved_options = options or ContractSchemaOptions()
     metadata_schema = _metadata_schema_for_table(
         con,
         table_key=table_key,
-        repo=repo,
-        commit=commit,
-        pii_by_column=pii_by_column,
+        repo=resolved_options.repo,
+        commit=resolved_options.commit,
+        pii_by_column=resolved_options.pii_by_column,
     )
-    relation_schema = _relation_schema_for_table(con, table_key=table_key)
+    relation_schema = _relation_schema_for_table(
+        con,
+        table_key=table_key,
+        dataset_root_dir=resolved_options.dataset_root_dir,
+        snapshot_id=resolved_options.snapshot_id,
+    )
     if relation_schema is None:
         return metadata_schema
     if metadata_schema is None:
@@ -117,14 +140,43 @@ def _relation_schema_for_table(
     con: DuckDBConnection,
     *,
     table_key: str,
+    dataset_root_dir: Path | None,
+    snapshot_id: str | None,
 ) -> pa.Schema | None:
     try:
         relation = con.table(table_key)
     except DuckDBCatalogException:
-        return None
+        return _parquet_schema_for_table(
+            table_key=table_key,
+            dataset_root_dir=dataset_root_dir,
+            snapshot_id=snapshot_id,
+        )
     limited = _limit_relation(relation)
     reader = _fetch_arrow_reader(limited, batch_size=1)
     return reader.schema
+
+
+def _parquet_schema_for_table(
+    *,
+    table_key: str,
+    dataset_root_dir: Path | None,
+    snapshot_id: str | None,
+) -> pa.Schema | None:
+    if dataset_root_dir is None or snapshot_id is None:
+        return None
+    manifest_path = dataset_manifest_path(
+        dataset_root=dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = read_dataset_manifest(manifest_path)
+    except (KeyError, TypeError, ValueError):
+        return None
+    entry = DatasetManifestEntry(manifest=manifest, manifest_path=manifest_path)
+    return dataset_schema_for_entry(entry)
 
 
 def _merge_schema_metadata(base: pa.Schema, metadata_schema: pa.Schema) -> pa.Schema:

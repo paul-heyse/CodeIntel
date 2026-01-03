@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from ipaddress import ip_address
 from pathlib import Path
 
+from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 
 
@@ -43,6 +44,7 @@ class BuildSettings:
     polars_query_opt_flags: tuple[str, ...] = ()
     polars_streaming: bool = True
     polars_streaming_fallback: bool = True
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     dataset_row_index_name: str | None = None
     dataset_row_index_offset: int = 0
 
@@ -263,6 +265,7 @@ class ServingSettings:
     dataset_batch_readahead: int | None = None
     dataset_use_threads: bool | None = None
     dataset_unify_schemas: bool = False
+    dataset_schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
 
     # Arrow IPC Control Plane
     ipc_enable_options: bool = False

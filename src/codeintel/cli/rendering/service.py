@@ -20,14 +20,20 @@ Classes
 
 from __future__ import annotations
 
-import json
 import sys
+from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
+import msgspec
 from rich.console import Console
 from rich.theme import Theme
 
 from codeintel.cli.rendering.types import OutputFormat, RenderContext
+from codeintel.core.columnar.stream import ColumnarStream
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.query_results import iter_records_from_arrow_reader, records_from_arrow_reader
+from codeintel.core.serialization.msgspec_json import JSON_ENCODER, encode_json_text
 
 if TYPE_CHECKING:
     from codeintel.cli.core import CliResult
@@ -52,6 +58,15 @@ CODEINTEL_THEME = Theme(
 
 # HTTP status code threshold for internal server errors (5xx)
 _INTERNAL_ERROR_STATUS_THRESHOLD = 500
+
+
+def _encode_hook(value: object) -> object:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Enum):
+        return value.value
+    msg = f"Unsupported type: {type(value).__name__}"
+    raise TypeError(msg)
 
 
 class RenderingService(Protocol):
@@ -184,8 +199,7 @@ class UnifiedRenderer:
             Problem detail to render.
         """
         if self._ctx.format in {OutputFormat.JSON, OutputFormat.JSONL}:
-            self._ctx.err_writer.write(json.dumps(error.to_dict(), indent=2))
-            self._ctx.err_writer.write("\n")
+            self._ctx.err_writer.write(encode_json_text(error.to_dict(), indent=2, newline=True))
         elif self._err_console is not None:
             self._err_console.print(f"[error]Error:[/error] {error.title}")
             if error.detail:
@@ -274,6 +288,9 @@ class UnifiedRenderer:
 
     def _render_data(self, data: object, metadata: dict[str, object]) -> None:
         """Render data payload."""
+        if isinstance(data, ColumnarStream):
+            self._render_stream(data, metadata=metadata)
+            return
         if self._ctx.format == OutputFormat.JSON:
             output: dict[str, object] = {"data": self._serialize(data)}
             if metadata:
@@ -296,6 +313,22 @@ class UnifiedRenderer:
             else:
                 self._ctx.writer.write(f"{data}\n")
 
+    def _render_stream(self, stream: ColumnarStream, *, metadata: dict[str, object]) -> None:
+        reader = stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        if self._ctx.format == OutputFormat.JSONL:
+            for record in iter_records_from_arrow_reader(reader):
+                self._write_jsonl(record)
+            return
+        records = records_from_arrow_reader(reader)
+        if self._ctx.format == OutputFormat.JSON:
+            output: dict[str, object] = {"data": records}
+            if metadata:
+                output["metadata"] = metadata
+            self._write_json(output)
+            return
+        for record in records:
+            self._ctx.writer.write(f"{record}\n")
+
     def _render_dict(self, data: dict[str, object]) -> None:
         """Render a dictionary."""
         if self._console is not None:
@@ -307,12 +340,12 @@ class UnifiedRenderer:
 
     def _write_json(self, obj: object) -> None:
         """Write JSON to stdout with pretty formatting."""
-        self._ctx.writer.write(json.dumps(obj, indent=2, default=str))
-        self._ctx.writer.write("\n")
+        self._ctx.writer.write(encode_json_text(obj, indent=2, newline=True))
 
     def _write_jsonl(self, obj: object) -> None:
         """Write JSON to stdout as single line (for JSONL)."""
-        self._ctx.writer.write(json.dumps(obj, default=str))
+        encoded = JSON_ENCODER.encode(obj).decode("utf-8")
+        self._ctx.writer.write(encoded)
         self._ctx.writer.write("\n")
 
     @staticmethod
@@ -327,9 +360,12 @@ class UnifiedRenderer:
         to_dict = getattr(data, "to_dict", None)
         if callable(to_dict):
             return to_dict()
-        if hasattr(data, "__dict__") and not isinstance(data, type):
-            return data.__dict__
-        return data
+        try:
+            return msgspec.to_builtins(data, enc_hook=_encode_hook)
+        except TypeError:
+            if hasattr(data, "__dict__") and not isinstance(data, type):
+                return data.__dict__
+            return data
 
     @staticmethod
     def _exit_code_for_error(error: ProblemDetail | None) -> int:

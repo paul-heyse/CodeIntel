@@ -155,9 +155,7 @@ def _test_nodes_for_file(
 
 def _find_enclosing_test(span: Span, nodes: list[_TestNode]) -> _TestNode | None:
     candidates = [
-        node
-        for node in nodes
-        if node.span.start_byte <= span.start_byte < node.span.end_byte
+        node for node in nodes if node.span.start_byte <= span.start_byte < node.span.end_byte
     ]
     if not candidates:
         return None

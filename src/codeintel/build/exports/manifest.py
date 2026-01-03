@@ -6,6 +6,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import msgspec
+
 from codeintel.core.hashing import file_hash
 from codeintel.core.manifests import (
     ExportManifestData,
@@ -86,10 +88,13 @@ def write_per_dataset_manifest(
     Path
         Path to the written manifest file.
     """
-    payload = dict(manifest.to_json_obj())
-    payload["artifact"] = output_path.name
+    resolved_manifest = (
+        msgspec.structs.replace(manifest, artifact=output_path.name)
+        if manifest.artifact is None
+        else manifest
+    )
     manifest_path = output_path.with_suffix(output_path.suffix + ".manifest.json")
-    write_manifest_json(manifest_path, payload)
+    write_manifest_json(manifest_path, resolved_manifest)
     return manifest_path
 
 

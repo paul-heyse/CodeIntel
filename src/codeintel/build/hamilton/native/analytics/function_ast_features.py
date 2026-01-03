@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +13,6 @@ from codeintel.build.analytics.ast_features.extract import compute_function_feat
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -24,6 +22,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
@@ -197,14 +196,14 @@ def _feature_row_from_goid(
         "uses_concurrency_lib": features.uses_concurrency_lib,
         "uses_threading": features.uses_threading,
         "uses_asyncio_lib": features.uses_asyncio_lib,
-        "http_client_libs": json.dumps(sorted(features.http_client_libs)),
-        "http_server_libs": json.dumps(sorted(features.http_server_libs)),
-        "db_libs": json.dumps(sorted(features.db_libs)),
-        "message_libs": json.dumps(sorted(features.message_libs)),
+        "http_client_libs": sorted(features.http_client_libs),
+        "http_server_libs": sorted(features.http_server_libs),
+        "db_libs": sorted(features.db_libs),
+        "message_libs": sorted(features.message_libs),
         "config_read_count": features.config_read_count,
         "feature_flag_count": features.feature_flag_count,
-        "decorators": json.dumps(list(features.decorators)),
-        "libraries_used": json.dumps(sorted(features.libraries_used)),
+        "decorators": list(features.decorators),
+        "libraries_used": sorted(features.libraries_used),
         "created_at": row.get("created_at"),
     }
 

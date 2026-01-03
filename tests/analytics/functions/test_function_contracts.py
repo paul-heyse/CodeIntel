@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.storage.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 
