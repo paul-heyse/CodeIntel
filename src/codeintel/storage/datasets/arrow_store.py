@@ -19,6 +19,7 @@ import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema_metadata import merge_metadata
 from codeintel.core.manifests import ArrowDatasetManifest
+from codeintel.core.validation.schema_constraints import schema_metadata_errors
 from codeintel.storage.datasets.manifests import (
     dataset_manifest_path,
     read_dataset_manifest,
@@ -176,6 +177,7 @@ def write_dataset(
     resolved = options or ArrowDatasetWriteOptions()
     prepared = _apply_dictionary_options(data, resolved)
     prepared = _apply_schema_metadata(prepared, resolved.schema_metadata)
+    _validate_schema_metadata(prepared.schema, table_key=table_key)
     snapshot_dir = dataset_snapshot_dir(
         dataset_root,
         table_key=table_key,
@@ -521,6 +523,14 @@ def _apply_schema_metadata(
         schema = data.schema.with_metadata(merged)
         return pa.RecordBatchReader.from_batches(schema, data)
     return data
+
+
+def _validate_schema_metadata(schema: pa.Schema, *, table_key: str) -> None:
+    errors = schema_metadata_errors(schema)
+    if not errors:
+        return
+    message = f"Arrow schema metadata validation failed for {table_key}: " + "; ".join(errors)
+    raise ValueError(message)
 
 
 def _dictionary_encode_table(

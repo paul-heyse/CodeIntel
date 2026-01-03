@@ -16,6 +16,7 @@ from codeintel.core.schemas.serde import (
     table_schema_from_json_obj,
     table_schema_to_json_obj,
 )
+from codeintel.core.serialization.msgspec import strip_unknown_fields
 from codeintel.core.validation.profiles import normalize_validation_profile
 
 
@@ -103,6 +104,16 @@ class DatasetContractPayload(msgspec.Struct, frozen=True):
     upstream_dependencies: list[str] = msgspec.field(default_factory=list)
     validation_profile: str = "strict"
     composition: dict[str, object] | None = None
+
+
+_CONTRACT_PAYLOAD_JSON_DECODER = msgspec.json.Decoder(
+    type=DatasetContractPayload,
+    strict=True,
+)
+_CONTRACT_PAYLOAD_MSGPACK_DECODER = msgspec.msgpack.Decoder(
+    type=DatasetContractPayload,
+    strict=True,
+)
 
 
 def contract_payload_from_contract(contract: DatasetContract) -> DatasetContractPayload:
@@ -201,19 +212,44 @@ def _contract_payload_from_obj(value: object) -> DatasetContractPayload:
     if isinstance(value, (bytes, bytearray, memoryview)):
         raw = bytes(value)
         try:
-            return msgspec.msgpack.decode(raw, type=DatasetContractPayload)
+            return _CONTRACT_PAYLOAD_MSGPACK_DECODER.decode(raw)
+        except msgspec.ValidationError:
+            builtins = msgspec.msgpack.decode(raw)
+            sanitized = strip_unknown_fields(builtins, DatasetContractPayload)
+            try:
+                return msgspec.convert(sanitized, type=DatasetContractPayload, strict=True)
+            except msgspec.ValidationError as fallback_exc:
+                msg = "Invalid DatasetContract payload"
+                raise TypeError(msg) from fallback_exc
         except msgspec.DecodeError:
-            return msgspec.json.decode(raw, type=DatasetContractPayload)
+            return _decode_contract_payload_json(raw)
     if isinstance(value, str):
-        return msgspec.json.decode(value, type=DatasetContractPayload)
+        return _decode_contract_payload_json(value)
     if isinstance(value, Mapping):
+        sanitized = strip_unknown_fields(dict(value), DatasetContractPayload)
         try:
-            return msgspec.convert(value, type=DatasetContractPayload, strict=False)
+            return msgspec.convert(sanitized, type=DatasetContractPayload, strict=True)
         except msgspec.ValidationError as exc:
             msg = "Invalid DatasetContract payload"
             raise TypeError(msg) from exc
     msg = "DatasetContract payload must be a mapping or encoded bytes"
     raise TypeError(msg)
+
+
+def _decode_contract_payload_json(raw: bytes | str) -> DatasetContractPayload:
+    try:
+        return _CONTRACT_PAYLOAD_JSON_DECODER.decode(raw)
+    except msgspec.ValidationError:
+        builtins = msgspec.json.decode(raw)
+        sanitized = strip_unknown_fields(builtins, DatasetContractPayload)
+        try:
+            return msgspec.convert(sanitized, type=DatasetContractPayload, strict=True)
+        except msgspec.ValidationError as fallback_exc:
+            msg = "Invalid DatasetContract payload"
+            raise TypeError(msg) from fallback_exc
+    except msgspec.DecodeError as exc:
+        msg = "Invalid DatasetContract payload"
+        raise TypeError(msg) from exc
 
 
 def contract_from_payload(value: object) -> DatasetContract:

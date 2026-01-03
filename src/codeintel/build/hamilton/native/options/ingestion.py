@@ -6,13 +6,15 @@ module scanning, SCIP indexing, and related operations.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = [
+    "BytecodeExtractOptions",
+    "InspectExtractOptions",
     "ModuleIngestOptions",
     "ScipIngestOptions",
     "SyntaxAugmentOptions",
@@ -120,6 +122,59 @@ class SyntaxIndexOptions:
     """
 
     emit_ast_nodes: bool = True
+
+
+@dataclass(frozen=True)
+class BytecodeExtractOptions:
+    """Configuration options for bytecode extraction.
+
+    Attributes
+    ----------
+    optimize
+        Optimization level passed to compile() (0, 1, or 2).
+    show_caches
+        Whether to request inline cache metadata from dis.
+    adaptive
+        Whether to emit adaptive instruction variants.
+    include_exception_table
+        Whether to parse the exception table.
+    include_cfg
+        Whether to derive CFG blocks/edges.
+    include_defuse
+        Whether to emit def/use events.
+    """
+
+    optimize: int = 0
+    show_caches: bool = True
+    adaptive: bool = False
+    include_exception_table: bool = True
+    include_cfg: bool = True
+    include_defuse: bool = True
+
+
+@dataclass(frozen=True)
+class InspectExtractOptions:
+    """Configuration options for inspect extraction.
+
+    Attributes
+    ----------
+    enable
+        Whether to enable inspect extraction (disabled by default).
+    module_allowlist
+        Explicit module names allowed for import/inspection.
+    max_objects
+        Maximum number of objects to inspect.
+    follow_wrapped
+        Whether to follow wrapper chains for signatures.
+    eval_str
+        Whether to evaluate string annotations.
+    """
+
+    enable: bool = False
+    module_allowlist: list[str] = field(default_factory=list)
+    max_objects: int = 5000
+    follow_wrapped: bool = True
+    eval_str: bool = False
 
 
 @dataclass(frozen=True)

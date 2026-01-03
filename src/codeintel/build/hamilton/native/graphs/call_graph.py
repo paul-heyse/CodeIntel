@@ -11,10 +11,11 @@ import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
@@ -116,14 +117,29 @@ def _call_name(node: ast.AST) -> str | None:
 
 def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
-        rel_path = row.get("path")
-        module_name = row.get("module")
-        language = row.get("language")
-        if language not in {None, "python"}:
-            continue
-        if isinstance(rel_path, str) and isinstance(module_name, str):
-            module_by_path[rel_path] = module_name
+    if modules_frame.is_empty():
+        return module_by_path
+    required = {"path", "module"}
+    if not required.issubset(set(modules_frame.columns)):
+        return module_by_path
+    filtered = modules_frame
+    if "language" in filtered.columns:
+        filtered = filtered.filter(pl.col("language").is_null() | (pl.col("language") == "python"))
+    filtered = filtered.select(["path", "module"]).with_columns(
+        pl.col("path").cast(pl.Utf8, strict=False),
+        pl.col("module").cast(pl.Utf8, strict=False),
+    )
+    filtered = filtered.filter(
+        pl.col("path").is_not_null()
+        & pl.col("module").is_not_null()
+        & (pl.col("path").str.len_chars() > 0)
+        & (pl.col("module").str.len_chars() > 0)
+    )
+    if filtered.is_empty():
+        return module_by_path
+    data = filtered.to_dict(as_series=False)
+    for rel_path, module_name in zip(data["path"], data["module"], strict=True):
+        module_by_path[str(rel_path)] = str(module_name)
     return module_by_path
 
 
@@ -134,28 +150,68 @@ def _call_graph_indices(
     goid_by_qualname: dict[str, int] = {}
     local_name_map: dict[str, dict[str, int]] = {}
     goid_language: dict[int, str] = {}
-    for row in goids_frame.iter_rows(named=True):
-        if row.get("kind") not in {"function", "method"}:
+    data = _call_graph_index_rows(goids_frame, module_by_path)
+    if data is None:
+        return goid_by_qualname, local_name_map, goid_language
+    languages = data.get("language")
+    for idx, (qualname, rel_path, goid_raw) in enumerate(
+        zip(data["qualname"], data["rel_path"], data["goid_h128"], strict=True)
+    ):
+        if qualname is None or rel_path is None:
             continue
-        qualname = row.get("qualname")
-        rel_path = row.get("rel_path")
-        if not isinstance(qualname, str) or not isinstance(rel_path, str):
-            continue
-        module_name = module_by_path.get(rel_path)
+        module_name = module_by_path.get(str(rel_path))
         if not module_name:
             continue
-        goid = row.get("goid_h128")
-        if not isinstance(goid, int):
+        goid = normalize_decimal_id(goid_raw)
+        if goid is None:
             continue
-        goid_by_qualname[qualname] = goid
-        language = row.get("language")
-        if isinstance(language, str):
-            goid_language[goid] = language
-        local_name = qualname.split(".")[-1]
-        if qualname == f"{module_name}.{local_name}":
-            local_map = local_name_map.setdefault(module_name, {})
-            local_map.setdefault(local_name, goid)
+        qualname_value = str(qualname)
+        goid_by_qualname[qualname_value] = goid
+        if languages is not None:
+            language_raw = languages[idx]
+            if isinstance(language_raw, str):
+                goid_language[goid] = language_raw
+        _update_local_name_map(
+            local_name_map,
+            module_name=module_name,
+            qualname=qualname_value,
+            goid=goid,
+        )
     return goid_by_qualname, local_name_map, goid_language
+
+
+def _call_graph_index_rows(
+    goids_frame: pl.DataFrame,
+    module_by_path: dict[str, str],
+) -> dict[str, list[object]] | None:
+    if goids_frame.is_empty() or not module_by_path:
+        return None
+    required = {"kind", "qualname", "rel_path", "goid_h128"}
+    if not required.issubset(set(goids_frame.columns)):
+        return None
+    filtered = goids_frame.filter(pl.col("kind").is_in(_FUNCTION_KINDS))
+    if "rel_path" in filtered.columns:
+        filtered = filtered.filter(pl.col("rel_path").is_in(list(module_by_path)))
+    if filtered.is_empty():
+        return None
+    columns = ["qualname", "rel_path", "goid_h128"]
+    if "language" in filtered.columns:
+        columns.append("language")
+    return filtered.select(columns).to_dict(as_series=False)
+
+
+def _update_local_name_map(
+    local_name_map: dict[str, dict[str, int]],
+    *,
+    module_name: str,
+    qualname: str,
+    goid: int,
+) -> None:
+    local_name = qualname.rsplit(".", maxsplit=1)[-1]
+    if qualname != f"{module_name}.{local_name}":
+        return
+    local_map = local_name_map.setdefault(module_name, {})
+    local_map.setdefault(local_name, goid)
 
 
 def _edge_rows_for_module(
@@ -229,11 +285,17 @@ def call_graph_nodes_compute(
     polars.LazyFrame
         Lazy frame for computed call graph nodes.
     """
-    goids = tabular_to_frame(q__core__goids)
+    goids = (
+        tabular_to_lazyframe(q__core__goids)
+        .select(["goid_h128", "language", "kind", "rel_path", "qualname"])
+        .collect()
+    )
     if goids.is_empty():
         return empty_frame_for_table(CALL_GRAPH_NODES_TABLE_KEY)
 
-    modules = tabular_to_frame(q__core__modules)
+    modules = (
+        tabular_to_lazyframe(q__core__modules).select(["path", "module", "language"]).collect()
+    )
     module_by_path = _module_by_path(modules)
 
     function_map: dict[tuple[str, str], _FunctionDefInfo] = {}
@@ -298,11 +360,17 @@ def call_graph_edges_compute(
     InferableTabularInput
         Tabular input for computed call graph edges.
     """
-    goids = tabular_to_frame(q__core__goids)
+    goids = (
+        tabular_to_lazyframe(q__core__goids)
+        .select(["goid_h128", "language", "kind", "rel_path", "qualname"])
+        .collect()
+    )
     if goids.is_empty():
         return empty_reader_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
-    modules = tabular_to_frame(q__core__modules)
+    modules = (
+        tabular_to_lazyframe(q__core__modules).select(["path", "module", "language"]).collect()
+    )
     module_by_path = _module_by_path(modules)
     goid_by_qualname, local_name_map, goid_language = _call_graph_indices(
         goids,

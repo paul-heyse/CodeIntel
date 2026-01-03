@@ -122,48 +122,120 @@ def _parse_json_list(value: object) -> list[str]:
 
 def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
     module_map: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
-        path = row.get("path")
-        module = row.get("module")
-        if isinstance(path, str) and isinstance(module, str):
-            module_map[path] = module
+    if modules_frame.is_empty():
+        return module_map
+    if not {"path", "module"}.issubset(set(modules_frame.columns)):
+        return module_map
+    data = modules_frame.select(["path", "module"]).to_dict(as_series=False)
+    module_map.update(
+        {
+            path: module
+            for path, module in zip(data["path"], data["module"], strict=True)
+            if isinstance(path, str) and isinstance(module, str)
+        }
+    )
     return module_map
 
 
 def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeatures]:
     features_map: dict[int, FunctionAstFeatures] = {}
-    for row in features_frame.iter_rows(named=True):
-        goid_raw = row.get("function_goid_h128")
+    if features_frame.is_empty():
+        return features_map
+    required = {"function_goid_h128", "rel_path", "qualname"}
+    if not required.issubset(set(features_frame.columns)):
+        return features_map
+    columns = [
+        "function_goid_h128",
+        "rel_path",
+        "qualname",
+        "is_async",
+        "decorators",
+        "libraries_used",
+        "uses_network",
+        "uses_db",
+        "uses_filesystem",
+        "uses_subprocess",
+        "uses_concurrency_lib",
+        "uses_threading",
+        "uses_asyncio_lib",
+        "http_client_libs",
+        "http_server_libs",
+        "db_libs",
+        "message_libs",
+        "config_read_count",
+        "feature_flag_count",
+    ]
+    data = features_frame.select(columns).to_dict(as_series=False)
+    for (
+        goid_raw,
+        rel_path,
+        qualname,
+        is_async,
+        decorators,
+        libraries_used,
+        uses_network,
+        uses_db,
+        uses_filesystem,
+        uses_subprocess,
+        uses_concurrency_lib,
+        uses_threading,
+        uses_asyncio_lib,
+        http_client_libs,
+        http_server_libs,
+        db_libs,
+        message_libs,
+        config_read_count,
+        feature_flag_count,
+    ) in zip(
+        data["function_goid_h128"],
+        data["rel_path"],
+        data["qualname"],
+        data["is_async"],
+        data["decorators"],
+        data["libraries_used"],
+        data["uses_network"],
+        data["uses_db"],
+        data["uses_filesystem"],
+        data["uses_subprocess"],
+        data["uses_concurrency_lib"],
+        data["uses_threading"],
+        data["uses_asyncio_lib"],
+        data["http_client_libs"],
+        data["http_server_libs"],
+        data["db_libs"],
+        data["message_libs"],
+        data["config_read_count"],
+        data["feature_flag_count"],
+        strict=True,
+    ):
         goid_value = normalize_decimal_id(goid_raw)
         if goid_value is None:
             continue
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
         features_map[int(goid_value)] = FunctionAstFeatures(
             goid=int(goid_value),
             rel_path=rel_path,
             qualname=qualname,
-            is_async=bool(row.get("is_async")),
-            decorators=tuple(_parse_json_list(row.get("decorators"))),
+            is_async=bool(is_async),
+            decorators=tuple(_parse_json_list(decorators)),
             imports={},
-            libraries_used=frozenset(_parse_json_list(row.get("libraries_used"))),
+            libraries_used=frozenset(_parse_json_list(libraries_used)),
             io_flags=IoFlags(
-                uses_network=bool(row.get("uses_network")),
-                uses_db=bool(row.get("uses_db")),
-                uses_filesystem=bool(row.get("uses_filesystem")),
-                uses_subprocess=bool(row.get("uses_subprocess")),
+                uses_network=bool(uses_network),
+                uses_db=bool(uses_db),
+                uses_filesystem=bool(uses_filesystem),
+                uses_subprocess=bool(uses_subprocess),
             ),
-            uses_concurrency_lib=bool(row.get("uses_concurrency_lib")),
-            uses_threading=bool(row.get("uses_threading")),
-            uses_asyncio_lib=bool(row.get("uses_asyncio_lib")),
-            http_client_libs=frozenset(_parse_json_list(row.get("http_client_libs"))),
-            http_server_libs=frozenset(_parse_json_list(row.get("http_server_libs"))),
-            db_libs=frozenset(_parse_json_list(row.get("db_libs"))),
-            message_libs=frozenset(_parse_json_list(row.get("message_libs"))),
-            config_read_count=int(row.get("config_read_count") or 0),
-            feature_flag_count=int(row.get("feature_flag_count") or 0),
+            uses_concurrency_lib=bool(uses_concurrency_lib),
+            uses_threading=bool(uses_threading),
+            uses_asyncio_lib=bool(uses_asyncio_lib),
+            http_client_libs=frozenset(_parse_json_list(http_client_libs)),
+            http_server_libs=frozenset(_parse_json_list(http_server_libs)),
+            db_libs=frozenset(_parse_json_list(db_libs)),
+            message_libs=frozenset(_parse_json_list(message_libs)),
+            config_read_count=int(config_read_count or 0),
+            feature_flag_count=int(feature_flag_count or 0),
             extra={},
         )
     return features_map

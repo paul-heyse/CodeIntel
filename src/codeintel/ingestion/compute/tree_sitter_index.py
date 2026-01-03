@@ -38,6 +38,12 @@ if TYPE_CHECKING:
     from tree_sitter import Tree
     from tree_sitter_language_pack import SupportedLanguage
 
+    from codeintel.core.schemas.generated_rows.core import (
+        TreeSitterCaptureExtras,
+        TreeSitterNodeExtras,
+        TreeSitterParseErrorExtras,
+        TreeSitterTokenExtras,
+    )
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.tree_sitter.runner import (
         TreeSitterCapture,
@@ -48,12 +54,6 @@ if TYPE_CHECKING:
         TreeSitterParseResult,
         TreeSitterToken,
         TreeSitterTrivia,
-    )
-    from codeintel.core.schemas.generated_rows.core import (
-        TreeSitterCaptureExtras,
-        TreeSitterNodeExtras,
-        TreeSitterParseErrorExtras,
-        TreeSitterTokenExtras,
     )
 
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"

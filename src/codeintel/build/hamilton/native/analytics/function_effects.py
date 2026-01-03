@@ -22,7 +22,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -56,8 +56,12 @@ def function_effects__base(
     pl.LazyFrame
         Lazy frame with function effects columns.
     """
-    goids_frame = tabular_to_frame(q__core__goids)
-    modules_frame = tabular_to_frame(q__core__modules)
+    goids_frame = (
+        tabular_to_lazyframe(q__core__goids)
+        .select(["goid_h128", "rel_path", "qualname", "start_line", "end_line", "urn", "kind"])
+        .collect()
+    )
+    modules_frame = tabular_to_lazyframe(q__core__modules).select(["path", "module"]).collect()
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -70,8 +74,14 @@ def function_effects__base(
         catalog_provider=catalog,
         ast_map=ast_map,
         missing_goids=missing,
-        call_graph_edges=tabular_to_frame(q__graph__call_graph_edges),
-        call_graph_nodes=tabular_to_frame(q__graph__call_graph_nodes),
+        call_graph_edges=(
+            tabular_to_lazyframe(q__graph__call_graph_edges)
+            .select(["repo", "commit", "caller_goid_h128", "callee_goid_h128"])
+            .collect()
+        ),
+        call_graph_nodes=(
+            tabular_to_lazyframe(q__graph__call_graph_nodes).select(["goid_h128", "kind"]).collect()
+        ),
     )
     rows = build_function_effects_rows(env.snapshot, inputs=inputs)
     return rows_to_frame(FUNCTION_EFFECTS_TABLE_KEY, rows)

@@ -27,6 +27,12 @@ from codeintel.core.columnar.rows import (
     columnar_buffer_for_table_key,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.infrastructure.ast_facts import (
+    AstCollectContext,
+    AstNodeRecord,
+    AstSpan,
+    collect_ast_nodes,
+)
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
@@ -148,6 +154,16 @@ class _ParseManifestContext:
     libcst_version: str | None
 
 
+@dataclass(frozen=True)
+class _ParsedCstModule:
+    parsed_module: cst.Module
+    source_text: str
+    source_index: LineIndexedSource
+    encoding: str
+    manifest_context: _ParseManifestContext
+    wrapper: metadata.MetadataWrapper
+
+
 @dataclass(slots=True)
 class _CstBuffers:
     cst: ColumnarRowBuffer
@@ -217,8 +233,6 @@ class _DefExtrasInput:
     returns_node: cst.CSTNode | None = None
     docstring: str | None = None
     qualified_node: cst.CSTNode | None = None
-
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -1669,15 +1683,13 @@ def _build_source_index(source_bytes: bytes) -> tuple[LineIndexedSource, str]:
     return source_index, encoding
 
 
-def _extract_module_syntax(
+def _parse_module_context(
     *,
-    module: ModuleRecord,
     context: _SyntaxContext,
     source_bytes: bytes,
     buffers: _CstBuffers,
-    emit_ast_nodes: bool,
-) -> list[str]:
-    warnings: list[str] = []
+    warnings: list[str],
+) -> _ParsedCstModule | None:
     source_index, encoding = _build_source_index(source_bytes)
     libcst_version = _libcst_version()
     manifest_context = _build_manifest_context(
@@ -1699,8 +1711,7 @@ def _extract_module_syntax(
         message = f"Failed to parse {context.rel_path}: {exc}"
         warnings.append(message)
         log.warning("%s", message)
-        return warnings
-
+        return None
     source_text = parsed_module.code
     encoding = parsed_module.encoding if isinstance(parsed_module.encoding, str) else encoding
     source_index = LineIndexedSource(source_text, source_bytes, encoding=encoding)
@@ -1719,7 +1730,6 @@ def _extract_module_syntax(
         libcst_version=libcst_version,
     )
     wrapper = metadata.MetadataWrapper(parsed_module, unsafe_skip_copy=True)
-
     buffers.parse_manifest.append(
         _parse_manifest_row(
             manifest_context,
@@ -1727,34 +1737,74 @@ def _extract_module_syntax(
             error=None,
         )
     )
+    return _ParsedCstModule(
+        parsed_module=parsed_module,
+        source_text=source_text,
+        source_index=source_index,
+        encoding=encoding,
+        manifest_context=manifest_context,
+        wrapper=wrapper,
+    )
+
+
+def _resolve_scope_map(
+    wrapper: metadata.MetadataWrapper,
+    *,
+    rel_path: str,
+    warnings: list[str],
+) -> Mapping[cst.CSTNode, Scope | None]:
+    try:
+        return wrapper.resolve(metadata.ScopeProvider)
+    except (ValueError, TypeError, RuntimeError) as exc:
+        message = f"Scope metadata failed for {rel_path}: {exc}"
+        warnings.append(message)
+        log.warning("%s", message)
+        return {}
+
+
+def _extract_module_syntax(
+    *,
+    module: ModuleRecord,
+    context: _SyntaxContext,
+    source_bytes: bytes,
+    buffers: _CstBuffers,
+    emit_ast_nodes: bool,
+) -> list[str]:
+    warnings: list[str] = []
+    parsed_context = _parse_module_context(
+        context=context,
+        source_bytes=source_bytes,
+        buffers=buffers,
+        warnings=warnings,
+    )
+    if parsed_context is None:
+        return warnings
 
     cst_visitor = CstVisitor(
         rel_path=context.rel_path,
         module_name=module.module_name,
         source=SourceBundle(
-            text=source_text,
+            text=parsed_context.source_text,
             source_bytes=source_bytes,
-            encoding=encoding,
+            encoding=parsed_context.encoding,
         ),
     )
     syntax_graph_visitor = SyntaxGraphVisitor(
         context=context,
-        source_index=source_index,
+        source_index=parsed_context.source_index,
         snippet_limit=CST_CAPTURE_CONFIG.snippet_limit,
     )
-    scope_map: Mapping[cst.CSTNode, Scope | None]
-    try:
-        scope_map = wrapper.resolve(metadata.ScopeProvider)
-    except (ValueError, TypeError, RuntimeError) as exc:
-        message = f"Scope metadata failed for {context.rel_path}: {exc}"
-        warnings.append(message)
-        log.warning("%s", message)
-        scope_map = {}
+    scope_map = _resolve_scope_map(
+        parsed_context.wrapper,
+        rel_path=context.rel_path,
+        warnings=warnings,
+    )
     syntax_visitor = SyntaxFactsVisitor(
         context=context,
-        source_index=source_index,
+        source_index=parsed_context.source_index,
         access_map=_build_access_map(scope_map) if scope_map else {},
     )
+
     def _ast_node_id(node: object, span: AstSpan) -> str:
         return _stable_id(
             "ast_node",
@@ -1769,21 +1819,24 @@ def _extract_module_syntax(
             span.start_byte,
             span.end_byte,
         )
+
     ast_nodes = (
         collect_ast_nodes(
-            source_text,
-            source_index,
+            parsed_context.source_text,
+            parsed_context.source_index,
             node_id_factory=_ast_node_id,
-            warnings=warnings,
-            source_label=context.rel_path,
+            context=AstCollectContext(
+                warnings=warnings,
+                source_label=context.rel_path,
+            ),
         )
         if emit_ast_nodes
         else []
     )
     try:
-        wrapper.visit(cst_visitor)
-        wrapper.visit(syntax_graph_visitor)
-        wrapper.visit(syntax_visitor)
+        parsed_context.wrapper.visit(cst_visitor)
+        parsed_context.wrapper.visit(syntax_graph_visitor)
+        parsed_context.wrapper.visit(syntax_visitor)
     except (ValueError, TypeError, RuntimeError) as exc:
         message = f"Failed to extract syntax for {context.rel_path}: {exc}"
         warnings.append(message)

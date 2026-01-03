@@ -305,7 +305,7 @@ def _load_import_graph(
     env: BuildEnv,
     edges: InferableTabularInput,
     modules: InferableTabularInput,
-) -> tuple[nx.DiGraph, dict[str, dict[str, int | bool]] | None]:
+) -> tuple[nx.DiGraph, ComponentMeta | None]:
     import_edge_rows = _collect_rows(
         edges,
         ("src_module", "dst_module", "module_layer"),
@@ -331,6 +331,11 @@ def _call_graph_from_frames(
     return graph
 
 
+def _increment_edge_weight(attrs: Mapping[str, object], *, ctx: str) -> int:
+    weight = coerce_optional_int(attrs.get("weight"), ctx=ctx)
+    return (weight if weight is not None else 0) + 1
+
+
 def _add_call_graph_edges(graph: nx.DiGraph, edges: pl.DataFrame) -> None:
     if edges.is_empty():
         return
@@ -345,7 +350,7 @@ def _add_call_graph_edges(graph: nx.DiGraph, edges: pl.DataFrame) -> None:
             continue
         if graph.has_edge(caller, callee):
             attrs = graph[caller][callee]
-            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+            attrs["weight"] = _increment_edge_weight(attrs, ctx="call_graph_edge_weight")
         else:
             graph.add_edge(caller, callee, weight=1)
 
@@ -354,7 +359,9 @@ def _add_call_graph_nodes(graph: nx.DiGraph, nodes: pl.DataFrame) -> None:
     if nodes.is_empty() or "goid_h128" not in nodes.columns:
         return
     node_ids = nodes.get_column("goid_h128").to_list()
-    kinds = nodes.get_column("kind").to_list() if "kind" in nodes.columns else [None] * len(node_ids)
+    kinds = (
+        nodes.get_column("kind").to_list() if "kind" in nodes.columns else [None] * len(node_ids)
+    )
     for node_raw, kind in zip(node_ids, kinds, strict=True):
         node_id = normalize_decimal_id(node_raw)
         if node_id is None or node_id in graph:
@@ -403,19 +410,15 @@ def _add_import_edges(
             fallback_layer_by_module[source] = layer
         if graph.has_edge(source, target):
             attrs = graph[source][target]
-            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+            attrs["weight"] = _increment_edge_weight(attrs, ctx="import_graph_edge_weight")
         else:
             graph.add_edge(source, target, weight=1)
 
 
-def _component_meta_from_import_frame(
-    frame: pl.DataFrame,
-) -> dict[str, dict[str, int | bool]] | None:
+def _component_meta_from_import_frame(frame: pl.DataFrame) -> ComponentMeta | None:
     if frame.is_empty() or "module" not in frame.columns:
         return None
-    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(
-        as_series=False
-    )
+    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(as_series=False)
     comp_id: dict[str, int] = {}
     in_cycle: dict[str, bool] = {}
     layer_by_module: dict[str, int] = {}
@@ -453,9 +456,7 @@ def _apply_import_module_frame(
 ) -> None:
     if frame.is_empty() or "module" not in frame.columns:
         return
-    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(
-        as_series=False
-    )
+    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(as_series=False)
     for module, scc_id, component_size, layer in zip(
         data["module"],
         data["scc_id"],

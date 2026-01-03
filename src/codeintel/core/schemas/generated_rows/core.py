@@ -17,6 +17,26 @@ __all__ = [
     "CoreIngestRunsRow",
     "CoreModulesRow",
     "CoreParseManifestRow",
+    "CorePyBcBlocksRow",
+    "CorePyBcCfgEdgesRow",
+    "CorePyBcCodeUnitsRow",
+    "CorePyBcDefuseEventsRow",
+    "CorePyBcExceptionTableRow",
+    "CorePyBcInstructionsRow",
+    "CorePyInspectAnnotationsKvRow",
+    "CorePyInspectMembersStaticRow",
+    "CorePyInspectObjectsRow",
+    "CorePyInspectSignatureParamsRow",
+    "CorePyInspectSignaturesRow",
+    "CorePyInspectSourceRow",
+    "CorePyInspectUnwrapHopsRow",
+    "CorePySymBindingsRow",
+    "CorePySymFunctionPartitionsRow",
+    "CorePySymNamespaceEdgesRow",
+    "CorePySymResolutionEdgesRow",
+    "CorePySymScopeEdgesRow",
+    "CorePySymScopesRow",
+    "CorePySymSymbolsRow",
     "CoreRepoMapRow",
     "CoreSchemaInferenceErrorsRow",
     "CoreScipDiagnosticsRow",
@@ -53,26 +73,6 @@ __all__ = [
     "CoreTsTokensRow",
     "CoreTsTriviaRow",
     "CoreTsWeldCoverageRow",
-    "PyBcBlockRow",
-    "PyBcCfgEdgeRow",
-    "PyBcCodeUnitRow",
-    "PyBcDefUseEventRow",
-    "PyBcExceptionTableRow",
-    "PyBcInstructionRow",
-    "PyInspectAnnotationRow",
-    "PyInspectMemberRow",
-    "PyInspectObjectRow",
-    "PyInspectSignatureParamRow",
-    "PyInspectSignatureRow",
-    "PyInspectSourceRow",
-    "PyInspectUnwrapHopRow",
-    "PySymBindingRow",
-    "PySymFunctionPartitionsRow",
-    "PySymNamespaceEdgeRow",
-    "PySymResolutionEdgeRow",
-    "PySymScopeEdgeRow",
-    "PySymScopeRow",
-    "PySymSymbolRow",
 ]
 
 
@@ -305,7 +305,7 @@ class CoreAstNodesRow(TypedDict):
     hash: str
 
 
-class PySymScopeRow(TypedDict):
+class CorePySymScopesRow(TypedDict):
     """Row model for core.py_sym_scopes."""
 
     repo: str
@@ -328,7 +328,7 @@ class PySymScopeRow(TypedDict):
     anchor_reason: str | None
 
 
-class PySymSymbolRow(TypedDict):
+class CorePySymSymbolsRow(TypedDict):
     """Row model for core.py_sym_symbols."""
 
     repo: str
@@ -351,7 +351,7 @@ class PySymSymbolRow(TypedDict):
     namespace_count: int | None
 
 
-class PySymScopeEdgeRow(TypedDict):
+class CorePySymScopeEdgesRow(TypedDict):
     """Row model for core.py_sym_scope_edges."""
 
     repo: str
@@ -362,7 +362,7 @@ class PySymScopeEdgeRow(TypedDict):
     edge_kind: str
 
 
-class PySymNamespaceEdgeRow(TypedDict):
+class CorePySymNamespaceEdgesRow(TypedDict):
     """Row model for core.py_sym_namespace_edges."""
 
     repo: str
@@ -376,7 +376,7 @@ class PySymNamespaceEdgeRow(TypedDict):
     is_ambiguous: bool | None
 
 
-class PySymFunctionPartitionsRow(TypedDict):
+class CorePySymFunctionPartitionsRow(TypedDict):
     """Row model for core.py_sym_function_partitions."""
 
     repo: str
@@ -390,7 +390,7 @@ class PySymFunctionPartitionsRow(TypedDict):
     frees: list[str] | None
 
 
-class PySymBindingRow(TypedDict):
+class CorePySymBindingsRow(TypedDict):
     """Row model for core.py_sym_bindings."""
 
     repo: str
@@ -407,7 +407,7 @@ class PySymBindingRow(TypedDict):
     scoping_class: str | None
 
 
-class PySymResolutionEdgeRow(TypedDict):
+class CorePySymResolutionEdgesRow(TypedDict):
     """Row model for core.py_sym_resolution_edges."""
 
     repo: str
@@ -438,7 +438,7 @@ class PyBcPositions(TypedDict, total=False):
     end_col: int | None
 
 
-class PyBcCodeUnitRow(TypedDict):
+class CorePyBcCodeUnitsRow(TypedDict):
     """Row model for core.py_bc_code_units."""
 
     repo: str
@@ -469,7 +469,7 @@ class PyBcCodeUnitRow(TypedDict):
     bytecode_magic: bytes | None
 
 
-class PyBcInstructionRow(TypedDict):
+class CorePyBcInstructionsRow(TypedDict):
     """Row model for core.py_bc_instructions."""
 
     repo: str
@@ -510,7 +510,7 @@ class PyBcInstructionRow(TypedDict):
     op_bytes: bytes | None
 
 
-class PyBcExceptionTableRow(TypedDict):
+class CorePyBcExceptionTableRow(TypedDict):
     """Row model for core.py_bc_exception_table."""
 
     repo: str
@@ -528,7 +528,7 @@ class PyBcExceptionTableRow(TypedDict):
     target_label: str | None
 
 
-class PyBcBlockRow(TypedDict):
+class CorePyBcBlocksRow(TypedDict):
     """Row model for core.py_bc_blocks."""
 
     repo: str
@@ -546,7 +546,7 @@ class PyBcBlockRow(TypedDict):
     last_instr_index: int | None
 
 
-class PyBcCfgEdgeRow(TypedDict):
+class CorePyBcCfgEdgesRow(TypedDict):
     """Row model for core.py_bc_cfg_edges."""
 
     repo: str
@@ -561,7 +561,7 @@ class PyBcCfgEdgeRow(TypedDict):
     exc_entry_index: int | None
 
 
-class PyBcDefUseEventRow(TypedDict):
+class CorePyBcDefuseEventsRow(TypedDict):
     """Row model for core.py_bc_defuse_events."""
 
     repo: str
@@ -598,7 +598,7 @@ class InspectOpStatus(TypedDict, total=False):
     error_msg: str
 
 
-class PyInspectObjectRow(TypedDict):
+class CorePyInspectObjectsRow(TypedDict):
     """Row model for core.py_inspect_objects."""
 
     repo: str
@@ -620,7 +620,7 @@ class PyInspectObjectRow(TypedDict):
     status: InspectOpStatus | None
 
 
-class PyInspectMemberRow(TypedDict):
+class CorePyInspectMembersStaticRow(TypedDict):
     """Row model for core.py_inspect_members_static."""
 
     repo: str
@@ -640,7 +640,7 @@ class PyInspectMemberRow(TypedDict):
     status: InspectOpStatus | None
 
 
-class PyInspectUnwrapHopRow(TypedDict):
+class CorePyInspectUnwrapHopsRow(TypedDict):
     """Row model for core.py_inspect_unwrap_hops."""
 
     repo: str
@@ -655,7 +655,7 @@ class PyInspectUnwrapHopRow(TypedDict):
     status: InspectOpStatus | None
 
 
-class PyInspectSignatureRow(TypedDict):
+class CorePyInspectSignaturesRow(TypedDict):
     """Row model for core.py_inspect_signatures."""
 
     repo: str
@@ -675,7 +675,7 @@ class PyInspectSignatureRow(TypedDict):
     status: InspectOpStatus | None
 
 
-class PyInspectSignatureParamRow(TypedDict):
+class CorePyInspectSignatureParamsRow(TypedDict):
     """Row model for core.py_inspect_signature_params."""
 
     repo: str
@@ -692,7 +692,7 @@ class PyInspectSignatureParamRow(TypedDict):
     status: InspectOpStatus | None
 
 
-class PyInspectAnnotationRow(TypedDict):
+class CorePyInspectAnnotationsKvRow(TypedDict):
     """Row model for core.py_inspect_annotations_kv."""
 
     repo: str
@@ -705,7 +705,7 @@ class PyInspectAnnotationRow(TypedDict):
     status: InspectOpStatus | None
 
 
-class PyInspectSourceRow(TypedDict):
+class CorePyInspectSourceRow(TypedDict):
     """Row model for core.py_inspect_source."""
 
     repo: str
@@ -829,7 +829,7 @@ class CoreIngestRunsRow(TypedDict):
     status: str
     error_kind: str | None
     error_message: str | None
-    datasets: bytes | None
+    datasets: list[str] | None
     modules_total: int | None
     modules_changed: int | None
     modules_deleted: int | None

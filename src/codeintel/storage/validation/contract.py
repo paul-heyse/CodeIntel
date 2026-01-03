@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
@@ -18,6 +18,8 @@ from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
+
+    from codeintel.storage.duckdb_types import DuckDBRelation
 
 
 @lru_cache(maxsize=1)
@@ -63,14 +65,17 @@ def _arrow_schema_for_table(
         relation = con.table(table_key)
     except (DuckDBCatalogException, DuckDBError):
         return None
-    limited = relation
+    limited: object = relation
     limiter = getattr(relation, "limit", None)
     if callable(limiter):
         try:
             limited = limiter(0)
         except TypeError:
             limited = relation
-    reader = limited.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    relation_to_read = (
+        limited if callable(getattr(limited, "fetch_record_batch", None)) else relation
+    )
+    reader = cast("DuckDBRelation", relation_to_read).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
     return reader.schema
 
 
@@ -127,7 +132,13 @@ def validate_contract_or_raise(
     *,
     include_views: bool = True,
 ) -> None:
-    """Validate dataset contract and raise on any issues."""
+    """Validate dataset contract and raise on any issues.
+
+    Raises
+    ------
+    ValueError
+        Raised when contract validation reports any issues.
+    """
     issues = collect_contract_issues(con, include_views=include_views, missing_ok=False)
     if not issues:
         return

@@ -141,11 +141,18 @@ def data_model_usage_frames(
 
 def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
     module_map: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
-        path = row.get("path")
-        module = row.get("module")
-        if isinstance(path, str) and isinstance(module, str):
-            module_map[path] = module
+    if modules_frame.is_empty():
+        return module_map
+    if not {"path", "module"}.issubset(set(modules_frame.columns)):
+        return module_map
+    data = modules_frame.select(["path", "module"]).to_dict(as_series=False)
+    module_map.update(
+        {
+            path: module
+            for path, module in zip(data["path"], data["module"], strict=True)
+            if isinstance(path, str) and isinstance(module, str)
+        }
+    )
     return module_map
 
 

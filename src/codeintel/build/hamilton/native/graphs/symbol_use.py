@@ -25,7 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -39,11 +39,18 @@ SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
 
 def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
-        path = row.get("path")
-        module = row.get("module")
-        if isinstance(path, str) and isinstance(module, str):
-            module_by_path[path] = module
+    if modules_frame.is_empty():
+        return module_by_path
+    if not {"path", "module"}.issubset(set(modules_frame.columns)):
+        return module_by_path
+    data = modules_frame.select(["path", "module"]).to_dict(as_series=False)
+    module_by_path.update(
+        {
+            path: module
+            for path, module in zip(data["path"], data["module"], strict=True)
+            if isinstance(path, str) and isinstance(module, str)
+        }
+    )
     return module_by_path
 
 
@@ -51,17 +58,25 @@ def _goid_spans_by_path(
     goids_frame: pl.DataFrame,
 ) -> dict[str, IntervalTree]:
     spans_by_path: dict[str, IntervalTree] = {}
-    for row in goids_frame.iter_rows(named=True):
-        rel_path = row.get("rel_path")
+    if goids_frame.is_empty() or "rel_path" not in goids_frame.columns:
+        return spans_by_path
+    data = goids_frame.select(["rel_path", "goid_h128", "start_line", "end_line"]).to_dict(
+        as_series=False
+    )
+    for rel_path, goid_raw, start_line, end_line in zip(
+        data["rel_path"],
+        data["goid_h128"],
+        data["start_line"],
+        data["end_line"],
+        strict=True,
+    ):
         if not isinstance(rel_path, str):
             continue
-        goid_value = normalize_decimal_id(row.get("goid_h128"))
+        goid_value = normalize_decimal_id(goid_raw)
         if goid_value is None:
             continue
-        start_line = row.get("start_line")
         if not isinstance(start_line, int):
             continue
-        end_line = row.get("end_line")
         _, resolved_end = normalize_line_span(
             start_line,
             end_line if isinstance(end_line, int) else None,
@@ -88,15 +103,24 @@ def _match_goid(tree: IntervalTree | None, line: int) -> int | None:
 
 def _symbol_occurrences(occurrences_frame: pl.DataFrame) -> list[SymbolOccurrence]:
     occurrences: list[SymbolOccurrence] = []
-    for row in occurrences_frame.iter_rows(named=True):
-        symbol = row.get("symbol")
-        rel_path = row.get("rel_path")
-        start_line = row.get("start_line")
+    if occurrences_frame.is_empty():
+        return occurrences
+    required = {"symbol", "rel_path", "start_line"}
+    if not required.issubset(set(occurrences_frame.columns)):
+        return occurrences
+    columns = ["symbol", "rel_path", "start_line"]
+    if "roles" in occurrences_frame.columns:
+        columns.append("roles")
+    data = occurrences_frame.select(columns).to_dict(as_series=False)
+    roles_values = data.get("roles")
+    for idx, (symbol, rel_path, start_line) in enumerate(
+        zip(data["symbol"], data["rel_path"], data["start_line"], strict=True)
+    ):
         if not isinstance(symbol, str) or not isinstance(rel_path, str):
             continue
         if not isinstance(start_line, int):
             continue
-        roles = parse_symbol_roles(row.get("roles"))
+        roles = parse_symbol_roles(roles_values[idx] if roles_values is not None else None)
         occurrences.append(
             SymbolOccurrence(
                 symbol=symbol,
@@ -177,12 +201,20 @@ def symbol_use_edges_compute(
     InferableTabularInput
         Tabular input for computed symbol use edges.
     """
-    occurrences_frame = tabular_to_frame(q__core__scip_occurrences)
+    occurrences_frame = (
+        tabular_to_lazyframe(q__core__scip_occurrences)
+        .select(["symbol", "rel_path", "start_line", "roles"])
+        .collect()
+    )
     if occurrences_frame.is_empty():
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
-    modules_frame = tabular_to_frame(q__core__modules)
-    goids_frame = tabular_to_frame(q__core__goids)
+    modules_frame = tabular_to_lazyframe(q__core__modules).select(["path", "module"]).collect()
+    goids_frame = (
+        tabular_to_lazyframe(q__core__goids)
+        .select(["rel_path", "goid_h128", "start_line", "end_line"])
+        .collect()
+    )
     occurrences = _symbol_occurrences(occurrences_frame)
     if not occurrences:
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)

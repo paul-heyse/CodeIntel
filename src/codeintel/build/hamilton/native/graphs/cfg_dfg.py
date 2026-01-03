@@ -13,7 +13,7 @@ from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
@@ -56,17 +56,29 @@ def _collect_ast_function_keys(
 ) -> tuple[dict[str, set[tuple[int, str]]], set[str]]:
     function_keys_by_path: dict[str, set[tuple[int, str]]] = {}
     paths: set[str] = set()
-    for row in ast_nodes_frame.iter_rows(named=True):
-        path = row.get("path")
+    if ast_nodes_frame.is_empty() or "path" not in ast_nodes_frame.columns:
+        return function_keys_by_path, paths
+    path_values = ast_nodes_frame.get_column("path").drop_nulls().to_list()
+    paths = {str(path) for path in path_values if isinstance(path, str) and path}
+    if not {"node_type", "name", "lineno"}.issubset(set(ast_nodes_frame.columns)):
+        return function_keys_by_path, paths
+    functions = ast_nodes_frame.select(["path", "node_type", "name", "lineno"]).filter(
+        pl.col("node_type").is_in(["FunctionDef", "AsyncFunctionDef"])
+    )
+    if functions.is_empty():
+        return function_keys_by_path, paths
+    data = functions.to_dict(as_series=False)
+    for path, name, lineno in zip(
+        data["path"],
+        data["name"],
+        data["lineno"],
+        strict=True,
+    ):
         if not isinstance(path, str) or not path:
             continue
-        paths.add(path)
-        node_type = row.get("node_type")
-        if node_type not in {"FunctionDef", "AsyncFunctionDef"}:
+        if not isinstance(name, str) or not name:
             continue
-        name = row.get("name")
-        lineno = row.get("lineno")
-        if not isinstance(name, str) or not isinstance(lineno, int):
+        if not isinstance(lineno, int):
             continue
         function_keys_by_path.setdefault(path, set()).add((lineno, name))
     return function_keys_by_path, paths
@@ -77,14 +89,26 @@ def _collect_goids_by_path(
     function_keys_by_path: dict[str, set[tuple[int, str]]],
 ) -> dict[str, list[_FunctionGoidInfo]]:
     goids_by_path: dict[str, list[_FunctionGoidInfo]] = {}
-    for row in goids_frame.iter_rows(named=True):
-        if row.get("kind") not in {"function", "method"}:
-            continue
-        if row.get("language") not in {None, "python"}:
-            continue
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
-        start_line = row.get("start_line")
+    if goids_frame.is_empty():
+        return goids_by_path
+    required = {"kind", "rel_path", "qualname", "goid_h128", "start_line"}
+    if not required.issubset(set(goids_frame.columns)):
+        return goids_by_path
+    filtered = goids_frame.filter(pl.col("kind").is_in(["function", "method"]))
+    if "language" in filtered.columns:
+        filtered = filtered.filter(pl.col("language").is_null() | (pl.col("language") == "python"))
+    if filtered.is_empty():
+        return goids_by_path
+    columns = ["rel_path", "qualname", "goid_h128", "start_line", "end_line"]
+    data = filtered.select(columns).to_dict(as_series=False)
+    for rel_path, qualname, goid_raw, start_line, end_line in zip(
+        data["rel_path"],
+        data["qualname"],
+        data["goid_h128"],
+        data["start_line"],
+        data["end_line"],
+        strict=True,
+    ):
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
         if not isinstance(start_line, int):
@@ -93,10 +117,9 @@ def _collect_goids_by_path(
         key_set = function_keys_by_path.get(rel_path)
         if key_set is not None and (start_line, name) not in key_set:
             continue
-        goid_value = normalize_decimal_id(row.get("goid_h128"))
+        goid_value = normalize_decimal_id(goid_raw)
         if goid_value is None:
             continue
-        end_line = row.get("end_line")
         _, resolved_end = normalize_line_span(
             start_line,
             end_line if isinstance(end_line, int) else None,
@@ -199,11 +222,29 @@ def cfg_dfg_analysis(
     _CfgDfgAnalysis
         Container of CFG blocks/edges and DFG edges rows.
     """
-    goids_frame = tabular_to_frame(q__core__goids)
+    goids_frame = (
+        tabular_to_lazyframe(q__core__goids)
+        .select(
+            [
+                "goid_h128",
+                "rel_path",
+                "qualname",
+                "start_line",
+                "end_line",
+                "kind",
+                "language",
+            ]
+        )
+        .collect()
+    )
     if goids_frame.is_empty():
         return _CfgDfgAnalysis(cfg_blocks=(), cfg_edges=(), dfg_edges=())
 
-    ast_nodes_frame = tabular_to_frame(q__core__ast_nodes)
+    ast_nodes_frame = (
+        tabular_to_lazyframe(q__core__ast_nodes)
+        .select(["path", "node_type", "name", "lineno"])
+        .collect()
+    )
     function_keys_by_path, paths = _collect_ast_function_keys(ast_nodes_frame)
     goids_by_path = _collect_goids_by_path(goids_frame, function_keys_by_path)
     resolved_paths = paths or set(goids_by_path)

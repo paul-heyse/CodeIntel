@@ -43,7 +43,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("status", "VARCHAR", nullable=False),
             Column("error_kind", "VARCHAR"),
             Column("error_message", "VARCHAR"),
-            Column("datasets", "BLOB"),
+            Column("datasets", "LIST(VARCHAR)"),
             Column("modules_total", "BIGINT"),
             Column("modules_changed", "BIGINT"),
             Column("modules_deleted", "BIGINT"),

@@ -199,11 +199,9 @@ def _row_matches_scope(
     repo: str | None,
     commit: str | None,
 ) -> bool:
-    if repo is not None and not _matches_optional_scope(row.get("repo"), repo):
-        return False
-    if commit is not None and not _matches_optional_scope(row.get("commit"), commit):
-        return False
-    return True
+    return (repo is None or _matches_optional_scope(row.get("repo"), repo)) and (
+        commit is None or _matches_optional_scope(row.get("commit"), commit)
+    )
 
 
 def _add_bipartite_edge(graph: nx.Graph, *, key: str, module: str) -> None:

@@ -18,6 +18,7 @@ from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
+    AstCollectContext,
     AstNodeRecord,
     ast_node_id,
     collect_ast_nodes,
@@ -121,8 +122,16 @@ class AstVisitor(ast.NodeVisitor):
         self.module_name = module_name
         self.metrics = AstMetrics(rel_path=rel_path)
         self.def_info_by_node_id: dict[int, _DefInfo] = {}
+        self.ast_rows: list[dict[str, object]] = []
         self._scope_stack: list[str] = []
         self._depth = 0
+        self._root: ast.AST | None = None
+
+    def visit(self, node: ast.AST) -> None:
+        """Record the root node before delegating to the base visitor."""
+        if self._root is None:
+            self._root = node
+        super().visit(node)
 
     def generic_visit(self, node: ast.AST) -> None:
         """Track complexity, scope, and depth while visiting."""
@@ -134,7 +143,7 @@ class AstVisitor(ast.NodeVisitor):
             node, (ast.If, ast.For, ast.While, ast.Try, ast.With, ast.AsyncWith, ast.AsyncFor)
         ):
             self.metrics.complexity += 1
-        if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             self._record_function(node)
         elif isinstance(node, ast.ClassDef):
             self._record_class(node)
@@ -160,6 +169,39 @@ class AstVisitor(ast.NodeVisitor):
         if not self._scope_stack:
             return self.module_name
         return f"{self.module_name}." + ".".join(self._scope_stack)
+
+    def build_ast_rows(self, source_text: str) -> list[dict[str, object]]:
+        """Build AST rows from the collected visit metadata.
+
+        Parameters
+        ----------
+        source_text
+            Source text used for span and offset calculations.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            AST row payloads for serialization.
+        """
+        if self._root is None:
+            return []
+        source_bytes = source_text.encode("utf-8", errors="replace")
+        _, source_index = _build_source_index(source_bytes)
+        records = collect_ast_nodes(
+            source_text,
+            source_index,
+            node_id_factory=lambda node, span: ast_node_id(
+                self.rel_path,
+                type(node).__name__,
+                span,
+            ),
+            context=AstCollectContext(
+                source_label=self.rel_path,
+                parsed=self._root,
+            ),
+        )
+        self.ast_rows = _build_ast_rows(self.rel_path, records, self.def_info_by_node_id)
+        return self.ast_rows
 
     def _record_module(self, node: ast.Module) -> None:
         """Record the module node and reset scope."""
@@ -290,7 +332,7 @@ def _coerce_type_ignores(value: object) -> list[dict[str, object]] | None:
 
 
 def _build_ast_rows(
-    module: ModuleRecord,
+    rel_path: str,
     records: list[AstNodeRecord],
     def_info: dict[int, _DefInfo],
 ) -> list[dict[str, object]]:
@@ -301,8 +343,8 @@ def _build_ast_rows(
         name = info.name if info is not None else _coerce_str(extras.get("name"))
         decorators = info.decorators if info is not None and info.decorators else None
         docstring = info.docstring if info is not None else None
-        row = {
-            "path": module.rel_path,
+        row: dict[str, object] = {
+            "path": rel_path,
             "node_type": record.kind,
             "name": name,
             "qualname": info.qualname if info is not None else None,
@@ -412,11 +454,13 @@ def _extract_module_ast(
             type(node).__name__,
             span,
         ),
-        parsed=tree,
-        source_label=module.rel_path,
+        context=AstCollectContext(
+            source_label=module.rel_path,
+            parsed=tree,
+        ),
     )
     return ModuleAstResult(
-        ast_rows=_build_ast_rows(module, records, visitor.def_info_by_node_id),
+        ast_rows=_build_ast_rows(module.rel_path, records, visitor.def_info_by_node_id),
         metric_row=_build_metric_row(visitor.metrics),
     )
 

@@ -31,6 +31,7 @@ from codeintel.core.datasets.scanning import (
 )
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.core.schemas.arrow_metadata import arrow_schema_hash
+from codeintel.core.validation.schema_constraints import schema_metadata_errors
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -176,6 +177,7 @@ def write_dataset(
     resolved = options or ArrowDatasetWriteOptions()
     prepared = _apply_dictionary_options(data, resolved)
     prepared = _apply_schema_metadata(prepared, resolved.schema_metadata)
+    _validate_schema_metadata(prepared.schema, table_key=table_key)
     snapshot_dir = dataset_snapshot_dir(
         dataset_root,
         table_key=table_key,
@@ -521,6 +523,14 @@ def _apply_schema_metadata(
         schema = data.schema.with_metadata(merged)
         return pa.RecordBatchReader.from_batches(schema, data)
     return data
+
+
+def _validate_schema_metadata(schema: pa.Schema, *, table_key: str) -> None:
+    errors = schema_metadata_errors(schema)
+    if not errors:
+        return
+    message = f"Arrow schema metadata validation failed for {table_key}: " + "; ".join(errors)
+    raise ValueError(message)
 
 
 def _dictionary_encode_table(

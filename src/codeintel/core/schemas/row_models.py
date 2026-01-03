@@ -21,6 +21,7 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+import msgspec
 import numpy as np
 
 from codeintel.core.helpers.json import normalize_duckdb_json_value
@@ -41,7 +42,18 @@ def _row_model_class_name(*, schema: str, name: str) -> str:
     return f"{schema_part}__{name}__Row"
 
 
+def _row_struct_class_name(*, schema: str, name: str) -> str:
+    schema_part = schema[:1].upper() + schema[1:]
+    return f"{schema_part}__{name}__RowStruct"
+
+
 def _register_row_model(name: str, model: type[object]) -> None:
+    if globals().get(name) is model:
+        return
+    globals()[name] = model
+
+
+def _register_row_struct(name: str, model: type[msgspec.Struct]) -> None:
     if globals().get(name) is model:
         return
     globals()[name] = model
@@ -77,6 +89,36 @@ def _row_model_cached(
     return model
 
 
+@lru_cache(maxsize=2048)
+def _row_struct_cached(
+    schema: str,
+    name: str,
+    signature: tuple[tuple[str, ColumnType, bool], ...],
+) -> type[msgspec.Struct]:
+    class_name = _row_struct_class_name(schema=schema, name=name)
+
+    fields: list[tuple[str, object]] = []
+    for col_name, col_type, nullable in signature:
+        if not _VALID_IDENTIFIER_RE.match(col_name):
+            msg = f"Column name is not a valid identifier for row struct: {col_name}"
+            raise ValueError(msg)
+        base = _python_type_for_column_type(col_type)
+        annotated: object = base | None if nullable else base
+        fields.append((col_name, annotated))
+
+    model = msgspec.defstruct(
+        class_name,
+        fields,
+        module=__name__,
+        frozen=True,
+        omit_defaults=True,
+        forbid_unknown_fields=True,
+        kw_only=False,
+    )
+    _register_row_struct(class_name, model)
+    return model
+
+
 def row_model_for_table_schema(*, table_schema: TableSchema) -> type[object]:
     """Return a cached dataclass row model for a TableSchema.
 
@@ -97,7 +139,28 @@ def row_model_for_table_schema(*, table_schema: TableSchema) -> type[object]:
     )
 
 
+def row_struct_for_table_schema(*, table_schema: TableSchema) -> type[msgspec.Struct]:
+    """Return a cached msgspec Struct row model for a TableSchema.
+
+    Parameters
+    ----------
+    table_schema
+        Source TableSchema.
+
+    Returns
+    -------
+    type[msgspec.Struct]
+        Frozen msgspec Struct type with fields matching the schema column order.
+    """
+    return _row_struct_cached(
+        table_schema.schema,
+        table_schema.name,
+        _row_model_signature(table_schema),
+    )
+
+
 RowSerializer = Callable[[Mapping[str, object]], tuple[object, ...]]
+RowStructBuilder = Callable[[Mapping[str, object]], msgspec.Struct]
 
 _ROW_VALUE_CONTAINERS: tuple[type[object], ...] = (dict, list, tuple, set)
 _ROW_VALUE_BINARY: tuple[type[object], ...] = (bytes, bytearray, memoryview)
@@ -211,6 +274,47 @@ def row_serializer_for_table_schema(*, table_schema: TableSchema) -> RowSerializ
     return _row_serializer_cached(_row_model_signature(table_schema))
 
 
+@lru_cache(maxsize=2048)
+def _row_struct_builder_cached(
+    schema: str,
+    name: str,
+    signature: tuple[tuple[str, ColumnType, bool], ...],
+) -> RowStructBuilder:
+    column_types: tuple[tuple[str, ColumnType], ...] = tuple(
+        (col_name, col_type) for col_name, col_type, _nullable in signature
+    )
+    struct_model = _row_struct_cached(schema, name, signature)
+
+    def _build(row: Mapping[str, object]) -> msgspec.Struct:
+        normalized = {
+            col_name: normalize_row_value_for_type(row[col_name], col_type)
+            for col_name, col_type in column_types
+        }
+        return msgspec.convert(normalized, type=struct_model, strict=True)
+
+    return _build
+
+
+def row_struct_builder_for_table_schema(*, table_schema: TableSchema) -> RowStructBuilder:
+    """Return a cached builder to create msgspec rows from mappings.
+
+    Parameters
+    ----------
+    table_schema
+        Source TableSchema.
+
+    Returns
+    -------
+    RowStructBuilder
+        Callable that returns a msgspec Struct instance.
+    """
+    return _row_struct_builder_cached(
+        table_schema.schema,
+        table_schema.name,
+        _row_model_signature(table_schema),
+    )
+
+
 def _row_model_name_parts(name: str) -> tuple[str, str] | None:
     parts = name.split("__")
     if len(parts) != _ROW_MODEL_NAME_PARTS or parts[2] != "Row":
@@ -249,6 +353,10 @@ class GeneratedRowBinding:
         Generated frozen dataclass type with fields matching the schema.
     serializer
         Function that converts a row mapping to an ordered tuple.
+    struct_model
+        Generated msgspec Struct type with fields matching the schema.
+    struct_builder
+        Builder that converts a row mapping into a msgspec Struct instance.
     table_key
         Fully qualified table key (schema.table) for provenance.
     schema_hash
@@ -275,6 +383,8 @@ class GeneratedRowBinding:
 
     row_model: type[object]
     serializer: RowSerializer
+    struct_model: type[msgspec.Struct] | None = None
+    struct_builder: RowStructBuilder | None = None
     table_key: str
     schema_hash: str
     derivation_kind: str | None = None
@@ -326,10 +436,14 @@ def row_binding_for_table_schema(
     """
     model = row_model_for_table_schema(table_schema=table_schema)
     serializer = row_serializer_for_table_schema(table_schema=table_schema)
+    struct_model = row_struct_for_table_schema(table_schema=table_schema)
+    struct_builder = row_struct_builder_for_table_schema(table_schema=table_schema)
 
     return GeneratedRowBinding(
         row_model=model,
         serializer=serializer,
+        struct_model=struct_model,
+        struct_builder=struct_builder,
         table_key=table_schema.table_key,
         schema_hash=schema_hash(table_schema),
         derivation_kind=derivation_kind,
@@ -340,9 +454,12 @@ def row_binding_for_table_schema(
 __all__ = [
     "GeneratedRowBinding",
     "RowSerializer",
+    "RowStructBuilder",
     "normalize_row_value",
     "normalize_row_value_for_type",
     "row_binding_for_table_schema",
     "row_model_for_table_schema",
     "row_serializer_for_table_schema",
+    "row_struct_builder_for_table_schema",
+    "row_struct_for_table_schema",
 ]

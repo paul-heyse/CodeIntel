@@ -42,6 +42,7 @@ from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.validation.mode import ContractValidationMode
+from codeintel.core.validation.schema_constraints import schema_metadata_errors
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.duckdb_explain import normalize_explain_output
 from codeintel.storage.helpers.table_key import split_table_key
@@ -56,7 +57,10 @@ from codeintel.storage.staging import registered_temp_relation
 from codeintel.storage.upsert import UpsertSpec
 from codeintel.storage.validation.columnar import (
     ColumnarValidationContext,
+    TableValidationError,
     ValidationMode,
+    validate_record_batch_reader,
+    validate_table,
 )
 
 if TYPE_CHECKING:
@@ -809,6 +813,61 @@ def _write_relation_inner(
     return resolved_count
 
 
+def _table_row_count(
+    relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
+) -> int | None:
+    if isinstance(relation, pa.Table):
+        return cast("int", relation.num_rows)
+    return None
+
+
+def _materialize_relation_for_validation(
+    relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
+    *,
+    contract_schema: pa.Schema | None,
+    validation_mode: ValidationMode,
+) -> DuckDBRelation | pa.Table | pa.RecordBatchReader:
+    if isinstance(relation, DuckDBRelation) and (
+        contract_schema is not None or validation_mode != "skip"
+    ):
+        return relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return relation
+
+
+def _validate_tabular_relation(
+    relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    validation_mode: ValidationMode,
+) -> DuckDBRelation | pa.Table | pa.RecordBatchReader:
+    if validation_mode == "skip":
+        return relation
+    context = _validation_context_for_table(gateway, table_key=table_key)
+    if isinstance(relation, pa.Table):
+        return validate_table(
+            table_key,
+            relation,
+            context=context,
+            mode=validation_mode,
+        )
+    if isinstance(relation, pa.RecordBatchReader):
+        return validate_record_batch_reader(
+            table_key,
+            relation,
+            context=context,
+            mode=validation_mode,
+        )
+    return relation
+
+
+def _ensure_schema_metadata(table_key: str, *, schema: pa.Schema) -> None:
+    errors = schema_metadata_errors(schema)
+    if not errors:
+        return
+    raise TableValidationError(table_key, errors)
+
+
 def _write_tabular(
     *,
     gateway: StorageGateway,
@@ -816,36 +875,26 @@ def _write_tabular(
     relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
     options: MaterializeOptions,
 ) -> int | None:
-    table_row_count: int | None = None
-    if isinstance(relation, pa.Table):
-        table_row_count = cast("int", relation.num_rows)
+    table_row_count = _table_row_count(relation)
     contract_schema = _contract_schema_for_table(gateway, table_key=table_key)
     validation_mode = _validation_mode(gateway)
-    if isinstance(relation, DuckDBRelation) and (
-        contract_schema is not None or validation_mode != "skip"
-    ):
-        relation = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    relation = _materialize_relation_for_validation(
+        relation,
+        contract_schema=contract_schema,
+        validation_mode=validation_mode,
+    )
     if contract_schema is not None:
         relation = _align_tabular_input(
             relation,
             contract_schema=contract_schema,
         )
-    if validation_mode != "skip":
-        context = _validation_context_for_table(gateway, table_key=table_key)
-        if isinstance(relation, pa.Table):
-            relation = validate_table(
-                table_key,
-                relation,
-                context=context,
-                mode=validation_mode,
-            )
-        elif isinstance(relation, pa.RecordBatchReader):
-            relation = validate_record_batch_reader(
-                table_key,
-                relation,
-                context=context,
-                mode=validation_mode,
-            )
+        _ensure_schema_metadata(table_key, schema=relation.schema)
+    relation = _validate_tabular_relation(
+        relation,
+        gateway=gateway,
+        table_key=table_key,
+        validation_mode=validation_mode,
+    )
     if isinstance(relation, DuckDBRelation):
         return _write_relation(
             gateway=gateway,

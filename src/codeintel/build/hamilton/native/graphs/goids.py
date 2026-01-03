@@ -25,7 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import empty_frame_for_table, rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
@@ -79,24 +79,28 @@ def _rows_to_frame(
     return rows_to_frame(table_key, row_dicts)
 
 
-def _module_lookup(
-    modules_frame: pl.DataFrame,
-) -> tuple[dict[str, str], dict[str, str]]:
-    module_by_path: dict[str, str] = {}
-    language_by_path: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
-        path = row.get("path")
-        module = row.get("module")
-        language = row.get("language")
-        if not isinstance(path, str) or not path:
-            continue
-        if not isinstance(module, str) or not module:
-            continue
-        if not isinstance(language, str) or not language:
-            continue
-        module_by_path[path] = module
-        language_by_path[path] = language
-    return module_by_path, language_by_path
+def _module_frame(modules_frame: pl.DataFrame) -> pl.DataFrame:
+    if modules_frame.is_empty():
+        return modules_frame
+    required = {"path", "module", "language"}
+    if not required.issubset(set(modules_frame.columns)):
+        return pl.DataFrame()
+    return (
+        modules_frame.select(["path", "module", "language"])
+        .with_columns(
+            pl.col("path").cast(pl.Utf8, strict=False),
+            pl.col("module").cast(pl.Utf8, strict=False),
+            pl.col("language").cast(pl.Utf8, strict=False),
+        )
+        .filter(
+            pl.col("path").is_not_null()
+            & pl.col("module").is_not_null()
+            & pl.col("language").is_not_null()
+            & (pl.col("path").str.len_chars() > 0)
+            & (pl.col("module").str.len_chars() > 0)
+            & (pl.col("language").str.len_chars() > 0)
+        )
+    )
 
 
 def _resolve_qualname(
@@ -129,76 +133,154 @@ def _resolve_start_line(node_type: str, start_line: object) -> int | None:
 _ALLOWED_NODE_TYPES = frozenset({"Module", "ClassDef", "FunctionDef", "AsyncFunctionDef"})
 
 
-def _descriptor_from_row(
+@dataclass(frozen=True, slots=True)
+class _DescriptorContext:
+    repo: str
+    commit: str
+
+
+@dataclass(frozen=True, slots=True)
+class _DescriptorValues:
+    node_type: str | None
+    path: str | None
+    module_name: str | None
+    language: str | None
+    name: object
+    qualname: object
+    parent_qualname: object
+    lineno: object
+    end_lineno: object
+
+
+def _descriptor_from_values(
     *,
-    row: dict[str, object],
-    module_by_path: dict[str, str],
-    language_by_path: dict[str, str],
-    repo: str,
-    commit: str,
+    values: _DescriptorValues,
+    context: _DescriptorContext,
 ) -> tuple[_ResolvedDescriptor, tuple[str, str, str, int]] | None:
-    node_type = row.get("node_type")
-    if not isinstance(node_type, str) or node_type not in _ALLOWED_NODE_TYPES:
+    if values.node_type is None or values.node_type not in _ALLOWED_NODE_TYPES:
         return None
-    path = row.get("path")
-    if not isinstance(path, str):
+    if values.path is None or values.module_name is None or values.language is None:
         return None
-    module_name = module_by_path.get(path)
-    language = language_by_path.get(path)
-    if module_name is None or language is None:
-        return None
-    start_line = _resolve_start_line(node_type, row.get("lineno"))
+    start_line = _resolve_start_line(values.node_type, values.lineno)
     if start_line is None:
         return None
-    end_line = row.get("end_lineno")
     _, resolved_end = normalize_line_span(
         start_line,
-        end_line if isinstance(end_line, int) else None,
+        values.end_lineno if isinstance(values.end_lineno, int) else None,
     )
-    qualname = _resolve_qualname(
-        node_type=node_type,
-        module_name=module_name,
-        name=row.get("name"),
-        qualname=row.get("qualname"),
-        parent_qualname=row.get("parent_qualname"),
+    qualname_value = _resolve_qualname(
+        node_type=values.node_type,
+        module_name=values.module_name,
+        name=values.name,
+        qualname=values.qualname,
+        parent_qualname=values.parent_qualname,
     )
-    if qualname is None:
+    if qualname_value is None:
         return None
-    parent_qualname = row.get("parent_qualname")
-    parent_value = parent_qualname if isinstance(parent_qualname, str) else module_name
-    kind = determine_kind(node_type, parent_value, path, module_name)
+    parent_value = (
+        values.parent_qualname if isinstance(values.parent_qualname, str) else values.module_name
+    )
+    kind = determine_kind(values.node_type, parent_value, values.path, values.module_name)
     descriptor = GoidDescriptor(
-        repo=repo,
-        commit=commit,
-        language=language,
-        rel_path=path,
+        repo=context.repo,
+        commit=context.commit,
+        language=values.language,
+        rel_path=values.path,
         kind=kind,
-        qualname=qualname,
+        qualname=qualname_value,
         start_line=start_line,
         end_line=resolved_end,
     )
-    dedupe_key = (path, node_type, qualname, start_line)
-    return _ResolvedDescriptor(descriptor=descriptor, module_name=module_name), dedupe_key
+    dedupe_key = (values.path, values.node_type, qualname_value, start_line)
+    return (
+        _ResolvedDescriptor(descriptor=descriptor, module_name=values.module_name),
+        dedupe_key,
+    )
+
+
+def _joined_ast_nodes(
+    ast_nodes_frame: pl.DataFrame,
+    modules_frame: pl.DataFrame,
+) -> pl.DataFrame:
+    if ast_nodes_frame.is_empty() or modules_frame.is_empty():
+        return pl.DataFrame()
+    required = {
+        "path",
+        "node_type",
+        "name",
+        "qualname",
+        "parent_qualname",
+        "lineno",
+        "end_lineno",
+    }
+    if not required.issubset(set(ast_nodes_frame.columns)):
+        return pl.DataFrame()
+    filtered_nodes = ast_nodes_frame.select(list(required)).filter(
+        pl.col("node_type").is_in(list(_ALLOWED_NODE_TYPES))
+    )
+    if filtered_nodes.is_empty():
+        return pl.DataFrame()
+    return filtered_nodes.join(modules_frame, on="path", how="inner")
 
 
 def _collect_descriptors(
     *,
-    ast_nodes_frame: pl.DataFrame,
-    module_by_path: dict[str, str],
-    language_by_path: dict[str, str],
+    joined_nodes: pl.DataFrame,
     repo: str,
     commit: str,
 ) -> list[_ResolvedDescriptor]:
     descriptors: list[_ResolvedDescriptor] = []
     seen: set[tuple[str, str, str, int]] = set()
-
-    for row in ast_nodes_frame.iter_rows(named=True):
-        result = _descriptor_from_row(
-            row=row,
-            module_by_path=module_by_path,
-            language_by_path=language_by_path,
-            repo=repo,
-            commit=commit,
+    if joined_nodes.is_empty():
+        return descriptors
+    data = joined_nodes.select(
+        [
+            "node_type",
+            "path",
+            "module",
+            "language",
+            "name",
+            "qualname",
+            "parent_qualname",
+            "lineno",
+            "end_lineno",
+        ]
+    ).to_dict(as_series=False)
+    for (
+        node_type,
+        path,
+        module_name,
+        language,
+        name,
+        qualname,
+        parent_qualname,
+        lineno,
+        end_lineno,
+    ) in zip(
+        data["node_type"],
+        data["path"],
+        data["module"],
+        data["language"],
+        data["name"],
+        data["qualname"],
+        data["parent_qualname"],
+        data["lineno"],
+        data["end_lineno"],
+        strict=True,
+    ):
+        result = _descriptor_from_values(
+            values=_DescriptorValues(
+                node_type=str(node_type) if node_type is not None else None,
+                path=str(path) if path is not None else None,
+                module_name=str(module_name) if module_name is not None else None,
+                language=str(language) if language is not None else None,
+                name=name,
+                qualname=qualname,
+                parent_qualname=parent_qualname,
+                lineno=lineno,
+                end_lineno=end_lineno,
+            ),
+            context=_DescriptorContext(repo=repo, commit=commit),
         )
         if result is None:
             continue
@@ -221,9 +303,21 @@ def goids_inputs(
     _GoidsInputs
         Collected frames for GOID computation.
     """
+    modules = tabular_to_lazyframe(q__core__modules).select(["path", "module", "language"])
+    ast_nodes = tabular_to_lazyframe(q__core__ast_nodes).select(
+        [
+            "path",
+            "node_type",
+            "name",
+            "qualname",
+            "parent_qualname",
+            "lineno",
+            "end_lineno",
+        ]
+    )
     return _GoidsInputs(
-        modules=tabular_to_frame(q__core__modules),
-        ast_nodes=tabular_to_frame(q__core__ast_nodes),
+        modules=modules.collect(),
+        ast_nodes=ast_nodes.collect(),
     )
 
 
@@ -245,14 +339,13 @@ def goids_analysis(env: BuildEnv, goids_inputs: _GoidsInputs) -> _GoidsAnalysis:
     if goids_inputs.modules.is_empty() or goids_inputs.ast_nodes.is_empty():
         return _GoidsAnalysis(goid_rows=(), crosswalk_rows=())
 
-    module_by_path, language_by_path = _module_lookup(goids_inputs.modules)
-    if not module_by_path:
+    modules_frame = _module_frame(goids_inputs.modules)
+    if modules_frame.is_empty():
         return _GoidsAnalysis(goid_rows=(), crosswalk_rows=())
 
+    joined_nodes = _joined_ast_nodes(goids_inputs.ast_nodes, modules_frame)
     descriptors = _collect_descriptors(
-        ast_nodes_frame=goids_inputs.ast_nodes,
-        module_by_path=module_by_path,
-        language_by_path=language_by_path,
+        joined_nodes=joined_nodes,
         repo=env.repo,
         commit=env.commit,
     )

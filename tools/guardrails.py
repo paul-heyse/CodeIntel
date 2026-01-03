@@ -26,7 +26,9 @@ from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_co
 from codeintel.build.schemas.contract_service import configure_contract_service
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.cli.resolution import resolve_from_params
+from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway import (
     DuckDBConnection,
@@ -405,13 +407,42 @@ def _policy_doc_issues(repo_root: Path) -> list[str]:
     if not policy_path.exists():
         return ["docs/core_data_format_policy.md: missing core data format policy document"]
     text = policy_path.read_text(encoding="utf-8")
-    required_phrases = ("JSON is boundary-only", "Arrow/Parquet")
+    required_phrases = ("JSON is boundary-only", "Arrow/Parquet", "codeintel.schema_hash")
     missing = [phrase for phrase in required_phrases if phrase not in text]
     return (
         ["docs/core_data_format_policy.md: missing required policy language " + ", ".join(missing)]
         if missing
         else []
     )
+
+
+def _core_registry_issues() -> list[str]:
+    """Return core registry violations for JSON/BLOB column usage."""
+    issues: list[str] = []
+
+    def _check_table(table: object) -> None:
+        schema = getattr(table, "schema", None)
+        if schema != "core":
+            return
+        table_key = getattr(table, "table_key", f"{schema}.<unknown>")
+        columns = getattr(table, "columns", ())
+        for column in columns:
+            column_type = getattr(column, "type", None)
+            column_name = getattr(column, "name", "<unknown>")
+            if column_type == "JSON":
+                issues.append(
+                    f"{table_key}: column {column_name} declares JSON type (core JSON is boundary-only)"
+                )
+            if column_name.endswith("_json") and column_type in {"BLOB", "JSON"}:
+                issues.append(
+                    f"{table_key}: column {column_name} uses {column_type} (core JSON is boundary-only)"
+                )
+
+    for table in OUTPUT_TABLE_SCHEMAS.values():
+        _check_table(table)
+    for table in TABLE_SCHEMAS.values():
+        _check_table(table)
+    return issues
 
 
 def _guardrails_storage_config(runtime: ResolvedRuntime) -> StorageConfig:
@@ -634,6 +665,11 @@ def main() -> int:
     policy_issues = _policy_doc_issues(repo_root)
     if policy_issues:
         for line in policy_issues:
+            sys.stderr.write(f"{line}\n")
+        return 1
+    registry_issues = _core_registry_issues()
+    if registry_issues:
+        for line in registry_issues:
             sys.stderr.write(f"{line}\n")
         return 1
 

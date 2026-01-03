@@ -97,17 +97,28 @@ build/serving (orchestration, registry, runtime composition)
 
 ### Workstream C: Arrow schema and row model migration
 #### Completed
-- [x] BLOB payloads are now encoded at write time for callgraph/CFG/tree-sitter
-  ingestion and associated tests (msgspec payloads instead of JSON objects).
+- [x] Migrated core columnar fields to Arrow-native list/map/struct types for:
+  `core.modules` tags/owners, `core.repo_map` modules/overlays,
+  `core.ast_nodes` decorators, `core.cst_nodes` span/parents/qnames,
+  `core.parse_manifest` future_imports, and `core.docstrings`
+  params/returns/raises/examples.
+- [x] Converted core syntax + tree-sitter extras payloads to Arrow-native structs
+  and updated `core` generated row models.
+- [x] Updated CST/tree-sitter ingestion and syntax augmentation to emit
+  structured extras without msgpack encoding; encode only at export boundaries
+  (e.g., CPG node extras).
 
 #### Outstanding checklist
-- [ ] Replace JSON columns with Arrow `struct`/`map`/`list` in:
-  `src/codeintel/core/schemas/output_registry.py` and
-  `src/codeintel/core/schemas/table_registry.py`.
-- [ ] Regenerate generated row models to match Arrow-native nested types:
-  `src/codeintel/core/schemas/generated_rows/core.py`,
-  `src/codeintel/core/schemas/generated_rows/graph.py`,
-  `src/codeintel/core/schemas/generated_rows/analytics.py`.
+- [ ] Finish remaining JSON/BLOB replacements in core registries:
+  - [ ] Audit `src/codeintel/core/schemas/output_registry.py` for any remaining
+    JSON/BLOB columns in `core.*` tables.
+  - [ ] Update `src/codeintel/core/schemas/table_registry.py` to mirror the
+    Arrow-native types for those columns.
+  - [ ] Update any affected ingestion/build producers and tests to emit
+    structured values (no JSON objects).
+- [ ] Regenerate/align generated row models where still byte-typed:
+  - [ ] `src/codeintel/core/schemas/generated_rows/graph.py`
+  - [ ] `src/codeintel/core/schemas/generated_rows/analytics.py`
 - [ ] Add msgspec Struct row models for generated rows and adapters for
   typed row construction.
 - [ ] Ensure Arrow schema metadata includes `codeintel.schema_hash`,
@@ -171,8 +182,11 @@ build/serving (orchestration, registry, runtime composition)
 
 ### Phase 2: Arrow schema and row models
 - [x] Encode BLOB payloads in ingestion write paths.
-- [ ] Replace JSON columns with Arrow types.
-- [ ] Update generated row models and schema registries.
+- [x] Replace JSON columns with Arrow types for core modules/repo_map,
+  AST/CST metadata, docstrings, syntax, and tree-sitter payloads.
+- [ ] Finish remaining JSON/BLOB columns in core registries and update
+  schema registries.
+- [ ] Update generated row models for graph/analytics where still byte-typed.
 - [ ] Backfill schema metadata validation.
 
 ### Phase 3: Streaming IO adoption

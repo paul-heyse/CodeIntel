@@ -8,49 +8,25 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
-import pyarrow.parquet as pq
-
-try:
-    import polars as pl
-except ImportError:  # pragma: no cover - optional dependency
-    pl = None
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import log_export_error
 from codeintel.build.schemas import get_schema_provider
-from codeintel.core.columnar.schema_alignment import (
-    align_reader_to_contract,
-    extras_policy_from_schema,
-)
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED
 from codeintel.core.errors.taxonomy import NOT_FOUND
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.primitives import TableSchema, column_type_base
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
-from codeintel.core.validation.pandera_schema import (
-    PanderaDiagnostics,
-    pandera_available,
-    pandera_error_diagnostics,
-    pandera_error_types,
-    pandera_schema_for_table,
-)
-from codeintel.core.validation.profiles import (
-    ValidationProfile,
-    normalize_validation_profile,
-    resolve_validation_depth,
-)
-from codeintel.core.validation.schema_constraints import (
-    arrow_batch_errors,
-    nullability_errors_for_batch,
-    observation_errors_for_batch,
-    schema_errors,
-    schema_metadata_errors,
+from codeintel.core.validation.profiles import ValidationProfile
+from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
+    TableValidationError,
+    validate_parquet_path,
+    validate_record_batch_reader,
 )
 
 if TYPE_CHECKING:
@@ -175,113 +151,24 @@ def _reader_for_jsonl(
     return reader, errors
 
 
-def _reader_for_parquet(path: Path) -> pa.RecordBatchReader:
-    parquet_file = pq.ParquetFile(path)
-    return pa.RecordBatchReader.from_batches(
-        parquet_file.schema_arrow,
-        parquet_file.iter_batches(batch_size=DEFAULT_ARROW_BATCH_SIZE),
-    )
+def _effective_validation_profile(
+    validation_profile: ValidationProfile | None,
+) -> ValidationProfile | None:
+    if validation_profile == "lenient":
+        return "data-light"
+    return validation_profile
 
 
-def _pandera_error_messages(diagnostics: PanderaDiagnostics) -> list[str]:
-    payload = diagnostics.to_dict()
-    message = f"Pandera validation failed: {payload.get('error')}"
-    failure_cases = payload.get("failure_cases")
-    if failure_cases is not None:
-        message = f"{message}; failure_cases={failure_cases}"
-    return [message]
-
-
-def _pandera_batch_errors(
-    *,
-    table_key: str,
-    batch: pa.RecordBatch,
-    schema: object,
-) -> list[str]:
-    if pl is None:
-        return []
-    error_types = pandera_error_types()
-    if not error_types:
-        return []
-    frame = pl.from_arrow(pa.Table.from_batches([batch]))
-    if not isinstance(frame, pl.DataFrame):
-        return []
-    validate = getattr(schema, "validate", None)
-    if not callable(validate):
-        return []
-    try:
-        validate(frame, lazy=True)
-    except error_types as exc:
-        diagnostics = pandera_error_diagnostics(exc, table_key=table_key)
-        return _pandera_error_messages(diagnostics)
-    return []
-
-
-def _validation_depth(validation_profile: ValidationProfile | None) -> str:
-    if validation_profile is None:
-        return "data-strict"
-    normalized = normalize_validation_profile(validation_profile, default="strict")
-    return resolve_validation_depth(normalized)
-
-
-def _pandera_schema(
+def _validation_context(
     *,
     table_schema: TableSchema,
-    contract_schema: pa.Schema,
     validation_profile: ValidationProfile | None,
-) -> object | None:
-    if not pandera_available():
-        return None
-    extras_policy = extras_policy_from_schema(contract_schema)
-    return pandera_schema_for_table(
+) -> ColumnarValidationContext:
+    return ColumnarValidationContext(
         table_schema=table_schema,
-        observation=None,
-        extras_policy=extras_policy,
-        validation_profile=validation_profile,
+        schema_observation=None,
+        validation_profile=_effective_validation_profile(validation_profile),
     )
-
-
-@dataclass(frozen=True, slots=True)
-class _ReaderValidationContext:
-    table_key: str
-    reader: pa.RecordBatchReader
-    table_schema: TableSchema
-    contract_schema: pa.Schema
-    include_data_checks: bool
-    pandera_schema: object | None
-
-
-def _validate_reader(context: _ReaderValidationContext) -> list[str]:
-    errors: list[str] = []
-    schema_for_errors = context.reader.schema
-    if context.contract_schema.metadata is not None:
-        schema_for_errors = context.reader.schema.with_metadata(context.contract_schema.metadata)
-    errors.extend(schema_errors(context.table_schema, schema_for_errors))
-    errors.extend(schema_metadata_errors(context.reader.schema))
-    try:
-        aligned = align_reader_to_contract(context.reader, context.contract_schema)
-    except (TypeError, ValueError, pa.ArrowInvalid) as exc:
-        errors.append(f"Failed to align to contract schema: {exc}")
-        return errors
-    try:
-        for batch in aligned:
-            errors.extend(arrow_batch_errors(batch))
-            if not context.include_data_checks:
-                continue
-            if context.pandera_schema is not None:
-                errors.extend(
-                    _pandera_batch_errors(
-                        table_key=context.table_key,
-                        batch=batch,
-                        schema=context.pandera_schema,
-                    )
-                )
-            else:
-                errors.extend(nullability_errors_for_batch(context.table_schema, batch))
-                errors.extend(observation_errors_for_batch(context.table_schema, batch, None))
-    except (TypeError, ValueError, pa.ArrowInvalid) as exc:
-        errors.append(f"Arrow validation failed: {exc}")
-    return errors
 
 
 def validate_export_files(
@@ -316,16 +203,9 @@ def validate_export_files(
     _ = gateway
     table_schema = _table_schema_for_key(table_key, dataset_name=dataset_name)
     contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-    depth = _validation_depth(validation_profile)
-    include_data_checks = depth != "schema-only"
-    pandera_schema = (
-        _pandera_schema(
-            table_schema=table_schema,
-            contract_schema=contract_schema,
-            validation_profile=validation_profile,
-        )
-        if include_data_checks
-        else None
+    context = _validation_context(
+        table_schema=table_schema,
+        validation_profile=validation_profile,
     )
 
     all_errors: list[str] = []
@@ -345,31 +225,21 @@ def validate_export_files(
                     table_schema=table_schema,
                     contract_schema=contract_schema,
                 )
-                errors = [*read_errors]
-                errors.extend(
-                    _validate_reader(
-                        _ReaderValidationContext(
-                            table_key=table_key,
-                            reader=reader,
-                            table_schema=table_schema,
-                            contract_schema=contract_schema,
-                            include_data_checks=include_data_checks,
-                            pandera_schema=pandera_schema,
-                        )
+                errors = list(read_errors)
+                try:
+                    validate_record_batch_reader(
+                        table_key,
+                        reader,
+                        context=context,
+                        mode="strict",
                     )
-                )
+                except TableValidationError as exc:
+                    errors.extend(exc.errors)
             else:
-                reader = _reader_for_parquet(path)
-                errors = _validate_reader(
-                    _ReaderValidationContext(
-                        table_key=table_key,
-                        reader=reader,
-                        table_schema=table_schema,
-                        contract_schema=contract_schema,
-                        include_data_checks=include_data_checks,
-                        pandera_schema=pandera_schema,
-                    )
-                )
+                validate_parquet_path(table_key, path, context=context, mode="strict")
+                errors = []
+        except TableValidationError as exc:
+            errors = list(exc.errors)
         except (OSError, ValueError, TypeError, pa.ArrowInvalid) as exc:
             errors = [f"Failed to read {path.name}: {exc}"]
         all_errors.extend([f"{path}: {err}" for err in errors])

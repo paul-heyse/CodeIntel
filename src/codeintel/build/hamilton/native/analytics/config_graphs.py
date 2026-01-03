@@ -287,7 +287,8 @@ def _add_call_graph_edges(graph: nx.DiGraph, edges: pl.DataFrame) -> None:
             continue
         if graph.has_edge(caller, callee):
             attrs = graph[caller][callee]
-            attrs["weight"] = int(attrs.get("weight", 0)) + 1
+            current_weight = _coerce_int(attrs.get("weight"))
+            attrs["weight"] = (current_weight or 0) + 1
         else:
             graph.add_edge(caller, callee, weight=1)
 

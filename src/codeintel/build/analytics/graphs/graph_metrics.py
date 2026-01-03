@@ -351,13 +351,14 @@ def _build_module_graph_metrics_rows(
     import_stats = neighbor_stats(graph, weight=inputs.ctx.betweenness_weight)
     centrality_bundle = centrality_directed(graph, inputs.ctx)
     component_raw = component_metadata(graph)
+    computed_component_meta: dict[str, dict[str, int | bool]] = {
+        "component_id": {str(node): int(val) for node, val in component_raw.component_id.items()},
+        "in_cycle": {str(node): bool(flag) for node, flag in component_raw.in_cycle.items()},
+        "layer": {str(node): int(val) for node, val in component_raw.layer.items()},
+    }
     component_meta = merge_component_metadata(
         modules,
-        {
-            "component_id": dict(component_raw.component_id),
-            "in_cycle": dict(component_raw.in_cycle),
-            "layer": dict(component_raw.layer),
-        },
+        computed_component_meta,
         inputs.component_meta_cache,
     )
 

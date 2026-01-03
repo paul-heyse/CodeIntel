@@ -134,15 +134,15 @@ def component_metadata_from_import_rows(
 
 
 def merge_component_metadata(
-    graph_nodes: set[Any],
-    computed: Mapping[str, Mapping[Any, int | bool]],
-    cached: Mapping[str, Mapping[Any, int | bool]] | None,
-) -> dict[str, dict[Any, int | bool]]:
+    graph_nodes: set[str],
+    computed: Mapping[str, Mapping[str, int | bool]],
+    cached: Mapping[str, Mapping[str, int | bool]] | None,
+) -> dict[str, dict[str, int | bool]]:
     """Overlay cached component metadata on computed values when available.
 
     Returns
     -------
-    dict[str, dict[Any, int | bool]]
+    dict[str, dict[str, int | bool]]
         Component metadata combining computed and cached values.
     """
     if cached is None:

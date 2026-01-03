@@ -351,6 +351,7 @@ def test_ast_visitor_records_decorator_span(ast_nodes_columns: tuple[str, ...]) 
     tree = ast.parse(source, filename="mod.py")
     visitor = AstVisitor(rel_path="mod.py", module_name="mod")
     visitor.visit(tree)
+    visitor.build_ast_rows(source)
 
     serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
     rows = [dict(zip(ast_nodes_columns, serializer(row), strict=True)) for row in visitor.ast_rows]

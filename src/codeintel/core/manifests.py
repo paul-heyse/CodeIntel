@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import types
 from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Literal,
-    TypeGuard,
     TypeVar,
-    Union,
     cast,
-    get_args,
-    get_origin,
     overload,
 )
 
 import msgspec
-import msgspec.structs as msgspec_structs
 
+from codeintel.core.serialization.msgspec import strip_unknown_fields
 from codeintel.core.serialization.msgspec_json import (
     decode_json_bytes,
     encode_json_bytes,
@@ -86,85 +81,11 @@ def _decode_manifest_payload[T](payload: bytes, *, payload_type: type[T]) -> T:
         return decode_json_bytes(payload, payload_type=payload_type)
     except msgspec.ValidationError as exc:
         builtins = msgspec.json.decode(payload)
-        sanitized = _strip_unknown_fields(builtins, payload_type)
+        sanitized = strip_unknown_fields(builtins, payload_type)
         try:
-            return msgspec.convert(sanitized, type=payload_type, strict=False)
+            return msgspec.convert(sanitized, type=payload_type, strict=True)
         except msgspec.ValidationError as fallback_exc:
             raise fallback_exc from exc
-
-
-def _strip_unknown_fields(value: object, target_type: object) -> object:
-    origin = get_origin(target_type)
-    if origin is None:
-        if _is_struct_type(target_type):
-            return _strip_struct_fields(value, target_type)
-        return value
-    if origin in {list, tuple, set, frozenset}:
-        return _strip_collection_fields(value, target_type, origin)
-    if origin in {dict, Mapping}:
-        return _strip_mapping_fields(value, target_type)
-    if origin in {Union, types.UnionType}:
-        return _strip_union_fields(value, target_type)
-    return value
-
-
-def _strip_collection_fields(value: object, target_type: object, origin: object) -> object:
-    args = get_args(target_type)
-    item_type = args[0] if args else object
-    if isinstance(value, list):
-        items = [_strip_unknown_fields(item, item_type) for item in value]
-        if origin is tuple:
-            return tuple(items)
-        if origin is set:
-            return set(items)
-        if origin is frozenset:
-            return frozenset(items)
-        return items
-    if origin is tuple and isinstance(value, tuple):
-        return tuple(_strip_unknown_fields(item, item_type) for item in value)
-    return value
-
-
-def _strip_mapping_fields(value: object, target_type: object) -> object:
-    if not isinstance(value, dict):
-        return value
-    args = get_args(target_type)
-    key_type = args[0] if args else object
-    value_type = args[1] if len(args) > 1 else object
-    normalized: dict[object, object] = {}
-    for key, item in value.items():
-        normalized_key = str(key) if key_type is str else key
-        normalized[normalized_key] = _strip_unknown_fields(item, value_type)
-    return normalized
-
-
-def _strip_union_fields(value: object, target_type: object) -> object:
-    if value is None:
-        return None
-    for arg in (arg for arg in get_args(target_type) if arg is not type(None)):
-        if _is_struct_type(arg) and isinstance(value, dict):
-            return _strip_unknown_fields(value, arg)
-        origin = get_origin(arg)
-        if origin is not None:
-            return _strip_unknown_fields(value, arg)
-    return value
-
-
-def _strip_struct_fields(value: object, target_type: type[msgspec.Struct]) -> object:
-    if not isinstance(value, dict):
-        return value
-    fields = msgspec_structs.fields(cast("msgspec.Struct", target_type))
-    allowed = {field.encode_name: field.type for field in fields}
-    normalized: dict[str, object] = {}
-    for key, item in value.items():
-        if key not in allowed:
-            continue
-        normalized[key] = _strip_unknown_fields(item, allowed[key])
-    return normalized
-
-
-def _is_struct_type(target_type: object) -> TypeGuard[type[msgspec.Struct]]:
-    return isinstance(target_type, type) and issubclass(target_type, msgspec.Struct)
 
 
 def _encode_manifest_bytes(payload: object) -> bytes:

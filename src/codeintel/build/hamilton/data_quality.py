@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 import polars as pl
 import pyarrow as pa
@@ -11,40 +11,23 @@ from hamilton.data_quality.base import DataValidationLevel, DataValidator, Valid
 from polars.exceptions import PolarsError
 
 from codeintel.build.schemas import get_schema_provider
-from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_POLICY
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.resolution import resolve_table_schema
-from codeintel.core.validation.pandera_schema import (
-    pandera_available,
-    pandera_error_diagnostics,
-    pandera_error_types,
-    pandera_schema_for_table,
-    resolve_extras_policy,
-)
 from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
+from codeintel.storage.validation.columnar import (
+    ColumnarValidationContext,
+    TableValidationError,
+    validate_record_batch_reader,
+    validate_table,
+)
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 
-class _PanderaSchemaProtocol(Protocol):
-    def validate(
-        self,
-        check_obj: pl.DataFrame | pl.LazyFrame,
-        **kwargs: object,
-    ) -> object: ...
-
-
 @dataclass(frozen=True, slots=True)
-class _PanderaValidationContext:
-    schema_obj: _PanderaSchemaProtocol
-    error_types: tuple[type[BaseException], ...]
-    primary_keys: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class PanderaSchemaValidator(DataValidator):
-    """Validate table outputs with a Pandera schema derived from the contract."""
+class ColumnarSchemaValidator(DataValidator):
+    """Validate table outputs using storage columnar validation."""
 
     table_key: str
     validation_profile: ValidationProfile
@@ -69,7 +52,7 @@ class PanderaSchemaValidator(DataValidator):
         str
             Validator name identifier.
         """
-        return "pandera_schema"
+        return "columnar_schema"
 
     @staticmethod
     def applies_to(datatype: type[object]) -> bool:
@@ -96,10 +79,10 @@ class PanderaSchemaValidator(DataValidator):
         str
             Validator description for diagnostics.
         """
-        return f"Validate Pandera contract for {self.table_key}"
+        return f"Validate columnar contract for {self.table_key}"
 
     def validate(self, dataset: object) -> ValidationResult:
-        """Validate the dataset using a Pandera schema derived from TableSchema.
+        """Validate the dataset using storage columnar validation.
 
         Parameters
         ----------
@@ -111,69 +94,26 @@ class PanderaSchemaValidator(DataValidator):
         ValidationResult
             Validation outcome for the dataset.
         """
-        prepared = self._prepare_validation()
+        prepared = self._prepare_validation_context()
         if isinstance(prepared, ValidationResult):
             return prepared
-        if isinstance(dataset, pa.RecordBatchReader):
-            if prepared.primary_keys:
-                return _validate_pandera_reader_full(
-                    dataset,
-                    context=prepared,
-                    table_key=self.table_key,
-                )
-            return _validate_pandera_reader_stream(
-                dataset,
-                context=prepared,
-                table_key=self.table_key,
-            )
-        frame = _pandera_frame(dataset)
-        if frame is None:
-            return ValidationResult(
-                passes=True,
-                message=f"Skipping Pandera validation for {type(dataset).__name__}",
-            )
-        return _validate_pandera_frame(
-            frame,
+        return _validate_columnar_dataset(
+            dataset=dataset,
             context=prepared,
             table_key=self.table_key,
         )
 
-    def _prepare_validation(self) -> ValidationResult | _PanderaValidationContext:
-        if not pandera_available():
-            return ValidationResult(
-                passes=True,
-                message=f"Pandera unavailable for {self.table_key}",
-            )
+    def _prepare_validation_context(self) -> ValidationResult | ColumnarValidationContext:
         table_schema, observation = _resolve_table_schema(self.table_key)
         if table_schema is None:
             return ValidationResult(
                 passes=True,
-                message=f"No Pandera schema for {self.table_key}",
+                message=f"No TableSchema available for {self.table_key}",
             )
-        extras_policy = resolve_extras_policy(observation, fallback=DEFAULT_EXTRAS_POLICY)
-        schema = pandera_schema_for_table(
+        return ColumnarValidationContext(
             table_schema=table_schema,
-            observation=observation,
-            extras_policy=extras_policy,
-            validation_profile=self.validation_profile,
-        )
-        if schema is None:
-            return ValidationResult(
-                passes=True,
-                message=f"Pandera unavailable for {self.table_key}",
-            )
-        error_types = pandera_error_types()
-        if not error_types:
-            return ValidationResult(
-                passes=True,
-                message=f"Pandera error types unavailable for {self.table_key}",
-            )
-        schema_obj = cast("_PanderaSchemaProtocol", schema)
-        primary_keys = tuple(table_schema.primary_key)
-        return _PanderaValidationContext(
-            schema_obj=schema_obj,
-            error_types=error_types,
-            primary_keys=primary_keys,
+            schema_observation=observation,
+            validation_profile=_effective_validation_profile(self.validation_profile),
         )
 
 
@@ -324,7 +264,7 @@ def build_table_schema_validators(
         include_row_count = False
 
     validators.append(
-        PanderaSchemaValidator(
+        ColumnarSchemaValidator(
             table_key=table_key,
             validation_profile=normalized,
             importance=importance,
@@ -352,15 +292,59 @@ def _resolve_table_schema(
     return resolution.table_schema, resolution.observation
 
 
-def _pandera_frame(dataset: object) -> pl.LazyFrame | pl.DataFrame | None:
-    if isinstance(dataset, (pl.LazyFrame, pl.DataFrame)):
-        return dataset
+def _effective_validation_profile(profile: ValidationProfile) -> ValidationProfile:
+    if profile == "lenient":
+        return "data-light"
+    return profile
+
+
+def _validate_columnar_dataset(
+    *,
+    dataset: object,
+    context: ColumnarValidationContext,
+    table_key: str,
+) -> ValidationResult:
+    try:
+        if isinstance(dataset, pa.RecordBatchReader):
+            validate_record_batch_reader(table_key, dataset, context=context, mode="strict")
+            return ValidationResult(
+                passes=True,
+                message=f"Columnar validation passed for {table_key}",
+            )
+        table = _table_from_dataset(dataset)
+        if table is None:
+            return ValidationResult(
+                passes=True,
+                message=f"Skipping columnar validation for {type(dataset).__name__}",
+            )
+        validate_table(table_key, table, context=context, mode="strict")
+        return ValidationResult(
+            passes=True,
+            message=f"Columnar validation passed for {table_key}",
+        )
+    except TableValidationError as exc:
+        return ValidationResult(
+            passes=False,
+            message=f"Columnar validation failed for {table_key}",
+            diagnostics={"errors": list(exc.errors), "table_key": exc.table_key},
+        )
+    except (PolarsError, pa.ArrowInvalid, TypeError, ValueError) as exc:
+        return ValidationResult(
+            passes=False,
+            message=f"Columnar validation failed for {table_key}: {exc}",
+        )
+
+
+def _table_from_dataset(dataset: object) -> pa.Table | None:
     if isinstance(dataset, pa.Table):
-        frame = pl.from_arrow(dataset)
-        return frame if isinstance(frame, pl.DataFrame) else None
+        return dataset
     if isinstance(dataset, pa.RecordBatch):
-        frame = pl.from_arrow(pa.Table.from_batches([dataset]))
-        return frame if isinstance(frame, pl.DataFrame) else None
+        return pa.Table.from_batches([dataset])
+    if isinstance(dataset, pl.DataFrame):
+        return dataset.to_arrow()
+    if isinstance(dataset, pl.LazyFrame):
+        frame = dataset.collect()
+        return frame.to_arrow()
     return None
 
 
@@ -393,85 +377,8 @@ def _frame_scalar(dataset: pl.DataFrame) -> int | None:
     return None
 
 
-def _validate_pandera_frame(
-    frame: pl.DataFrame | pl.LazyFrame,
-    *,
-    context: _PanderaValidationContext,
-    table_key: str,
-) -> ValidationResult:
-    try:
-        context.schema_obj.validate(frame, lazy=True)
-    except context.error_types as exc:
-        diagnostics = pandera_error_diagnostics(exc, table_key=table_key)
-        return ValidationResult(
-            passes=False,
-            message=f"Pandera validation failed for {table_key}",
-            diagnostics=diagnostics.to_dict(),
-        )
-    return ValidationResult(
-        passes=True,
-        message=f"Pandera validation passed for {table_key}",
-    )
-
-
-def _validate_pandera_reader_stream(
-    reader: pa.RecordBatchReader,
-    *,
-    context: _PanderaValidationContext,
-    table_key: str,
-) -> ValidationResult:
-    for batch_index, batch in enumerate(reader):
-        frame = _pandera_frame(batch)
-        if frame is None:
-            return ValidationResult(
-                passes=True,
-                message=f"Skipping Pandera validation for {type(batch).__name__}",
-            )
-        try:
-            context.schema_obj.validate(frame, lazy=True)
-        except context.error_types as exc:
-            diagnostics = pandera_error_diagnostics(exc, table_key=table_key)
-            diagnostics = diagnostics.__replace__(batch_index=batch_index)
-            return ValidationResult(
-                passes=False,
-                message=f"Pandera validation failed for {table_key}",
-                diagnostics=diagnostics.to_dict(),
-            )
-    return ValidationResult(
-        passes=True,
-        message=f"Pandera validation passed for {table_key}",
-    )
-
-
-def _validate_pandera_reader_full(
-    reader: pa.RecordBatchReader,
-    *,
-    context: _PanderaValidationContext,
-    table_key: str,
-) -> ValidationResult:
-    try:
-        batches = list(reader)
-    except (TypeError, ValueError, pa.ArrowInvalid):
-        return ValidationResult(
-            passes=True,
-            message=f"Skipping Pandera validation for {type(reader).__name__}",
-        )
-    table = pa.Table.from_batches(batches, schema=reader.schema)
-    frame = _pandera_frame(table)
-    if frame is None:
-        return ValidationResult(
-            passes=True,
-            message=f"Skipping Pandera validation for {type(table).__name__}",
-        )
-    return _validate_pandera_frame(
-        frame,
-        context=context,
-        table_key=table_key,
-    )
-
-
 __all__ = [
-    "PanderaSchemaValidator",
+    "ColumnarSchemaValidator",
     "TableRowCountValidator",
     "build_table_schema_validators",
 ]

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -89,9 +89,13 @@ def _compute_postdom_bitsets(
 def _block_indexes(blocks: pl.DataFrame) -> tuple[dict[str, int], dict[int, str]]:
     block_idx_by_id: dict[str, int] = {}
     block_id_by_idx: dict[int, str] = {}
-    for row in blocks.iter_rows(named=True):
-        block_id = row.get("block_id")
-        block_idx = row.get("block_idx")
+    if blocks.is_empty():
+        return block_idx_by_id, block_id_by_idx
+    required = {"block_id", "block_idx"}
+    if not required.issubset(set(blocks.columns)):
+        return block_idx_by_id, block_id_by_idx
+    data = blocks.select(["block_id", "block_idx"]).to_dict(as_series=False)
+    for block_id, block_idx in zip(data["block_id"], data["block_idx"], strict=True):
         if not isinstance(block_id, str) or not isinstance(block_idx, int):
             continue
         block_idx_by_id[block_id] = block_idx
@@ -104,9 +108,19 @@ def _edge_indexes(
 ) -> tuple[list[tuple[int, int]], dict[tuple[int, int], str | None]]:
     edges_idx: list[tuple[int, int]] = []
     edge_kind_by_pair: dict[tuple[int, int], str | None] = {}
-    for row in edges.iter_rows(named=True):
-        src_id = row.get("src_block_id")
-        dst_id = row.get("dst_block_id")
+    if edges.is_empty():
+        return edges_idx, edge_kind_by_pair
+    required = {"src_block_id", "dst_block_id"}
+    if not required.issubset(set(edges.columns)):
+        return edges_idx, edge_kind_by_pair
+    columns = ["src_block_id", "dst_block_id"]
+    if "edge_kind" in edges.columns:
+        columns.append("edge_kind")
+    data = edges.select(columns).to_dict(as_series=False)
+    kinds = data.get("edge_kind")
+    for idx, (src_id, dst_id) in enumerate(
+        zip(data["src_block_id"], data["dst_block_id"], strict=True)
+    ):
         if not isinstance(src_id, str) or not isinstance(dst_id, str):
             continue
         src_idx = block_idx_by_id.get(src_id)
@@ -114,7 +128,7 @@ def _edge_indexes(
         if src_idx is None or dst_idx is None:
             continue
         edges_idx.append((src_idx, dst_idx))
-        edge_kind_by_pair[src_idx, dst_idx] = row.get("edge_kind")
+        edge_kind_by_pair[src_idx, dst_idx] = kinds[idx] if kinds is not None else None
     return edges_idx, edge_kind_by_pair
 
 
@@ -239,8 +253,16 @@ def cdg_edges(
     polars.LazyFrame
         Lazy frame for graph.cdg_edges.
     """
-    blocks_frame = tabular_to_frame(q__graph__cfg_blocks)
-    edges_frame = tabular_to_frame(q__graph__cfg_edges)
+    blocks_frame = (
+        tabular_to_lazyframe(q__graph__cfg_blocks)
+        .select(["function_goid_h128", "block_id", "block_idx"])
+        .collect()
+    )
+    edges_frame = (
+        tabular_to_lazyframe(q__graph__cfg_edges)
+        .select(["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"])
+        .collect()
+    )
     if blocks_frame.is_empty() or edges_frame.is_empty():
         return empty_frame_for_table(CDG_EDGES_TABLE_KEY)
 

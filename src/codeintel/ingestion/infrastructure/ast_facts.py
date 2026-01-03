@@ -36,6 +36,15 @@ class AstNodeRecord:
     node: ast.AST
 
 
+@dataclass(frozen=True, slots=True)
+class AstCollectContext:
+    """Optional context for AST node collection."""
+
+    warnings: list[str] | None = None
+    source_label: str | None = None
+    parsed: ast.AST | None = None
+
+
 def _ast_module_span(source_index: LineIndexedSource) -> AstSpan:
     end_byte = len(source_index.source_bytes)
     if not source_index.lines:
@@ -63,7 +72,20 @@ def ast_span_for_node(
     node: ast.AST,
     source_index: LineIndexedSource,
 ) -> AstSpan | None:
-    """Return an AST node span with byte offsets when available."""
+    """Return an AST node span with byte offsets when available.
+
+    Parameters
+    ----------
+    node
+        AST node to measure.
+    source_index
+        Line-indexed source for offset lookups.
+
+    Returns
+    -------
+    AstSpan | None
+        Span data when offsets are available, otherwise None.
+    """
     if isinstance(node, ast.Module):
         return _ast_module_span(source_index)
     lineno = getattr(node, "lineno", None)
@@ -168,7 +190,18 @@ def _ast_constant_payload(node: ast.AST) -> dict[str, object]:
 
 
 def ast_node_extras(node: ast.AST) -> dict[str, object] | None:
-    """Return structured extras for an AST node."""
+    """Return structured extras for an AST node.
+
+    Parameters
+    ----------
+    node
+        AST node to inspect.
+
+    Returns
+    -------
+    dict[str, object] | None
+        Extra payload for the node when available, otherwise None.
+    """
     extras: dict[str, object] = {}
     for payload in (
         _ast_ctx_payload(node),
@@ -184,7 +217,22 @@ def ast_node_extras(node: ast.AST) -> dict[str, object] | None:
 
 
 def ast_node_id(rel_path: str, node_kind: str, span: AstSpan) -> str:
-    """Return a stable-ish AST node identifier for a file span."""
+    """Return a stable-ish AST node identifier for a file span.
+
+    Parameters
+    ----------
+    rel_path
+        Relative path of the source file.
+    node_kind
+        AST node kind name.
+    span
+        Normalized span for the node.
+
+    Returns
+    -------
+    str
+        Deterministic hash for the node span.
+    """
     payload = (
         f"{rel_path}:{node_kind}:{span.start_byte}:{span.end_byte}:"
         f"{span.start_line}:{span.end_line}"
@@ -197,20 +245,36 @@ def collect_ast_nodes(
     source_index: LineIndexedSource,
     *,
     node_id_factory: Callable[[ast.AST, AstSpan], str],
-    warnings: list[str] | None = None,
-    source_label: str | None = None,
-    parsed: ast.AST | None = None,
+    context: AstCollectContext | None = None,
 ) -> list[AstNodeRecord]:
-    """Collect AST node records with spans and extras."""
-    tree = parsed
-    label = source_label or "<source>"
+    """Collect AST node records with spans and extras.
+
+    Parameters
+    ----------
+    source_text
+        Source text to parse when no parsed tree is supplied.
+    source_index
+        Line-indexed source for span lookups.
+    node_id_factory
+        Callable that produces stable node IDs from spans.
+    context
+        Optional context with warnings sink, source label, and parsed tree.
+
+    Returns
+    -------
+    list[AstNodeRecord]
+        AST node records with spans and extras.
+    """
+    resolved_context = context or AstCollectContext()
+    tree = resolved_context.parsed
+    label = resolved_context.source_label or "<source>"
     if tree is None:
         try:
             tree = ast.parse(source_text, type_comments=True)
         except (SyntaxError, ValueError, TypeError) as exc:
             message = f"AST parse failed for {label}: {exc}"
-            if warnings is not None:
-                warnings.append(message)
+            if resolved_context.warnings is not None:
+                resolved_context.warnings.append(message)
             LOG.warning("%s", message)
             return []
     records: list[AstNodeRecord] = []
@@ -233,6 +297,7 @@ def collect_ast_nodes(
 
 
 __all__ = [
+    "AstCollectContext",
     "AstNodeRecord",
     "AstSpan",
     "ast_node_extras",

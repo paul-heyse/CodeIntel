@@ -734,7 +734,7 @@ def _capture_row(
     metadata: _CaptureMetadata,
     context: _QueryPackContext,
 ) -> TreeSitterCapture:
-    extras: dict[str, object] = {
+    extras: TreeSitterCaptureExtras = {
         "query_hash": pack.query_hash,
         "pattern_index": metadata.pattern_value,
         "capture_index": metadata.capture_index,
@@ -767,7 +767,7 @@ def _token_row(
 ) -> TreeSitterToken:
     raw_kind = capture_name[len(_TOKEN_PREFIX) :]
     token_kind, literal_kind = _token_kind(raw_kind)
-    token_extras: dict[str, object] = {
+    token_extras: TreeSitterTokenExtras = {
         "query_hash": pack.query_hash,
         "pattern_index": metadata.pattern_value,
         "capture_index": metadata.capture_index,
@@ -808,7 +808,7 @@ def _trivia_row(
     context: _QueryPackContext,
 ) -> TreeSitterTrivia:
     trivia_kind = capture_name[len(_TRIVIA_PREFIX) :]
-    trivia_extras: dict[str, object] = {
+    trivia_extras: TreeSitterTokenExtras = {
         "query_hash": pack.query_hash,
         "pattern_index": metadata.pattern_value,
         "capture_index": metadata.capture_index,
