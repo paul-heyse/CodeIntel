@@ -56,6 +56,7 @@ def test_symtable_resolution_edges(tmp_path: Path) -> None:
 
 
 def test_symtable_freevars(tmp_path: Path) -> None:
+    """Ensure freevars are recorded for nested scopes."""
     repo_root = tmp_path / "repo"
     write_tree(
         repo_root,
@@ -78,6 +79,7 @@ def test_symtable_freevars(tmp_path: Path) -> None:
     assert result.result.success
 
     partitions = _columnar_to_dicts(result.function_partition_rows)
+
     def _has_free_x(row: Mapping[str, object]) -> bool:
         frees = row.get("frees")
         return isinstance(frees, list) and "x" in frees
@@ -86,6 +88,7 @@ def test_symtable_freevars(tmp_path: Path) -> None:
 
 
 def test_symtable_comprehension_scope(tmp_path: Path) -> None:
+    """Ensure comprehension scopes are recorded in symtable outputs."""
     repo_root = tmp_path / "repo"
     write_tree(
         repo_root,
@@ -106,5 +109,7 @@ def test_symtable_comprehension_scope(tmp_path: Path) -> None:
     assert result.result.success
 
     scopes = _columnar_to_dicts(result.scope_rows)
-    scope_types = {row.get("scope_type") for row in scopes if isinstance(row.get("scope_type"), str)}
+    scope_types = {
+        row.get("scope_type") for row in scopes if isinstance(row.get("scope_type"), str)
+    }
     assert "COMPREHENSION" in scope_types

@@ -51,7 +51,10 @@ def _row_models_from_module(*, module: object, prefix: str) -> dict[str, type[Ro
         model = getattr(module, name, None)
         if model is None or not isinstance(model, type):
             continue
-        table_key = _table_key_from_row_model_name(prefix=prefix, name=name)
+        try:
+            table_key = _table_key_from_row_model_name(prefix=prefix, name=name)
+        except ValueError:
+            continue
         result[table_key] = cast("type[RowModelProtocol]", model)
     return result
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import table_to_lazyframe, tabular_to_arrow_table
 from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -66,8 +66,8 @@ def pdg_edges(
     polars.LazyFrame
         Lazy frame for graph.pdg_edges.
     """
-    dfg_edges = tabular_to_lazyframe(q__graph__dfg_edges)
-    cdg_edges = tabular_to_lazyframe(q__graph__cdg_edges)
+    dfg_edges = table_to_lazyframe(tabular_to_arrow_table(q__graph__dfg_edges))
+    cdg_edges = table_to_lazyframe(tabular_to_arrow_table(q__graph__cdg_edges))
 
     dfg_frame = _dfg_edges_frame(dfg_edges)
     cdg_frame = _cdg_edges_frame(cdg_edges)

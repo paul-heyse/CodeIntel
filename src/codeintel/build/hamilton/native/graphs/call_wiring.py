@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import polars as pl
 from intervaltree import IntervalTree
 
+from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import (
     JoinSpec,
@@ -1908,7 +1909,7 @@ def cpg_call_targets(
     targets = pl.DataFrame(all_rows).lazy()
     blocks = tabular_to_lazyframe(q__graph__cfg_blocks)
 
-    targets = join_validated(
+    targets = arrow_join_lazyframes(
         targets,
         _entry_blocks(blocks),
         spec=JoinSpec(
@@ -1918,7 +1919,7 @@ def cpg_call_targets(
             validate="m:1",
         ),
     ).drop(["function_goid_h128"])
-    targets = join_validated(
+    targets = arrow_join_lazyframes(
         targets,
         _exit_blocks(blocks),
         spec=JoinSpec(
@@ -2015,7 +2016,7 @@ def _arg_edges_positional(args: pl.LazyFrame, params: pl.LazyFrame) -> pl.LazyFr
     pos_args = args.filter(pl.col("arg_kind") == "positional")
     non_variadic = params.filter(~pl.col("param_kind").is_in(["varargs", "varkw"]))
     return (
-        join_validated(
+        arrow_join_lazyframes(
             pos_args,
             non_variadic,
             spec=JoinSpec(
@@ -2053,7 +2054,7 @@ def _arg_edges_positional(args: pl.LazyFrame, params: pl.LazyFrame) -> pl.LazyFr
 def _arg_edges_keyword(args: pl.LazyFrame, params: pl.LazyFrame) -> pl.LazyFrame:
     kw_args = args.filter(pl.col("arg_kind") == "keyword")
     return (
-        join_validated(
+        arrow_join_lazyframes(
             kw_args,
             params,
             spec=JoinSpec(
@@ -2099,7 +2100,7 @@ def _arg_edges_star(
     subset = args.filter(pl.col("arg_kind") == arg_kind)
     var_params = params.filter(pl.col("param_kind") == param_kind)
     return (
-        join_validated(
+        arrow_join_lazyframes(
             subset,
             var_params,
             spec=JoinSpec(on=["callee_def_id"], how="inner", validate="m:1"),
@@ -2159,19 +2160,31 @@ def _arg_to_param_frames(
             "confidence",
             "extras_json",
         ]
+    ).with_columns(
+        pl.col("repo").cast(pl.Utf8),
+        pl.col("commit").cast(pl.Utf8),
+        pl.col("call_id").cast(pl.Utf8),
     )
     explicit_targets = call_targets.filter(pl.col("call_kind") == _CALL_KIND_EXPLICIT).filter(
         (pl.col("target_role") == _TARGET_ROLE_INIT)
         | (pl.col("binding_kind") != _BINDING_CONSTRUCTOR)
     )
-    args = tabular_to_lazyframe(q__core__syntax_call_args).join(
+    args_source = tabular_to_lazyframe(q__core__syntax_call_args).with_columns(
+        pl.col("repo").cast(pl.Utf8),
+        pl.col("commit").cast(pl.Utf8),
+        pl.col("call_id").cast(pl.Utf8),
+    )
+    args = join_validated(
+        args_source,
         explicit_targets,
-        on=["repo", "commit", "call_id"],
-        how="left",
+        spec=JoinSpec(on=["repo", "commit", "call_id"], how="left"),
     )
     args = args.filter(pl.col("callee_def_id").is_not_null())
     args = args.with_columns(
         pl.col("confidence").fill_null(0.0),
+        pl.col("callee_def_id").cast(pl.Utf8).alias("callee_def_id"),
+        pl.col("arg_kind").cast(pl.Utf8).alias("arg_kind"),
+        pl.col("arg_name").cast(pl.Utf8).alias("arg_name"),
         pl.when(pl.col("arg_kind") == "positional")
         .then(pl.format("positional:{}", pl.col("arg_ordinal")))
         .when(pl.col("arg_kind") == "keyword")
@@ -2197,6 +2210,7 @@ def _arg_to_param_frames(
         )
         .then(pl.col("arg_ordinal") + pl.lit(1))
         .otherwise(pl.col("arg_ordinal"))
+        .cast(pl.Int64)
         .alias("param_ordinal_hint"),
     )
     params = tabular_to_lazyframe(q__core__syntax_func_params).select(
@@ -2207,6 +2221,11 @@ def _arg_to_param_frames(
             "param_name",
             "param_node_id",
         ]
+    ).with_columns(
+        pl.col("callee_def_id").cast(pl.Utf8).alias("callee_def_id"),
+        pl.col("param_kind").cast(pl.Utf8).alias("param_kind"),
+        pl.col("param_name").cast(pl.Utf8).alias("param_name"),
+        pl.col("param_ordinal").cast(pl.Int64).alias("param_ordinal"),
     )
     return _ArgToParamFrames(
         call_targets=call_targets,
@@ -2249,7 +2268,7 @@ def _implicit_receiver_edges(
         pl.col("confidence").fill_null(0.0),
     )
     return (
-        join_validated(
+        arrow_join_lazyframes(
             implicit_receiver,
             params,
             spec=JoinSpec(
@@ -2322,7 +2341,7 @@ def _implicit_descriptor_edges(
             pl.col("confidence").fill_null(0.0),
         )
         .pipe(
-            join_validated,
+            arrow_join_lazyframes,
             params,
             spec=JoinSpec(
                 on=["callee_def_id", "param_ordinal"],
@@ -2365,7 +2384,7 @@ def _implicit_descriptor_edges(
             pl.col("confidence").fill_null(0.0),
         )
         .pipe(
-            join_validated,
+            arrow_join_lazyframes,
             params,
             spec=JoinSpec(
                 on=["callee_def_id", "param_ordinal"],
@@ -2408,7 +2427,7 @@ def _implicit_descriptor_edges(
             pl.col("confidence").fill_null(0.0),
         )
         .pipe(
-            join_validated,
+            arrow_join_lazyframes,
             params,
             spec=JoinSpec(
                 on=["callee_def_id", "param_ordinal"],
@@ -2451,7 +2470,7 @@ def _implicit_descriptor_edges(
             pl.col("confidence").fill_null(0.0),
         )
         .pipe(
-            join_validated,
+            arrow_join_lazyframes,
             params,
             spec=JoinSpec(
                 on=["callee_def_id", "param_ordinal"],
@@ -2500,7 +2519,7 @@ def _implicit_descriptor_edges(
             pl.col("confidence").fill_null(0.0),
         )
         .pipe(
-            join_validated,
+            arrow_join_lazyframes,
             params,
             spec=JoinSpec(
                 on=["callee_def_id", "param_ordinal"],
@@ -2543,7 +2562,7 @@ def _implicit_descriptor_edges(
             pl.col("confidence").fill_null(0.0),
         )
         .pipe(
-            join_validated,
+            arrow_join_lazyframes,
             params,
             spec=JoinSpec(
                 on=["callee_def_id", "param_ordinal"],
@@ -2586,7 +2605,7 @@ def _implicit_descriptor_edges(
             pl.col("confidence").fill_null(0.0),
         )
         .pipe(
-            join_validated,
+            arrow_join_lazyframes,
             params,
             spec=JoinSpec(
                 on=["callee_def_id", "param_ordinal"],
@@ -2628,7 +2647,11 @@ def _implicit_descriptor_edges(
             pl.col("call_node_id").alias("arg_expr_node_id"),
             pl.col("confidence").fill_null(0.0),
         )
-        .join(params, on=["callee_def_id", "param_ordinal"], how="left")
+        .pipe(
+            arrow_join_lazyframes,
+            params,
+            spec=JoinSpec(on=["callee_def_id", "param_ordinal"], how="left"),
+        )
         .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
         .select(
             [
@@ -2666,7 +2689,11 @@ def _implicit_descriptor_edges(
             pl.col("call_node_id").alias("arg_expr_node_id"),
             pl.col("confidence").fill_null(0.0),
         )
-        .join(params, on=["callee_def_id", "param_ordinal"], how="left")
+        .pipe(
+            arrow_join_lazyframes,
+            params,
+            spec=JoinSpec(on=["callee_def_id", "param_ordinal"], how="left"),
+        )
         .with_columns(pl.lit("ARG_TO_PARAM").alias("edge_kind"))
         .select(
             [

@@ -13,6 +13,13 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import (
+    AsyncGeneratorType,
+    CodeType,
+    CoroutineType,
+    FrameType,
+    GeneratorType,
+)
 from typing import TYPE_CHECKING, cast
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -21,11 +28,15 @@ from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
+
+    import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
@@ -35,11 +46,14 @@ LOG = logging.getLogger(__name__)
 
 PY_INSPECT_OBJECTS_TABLE_KEY = "core.py_inspect_objects"
 PY_INSPECT_MEMBERS_TABLE_KEY = "core.py_inspect_members_static"
+PY_INSPECT_CLASS_MRO_TABLE_KEY = "core.py_inspect_class_mro"
+PY_INSPECT_CLASS_ATTRS_TABLE_KEY = "core.py_inspect_class_attrs"
 PY_INSPECT_UNWRAP_TABLE_KEY = "core.py_inspect_unwrap_hops"
 PY_INSPECT_SIGNATURES_TABLE_KEY = "core.py_inspect_signatures"
 PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY = "core.py_inspect_signature_params"
 PY_INSPECT_ANNOTATIONS_TABLE_KEY = "core.py_inspect_annotations_kv"
 PY_INSPECT_SOURCE_TABLE_KEY = "core.py_inspect_source"
+PY_INSPECT_RUNTIME_STATE_TABLE_KEY = "core.py_inspect_runtime_state"
 _ALLOWLIST_PREVIEW_LIMIT = 5
 
 
@@ -50,18 +64,54 @@ class InspectExtractResult:
     result: ExecutionResult
     object_rows: ColumnarRows = field(default_factory=dict)
     member_rows: ColumnarRows = field(default_factory=dict)
+    class_mro_rows: ColumnarRows = field(default_factory=dict)
+    class_attr_rows: ColumnarRows = field(default_factory=dict)
     unwrap_rows: ColumnarRows = field(default_factory=dict)
     signature_rows: ColumnarRows = field(default_factory=dict)
     signature_param_rows: ColumnarRows = field(default_factory=dict)
     annotation_rows: ColumnarRows = field(default_factory=dict)
     source_rows: ColumnarRows = field(default_factory=dict)
+    runtime_state_rows: ColumnarRows = field(default_factory=dict)
+    object_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
+    )
+    member_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
+    )
+    class_mro_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
+    )
+    class_attr_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
+    )
+    unwrap_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
+    )
+    signature_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
+    )
+    signature_param_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
+    )
+    annotation_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
+    )
+    source_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
+    )
+    runtime_state_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
+    )
     object_row_count: int = 0
     member_row_count: int = 0
+    class_mro_row_count: int = 0
+    class_attr_row_count: int = 0
     unwrap_row_count: int = 0
     signature_row_count: int = 0
     signature_param_row_count: int = 0
     annotation_row_count: int = 0
     source_row_count: int = 0
+    runtime_state_row_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,11 +128,14 @@ class _InspectContext:
 class _InspectBuffers:
     objects: ColumnarRowBuffer
     members: ColumnarRowBuffer
+    class_mro: ColumnarRowBuffer
+    class_attrs: ColumnarRowBuffer
     unwrap: ColumnarRowBuffer
     signatures: ColumnarRowBuffer
     signature_params: ColumnarRowBuffer
     annotations: ColumnarRowBuffer
     sources: ColumnarRowBuffer
+    runtime_state: ColumnarRowBuffer
 
 
 @dataclass(slots=True)
@@ -100,22 +153,44 @@ class _InspectState:
 
 
 @dataclass(frozen=True, slots=True)
+class _RuntimeFrameInfo:
+    frame: FrameType | None
+    frame_object_id: str | None
+    frame_line: int | None
+    frame_offset: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _RuntimeStateInfo:
+    object_kind: str
+    state_kind: str
+    state: str | None
+    status: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class _InspectWorkerPayload:
     warnings: list[str]
     object_rows: ColumnarRows
     member_rows: ColumnarRows
+    class_mro_rows: ColumnarRows
+    class_attr_rows: ColumnarRows
     unwrap_rows: ColumnarRows
     signature_rows: ColumnarRows
     signature_param_rows: ColumnarRows
     annotation_rows: ColumnarRows
     source_rows: ColumnarRows
+    runtime_state_rows: ColumnarRows
     object_row_count: int
     member_row_count: int
+    class_mro_row_count: int
+    class_attr_row_count: int
     unwrap_row_count: int
     signature_row_count: int
     signature_param_row_count: int
     annotation_row_count: int
     source_row_count: int
+    runtime_state_row_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,11 +212,14 @@ def _build_inspect_buffers() -> _InspectBuffers:
     return _InspectBuffers(
         objects=columnar_buffer_for_table_key(PY_INSPECT_OBJECTS_TABLE_KEY),
         members=columnar_buffer_for_table_key(PY_INSPECT_MEMBERS_TABLE_KEY),
+        class_mro=columnar_buffer_for_table_key(PY_INSPECT_CLASS_MRO_TABLE_KEY),
+        class_attrs=columnar_buffer_for_table_key(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
         unwrap=columnar_buffer_for_table_key(PY_INSPECT_UNWRAP_TABLE_KEY),
         signatures=columnar_buffer_for_table_key(PY_INSPECT_SIGNATURES_TABLE_KEY),
         signature_params=columnar_buffer_for_table_key(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
         annotations=columnar_buffer_for_table_key(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
         sources=columnar_buffer_for_table_key(PY_INSPECT_SOURCE_TABLE_KEY),
+        runtime_state=columnar_buffer_for_table_key(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
     )
 
 
@@ -202,9 +280,56 @@ def _object_kind(value: object) -> str:
     return kind
 
 
+def _runtime_frame(value: object) -> FrameType | None:
+    if inspect.isframe(value):
+        return value
+    if inspect.istraceback(value):
+        return value.tb_frame
+    if inspect.isgenerator(value):
+        return value.gi_frame
+    if inspect.iscoroutine(value):
+        return value.cr_frame
+    if inspect.isasyncgen(value):
+        return value.ag_frame
+    return None
+
+
+def _runtime_code(value: object) -> CodeType | None:
+    if inspect.isframe(value):
+        return value.f_code
+    if inspect.istraceback(value):
+        return value.tb_frame.f_code
+    if inspect.isgenerator(value):
+        return value.gi_code
+    if inspect.iscoroutine(value):
+        return value.cr_code
+    if inspect.isasyncgen(value):
+        return value.ag_code
+    return None
+
+
+def _frame_module_name(frame: FrameType | None) -> str | None:
+    if frame is None:
+        return None
+    module_name = frame.f_globals.get("__name__")
+    return module_name if isinstance(module_name, str) else None
+
+
+def _int_or_none(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
 def _object_module_name(value: object) -> str | None:
     if inspect.ismodule(value):
         return getattr(value, "__name__", None)
+    runtime_frame = _runtime_frame(value)
+    runtime_module = _frame_module_name(runtime_frame)
+    if runtime_module is not None:
+        return runtime_module
     module_name = getattr(value, "__module__", None)
     return module_name if isinstance(module_name, str) else None
 
@@ -213,6 +338,14 @@ def _object_qualname(value: object) -> str | None:
     qualname = getattr(value, "__qualname__", None)
     if isinstance(qualname, str):
         return qualname
+    runtime_code = _runtime_code(value)
+    if runtime_code is not None:
+        runtime_qualname = getattr(runtime_code, "co_qualname", None)
+        if isinstance(runtime_qualname, str) and runtime_qualname:
+            return runtime_qualname
+        runtime_name = getattr(runtime_code, "co_name", None)
+        if isinstance(runtime_name, str) and runtime_name:
+            return runtime_name
     name = getattr(value, "__name__", None)
     return name if isinstance(name, str) else None
 
@@ -225,7 +358,132 @@ def _object_name(value: object) -> str | None:
 def _object_id(value: object, kind: str) -> str:
     module_name = _object_module_name(value)
     qualname = _object_qualname(value)
+    if (
+        inspect.isframe(value)
+        or inspect.istraceback(value)
+        or inspect.isgenerator(value)
+        or inspect.iscoroutine(value)
+        or inspect.isasyncgen(value)
+    ):
+        return _stable_id("py_inspect_obj", module_name, qualname, kind, id(value))
+    if module_name is None and qualname is None:
+        return _stable_id("py_inspect_obj", kind, id(value))
     return _stable_id("py_inspect_obj", module_name, qualname, kind)
+
+
+def _frame_position_info(
+    frame: FrameType | None,
+) -> tuple[int | None, int | None, int | None, int | None]:
+    if frame is None:
+        return None, None, None, None
+    try:
+        info = inspect.getframeinfo(frame)
+    except (TypeError, ValueError):
+        return None, None, None, None
+    positions = getattr(info, "positions", None)
+    if positions is None:
+        return None, None, None, None
+    return (
+        _int_or_none(getattr(positions, "lineno", None)),
+        _int_or_none(getattr(positions, "end_lineno", None)),
+        _int_or_none(getattr(positions, "col_offset", None)),
+        _int_or_none(getattr(positions, "end_col_offset", None)),
+    )
+
+
+def _frame_locals_payload(frame: FrameType | None) -> list[dict[str, object]]:
+    if frame is None:
+        return []
+    try:
+        locals_map = frame.f_locals
+    except AttributeError:
+        return []
+    if isinstance(locals_map, dict):
+        items = locals_map.items()
+    else:
+        try:
+            items = locals_map.items()
+        except AttributeError:
+            return []
+    payload: list[dict[str, object]] = []
+    for key, value in items:
+        if not isinstance(key, str):
+            continue
+        payload.append({"name": key, "value": _value_ref(value)})
+    return payload
+
+
+def _frame_line(value: object, frame: FrameType | None) -> int | None:
+    if inspect.istraceback(value):
+        return _int_or_none(value.tb_lineno)
+    if frame is None:
+        return None
+    return _int_or_none(frame.f_lineno)
+
+
+def _frame_offset(value: object, frame: FrameType | None) -> int | None:
+    if inspect.istraceback(value):
+        return _int_or_none(value.tb_lasti)
+    if frame is None:
+        return None
+    return _int_or_none(frame.f_lasti)
+
+
+def _runtime_state_row(
+    *,
+    context: _InspectContext,
+    frame_info: _RuntimeFrameInfo,
+    state_info: _RuntimeStateInfo,
+) -> dict[str, object]:
+    frame = frame_info.frame
+    frame_file = None
+    if frame is not None and isinstance(frame.f_code.co_filename, str):
+        frame_file = frame.f_code.co_filename
+    frame_module = _frame_module_name(frame)
+    frame_code_qualname = None
+    frame_code_name = None
+    frame_firstlineno = None
+    if frame is not None:
+        if isinstance(frame.f_code.co_name, str):
+            frame_code_name = frame.f_code.co_name
+        qualname = getattr(frame.f_code, "co_qualname", None)
+        if isinstance(qualname, str):
+            frame_code_qualname = qualname
+        frame_firstlineno = _int_or_none(frame.f_code.co_firstlineno)
+    frame_start_line, frame_end_line, frame_start_col, frame_end_col = _frame_position_info(frame)
+    return {
+        "repo": context.repo,
+        "commit": context.commit,
+        "mode": context.mode,
+        "object_id": context.object_id,
+        "object_kind": state_info.object_kind,
+        "state_kind": state_info.state_kind,
+        "state": state_info.state,
+        "frame_object_id": frame_info.frame_object_id,
+        "frame_file": frame_file,
+        "frame_module": frame_module,
+        "frame_code_qualname": frame_code_qualname,
+        "frame_code_name": frame_code_name,
+        "frame_firstlineno": frame_firstlineno,
+        "frame_line": frame_info.frame_line,
+        "frame_start_line": frame_start_line,
+        "frame_end_line": frame_end_line,
+        "frame_start_col": frame_start_col,
+        "frame_end_col": frame_end_col,
+        "frame_offset": frame_info.frame_offset,
+        "locals": _frame_locals_payload(frame),
+        "status": state_info.status,
+    }
+
+
+def _is_runtime_object(value: object) -> bool:
+    return (
+        inspect.isframe(value)
+        or inspect.istraceback(value)
+        or inspect.isgenerator(value)
+        or inspect.iscoroutine(value)
+        or inspect.isasyncgen(value)
+    )
 
 
 def _has_signature_override(value: object) -> bool:
@@ -486,8 +744,285 @@ def _record_object(
     context = _inspect_context(state, object_id=object_id)
     state.buffers.objects.append(_object_row(value, context=context, kind=kind))
     state.object_count += 1
+    if inspect.isclass(value):
+        _inspect_class(state, cast("type[object]", value), object_id=object_id)
     return object_id
 
+
+def _inspect_class(
+    state: _InspectState,
+    value: type[object],
+    *,
+    object_id: str,
+) -> None:
+    context = _inspect_context(state, object_id=object_id)
+    if not _inspect_class_mro(state, value, context=context):
+        return
+    _inspect_class_attrs(state, value, context=context)
+
+
+def _inspect_class_mro(
+    state: _InspectState,
+    value: type[object],
+    *,
+    context: _InspectContext,
+) -> bool:
+    try:
+        mro_items = inspect.getmro(value)
+    except (AttributeError, TypeError) as exc:
+        state.buffers.class_mro.append(
+            {
+                "repo": context.repo,
+                "commit": context.commit,
+                "mode": context.mode,
+                "class_object_id": context.object_id,
+                "mro_index": 0,
+                "base_object_id": None,
+                "base_kind": None,
+                "status": _error_status(exc),
+            }
+        )
+        return False
+    for index, base in enumerate(mro_items):
+        base_kind = _object_kind(base)
+        base_object_id = _record_object(state, value=base, kind=base_kind)
+        if base_object_id is None:
+            base_object_id = _object_id(base, base_kind)
+        state.buffers.class_mro.append(
+            {
+                "repo": context.repo,
+                "commit": context.commit,
+                "mode": context.mode,
+                "class_object_id": context.object_id,
+                "mro_index": index,
+                "base_object_id": base_object_id,
+                "base_kind": base_kind,
+                "status": _ok_status(),
+            }
+        )
+    return True
+
+
+def _inspect_class_attrs(
+    state: _InspectState,
+    value: type[object],
+    *,
+    context: _InspectContext,
+) -> None:
+    try:
+        class_attrs = inspect.classify_class_attrs(value)
+    except (AttributeError, TypeError) as exc:
+        state.buffers.class_attrs.append(
+            {
+                "repo": context.repo,
+                "commit": context.commit,
+                "mode": context.mode,
+                "class_object_id": context.object_id,
+                "attr_name": "__inspect_error__",
+                "attr_kind": None,
+                "defining_object_id": None,
+                "value_kind": None,
+                "value_object_id": None,
+                "value_ref": None,
+                "desc_is_data": None,
+                "desc_is_methoddesc": None,
+                "desc_is_getset": None,
+                "desc_is_member": None,
+                "status": _error_status(exc),
+            }
+        )
+        return
+    for attr in class_attrs:
+        row = _class_attr_row(state, context=context, attr=attr)
+        if row is None:
+            continue
+        value_object_id = row["value_object_id"]
+        state.buffers.class_attrs.append(row)
+        if value_object_id is None:
+            continue
+        value_obj = getattr(attr, "object", None)
+        if callable(value_obj):
+            _inspect_callable(
+                state,
+                cast("InspectableCallable", value_obj),
+                object_id=cast("str", value_object_id),
+            )
+
+
+def _class_attr_row(
+    state: _InspectState,
+    *,
+    context: _InspectContext,
+    attr: object,
+) -> dict[str, object] | None:
+    attr_name = getattr(attr, "name", None)
+    if not isinstance(attr_name, str):
+        return None
+    attr_kind = getattr(attr, "kind", None)
+    attr_kind_value = attr_kind if isinstance(attr_kind, str) else None
+    defining_class = getattr(attr, "defining_class", None)
+    defining_object_id: str | None = None
+    if inspect.isclass(defining_class):
+        defining_kind = _object_kind(defining_class)
+        defining_object_id = _record_object(state, value=defining_class, kind=defining_kind)
+        if defining_object_id is None:
+            defining_object_id = _object_id(defining_class, defining_kind)
+    value_obj = getattr(attr, "object", None)
+    value_kind = _object_kind(value_obj)
+    value_object_id: str | None = None
+    if inspect.isroutine(value_obj) or inspect.isclass(value_obj) or inspect.ismodule(value_obj):
+        value_object_id = _record_object(state, value=value_obj, kind=value_kind)
+    return {
+        "repo": context.repo,
+        "commit": context.commit,
+        "mode": context.mode,
+        "class_object_id": context.object_id,
+        "attr_name": attr_name,
+        "attr_kind": attr_kind_value,
+        "defining_object_id": defining_object_id,
+        "value_kind": value_kind,
+        "value_object_id": value_object_id,
+        "value_ref": _value_ref(value_obj),
+        "desc_is_data": inspect.isdatadescriptor(value_obj),
+        "desc_is_methoddesc": inspect.ismethoddescriptor(value_obj),
+        "desc_is_getset": inspect.isgetsetdescriptor(value_obj),
+        "desc_is_member": inspect.ismemberdescriptor(value_obj),
+        "status": _ok_status(),
+    }
+
+
+def _runtime_state_rows(
+    state: _InspectState,
+    *,
+    value: object,
+    object_id: str,
+) -> list[dict[str, object]]:
+    context = _inspect_context(state, object_id=object_id)
+    object_kind = _object_kind(value)
+    frame = _runtime_frame(value)
+    frame_object_id: str | None = None
+    if frame is not None:
+        frame_kind = _object_kind(frame)
+        frame_object_id = _record_object(state, value=frame, kind=frame_kind)
+        if frame_object_id is None:
+            frame_object_id = _object_id(frame, frame_kind)
+    frame_info = _RuntimeFrameInfo(
+        frame=frame,
+        frame_object_id=frame_object_id,
+        frame_line=_frame_line(value, frame),
+        frame_offset=_frame_offset(value, frame),
+    )
+    state_info = _runtime_state_info(value, object_kind)
+    if state_info is None:
+        return []
+    return [
+        _runtime_state_row(
+            context=context,
+            frame_info=frame_info,
+            state_info=state_info,
+        )
+    ]
+
+
+def _runtime_state_info(
+    value: object,
+    object_kind: str,
+) -> _RuntimeStateInfo | None:
+    if inspect.isframe(value):
+        return _RuntimeStateInfo(
+            object_kind=object_kind,
+            state_kind="frame",
+            state=None,
+            status=_ok_status(),
+        )
+    if inspect.istraceback(value):
+        return _RuntimeStateInfo(
+            object_kind=object_kind,
+            state_kind="traceback",
+            state=None,
+            status=_ok_status(),
+        )
+    if inspect.isgenerator(value):
+        return _runtime_state_from_generator(
+            object_kind,
+            cast("GeneratorType[object, object, object]", value),
+        )
+    if inspect.iscoroutine(value):
+        return _runtime_state_from_coroutine(
+            object_kind,
+            cast("CoroutineType[object, object, object]", value),
+        )
+    if inspect.isasyncgen(value):
+        return _runtime_state_from_asyncgen(
+            object_kind,
+            cast("AsyncGeneratorType[object, object]", value),
+        )
+    return None
+
+
+def _runtime_state_from_generator(
+    object_kind: str,
+    value: GeneratorType[object, object, object],
+) -> _RuntimeStateInfo:
+    try:
+        state_value = inspect.getgeneratorstate(value)
+        status = _ok_status()
+    except (ValueError, TypeError) as exc:
+        state_value = None
+        status = _error_status(exc)
+    return _RuntimeStateInfo(
+        object_kind=object_kind,
+        state_kind="generator",
+        state=state_value,
+        status=status,
+    )
+
+
+def _runtime_state_from_coroutine(
+    object_kind: str,
+    value: CoroutineType[object, object, object],
+) -> _RuntimeStateInfo:
+    try:
+        state_value = inspect.getcoroutinestate(value)
+        status = _ok_status()
+    except (ValueError, TypeError) as exc:
+        state_value = None
+        status = _error_status(exc)
+    return _RuntimeStateInfo(
+        object_kind=object_kind,
+        state_kind="coroutine",
+        state=state_value,
+        status=status,
+    )
+
+
+def _runtime_state_from_asyncgen(
+    object_kind: str,
+    value: AsyncGeneratorType[object, object],
+) -> _RuntimeStateInfo:
+    try:
+        state_value = inspect.getasyncgenstate(value)
+        status = _ok_status()
+    except (ValueError, TypeError) as exc:
+        state_value = None
+        status = _error_status(exc)
+    return _RuntimeStateInfo(
+        object_kind=object_kind,
+        state_kind="asyncgen",
+        state=state_value,
+        status=status,
+    )
+
+
+def _inspect_runtime_state(
+    state: _InspectState,
+    *,
+    value: object,
+    object_id: str,
+) -> None:
+    rows = _runtime_state_rows(state, value=value, object_id=object_id)
+    if rows:
+        state.buffers.runtime_state.extend(rows)
 
 def _inspect_callable(
     state: _InspectState,
@@ -524,7 +1059,8 @@ def _inspect_member(
         return
     value_kind = _object_kind(value)
     value_object_id: str | None = None
-    if inspect.isroutine(value) or inspect.isclass(value) or inspect.ismodule(value):
+    is_runtime = _is_runtime_object(value)
+    if inspect.isroutine(value) or inspect.isclass(value) or inspect.ismodule(value) or is_runtime:
         value_object_id = _record_object(state, value=value, kind=value_kind)
     state.buffers.members.append(
         {
@@ -545,6 +1081,8 @@ def _inspect_member(
             "status": _ok_status(),
         }
     )
+    if value_object_id is not None and is_runtime:
+        _inspect_runtime_state(state, value=value, object_id=value_object_id)
     if value_object_id is None or not callable(value):
         return
     _inspect_callable(state, cast("InspectableCallable", value), object_id=value_object_id)
@@ -658,18 +1196,24 @@ def _build_payload(state: _InspectState) -> _InspectWorkerPayload:
         warnings=list(state.warnings),
         object_rows=state.buffers.objects.data,
         member_rows=state.buffers.members.data,
+        class_mro_rows=state.buffers.class_mro.data,
+        class_attr_rows=state.buffers.class_attrs.data,
         unwrap_rows=state.buffers.unwrap.data,
         signature_rows=state.buffers.signatures.data,
         signature_param_rows=state.buffers.signature_params.data,
         annotation_rows=state.buffers.annotations.data,
         source_rows=state.buffers.sources.data,
+        runtime_state_rows=state.buffers.runtime_state.data,
         object_row_count=state.buffers.objects.row_count,
         member_row_count=state.buffers.members.row_count,
+        class_mro_row_count=state.buffers.class_mro.row_count,
+        class_attr_row_count=state.buffers.class_attrs.row_count,
         unwrap_row_count=state.buffers.unwrap.row_count,
         signature_row_count=state.buffers.signatures.row_count,
         signature_param_row_count=state.buffers.signature_params.row_count,
         annotation_row_count=state.buffers.annotations.row_count,
         source_row_count=state.buffers.sources.row_count,
+        runtime_state_row_count=state.buffers.runtime_state.row_count,
     )
 
 
@@ -748,22 +1292,88 @@ def _payload_to_result(
     warnings: list[str] | None = None,
 ) -> InspectExtractResult:
     resolved_warnings = payload.warnings if warnings is None else warnings
+    object_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_OBJECTS_TABLE_KEY,
+        payload.object_rows,
+        extras_policy="retain",
+    )
+    member_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_MEMBERS_TABLE_KEY,
+        payload.member_rows,
+        extras_policy="retain",
+    )
+    class_mro_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_CLASS_MRO_TABLE_KEY,
+        payload.class_mro_rows,
+        extras_policy="retain",
+    )
+    class_attr_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
+        payload.class_attr_rows,
+        extras_policy="retain",
+    )
+    unwrap_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_UNWRAP_TABLE_KEY,
+        payload.unwrap_rows,
+        extras_policy="retain",
+    )
+    signature_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_SIGNATURES_TABLE_KEY,
+        payload.signature_rows,
+        extras_policy="retain",
+    )
+    signature_param_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
+        payload.signature_param_rows,
+        extras_policy="retain",
+    )
+    annotation_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_ANNOTATIONS_TABLE_KEY,
+        payload.annotation_rows,
+        extras_policy="retain",
+    )
+    source_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_SOURCE_TABLE_KEY,
+        payload.source_rows,
+        extras_policy="retain",
+    )
+    runtime_state_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
+        payload.runtime_state_rows,
+        extras_policy="retain",
+    )
     return InspectExtractResult(
         result=ExecutionResult.ok(warnings=tuple(resolved_warnings)),
         object_rows=payload.object_rows,
         member_rows=payload.member_rows,
+        class_mro_rows=payload.class_mro_rows,
+        class_attr_rows=payload.class_attr_rows,
         unwrap_rows=payload.unwrap_rows,
         signature_rows=payload.signature_rows,
         signature_param_rows=payload.signature_param_rows,
         annotation_rows=payload.annotation_rows,
         source_rows=payload.source_rows,
+        runtime_state_rows=payload.runtime_state_rows,
+        object_rows_reader=object_rows_reader,
+        member_rows_reader=member_rows_reader,
+        class_mro_rows_reader=class_mro_rows_reader,
+        class_attr_rows_reader=class_attr_rows_reader,
+        unwrap_rows_reader=unwrap_rows_reader,
+        signature_rows_reader=signature_rows_reader,
+        signature_param_rows_reader=signature_param_rows_reader,
+        annotation_rows_reader=annotation_rows_reader,
+        source_rows_reader=source_rows_reader,
+        runtime_state_rows_reader=runtime_state_rows_reader,
         object_row_count=payload.object_row_count,
         member_row_count=payload.member_row_count,
+        class_mro_row_count=payload.class_mro_row_count,
+        class_attr_row_count=payload.class_attr_row_count,
         unwrap_row_count=payload.unwrap_row_count,
         signature_row_count=payload.signature_row_count,
         signature_param_row_count=payload.signature_param_row_count,
         annotation_row_count=payload.annotation_row_count,
         source_row_count=payload.source_row_count,
+        runtime_state_row_count=payload.runtime_state_row_count,
     )
 
 

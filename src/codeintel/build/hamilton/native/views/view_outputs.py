@@ -8,7 +8,9 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+import duckdb
 import polars as pl
+from polars.exceptions import SQLInterfaceError
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError, SqlglotError
 
@@ -101,8 +103,26 @@ def _table_key_from_table(table: exp.Table) -> str:
 
 
 def _table_keys_from_ast(ast: exp.Expression) -> tuple[str, ...]:
-    keys = {_table_key_from_table(table) for table in ast.find_all(exp.Table)}
+    cte_names = _cte_names(ast)
+    keys = {
+        _table_key_from_table(table)
+        for table in ast.find_all(exp.Table)
+        if not _is_cte_table(table, cte_names)
+    }
     return tuple(sorted(key for key in keys if key))
+
+
+def _cte_names(ast: exp.Expression) -> frozenset[str]:
+    names = {cte.alias_or_name for cte in ast.find_all(exp.CTE) if cte.alias_or_name}
+    return frozenset(names)
+
+
+def _is_cte_table(table: exp.Table, cte_names: frozenset[str]) -> bool:
+    if not cte_names:
+        return False
+    if table.db:
+        return False
+    return table.name in cte_names
 
 
 def _rewrite_ast_tables(ast: exp.Expression) -> exp.Expression:
@@ -145,7 +165,82 @@ def _schema_mapping_for_dependencies(
 
 def _optimize_view_ast(ast: exp.Expression, dependencies: Sequence[str]) -> exp.Expression:
     schema_mapping = _schema_mapping_for_dependencies(dependencies)
-    return canonicalize_expression_duckdb(ast, schema=schema_mapping)
+    optimized = canonicalize_expression_duckdb(ast, schema=schema_mapping)
+    optimized = _hoist_non_equi_join_filters(optimized)
+    return _strip_nested_list_aggregates(optimized)
+
+
+def _strip_nested_list_aggregates(ast: exp.Expression) -> exp.Expression:
+    def _transform(node: exp.Expression) -> exp.Expression:
+        if not isinstance(node, exp.Max):
+            return node
+        arg = node.this
+        if arg is None:
+            return node
+        if any(isinstance(child, exp.List) for child in arg.walk()):
+            return arg
+        return node
+
+    return ast.transform(_transform)
+
+
+def _hoist_non_equi_join_filters(ast: exp.Expression) -> exp.Expression:
+    if not isinstance(ast, exp.Select):
+        return ast
+    extra_filters: list[exp.Expression] = []
+    for join in ast.find_all(exp.Join):
+        kind = join.args.get("kind")
+        if kind is not None and str(kind).upper() != "INNER":
+            continue
+        on = join.args.get("on")
+        if on is None:
+            continue
+        parts = _flatten_and_conditions(on)
+        equi = [part for part in parts if _is_equi_join_condition(part)]
+        non_equi = [part for part in parts if not _is_equi_join_condition(part)]
+        if not non_equi or not equi:
+            continue
+        join.set("on", _combine_and_conditions(equi))
+        extra_filters.extend(non_equi)
+    if not extra_filters:
+        return ast
+    where = ast.args.get("where")
+    combined = _combine_and_conditions(extra_filters)
+    if where is None:
+        ast.set("where", exp.Where(this=combined))
+        return ast
+    if where.this is None:
+        where.set("this", combined)
+        return ast
+    where.set("this", _combine_and_conditions([where.this, *extra_filters]))
+    return ast
+
+
+def _flatten_and_conditions(expr: exp.Expression) -> list[exp.Expression]:
+    if not isinstance(expr, exp.And):
+        return [expr]
+    left = expr.this
+    right = expr.expression
+    if left is None or right is None:
+        return [expr]
+    return [*_flatten_and_conditions(left), *_flatten_and_conditions(right)]
+
+
+def _combine_and_conditions(conditions: Sequence[exp.Expression]) -> exp.Expression:
+    if not conditions:
+        msg = "At least one condition is required"
+        raise ValueError(msg)
+    iterator = iter(conditions)
+    combined = next(iterator)
+    for condition in iterator:
+        combined = exp.And(this=combined, expression=condition)
+    return combined
+
+
+def _is_equi_join_condition(expr: exp.Expression) -> bool:
+    if not isinstance(expr, exp.EQ):
+        return False
+    return isinstance(expr.this, exp.Column) and isinstance(expr.expression, exp.Column)
 
 
 def _discover_registered_views() -> tuple[DiscoveredViewBuilder, ...]:
@@ -382,10 +477,31 @@ def _execute_view_query(
     ctx = pl.SQLContext()
     for table_key, frame in frames.items():
         ctx.register(table_key, frame)
-    result = ctx.execute(plan.sql)
+    try:
+        result = ctx.execute(plan.sql)
+    except SQLInterfaceError:
+        return _execute_view_query_duckdb(plan=plan, frames=frames)
     if isinstance(result, pl.LazyFrame):
         return result
     return result.lazy()
+
+
+def _execute_view_query_duckdb(
+    *,
+    plan: ViewPlan,
+    frames: Mapping[str, pl.LazyFrame],
+) -> pl.LazyFrame:
+    con = duckdb.connect()
+    try:
+        for table_key, frame in frames.items():
+            con.register(table_key, frame.collect().to_arrow())
+        result = con.execute(plan.sql).fetch_arrow_table()
+    finally:
+        con.close()
+    frame = pl.from_arrow(result)
+    if isinstance(frame, pl.Series):
+        frame = frame.to_frame()
+    return frame.lazy()
 
 
 def _build_ast_view_node(

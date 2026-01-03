@@ -24,7 +24,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import table_to_frame, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -182,6 +182,33 @@ def _attach_goids(
     return updated
 
 
+def _symbol_use_frames(
+    q__core__scip_occurrences: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+    q__core__goids: InferableTabularInput,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    occurrences_table = tabular_to_arrow_table(q__core__scip_occurrences).select(
+        ["symbol", "rel_path", "start_line", "roles"]
+    )
+    modules_table = tabular_to_arrow_table(q__core__modules).select(["path", "module"])
+    goids_table = tabular_to_arrow_table(q__core__goids).select(
+        ["rel_path", "goid_h128", "start_line", "end_line"]
+    )
+    return (
+        table_to_frame(occurrences_table),
+        table_to_frame(modules_table),
+        table_to_frame(goids_table),
+    )
+
+
+def _definition_maps(
+    occurrences: list[SymbolOccurrence],
+) -> tuple[dict[str, tuple[str, int]], dict[str, str]]:
+    def_info_by_symbol = _definitions_by_symbol(occurrences)
+    def_path_by_symbol = {symbol: info[0] for symbol, info in def_info_by_symbol.items()}
+    return def_info_by_symbol, def_path_by_symbol
+
+
 def symbol_use_edges_compute(
     q__core__scip_occurrences: InferableTabularInput,
     q__core__modules: InferableTabularInput,
@@ -194,27 +221,19 @@ def symbol_use_edges_compute(
     InferableTabularInput
         Tabular input for computed symbol use edges.
     """
-    occurrences_frame = (
-        tabular_to_lazyframe(q__core__scip_occurrences)
-        .select(["symbol", "rel_path", "start_line", "roles"])
-        .collect()
+    occurrences_frame, modules_frame, goids_frame = _symbol_use_frames(
+        q__core__scip_occurrences,
+        q__core__modules,
+        q__core__goids,
     )
     if occurrences_frame.is_empty():
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
-
-    modules_frame = tabular_to_lazyframe(q__core__modules).select(["path", "module"]).collect()
-    goids_frame = (
-        tabular_to_lazyframe(q__core__goids)
-        .select(["rel_path", "goid_h128", "start_line", "end_line"])
-        .collect()
-    )
     occurrences = _symbol_occurrences(occurrences_frame)
     if not occurrences:
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     module_by_path = _module_by_path(modules_frame)
-    def_info_by_symbol = _definitions_by_symbol(occurrences)
-    def_path_by_symbol = {symbol: info[0] for symbol, info in def_info_by_symbol.items()}
+    def_info_by_symbol, def_path_by_symbol = _definition_maps(occurrences)
     edges = build_use_edges(occurrences, def_path_by_symbol, module_by_path)
     if not edges:
         return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)

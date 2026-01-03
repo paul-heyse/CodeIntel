@@ -163,6 +163,25 @@ def tabular_to_arrow_reader(value: InferableTabularInput) -> pa.RecordBatchReade
     raise TypeError(msg)
 
 
+def tabular_to_arrow_table(value: InferableTabularInput) -> pa.Table:
+    """Convert an inferable tabular input to an Arrow Table.
+
+    Parameters
+    ----------
+    value
+        Tabular input to convert.
+
+    Returns
+    -------
+    pa.Table
+        Arrow table representation of the input.
+    """
+    if isinstance(value, pa.Table):
+        return value
+    reader = tabular_to_arrow_reader(value)
+    return pa.Table.from_batches(list(reader), schema=reader.schema)
+
+
 def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
     """Convert an inferable tabular input to a Polars LazyFrame.
 
@@ -290,6 +309,7 @@ __all__ = [
     "table_to_lazyframe",
     "table_to_reader",
     "tabular_to_arrow_reader",
+    "tabular_to_arrow_table",
     "tabular_to_frame",
     "tabular_to_lazyframe",
 ]

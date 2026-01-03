@@ -12,6 +12,45 @@ Think of these as **three different introspection planes**:
 
 ---
 
+## 0.5) Implementation status in CodeIntel (current repo)
+
+### Completed
+- [x] dis extraction tables for code units, instructions, exception table, blocks, CFG edges, and def/use events with span anchoring and label mapping.
+- [x] symtable extraction tables for scopes, symbols, scope edges, namespace edges, function partitions, derived bindings, and resolution edges with AST anchors for module/function/class.
+- [x] inspect extraction tables for objects, members (static), unwrap hops, signatures, signature params, annotations, and source using an allowlist + subprocess/budgeted execution.
+- [x] CPG nodes for SCOPE, BINDING, BC_CODE_UNIT, BC_INSTR, CFG_BLOCK, INSPECT_OBJECT, INSPECT_SIGNATURE, and INSPECT_SIGNATURE_PARAM.
+- [x] CPG edges for OWNS_SCOPE/PARENT_SCOPE, BINDS_DEF/BINDS_USE, DEFINES_BINDING/USES_BINDING, REACHES, CFG_*, HAS_SIGNATURE/HAS_PARAM, INSPECT_ANCHORS_AST, INSPECT_SYMBOL, and ARG_TO_PARAM_INSPECT.
+- [x] Validation check for bytecode def/use binding-space mismatches.
+
+### Remaining checklists
+
+### DIS / bytecode -> CPG
+- [ ] Emit explicit bytecode-to-AST (or syntax) anchor edges using instruction spans with deterministic fallbacks.
+- [ ] Project callsite nodes from bytecode CALL opcodes and link them to syntax call nodes and SCIP symbols.
+- [ ] Implement stack-effect DFG modeling to emit USE/DEF edges for stack values and intermediate results.
+- [ ] Add memory edges for LOAD_ATTR/STORE_ATTR/LOAD_SUBSCR/STORE_SUBSCR and LOAD_GLOBAL/STORE_GLOBAL keyed to bindings.
+- [ ] Add fixtures that assert stack-effect DFG and callsite wiring on if/loop/try/with patterns.
+
+### INSPECT overlay
+- [ ] Project unwrap hops into CPG edges (e.g., WRAPS/DECORATES) using py_inspect_unwrap_hops.
+- [ ] Add class and descriptor topology extraction (getmro/classify_class_attrs/getattr_static) and CPG edges.
+- [ ] Add frame/traceback extraction and map FrameInfo positions back to bytecode instructions.
+- [ ] Add generator/coroutine/asyncgen state + locals extraction (get*state/get*locals).
+- [ ] Implement BoundArguments-based call binding to emit BINDS_ARG edges with confidence.
+- [ ] Improve inspect-to-AST anchoring using source spans and confidence metadata (not only qualname joins).
+
+### SYMTABLE
+- [ ] Anchor ANNOTATION/TYPE_ALIAS/TYPE_PARAMETERS/TYPE_VARIABLE scopes to AST spans with confidence metadata.
+- [ ] Project py_sym_namespace_edges into CPG edges for namespace binding structure.
+- [ ] Add tests for type-alias/type-parameter scopes and annotation-only bindings.
+
+### Cross-cutting and validation
+- [ ] Add run-level compiler metadata (python version, magic number, optimize flags, dont_inherit).
+- [ ] Track anchor coverage metrics for bytecode->AST and inspect->AST joins.
+- [ ] Expand micro-fixtures for nested try/except/finally/with, comprehensions, and decorators.
+
+---
+
 ## A) `dis` — Disassembler for Python bytecode (3.13)
 
 ### A1) Command-line interface (stdlib tool surface)

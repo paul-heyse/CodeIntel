@@ -708,19 +708,25 @@ outputs:
     table_keys:
       - "core.py_inspect_objects"
       - "core.py_inspect_members_static"
+      - "core.py_inspect_class_mro"
+      - "core.py_inspect_class_attrs"
       - "core.py_inspect_unwrap_hops"
       - "core.py_inspect_signatures"
       - "core.py_inspect_signature_params"
       - "core.py_inspect_annotations_kv"
       - "core.py_inspect_source"
+      - "core.py_inspect_runtime_state"
     contracts:
       - "core.py_inspect_objects"
       - "core.py_inspect_members_static"
+      - "core.py_inspect_class_mro"
+      - "core.py_inspect_class_attrs"
       - "core.py_inspect_unwrap_hops"
       - "core.py_inspect_signatures"
       - "core.py_inspect_signature_params"
       - "core.py_inspect_annotations_kv"
       - "core.py_inspect_source"
+      - "core.py_inspect_runtime_state"
     downstream_consumers: []
     upstream_targets:
       - "core.modules"

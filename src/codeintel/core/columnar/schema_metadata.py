@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import msgspec
 import pyarrow as pa
 
 from codeintel.core.serialization.msgspec_json import JSON_DECODER, JSON_ENCODER
@@ -119,7 +120,7 @@ def merge_field_metadata(
 def _decode_metadata_value(raw: str) -> object:
     try:
         return JSON_DECODER.decode(raw)
-    except ValueError:
+    except (ValueError, msgspec.DecodeError):
         return raw
 
 

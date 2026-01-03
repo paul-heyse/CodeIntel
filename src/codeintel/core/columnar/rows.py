@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.schema_alignment import align_reader_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.arrow_gen import (
     ArrowSchemaMetadata,
@@ -184,6 +185,31 @@ def record_batch_reader_for_rows(
     return collector.to_reader(), collector.row_count
 
 
+def record_batch_reader_for_columnar_rows(
+    table_key: str,
+    rows: Mapping[str, Sequence[object]],
+    *,
+    extras_policy: ExtrasPolicy | None = None,
+) -> tuple[pa.RecordBatchReader, int]:
+    """Build a RecordBatchReader from columnar row data using the contract schema.
+
+    Returns
+    -------
+    tuple[pa.RecordBatchReader, int]
+        Reader for the row batches plus the total row count.
+    """
+    row_count = columnar_row_count(rows)
+    if row_count == 0:
+        arrow_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
+        return pa.RecordBatchReader.from_batches(arrow_schema, []), 0
+    normalized = {name: list(values) for name, values in rows.items()}
+    batch = pa.RecordBatch.from_pydict(normalized)
+    reader = pa.RecordBatchReader.from_batches(batch.schema, [batch])
+    contract_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
+    aligned = align_reader_to_contract(reader, contract_schema, extras_policy=extras_policy)
+    return aligned, row_count
+
+
 def _arrow_schema_for_table(
     table_key: str,
     extras_policy: ExtrasPolicy | None,
@@ -247,5 +273,6 @@ __all__ = [
     "columnar_buffer_for_table_key",
     "columnar_row_count",
     "empty_reader_for_table",
+    "record_batch_reader_for_columnar_rows",
     "record_batch_reader_for_rows",
 ]

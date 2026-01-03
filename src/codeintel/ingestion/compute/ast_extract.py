@@ -15,7 +15,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
+from codeintel.core.columnar.rows import (
+    ColumnarRows,
+    columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
+)
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstCollectContext,
@@ -27,6 +32,8 @@ from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
+
+    import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -101,6 +108,12 @@ class AstExtractResult:
     result: ExecutionResult
     ast_rows: ColumnarRows = field(default_factory=dict)
     metric_rows: ColumnarRows = field(default_factory=dict)
+    ast_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(AST_NODES_TABLE_KEY)
+    )
+    metric_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(AST_METRICS_TABLE_KEY)
+    )
     ast_row_count: int = 0
     metric_row_count: int = 0
 
@@ -525,12 +538,24 @@ class AstExtractStep(BaseExtractStep):
             metrics_buffer.row_count,
         )
 
+        ast_rows_reader, ast_row_count = record_batch_reader_for_columnar_rows(
+            AST_NODES_TABLE_KEY,
+            ast_buffer.data,
+            extras_policy="retain",
+        )
+        metric_rows_reader, metric_row_count = record_batch_reader_for_columnar_rows(
+            AST_METRICS_TABLE_KEY,
+            metrics_buffer.data,
+            extras_policy="retain",
+        )
         return AstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             ast_rows=ast_buffer.data,
             metric_rows=metrics_buffer.data,
-            ast_row_count=ast_buffer.row_count,
-            metric_row_count=metrics_buffer.row_count,
+            ast_rows_reader=ast_rows_reader,
+            metric_rows_reader=metric_rows_reader,
+            ast_row_count=ast_row_count,
+            metric_row_count=metric_row_count,
         )
 
     def _iter_python_source_bundles(

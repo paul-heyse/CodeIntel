@@ -125,6 +125,10 @@ Reference anchors:
 - [ ] Resolve DEF/USE events to bindings via symtable resolve_binding.
 - [ ] Run reaching-defs over py_bc_cfg_edges and emit REACHES edges.
 - [ ] Emit DEFINES_BINDING/USES_BINDING edges for bytecode events.
+- [ ] Emit bytecode instruction -> AST/syntax anchors for stable joins.
+- [ ] Add stack-effect DFG modeling for transient values (stack/register-like).
+- [ ] Emit memory access edges for attr/subscript/global operations.
+- [ ] Project bytecode CALL opcodes into explicit callsite nodes.
 - [ ] Add DFG sanity checks:
   - LOAD_FAST -> local/param binding
   - LOAD_DEREF -> resolved FREE/NONLOCAL binding
@@ -138,6 +142,11 @@ Reference anchors:
 - [x] Emit inspect tables (objects, members, unwrap, signatures, annotations, source).
 - [ ] Emit derived anchors to AST/SCIP.
 - [ ] Add optional callsite param wiring using inspect signatures.
+- [ ] Project unwrap hops into WRAPS/DECORATES edges in the CPG.
+- [ ] Add class/descriptor topology extraction and graph projection.
+- [ ] Add frame/traceback extraction with bytecode instruction anchoring.
+- [ ] Add generator/coroutine/asyncgen state + locals extraction.
+- [ ] Add BoundArguments-based call binding edges for runtime callsites.
 - [x] Add budgets and toggles in ingestion options to disable by default.
 
 ### Phase 6: CPG projection and schema wiring
@@ -146,6 +155,7 @@ Reference anchors:
   - SCOPE, BINDING, BC_CODE_UNIT, BC_INSTR, CFG_BLOCK
   - edges: OWNS_SCOPE, PARENT_SCOPE, DECLARES, RESOLVES_TO, CFG_*, REACHES
 - [ ] Bridge BINDING <-> SCIP SYMBOL via AST def/use anchors.
+- [ ] Project py_sym_namespace_edges into namespace binding edges.
 - [ ] Ensure node and edge ids are stable and byte-span anchored.
 
 ### Phase 7: Validation, fixtures, and drift gates
@@ -244,7 +254,21 @@ Reference anchors:
 - [ ] Resolve DEF/USE events to bindings via symtable resolution
 - [ ] Run reaching-defs over py_bc_cfg_edges and emit REACHES edges
 - [ ] Emit DEFINES_BINDING/USES_BINDING edges for bytecode events
+- [ ] Emit bytecode instruction -> AST/syntax anchors
+  - Graph mapping: add BYTECODE_ANCHOR (BC_INSTR -> AST_NODE) and/or BYTECODE_COVERS edges
+- [ ] Add stack-effect DFG modeling for transient values
+  - Graph mapping: emit STACK_DEF/STACK_USE edges from BC_INSTR nodes or create VALUE nodes
+- [ ] Emit memory access edges for attr/subscript/global operations
+  - Graph mapping: emit READS_ATTR/WRITES_ATTR, READS_SUBSCR/WRITES_SUBSCR, READS_GLOBAL edges
+- [ ] Project bytecode CALL opcodes into explicit callsites
+  - Graph mapping: create CALLSITE nodes, add CALLS edges to callee symbols, link to syntax call nodes
 - [ ] Add DFG sanity checks (LOAD_FAST/LOAD_DEREF/LOAD_GLOBAL mapping)
+
+### Symtable advanced scope mapping
+- [ ] Anchor ANNOTATION/TYPE_ALIAS/TYPE_PARAMETERS/TYPE_VARIABLE scopes to AST spans
+  - Graph mapping: ensure OWNS_SCOPE edges exist for type/meta scopes with confidence metadata
+- [ ] Project py_sym_namespace_edges into CPG edges
+  - Graph mapping: emit BINDS_NAMESPACE/DECLARES_NAMESPACE edges from binding -> scope
 
 ### Inspect overlay hardening
 - [ ] Isolate inspect extraction in a subprocess (avoid in-process import side effects)
@@ -252,6 +276,19 @@ Reference anchors:
 - [ ] Emit derived anchors to AST/SCIP and confidence metadata
 - [ ] Add optional callsite param wiring using inspect signatures
 - [ ] Add allowlist validation and error reporting for blocked imports
+  - Graph mapping: ensure WRAPS/DECORATES edges for unwrap hops when enabled
+
+### Inspect runtime topology and call binding
+- [ ] Project unwrap hops into graph edges
+  - Graph mapping: emit WRAPS/DECORATES edges between INSPECT_OBJECT nodes
+- [ ] Add class/descriptor topology extraction (MRO/classify_class_attrs/getattr_static)
+  - Graph mapping: emit INHERITS, DECLARES_ATTR, OVERRIDES, DESCRIPTOR edges
+- [ ] Add frame/traceback extraction with instruction anchoring
+  - Graph mapping: emit FRAME_AT_INSTR/TRACEBACK_AT_INSTR edges to BC_INSTR nodes
+- [ ] Add generator/coroutine/asyncgen state + locals extraction
+  - Graph mapping: emit HAS_STATE edges from runtime object to state nodes or edges with props
+- [ ] Add BoundArguments-based call binding edges
+  - Graph mapping: emit BINDS_ARG edges (callsite arg -> signature param) with confidence
 
 ### CPG projection and validation wiring
 - [ ] Add nodes/edges for scopes, bindings, bytecode code units, CFG blocks

@@ -71,7 +71,7 @@ from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.frames import (
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
-    lazyframe_for_ingest_columns,
+    lazyframe_for_ingest_reader,
 )
 from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.paths import normalize_path
@@ -380,11 +380,18 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
             full_rebuild=False,
         )
 
-        module_rows = lazyframe_for_ingest_columns(MODULES_TABLE_KEY, scan_result.module_rows)
-        file_state_rows = lazyframe_for_ingest_columns(
-            FILE_STATE_TABLE_KEY, scan_result.file_state_rows
+        module_rows = lazyframe_for_ingest_reader(
+            MODULES_TABLE_KEY,
+            scan_result.module_rows_reader,
         )
-        repo_map_rows = lazyframe_for_ingest_columns(REPO_MAP_TABLE_KEY, scan_result.repo_map_rows)
+        file_state_rows = lazyframe_for_ingest_reader(
+            FILE_STATE_TABLE_KEY,
+            scan_result.file_state_rows_reader,
+        )
+        repo_map_rows = lazyframe_for_ingest_reader(
+            REPO_MAP_TABLE_KEY,
+            scan_result.repo_map_rows_reader,
+        )
         return ModuleToolOutput(
             result=ExecutionResult.ok(),
             modules=scan_result.modules,
@@ -789,7 +796,7 @@ def t__config_ingest__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_ingest_columns(CONFIG_VALUES_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_ingest_reader(CONFIG_VALUES_TABLE_KEY, ingest_result.rows_reader)
         return ConfigToolOutput(
             result=ingest_result.result,
             rows=frame,
@@ -1080,7 +1087,7 @@ def t__tests_ingest__run(
             commit=env.snapshot.commit,
             json_report_path=report_path,
         )
-        frame = lazyframe_for_ingest_columns(TEST_CATALOG_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_ingest_reader(TEST_CATALOG_TABLE_KEY, ingest_result.rows_reader)
         return TestsToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
             rows=frame,
@@ -1270,9 +1277,9 @@ def t__typing__run(
                 run_diagnostics=True,
             )
         )
-        diagnostic_frame = lazyframe_for_ingest_columns(
+        diagnostic_frame = lazyframe_for_ingest_reader(
             STATIC_DIAGNOSTICS_TABLE_KEY,
-            ingest_result.diagnostic_rows,
+            ingest_result.diagnostic_rows_reader,
         )
         return TypingToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),

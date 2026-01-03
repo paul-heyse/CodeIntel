@@ -21,7 +21,10 @@ from codeintel.ingestion.ports.change_detection import (
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
-from codeintel.storage.query_results import iter_tuples_from_relation
+from codeintel.storage.query_results import (
+    iter_tuples_from_arrow_reader,
+    iter_tuples_from_relation,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -180,20 +183,10 @@ class HashChangeDetectionAdapter:
                 "mtime_ns",
                 "content_hash",
             )
-            rows = [
-                {
-                    "rel_path": rel_path,
-                    "size_bytes": size_bytes,
-                    "mtime_ns": mtime_ns,
-                    "content_hash": content_hash,
-                }
-                for rel_path, size_bytes, mtime_ns, content_hash in iter_tuples_from_relation(
-                    relation
-                )
-            ]
+            rows_iter = iter_tuples_from_relation(relation)
         else:
             self._storage.ensure_schema("core.file_state")
-            result = self._storage.execute_query(
+            reader = self._storage.fetch_arrow_reader(
                 """
                 WITH ranked AS (
                     SELECT
@@ -211,23 +204,15 @@ class HashChangeDetectionAdapter:
                 """,
                 [repo, language],
             )
-            rows = [
-                {
-                    "rel_path": rel_path,
-                    "size_bytes": size_bytes,
-                    "mtime_ns": mtime_ns,
-                    "content_hash": content_hash,
-                }
-                for rel_path, size_bytes, mtime_ns, content_hash in result.rows
-            ]
+            rows_iter = iter_tuples_from_arrow_reader(reader)
 
         state: dict[str, FileDigest] = {}
-        for row in rows:
-            normalized = normalize_path(str(row["rel_path"]))
+        for rel_path, size_bytes, mtime_ns, content_hash in rows_iter:
+            normalized = normalize_path(str(rel_path))
             state[normalized] = FileDigest(
-                size_bytes=int(cast("SupportsInt", row["size_bytes"])),
-                mtime_ns=int(cast("SupportsInt", row["mtime_ns"])),
-                content_hash=str(row["content_hash"]),
+                size_bytes=int(cast("SupportsInt", size_bytes)),
+                mtime_ns=int(cast("SupportsInt", mtime_ns)),
+                content_hash=str(content_hash),
             )
 
         if not state:

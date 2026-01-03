@@ -17,6 +17,8 @@ from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsStaticDiagnosticsRow as StaticDiagnosticRow,
@@ -27,6 +29,8 @@ DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.ingestion.ports.tools import IngestToolPort
@@ -148,10 +152,16 @@ class TypingIngestStep:
             diagnostic_buffer.row_count,
         )
 
+        diagnostic_rows_reader, row_count = record_batch_reader_for_columnar_rows(
+            DIAGNOSTICS_TABLE_KEY,
+            diagnostic_buffer.data,
+            extras_policy="retain",
+        )
         return TypingIngestResult(
             result=ExecutionResult.ok(),
             diagnostic_rows=diagnostic_buffer.data,
-            diagnostic_row_count=diagnostic_buffer.row_count,
+            diagnostic_rows_reader=diagnostic_rows_reader,
+            diagnostic_row_count=row_count,
         )
 
     @staticmethod
@@ -244,6 +254,9 @@ class TypingIngestResult:
 
     result: ExecutionResult
     diagnostic_rows: ColumnarRows = field(default_factory=dict)
+    diagnostic_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(DIAGNOSTICS_TABLE_KEY)
+    )
     diagnostic_row_count: int = 0
 
 

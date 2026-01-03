@@ -21,12 +21,16 @@ from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
+
+    import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
@@ -62,6 +66,24 @@ class DisExtractResult:
     block_rows: ColumnarRows = field(default_factory=dict)
     cfg_edge_rows: ColumnarRows = field(default_factory=dict)
     defuse_event_rows: ColumnarRows = field(default_factory=dict)
+    code_unit_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_CODE_UNITS_TABLE_KEY)
+    )
+    instruction_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY)
+    )
+    exception_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_EXCEPTION_TABLE_KEY)
+    )
+    block_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_BLOCKS_TABLE_KEY)
+    )
+    cfg_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_CFG_EDGES_TABLE_KEY)
+    )
+    defuse_event_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY)
+    )
     code_unit_row_count: int = 0
     instruction_row_count: int = 0
     exception_row_count: int = 0
@@ -1171,6 +1193,8 @@ def _append_code_unit_row(
             "exceptiontable_len": len(getattr(unit.code, "co_exceptiontable", b"")),
             "python_version": sys.version.split()[0],
             "bytecode_magic": importlib.util.MAGIC_NUMBER,
+            "optimize": context.options.optimize,
+            "dont_inherit": True,
         }
     )
 
@@ -1370,6 +1394,36 @@ class DisExtractStep(BaseExtractStep):
             buffers.code_units.row_count,
             buffers.instructions.row_count,
         )
+        code_unit_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_BC_CODE_UNITS_TABLE_KEY,
+            buffers.code_units.data,
+            extras_policy="retain",
+        )
+        instruction_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_BC_INSTRUCTIONS_TABLE_KEY,
+            buffers.instructions.data,
+            extras_policy="retain",
+        )
+        exception_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_BC_EXCEPTION_TABLE_KEY,
+            buffers.exceptions.data,
+            extras_policy="retain",
+        )
+        block_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_BC_BLOCKS_TABLE_KEY,
+            buffers.blocks.data,
+            extras_policy="retain",
+        )
+        cfg_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_BC_CFG_EDGES_TABLE_KEY,
+            buffers.cfg_edges.data,
+            extras_policy="retain",
+        )
+        defuse_event_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_BC_DEFUSE_EVENTS_TABLE_KEY,
+            buffers.defuse_events.data,
+            extras_policy="retain",
+        )
         return DisExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             code_unit_rows=buffers.code_units.data,
@@ -1378,6 +1432,12 @@ class DisExtractStep(BaseExtractStep):
             block_rows=buffers.blocks.data,
             cfg_edge_rows=buffers.cfg_edges.data,
             defuse_event_rows=buffers.defuse_events.data,
+            code_unit_rows_reader=code_unit_rows_reader,
+            instruction_rows_reader=instruction_rows_reader,
+            exception_rows_reader=exception_rows_reader,
+            block_rows_reader=block_rows_reader,
+            cfg_edge_rows_reader=cfg_edge_rows_reader,
+            defuse_event_rows_reader=defuse_event_rows_reader,
             code_unit_row_count=buffers.code_units.row_count,
             instruction_row_count=buffers.instructions.row_count,
             exception_row_count=buffers.exceptions.row_count,

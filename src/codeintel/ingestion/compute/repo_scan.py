@@ -8,16 +8,23 @@ for all I/O operations.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
+from codeintel.core.columnar.rows import (
+    ColumnarRows,
+    columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
+)
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
+
+    import pyarrow as pa
 
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeSet
@@ -25,6 +32,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 MODULES_TABLE_KEY = "core.modules"
+FILE_STATE_TABLE_KEY = "core.file_state"
 REPO_MAP_TABLE_KEY = "core.repo_map"
 
 
@@ -51,6 +59,15 @@ class RepoScanResult:
     module_rows: ColumnarRows
     file_state_rows: ColumnarRows
     repo_map_rows: ColumnarRows
+    module_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(MODULES_TABLE_KEY)
+    )
+    file_state_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(FILE_STATE_TABLE_KEY)
+    )
+    repo_map_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(REPO_MAP_TABLE_KEY)
+    )
 
 
 class RepoScanStep:
@@ -152,6 +169,21 @@ class RepoScanStep:
             commit=commit,
             modules=modules,
         )
+        module_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            MODULES_TABLE_KEY,
+            module_buffer.data,
+            extras_policy="retain",
+        )
+        file_state_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            FILE_STATE_TABLE_KEY,
+            change_set.state_rows,
+            extras_policy="retain",
+        )
+        repo_map_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            REPO_MAP_TABLE_KEY,
+            repo_map_rows,
+            extras_policy="retain",
+        )
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",
@@ -169,6 +201,9 @@ class RepoScanStep:
             module_rows=module_buffer.data,
             file_state_rows=change_set.state_rows,
             repo_map_rows=repo_map_rows,
+            module_rows_reader=module_rows_reader,
+            file_state_rows_reader=file_state_rows_reader,
+            repo_map_rows_reader=repo_map_rows_reader,
         )
 
     @staticmethod

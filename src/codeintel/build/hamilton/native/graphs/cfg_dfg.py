@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
+import pyarrow as pa
 
 from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.conversion import table_to_frame, tabular_to_arrow_table
 from codeintel.build.tabular.frames import empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
@@ -135,6 +136,29 @@ def _collect_goids_by_path(
     return goids_by_path
 
 
+def _filter_goids_table(goids_table: pa.Table) -> pa.Table:
+    if goids_table.num_rows == 0:
+        return goids_table
+    columns = set(goids_table.column_names)
+    if "kind" not in columns:
+        return goids_table
+    kind_values = goids_table.column("kind").to_pylist()
+    language_values: list[object] | None = None
+    if "language" in columns:
+        language_values = goids_table.column("language").to_pylist()
+    mask: list[bool] = []
+    for index, kind in enumerate(kind_values):
+        if kind not in {"function", "method"}:
+            mask.append(False)
+            continue
+        if language_values is None:
+            mask.append(True)
+            continue
+        language = language_values[index]
+        mask.append(language is None or language == "python")
+    return goids_table.filter(pa.array(mask))
+
+
 def _build_cfg_dfg_rows(
     repo_root: Path,
     goids_by_path: dict[str, list[_FunctionGoidInfo]],
@@ -222,29 +246,26 @@ def cfg_dfg_analysis(
     _CfgDfgAnalysis
         Container of CFG blocks/edges and DFG edges rows.
     """
-    goids_frame = (
-        tabular_to_lazyframe(q__core__goids)
-        .select(
-            [
-                "goid_h128",
-                "rel_path",
-                "qualname",
-                "start_line",
-                "end_line",
-                "kind",
-                "language",
-            ]
-        )
-        .collect()
+    goids_table = tabular_to_arrow_table(q__core__goids).select(
+        [
+            "goid_h128",
+            "rel_path",
+            "qualname",
+            "start_line",
+            "end_line",
+            "kind",
+            "language",
+        ]
     )
+    goids_table = _filter_goids_table(goids_table)
+    goids_frame = table_to_frame(goids_table)
     if goids_frame.is_empty():
         return _CfgDfgAnalysis(cfg_blocks=(), cfg_edges=(), dfg_edges=())
 
-    ast_nodes_frame = (
-        tabular_to_lazyframe(q__core__ast_nodes)
-        .select(["path", "node_type", "name", "lineno"])
-        .collect()
+    ast_nodes_table = tabular_to_arrow_table(q__core__ast_nodes).select(
+        ["path", "node_type", "name", "lineno"]
     )
+    ast_nodes_frame = table_to_frame(ast_nodes_table)
     function_keys_by_path, paths = _collect_ast_function_keys(ast_nodes_frame)
     goids_by_path = _collect_goids_by_path(goids_frame, function_keys_by_path)
     resolved_paths = paths or set(goids_by_path)

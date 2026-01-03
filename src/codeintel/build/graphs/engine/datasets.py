@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -131,6 +131,38 @@ def scan_snapshot_reader(
     )
     scanner = build_scanner(dataset, options=options)
     return scanner.to_reader()
+
+
+def scan_snapshot_reader_with_columns(
+    request: SnapshotScanRequest,
+    *,
+    columns: tuple[str, ...] | None,
+) -> pa.RecordBatchReader | None:
+    """Return a RecordBatchReader for a dataset snapshot with selected columns.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader | None
+        Reader for the dataset snapshot or None when missing.
+    """
+    updated = replace(request, columns=columns)
+    return scan_snapshot_reader(updated)
+
+
+def scan_snapshot_table(
+    request: SnapshotScanRequest,
+) -> pa.Table | None:
+    """Return a materialized Arrow Table for a dataset snapshot.
+
+    Returns
+    -------
+    pyarrow.Table | None
+        Arrow table for the dataset snapshot or None when missing.
+    """
+    reader = scan_snapshot_reader(request)
+    if reader is None:
+        return None
+    return pa.Table.from_batches(list(reader), schema=reader.schema)
 
 
 def scan_snapshot_lazyframe(

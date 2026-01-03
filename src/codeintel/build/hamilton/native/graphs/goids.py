@@ -25,8 +25,9 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.tabular.arrow_ops import arrow_join_frames
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import empty_frame_for_table, rows_to_frame
+from codeintel.build.tabular.frames import JoinSpec, empty_frame_for_table, rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
 from codeintel.core.schemas.generated_rows import columns_for_table_key
@@ -220,7 +221,11 @@ def _joined_ast_nodes(
     )
     if filtered_nodes.is_empty():
         return pl.DataFrame()
-    return filtered_nodes.join(modules_frame, on="path", how="inner")
+    return arrow_join_frames(
+        filtered_nodes,
+        modules_frame,
+        spec=JoinSpec(on=["path"], how="inner"),
+    )
 
 
 def _collect_descriptors(

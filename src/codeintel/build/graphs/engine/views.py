@@ -20,8 +20,9 @@ import polars as pl
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     scan_snapshot_reader,
+    scan_snapshot_table,
 )
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, table_to_reader
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 from codeintel.core.query_results import iter_tuples_from_arrow_reader
@@ -231,7 +232,7 @@ def load_call_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.call_graph_edges")
     if dataset_root is None:
         return nx.DiGraph()
-    reader = scan_snapshot_reader(
+    edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.call_graph_edges",
@@ -241,13 +242,13 @@ def load_call_graph(
             commit=commit,
         )
     )
-    if reader is None:
+    if edge_table is None:
         return nx.DiGraph()
 
     graph = nx.DiGraph()
-    _add_call_edges(graph, reader)
+    _add_call_edges(graph, table_to_reader(edge_table))
 
-    node_reader = scan_snapshot_reader(
+    node_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.call_graph_nodes",
@@ -257,8 +258,8 @@ def load_call_graph(
             commit=commit,
         )
     )
-    if node_reader is not None:
-        _add_call_nodes(graph, node_reader)
+    if node_table is not None:
+        _add_call_nodes(graph, table_to_reader(node_table))
 
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
@@ -294,7 +295,7 @@ def load_import_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.import_graph_edges")
     if dataset_root is None:
         return nx.DiGraph()
-    edge_reader = scan_snapshot_reader(
+    edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.import_graph_edges",
@@ -304,12 +305,12 @@ def load_import_graph(
             commit=commit,
         )
     )
-    if edge_reader is None:
+    if edge_table is None:
         return nx.DiGraph()
 
     graph = nx.DiGraph()
     fallback_layer_by_module: dict[str, int] = {}
-    for src, dst, layer in iter_tuples_from_arrow_reader(edge_reader):
+    for src, dst, layer in iter_tuples_from_arrow_reader(table_to_reader(edge_table)):
         if src is None or dst is None:
             continue
         source = str(src)
@@ -321,7 +322,7 @@ def load_import_graph(
         weight = _coerce_edge_weight_int(edge_data.get("weight") if edge_data is not None else None)
         graph.add_edge(source, target, weight=weight + 1)
 
-    module_reader = scan_snapshot_reader(
+    module_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.import_modules",
@@ -331,8 +332,8 @@ def load_import_graph(
             commit=commit,
         )
     )
-    if module_reader is not None:
-        for module_row in iter_tuples_from_arrow_reader(module_reader):
+    if module_table is not None:
+        for module_row in iter_tuples_from_arrow_reader(table_to_reader(module_table)):
             module_name, attrs = module_attrs_from_row(*module_row)
             graph.add_node(module_name, **attrs)
     elif fallback_layer_by_module:
@@ -531,7 +532,7 @@ def load_symbol_module_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
         return nx.Graph()
-    edge_reader = scan_snapshot_reader(
+    edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.symbol_use_edges",
@@ -539,9 +540,9 @@ def load_symbol_module_graph(
             columns=("def_path", "use_path"),
         )
     )
-    if edge_reader is None:
+    if edge_table is None:
         return nx.Graph()
-    module_reader = scan_snapshot_reader(
+    module_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="core.modules",
@@ -549,11 +550,11 @@ def load_symbol_module_graph(
             columns=("path", "module", "repo", "commit"),
         )
     )
-    if module_reader is None:
+    if module_table is None:
         return nx.Graph()
-    module_by_path = _module_name_map(module_reader, repo=repo, commit=commit)
+    module_by_path = _module_name_map(table_to_reader(module_table), repo=repo, commit=commit)
     graph = nx.Graph()
-    for def_path, use_path in iter_tuples_from_arrow_reader(edge_reader):
+    for def_path, use_path in iter_tuples_from_arrow_reader(table_to_reader(edge_table)):
         if def_path is None or use_path is None:
             continue
         def_module = module_by_path.get(str(def_path))
@@ -598,7 +599,7 @@ def load_symbol_function_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
         return nx.Graph()
-    reader = scan_snapshot_reader(
+    edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.symbol_use_edges",
@@ -606,11 +607,11 @@ def load_symbol_function_graph(
             columns=("def_goid_h128", "use_goid_h128"),
         )
     )
-    if reader is None:
+    if edge_table is None:
         return nx.Graph()
 
     graph = nx.Graph()
-    for def_goid, use_goid in iter_tuples_from_arrow_reader(reader):
+    for def_goid, use_goid in iter_tuples_from_arrow_reader(table_to_reader(edge_table)):
         if def_goid is None or use_goid is None:
             continue
         left = normalize_decimal(def_goid)

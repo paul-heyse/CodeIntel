@@ -8,7 +8,7 @@ import io
 import logging
 import symtable
 import tokenize
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -17,6 +17,8 @@ from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
@@ -29,6 +31,8 @@ from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from symtable import Symbol, SymbolTable
+
+    import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -55,6 +59,27 @@ class SymtableExtractResult:
     function_partition_rows: ColumnarRows = field(default_factory=dict)
     binding_rows: ColumnarRows = field(default_factory=dict)
     resolution_edge_rows: ColumnarRows = field(default_factory=dict)
+    scope_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_SCOPES_TABLE_KEY)
+    )
+    symbol_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_SYMBOLS_TABLE_KEY)
+    )
+    scope_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY)
+    )
+    namespace_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY)
+    )
+    function_partition_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY)
+    )
+    binding_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_BINDINGS_TABLE_KEY)
+    )
+    resolution_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY)
+    )
     scope_row_count: int = 0
     symbol_row_count: int = 0
     scope_edge_row_count: int = 0
@@ -331,21 +356,103 @@ def _build_ast_anchor_index(
     module_anchor: _AstAnchor | None = None
     anchors: dict[tuple[str, str, int], _AstAnchor] = {}
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        module_candidate = _module_anchor_from_node(node, source_index, rel_path)
+        if module_candidate is not None:
+            module_anchor = module_candidate
             continue
-        span = ast_span_for_node(node, source_index)
-        if span is None:
-            continue
-        node_kind = type(node).__name__
-        node_id = ast_node_id(rel_path, node_kind, span)
-        anchor = _AstAnchor(node_id=node_id, span=span)
-        if isinstance(node, ast.Module):
-            module_anchor = anchor
-            continue
-        name = node.name
-        lineno = span.start_line
-        anchors[node_kind, name, lineno] = anchor
+        anchor_item = _named_anchor_from_node(node, source_index, rel_path)
+        if anchor_item is not None:
+            key, anchor = anchor_item
+            anchors[key] = anchor
     return module_anchor, anchors
+
+
+def _module_anchor_from_node(
+    node: ast.AST,
+    source_index: LineIndexedSource,
+    rel_path: str,
+) -> _AstAnchor | None:
+    if not isinstance(node, ast.Module):
+        return None
+    span = ast_span_for_node(node, source_index)
+    if span is None:
+        return None
+    node_id = ast_node_id(rel_path, "Module", span)
+    return _AstAnchor(node_id=node_id, span=span)
+
+
+def _named_anchor_from_node(
+    node: ast.AST,
+    source_index: LineIndexedSource,
+    rel_path: str,
+) -> tuple[tuple[str, str, int], _AstAnchor] | None:
+    anchor = _anchor_for_definition(node, source_index, rel_path)
+    if anchor is not None:
+        return anchor
+    return _anchor_for_typing_node(node, source_index, rel_path)
+
+
+def _anchor_for_definition(
+    node: ast.AST,
+    source_index: LineIndexedSource,
+    rel_path: str,
+) -> tuple[tuple[str, str, int], _AstAnchor] | None:
+    if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        return None
+    span = ast_span_for_node(node, source_index)
+    if span is None:
+        return None
+    node_kind = type(node).__name__
+    node_id = ast_node_id(rel_path, node_kind, span)
+    anchor = _AstAnchor(node_id=node_id, span=span)
+    return (node_kind, node.name, span.start_line), anchor
+
+
+def _anchor_for_typing_node(
+    node: ast.AST,
+    source_index: LineIndexedSource,
+    rel_path: str,
+) -> tuple[tuple[str, str, int], _AstAnchor] | None:
+    alias_anchor = _anchor_for_type_alias(node, source_index, rel_path)
+    if alias_anchor is not None:
+        return alias_anchor
+    return _anchor_for_type_param(node, source_index, rel_path)
+
+
+def _anchor_for_type_alias(
+    node: ast.AST,
+    source_index: LineIndexedSource,
+    rel_path: str,
+) -> tuple[tuple[str, str, int], _AstAnchor] | None:
+    if not isinstance(node, ast.TypeAlias):
+        return None
+    name_node = node.name
+    name = name_node.id if isinstance(name_node, ast.Name) else None
+    if name is None:
+        return None
+    span = ast_span_for_node(node, source_index)
+    if span is None:
+        return None
+    node_id = ast_node_id(rel_path, "TypeAlias", span)
+    return ("TypeAlias", name, span.start_line), _AstAnchor(node_id=node_id, span=span)
+
+
+def _anchor_for_type_param(
+    node: ast.AST,
+    source_index: LineIndexedSource,
+    rel_path: str,
+) -> tuple[tuple[str, str, int], _AstAnchor] | None:
+    if not isinstance(node, (ast.TypeVar, ast.TypeVarTuple, ast.ParamSpec)):
+        return None
+    name = node.name if isinstance(node.name, str) else None
+    if name is None:
+        return None
+    span = ast_span_for_node(node, source_index)
+    if span is None:
+        return None
+    node_kind = type(node).__name__
+    node_id = ast_node_id(rel_path, node_kind, span)
+    return (node_kind, name, span.start_line), _AstAnchor(node_id=node_id, span=span)
 
 
 def _scope_anchor(
@@ -355,24 +462,102 @@ def _scope_anchor(
     anchors: dict[tuple[str, str, int], _AstAnchor],
 ) -> tuple[_AstAnchor | None, float | None, str | None]:
     if scope.scope_type == "MODULE":
-        if module_anchor is None:
-            return None, None, None
-        return module_anchor, 1.0, "module"
+        return _anchor_for_module_scope(module_anchor)
     lineno = scope.lineno
     if lineno is None:
         return None, None, None
     normalized_line = max(lineno - 1, 0)
-    if scope.scope_type == "FUNCTION":
-        anchor = anchors.get(("FunctionDef", scope.scope_name, normalized_line))
-        if anchor is None:
-            anchor = anchors.get(("AsyncFunctionDef", scope.scope_name, normalized_line))
+    handler = _SCOPE_ANCHOR_HANDLERS.get(scope.scope_type)
+    if handler is None:
+        return None, None, None
+    return handler(scope, anchors, normalized_line)
+
+
+def _anchor_for_module_scope(
+    module_anchor: _AstAnchor | None,
+) -> tuple[_AstAnchor | None, float | None, str | None]:
+    if module_anchor is None:
+        return None, None, None
+    return module_anchor, 1.0, "module"
+
+
+def _anchor_for_function_scope(
+    scope: _ScopeInfo,
+    anchors: dict[tuple[str, str, int], _AstAnchor],
+    normalized_line: int,
+) -> tuple[_AstAnchor | None, float | None, str | None]:
+    anchor = anchors.get(("FunctionDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        anchor = anchors.get(("AsyncFunctionDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        return None, None, None
+    return anchor, 1.0, "function"
+
+
+def _anchor_for_class_scope(
+    scope: _ScopeInfo,
+    anchors: dict[tuple[str, str, int], _AstAnchor],
+    normalized_line: int,
+) -> tuple[_AstAnchor | None, float | None, str | None]:
+    anchor = anchors.get(("ClassDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        return None, None, None
+    return anchor, 1.0, "class"
+
+
+def _anchor_for_type_alias_scope(
+    scope: _ScopeInfo,
+    anchors: dict[tuple[str, str, int], _AstAnchor],
+    normalized_line: int,
+) -> tuple[_AstAnchor | None, float | None, str | None]:
+    anchor = anchors.get(("TypeAlias", scope.scope_name, normalized_line))
+    if anchor is None:
+        return None, None, None
+    return anchor, 0.9, "type_alias"
+
+
+def _anchor_for_type_variable_scope(
+    scope: _ScopeInfo,
+    anchors: dict[tuple[str, str, int], _AstAnchor],
+    normalized_line: int,
+) -> tuple[_AstAnchor | None, float | None, str | None]:
+    for kind in ("TypeVar", "TypeVarTuple", "ParamSpec"):
+        anchor = anchors.get((kind, scope.scope_name, normalized_line))
         if anchor is not None:
-            return anchor, 1.0, "function"
-    if scope.scope_type == "CLASS":
-        anchor = anchors.get(("ClassDef", scope.scope_name, normalized_line))
-        if anchor is not None:
-            return anchor, 1.0, "class"
+            return anchor, 0.9, "type_variable"
     return None, None, None
+
+
+def _anchor_for_type_parameters_scope(
+    scope: _ScopeInfo,
+    anchors: dict[tuple[str, str, int], _AstAnchor],
+    normalized_line: int,
+) -> tuple[_AstAnchor | None, float | None, str | None]:
+    anchor = anchors.get(("FunctionDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        anchor = anchors.get(("AsyncFunctionDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        anchor = anchors.get(("ClassDef", scope.scope_name, normalized_line))
+    if anchor is None:
+        anchor = anchors.get(("TypeAlias", scope.scope_name, normalized_line))
+    if anchor is None:
+        return None, None, None
+    return anchor, 0.7, "type_parameters_owner"
+
+
+_ScopeAnchorHandler = Callable[
+    [_ScopeInfo, dict[tuple[str, str, int], _AstAnchor], int],
+    tuple[_AstAnchor | None, float | None, str | None],
+]
+
+
+_SCOPE_ANCHOR_HANDLERS: dict[str, _ScopeAnchorHandler] = {
+    "FUNCTION": _anchor_for_function_scope,
+    "CLASS": _anchor_for_class_scope,
+    "TYPE_ALIAS": _anchor_for_type_alias_scope,
+    "TYPE_VARIABLE": _anchor_for_type_variable_scope,
+    "TYPE_PARAMETERS": _anchor_for_type_parameters_scope,
+}
 
 
 def _binding_kind(symbol: Symbol) -> tuple[str, str, bool]:
@@ -793,6 +978,41 @@ class SymtableExtractStep(BaseExtractStep):
             )
             _process_module(context, buffers, warnings=warnings)
 
+        scope_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_SYM_SCOPES_TABLE_KEY,
+            buffers.scopes.data,
+            extras_policy="retain",
+        )
+        symbol_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_SYM_SYMBOLS_TABLE_KEY,
+            buffers.symbols.data,
+            extras_policy="retain",
+        )
+        scope_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_SYM_SCOPE_EDGES_TABLE_KEY,
+            buffers.scope_edges.data,
+            extras_policy="retain",
+        )
+        namespace_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
+            buffers.namespace_edges.data,
+            extras_policy="retain",
+        )
+        function_partition_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
+            buffers.function_partitions.data,
+            extras_policy="retain",
+        )
+        binding_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_SYM_BINDINGS_TABLE_KEY,
+            buffers.bindings.data,
+            extras_policy="retain",
+        )
+        resolution_edge_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
+            buffers.resolution_edges.data,
+            extras_policy="retain",
+        )
         return SymtableExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             scope_rows=buffers.scopes.data,
@@ -802,6 +1022,13 @@ class SymtableExtractStep(BaseExtractStep):
             function_partition_rows=buffers.function_partitions.data,
             binding_rows=buffers.bindings.data,
             resolution_edge_rows=buffers.resolution_edges.data,
+            scope_rows_reader=scope_rows_reader,
+            symbol_rows_reader=symbol_rows_reader,
+            scope_edge_rows_reader=scope_edge_rows_reader,
+            namespace_edge_rows_reader=namespace_edge_rows_reader,
+            function_partition_rows_reader=function_partition_rows_reader,
+            binding_rows_reader=binding_rows_reader,
+            resolution_edge_rows_reader=resolution_edge_rows_reader,
             scope_row_count=buffers.scopes.row_count,
             symbol_row_count=buffers.symbols.row_count,
             scope_edge_row_count=buffers.scope_edges.row_count,

@@ -16,13 +16,13 @@ from codeintel.core.columnar.rows import (
 )
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.generated_rows.core import (
-    CoreParseManifestRow,
     CoreTsCapturesRow,
     CoreTsChangedRangesRow,
     CoreTsEdgesRow,
     CoreTsLanguageMetadataRow,
     CoreTsNodesRow,
     CoreTsParseErrorsRow,
+    CoreTsParseManifestRow,
     CoreTsTokensRow,
     CoreTsTriviaRow,
 )
@@ -34,13 +34,11 @@ from codeintel.ingestion.tree_sitter.runner import TreeSitterRunOptions, run_tre
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from typing import TypedDict
 
     from tree_sitter import Tree
     from tree_sitter_language_pack import SupportedLanguage
 
-    from codeintel.core.schemas.generated_rows.core import (
-        TreeSitterParseErrorExtras,
-    )
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.tree_sitter.runner import (
         TreeSitterCapture,
@@ -53,7 +51,12 @@ if TYPE_CHECKING:
         TreeSitterTrivia,
     )
 
-PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
+    class TreeSitterParseErrorExtras(TypedDict):
+        node_type: str | None
+        has_error: bool | None
+        parse_state: int | None
+
+TS_PARSE_MANIFEST_TABLE_KEY = "core.ts_parse_manifest"
 TS_CAPTURES_TABLE_KEY = "core.ts_captures"
 TS_NODES_TABLE_KEY = "core.ts_nodes"
 TS_EDGES_TABLE_KEY = "core.ts_edges"
@@ -71,7 +74,7 @@ class TreeSitterIndexResult:
 
     result: ExecutionResult
     parse_manifest_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
+        default_factory=lambda: empty_reader_for_table(TS_PARSE_MANIFEST_TABLE_KEY)
     )
     captures_rows: pa.RecordBatchReader = field(
         default_factory=lambda: empty_reader_for_table(TS_CAPTURES_TABLE_KEY)
@@ -180,7 +183,7 @@ def _parse_manifest_row(
     error: TreeSitterParseError | None,
     error_kind: str | None = None,
     error_message: str | None = None,
-) -> CoreParseManifestRow:
+) -> CoreTsParseManifestRow:
     error_line = None
     error_col = None
     error_snippet = None
@@ -192,7 +195,7 @@ def _parse_manifest_row(
         error_col = error.start_col
         error_snippet = context.source_index.line_snippet(error.start_row)
 
-    return CoreParseManifestRow(
+    return CoreTsParseManifestRow(
         repo=context.repo,
         commit=context.commit,
         rel_path=context.rel_path,
@@ -237,7 +240,7 @@ def _language_metadata_row(
 def _build_buffers() -> _TreeSitterBuffers:
     return _TreeSitterBuffers(
         parse_manifest=columnar_batch_collector_for_table_key(
-            PARSE_MANIFEST_TABLE_KEY,
+            TS_PARSE_MANIFEST_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
             extras_policy="retain",
         ),

@@ -13,7 +13,6 @@ from tests._helpers.fixtures.repos import write_tree
 
 def test_dis_extract_cfg_edges(tmp_path: Path) -> None:
     """Ensure CFG extraction emits block and edge rows."""
-    """Ensure CFG extraction emits block and edge rows."""
     repo_root = tmp_path / "repo"
     write_tree(
         repo_root,
@@ -41,7 +40,13 @@ def test_dis_extract_cfg_edges(tmp_path: Path) -> None:
 
 
 def _columnar_to_dicts(rows: ColumnarRows) -> list[dict[str, object]]:
-    """Convert columnar rows into a list of dicts for assertions."""
+    """Convert columnar rows into a list of dicts for assertions.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Rows converted from columnar storage.
+    """
     if not rows:
         return []
     columns = list(rows.keys())
@@ -64,7 +69,7 @@ def test_dis_extract_exception_table_edges(tmp_path: Path) -> None:
                     "        with open(path) as handle:",
                     "            return handle.read()",
                     "    except OSError:",
-                    "        return \"\"",
+                    '        return ""',
                 ]
             ),
         },

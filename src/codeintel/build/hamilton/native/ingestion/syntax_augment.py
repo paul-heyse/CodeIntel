@@ -10,6 +10,7 @@ from numbers import Integral
 import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.ingestion import SyntaxAugmentOptions
 from codeintel.build.hamilton.native.patterns import (
     RelationTableSaveSpec,
@@ -18,8 +19,10 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
+from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
 from codeintel.build.tabular.conversion import tabular_to_frame
 from codeintel.build.tabular.frames import (
+    JoinSpec,
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
     rows_to_frame,
@@ -31,8 +34,8 @@ from codeintel.core.spans import normalize_byte_span
 _HAMILTON_TYPE_HINTS = (BuildEnv, InferableTabularInput)
 
 SYNTAX_AUGMENT_TARGET_NAME = "syntax_augment"
-SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
-SYNTAX_EDGES_TABLE_KEY = "core.syntax_edges"
+SYNTAX_NODES_AUGMENTED_TABLE_KEY = "core.syntax_nodes_augmented"
+SYNTAX_EDGES_AUGMENTED_TABLE_KEY = "core.syntax_edges_augmented"
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
 TS_NODES_TABLE_KEY = "core.ts_nodes"
 TS_EDGES_TABLE_KEY = "core.ts_edges"
@@ -374,9 +377,11 @@ def _weld_coverage_frame(
     if mapped is None:
         coverage = ts_counts.with_columns(pl.lit(0).alias("mapped_count"))
     else:
-        coverage = ts_counts.join(mapped, on=group_keys, how="left").with_columns(
-            pl.col("mapped_count").fill_null(0)
-        )
+        coverage = arrow_join_lazyframes(
+            ts_counts,
+            mapped,
+            spec=JoinSpec(on=group_keys, how="left"),
+        ).with_columns(pl.col("mapped_count").fill_null(0))
     coverage = coverage.with_columns(
         pl.col("mapped_count").cast(pl.Int64),
         pl.when(pl.col("ts_node_count") > 0)
@@ -520,15 +525,15 @@ def syntax_augment__frames(
     _merge_ts_extras(nodes_rows, inputs.ts_nodes, xref_rows)
 
     syntax_nodes_frame = dedupe_frame_for_table(
-        rows_to_frame(SYNTAX_NODES_TABLE_KEY, nodes_rows),
-        table_key=SYNTAX_NODES_TABLE_KEY,
+        rows_to_frame(SYNTAX_NODES_AUGMENTED_TABLE_KEY, nodes_rows),
+        table_key=SYNTAX_NODES_AUGMENTED_TABLE_KEY,
     )
     if not syntax_edges.columns:
-        syntax_edges_frame = empty_lazyframe_for_table(SYNTAX_EDGES_TABLE_KEY)
+        syntax_edges_frame = empty_lazyframe_for_table(SYNTAX_EDGES_AUGMENTED_TABLE_KEY)
     else:
         syntax_edges_frame = dedupe_frame_for_table(
             syntax_edges.lazy(),
-            table_key=SYNTAX_EDGES_TABLE_KEY,
+            table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
         )
     if syntax_augment__options.emit_ts_xref:
         xref_frame = dedupe_frame_for_table(
@@ -613,16 +618,26 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
     target_name=SYNTAX_AUGMENT_TARGET_NAME,
     tables=(
         TableTargetTableSpec(
-            table_key=SYNTAX_NODES_TABLE_KEY,
+            table_key=SYNTAX_NODES_AUGMENTED_TABLE_KEY,
             base_node="syntax_augment__syntax_nodes__base",
-            save_spec=RelationTableSaveSpec(table_key=SYNTAX_NODES_TABLE_KEY),
+            save_spec=RelationTableSaveSpec(
+                table_key=SYNTAX_NODES_AUGMENTED_TABLE_KEY,
+                output_name=materialize_node(
+                    f"{SYNTAX_NODES_AUGMENTED_TABLE_KEY}__{SYNTAX_AUGMENT_TARGET_NAME}"
+                ),
+            ),
             node_name="syntax_augment__syntax_nodes",
             input_type=pl.LazyFrame,
         ),
         TableTargetTableSpec(
-            table_key=SYNTAX_EDGES_TABLE_KEY,
+            table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
             base_node="syntax_augment__syntax_edges__base",
-            save_spec=RelationTableSaveSpec(table_key=SYNTAX_EDGES_TABLE_KEY),
+            save_spec=RelationTableSaveSpec(
+                table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
+                output_name=materialize_node(
+                    f"{SYNTAX_EDGES_AUGMENTED_TABLE_KEY}__{SYNTAX_AUGMENT_TARGET_NAME}"
+                ),
+            ),
             node_name="syntax_augment__syntax_edges",
             input_type=pl.LazyFrame,
         ),

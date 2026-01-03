@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import opcode
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import TypedDict, cast
@@ -16,8 +17,15 @@ from codeintel.build.graphs.compute.goid import DECIMAL_38_MAX
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    arrow_join_frames,
+    arrow_join_lazyframes,
+    arrow_join_tables,
+    arrow_table_from_lazyframe,
+)
+from codeintel.build.tabular.conversion import table_to_frame, tabular_to_lazyframe
+from codeintel.build.tabular.frames import JoinSpec, dedupe_frame_for_table, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.generated_rows import columns_for_table_key
@@ -42,6 +50,7 @@ AST_NODES_TABLE_KEY = "core.ast_nodes"
 PY_SYM_SCOPES_TABLE_KEY = "core.py_sym_scopes"
 PY_SYM_BINDINGS_TABLE_KEY = "core.py_sym_bindings"
 PY_SYM_SCOPE_EDGES_TABLE_KEY = "core.py_sym_scope_edges"
+PY_SYM_NAMESPACE_EDGES_TABLE_KEY = "core.py_sym_namespace_edges"
 PY_SYM_RESOLUTION_EDGES_TABLE_KEY = "core.py_sym_resolution_edges"
 PY_BC_CODE_UNITS_TABLE_KEY = "core.py_bc_code_units"
 PY_BC_INSTRUCTIONS_TABLE_KEY = "core.py_bc_instructions"
@@ -49,8 +58,12 @@ PY_BC_BLOCKS_TABLE_KEY = "core.py_bc_blocks"
 PY_BC_CFG_EDGES_TABLE_KEY = "core.py_bc_cfg_edges"
 PY_BC_DEFUSE_EVENTS_TABLE_KEY = "core.py_bc_defuse_events"
 PY_INSPECT_OBJECTS_TABLE_KEY = "core.py_inspect_objects"
+PY_INSPECT_CLASS_MRO_TABLE_KEY = "core.py_inspect_class_mro"
+PY_INSPECT_CLASS_ATTRS_TABLE_KEY = "core.py_inspect_class_attrs"
+PY_INSPECT_UNWRAP_TABLE_KEY = "core.py_inspect_unwrap_hops"
 PY_INSPECT_SIGNATURES_TABLE_KEY = "core.py_inspect_signatures"
 PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY = "core.py_inspect_signature_params"
+PY_INSPECT_RUNTIME_STATE_TABLE_KEY = "core.py_inspect_runtime_state"
 
 ORDINAL_MOD = 2**31 - 1
 
@@ -215,6 +228,7 @@ class _CpgOverlayEdgeInputs:
     py_sym_scopes: pl.LazyFrame
     py_sym_bindings: pl.LazyFrame
     py_sym_scope_edges: pl.LazyFrame
+    py_sym_namespace_edges: pl.LazyFrame
     py_sym_resolution_edges: pl.LazyFrame
     py_bc_code_units: pl.LazyFrame
     py_bc_instructions: pl.LazyFrame
@@ -222,8 +236,12 @@ class _CpgOverlayEdgeInputs:
     py_bc_cfg_edges: pl.LazyFrame
     py_bc_defuse_events: pl.LazyFrame
     py_inspect_objects: pl.LazyFrame
+    py_inspect_class_mro: pl.LazyFrame
+    py_inspect_class_attrs: pl.LazyFrame
+    py_inspect_unwrap_hops: pl.LazyFrame
     py_inspect_signatures: pl.LazyFrame
     py_inspect_signature_params: pl.LazyFrame
+    py_inspect_runtime_state: pl.LazyFrame
 
 
 @dataclass(frozen=True)
@@ -231,6 +249,7 @@ class _CpgOverlayScopeInputs:
     py_sym_scopes: pl.LazyFrame
     py_sym_bindings: pl.LazyFrame
     py_sym_scope_edges: pl.LazyFrame
+    py_sym_namespace_edges: pl.LazyFrame
     py_sym_resolution_edges: pl.LazyFrame
 
 
@@ -251,10 +270,35 @@ class _CpgOverlayBytecodeInputs:
 
 
 @dataclass(frozen=True)
-class _CpgOverlayInspectInputs:
+class _CpgOverlaySyntaxCallInputs:
+    syntax_calls: pl.LazyFrame
+    syntax_call_args: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgOverlayInspectCoreInputs:
     py_inspect_objects: pl.LazyFrame
+    py_inspect_class_mro: pl.LazyFrame
+    py_inspect_class_attrs: pl.LazyFrame
+    py_inspect_unwrap_hops: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgOverlayInspectRuntimeInputs:
     py_inspect_signatures: pl.LazyFrame
     py_inspect_signature_params: pl.LazyFrame
+    py_inspect_runtime_state: pl.LazyFrame
+
+
+@dataclass(frozen=True)
+class _CpgOverlayInspectInputs:
+    py_inspect_objects: pl.LazyFrame
+    py_inspect_class_mro: pl.LazyFrame
+    py_inspect_class_attrs: pl.LazyFrame
+    py_inspect_unwrap_hops: pl.LazyFrame
+    py_inspect_signatures: pl.LazyFrame
+    py_inspect_signature_params: pl.LazyFrame
+    py_inspect_runtime_state: pl.LazyFrame
     syntax_calls: pl.LazyFrame
     syntax_call_args: pl.LazyFrame
 
@@ -423,7 +467,11 @@ def _cfg_blocks_to_cpg(cfg_blocks: pl.LazyFrame, goids: pl.LazyFrame) -> pl.Lazy
         "repo",
         "commit",
     )
-    blocks = cfg_blocks.join(goid_ctx, on="function_goid_h128", how="left")
+    blocks = arrow_join_lazyframes(
+        cfg_blocks,
+        goid_ctx,
+        spec=JoinSpec(on=["function_goid_h128"], how="left"),
+    )
     pk_values = {
         "function_goid_h128": pl.col("function_goid_h128"),
         "block_idx": pl.col("block_idx"),
@@ -540,7 +588,7 @@ def _ts_trivia_to_cpg(trivia: pl.LazyFrame) -> pl.LazyFrame:
     ).select(_CPG_NODE_COLUMNS)
 
 
-def _ast_nodes_to_cpg(ast_nodes: pl.LazyFrame) -> pl.LazyFrame:
+def _ast_nodes_to_cpg(ast_nodes: pl.LazyFrame, env: BuildEnv) -> pl.LazyFrame:
     required = {
         "path",
         "node_type",
@@ -576,6 +624,8 @@ def _ast_nodes_to_cpg(ast_nodes: pl.LazyFrame) -> pl.LazyFrame:
         "constant_kind": pl.col("constant_kind"),
     }
     return ast_nodes.with_columns(
+        pl.lit(env.repo).alias("repo"),
+        pl.lit(env.commit).alias("commit"),
         _pk_expr(AST_NODES_TABLE_KEY, pk_values).alias("cpg_node_id"),
         pl.lit("AST_NODE").alias("node_kind"),
         pl.lit(AST_NODES_TABLE_KEY).alias("source_table_key"),
@@ -1079,6 +1129,7 @@ def _graph_lazyframes(graph_inputs: _CpgNodeGraphInputs) -> _CpgNodeGraphLazyFra
 
 
 def cpg_nodes(
+    env: BuildEnv,
     cpg_nodes__inputs: _CpgNodeInputs,
 ) -> pl.LazyFrame:
     """Build CPG nodes from syntax, symbol, and flow inventories.
@@ -1093,7 +1144,7 @@ def cpg_nodes(
 
     frames = [
         _syntax_nodes_to_cpg(core.syntax_nodes),
-        _ast_nodes_to_cpg(core.ast_nodes),
+        _ast_nodes_to_cpg(core.ast_nodes, env),
         _scip_symbols_to_cpg(core.scip_symbol_information),
         _goids_to_cpg(core.goids),
         _py_sym_scopes_to_cpg(core.py_sym_scopes),
@@ -1244,6 +1295,11 @@ def _occurrence_roles(
         pl.col("start_col").alias("occ_start_col"),
         pl.col("end_line").alias("occ_end_line"),
         pl.col("end_col").alias("occ_end_col"),
+    ).with_columns(
+        pl.col("occ_start_line").cast(pl.Int64),
+        pl.col("occ_start_col").cast(pl.Int64),
+        pl.col("occ_end_line").cast(pl.Int64),
+        pl.col("occ_end_col").cast(pl.Int64),
     )
     syntax_lf = occ_syntax.select(
         "repo",
@@ -1259,9 +1315,12 @@ def _occurrence_roles(
         "syntax_node_id",
         "match_kind",
         "candidate_count",
+    ).with_columns(
+        pl.col("occ_start_line").cast(pl.Int64),
+        pl.col("occ_start_col").cast(pl.Int64),
+        pl.col("occ_end_line").cast(pl.Int64),
+        pl.col("occ_end_col").cast(pl.Int64),
     )
-    span = span_lf.collect()
-    syntax = syntax_lf.collect()
     join_keys = [
         "repo",
         "commit",
@@ -1273,50 +1332,56 @@ def _occurrence_roles(
         "occ_end_col",
     ]
     # Contract: span rows are unique per occurrence join key.
-    joined = syntax.join(span, on=join_keys, how="left", validate="m:1")
-    if joined.is_empty():
-        return joined.lazy()
+    span_table = arrow_table_from_lazyframe(span_lf)
+    syntax_table = arrow_table_from_lazyframe(syntax_lf)
+    joined_table = arrow_join_tables(
+        syntax_table,
+        span_table,
+        spec=ArrowJoinSpec(on=join_keys, how="left", validate="m:1"),
+    )
+    if joined_table.num_rows == 0:
+        return table_to_frame(joined_table).lazy()
+    joined = table_to_frame(joined_table)
+    span_frame = table_to_frame(span_table)
     joined = joined.with_row_index(name="__row_id").with_columns(
         pl.lit(None).cast(pl.Utf8).alias("span_match_kind"),
         pl.lit(None).cast(pl.Int64).alias("span_candidate_count"),
     )
-    fallback_rows = _occurrence_fallback_rows(joined, span)
+    fallback_rows = _occurrence_fallback_rows(joined, span_frame)
     if fallback_rows:
         fallback = pl.DataFrame(fallback_rows)
-        joined = (
-            joined.join(fallback, on="__row_id", how="left")
-            .with_columns(
-                pl.coalesce([pl.col("scip_roles"), pl.col("scip_roles_fallback")]).alias(
-                    "scip_roles"
-                ),
-                pl.coalesce([pl.col("is_definition"), pl.col("is_definition_fallback")]).alias(
-                    "is_definition"
-                ),
-                pl.coalesce([pl.col("is_reference"), pl.col("is_reference_fallback")]).alias(
-                    "is_reference"
-                ),
-                pl.coalesce([pl.col("is_import"), pl.col("is_import_fallback")]).alias("is_import"),
-                pl.coalesce([pl.col("is_write"), pl.col("is_write_fallback")]).alias("is_write"),
-                pl.coalesce([pl.col("is_read"), pl.col("is_read_fallback")]).alias("is_read"),
-                pl.coalesce([pl.col("span_match_kind"), pl.col("span_match_kind_fallback")]).alias(
-                    "span_match_kind"
-                ),
-                pl.coalesce(
-                    [pl.col("span_candidate_count"), pl.col("span_candidate_count_fallback")]
-                ).alias("span_candidate_count"),
-            )
-            .drop(
-                [
-                    "scip_roles_fallback",
-                    "is_definition_fallback",
-                    "is_reference_fallback",
-                    "is_import_fallback",
-                    "is_write_fallback",
-                    "is_read_fallback",
-                    "span_match_kind_fallback",
-                    "span_candidate_count_fallback",
-                ]
-            )
+        joined = arrow_join_frames(
+            joined,
+            fallback,
+            spec=JoinSpec(on=["__row_id"], how="left"),
+        )
+        joined = joined.with_columns(
+            pl.coalesce([pl.col("scip_roles"), pl.col("scip_roles_fallback")]).alias("scip_roles"),
+            pl.coalesce([pl.col("is_definition"), pl.col("is_definition_fallback")]).alias(
+                "is_definition"
+            ),
+            pl.coalesce([pl.col("is_reference"), pl.col("is_reference_fallback")]).alias(
+                "is_reference"
+            ),
+            pl.coalesce([pl.col("is_import"), pl.col("is_import_fallback")]).alias("is_import"),
+            pl.coalesce([pl.col("is_write"), pl.col("is_write_fallback")]).alias("is_write"),
+            pl.coalesce([pl.col("is_read"), pl.col("is_read_fallback")]).alias("is_read"),
+            pl.coalesce([pl.col("span_match_kind"), pl.col("span_match_kind_fallback")]).alias(
+                "span_match_kind"
+            ),
+            pl.coalesce([pl.col("span_candidate_count"), pl.col("span_candidate_count_fallback")])
+            .alias("span_candidate_count"),
+        ).drop(
+            [
+                "scip_roles_fallback",
+                "is_definition_fallback",
+                "is_reference_fallback",
+                "is_import_fallback",
+                "is_write_fallback",
+                "is_read_fallback",
+                "span_match_kind_fallback",
+                "span_candidate_count_fallback",
+            ]
         )
     return joined.drop("__row_id").lazy()
 
@@ -1531,7 +1596,11 @@ def _cfg_edges_to_cpg(
         "repo",
         "commit",
     )
-    blocks = cfg_blocks.join(goid_ctx, on="function_goid_h128", how="left").select(
+    blocks = arrow_join_lazyframes(
+        cfg_blocks,
+        goid_ctx,
+        spec=JoinSpec(on=["function_goid_h128"], how="left"),
+    ).select(
         "function_goid_h128",
         "block_id",
         "block_idx",
@@ -1545,8 +1614,14 @@ def _cfg_edges_to_cpg(
     dst_blocks = blocks.rename(
         {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
     )
-    joined = cfg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left").join(
-        dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left"
+    joined = arrow_join_lazyframes(
+        cfg_edges,
+        src_blocks,
+        spec=JoinSpec(on=["function_goid_h128", "src_block_id"], how="left"),
+    ).pipe(
+        arrow_join_lazyframes,
+        dst_blocks,
+        spec=JoinSpec(on=["function_goid_h128", "dst_block_id"], how="left"),
     )
     src_pk = {
         "function_goid_h128": pl.col("function_goid_h128"),
@@ -1593,7 +1668,11 @@ def _dfg_edges_to_cpg(
         "repo",
         "commit",
     )
-    blocks = cfg_blocks.join(goid_ctx, on="function_goid_h128", how="left").select(
+    blocks = arrow_join_lazyframes(
+        cfg_blocks,
+        goid_ctx,
+        spec=JoinSpec(on=["function_goid_h128"], how="left"),
+    ).select(
         "function_goid_h128",
         "block_id",
         "block_idx",
@@ -1607,8 +1686,14 @@ def _dfg_edges_to_cpg(
     dst_blocks = blocks.rename(
         {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
     )
-    joined = dfg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left").join(
-        dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left"
+    joined = arrow_join_lazyframes(
+        dfg_edges,
+        src_blocks,
+        spec=JoinSpec(on=["function_goid_h128", "src_block_id"], how="left"),
+    ).pipe(
+        arrow_join_lazyframes,
+        dst_blocks,
+        spec=JoinSpec(on=["function_goid_h128", "dst_block_id"], how="left"),
     )
     src_pk = {
         "function_goid_h128": pl.col("function_goid_h128"),
@@ -1664,7 +1749,11 @@ def _cdg_edges_to_cpg(
         "repo",
         "commit",
     )
-    blocks = cfg_blocks.join(goid_ctx, on="function_goid_h128", how="left").select(
+    blocks = arrow_join_lazyframes(
+        cfg_blocks,
+        goid_ctx,
+        spec=JoinSpec(on=["function_goid_h128"], how="left"),
+    ).select(
         "function_goid_h128",
         "block_id",
         "block_idx",
@@ -1678,8 +1767,14 @@ def _cdg_edges_to_cpg(
     dst_blocks = blocks.rename(
         {"block_id": "dst_block_id", "block_idx": "dst_block_idx", "rel_path": "dst_path"}
     )
-    joined = cdg_edges.join(src_blocks, on=["function_goid_h128", "src_block_id"], how="left").join(
-        dst_blocks, on=["function_goid_h128", "dst_block_id"], how="left"
+    joined = arrow_join_lazyframes(
+        cdg_edges,
+        src_blocks,
+        spec=JoinSpec(on=["function_goid_h128", "src_block_id"], how="left"),
+    ).pipe(
+        arrow_join_lazyframes,
+        dst_blocks,
+        spec=JoinSpec(on=["function_goid_h128", "dst_block_id"], how="left"),
     )
     src_pk = {
         "function_goid_h128": pl.col("function_goid_h128"),
@@ -1735,16 +1830,19 @@ def _call_wiring_calls_to_cpg(
     )
     blocks = cfg_blocks.select("function_goid_h128", "block_id", "block_idx")
     joined = (
-        call_edges.join(
+        arrow_join_lazyframes(
+            call_edges,
             syntax_keys,
-            on=["repo", "commit", "call_node_id"],
-            how="left",
+            spec=JoinSpec(on=["repo", "commit", "call_node_id"], how="left"),
         )
-        .join(
+        .pipe(
+            arrow_join_lazyframes,
             blocks,
-            left_on="callee_entry_block_id",
-            right_on="block_id",
-            how="left",
+            spec=JoinSpec(
+                left_on=["callee_entry_block_id"],
+                right_on=["block_id"],
+                how="left",
+            ),
         )
         .drop(["block_id"])
     )
@@ -1806,8 +1904,14 @@ def _call_wiring_arg_to_param_to_cpg(
             "node_id": "dst_param_node_id",
         }
     )
-    joined = arg_edges.join(src_keys, on=["repo", "commit", "src_arg_node_id"], how="left").join(
-        dst_keys, on=["repo", "commit", "dst_param_node_id"], how="left"
+    joined = arrow_join_lazyframes(
+        arg_edges,
+        src_keys,
+        spec=JoinSpec(on=["repo", "commit", "src_arg_node_id"], how="left"),
+    ).pipe(
+        arrow_join_lazyframes,
+        dst_keys,
+        spec=JoinSpec(on=["repo", "commit", "dst_param_node_id"], how="left"),
     )
     src_pk = {
         "repo": pl.col("repo"),
@@ -1878,16 +1982,19 @@ def _call_wiring_ret_to_call_to_cpg(
     )
     blocks = cfg_blocks.select("function_goid_h128", "block_id", "block_idx")
     joined = (
-        ret_edges.join(
+        arrow_join_lazyframes(
+            ret_edges,
             syntax_keys,
-            on=["repo", "commit", "call_node_id"],
-            how="left",
+            spec=JoinSpec(on=["repo", "commit", "call_node_id"], how="left"),
         )
-        .join(
+        .pipe(
+            arrow_join_lazyframes,
             blocks,
-            left_on="exit_block_id",
-            right_on="block_id",
-            how="left",
+            spec=JoinSpec(
+                left_on=["exit_block_id"],
+                right_on=["block_id"],
+                how="left",
+            ),
         )
         .drop(["block_id"])
     )
@@ -2594,6 +2701,31 @@ class _AstBindingContext:
     resolution: Mapping[str, object] | None
 
 
+@dataclass(frozen=True)
+class _AstAnchorMatch:
+    node_hash: str
+    node_type: str | None
+    match_kind: str
+
+
+@dataclass(frozen=True)
+class _StackValue:
+    instr_id: str
+    push_index: int
+    opname: str | None
+    emit_edge: bool
+
+
+@dataclass(frozen=True)
+class _StackEdgeContext:
+    instr: Mapping[str, object]
+    value: _StackValue
+    block_id: str
+    pop_index: int
+    depth_before: int
+    depth_after: int
+
+
 def _ast_binding_context_for_event(
     event: Mapping[str, object],
     *,
@@ -2709,6 +2841,85 @@ def _scopes_by_path(scope_rows: list[dict[str, object]]) -> dict[str, list[dict[
     return by_path
 
 
+def _ast_nodes_by_path(ast_rows: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+    by_path: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in ast_rows:
+        rel_path = _coerce_str(row.get("path"))
+        if rel_path is None:
+            continue
+        by_path[rel_path].append(row)
+    return by_path
+
+
+def _ast_anchor_candidates_by_span(
+    nodes: list[dict[str, object]],
+    *,
+    instr_start: int | None,
+    instr_end: int | None,
+) -> list[tuple[int, dict[str, object]]]:
+    if instr_start is None or instr_end is None:
+        return []
+    candidates: list[tuple[int, dict[str, object]]] = []
+    for node in nodes:
+        start_byte = _coerce_int(node.get("start_byte"))
+        end_byte = _coerce_int(node.get("end_byte"))
+        if not _span_contains(start_byte, end_byte, instr_start, instr_end):
+            continue
+        span_len = _span_length(start_byte, end_byte)
+        sort_key = span_len if span_len is not None else 2**63
+        candidates.append((sort_key, node))
+    return candidates
+
+
+def _ast_anchor_candidates_by_line(
+    nodes: list[dict[str, object]],
+    *,
+    line_number: int | None,
+) -> list[tuple[int, dict[str, object]]]:
+    if line_number is None:
+        return []
+    candidates: list[tuple[int, dict[str, object]]] = []
+    for node in nodes:
+        start_line = _coerce_int(node.get("lineno"))
+        end_line = _coerce_int(node.get("end_lineno")) or start_line
+        if start_line is None or end_line is None:
+            continue
+        if start_line <= line_number <= end_line:
+            span_len = _span_length(
+                _coerce_int(node.get("start_byte")),
+                _coerce_int(node.get("end_byte")),
+            )
+            sort_key = span_len if span_len is not None else 2**63
+            candidates.append((sort_key, node))
+    return candidates
+
+
+def _select_ast_anchor(
+    nodes: list[dict[str, object]],
+    *,
+    instr_start: int | None,
+    instr_end: int | None,
+    line_number: int | None,
+) -> _AstAnchorMatch | None:
+    candidates = _ast_anchor_candidates_by_span(nodes, instr_start=instr_start, instr_end=instr_end)
+    match_kind = "SPAN_CONTAINS"
+    if not candidates:
+        candidates = _ast_anchor_candidates_by_line(nodes, line_number=line_number)
+        match_kind = "LINE_CONTAINS"
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    node = candidates[0][1]
+    node_hash = _coerce_str(node.get("hash"))
+    if node_hash is None:
+        return None
+    return _AstAnchorMatch(
+        node_hash=node_hash,
+        node_type=_coerce_str(node.get("node_type")),
+        match_kind=match_kind,
+    )
+
+
 def _ast_binding_edges_to_cpg(
     ast_nodes: pl.LazyFrame,
     scopes: pl.LazyFrame,
@@ -2782,6 +2993,1099 @@ def _ast_binding_edges_to_cpg(
     return _edge_rows_to_lazyframe(edges)
 
 
+def _bytecode_ast_anchor_edge_row(
+    instr: Mapping[str, object],
+    anchor: _AstAnchorMatch,
+) -> dict[str, object]:
+    repo = _coerce_str(instr.get("repo"))
+    commit = _coerce_str(instr.get("commit"))
+    rel_path = _coerce_str(instr.get("rel_path"))
+    code_unit_id = _coerce_str(instr.get("code_unit_id"))
+    instr_id = _coerce_str(instr.get("instr_id"))
+    if _has_missing(repo, commit, rel_path, code_unit_id, instr_id):
+        return {}
+    src_cpg_node_id = _instruction_cpg_id(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        rel_path=cast("str", rel_path),
+        code_unit_id=cast("str", code_unit_id),
+        instr_id=cast("str", instr_id),
+    )
+    extras = {
+        "match_kind": anchor.match_kind,
+        "ast_node_type": anchor.node_type,
+    }
+    ordinal = _stable_ordinal(
+        "graph.cpg_edges_bc_instr_ast",
+        {"code_unit_id": code_unit_id, "instr_id": instr_id, "ast_hash": anchor.node_hash},
+    )
+    return {
+        "repo": repo,
+        "commit": commit,
+        "src_cpg_node_id": src_cpg_node_id,
+        "dst_cpg_node_id": _ast_cpg_id(anchor.node_hash),
+        "edge_kind": "BYTECODE_ANCHOR",
+        "edge_layer": "SYNTAX",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(extras),
+    }
+
+
+def _py_bc_instruction_ast_edges_to_cpg(
+    instructions: pl.LazyFrame,
+    ast_nodes: pl.LazyFrame,
+) -> pl.LazyFrame:
+    instr_rows = _collect_rows(
+        instructions,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "code_unit_id",
+            "instr_id",
+            "span_start_byte",
+            "span_end_byte",
+            "line_number",
+        ),
+    )
+    ast_rows = _collect_rows(
+        ast_nodes,
+        columns=("path", "hash", "node_type", "start_byte", "end_byte", "lineno", "end_lineno"),
+    )
+    if not instr_rows or not ast_rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    ast_by_path = _ast_nodes_by_path(ast_rows)
+    edges: list[dict[str, object]] = []
+    for instr in instr_rows:
+        rel_path = _coerce_str(instr.get("rel_path"))
+        if rel_path is None:
+            continue
+        nodes = ast_by_path.get(rel_path)
+        if not nodes:
+            continue
+        anchor = _select_ast_anchor(
+            nodes,
+            instr_start=_coerce_int(instr.get("span_start_byte")),
+            instr_end=_coerce_int(instr.get("span_end_byte")),
+            line_number=_coerce_int(instr.get("line_number")),
+        )
+        if anchor is None:
+            continue
+        edge = _bytecode_ast_anchor_edge_row(instr, anchor)
+        if edge:
+            edges.append(edge)
+    return _edge_rows_to_lazyframe(edges)
+
+
+def _is_call_op(opname: str | None) -> bool:
+    if opname is None:
+        return False
+    return opname in {"CALL", "CALL_FUNCTION", "CALL_FUNCTION_EX", "CALL_METHOD", "CALL_KW"}
+
+
+def _select_syntax_call(
+    calls: list[dict[str, object]],
+    *,
+    instr_start: int | None,
+    instr_end: int | None,
+    line_number: int | None,
+) -> dict[str, object] | None:
+    candidates = _ast_anchor_candidates_by_span(calls, instr_start=instr_start, instr_end=instr_end)
+    match_kind = "SPAN_CONTAINS"
+    if not candidates:
+        candidates = []
+        if line_number is not None:
+            for call in calls:
+                start_line = _coerce_int(call.get("start_line"))
+                end_line = _coerce_int(call.get("end_line")) or start_line
+                if start_line is None or end_line is None:
+                    continue
+                if start_line <= line_number <= end_line:
+                    span_len = _span_length(
+                        _coerce_int(call.get("start_byte")),
+                        _coerce_int(call.get("end_byte")),
+                    )
+                    sort_key = span_len if span_len is not None else 2**63
+                    candidates.append((sort_key, call))
+        match_kind = "LINE_CONTAINS"
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    candidate = dict(candidates[0][1])
+    candidate["match_kind"] = match_kind
+    return candidate
+
+
+def _bytecode_callsite_edge_row(
+    instr: Mapping[str, object],
+    call_row: Mapping[str, object],
+) -> dict[str, object]:
+    repo = _coerce_str(instr.get("repo"))
+    commit = _coerce_str(instr.get("commit"))
+    rel_path = _coerce_str(instr.get("rel_path"))
+    code_unit_id = _coerce_str(instr.get("code_unit_id"))
+    instr_id = _coerce_str(instr.get("instr_id"))
+    producer = _coerce_str(call_row.get("producer"))
+    call_node_id = _coerce_str(call_row.get("call_node_id"))
+    call_id = _coerce_str(call_row.get("call_id"))
+    match_kind = _coerce_str(call_row.get("match_kind"))
+    if _has_missing(
+        repo,
+        commit,
+        rel_path,
+        code_unit_id,
+        instr_id,
+        producer,
+        call_node_id,
+        call_id,
+    ):
+        return {}
+    src_cpg_node_id = _instruction_cpg_id(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        rel_path=cast("str", rel_path),
+        code_unit_id=cast("str", code_unit_id),
+        instr_id=cast("str", instr_id),
+    )
+    dst_cpg_node_id = _syntax_node_cpg_id(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        rel_path=cast("str", rel_path),
+        producer=cast("str", producer),
+        node_id=cast("str", call_node_id),
+    )
+    extras = {
+        "call_id": call_id,
+        "callee_text": call_row.get("callee_text"),
+        "match_kind": match_kind,
+    }
+    ordinal = _stable_ordinal(
+        "graph.cpg_edges_bc_callsite",
+        {"code_unit_id": code_unit_id, "instr_id": instr_id, "call_id": call_id},
+    )
+    return {
+        "repo": repo,
+        "commit": commit,
+        "src_cpg_node_id": src_cpg_node_id,
+        "dst_cpg_node_id": dst_cpg_node_id,
+        "edge_kind": "BYTECODE_CALLSITE",
+        "edge_layer": "CALL",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(extras),
+    }
+
+
+def _py_bc_callsite_edges_to_cpg(
+    instructions: pl.LazyFrame,
+    syntax_calls: pl.LazyFrame,
+) -> pl.LazyFrame:
+    instr_rows = _collect_rows(
+        instructions,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "code_unit_id",
+            "instr_id",
+            "baseopname",
+            "opname",
+            "span_start_byte",
+            "span_end_byte",
+            "line_number",
+        ),
+    )
+    call_rows = _collect_rows(
+        syntax_calls,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "producer",
+            "call_id",
+            "call_node_id",
+            "start_byte",
+            "end_byte",
+            "start_line",
+            "end_line",
+            "callee_text",
+        ),
+    )
+    if not instr_rows or not call_rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    calls_by_path = _ast_nodes_by_path(call_rows)
+    edges: list[dict[str, object]] = []
+    for instr in instr_rows:
+        opname = _coerce_str(instr.get("baseopname")) or _coerce_str(instr.get("opname"))
+        if not _is_call_op(opname):
+            continue
+        rel_path = _coerce_str(instr.get("rel_path"))
+        if rel_path is None:
+            continue
+        calls = calls_by_path.get(rel_path)
+        if not calls:
+            continue
+        call_match = _select_syntax_call(
+            calls,
+            instr_start=_coerce_int(instr.get("span_start_byte")),
+            instr_end=_coerce_int(instr.get("span_end_byte")),
+            line_number=_coerce_int(instr.get("line_number")),
+        )
+        if call_match is None:
+            continue
+        edge = _bytecode_callsite_edge_row(instr, call_match)
+        if edge:
+            edges.append(edge)
+    return _edge_rows_to_lazyframe(edges)
+
+
+def _coerce_callee_text(value: object) -> str | None:
+    text = _coerce_str(value)
+    if text is None:
+        return None
+    stripped = text.strip()
+    return stripped or None
+
+
+def _leaf_name(name: str) -> str:
+    return name.rsplit(".", 1)[-1]
+
+
+def _display_name_variants(display_name: str) -> list[str]:
+    normalized = display_name.replace("::", ".")
+    if "#" in normalized:
+        normalized = normalized.split("#", 1)[0]
+    if normalized and normalized != display_name:
+        return [display_name, normalized]
+    return [display_name] if display_name else []
+
+
+def _index_symbol_rows(
+    rows: Sequence[Mapping[str, object]],
+) -> tuple[
+    dict[tuple[str, str], dict[str, list[Mapping[str, object]]]],
+    dict[tuple[str, str], dict[str, list[Mapping[str, object]]]],
+]:
+    exact: dict[tuple[str, str], dict[str, list[Mapping[str, object]]]] = {}
+    leaf: dict[tuple[str, str], dict[str, list[Mapping[str, object]]]] = {}
+    for row in rows:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        display_name = _coerce_str(row.get("display_name"))
+        if _has_missing(repo, commit, display_name):
+            continue
+        key = (cast("str", repo), cast("str", commit))
+        for variant in _display_name_variants(cast("str", display_name)):
+            if not variant:
+                continue
+            exact.setdefault(key, {}).setdefault(variant, []).append(row)
+            leaf_name = _leaf_name(variant)
+            leaf.setdefault(key, {}).setdefault(leaf_name, []).append(row)
+    return exact, leaf
+
+
+def _symbol_matches_from_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    match_kind: str,
+    confidence: float,
+) -> list[tuple[Mapping[str, object], str, float]]:
+    matches: list[tuple[Mapping[str, object], str, float]] = []
+    seen_symbols: set[str] = set()
+    for row in rows:
+        symbol = _coerce_str(row.get("symbol"))
+        if symbol is None or symbol in seen_symbols:
+            continue
+        seen_symbols.add(symbol)
+        matches.append((row, match_kind, confidence))
+    return matches
+
+
+def _callsite_symbol_matches(
+    *,
+    repo: str,
+    commit: str,
+    callee_text: str,
+    exact_index: Mapping[tuple[str, str], Mapping[str, Sequence[Mapping[str, object]]]],
+    leaf_index: Mapping[tuple[str, str], Mapping[str, Sequence[Mapping[str, object]]]],
+) -> list[tuple[Mapping[str, object], str, float]]:
+    key = (repo, commit)
+    exact_matches = exact_index.get(key, {}).get(callee_text)
+    if exact_matches:
+        return _symbol_matches_from_rows(
+            exact_matches,
+            match_kind="display_name",
+            confidence=0.7,
+        )
+    leaf_matches = leaf_index.get(key, {}).get(_leaf_name(callee_text), [])
+    return _symbol_matches_from_rows(
+        leaf_matches,
+        match_kind="leaf_name",
+        confidence=0.35,
+    )
+
+
+def _bytecode_callsite_symbol_edge_row(
+    instr: Mapping[str, object],
+    call_row: Mapping[str, object],
+    symbol_row: Mapping[str, object],
+    *,
+    match_kind: str,
+    confidence: float,
+) -> dict[str, object]:
+    repo = _coerce_str(instr.get("repo"))
+    commit = _coerce_str(instr.get("commit"))
+    rel_path = _coerce_str(instr.get("rel_path"))
+    code_unit_id = _coerce_str(instr.get("code_unit_id"))
+    instr_id = _coerce_str(instr.get("instr_id"))
+    symbol = _coerce_str(symbol_row.get("symbol"))
+    if _has_missing(repo, commit, rel_path, code_unit_id, instr_id, symbol):
+        return {}
+    src_cpg_node_id = _instruction_cpg_id(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        rel_path=cast("str", rel_path),
+        code_unit_id=cast("str", code_unit_id),
+        instr_id=cast("str", instr_id),
+    )
+    dst_cpg_node_id = _stable_cpg_id(
+        SCIP_SYMBOLS_TABLE_KEY,
+        {"repo": repo, "commit": commit, "symbol": symbol},
+    )
+    extras = {
+        "call_id": call_row.get("call_id"),
+        "callee_text": call_row.get("callee_text"),
+        "match_kind": match_kind,
+        "confidence": confidence,
+        "symbol_display_name": symbol_row.get("display_name"),
+    }
+    ordinal = _stable_ordinal(
+        "graph.cpg_edges_bc_callsite_symbol",
+        {
+            "code_unit_id": code_unit_id,
+            "instr_id": instr_id,
+            "symbol": symbol,
+            "match_kind": match_kind,
+        },
+    )
+    return {
+        "repo": repo,
+        "commit": commit,
+        "src_cpg_node_id": src_cpg_node_id,
+        "dst_cpg_node_id": dst_cpg_node_id,
+        "edge_kind": "BYTECODE_CALLS_SYMBOL",
+        "edge_layer": "CALL",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(extras),
+    }
+
+
+def _callsite_symbol_edges_for_instr(
+    instr: Mapping[str, object],
+    *,
+    calls_by_path: Mapping[str, list[dict[str, object]]],
+    exact_index: Mapping[tuple[str, str], Mapping[str, Sequence[Mapping[str, object]]]],
+    leaf_index: Mapping[tuple[str, str], Mapping[str, Sequence[Mapping[str, object]]]],
+) -> list[dict[str, object]]:
+    opname = _coerce_str(instr.get("baseopname")) or _coerce_str(instr.get("opname"))
+    if not _is_call_op(opname):
+        return []
+    rel_path = _coerce_str(instr.get("rel_path"))
+    calls = calls_by_path.get(rel_path) if rel_path else None
+    if not rel_path or not calls:
+        return []
+    call_match = _select_syntax_call(
+        calls,
+        instr_start=_coerce_int(instr.get("span_start_byte")),
+        instr_end=_coerce_int(instr.get("span_end_byte")),
+        line_number=_coerce_int(instr.get("line_number")),
+    )
+    callee_text = _coerce_callee_text(call_match.get("callee_text")) if call_match else None
+    if call_match is None or callee_text is None:
+        return []
+    repo = _coerce_str(instr.get("repo"))
+    commit = _coerce_str(instr.get("commit"))
+    if _has_missing(repo, commit):
+        return []
+    matches = _callsite_symbol_matches(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        callee_text=callee_text,
+        exact_index=exact_index,
+        leaf_index=leaf_index,
+    )
+    edges: list[dict[str, object]] = []
+    for symbol_row, match_kind, confidence in matches:
+        edge = _bytecode_callsite_symbol_edge_row(
+            instr,
+            call_match,
+            symbol_row,
+            match_kind=match_kind,
+            confidence=confidence,
+        )
+        if edge:
+            edges.append(edge)
+    return edges
+
+
+@dataclass(frozen=True, slots=True)
+class _CallsiteSymbolInputs:
+    instr_rows: list[dict[str, object]]
+    calls_by_path: dict[str, list[dict[str, object]]]
+    exact_index: dict[tuple[str, str], dict[str, list[Mapping[str, object]]]]
+    leaf_index: dict[tuple[str, str], dict[str, list[Mapping[str, object]]]]
+
+
+def _callsite_symbol_inputs(
+    instructions: pl.LazyFrame,
+    syntax_calls: pl.LazyFrame,
+    scip_symbols: pl.LazyFrame,
+) -> _CallsiteSymbolInputs | None:
+    instr_rows = _collect_rows(
+        instructions,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "code_unit_id",
+            "instr_id",
+            "baseopname",
+            "opname",
+            "span_start_byte",
+            "span_end_byte",
+            "line_number",
+        ),
+    )
+    call_rows = _collect_rows(
+        syntax_calls,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "producer",
+            "call_id",
+            "call_node_id",
+            "start_byte",
+            "end_byte",
+            "start_line",
+            "end_line",
+            "callee_text",
+        ),
+    )
+    symbol_rows = _collect_rows(
+        scip_symbols,
+        columns=("repo", "commit", "symbol", "display_name"),
+    )
+    if not instr_rows or not call_rows or not symbol_rows:
+        return None
+    calls_by_path = _ast_nodes_by_path(call_rows)
+    exact_index, leaf_index = _index_symbol_rows(symbol_rows)
+    return _CallsiteSymbolInputs(
+        instr_rows=instr_rows,
+        calls_by_path=calls_by_path,
+        exact_index=exact_index,
+        leaf_index=leaf_index,
+    )
+
+
+def _py_bc_callsite_symbol_edges_to_cpg(
+    instructions: pl.LazyFrame,
+    syntax_calls: pl.LazyFrame,
+    scip_symbols: pl.LazyFrame,
+) -> pl.LazyFrame:
+    inputs = _callsite_symbol_inputs(instructions, syntax_calls, scip_symbols)
+    if inputs is None:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    edges: list[dict[str, object]] = []
+    for instr in inputs.instr_rows:
+        edges.extend(
+            _callsite_symbol_edges_for_instr(
+                instr,
+                calls_by_path=inputs.calls_by_path,
+                exact_index=inputs.exact_index,
+                leaf_index=inputs.leaf_index,
+            )
+        )
+    return _edge_rows_to_lazyframe(edges)
+
+
+_MEMORY_EDGE_KIND_MAP = {
+    ("attribute", "USE"): "READS_ATTR",
+    ("attribute", "DEF"): "WRITES_ATTR",
+    ("subscript", "USE"): "READS_SUBSCR",
+    ("subscript", "DEF"): "WRITES_SUBSCR",
+    ("global", "USE"): "READS_GLOBAL",
+    ("global", "DEF"): "WRITES_GLOBAL",
+}
+
+
+def _memory_edge_kind(space: str | None, event_kind: str | None) -> str | None:
+    if space is None or event_kind is None:
+        return None
+    return _MEMORY_EDGE_KIND_MAP.get((space, event_kind))
+
+
+def _bytecode_memory_edge_row(
+    event: Mapping[str, object],
+    *,
+    anchor: _AstAnchorMatch,
+    edge_kind: str,
+) -> dict[str, object]:
+    repo = _coerce_str(event.get("repo"))
+    commit = _coerce_str(event.get("commit"))
+    rel_path = _coerce_str(event.get("rel_path"))
+    code_unit_id = _coerce_str(event.get("code_unit_id"))
+    instr_id = _coerce_str(event.get("instr_id"))
+    if _has_missing(repo, commit, rel_path, code_unit_id, instr_id):
+        return {}
+    src_cpg_node_id = _instruction_cpg_id(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        rel_path=cast("str", rel_path),
+        code_unit_id=cast("str", code_unit_id),
+        instr_id=cast("str", instr_id),
+    )
+    extras = {
+        "space": event.get("space"),
+        "name": event.get("name"),
+        "event_kind": event.get("event_kind"),
+        "confidence": event.get("confidence"),
+        "match_kind": anchor.match_kind,
+        "ast_node_type": anchor.node_type,
+    }
+    ordinal = _stable_ordinal(
+        "graph.cpg_edges_bc_memory",
+        {"code_unit_id": code_unit_id, "instr_id": instr_id, "edge_kind": edge_kind},
+    )
+    return {
+        "repo": repo,
+        "commit": commit,
+        "src_cpg_node_id": src_cpg_node_id,
+        "dst_cpg_node_id": _ast_cpg_id(anchor.node_hash),
+        "edge_kind": edge_kind,
+        "edge_layer": "FLOW",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(extras),
+    }
+
+
+def _instr_index(
+    instr_rows: Sequence[Mapping[str, object]],
+) -> dict[tuple[str, str], dict[str, object]]:
+    instr_by_key: dict[tuple[str, str], dict[str, object]] = {}
+    for instr in instr_rows:
+        rel_path = _coerce_str(instr.get("rel_path"))
+        instr_id = _coerce_str(instr.get("instr_id"))
+        if rel_path is None or instr_id is None:
+            continue
+        instr_by_key[rel_path, instr_id] = dict(instr)
+    return instr_by_key
+
+
+def _anchor_for_key(
+    key: tuple[str, str],
+    *,
+    rel_path: str,
+    instr: Mapping[str, object],
+    ast_by_path: Mapping[str, list[dict[str, object]]],
+    cache: dict[tuple[str, str], _AstAnchorMatch | None],
+) -> _AstAnchorMatch | None:
+    anchor = cache.get(key)
+    if anchor is None and key not in cache:
+        nodes = ast_by_path.get(rel_path, [])
+        anchor = _select_ast_anchor(
+            nodes,
+            instr_start=_coerce_int(instr.get("span_start_byte")),
+            instr_end=_coerce_int(instr.get("span_end_byte")),
+            line_number=_coerce_int(instr.get("line_number")),
+        )
+        cache[key] = anchor
+    return anchor
+
+
+def _memory_edge_for_event(
+    event: Mapping[str, object],
+    *,
+    instr_by_key: Mapping[tuple[str, str], dict[str, object]],
+    ast_by_path: Mapping[str, list[dict[str, object]]],
+    anchor_cache: dict[tuple[str, str], _AstAnchorMatch | None],
+) -> dict[str, object]:
+    edge_kind = _memory_edge_kind(
+        _coerce_str(event.get("space")),
+        _coerce_str(event.get("event_kind")),
+    )
+    if edge_kind is None:
+        return {}
+    rel_path = _coerce_str(event.get("rel_path"))
+    instr_id = _coerce_str(event.get("instr_id"))
+    if rel_path is None or instr_id is None:
+        return {}
+    key = (rel_path, instr_id)
+    instr = instr_by_key.get(key)
+    if instr is None:
+        return {}
+    anchor = _anchor_for_key(
+        key,
+        rel_path=rel_path,
+        instr=instr,
+        ast_by_path=ast_by_path,
+        cache=anchor_cache,
+    )
+    if anchor is None:
+        return {}
+    return _bytecode_memory_edge_row(event, anchor=anchor, edge_kind=edge_kind)
+
+
+def _py_bc_memory_edges_to_cpg(
+    defuse_events: pl.LazyFrame,
+    instructions: pl.LazyFrame,
+    ast_nodes: pl.LazyFrame,
+) -> pl.LazyFrame:
+    event_rows = _collect_rows(
+        defuse_events,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "code_unit_id",
+            "instr_id",
+            "event_kind",
+            "space",
+            "name",
+            "confidence",
+        ),
+    )
+    instr_rows = _collect_rows(
+        instructions,
+        columns=("rel_path", "instr_id", "span_start_byte", "span_end_byte", "line_number"),
+    )
+    ast_rows = _collect_rows(
+        ast_nodes,
+        columns=("path", "hash", "node_type", "start_byte", "end_byte", "lineno", "end_lineno"),
+    )
+    if not event_rows or not instr_rows or not ast_rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    ast_by_path = _ast_nodes_by_path(ast_rows)
+    instr_by_key = _instr_index(instr_rows)
+    anchor_cache: dict[tuple[str, str], _AstAnchorMatch | None] = {}
+    edges: list[dict[str, object]] = []
+    for event in event_rows:
+        edge = _memory_edge_for_event(
+            event,
+            instr_by_key=instr_by_key,
+            ast_by_path=ast_by_path,
+            anchor_cache=anchor_cache,
+        )
+        if edge:
+            edges.append(edge)
+    return _edge_rows_to_lazyframe(edges)
+
+
+def _stack_effect_net(opname: str, arg: int | None) -> int | None:
+    opcode_value = opcode.opmap.get(opname)
+    if opcode_value is None:
+        return None
+    arg_value = arg if arg is not None else 0
+    try:
+        return opcode.stack_effect(opcode_value, arg_value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _load_push_count(opname: str) -> int | None:
+    if not opname.startswith("LOAD_"):
+        return None
+    tokens = opname.split("_")
+    load_tokens = sum(1 for token in tokens if token == "LOAD")
+    return load_tokens if load_tokens > 0 else None
+
+
+def _effect_from_push(
+    *,
+    opname: str,
+    arg: int | None,
+    push_count: int,
+    emit_edge: bool,
+) -> tuple[int, int, bool] | None:
+    net = _stack_effect_net(opname, arg)
+    if net is None:
+        return None
+    pop_count = push_count - net
+    if pop_count < 0:
+        return None
+    return pop_count, push_count, emit_edge
+
+
+def _effect_pop_only(*, opname: str, arg: int | None) -> tuple[int, int, bool] | None:
+    net = _stack_effect_net(opname, arg)
+    if net is None:
+        return None
+    if net > 0:
+        return None
+    return -net, 0, True
+
+
+_STACK_SKIP_OPS = {"CACHE", "NOP", "RESUME"}
+_STACK_POP_ONLY_OPS = {"POP_TOP", "RETURN_VALUE"}
+_STACK_LOAD_WITH_POP = {"LOAD_ATTR", "LOAD_METHOD", "LOAD_SUPER_ATTR", "LOAD_SUPER_METHOD"}
+_STACK_BINARY_OPS = {"BINARY_OP", "BINARY_SUBSCR", "COMPARE_OP", "IS_OP", "CONTAINS_OP"}
+_STACK_ITER_OPS = {"GET_ITER", "FOR_ITER"}
+_STACK_POP_PREFIXES = ("STORE_", "DELETE_")
+_STACK_PUSH_EXACT: dict[str, tuple[int, bool]] = {"PUSH_NULL": (1, False)}
+
+
+def _stack_push_spec(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    for handler in _STACK_PUSH_HANDLERS:
+        spec = handler(opname, arg)
+        if spec is not None:
+            return spec
+    return None
+
+
+def _stack_push_from_exact(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    _ = arg
+    return _STACK_PUSH_EXACT.get(opname)
+
+
+def _stack_push_from_load(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    _ = arg
+    if opname in _STACK_LOAD_WITH_POP:
+        return 1, True
+    if not opname.startswith("LOAD_"):
+        return None
+    load_count = _load_push_count(opname)
+    if load_count is None:
+        return None
+    return load_count, True
+
+
+def _stack_push_from_unary(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    _ = arg
+    if opname.startswith("UNARY_"):
+        return 1, True
+    return None
+
+
+def _stack_push_from_binary(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    _ = arg
+    if opname in _STACK_BINARY_OPS:
+        return 1, True
+    return None
+
+
+def _stack_push_from_call(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    _ = arg
+    if opname.startswith("CALL"):
+        return 1, True
+    return None
+
+
+def _stack_push_from_iter(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    _ = arg
+    if opname in _STACK_ITER_OPS:
+        return 1, True
+    return None
+
+
+def _stack_push_from_unpack(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    if opname != "UNPACK_SEQUENCE":
+        return None
+    if arg is None or arg < 0:
+        return None
+    return arg, True
+
+
+def _stack_push_from_build(opname: str, arg: int | None) -> tuple[int, bool] | None:
+    _ = arg
+    if opname.startswith("BUILD_"):
+        return 1, True
+    return None
+
+
+_STACK_PUSH_HANDLERS: tuple[
+    Callable[[str, int | None], tuple[int, bool] | None],
+    ...,
+] = (
+    _stack_push_from_exact,
+    _stack_push_from_load,
+    _stack_push_from_unary,
+    _stack_push_from_binary,
+    _stack_push_from_call,
+    _stack_push_from_iter,
+    _stack_push_from_unpack,
+    _stack_push_from_build,
+)
+
+
+def _stack_effect_counts(
+    opname: str | None,
+    arg: int | None,
+) -> tuple[int, int, bool] | None:
+    if opname is None or opname in _STACK_SKIP_OPS:
+        return None
+    if opname in _STACK_POP_ONLY_OPS:
+        return _effect_pop_only(opname=opname, arg=arg)
+    if opname.startswith(_STACK_POP_PREFIXES):
+        return _effect_pop_only(opname=opname, arg=arg)
+    push_spec = _stack_push_spec(opname, arg)
+    if push_spec is None:
+        return None
+    push_count, emit_edge = push_spec
+    return _effect_from_push(
+        opname=opname,
+        arg=arg,
+        push_count=push_count,
+        emit_edge=emit_edge,
+    )
+
+
+def _parse_stack_instr_row(row: Mapping[str, object]) -> dict[str, object] | None:
+    repo = _coerce_str(row.get("repo"))
+    commit = _coerce_str(row.get("commit"))
+    rel_path = _coerce_str(row.get("rel_path"))
+    code_unit_id = _coerce_str(row.get("code_unit_id"))
+    instr_id = _coerce_str(row.get("instr_id"))
+    instr_index = _coerce_int(row.get("instr_index"))
+    if _has_missing(repo, commit, rel_path, code_unit_id, instr_id, instr_index):
+        return None
+    opname = _coerce_str(row.get("baseopname")) or _coerce_str(row.get("opname"))
+    return {
+        "repo": repo,
+        "commit": commit,
+        "rel_path": rel_path,
+        "code_unit_id": code_unit_id,
+        "instr_id": instr_id,
+        "instr_index": instr_index,
+        "opname": opname,
+        "arg": _coerce_int(row.get("arg")),
+    }
+
+
+def _group_stack_instructions(
+    rows: Sequence[Mapping[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        parsed = _parse_stack_instr_row(row)
+        if parsed is None:
+            continue
+        code_unit_id = cast("str", parsed["code_unit_id"])
+        grouped[code_unit_id].append(parsed)
+    for instrs in grouped.values():
+        instrs.sort(key=lambda item: cast("int", item["instr_index"]))
+    return grouped
+
+
+def _stack_edge_row(context: _StackEdgeContext) -> dict[str, object]:
+    instr = context.instr
+    repo = _coerce_str(instr.get("repo"))
+    commit = _coerce_str(instr.get("commit"))
+    rel_path = _coerce_str(instr.get("rel_path"))
+    code_unit_id = _coerce_str(instr.get("code_unit_id"))
+    instr_id = _coerce_str(instr.get("instr_id"))
+    if _has_missing(repo, commit, rel_path, code_unit_id, instr_id):
+        return {}
+    src_cpg_node_id = _instruction_cpg_id(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        rel_path=cast("str", rel_path),
+        code_unit_id=cast("str", code_unit_id),
+        instr_id=context.value.instr_id,
+    )
+    dst_cpg_node_id = _instruction_cpg_id(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        rel_path=cast("str", rel_path),
+        code_unit_id=cast("str", code_unit_id),
+        instr_id=cast("str", instr_id),
+    )
+    extras = {
+        "block_id": context.block_id,
+        "stack_pop_index": context.pop_index,
+        "stack_push_index": context.value.push_index,
+        "stack_depth_before": context.depth_before,
+        "stack_depth_after": context.depth_after,
+        "src_opname": context.value.opname,
+        "dst_opname": instr.get("opname"),
+        "confidence": 0.4,
+    }
+    ordinal = _stable_ordinal(
+        "graph.cpg_edges_bc_stack",
+        {
+            "code_unit_id": code_unit_id,
+            "src_instr_id": context.value.instr_id,
+            "dst_instr_id": instr_id,
+            "block_id": context.block_id,
+            "stack_pop_index": context.pop_index,
+            "stack_push_index": context.value.push_index,
+        },
+    )
+    return {
+        "repo": repo,
+        "commit": commit,
+        "src_cpg_node_id": src_cpg_node_id,
+        "dst_cpg_node_id": dst_cpg_node_id,
+        "edge_kind": "STACK_REACHES",
+        "edge_layer": "FLOW",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(extras),
+    }
+
+
+def _block_instruction_rows(
+    block: _PyBcBlock,
+    instructions: Sequence[Mapping[str, object]],
+) -> list[Mapping[str, object]]:
+    filtered: list[Mapping[str, object]] = []
+    first_index = block["first_instr_index"]
+    last_index = block["last_instr_index"]
+    for instr in instructions:
+        instr_index = _coerce_int(instr.get("instr_index"))
+        if instr_index is None:
+            continue
+        if instr_index < first_index:
+            continue
+        if instr_index > last_index:
+            break
+        filtered.append(instr)
+    return filtered
+
+
+def _stack_pop_edges(
+    instr: Mapping[str, object],
+    *,
+    block_id: str,
+    pop_count: int,
+    depth_before: int,
+    stack: list[_StackValue],
+) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    for pop_index in range(pop_count):
+        if not stack:
+            break
+        value = stack.pop()
+        if not value.emit_edge:
+            continue
+        context = _StackEdgeContext(
+            instr=instr,
+            value=value,
+            block_id=block_id,
+            pop_index=pop_index,
+            depth_before=depth_before,
+            depth_after=len(stack),
+        )
+        edge = _stack_edge_row(context)
+        if edge:
+            edges.append(edge)
+    return edges
+
+
+def _stack_push_values(
+    instr: Mapping[str, object],
+    *,
+    push_count: int,
+    emit_edge: bool,
+    stack: list[_StackValue],
+) -> None:
+    instr_id = _coerce_str(instr.get("instr_id"))
+    if instr_id is None:
+        return
+    opname = _coerce_str(instr.get("opname"))
+    stack.extend(
+        [
+            _StackValue(
+                instr_id=instr_id,
+                push_index=push_index,
+                opname=opname,
+                emit_edge=emit_edge,
+            )
+            for push_index in range(push_count)
+        ]
+    )
+
+
+def _stack_edges_for_instruction(
+    instr: Mapping[str, object],
+    *,
+    block_id: str,
+    stack: list[_StackValue],
+) -> list[dict[str, object]]:
+    effect = _stack_effect_counts(
+        _coerce_str(instr.get("opname")),
+        _coerce_int(instr.get("arg")),
+    )
+    if effect is None:
+        return []
+    pop_count, push_count, emit_edge = effect
+    depth_before = len(stack)
+    edges = _stack_pop_edges(
+        instr,
+        block_id=block_id,
+        pop_count=pop_count,
+        depth_before=depth_before,
+        stack=stack,
+    )
+    _stack_push_values(instr, push_count=push_count, emit_edge=emit_edge, stack=stack)
+    return edges
+
+
+def _stack_edges_for_block(
+    block: _PyBcBlock,
+    instructions: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    stack: list[_StackValue] = []
+    for instr in _block_instruction_rows(block, instructions):
+        edges.extend(
+            _stack_edges_for_instruction(
+                instr,
+                block_id=block["block_id"],
+                stack=stack,
+            )
+        )
+    return edges
+
+
+def _py_bc_stack_edges_to_cpg(
+    instructions: pl.LazyFrame,
+    blocks: pl.LazyFrame,
+) -> pl.LazyFrame:
+    instr_rows = _collect_rows(
+        instructions,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "code_unit_id",
+            "instr_id",
+            "instr_index",
+            "opname",
+            "baseopname",
+            "arg",
+        ),
+    )
+    block_rows = _collect_rows(
+        blocks,
+        columns=("code_unit_id", "block_id", "first_instr_index", "last_instr_index"),
+    )
+    if not instr_rows or not block_rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    instrs_by_unit = _group_stack_instructions(instr_rows)
+    blocks_by_unit = _group_blocks(block_rows)
+    edges: list[dict[str, object]] = []
+    for code_unit_id, unit_blocks in blocks_by_unit.items():
+        unit_instrs = instrs_by_unit.get(code_unit_id)
+        if not unit_instrs:
+            continue
+        for block in sorted(unit_blocks, key=lambda item: item["first_instr_index"]):
+            edges.extend(_stack_edges_for_block(block, unit_instrs))
+    return _edge_rows_to_lazyframe(edges)
+
+
 def _py_sym_scope_edges_to_cpg(scope_edges: pl.LazyFrame) -> pl.LazyFrame:
     required = {
         "repo",
@@ -2844,6 +4148,102 @@ def _py_sym_scope_edges_to_cpg(scope_edges: pl.LazyFrame) -> pl.LazyFrame:
         extras.alias("extras_json"),
     ).select(_CPG_EDGE_COLUMNS)
     return pl.concat([owns, parent], how="vertical_relaxed")
+
+
+def _py_sym_namespace_edges_to_cpg(
+    namespace_edges: pl.LazyFrame,
+    bindings: pl.LazyFrame,
+) -> pl.LazyFrame:
+    edge_rows = _collect_rows(
+        namespace_edges,
+        columns=(
+            "repo",
+            "commit",
+            "rel_path",
+            "scope_id",
+            "name",
+            "symbol_row_id",
+            "child_scope_id",
+            "edge_kind",
+            "is_ambiguous",
+        ),
+    )
+    binding_rows = _collect_rows(
+        bindings,
+        columns=("repo", "commit", "rel_path", "binding_id", "scope_id", "name"),
+    )
+    if not edge_rows or not binding_rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    bindings_by_scope, _ = _build_binding_index(binding_rows)
+    edges: list[dict[str, object]] = []
+    for row in edge_rows:
+        edge = _namespace_edge_row(row, bindings_by_scope)
+        if edge:
+            edges.append(edge)
+    return _edge_rows_to_lazyframe(edges)
+
+
+def _namespace_edge_row(
+    row: Mapping[str, object],
+    bindings_by_scope: Mapping[tuple[str, str, str], dict[str, object]],
+) -> dict[str, object]:
+    rel_path = _coerce_str(row.get("rel_path"))
+    scope_id = _coerce_str(row.get("scope_id"))
+    name = _coerce_str(row.get("name"))
+    child_scope_id = _coerce_str(row.get("child_scope_id"))
+    if rel_path is None or scope_id is None or name is None or child_scope_id is None:
+        return {}
+    binding = bindings_by_scope.get(
+        (rel_path, scope_id, name)
+    )
+    if binding is None:
+        return {}
+    repo = _coerce_str(binding.get("repo"))
+    commit = _coerce_str(binding.get("commit"))
+    binding_id = _coerce_str(binding.get("binding_id"))
+    if _has_missing(repo, commit, binding_id):
+        return {}
+    src_cpg_node_id = _stable_cpg_id(
+        PY_SYM_BINDINGS_TABLE_KEY,
+        {
+            "repo": repo,
+            "commit": commit,
+            "rel_path": rel_path,
+            "binding_id": binding_id,
+        },
+    )
+    dst_cpg_node_id = _stable_cpg_id(
+        PY_SYM_SCOPES_TABLE_KEY,
+        {
+            "repo": repo,
+            "commit": commit,
+            "rel_path": rel_path,
+            "scope_id": child_scope_id,
+        },
+    )
+    extras = {
+        "name": name,
+        "symbol_row_id": row.get("symbol_row_id"),
+        "is_ambiguous": row.get("is_ambiguous"),
+    }
+    ordinal = _stable_ordinal(
+        "graph.cpg_edges_namespace",
+        {
+            "binding_id": binding_id,
+            "child_scope_id": child_scope_id,
+        },
+    )
+    return {
+        "repo": repo,
+        "commit": commit,
+        "src_cpg_node_id": src_cpg_node_id,
+        "dst_cpg_node_id": dst_cpg_node_id,
+        "edge_kind": _coerce_str(row.get("edge_kind")) or "BINDS_NAMESPACE",
+        "edge_layer": "SYMBOL",
+        "rel_path": rel_path,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(extras),
+    }
 
 
 def _py_sym_binding_edges_to_cpg(bindings: pl.LazyFrame) -> pl.LazyFrame:
@@ -2967,7 +4367,11 @@ def _py_sym_binding_symbol_edges_to_cpg(
     ):
         return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
     scope_fields = scopes.select("repo", "commit", "rel_path", "scope_id", "qualpath")
-    joined = bindings.join(scope_fields, on=["repo", "commit", "rel_path", "scope_id"], how="left")
+    joined = arrow_join_lazyframes(
+        bindings,
+        scope_fields,
+        spec=JoinSpec(on=["repo", "commit", "rel_path", "scope_id"], how="left"),
+    )
     scope_qualname = (
         pl.col("qualpath")
         .str.replace_all("::", ".")
@@ -2985,11 +4389,14 @@ def _py_sym_binding_symbol_edges_to_cpg(
         pl.col("binding_qualname").is_not_null()
     )
     symbols = scip_symbols.select("repo", "commit", "symbol", "display_name")
-    matched = bindings_named.join(
+    matched = arrow_join_lazyframes(
+        bindings_named,
         symbols,
-        left_on=["repo", "commit", "binding_qualname"],
-        right_on=["repo", "commit", "display_name"],
-        how="inner",
+        spec=JoinSpec(
+            left_on=["repo", "commit", "binding_qualname"],
+            right_on=["repo", "commit", "display_name"],
+            how="inner",
+        ),
     )
     binding_pk = {
         "repo": pl.col("repo"),
@@ -3949,9 +5356,7 @@ def _args_by_call(
         call_id = _coerce_str(row.get("call_id"))
         if None in {repo, commit, call_id}:
             continue
-        args_by_call[cast("str", repo), cast("str", commit), cast("str", call_id)].append(
-            dict(row)
-        )
+        args_by_call[cast("str", repo), cast("str", commit), cast("str", call_id)].append(dict(row))
     return args_by_call
 
 
@@ -4159,11 +5564,10 @@ def _inspect_to_ast_edges_to_cpg(
         _inspect_full_qualname_expr().alias("full_qualname")
     ).filter(pl.col("full_qualname").is_not_null())
     ast_defs = ast_nodes.filter(pl.col("qualname").is_not_null())
-    joined = inspect_full.join(
+    joined = arrow_join_lazyframes(
+        inspect_full,
         ast_defs,
-        left_on="full_qualname",
-        right_on="qualname",
-        how="inner",
+        spec=JoinSpec(left_on=["full_qualname"], right_on=["qualname"], how="inner"),
     )
     src_pk = {
         "repo": pl.col("repo"),
@@ -4206,11 +5610,14 @@ def _inspect_to_scip_edges_to_cpg(
         _inspect_full_qualname_expr().alias("full_qualname")
     ).filter(pl.col("full_qualname").is_not_null())
     symbols = scip_symbols.select("repo", "commit", "symbol", "display_name")
-    joined = inspect_full.join(
+    joined = arrow_join_lazyframes(
+        inspect_full,
         symbols,
-        left_on=["repo", "commit", "full_qualname"],
-        right_on=["repo", "commit", "display_name"],
-        how="inner",
+        spec=JoinSpec(
+            left_on=["repo", "commit", "full_qualname"],
+            right_on=["repo", "commit", "display_name"],
+            how="inner",
+        ),
     )
     src_pk = {
         "repo": pl.col("repo"),
@@ -4236,6 +5643,453 @@ def _inspect_to_scip_edges_to_cpg(
         ordinal.alias("ordinal"),
         extras.alias("extras_json"),
     ).select(_CPG_EDGE_COLUMNS)
+
+
+def _py_inspect_class_mro_edges_to_cpg(class_mro: pl.LazyFrame) -> pl.LazyFrame:
+    rows = _collect_rows(
+        class_mro,
+        columns=(
+            "repo",
+            "commit",
+            "class_object_id",
+            "mro_index",
+            "base_object_id",
+            "base_kind",
+            "status",
+        ),
+    )
+    if not rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    edges: list[dict[str, object]] = []
+    for row in rows:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        class_object_id = _coerce_str(row.get("class_object_id"))
+        base_object_id = _coerce_str(row.get("base_object_id"))
+        mro_index = _coerce_int(row.get("mro_index"))
+        if _has_missing(repo, commit, class_object_id, base_object_id, mro_index):
+            continue
+        src_cpg_node_id = _stable_cpg_id(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            {"repo": repo, "commit": commit, "object_id": class_object_id},
+        )
+        dst_cpg_node_id = _stable_cpg_id(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            {"repo": repo, "commit": commit, "object_id": base_object_id},
+        )
+        extras = {
+            "mro_index": mro_index,
+            "base_kind": row.get("base_kind"),
+            "status": row.get("status"),
+        }
+        ordinal = _stable_ordinal(
+            "graph.cpg_edges_inspect_class_mro",
+            {
+                "class_object_id": class_object_id,
+                "base_object_id": base_object_id,
+                "mro_index": mro_index,
+            },
+        )
+        edges.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "src_cpg_node_id": src_cpg_node_id,
+                "dst_cpg_node_id": dst_cpg_node_id,
+                "edge_kind": "INHERITS",
+                "edge_layer": "SYMBOL",
+                "rel_path": None,
+                "ordinal": ordinal,
+                "extras_json": _row_to_payload(extras),
+            }
+        )
+    return _edge_rows_to_lazyframe(edges)
+
+
+def _py_inspect_class_attr_edges_to_cpg(class_attrs: pl.LazyFrame) -> pl.LazyFrame:
+    rows = _collect_rows(
+        class_attrs,
+        columns=(
+            "repo",
+            "commit",
+            "class_object_id",
+            "attr_name",
+            "attr_kind",
+            "defining_object_id",
+            "value_kind",
+            "value_object_id",
+            "desc_is_data",
+            "desc_is_methoddesc",
+            "desc_is_getset",
+            "desc_is_member",
+            "status",
+        ),
+    )
+    if not rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    edges: list[dict[str, object]] = []
+    for row in rows:
+        context = _inspect_class_attr_context(row)
+        if context is None:
+            continue
+        edges.extend(_inspect_class_attr_edges(context))
+    return _edge_rows_to_lazyframe(edges)
+
+
+@dataclass(frozen=True)
+class _InspectClassAttrContext:
+    repo: str
+    commit: str
+    class_object_id: str
+    attr_name: str
+    defining_object_id: str | None
+    value_object_id: str | None
+    extras: dict[str, object]
+    src_cpg_node_id: int
+    is_descriptor: bool
+
+
+def _inspect_class_attr_context(row: Mapping[str, object]) -> _InspectClassAttrContext | None:
+    repo = _coerce_str(row.get("repo"))
+    commit = _coerce_str(row.get("commit"))
+    class_object_id = _coerce_str(row.get("class_object_id"))
+    attr_name = _coerce_str(row.get("attr_name"))
+    defining_object_id = _coerce_str(row.get("defining_object_id"))
+    value_object_id = _coerce_str(row.get("value_object_id"))
+    if _has_missing(repo, commit, class_object_id, attr_name):
+        return None
+    extras = {
+        "attr_name": attr_name,
+        "attr_kind": row.get("attr_kind"),
+        "defining_object_id": defining_object_id,
+        "value_kind": row.get("value_kind"),
+        "desc_is_data": row.get("desc_is_data"),
+        "desc_is_methoddesc": row.get("desc_is_methoddesc"),
+        "desc_is_getset": row.get("desc_is_getset"),
+        "desc_is_member": row.get("desc_is_member"),
+        "status": row.get("status"),
+    }
+    src_cpg_node_id = _stable_cpg_id(
+        PY_INSPECT_OBJECTS_TABLE_KEY,
+        {"repo": repo, "commit": commit, "object_id": class_object_id},
+    )
+    is_descriptor = any(
+        _coerce_bool(row.get(flag))
+        for flag in ("desc_is_data", "desc_is_methoddesc", "desc_is_getset", "desc_is_member")
+    )
+    return _InspectClassAttrContext(
+        repo=cast("str", repo),
+        commit=cast("str", commit),
+        class_object_id=cast("str", class_object_id),
+        attr_name=cast("str", attr_name),
+        defining_object_id=defining_object_id,
+        value_object_id=value_object_id,
+        extras=extras,
+        src_cpg_node_id=src_cpg_node_id,
+        is_descriptor=is_descriptor,
+    )
+
+
+def _inspect_class_attr_edge(
+    context: _InspectClassAttrContext,
+    *,
+    target_object_id: str,
+    edge_kind: str,
+    ordinal_values: Mapping[str, object],
+) -> dict[str, object]:
+    dst_cpg_node_id = _stable_cpg_id(
+        PY_INSPECT_OBJECTS_TABLE_KEY,
+        {"repo": context.repo, "commit": context.commit, "object_id": target_object_id},
+    )
+    ordinal = _stable_ordinal("graph.cpg_edges_inspect_class_attr", ordinal_values)
+    return {
+        "repo": context.repo,
+        "commit": context.commit,
+        "src_cpg_node_id": context.src_cpg_node_id,
+        "dst_cpg_node_id": dst_cpg_node_id,
+        "edge_kind": edge_kind,
+        "edge_layer": "SYMBOL",
+        "rel_path": None,
+        "ordinal": ordinal,
+        "extras_json": _row_to_payload(context.extras),
+    }
+
+
+def _inspect_class_attr_edges(context: _InspectClassAttrContext) -> list[dict[str, object]]:
+    edges: list[dict[str, object]] = []
+    if context.value_object_id is not None:
+        edges.append(
+            _inspect_class_attr_edge(
+                context,
+                target_object_id=context.value_object_id,
+                edge_kind="DECLARES_ATTR",
+                ordinal_values={
+                    "class_object_id": context.class_object_id,
+                    "attr_name": context.attr_name,
+                    "value_object_id": context.value_object_id,
+                    "edge_kind": "DECLARES_ATTR",
+                },
+            )
+        )
+    if (
+        context.defining_object_id is not None
+        and context.defining_object_id != context.class_object_id
+    ):
+        edges.append(
+            _inspect_class_attr_edge(
+                context,
+                target_object_id=context.defining_object_id,
+                edge_kind="OVERRIDES",
+                ordinal_values={
+                    "class_object_id": context.class_object_id,
+                    "attr_name": context.attr_name,
+                    "defining_object_id": context.defining_object_id,
+                    "edge_kind": "OVERRIDES",
+                },
+            )
+        )
+    if context.value_object_id is not None and context.is_descriptor:
+        edges.append(
+            _inspect_class_attr_edge(
+                context,
+                target_object_id=context.value_object_id,
+                edge_kind="DESCRIPTOR",
+                ordinal_values={
+                    "class_object_id": context.class_object_id,
+                    "attr_name": context.attr_name,
+                    "value_object_id": context.value_object_id,
+                    "edge_kind": "DESCRIPTOR",
+                },
+            )
+        )
+    return edges
+
+
+def _runtime_state_extras_expr() -> pl.Expr:
+    return _pk_json_expr(
+        {
+            "state_kind": pl.col("state_kind"),
+            "state": pl.col("state"),
+            "object_kind": pl.col("object_kind"),
+            "frame_file": pl.col("frame_file"),
+            "frame_module": pl.col("frame_module"),
+            "frame_line": pl.col("frame_line"),
+            "frame_offset": pl.col("frame_offset"),
+            "status": pl.col("status"),
+        }
+    )
+
+
+def _runtime_state_has_state_edges(runtime_state: pl.LazyFrame) -> pl.LazyFrame:
+    has_state = runtime_state.filter(pl.col("frame_object_id").is_not_null())
+    extras = _runtime_state_extras_expr()
+    ordinal = _ordinal_expr(
+        "graph.cpg_edges_inspect_runtime_state",
+        {
+            "object_id": pl.col("object_id"),
+            "state_kind": pl.col("state_kind"),
+            "frame_object_id": pl.col("frame_object_id"),
+        },
+    )
+    return has_state.with_columns(
+        _pk_expr(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            {"repo": pl.col("repo"), "commit": pl.col("commit"), "object_id": pl.col("object_id")},
+        ).alias("src_cpg_node_id"),
+        _pk_expr(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            {
+                "repo": pl.col("repo"),
+                "commit": pl.col("commit"),
+                "object_id": pl.col("frame_object_id"),
+            },
+        ).alias("dst_cpg_node_id"),
+        pl.lit("HAS_STATE").alias("edge_kind"),
+        pl.lit("FLOW").alias("edge_layer"),
+        pl.lit(None).alias("rel_path"),
+        ordinal.alias("ordinal"),
+        extras.alias("extras_json"),
+    ).select(_CPG_EDGE_COLUMNS)
+
+
+def _runtime_state_with_path(runtime_state: pl.LazyFrame) -> pl.LazyFrame:
+    frame_name = pl.coalesce([pl.col("frame_code_qualname"), pl.col("frame_code_name")])
+    return (
+        runtime_state.filter(pl.col("frame_module").is_not_null())
+        .with_columns(frame_name.alias("frame_name"))
+        .filter(pl.col("frame_name").is_not_null())
+        .with_columns(
+            pl.concat_str([pl.col("frame_module"), pl.lit("::"), pl.col("frame_name")]).alias(
+                "frame_qualpath"
+            )
+        )
+        .filter(pl.col("frame_offset").is_not_null())
+        .filter(pl.col("frame_offset") >= 0)
+    )
+
+
+def _runtime_state_instr_edges(
+    runtime_state: pl.LazyFrame,
+    code_units: pl.LazyFrame,
+    instructions: pl.LazyFrame,
+) -> pl.LazyFrame:
+    runtime_with_path = _runtime_state_with_path(runtime_state)
+    joined_units = arrow_join_lazyframes(
+        runtime_with_path,
+        code_units.select("repo", "commit", "rel_path", "code_unit_id", "qualpath"),
+        spec=JoinSpec(
+            left_on=["repo", "commit", "frame_qualpath"],
+            right_on=["repo", "commit", "qualpath"],
+            how="left",
+        ),
+    )
+    joined_instr = arrow_join_lazyframes(
+        joined_units,
+        instructions.select("repo", "commit", "rel_path", "code_unit_id", "instr_id", "offset"),
+        spec=JoinSpec(
+            left_on=["repo", "commit", "rel_path", "code_unit_id", "frame_offset"],
+            right_on=["repo", "commit", "rel_path", "code_unit_id", "offset"],
+            how="left",
+        ),
+    )
+    instr_filtered = joined_instr.filter(pl.col("instr_id").is_not_null())
+    edge_kind = (
+        pl.when(pl.col("state_kind") == "traceback")
+        .then(pl.lit("TRACEBACK_AT_INSTR"))
+        .otherwise(pl.lit("FRAME_AT_INSTR"))
+    )
+    extras = _runtime_state_extras_expr()
+    ordinal = _ordinal_expr(
+        "graph.cpg_edges_inspect_runtime_state",
+        {
+            "object_id": pl.col("object_id"),
+            "state_kind": pl.col("state_kind"),
+            "instr_id": pl.col("instr_id"),
+            "frame_offset": pl.col("frame_offset"),
+        },
+    )
+    return instr_filtered.with_columns(
+        _pk_expr(
+            PY_INSPECT_OBJECTS_TABLE_KEY,
+            {"repo": pl.col("repo"), "commit": pl.col("commit"), "object_id": pl.col("object_id")},
+        ).alias("src_cpg_node_id"),
+        _pk_expr(
+            PY_BC_INSTRUCTIONS_TABLE_KEY,
+            {
+                "repo": pl.col("repo"),
+                "commit": pl.col("commit"),
+                "rel_path": pl.col("rel_path"),
+                "code_unit_id": pl.col("code_unit_id"),
+                "instr_id": pl.col("instr_id"),
+            },
+        ).alias("dst_cpg_node_id"),
+        edge_kind.alias("edge_kind"),
+        pl.lit("FLOW").alias("edge_layer"),
+        pl.col("rel_path"),
+        ordinal.alias("ordinal"),
+        extras.alias("extras_json"),
+    ).select(_CPG_EDGE_COLUMNS)
+
+
+def _py_inspect_runtime_state_edges_to_cpg(
+    runtime_state: pl.LazyFrame,
+    code_units: pl.LazyFrame,
+    instructions: pl.LazyFrame,
+) -> pl.LazyFrame:
+    required_state = {
+        "repo",
+        "commit",
+        "object_id",
+        "object_kind",
+        "state_kind",
+        "state",
+        "frame_object_id",
+        "frame_file",
+        "frame_module",
+        "frame_code_qualname",
+        "frame_code_name",
+        "frame_line",
+        "frame_offset",
+        "status",
+    }
+    required_units = {"repo", "commit", "rel_path", "code_unit_id", "qualpath"}
+    required_instr = {"repo", "commit", "rel_path", "code_unit_id", "instr_id", "offset"}
+    if (
+        not required_state.issubset(runtime_state.columns)
+        or not required_units.issubset(code_units.columns)
+        or not required_instr.issubset(instructions.columns)
+    ):
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    has_state_edges = _runtime_state_has_state_edges(runtime_state)
+    instr_edges = _runtime_state_instr_edges(runtime_state, code_units, instructions)
+    combined = pl.concat([has_state_edges, instr_edges], how="vertical_relaxed")
+    if combined.columns:
+        return combined.select(_CPG_EDGE_COLUMNS)
+    return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+
+
+def _py_inspect_unwrap_edges_to_cpg(unwrap_hops: pl.LazyFrame) -> pl.LazyFrame:
+    rows = _collect_rows(
+        unwrap_hops,
+        columns=(
+            "repo",
+            "commit",
+            "root_object_id",
+            "hop",
+            "object_id",
+            "has_wrapped",
+            "has_signature_override",
+            "stop_reason",
+        ),
+    )
+    if not rows:
+        return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
+    grouped: dict[tuple[str, str, str], list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        root_object_id = _coerce_str(row.get("root_object_id"))
+        hop = _coerce_int(row.get("hop"))
+        obj_id = _coerce_str(row.get("object_id"))
+        if _has_missing(repo, commit, root_object_id, hop, obj_id):
+            continue
+        grouped[cast("str", repo), cast("str", commit), cast("str", root_object_id)].append(row)
+    edges: list[dict[str, object]] = []
+    for (repo, commit, root_object_id), items in grouped.items():
+        items.sort(key=lambda item: _coerce_int(item.get("hop")) or 0)
+        for idx in range(len(items) - 1):
+            src_id = _coerce_str(items[idx].get("object_id"))
+            dst_id = _coerce_str(items[idx + 1].get("object_id"))
+            if _has_missing(src_id, dst_id):
+                continue
+            src_pk = {"repo": repo, "commit": commit, "object_id": src_id}
+            dst_pk = {"repo": repo, "commit": commit, "object_id": dst_id}
+            extras = {
+                "root_object_id": root_object_id,
+                "hop": items[idx].get("hop"),
+                "has_wrapped": items[idx].get("has_wrapped"),
+                "has_signature_override": items[idx].get("has_signature_override"),
+                "stop_reason": items[idx].get("stop_reason"),
+            }
+            hop_value = _coerce_int(items[idx].get("hop"))
+            ordinal = _stable_ordinal(
+                "graph.cpg_edges_inspect_wraps",
+                {"root_object_id": root_object_id, "hop": hop_value},
+            )
+            edges.append(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "src_cpg_node_id": _stable_cpg_id(PY_INSPECT_OBJECTS_TABLE_KEY, src_pk),
+                    "dst_cpg_node_id": _stable_cpg_id(PY_INSPECT_OBJECTS_TABLE_KEY, dst_pk),
+                    "edge_kind": "WRAPS",
+                    "edge_layer": "SYMBOL",
+                    "rel_path": None,
+                    "ordinal": ordinal,
+                    "extras_json": _row_to_payload(extras),
+                }
+            )
+    return _edge_rows_to_lazyframe(edges)
 
 
 def cpg_edge_symbol_inputs(
@@ -4339,6 +6193,7 @@ def cpg_edge_overlay_scope_inputs(
     q__core__py_sym_scopes: InferableTabularInput,
     q__core__py_sym_bindings: InferableTabularInput,
     q__core__py_sym_scope_edges: InferableTabularInput,
+    q__core__py_sym_namespace_edges: InferableTabularInput,
     q__core__py_sym_resolution_edges: InferableTabularInput,
 ) -> _CpgOverlayScopeInputs:
     """Collect scope overlay inputs for CPG edge assembly.
@@ -4352,6 +6207,7 @@ def cpg_edge_overlay_scope_inputs(
         py_sym_scopes=tabular_to_lazyframe(q__core__py_sym_scopes),
         py_sym_bindings=tabular_to_lazyframe(q__core__py_sym_bindings),
         py_sym_scope_edges=tabular_to_lazyframe(q__core__py_sym_scope_edges),
+        py_sym_namespace_edges=tabular_to_lazyframe(q__core__py_sym_namespace_edges),
         py_sym_resolution_edges=tabular_to_lazyframe(q__core__py_sym_resolution_edges),
     )
 
@@ -4398,12 +6254,67 @@ def cpg_edge_overlay_bytecode_inputs(
     )
 
 
-def cpg_edge_overlay_inspect_inputs(
-    q__core__py_inspect_objects: InferableTabularInput,
-    q__core__py_inspect_signatures: InferableTabularInput,
-    q__core__py_inspect_signature_params: InferableTabularInput,
+def cpg_edge_overlay_syntax_call_inputs(
     q__core__syntax_calls: InferableTabularInput,
     q__core__syntax_call_args: InferableTabularInput,
+) -> _CpgOverlaySyntaxCallInputs:
+    """Collect syntax call inputs for CPG inspect overlays.
+
+    Returns
+    -------
+    _CpgOverlaySyntaxCallInputs
+        Syntax call inputs for inspect overlays.
+    """
+    return _CpgOverlaySyntaxCallInputs(
+        syntax_calls=tabular_to_lazyframe(q__core__syntax_calls),
+        syntax_call_args=tabular_to_lazyframe(q__core__syntax_call_args),
+    )
+
+
+def cpg_edge_overlay_inspect_core_inputs(
+    q__core__py_inspect_objects: InferableTabularInput,
+    q__core__py_inspect_class_mro: InferableTabularInput,
+    q__core__py_inspect_class_attrs: InferableTabularInput,
+    q__core__py_inspect_unwrap_hops: InferableTabularInput,
+) -> _CpgOverlayInspectCoreInputs:
+    """Collect core inspect inputs for CPG edge assembly.
+
+    Returns
+    -------
+    _CpgOverlayInspectCoreInputs
+        Core inspect inputs for CPG edge assembly.
+    """
+    return _CpgOverlayInspectCoreInputs(
+        py_inspect_objects=tabular_to_lazyframe(q__core__py_inspect_objects),
+        py_inspect_class_mro=tabular_to_lazyframe(q__core__py_inspect_class_mro),
+        py_inspect_class_attrs=tabular_to_lazyframe(q__core__py_inspect_class_attrs),
+        py_inspect_unwrap_hops=tabular_to_lazyframe(q__core__py_inspect_unwrap_hops),
+    )
+
+
+def cpg_edge_overlay_inspect_runtime_inputs(
+    q__core__py_inspect_signatures: InferableTabularInput,
+    q__core__py_inspect_signature_params: InferableTabularInput,
+    q__core__py_inspect_runtime_state: InferableTabularInput,
+) -> _CpgOverlayInspectRuntimeInputs:
+    """Collect runtime inspect inputs for CPG edge assembly.
+
+    Returns
+    -------
+    _CpgOverlayInspectRuntimeInputs
+        Runtime inspect inputs for CPG edge assembly.
+    """
+    return _CpgOverlayInspectRuntimeInputs(
+        py_inspect_signatures=tabular_to_lazyframe(q__core__py_inspect_signatures),
+        py_inspect_signature_params=tabular_to_lazyframe(q__core__py_inspect_signature_params),
+        py_inspect_runtime_state=tabular_to_lazyframe(q__core__py_inspect_runtime_state),
+    )
+
+
+def cpg_edge_overlay_inspect_inputs(
+    cpg_edge_overlay_inspect_core_inputs: _CpgOverlayInspectCoreInputs,
+    cpg_edge_overlay_inspect_runtime_inputs: _CpgOverlayInspectRuntimeInputs,
+    cpg_edge_overlay_syntax_call_inputs: _CpgOverlaySyntaxCallInputs,
 ) -> _CpgOverlayInspectInputs:
     """Collect inspect overlay inputs for CPG edge assembly.
 
@@ -4413,11 +6324,15 @@ def cpg_edge_overlay_inspect_inputs(
         Inspect overlay inputs for CPG edge assembly.
     """
     return _CpgOverlayInspectInputs(
-        py_inspect_objects=tabular_to_lazyframe(q__core__py_inspect_objects),
-        py_inspect_signatures=tabular_to_lazyframe(q__core__py_inspect_signatures),
-        py_inspect_signature_params=tabular_to_lazyframe(q__core__py_inspect_signature_params),
-        syntax_calls=tabular_to_lazyframe(q__core__syntax_calls),
-        syntax_call_args=tabular_to_lazyframe(q__core__syntax_call_args),
+        py_inspect_objects=cpg_edge_overlay_inspect_core_inputs.py_inspect_objects,
+        py_inspect_class_mro=cpg_edge_overlay_inspect_core_inputs.py_inspect_class_mro,
+        py_inspect_class_attrs=cpg_edge_overlay_inspect_core_inputs.py_inspect_class_attrs,
+        py_inspect_unwrap_hops=cpg_edge_overlay_inspect_core_inputs.py_inspect_unwrap_hops,
+        py_inspect_signatures=cpg_edge_overlay_inspect_runtime_inputs.py_inspect_signatures,
+        py_inspect_signature_params=cpg_edge_overlay_inspect_runtime_inputs.py_inspect_signature_params,
+        py_inspect_runtime_state=cpg_edge_overlay_inspect_runtime_inputs.py_inspect_runtime_state,
+        syntax_calls=cpg_edge_overlay_syntax_call_inputs.syntax_calls,
+        syntax_call_args=cpg_edge_overlay_syntax_call_inputs.syntax_call_args,
     )
 
 
@@ -4441,6 +6356,7 @@ def cpg_edge_overlay_inputs(
         py_sym_scopes=cpg_edge_overlay_symbol_inputs.scope_inputs.py_sym_scopes,
         py_sym_bindings=cpg_edge_overlay_symbol_inputs.scope_inputs.py_sym_bindings,
         py_sym_scope_edges=cpg_edge_overlay_symbol_inputs.scope_inputs.py_sym_scope_edges,
+        py_sym_namespace_edges=cpg_edge_overlay_symbol_inputs.scope_inputs.py_sym_namespace_edges,
         py_sym_resolution_edges=cpg_edge_overlay_symbol_inputs.scope_inputs.py_sym_resolution_edges,
         py_bc_code_units=cpg_edge_overlay_bytecode_inputs.py_bc_code_units,
         py_bc_instructions=cpg_edge_overlay_bytecode_inputs.py_bc_instructions,
@@ -4448,8 +6364,12 @@ def cpg_edge_overlay_inputs(
         py_bc_cfg_edges=cpg_edge_overlay_bytecode_inputs.py_bc_cfg_edges,
         py_bc_defuse_events=cpg_edge_overlay_bytecode_inputs.py_bc_defuse_events,
         py_inspect_objects=cpg_edge_overlay_inspect_inputs.py_inspect_objects,
+        py_inspect_class_mro=cpg_edge_overlay_inspect_inputs.py_inspect_class_mro,
+        py_inspect_class_attrs=cpg_edge_overlay_inspect_inputs.py_inspect_class_attrs,
+        py_inspect_unwrap_hops=cpg_edge_overlay_inspect_inputs.py_inspect_unwrap_hops,
         py_inspect_signatures=cpg_edge_overlay_inspect_inputs.py_inspect_signatures,
         py_inspect_signature_params=cpg_edge_overlay_inspect_inputs.py_inspect_signature_params,
+        py_inspect_runtime_state=cpg_edge_overlay_inspect_inputs.py_inspect_runtime_state,
     )
 
 
@@ -4531,6 +6451,10 @@ def cpg_edges(
             syntax_nodes,
         ),
         _py_sym_scope_edges_to_cpg(overlay_inputs.py_sym_scope_edges),
+        _py_sym_namespace_edges_to_cpg(
+            overlay_inputs.py_sym_namespace_edges,
+            overlay_inputs.py_sym_bindings,
+        ),
         _py_sym_binding_edges_to_cpg(overlay_inputs.py_sym_bindings),
         _py_sym_resolution_edges_to_cpg(overlay_inputs.py_sym_resolution_edges),
         _py_sym_binding_symbol_edges_to_cpg(
@@ -4544,6 +6468,19 @@ def cpg_edges(
             overlay_inputs.py_sym_bindings,
             overlay_inputs.py_sym_resolution_edges,
         ),
+        _py_bc_instruction_ast_edges_to_cpg(
+            overlay_inputs.py_bc_instructions,
+            overlay_inputs.ast_nodes,
+        ),
+        _py_bc_callsite_edges_to_cpg(
+            overlay_inputs.py_bc_instructions,
+            overlay_inputs.syntax_calls,
+        ),
+        _py_bc_callsite_symbol_edges_to_cpg(
+            overlay_inputs.py_bc_instructions,
+            overlay_inputs.syntax_calls,
+            overlay_inputs.scip_symbols,
+        ),
         _py_bc_cfg_edges_to_cpg(overlay_inputs.py_bc_cfg_edges),
         _py_bc_defuse_binding_edges_to_cpg(
             overlay_inputs.py_bc_defuse_events,
@@ -4551,6 +6488,15 @@ def cpg_edges(
             overlay_inputs.py_sym_scopes,
             overlay_inputs.py_sym_bindings,
             overlay_inputs.py_sym_resolution_edges,
+        ),
+        _py_bc_memory_edges_to_cpg(
+            overlay_inputs.py_bc_defuse_events,
+            overlay_inputs.py_bc_instructions,
+            overlay_inputs.ast_nodes,
+        ),
+        _py_bc_stack_edges_to_cpg(
+            overlay_inputs.py_bc_instructions,
+            overlay_inputs.py_bc_blocks,
         ),
         _py_bc_reaches_edges_to_cpg(
             _PyBcReachesInputs(
@@ -4574,6 +6520,14 @@ def cpg_edges(
             overlay_inputs.py_inspect_signatures,
             overlay_inputs.py_inspect_signature_params,
         ),
+        _py_inspect_unwrap_edges_to_cpg(overlay_inputs.py_inspect_unwrap_hops),
+        _py_inspect_class_mro_edges_to_cpg(overlay_inputs.py_inspect_class_mro),
+        _py_inspect_class_attr_edges_to_cpg(overlay_inputs.py_inspect_class_attrs),
+        _py_inspect_runtime_state_edges_to_cpg(
+            overlay_inputs.py_inspect_runtime_state,
+            overlay_inputs.py_bc_code_units,
+            overlay_inputs.py_bc_instructions,
+        ),
         _inspect_to_ast_edges_to_cpg(
             overlay_inputs.py_inspect_objects,
             overlay_inputs.ast_nodes,
@@ -4590,10 +6544,78 @@ def cpg_edges(
     return empty_frame_for_table(CPG_EDGES_TABLE_KEY)
 
 
+def instruction_cpg_id(
+    *,
+    repo: str,
+    commit: str,
+    rel_path: str,
+    code_unit_id: str,
+    instr_id: str,
+) -> int:
+    """Public wrapper for instruction CPG node IDs.
+
+    Returns
+    -------
+    int
+        Stable CPG node identifier.
+    """
+    return _instruction_cpg_id(
+        repo=repo,
+        commit=commit,
+        rel_path=rel_path,
+        code_unit_id=code_unit_id,
+        instr_id=instr_id,
+    )
+
+
+def stable_cpg_id(table_key: str, pk: Mapping[str, object]) -> int:
+    """Public wrapper for stable CPG node IDs.
+
+    Returns
+    -------
+    int
+        Stable CPG node identifier.
+    """
+    return _stable_cpg_id(table_key, pk)
+
+
+def py_bc_callsite_symbol_edges_to_cpg(
+    instructions: pl.LazyFrame,
+    syntax_calls: pl.LazyFrame,
+    scip_symbols: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Public wrapper for bytecode callsite symbol edges.
+
+    Returns
+    -------
+    polars.LazyFrame
+        LazyFrame of callsite symbol edges.
+    """
+    return _py_bc_callsite_symbol_edges_to_cpg(instructions, syntax_calls, scip_symbols)
+
+
+def py_bc_stack_edges_to_cpg(
+    instructions: pl.LazyFrame,
+    blocks: pl.LazyFrame,
+) -> pl.LazyFrame:
+    """Public wrapper for bytecode stack edges.
+
+    Returns
+    -------
+    polars.LazyFrame
+        LazyFrame of stack edges.
+    """
+    return _py_bc_stack_edges_to_cpg(instructions, blocks)
+
+
 __all__ = [
     "CPG_EDGES_TABLE_KEY",
     "CPG_NODES_TABLE_KEY",
     "CPG_TARGET_NAME",
     "cpg_edges",
     "cpg_nodes",
+    "instruction_cpg_id",
+    "py_bc_callsite_symbol_edges_to_cpg",
+    "py_bc_stack_edges_to_cpg",
+    "stable_cpg_id",
 ]

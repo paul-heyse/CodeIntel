@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.ingestion import TreeSitterIndexOptions
@@ -18,30 +19,26 @@ from codeintel.build.hamilton.native.patterns import (
     attach_tool_target_template,
     run_tool_step,
 )
+from codeintel.build.hamilton.native.patterns.tool_target import TabularByTable
 from codeintel.build.hamilton.native.target_decorators import TargetSpecDescriptor
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.tree_sitter_index import (
     TreeSitterIndexRunOptions,
     TreeSitterIndexStep,
 )
-
-if TYPE_CHECKING:
-    from codeintel.build.hamilton.dag_catalog import DagCatalog
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.native.patterns.tool_target import TabularByTable
-    from codeintel.build.hamilton.run_records import TargetRunRecord
-    from codeintel.build.tabular.types import InferableTabularInput
-    from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
 TREE_SITTER_TARGET_NAME = "tree_sitter_index"
-PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
+TS_PARSE_MANIFEST_TABLE_KEY = "core.ts_parse_manifest"
 TS_CAPTURES_TABLE_KEY = "core.ts_captures"
 TS_NODES_TABLE_KEY = "core.ts_nodes"
 TS_EDGES_TABLE_KEY = "core.ts_edges"
@@ -50,12 +47,12 @@ TS_CHANGED_RANGES_TABLE_KEY = "core.ts_changed_ranges"
 TS_TOKENS_TABLE_KEY = "core.ts_tokens"
 TS_TRIVIA_TABLE_KEY = "core.ts_trivia"
 TS_LANGUAGE_METADATA_TABLE_KEY = "core.ts_language_metadata"
-PARSE_MANIFEST_OUTPUT_NAME = (
-    f"{materialize_node(PARSE_MANIFEST_TABLE_KEY)}__{TREE_SITTER_TARGET_NAME}"
+TS_PARSE_MANIFEST_OUTPUT_NAME = (
+    f"{materialize_node(TS_PARSE_MANIFEST_TABLE_KEY)}__{TREE_SITTER_TARGET_NAME}"
 )
 
 TREE_SITTER_TABLE_KEYS = (
-    PARSE_MANIFEST_TABLE_KEY,
+    TS_PARSE_MANIFEST_TABLE_KEY,
     TS_CAPTURES_TABLE_KEY,
     TS_NODES_TABLE_KEY,
     TS_EDGES_TABLE_KEY,
@@ -72,7 +69,7 @@ class TreeSitterToolOutput(ToolStepOutput):
     """Tool step output for tree-sitter indexing."""
 
     parse_manifest_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
+        default_factory=lambda: empty_reader_for_table(TS_PARSE_MANIFEST_TABLE_KEY)
     )
     captures_rows: InferableTabularInput = field(
         default_factory=lambda: empty_reader_for_table(TS_CAPTURES_TABLE_KEY)
@@ -191,7 +188,7 @@ def _coerce_tree_sitter_output(
     )
     return TreeSitterToolOutput(
         result=merged,
-        parse_manifest_rows=empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY),
+        parse_manifest_rows=empty_reader_for_table(TS_PARSE_MANIFEST_TABLE_KEY),
         captures_rows=empty_reader_for_table(TS_CAPTURES_TABLE_KEY),
         nodes_rows=empty_reader_for_table(TS_NODES_TABLE_KEY),
         edges_rows=empty_reader_for_table(TS_EDGES_TABLE_KEY),
@@ -315,7 +312,7 @@ def t__tree_sitter_index__ingest(
         )
 
     payload = {
-        PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_rows,
+        TS_PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_rows,
         TS_CAPTURES_TABLE_KEY: t__tree_sitter_index__run.captures_rows,
         TS_NODES_TABLE_KEY: t__tree_sitter_index__run.nodes_rows,
         TS_EDGES_TABLE_KEY: t__tree_sitter_index__run.edges_rows,
@@ -326,7 +323,7 @@ def t__tree_sitter_index__ingest(
         TS_LANGUAGE_METADATA_TABLE_KEY: t__tree_sitter_index__run.language_metadata_rows,
     }
     table_counts = {
-        PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_row_count,
+        TS_PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_row_count,
         TS_CAPTURES_TABLE_KEY: t__tree_sitter_index__run.captures_row_count,
         TS_NODES_TABLE_KEY: t__tree_sitter_index__run.nodes_row_count,
         TS_EDGES_TABLE_KEY: t__tree_sitter_index__run.edges_row_count,
@@ -352,9 +349,9 @@ _TREE_SITTER_TARGET_SPEC = ToolTargetSpec(
     spec=_INTENSIVE_SPEC,
     tables=(
         TableOutputSpec(
-            table_key=PARSE_MANIFEST_TABLE_KEY,
+            table_key=TS_PARSE_MANIFEST_TABLE_KEY,
             node_name="tree_sitter_index__parse_manifest_rows",
-            output_name=PARSE_MANIFEST_OUTPUT_NAME,
+            output_name=TS_PARSE_MANIFEST_OUTPUT_NAME,
         ),
         TableOutputSpec(
             table_key=TS_CAPTURES_TABLE_KEY,

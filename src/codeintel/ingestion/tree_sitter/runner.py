@@ -17,15 +17,33 @@ from codeintel.ingestion.tree_sitter.registry import load_language, load_parser,
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from typing import NotRequired, TypedDict
 
     from tree_sitter import Language, Node, Tree
     from tree_sitter_language_pack import SupportedLanguage
 
-    from codeintel.core.schemas.generated_rows.core import (
-        TreeSitterCaptureExtras,
-        TreeSitterNodeExtras,
-        TreeSitterTokenExtras,
-    )
+    class TreeSitterCaptureExtras(TypedDict):
+        query_hash: str
+        pattern_index: int | None
+        capture_index: int | None
+        pattern_count: int
+        capture_count: int
+        field_name: str | None
+        field_id: int | None
+
+    class TreeSitterTokenExtras(TypedDict):
+        query_hash: str
+        pattern_index: int | None
+        capture_index: int | None
+        capture_name: str
+        pattern_count: int
+        capture_count: int
+        field_name: str | None
+        field_id: int | None
+        literal_kind: NotRequired[str]
+
+    class TreeSitterNodeExtras(TypedDict, total=False):
+        ...
 
 _TOKEN_PREFIX = "token."
 _TRIVIA_PREFIX = "trivia."

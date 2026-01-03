@@ -11,8 +11,9 @@ import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
+from codeintel.build.tabular.arrow_ops import arrow_join_frames
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import empty_frame_for_table
+from codeintel.build.tabular.frames import JoinSpec, empty_frame_for_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -321,7 +322,11 @@ def call_graph_nodes_compute(
     qualname_public_expr = ~(pl.col("qualname").str.split(".").list.last().str.starts_with("_"))
     if function_rows:
         enrich = pl.DataFrame(function_rows)
-        frame = frame.join(enrich, on=["rel_path", "qualname"], how="left")
+        frame = arrow_join_frames(
+            frame,
+            enrich,
+            spec=JoinSpec(on=["rel_path", "qualname"], how="left"),
+        )
         arity_expr = pl.coalesce([pl.col("arity"), pl.lit(0)]).cast(pl.Int64)
         is_public_expr = (
             pl.when(pl.col("is_public").is_null())

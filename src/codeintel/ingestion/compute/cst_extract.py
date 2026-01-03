@@ -25,6 +25,8 @@ from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
@@ -44,6 +46,7 @@ from codeintel.ingestion.infrastructure.cst_utils import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    import pyarrow as pa
     from libcst.metadata.scope_provider import Access, Scope
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
@@ -116,6 +119,42 @@ class CstExtractResult:
     syntax_call_args_rows: ColumnarRows = field(default_factory=dict)
     syntax_func_params_rows: ColumnarRows = field(default_factory=dict)
     syntax_imports_rows: ColumnarRows = field(default_factory=dict)
+    rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(CST_NODES_TABLE_KEY)
+    )
+    parse_manifest_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
+    )
+    syntax_spans_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_SPANS_TABLE_KEY)
+    )
+    syntax_nodes_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_NODES_TABLE_KEY)
+    )
+    syntax_edges_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_EDGES_TABLE_KEY)
+    )
+    syntax_scopes_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    )
+    syntax_defs_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_DEFS_TABLE_KEY)
+    )
+    syntax_refs_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_REFS_TABLE_KEY)
+    )
+    syntax_calls_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_CALLS_TABLE_KEY)
+    )
+    syntax_call_args_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    )
+    syntax_func_params_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    )
+    syntax_imports_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    )
     row_count: int = 0
     parse_manifest_row_count: int = 0
     syntax_spans_row_count: int = 0
@@ -2028,6 +2067,66 @@ class CstExtractStep(BaseExtractStep):
             buffers.cst.row_count,
         )
 
+        rows_reader, _ = record_batch_reader_for_columnar_rows(
+            CST_NODES_TABLE_KEY,
+            buffers.cst.data,
+            extras_policy="retain",
+        )
+        parse_manifest_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            PARSE_MANIFEST_TABLE_KEY,
+            buffers.parse_manifest.data,
+            extras_policy="retain",
+        )
+        syntax_spans_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_SPANS_TABLE_KEY,
+            buffers.spans.data,
+            extras_policy="retain",
+        )
+        syntax_nodes_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_NODES_TABLE_KEY,
+            buffers.syntax_nodes.data,
+            extras_policy="retain",
+        )
+        syntax_edges_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_EDGES_TABLE_KEY,
+            buffers.syntax_edges.data,
+            extras_policy="retain",
+        )
+        syntax_scopes_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_SCOPES_TABLE_KEY,
+            buffers.scopes.data,
+            extras_policy="retain",
+        )
+        syntax_defs_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_DEFS_TABLE_KEY,
+            buffers.defs.data,
+            extras_policy="retain",
+        )
+        syntax_refs_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_REFS_TABLE_KEY,
+            buffers.refs.data,
+            extras_policy="retain",
+        )
+        syntax_calls_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_CALLS_TABLE_KEY,
+            buffers.calls.data,
+            extras_policy="retain",
+        )
+        syntax_call_args_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_CALL_ARGS_TABLE_KEY,
+            buffers.call_args.data,
+            extras_policy="retain",
+        )
+        syntax_func_params_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_FUNC_PARAMS_TABLE_KEY,
+            buffers.func_params.data,
+            extras_policy="retain",
+        )
+        syntax_imports_rows_reader, _ = record_batch_reader_for_columnar_rows(
+            SYNTAX_IMPORTS_TABLE_KEY,
+            buffers.imports.data,
+            extras_policy="retain",
+        )
         return CstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             rows=buffers.cst.data,
@@ -2042,6 +2141,18 @@ class CstExtractStep(BaseExtractStep):
             syntax_call_args_rows=buffers.call_args.data,
             syntax_func_params_rows=buffers.func_params.data,
             syntax_imports_rows=buffers.imports.data,
+            rows_reader=rows_reader,
+            parse_manifest_rows_reader=parse_manifest_rows_reader,
+            syntax_spans_rows_reader=syntax_spans_rows_reader,
+            syntax_nodes_rows_reader=syntax_nodes_rows_reader,
+            syntax_edges_rows_reader=syntax_edges_rows_reader,
+            syntax_scopes_rows_reader=syntax_scopes_rows_reader,
+            syntax_defs_rows_reader=syntax_defs_rows_reader,
+            syntax_refs_rows_reader=syntax_refs_rows_reader,
+            syntax_calls_rows_reader=syntax_calls_rows_reader,
+            syntax_call_args_rows_reader=syntax_call_args_rows_reader,
+            syntax_func_params_rows_reader=syntax_func_params_rows_reader,
+            syntax_imports_rows_reader=syntax_imports_rows_reader,
             row_count=buffers.cst.row_count,
             parse_manifest_row_count=buffers.parse_manifest.row_count,
             syntax_spans_row_count=buffers.spans.row_count,

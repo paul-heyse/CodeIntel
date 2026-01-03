@@ -49,7 +49,7 @@ from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.frames import (
     empty_lazyframe_for_table,
-    lazyframe_for_ingest_columns,
+    lazyframe_for_ingest_reader,
 )
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
@@ -146,19 +146,25 @@ PY_BC_TABLE_KEYS = (
 
 PY_INSPECT_OBJECTS_TABLE_KEY = "core.py_inspect_objects"
 PY_INSPECT_MEMBERS_TABLE_KEY = "core.py_inspect_members_static"
+PY_INSPECT_CLASS_MRO_TABLE_KEY = "core.py_inspect_class_mro"
+PY_INSPECT_CLASS_ATTRS_TABLE_KEY = "core.py_inspect_class_attrs"
 PY_INSPECT_UNWRAP_TABLE_KEY = "core.py_inspect_unwrap_hops"
 PY_INSPECT_SIGNATURES_TABLE_KEY = "core.py_inspect_signatures"
 PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY = "core.py_inspect_signature_params"
 PY_INSPECT_ANNOTATIONS_TABLE_KEY = "core.py_inspect_annotations_kv"
 PY_INSPECT_SOURCE_TABLE_KEY = "core.py_inspect_source"
+PY_INSPECT_RUNTIME_STATE_TABLE_KEY = "core.py_inspect_runtime_state"
 PY_INSPECT_TABLE_KEYS = (
     PY_INSPECT_OBJECTS_TABLE_KEY,
     PY_INSPECT_MEMBERS_TABLE_KEY,
+    PY_INSPECT_CLASS_MRO_TABLE_KEY,
+    PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
     PY_INSPECT_UNWRAP_TABLE_KEY,
     PY_INSPECT_SIGNATURES_TABLE_KEY,
     PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
     PY_INSPECT_ANNOTATIONS_TABLE_KEY,
     PY_INSPECT_SOURCE_TABLE_KEY,
+    PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
 )
 
 
@@ -320,6 +326,12 @@ class InspectToolOutput(ToolStepOutput):
     member_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
     )
+    class_mro_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
+    )
+    class_attr_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
+    )
     unwrap_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
     )
@@ -335,13 +347,19 @@ class InspectToolOutput(ToolStepOutput):
     source_rows: pl.LazyFrame = field(
         default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
     )
+    runtime_state_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
+    )
     object_row_count: int = 0
     member_row_count: int = 0
+    class_mro_row_count: int = 0
+    class_attr_row_count: int = 0
     unwrap_row_count: int = 0
     signature_row_count: int = 0
     signature_param_row_count: int = 0
     annotation_row_count: int = 0
     source_row_count: int = 0
+    runtime_state_row_count: int = 0
 
 
 def _module_inventory_precheck(
@@ -633,18 +651,24 @@ def _coerce_inspect_output(
                 ),
                 object_rows=output.object_rows,
                 member_rows=output.member_rows,
+                class_mro_rows=output.class_mro_rows,
+                class_attr_rows=output.class_attr_rows,
                 unwrap_rows=output.unwrap_rows,
                 signature_rows=output.signature_rows,
                 signature_param_rows=output.signature_param_rows,
                 annotation_rows=output.annotation_rows,
                 source_rows=output.source_rows,
+                runtime_state_rows=output.runtime_state_rows,
                 object_row_count=output.object_row_count,
                 member_row_count=output.member_row_count,
+                class_mro_row_count=output.class_mro_row_count,
+                class_attr_row_count=output.class_attr_row_count,
                 unwrap_row_count=output.unwrap_row_count,
                 signature_row_count=output.signature_row_count,
                 signature_param_row_count=output.signature_param_row_count,
                 annotation_row_count=output.annotation_row_count,
                 source_row_count=output.source_row_count,
+                runtime_state_row_count=output.runtime_state_row_count,
             )
         return output
 
@@ -657,18 +681,24 @@ def _coerce_inspect_output(
         result=merged,
         object_rows=empty_lazyframe_for_table(PY_INSPECT_OBJECTS_TABLE_KEY),
         member_rows=empty_lazyframe_for_table(PY_INSPECT_MEMBERS_TABLE_KEY),
+        class_mro_rows=empty_lazyframe_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY),
+        class_attr_rows=empty_lazyframe_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
         unwrap_rows=empty_lazyframe_for_table(PY_INSPECT_UNWRAP_TABLE_KEY),
         signature_rows=empty_lazyframe_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY),
         signature_param_rows=empty_lazyframe_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
         annotation_rows=empty_lazyframe_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
         source_rows=empty_lazyframe_for_table(PY_INSPECT_SOURCE_TABLE_KEY),
+        runtime_state_rows=empty_lazyframe_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
         object_row_count=0,
         member_row_count=0,
+        class_mro_row_count=0,
+        class_attr_row_count=0,
         unwrap_row_count=0,
         signature_row_count=0,
         signature_param_row_count=0,
         annotation_row_count=0,
         source_row_count=0,
+        runtime_state_row_count=0,
     )
 
 
@@ -733,9 +763,13 @@ def t__ast__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        ast_frame = lazyframe_for_ingest_columns(AST_NODES_TABLE_KEY, extract_result.ast_rows)
-        metric_frame = lazyframe_for_ingest_columns(
-            AST_METRICS_TABLE_KEY, extract_result.metric_rows
+        ast_frame = lazyframe_for_ingest_reader(
+            AST_NODES_TABLE_KEY,
+            extract_result.ast_rows_reader,
+        )
+        metric_frame = lazyframe_for_ingest_reader(
+            AST_METRICS_TABLE_KEY,
+            extract_result.metric_rows_reader,
         )
         return AstToolOutput(
             result=extract_result.result,
@@ -824,7 +858,7 @@ def t__cst__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_ingest_columns(CST_NODES_TABLE_KEY, extract_result.rows)
+        frame = lazyframe_for_ingest_reader(CST_NODES_TABLE_KEY, extract_result.rows_reader)
         return CstToolOutput(
             result=extract_result.result,
             rows=frame,
@@ -912,49 +946,49 @@ def t__syntax_index__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        parse_manifest_frame = lazyframe_for_ingest_columns(
+        parse_manifest_frame = lazyframe_for_ingest_reader(
             PARSE_MANIFEST_TABLE_KEY,
-            extract_result.parse_manifest_rows,
+            extract_result.parse_manifest_rows_reader,
         )
-        syntax_spans_frame = lazyframe_for_ingest_columns(
+        syntax_spans_frame = lazyframe_for_ingest_reader(
             SYNTAX_SPANS_TABLE_KEY,
-            extract_result.syntax_spans_rows,
+            extract_result.syntax_spans_rows_reader,
         )
-        syntax_nodes_frame = lazyframe_for_ingest_columns(
+        syntax_nodes_frame = lazyframe_for_ingest_reader(
             SYNTAX_NODES_TABLE_KEY,
-            extract_result.syntax_nodes_rows,
+            extract_result.syntax_nodes_rows_reader,
         )
-        syntax_edges_frame = lazyframe_for_ingest_columns(
+        syntax_edges_frame = lazyframe_for_ingest_reader(
             SYNTAX_EDGES_TABLE_KEY,
-            extract_result.syntax_edges_rows,
+            extract_result.syntax_edges_rows_reader,
         )
-        syntax_scopes_frame = lazyframe_for_ingest_columns(
+        syntax_scopes_frame = lazyframe_for_ingest_reader(
             SYNTAX_SCOPES_TABLE_KEY,
-            extract_result.syntax_scopes_rows,
+            extract_result.syntax_scopes_rows_reader,
         )
-        syntax_defs_frame = lazyframe_for_ingest_columns(
+        syntax_defs_frame = lazyframe_for_ingest_reader(
             SYNTAX_DEFS_TABLE_KEY,
-            extract_result.syntax_defs_rows,
+            extract_result.syntax_defs_rows_reader,
         )
-        syntax_refs_frame = lazyframe_for_ingest_columns(
+        syntax_refs_frame = lazyframe_for_ingest_reader(
             SYNTAX_REFS_TABLE_KEY,
-            extract_result.syntax_refs_rows,
+            extract_result.syntax_refs_rows_reader,
         )
-        syntax_calls_frame = lazyframe_for_ingest_columns(
+        syntax_calls_frame = lazyframe_for_ingest_reader(
             SYNTAX_CALLS_TABLE_KEY,
-            extract_result.syntax_calls_rows,
+            extract_result.syntax_calls_rows_reader,
         )
-        syntax_call_args_frame = lazyframe_for_ingest_columns(
+        syntax_call_args_frame = lazyframe_for_ingest_reader(
             SYNTAX_CALL_ARGS_TABLE_KEY,
-            extract_result.syntax_call_args_rows,
+            extract_result.syntax_call_args_rows_reader,
         )
-        syntax_func_params_frame = lazyframe_for_ingest_columns(
+        syntax_func_params_frame = lazyframe_for_ingest_reader(
             SYNTAX_FUNC_PARAMS_TABLE_KEY,
-            extract_result.syntax_func_params_rows,
+            extract_result.syntax_func_params_rows_reader,
         )
-        syntax_imports_frame = lazyframe_for_ingest_columns(
+        syntax_imports_frame = lazyframe_for_ingest_reader(
             SYNTAX_IMPORTS_TABLE_KEY,
-            extract_result.syntax_imports_rows,
+            extract_result.syntax_imports_rows_reader,
         )
         return SyntaxIndexToolOutput(
             result=extract_result.result,
@@ -1079,33 +1113,33 @@ def t__symtable__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        scope_frame = lazyframe_for_ingest_columns(
+        scope_frame = lazyframe_for_ingest_reader(
             PY_SYM_SCOPES_TABLE_KEY,
-            extract_result.scope_rows,
+            extract_result.scope_rows_reader,
         )
-        symbol_frame = lazyframe_for_ingest_columns(
+        symbol_frame = lazyframe_for_ingest_reader(
             PY_SYM_SYMBOLS_TABLE_KEY,
-            extract_result.symbol_rows,
+            extract_result.symbol_rows_reader,
         )
-        scope_edge_frame = lazyframe_for_ingest_columns(
+        scope_edge_frame = lazyframe_for_ingest_reader(
             PY_SYM_SCOPE_EDGES_TABLE_KEY,
-            extract_result.scope_edge_rows,
+            extract_result.scope_edge_rows_reader,
         )
-        namespace_edge_frame = lazyframe_for_ingest_columns(
+        namespace_edge_frame = lazyframe_for_ingest_reader(
             PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
-            extract_result.namespace_edge_rows,
+            extract_result.namespace_edge_rows_reader,
         )
-        func_partition_frame = lazyframe_for_ingest_columns(
+        func_partition_frame = lazyframe_for_ingest_reader(
             PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
-            extract_result.function_partition_rows,
+            extract_result.function_partition_rows_reader,
         )
-        binding_frame = lazyframe_for_ingest_columns(
+        binding_frame = lazyframe_for_ingest_reader(
             PY_SYM_BINDINGS_TABLE_KEY,
-            extract_result.binding_rows,
+            extract_result.binding_rows_reader,
         )
-        resolution_frame = lazyframe_for_ingest_columns(
+        resolution_frame = lazyframe_for_ingest_reader(
             PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
-            extract_result.resolution_edge_rows,
+            extract_result.resolution_edge_rows_reader,
         )
         return SymtableToolOutput(
             result=extract_result.result,
@@ -1219,29 +1253,29 @@ def t__bytecode__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        code_unit_frame = lazyframe_for_ingest_columns(
+        code_unit_frame = lazyframe_for_ingest_reader(
             PY_BC_CODE_UNITS_TABLE_KEY,
-            extract_result.code_unit_rows,
+            extract_result.code_unit_rows_reader,
         )
-        instruction_frame = lazyframe_for_ingest_columns(
+        instruction_frame = lazyframe_for_ingest_reader(
             PY_BC_INSTRUCTIONS_TABLE_KEY,
-            extract_result.instruction_rows,
+            extract_result.instruction_rows_reader,
         )
-        exception_frame = lazyframe_for_ingest_columns(
+        exception_frame = lazyframe_for_ingest_reader(
             PY_BC_EXCEPTION_TABLE_KEY,
-            extract_result.exception_rows,
+            extract_result.exception_rows_reader,
         )
-        block_frame = lazyframe_for_ingest_columns(
+        block_frame = lazyframe_for_ingest_reader(
             PY_BC_BLOCKS_TABLE_KEY,
-            extract_result.block_rows,
+            extract_result.block_rows_reader,
         )
-        cfg_edge_frame = lazyframe_for_ingest_columns(
+        cfg_edge_frame = lazyframe_for_ingest_reader(
             PY_BC_CFG_EDGES_TABLE_KEY,
-            extract_result.cfg_edge_rows,
+            extract_result.cfg_edge_rows_reader,
         )
-        defuse_frame = lazyframe_for_ingest_columns(
+        defuse_frame = lazyframe_for_ingest_reader(
             PY_BC_DEFUSE_EVENTS_TABLE_KEY,
-            extract_result.defuse_event_rows,
+            extract_result.defuse_event_rows_reader,
         )
         return BytecodeToolOutput(
             result=extract_result.result,
@@ -1351,50 +1385,68 @@ def t__inspect__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        object_frame = lazyframe_for_ingest_columns(
+        object_frame = lazyframe_for_ingest_reader(
             PY_INSPECT_OBJECTS_TABLE_KEY,
-            extract_result.object_rows,
+            extract_result.object_rows_reader,
         )
-        member_frame = lazyframe_for_ingest_columns(
+        member_frame = lazyframe_for_ingest_reader(
             PY_INSPECT_MEMBERS_TABLE_KEY,
-            extract_result.member_rows,
+            extract_result.member_rows_reader,
         )
-        unwrap_frame = lazyframe_for_ingest_columns(
+        class_mro_frame = lazyframe_for_ingest_reader(
+            PY_INSPECT_CLASS_MRO_TABLE_KEY,
+            extract_result.class_mro_rows_reader,
+        )
+        class_attr_frame = lazyframe_for_ingest_reader(
+            PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
+            extract_result.class_attr_rows_reader,
+        )
+        unwrap_frame = lazyframe_for_ingest_reader(
             PY_INSPECT_UNWRAP_TABLE_KEY,
-            extract_result.unwrap_rows,
+            extract_result.unwrap_rows_reader,
         )
-        signature_frame = lazyframe_for_ingest_columns(
+        signature_frame = lazyframe_for_ingest_reader(
             PY_INSPECT_SIGNATURES_TABLE_KEY,
-            extract_result.signature_rows,
+            extract_result.signature_rows_reader,
         )
-        signature_param_frame = lazyframe_for_ingest_columns(
+        signature_param_frame = lazyframe_for_ingest_reader(
             PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
-            extract_result.signature_param_rows,
+            extract_result.signature_param_rows_reader,
         )
-        annotation_frame = lazyframe_for_ingest_columns(
+        annotation_frame = lazyframe_for_ingest_reader(
             PY_INSPECT_ANNOTATIONS_TABLE_KEY,
-            extract_result.annotation_rows,
+            extract_result.annotation_rows_reader,
         )
-        source_frame = lazyframe_for_ingest_columns(
+        source_frame = lazyframe_for_ingest_reader(
             PY_INSPECT_SOURCE_TABLE_KEY,
-            extract_result.source_rows,
+            extract_result.source_rows_reader,
+        )
+        runtime_state_frame = lazyframe_for_ingest_reader(
+            PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
+            extract_result.runtime_state_rows_reader,
         )
         return InspectToolOutput(
             result=extract_result.result,
             object_rows=object_frame,
             member_rows=member_frame,
+            class_mro_rows=class_mro_frame,
+            class_attr_rows=class_attr_frame,
             unwrap_rows=unwrap_frame,
             signature_rows=signature_frame,
             signature_param_rows=signature_param_frame,
             annotation_rows=annotation_frame,
             source_rows=source_frame,
+            runtime_state_rows=runtime_state_frame,
             object_row_count=extract_result.object_row_count,
             member_row_count=extract_result.member_row_count,
+            class_mro_row_count=extract_result.class_mro_row_count,
+            class_attr_row_count=extract_result.class_attr_row_count,
             unwrap_row_count=extract_result.unwrap_row_count,
             signature_row_count=extract_result.signature_row_count,
             signature_param_row_count=extract_result.signature_param_row_count,
             annotation_row_count=extract_result.annotation_row_count,
             source_row_count=extract_result.source_row_count,
+            runtime_state_row_count=extract_result.runtime_state_row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -1433,20 +1485,26 @@ def t__inspect__ingest(
     payload = {
         PY_INSPECT_OBJECTS_TABLE_KEY: t__inspect__run.object_rows,
         PY_INSPECT_MEMBERS_TABLE_KEY: t__inspect__run.member_rows,
+        PY_INSPECT_CLASS_MRO_TABLE_KEY: t__inspect__run.class_mro_rows,
+        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: t__inspect__run.class_attr_rows,
         PY_INSPECT_UNWRAP_TABLE_KEY: t__inspect__run.unwrap_rows,
         PY_INSPECT_SIGNATURES_TABLE_KEY: t__inspect__run.signature_rows,
         PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: t__inspect__run.signature_param_rows,
         PY_INSPECT_ANNOTATIONS_TABLE_KEY: t__inspect__run.annotation_rows,
         PY_INSPECT_SOURCE_TABLE_KEY: t__inspect__run.source_rows,
+        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: t__inspect__run.runtime_state_rows,
     }
     table_counts = {
         PY_INSPECT_OBJECTS_TABLE_KEY: t__inspect__run.object_row_count,
         PY_INSPECT_MEMBERS_TABLE_KEY: t__inspect__run.member_row_count,
+        PY_INSPECT_CLASS_MRO_TABLE_KEY: t__inspect__run.class_mro_row_count,
+        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: t__inspect__run.class_attr_row_count,
         PY_INSPECT_UNWRAP_TABLE_KEY: t__inspect__run.unwrap_row_count,
         PY_INSPECT_SIGNATURES_TABLE_KEY: t__inspect__run.signature_row_count,
         PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: t__inspect__run.signature_param_row_count,
         PY_INSPECT_ANNOTATIONS_TABLE_KEY: t__inspect__run.annotation_row_count,
         PY_INSPECT_SOURCE_TABLE_KEY: t__inspect__run.source_row_count,
+        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: t__inspect__run.runtime_state_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1486,7 +1544,10 @@ def t__docstrings__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_ingest_columns(DOCSTRINGS_TABLE_KEY, extract_result.rows)
+        frame = lazyframe_for_ingest_reader(
+            DOCSTRINGS_TABLE_KEY,
+            extract_result.rows_reader,
+        )
         return DocstringsToolOutput(
             result=extract_result.result,
             rows=frame,
@@ -1684,6 +1745,14 @@ _INSPECT_TARGET_SPEC = ToolTargetSpec(
             node_name="inspect__member_rows",
         ),
         TableOutputSpec(
+            table_key=PY_INSPECT_CLASS_MRO_TABLE_KEY,
+            node_name="inspect__class_mro_rows",
+        ),
+        TableOutputSpec(
+            table_key=PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
+            node_name="inspect__class_attr_rows",
+        ),
+        TableOutputSpec(
             table_key=PY_INSPECT_UNWRAP_TABLE_KEY,
             node_name="inspect__unwrap_rows",
         ),
@@ -1702,6 +1771,10 @@ _INSPECT_TARGET_SPEC = ToolTargetSpec(
         TableOutputSpec(
             table_key=PY_INSPECT_SOURCE_TABLE_KEY,
             node_name="inspect__source_rows",
+        ),
+        TableOutputSpec(
+            table_key=PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
+            node_name="inspect__runtime_state_rows",
         ),
     ),
 )

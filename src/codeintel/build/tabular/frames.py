@@ -257,6 +257,33 @@ def lazyframe_for_ingest_columns(
     )
 
 
+def lazyframe_for_ingest_reader(
+    table_key: str,
+    reader: pa.RecordBatchReader,
+) -> pl.LazyFrame:
+    """Build a LazyFrame for ingest sources from an Arrow reader.
+
+    Returns
+    -------
+    polars.LazyFrame
+        LazyFrame retaining extra ingest columns.
+    """
+    schema_service = _require_schema_service()
+    contract_schema = schema_service.get_arrow_schema(table_key)
+    if contract_schema is None:
+        table_schema = schema_service.require_table_schema(table_key)
+        contract_schema = arrow_contract_for_table_schema(
+            table_schema=table_schema,
+            metadata=ArrowSchemaMetadata(extras_policy="retain"),
+        )
+    aligned = align_reader_to_contract(
+        reader,
+        contract_schema,
+        extras_policy="retain",
+    )
+    return arrow_reader_to_lazyframe(aligned)
+
+
 @dataclass(frozen=True, slots=True)
 class JoinSpec:
     """Join configuration for validated LazyFrame joins."""
@@ -372,6 +399,7 @@ __all__ = [
     "empty_lazyframe_for_table",
     "join_validated",
     "lazyframe_for_ingest_columns",
+    "lazyframe_for_ingest_reader",
     "lazyframe_for_table_columns",
     "rows_to_frame",
     "to_records",

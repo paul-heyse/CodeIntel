@@ -16,12 +16,19 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
+from codeintel.core.columnar.rows import (
+    ColumnarRows,
+    columnar_buffer_for_table_key,
+    empty_reader_for_table,
+    record_batch_reader_for_columnar_rows,
+)
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
+
+    import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -253,6 +260,9 @@ class ConfigIngestResult:
 
     result: ExecutionResult
     rows: ColumnarRows = field(default_factory=dict)
+    rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_reader_for_table(CONFIG_VALUES_TABLE_KEY)
+    )
     row_count: int = 0
 
 
@@ -341,10 +351,16 @@ class ConfigIngestStep(BaseExtractStep):
             buffer.row_count,
         )
 
+        rows_reader, row_count = record_batch_reader_for_columnar_rows(
+            CONFIG_VALUES_TABLE_KEY,
+            buffer.data,
+            extras_policy="retain",
+        )
         return ConfigIngestResult(
             result=ExecutionResult.ok(warnings=warnings),
             rows=buffer.data,
-            row_count=buffer.row_count,
+            rows_reader=rows_reader,
+            row_count=row_count,
         )
 
 

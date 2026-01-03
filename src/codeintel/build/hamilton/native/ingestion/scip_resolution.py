@@ -19,13 +19,9 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
 from codeintel.build.tabular.conversion import tabular_to_frame, tabular_to_lazyframe
-from codeintel.build.tabular.frames import (
-    JoinSpec,
-    dedupe_frame_for_table,
-    join_validated,
-    rows_to_frame,
-)
+from codeintel.build.tabular.frames import JoinSpec, dedupe_frame_for_table, rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.intervals.span_resolver import SpanResolver
 
@@ -104,7 +100,7 @@ def _symbol_goid_xref_frame(
 ) -> pl.LazyFrame:
     definitions = occurrences.filter((pl.col("roles") & _ROLE_DEFINITION) != 0)
     # Contract: goids are unique per (rel_path, start_line, end_line).
-    joined = join_validated(
+    joined = arrow_join_lazyframes(
         definitions,
         goids,
         spec=JoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1"),
@@ -139,12 +135,12 @@ def _occurrence_span_xref_frame(
         "goid_h128",
     )
     # Contract: symbol_info/goid_lookup are unique per (repo, commit, scip_symbol).
-    base = join_validated(
+    base = arrow_join_lazyframes(
         occurrences,
         symbol_info,
         spec=JoinSpec(on=["repo", "commit", "scip_symbol"], how="left", validate="m:1"),
     )
-    base = join_validated(
+    base = arrow_join_lazyframes(
         base,
         goid_lookup,
         spec=JoinSpec(on=["repo", "commit", "scip_symbol"], how="left", validate="m:1"),

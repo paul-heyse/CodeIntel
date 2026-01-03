@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 import polars as pl
+from polars.exceptions import PolarsError
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -16,6 +17,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.frames import (
     JoinSpec,
@@ -32,10 +34,21 @@ SYNTAX_DEFS_RESOLVED_TABLE_KEY = "core.syntax_defs_resolved"
 SYNTAX_REFS_RESOLVED_TABLE_KEY = "core.syntax_refs_resolved"
 SYNTAX_CALLS_RESOLVED_TABLE_KEY = "core.syntax_calls_resolved"
 SYNTAX_IMPORTS_RESOLVED_TABLE_KEY = "core.syntax_imports_resolved"
+_OCCURRENCE_INT_COLUMNS = (
+    "occ_start_line",
+    "occ_start_col",
+    "occ_end_line",
+    "occ_end_col",
+    "occ_start_byte",
+    "occ_end_byte",
+)
 
 
 def _ordered_columns(table_key: str) -> list[str]:
-    schema = get_schema_service().require_table_schema(table_key)
+    try:
+        schema = get_schema_service().require_table_schema(table_key)
+    except (KeyError, RuntimeError):
+        return []
     return list(schema.column_names())
 
 
@@ -50,10 +63,64 @@ def _select_for_table(frame: pl.LazyFrame, table_key: str) -> pl.LazyFrame:
     return frame.select(columns)
 
 
+def _merge_column_names(schemas: list[list[str]]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for names in schemas:
+        for name in names:
+            if name in seen:
+                continue
+            seen.add(name)
+            ordered.append(name)
+    return ordered
+
+
+def _align_frames_for_concat(frames: list[pl.LazyFrame]) -> list[pl.LazyFrame]:
+    schemas: list[list[str]] = []
+    for frame in frames:
+        try:
+            schemas.append(list(frame.collect_schema().names()))
+        except PolarsError:
+            return frames
+    all_columns = _merge_column_names(schemas)
+    aligned: list[pl.LazyFrame] = []
+    for frame, names in zip(frames, schemas, strict=True):
+        missing = [name for name in all_columns if name not in names]
+        resolved = frame
+        if missing:
+            resolved = frame.with_columns([pl.lit(None).alias(name) for name in missing])
+        aligned.append(resolved.select(all_columns))
+    return aligned
+
+
 def _occurrence_resolution_frame(
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
 ) -> pl.LazyFrame:
+    def _coerce_occurrence_ints(frame: pl.LazyFrame) -> pl.LazyFrame:
+        try:
+            columns = set(frame.collect_schema().names())
+        except PolarsError:
+            return frame
+        casts = [
+            pl.col(name).cast(pl.Int64, strict=False).alias(name)
+            for name in _OCCURRENCE_INT_COLUMNS
+            if name in columns
+        ]
+        if not casts:
+            return frame
+        return frame.with_columns(casts)
+
+    def _drop_occurrence_bytes(frame: pl.LazyFrame) -> pl.LazyFrame:
+        try:
+            columns = set(frame.collect_schema().names())
+        except PolarsError:
+            return frame
+        drop_columns = [name for name in ("occ_start_byte", "occ_end_byte") if name in columns]
+        if not drop_columns:
+            return frame
+        return frame.drop(drop_columns)
+
     span = tabular_to_lazyframe(q__core__scip_occurrence_span_xref).select(
         "repo",
         "commit",
@@ -73,6 +140,8 @@ def _occurrence_resolution_frame(
         pl.col("start_byte").alias("occ_start_byte"),
         pl.col("end_byte").alias("occ_end_byte"),
     )
+    span = _coerce_occurrence_ints(span)
+    span = _drop_occurrence_bytes(span)
     syntax = tabular_to_lazyframe(q__core__scip_occurrence_syntax_xref).select(
         "repo",
         "commit",
@@ -90,6 +159,7 @@ def _occurrence_resolution_frame(
         "match_kind",
         "candidate_count",
     )
+    syntax = _coerce_occurrence_ints(syntax)
     join_keys = [
         "repo",
         "commit",
@@ -101,7 +171,7 @@ def _occurrence_resolution_frame(
         "occ_end_col",
     ]
     # Contract: span rows are unique per occurrence join key.
-    return join_validated(
+    return arrow_join_lazyframes(
         syntax,
         span,
         spec=JoinSpec(on=join_keys, how="left", validate="m:1"),
@@ -205,11 +275,14 @@ def _resolve_facts(
     )
 
     matched_bytes = bytes_join.filter(pl.col("scip_symbol").is_not_null())
-    aligned = [
-        _select_for_table(matched_bytes, table_key),
-        _select_for_table(fallback_join, table_key),
-        _select_for_table(line_join, table_key),
-    ]
+    if resolved_columns:
+        aligned = [
+            _select_for_table(matched_bytes, table_key),
+            _select_for_table(fallback_join, table_key),
+            _select_for_table(line_join, table_key),
+        ]
+    else:
+        aligned = _align_frames_for_concat([matched_bytes, fallback_join, line_join])
     combined = pl.concat(aligned, how="vertical_relaxed")
     if resolved_columns:
         combined = combined.select(resolved_columns)
