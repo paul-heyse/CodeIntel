@@ -5,18 +5,18 @@ from __future__ import annotations
 import ast
 import logging
 from collections import deque
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import networkx as nx
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.query_results import coerce_int
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
@@ -138,8 +138,8 @@ class FunctionEffectsInputs:
     catalog_provider: FunctionCatalogProvider | None = None
     ast_map: dict[int, FunctionAst] | None = None
     missing_goids: set[int] | None = None
-    call_graph_edges: pl.DataFrame | None = None
-    call_graph_nodes: pl.DataFrame | None = None
+    call_graph_edges: pa.Table | None = None
+    call_graph_nodes: pa.Table | None = None
 
 
 @dataclass(frozen=True)
@@ -149,8 +149,8 @@ class _EffectInputs:
     catalog: FunctionCatalogProvider
     ast_map: dict[int, FunctionAst] | None = None
     missing_goids: set[int] | None = None
-    call_graph_edges: pl.DataFrame | None = None
-    call_graph_nodes: pl.DataFrame | None = None
+    call_graph_edges: pa.Table | None = None
+    call_graph_nodes: pa.Table | None = None
 
 
 def _effects_payload(
@@ -385,32 +385,33 @@ def _compute_transitive_effects(
 
 
 def _unresolved_call_counts_from_frame(
-    edges_frame: pl.DataFrame | None,
+    edges_frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[int, int]:
     counts: dict[int, int] = {}
-    if edges_frame is None or edges_frame.is_empty():
+    if edges_frame is None or edges_frame.num_rows == 0:
         return counts
-    frame = edges_frame
-    if "repo" in frame.columns:
-        frame = frame.filter(pl.col("repo") == repo)
-    if "commit" in frame.columns:
-        frame = frame.filter(pl.col("commit") == commit)
-    if "callee_goid_h128" not in frame.columns:
+    if "callee_goid_h128" not in edges_frame.column_names:
         return counts
-    unresolved = frame.filter(
-        pl.col("callee_goid_h128").is_null() | (pl.col("callee_goid_h128") == -1)
-    )
-    if unresolved.is_empty() or "caller_goid_h128" not in unresolved.columns:
+    has_repo = "repo" in edges_frame.column_names
+    has_commit = "commit" in edges_frame.column_names
+    has_caller = "caller_goid_h128" in edges_frame.column_names
+    if not has_caller:
         return counts
-    grouped = unresolved.group_by("caller_goid_h128").len()
-    for row in grouped.iter_rows(named=True):
+    for row in edges_frame.to_pylist():
+        if has_repo and row.get("repo") != repo:
+            continue
+        if has_commit and row.get("commit") != commit:
+            continue
+        callee = row.get("callee_goid_h128")
+        if callee is not None and callee != -1:
+            continue
         goid = normalize_decimal_id(row.get("caller_goid_h128"))
         if goid is None:
             continue
-        counts[goid] = coerce_int(row.get("len"), ctx="unresolved_count")
+        counts[goid] = counts.get(goid, 0) + 1
     return counts
 
 
@@ -429,24 +430,28 @@ def _edge_weight_value(value: object) -> int:
     return 0
 
 
-def _filter_edges_frame(
-    edges_frame: pl.DataFrame | None,
+def _filter_edges_rows(
+    edges_frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame | None:
-    if edges_frame is None or edges_frame.is_empty():
-        return None
-    frame = edges_frame
-    if "repo" in frame.columns:
-        frame = frame.filter(pl.col("repo") == repo)
-    if "commit" in frame.columns:
-        frame = frame.filter(pl.col("commit") == commit)
-    return frame
+) -> list[dict[str, object]]:
+    if edges_frame is None or edges_frame.num_rows == 0:
+        return []
+    has_repo = "repo" in edges_frame.column_names
+    has_commit = "commit" in edges_frame.column_names
+    rows: list[dict[str, object]] = []
+    for row in edges_frame.to_pylist():
+        if has_repo and row.get("repo") != repo:
+            continue
+        if has_commit and row.get("commit") != commit:
+            continue
+        rows.append(row)
+    return rows
 
 
-def _add_call_edges(graph: nx.DiGraph, frame: pl.DataFrame) -> None:
-    for row in frame.iter_rows(named=True):
+def _add_call_edges(graph: nx.DiGraph, rows: Iterable[Mapping[str, object]]) -> None:
+    for row in rows:
         caller = normalize_decimal_id(row.get("caller_goid_h128"))
         callee = normalize_decimal_id(row.get("callee_goid_h128"))
         if caller is None or callee is None:
@@ -458,10 +463,10 @@ def _add_call_edges(graph: nx.DiGraph, frame: pl.DataFrame) -> None:
             graph.add_edge(caller, callee, weight=1)
 
 
-def _add_call_nodes(graph: nx.DiGraph, nodes_frame: pl.DataFrame | None) -> None:
-    if nodes_frame is None or nodes_frame.is_empty():
+def _add_call_nodes(graph: nx.DiGraph, nodes_frame: pa.Table | None) -> None:
+    if nodes_frame is None or nodes_frame.num_rows == 0:
         return
-    for row in nodes_frame.iter_rows(named=True):
+    for row in nodes_frame.to_pylist():
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
             continue
@@ -475,17 +480,17 @@ def _add_call_nodes(graph: nx.DiGraph, nodes_frame: pl.DataFrame | None) -> None
 
 
 def _call_graph_from_frames(
-    edges_frame: pl.DataFrame | None,
-    nodes_frame: pl.DataFrame | None,
+    edges_frame: pa.Table | None,
+    nodes_frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> nx.DiGraph:
     graph = nx.DiGraph()
-    frame = _filter_edges_frame(edges_frame, repo=repo, commit=commit)
-    if frame is None:
+    rows = _filter_edges_rows(edges_frame, repo=repo, commit=commit)
+    if not rows:
         return graph
-    _add_call_edges(graph, frame)
+    _add_call_edges(graph, rows)
     _add_call_nodes(graph, nodes_frame)
     return graph
 

@@ -7,6 +7,12 @@ import sys
 
 import pyarrow as pa
 
+from codeintel.build.graphs.assembly import (
+    empty_reader,
+    reader_for_rows,
+    reader_to_table,
+    tabular_to_reader,
+)
 from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
     SymbolUseEdge,
@@ -29,9 +35,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 
@@ -183,11 +187,11 @@ def _symbol_use_tables(
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
-    occurrences_table = tabular_to_arrow_table(q__core__scip_occurrences).select(
+    occurrences_table = reader_to_table(tabular_to_reader(q__core__scip_occurrences)).select(
         ["symbol", "rel_path", "start_line", "roles"]
     )
-    modules_table = tabular_to_arrow_table(q__core__modules).select(["path", "module"])
-    goids_table = tabular_to_arrow_table(q__core__goids).select(
+    modules_table = reader_to_table(tabular_to_reader(q__core__modules)).select(["path", "module"])
+    goids_table = reader_to_table(tabular_to_reader(q__core__goids)).select(
         ["rel_path", "goid_h128", "start_line", "end_line"]
     )
     return occurrences_table, modules_table, goids_table
@@ -219,23 +223,22 @@ def symbol_use_edges_compute(
         q__core__goids,
     )
     if occurrences_table.num_rows == 0:
-        return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
     occurrences = _symbol_occurrences(occurrences_table)
     if not occurrences:
-        return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
 
     module_by_path = _module_by_path(modules_table)
     def_info_by_symbol, def_path_by_symbol = _definition_maps(occurrences)
     edges = build_use_edges(occurrences, def_path_by_symbol, module_by_path)
     if not edges:
-        return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
 
     use_lines_by_symbol_path = _reference_lines_by_symbol_path(occurrences)
     goid_resolver = _goid_resolver(goids_table)
     edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_resolver)
     rows = (dataclasses.asdict(row) for row in edges_to_rows(edges))
-    reader, _ = record_batch_reader_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
-    return reader
+    return reader_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
 
 
 def symbol_use_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -262,7 +265,7 @@ def symbol_use_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for symbol use edges.
     """
     _ = env
-    return empty_reader_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+    return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
 
 
 _MODULE = sys.modules[__name__]

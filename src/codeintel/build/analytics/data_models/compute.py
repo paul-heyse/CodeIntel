@@ -30,7 +30,7 @@ from codeintel.build.analytics.data_models.core import (
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
-    import polars as pl
+    import pyarrow as pa
 
     from codeintel.build.analytics.data_models.core import ClassMeta, ModelRecord
     from codeintel.config.primitives import SnapshotRef
@@ -204,9 +204,9 @@ def _build_relationship_rows(
 def load_data_models_inputs(
     snapshot: SnapshotRef,
     *,
-    goids_frame: pl.DataFrame,
-    modules_frame: pl.DataFrame,
-    docstrings_frame: pl.DataFrame,
+    goids_frame: pa.Table,
+    modules_frame: pa.Table,
+    docstrings_frame: pa.Table,
 ) -> DataModelsInputs:
     """Load tabular inputs required for data model computation.
 
@@ -295,9 +295,9 @@ def compute_data_models_from_inputs(
 def compute_data_models_pure(
     snapshot: SnapshotRef,
     *,
-    goids_frame: pl.DataFrame,
-    modules_frame: pl.DataFrame,
-    docstrings_frame: pl.DataFrame,
+    goids_frame: pa.Table,
+    modules_frame: pa.Table,
+    docstrings_frame: pa.Table,
 ) -> DataModelsResult:
     """Compute data models without writing to database.
 

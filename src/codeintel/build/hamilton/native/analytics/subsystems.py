@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.subsystems.materialize import (
     SubsystemBuildInputs,
@@ -22,9 +22,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame, tabular_to_lazyframe
-from codeintel.build.tabular.frames import rows_to_frame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -118,46 +118,52 @@ def subsystem_rows(
     return build_subsystem_rows(
         env.snapshot,
         SubsystemBuildInputs(
-            modules_frame=tabular_to_frame(subsystem_core_frames.modules),
-            import_graph_edges_frame=tabular_to_lazyframe(
+            modules_frame=tabular_to_arrow_table(subsystem_core_frames.modules),
+            import_graph_edges_frame=tabular_to_arrow_table(
                 subsystem_core_frames.import_graph_edges
-            ).collect(),
-            symbol_use_edges_frame=tabular_to_lazyframe(
+            ),
+            symbol_use_edges_frame=tabular_to_arrow_table(
                 subsystem_core_frames.symbol_use_edges
-            ).collect(),
-            config_values_frame=tabular_to_lazyframe(
+            ),
+            config_values_frame=tabular_to_arrow_table(
                 subsystem_analytics_frames.config_values
-            ).collect(),
+            ),
         ),
     )
 
 
-def subsystems__base(subsystem_rows: SubsystemRows) -> pl.LazyFrame:
+def subsystems__base(subsystem_rows: SubsystemRows) -> pa.RecordBatchReader:
     """Build subsystem summary rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing subsystem rows.
+    pa.RecordBatchReader
+        Reader containing subsystem rows.
     """
-    return rows_to_frame(
+    if not subsystem_rows.subsystem_rows:
+        return empty_reader_for_table(SUBSYSTEMS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         SUBSYSTEMS_TABLE_KEY,
         subsystem_rows.subsystem_rows,
     )
+    return reader
 
 
-def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pl.LazyFrame:
+def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.RecordBatchReader:
     """Build subsystem membership rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing subsystem membership rows.
+    pa.RecordBatchReader
+        Reader containing subsystem membership rows.
     """
-    return rows_to_frame(
+    if not subsystem_rows.membership_rows:
+        return empty_reader_for_table(SUBSYSTEM_MODULES_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         SUBSYSTEM_MODULES_TABLE_KEY,
         subsystem_rows.membership_rows,
     )
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -171,6 +177,7 @@ _SUBSYSTEMS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEMS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEMS_TABLE_KEY),
             node_name="subsystems__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=SUBSYSTEM_MODULES_TABLE_KEY,
@@ -178,6 +185,7 @@ _SUBSYSTEMS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEM_MODULES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_MODULES_TABLE_KEY),
             node_name="subsystem_modules__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="subsystems__table_materializations",

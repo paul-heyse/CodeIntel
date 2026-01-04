@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 
@@ -121,7 +121,7 @@ class FunctionGoidLoader:
 
     def __init__(
         self,
-        goids_frame: pl.LazyFrame,
+        goids_frame: pa.Table,
         snapshot: SnapshotRef,
     ) -> None:
         """Initialize the loader.
@@ -154,9 +154,8 @@ class FunctionGoidLoader:
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        frame = _filter_frame_by_snapshot(self._goids_frame, self._snapshot)
-        filtered = frame.filter(pl.col("kind").is_in(["function", "method"]))
-        selected = filtered.select(
+        frame = _filter_table_by_snapshot(self._goids_frame, self._snapshot)
+        selected = frame.select(
             "goid_h128",
             "urn",
             "repo",
@@ -168,7 +167,9 @@ class FunctionGoidLoader:
             "start_line",
             "end_line",
         )
-        for record in selected.collect().to_dicts():
+        for record in selected.to_pylist():
+            if record.get("kind") not in {"function", "method"}:
+                continue
             goid_row: GoidRow = {
                 "goid_h128": coerce_int(record["goid_h128"], ctx="goid_h128"),
                 "urn": str(record["urn"]),
@@ -212,13 +213,18 @@ class FunctionGoidLoader:
         return (self._snapshot.repo_root / goid.rel_path).resolve()
 
 
-def _filter_frame_by_snapshot(frame: pl.LazyFrame, snapshot: SnapshotRef) -> pl.LazyFrame:
-    available = set(frame.columns)
-    if "repo" in available:
-        frame = frame.filter(pl.col("repo") == snapshot.repo)
-    if "commit" in available:
-        frame = frame.filter(pl.col("commit") == snapshot.commit)
-    return frame
+def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
+    available = set(frame.column_names)
+    rows = frame.to_pylist()
+    filtered = [
+        row
+        for row in rows
+        if (snapshot.repo == row.get("repo") if "repo" in available else True)
+        and (snapshot.commit == row.get("commit") if "commit" in available else True)
+    ]
+    if not filtered:
+        return pa.Table.from_pylist([])
+    return pa.Table.from_pylist(filtered)
 
 
 __all__ = [

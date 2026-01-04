@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
 from codeintel.build.analytics.compute.graphs import (
@@ -84,8 +84,8 @@ class CfgCentralityData:
 
 
 def load_cfg_blocks(
-    cfg_blocks_frame: pl.DataFrame,
-    cfg_edges_frame: pl.DataFrame,
+    cfg_blocks_frame: pa.Table,
+    cfg_edges_frame: pa.Table,
 ) -> tuple[dict[int, list[tuple[int, str, int, int]]], dict[int, list[tuple[int, int, str]]]]:
     """
     Load CFG blocks and edges grouped by function GOID.
@@ -98,7 +98,7 @@ def load_cfg_blocks(
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = defaultdict(list)
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = defaultdict(list)
 
-    for row in cfg_blocks_frame.iter_rows(named=True):
+    for row in cfg_blocks_frame.to_pylist():
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         block_idx = normalize_decimal_id(row.get("block_idx"))
         if fn_id is None or block_idx is None:
@@ -115,7 +115,7 @@ def load_cfg_blocks(
             )
         )
 
-    for row in cfg_edges_frame.iter_rows(named=True):
+    for row in cfg_edges_frame.to_pylist():
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
             continue

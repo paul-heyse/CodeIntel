@@ -11,15 +11,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-import polars as pl
+import pyarrow as pa
 
-from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_reader
+from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_table
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.query_results import coerce_int, coerce_str
 
 if TYPE_CHECKING:
@@ -97,11 +96,8 @@ class SubsystemDisagreementCheck(GraphCheckBase):
 # =============================================================================
 
 
-def _scan_snapshot_frame(request: SnapshotScanRequest) -> pl.LazyFrame | None:
-    reader = scan_snapshot_reader(request)
-    if reader is None:
-        return None
-    return arrow_reader_to_lazyframe(reader)
+def _scan_snapshot_table(request: SnapshotScanRequest) -> pa.Table | None:
+    return scan_snapshot_table(request)
 
 
 def _symbol_community_findings_impl(
@@ -119,7 +115,7 @@ def _symbol_community_findings_impl(
     """
     if dataset_root_dir is None:
         return []
-    frame = _scan_snapshot_frame(
+    table = _scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="analytics.symbol_graph_metrics_modules",
@@ -129,21 +125,21 @@ def _symbol_community_findings_impl(
             commit=commit,
         )
     )
-    if frame is None:
+    if table is None:
         return []
-    counts = (
-        frame.filter(pl.col("symbol_community_id").is_not_null())
-        .group_by("symbol_community_id")
-        .agg(pl.len().alias("sym_count"))
-        .filter(pl.col("sym_count") > SYMBOL_COMMUNITY_MIN)
-        .collect()
-    )
+    counts: dict[object, int] = {}
+    for row in table.to_pylist():
+        community_id = row.get("symbol_community_id")
+        if community_id is None:
+            continue
+        counts[community_id] = counts.get(community_id, 0) + 1
     comm_counts = [
         (
-            coerce_str(row.get("symbol_community_id"), ctx="symbol_community_id"),
-            coerce_int(row.get("sym_count"), ctx="symbol_community_count"),
+            coerce_str(community_id, ctx="symbol_community_id"),
+            coerce_int(count, ctx="symbol_community_count"),
         )
-        for row in counts.to_dicts()
+        for community_id, count in counts.items()
+        if count > SYMBOL_COMMUNITY_MIN
     ]
 
     if not comm_counts:
@@ -178,7 +174,7 @@ def _subsystem_disagreement_findings_impl(
     """
     if dataset_root_dir is None:
         return []
-    frame = _scan_snapshot_frame(
+    table = _scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="analytics.subsystem_agreement",
@@ -188,7 +184,7 @@ def _subsystem_disagreement_findings_impl(
             commit=commit,
         )
     )
-    if frame is None:
+    if table is None:
         return []
     disagreements = [
         (
@@ -199,7 +195,8 @@ def _subsystem_disagreement_findings_impl(
                 ctx="subsystem_agreement.import_community_id",
             ),
         )
-        for row in (frame.filter(pl.col("agrees") == pl.lit(value=False)).collect().to_dicts())
+        for row in table.to_pylist()
+        if row.get("agrees") is False
     ]
     if not disagreements:
         return []

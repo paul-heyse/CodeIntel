@@ -7,11 +7,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, reader_to_table
+from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
@@ -165,27 +164,6 @@ def scan_snapshot_table(
     return reader_to_table(reader)
 
 
-def scan_snapshot_lazyframe(
-    request: SnapshotScanRequest,
-) -> pl.LazyFrame | None:
-    """Return a LazyFrame for a dataset snapshot or None when missing.
-
-    Parameters
-    ----------
-    request
-        Snapshot scan request describing the dataset and filters.
-
-    Returns
-    -------
-    polars.LazyFrame | None
-        LazyFrame for the dataset snapshot or None when missing.
-    """
-    reader = scan_snapshot_reader(request)
-    if reader is None:
-        return None
-    return arrow_reader_to_lazyframe(reader)
-
-
 def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Dataset | None:
     try:
         return scan_dataset(
@@ -239,6 +217,6 @@ __all__ = [
     "SnapshotScanRequest",
     "dataset_snapshot_exists",
     "resolve_dataset_root",
-    "scan_snapshot_lazyframe",
     "scan_snapshot_reader",
+    "scan_snapshot_table",
 ]

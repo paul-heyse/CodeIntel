@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.repositories.base import BaseRepository
@@ -20,15 +20,15 @@ MAX_ROW_LIMIT = 9_223_372_036_854_775_807
 class DatasetReadRepository(BaseRepository):
     """Read dataset rows via DuckDB relations."""
 
-    def read_dataset_dataframe(
+    def read_dataset_table(
         self,
         table_key: str,
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> pl.DataFrame:
+    ) -> pa.Table:
         """
-        Return dataset rows as a Polars DataFrame validated by Arrow checks.
+        Return dataset rows as an Arrow Table validated by Arrow checks.
 
         Parameters
         ----------
@@ -41,7 +41,7 @@ class DatasetReadRepository(BaseRepository):
 
         Returns
         -------
-        polars.DataFrame
+        pyarrow.Table
             Validated dataset slice.
         """
         relation = self._relation(table_key)
@@ -55,10 +55,23 @@ class DatasetReadRepository(BaseRepository):
             table_key=table_key,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
         )
-        frame = pl.from_arrow(reader)
-        if isinstance(frame, pl.Series):
-            frame = frame.to_frame()
-        return frame
+        return pa.Table.from_batches(reader, schema=reader.schema)
+
+    def read_dataset_dataframe(
+        self,
+        table_key: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> pa.Table:
+        """Return dataset rows as an Arrow Table (legacy name).
+
+        Returns
+        -------
+        pyarrow.Table
+            Arrow table containing the dataset rows.
+        """
+        return self.read_dataset_table(table_key, limit=limit, offset=offset)
 
     def read_dataset_rows(self, table_key: str, *, limit: int, offset: int) -> list[RowDict]:
         """

@@ -8,7 +8,7 @@ import sys
 import tokenize
 from pathlib import Path
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -19,12 +19,9 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 
 log = logging.getLogger(__name__)
 
@@ -34,9 +31,9 @@ FILE_LINE_INDEX_TARGET_NAME = "file_line_index"
 FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
 
 
-def _resolve_module_paths(modules_frame: pl.DataFrame) -> dict[str, str | None]:
+def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
     paths: dict[str, str | None] = {}
-    for row in modules_frame.iter_rows(named=True):
+    for row in modules_table.to_pylist():
         rel_path = row.get("path")
         if not isinstance(rel_path, str) or not rel_path:
             continue
@@ -100,22 +97,22 @@ def _line_rows_for_bytes(
 def file_line_index__base(
     env: BuildEnv,
     q__core__modules: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build core.file_line_index rows from repository files.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of line index rows.
+    pa.RecordBatchReader
+        Reader of line index rows.
     """
-    modules_frame = tabular_to_frame(q__core__modules)
-    if modules_frame.is_empty():
-        return empty_frame_for_table(FILE_LINE_INDEX_TABLE_KEY)
+    modules_table = tabular_to_arrow_table(q__core__modules)
+    if modules_table.num_rows == 0:
+        return empty_reader_for_table(FILE_LINE_INDEX_TABLE_KEY)
 
     repo_root = Path(env.snapshot.repo_root)
-    path_languages = _resolve_module_paths(modules_frame)
+    path_languages = _resolve_module_paths(modules_table)
     if not path_languages:
-        return empty_frame_for_table(FILE_LINE_INDEX_TABLE_KEY)
+        return empty_reader_for_table(FILE_LINE_INDEX_TABLE_KEY)
 
     rows: list[dict[str, object]] = []
     for rel_path, language in sorted(path_languages.items()):
@@ -139,7 +136,8 @@ def file_line_index__base(
             )
         )
 
-    return rows_to_frame(FILE_LINE_INDEX_TABLE_KEY, rows)
+    reader, _ = record_batch_reader_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -155,7 +153,7 @@ _FILE_LINE_INDEX_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="file_line_index__table",
-            input_type=pl.LazyFrame,
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="file_line_index__table_materializations",

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import networkx as nx
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.subsystems.affinity import (
     AffinityFrames,
@@ -111,10 +111,10 @@ class SubsystemRows:
 class SubsystemBuildInputs:
     """Input frames required for subsystem inference."""
 
-    modules_frame: pl.DataFrame | None = None
-    import_graph_edges_frame: pl.DataFrame | None = None
-    symbol_use_edges_frame: pl.DataFrame | None = None
-    config_values_frame: pl.DataFrame | None = None
+    modules_frame: pa.Table | None = None
+    import_graph_edges_frame: pa.Table | None = None
+    symbol_use_edges_frame: pa.Table | None = None
+    config_values_frame: pa.Table | None = None
     options: SubsystemOptions | None = None
 
 
@@ -250,16 +250,16 @@ def _subsystem_id(repo: str, modules: list[str]) -> str:
 
 
 def _import_graph_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> nx.DiGraph:
     graph = nx.DiGraph()
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return graph
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    for row in filtered.iter_rows(named=True):
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    for row in filtered:
         src = row.get("src_module")
         dst = row.get("dst_module")
         if src is None or dst is None:
@@ -289,18 +289,21 @@ def _coerce_edge_weight(value: object) -> float:
     return 0.0
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _rows_for_snapshot(
+    frame: pa.Table,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
-    return filtered
+) -> list[dict[str, object]]:
+    rows = frame.to_pylist()
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
+    return [
+        row
+        for row in rows
+        if (repo == row.get("repo") if has_repo else True)
+        and (commit == row.get("commit") if has_commit else True)
+    ]
 
 
 def _derive_name(modules: list[str], subsystem_id: str, dominant_role: str | None) -> str:

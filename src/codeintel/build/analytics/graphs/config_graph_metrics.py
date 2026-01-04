@@ -6,10 +6,10 @@ import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.compute.graphs import (
     build_projection_graph,
@@ -159,13 +159,6 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
     return str(value) == expected
 
 
-def _matches_optional_scope_expr(column: str, expected: str) -> pl.Expr:
-    col = pl.col(column)
-    col_str = col.cast(pl.Utf8, strict=False)
-    stripped = col_str.str.strip_chars()
-    return col.is_null() | (stripped.str.len_chars() == 0) | (col_str == expected)
-
-
 def _parse_reference_modules(ref_modules: object) -> list[str]:
     if isinstance(ref_modules, list):
         return [str(mod) for mod in ref_modules]
@@ -244,50 +237,17 @@ def _config_bipartite_from_rows(
     return graph
 
 
-def _config_bipartite_from_frame(
-    frame: pl.DataFrame,
-    *,
-    allowed_modules: set[str] | None,
-    repo: str | None,
-    commit: str | None,
-) -> nx.Graph:
-    graph = nx.Graph()
-    if frame.is_empty():
-        return graph
-    filtered = frame
-    if repo is not None and "repo" in filtered.columns:
-        filtered = filtered.filter(_matches_optional_scope_expr("repo", repo))
-    if commit is not None and "commit" in filtered.columns:
-        filtered = filtered.filter(_matches_optional_scope_expr("commit", commit))
-    has_columns = "key" in filtered.columns and "reference_modules" in filtered.columns
-    if filtered.is_empty() or not has_columns:
-        return graph
-    parsed = filtered.select(
-        pl.col("key").cast(pl.Utf8, strict=False).alias("key"),
-        pl.col("reference_modules")
-        .map_elements(
-            lambda value: _normalize_reference_modules(value, allowed_modules=allowed_modules),
-            return_dtype=pl.List(pl.Utf8),
-        )
-        .alias("modules"),
-    ).filter(pl.col("key").is_not_null())
-    exploded = parsed.explode("modules").filter(pl.col("modules").is_not_null())
-    if exploded.is_empty():
-        return graph
-    edges = exploded.group_by(["key", "modules"]).agg(pl.len().alias("weight"))
-    for key, module, weight in edges.iter_rows():
-        key_node = ("c", str(key))
-        module_node = ("m", str(module))
-        if not graph.has_node(key_node):
-            graph.add_node(key_node, bipartite=0)
-        if not graph.has_node(module_node):
-            graph.add_node(module_node, bipartite=1)
-        graph.add_edge(key_node, module_node, weight=float(weight))
-    return graph
+def _rows_from_tabular(
+    rows: Iterable[Mapping[str, object]] | pa.Table,
+) -> list[dict[str, object]]:
+    if isinstance(rows, pa.Table):
+        table = cast("pa.Table", rows)
+        return table.to_pylist()
+    return [dict(row) for row in rows]
 
 
 def build_config_module_bipartite(
-    config_value_rows: Iterable[Mapping[str, object]] | pl.DataFrame,
+    config_value_rows: Iterable[Mapping[str, object]] | pa.Table,
     *,
     allowed_modules: set[str] | None = None,
     repo: str | None = None,
@@ -311,15 +271,9 @@ def build_config_module_bipartite(
     nx.Graph
         Undirected bipartite graph with config keys and modules.
     """
-    if isinstance(config_value_rows, pl.DataFrame):
-        return _config_bipartite_from_frame(
-            config_value_rows,
-            allowed_modules=allowed_modules,
-            repo=repo,
-            commit=commit,
-        )
+    rows = _rows_from_tabular(config_value_rows)
     return _config_bipartite_from_rows(
-        config_value_rows,
+        rows,
         allowed_modules=allowed_modules,
         repo=repo,
         commit=commit,
@@ -380,7 +334,7 @@ def compute_config_graph_metrics_result(
     *,
     repo: str,
     commit: str,
-    config_value_rows: Iterable[Mapping[str, object]] | pl.DataFrame,
+    config_value_rows: Iterable[Mapping[str, object]] | pa.Table,
     allowed_modules: set[str] | None = None,
     runtime: GraphRuntimeOptions | None = None,
 ) -> ConfigGraphMetricsResult:

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.compute.functions.typedness import compute_param_stats
 from codeintel.build.analytics.functions.config import (
@@ -22,7 +22,7 @@ from codeintel.build.analytics.functions.config import (
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
-from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.serialization.payload import encode_payload
@@ -268,15 +268,15 @@ def build_function_analytics(
 
 
 def _load_goids_from_frame(
-    goids_frame: pl.DataFrame,
+    goids_table: pa.Table,
     snapshot: SnapshotRef,
 ) -> dict[str, list[GoidRow]]:
-    """Load function GOIDs from a polars frame.
+    """Load function GOIDs from an Arrow table.
 
     Parameters
     ----------
-    goids_frame
-        Tabular ``core.goids`` frame.
+    goids_table
+        Arrow ``core.goids`` table.
     snapshot
         Repository and commit identifiers.
 
@@ -297,28 +297,25 @@ def _load_goids_from_frame(
         "start_line",
         "end_line",
     }
-    missing = required.difference(goids_frame.columns)
+    missing = required.difference(goids_table.column_names)
     if missing:
         log.warning("core.goids is missing columns: %s", ", ".join(sorted(missing)))
         return {}
 
-    filtered = (
-        goids_frame.lazy()
-        .filter(
-            (pl.col("repo") == snapshot.repo)
-            & (pl.col("commit") == snapshot.commit)
-            & (pl.col("kind").is_in(["function", "method"]))
-        )
-        .select(list(required))
-        .collect()
-    )
-
-    if filtered.is_empty():
+    selected = goids_table.select(list(required))
+    rows = [
+        row
+        for row in selected.to_pylist()
+        if row.get("repo") == snapshot.repo
+        and row.get("commit") == snapshot.commit
+        and row.get("kind") in {"function", "method"}
+    ]
+    if not rows:
         log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
         return {}
 
     goids_by_file: dict[str, list[GoidRow]] = {}
-    for record in filtered.iter_rows(named=True):
+    for record in rows:
         rel_path_raw = record.get("rel_path")
         rel_path = str(rel_path_raw).replace("\\", "/")
         goid_row: GoidRow = {
@@ -443,8 +440,8 @@ def compute_function_analytics_result_from_tabular(
     FunctionAnalyticsResult
         Container with types_rows and validation reporter.
     """
-    goids_frame = tabular_to_frame(goids_input)
-    goids_by_file = _load_goids_from_frame(goids_frame, snapshot)
+    goids_table = tabular_to_arrow_table(goids_input)
+    goids_by_file = _load_goids_from_frame(goids_table, snapshot)
     return _compute_from_goids(goids_by_file, snapshot, options=options)
 
 

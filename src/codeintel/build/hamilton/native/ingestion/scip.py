@@ -20,7 +20,7 @@ from numbers import Integral
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -53,11 +53,13 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.tabular.frames import (
-    lazyframe_for_ingest_columns,
-)
+from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import columnar_row_count, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import (
+    columnar_row_count,
+    record_batch_reader_for_columnar_rows,
+    record_batch_reader_for_rows,
+)
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
@@ -731,11 +733,10 @@ def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
     write_manifest(manifest_file, manifest)
 
 
-def _build_file_state_map(
-    file_state_rows: pl.LazyFrame,
-) -> dict[str, FileDigest]:
+def _build_file_state_map(file_state_rows: pa.RecordBatchReader) -> dict[str, FileDigest]:
     digest_by_path: dict[str, FileDigest] = {}
-    for row in file_state_rows.collect().to_dicts():
+    table = reader_to_table(file_state_rows)
+    for row in table.to_pylist():
         rel_path_raw = row.get("rel_path")
         size_raw = row.get("size_bytes")
         mtime_raw = row.get("mtime_ns")
@@ -836,11 +837,13 @@ def _execute_scip_incremental(
         options_hash=options_hash,
     )
     file_state_rows = module_inputs.scan.file_state_rows
-    if (
-        module_inputs.scan.file_state_row_count == 0
-        and columnar_row_count(change_set.state_rows) > 0
-    ):
-        file_state_rows = lazyframe_for_ingest_columns(FILE_STATE_TABLE_KEY, change_set.state_rows)
+    if module_inputs.scan.file_state_row_count == 0 and columnar_row_count(
+        change_set.state_rows
+    ) > 0:
+        file_state_rows, _ = record_batch_reader_for_columnar_rows(
+            FILE_STATE_TABLE_KEY,
+            change_set.state_rows,
+        )
     file_state_by_path = _build_file_state_map(file_state_rows)
     try:
         config = ScipIncrementalConfig(

@@ -12,6 +12,23 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from intervaltree import IntervalTree
 
+from codeintel.build.graphs.assembly import (
+    drop_table_columns as _drop_table_columns,
+)
+from codeintel.build.graphs.assembly import (
+    empty_reader,
+    reader_to_table,
+    tabular_to_reader,
+)
+from codeintel.build.graphs.assembly import (
+    rename_table_columns as _rename_table_columns,
+)
+from codeintel.build.graphs.assembly import (
+    select_table_columns as _select_table_columns,
+)
+from codeintel.build.graphs.assembly import (
+    table_rows as _table_rows,
+)
 from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
     align_table_to_contract,
@@ -19,9 +36,8 @@ from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
 from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
 
@@ -546,19 +562,6 @@ def _explicit_binding_kind(def_info: _DefInfo, callee_text: str | None) -> str:
     return _BINDING_BOUND_METHOD
 
 
-def _table_rows(table: pa.Table) -> list[dict[str, object]]:
-    if table.num_rows == 0:
-        return []
-    return table.to_pylist()
-
-
-def _select_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
-    present = [column for column in columns if column in table.column_names]
-    if not present:
-        return _empty_table(columns)
-    return table.select(present)
-
-
 def _build_def_catalog(defs_rows: Sequence[Mapping[str, object]]) -> _DefCatalog:
     builder = _DefCatalogBuilder()
     for row in defs_rows:
@@ -569,22 +572,6 @@ def _build_def_catalog(defs_rows: Sequence[Mapping[str, object]]) -> _DefCatalog
 def _table_to_reader(table_key: str, table: pa.Table) -> pa.RecordBatchReader:
     aligned = align_table_to_contract(table_key, table, extras_policy=None)
     return table_to_reader(aligned)
-
-
-def _drop_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
-    present = [column for column in columns if column in table.column_names]
-    if not present:
-        return table
-    return table.drop_columns(present)
-
-
-def _rename_table_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
-    if not mapping:
-        return table
-    new_names = [mapping.get(name, name) for name in table.column_names]
-    if new_names == list(table.column_names):
-        return table
-    return table.rename_columns(new_names)
 
 
 def _call_edge_extras(row: Mapping[str, object]) -> bytes:
@@ -1875,7 +1862,7 @@ def cpg_call_targets(
         Arrow reader for graph.cpg_call_targets.
     """
     calls = _select_table_columns(
-        tabular_to_arrow_table(q__core__syntax_calls),
+        reader_to_table(tabular_to_reader(q__core__syntax_calls)),
         [
             "repo",
             "commit",
@@ -1888,7 +1875,7 @@ def cpg_call_targets(
         ],
     )
     occurrences = _select_table_columns(
-        tabular_to_arrow_table(q__core__scip_occurrence_span_xref),
+        reader_to_table(tabular_to_reader(q__core__scip_occurrence_span_xref)),
         [
             "rel_path",
             "scip_symbol",
@@ -1898,7 +1885,7 @@ def cpg_call_targets(
         ],
     )
     defs_table = _select_table_columns(
-        tabular_to_arrow_table(q__core__syntax_defs_resolved),
+        reader_to_table(tabular_to_reader(q__core__syntax_defs_resolved)),
         [
             "def_id",
             "def_kind",
@@ -1917,7 +1904,7 @@ def cpg_call_targets(
 
     explicit_rows = _explicit_rows_for_call_targets(calls, occurrences, catalog)
     syntax_nodes_table = _select_table_columns(
-        tabular_to_arrow_table(q__core__syntax_nodes),
+        reader_to_table(tabular_to_reader(q__core__syntax_nodes)),
         [
             "repo",
             "commit",
@@ -1940,9 +1927,9 @@ def cpg_call_targets(
 
     all_rows = [*explicit_rows, *implicit_rows]
     if not all_rows:
-        return empty_reader_for_table(CPG_CALL_TARGETS_TABLE_KEY)
+        return empty_reader(CPG_CALL_TARGETS_TABLE_KEY)
     targets_table = pa.Table.from_pylist(all_rows)
-    blocks = tabular_to_arrow_table(q__graph__cfg_blocks)
+    blocks = reader_to_table(tabular_to_reader(q__graph__cfg_blocks))
     entry_table = _entry_blocks(blocks)
     exit_table = _exit_blocks(blocks)
 
@@ -2011,7 +1998,7 @@ def cpg_edges_calls(cpg_call_targets: InferableTabularInput) -> InferableTabular
     InferableTabularInput
         Arrow reader for graph.cpg_edges_calls.
     """
-    call_targets = tabular_to_arrow_table(cpg_call_targets)
+    call_targets = reader_to_table(tabular_to_reader(cpg_call_targets))
     rows: list[dict[str, object]] = []
     for row in _table_rows(call_targets):
         if row.get("callee_entry_block_id") is None:
@@ -2029,7 +2016,7 @@ def cpg_edges_calls(cpg_call_targets: InferableTabularInput) -> InferableTabular
             }
         )
     if not rows:
-        return empty_reader_for_table(CPG_CALL_EDGES_TABLE_KEY)
+        return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
     edges_table = dedupe_table_for_table(CPG_CALL_EDGES_TABLE_KEY, pa.Table.from_pylist(rows))
     return _table_to_reader(CPG_CALL_EDGES_TABLE_KEY, edges_table)
 
@@ -2386,12 +2373,12 @@ def cpg_edges_arg_to_param(
     InferableTabularInput
         Arrow reader for graph.cpg_edges_arg_to_param.
     """
-    call_targets_rows = _table_rows(tabular_to_arrow_table(cpg_call_targets))
+    call_targets_rows = _table_rows(reader_to_table(tabular_to_reader(cpg_call_targets)))
     explicit_targets, explicit_by_call = _explicit_targets_by_call(call_targets_rows)
-    call_args_rows = _table_rows(tabular_to_arrow_table(q__core__syntax_call_args))
+    call_args_rows = _table_rows(reader_to_table(tabular_to_reader(q__core__syntax_call_args)))
     args_rows = _build_arg_rows(call_args_rows, explicit_by_call)
     params_rows = _normalize_params_rows(
-        _table_rows(tabular_to_arrow_table(q__core__syntax_func_params))
+        _table_rows(reader_to_table(tabular_to_reader(q__core__syntax_func_params)))
     )
     params_index = _build_param_index(params_rows)
 
@@ -2404,7 +2391,7 @@ def cpg_edges_arg_to_param(
         *implicit_receiver_edges,
     ]
     if not combined_rows:
-        return empty_reader_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
+        return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
     edges_table = dedupe_table_for_table(
         CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
         pa.Table.from_pylist(combined_rows),
@@ -2420,7 +2407,7 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
     InferableTabularInput
         Arrow reader for graph.cpg_edges_ret_to_call.
     """
-    call_targets = tabular_to_arrow_table(cpg_call_targets)
+    call_targets = reader_to_table(tabular_to_reader(cpg_call_targets))
     rows: list[dict[str, object]] = []
     for row in _table_rows(call_targets):
         if row.get("callee_exit_block_id") is None:
@@ -2451,7 +2438,7 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
             }
         )
     if not rows:
-        return empty_reader_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
+        return empty_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
     edges_table = dedupe_table_for_table(
         CPG_RET_TO_CALL_EDGES_TABLE_KEY,
         pa.Table.from_pylist(rows),

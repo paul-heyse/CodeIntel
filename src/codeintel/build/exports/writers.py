@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, SupportsInt, TextIO, cast
+from collections.abc import Callable, Iterable, Sequence
+from typing import TYPE_CHECKING, SupportsInt, TextIO, TypedDict, cast
 
 import msgspec
 import pyarrow as pa
@@ -15,6 +15,10 @@ from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatch
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+class _ParquetWriterKwargs(TypedDict, total=False):
+    use_dictionary: bool
 
 
 def default_json_serializer(obj: object) -> object:
@@ -190,6 +194,8 @@ def write_parquet_relation(
     rel: ExportRelation,
     output_path: Path,
     batch_size: int = 10_000,
+    dictionary_encode: bool = False,
+    dictionary_columns: Sequence[str] | None = None,
 ) -> int:
     """Write a DuckDB relation to Parquet and return row count.
 
@@ -201,6 +207,10 @@ def write_parquet_relation(
         Destination path for the Parquet file.
     batch_size
         Maximum rows per batch read from DuckDB.
+    dictionary_encode
+        Whether to dictionary encode all columns during export.
+    dictionary_columns
+        Optional explicit columns to dictionary encode.
 
     Returns
     -------
@@ -208,28 +218,26 @@ def write_parquet_relation(
         Number of rows written to the Parquet file.
     """
     write_parquet = getattr(rel, "write_parquet", None)
-    if write_parquet is not None:
+    if write_parquet is not None and not (dictionary_encode or dictionary_columns):
         write_parquet(str(output_path))
         row_count_row = rel.aggregate("count(*)").fetchone()
         return _coerce_row_count(row_count_row[0]) if row_count_row else 0
 
     reader = rel.fetch_record_batch(batch_size)
-    rows_written = 0
-    wrote_batches = False
-    with pq.ParquetWriter(str(output_path), reader.schema) as writer:
-        for batch in _iter_batches(reader):
-            rows_written += batch.num_rows
-            wrote_batches = True
-            writer.write_table(pa.Table.from_batches([batch], schema=reader.schema))
-    if not wrote_batches:
-        pq.write_table(pa.Table.from_batches([], schema=reader.schema), str(output_path))
-    return rows_written
+    return write_parquet_reader(
+        reader=reader,
+        output_path=output_path,
+        dictionary_encode=dictionary_encode,
+        dictionary_columns=dictionary_columns,
+    )
 
 
 def write_parquet_reader(
     *,
     reader: RecordBatchReader,
     output_path: Path,
+    dictionary_encode: bool = False,
+    dictionary_columns: Sequence[str] | None = None,
 ) -> int:
     """Write a RecordBatchReader to Parquet and return row count.
 
@@ -239,6 +247,10 @@ def write_parquet_reader(
         Arrow record batch reader to export.
     output_path
         Destination path for the Parquet file.
+    dictionary_encode
+        Whether to dictionary encode all columns during export.
+    dictionary_columns
+        Optional explicit columns to dictionary encode.
 
     Returns
     -------
@@ -247,14 +259,22 @@ def write_parquet_reader(
     """
     rows_written = 0
     wrote_batches = False
-    with pq.ParquetWriter(str(output_path), reader.schema) as writer:
+    writer_kwargs = _parquet_writer_kwargs(
+        dictionary_encode=dictionary_encode,
+        dictionary_columns=dictionary_columns,
+    )
+    with pq.ParquetWriter(str(output_path), reader.schema, **writer_kwargs) as writer:
         for batch in _iter_batches(reader):
             rows_written += batch.num_rows
             wrote_batches = True
             table = pa.Table.from_batches([cast("pa.RecordBatch", batch)], schema=reader.schema)
             writer.write_table(table)
     if not wrote_batches:
-        pq.write_table(pa.Table.from_batches([], schema=reader.schema), str(output_path))
+        pq.write_table(
+            pa.Table.from_batches([], schema=reader.schema),
+            str(output_path),
+            **writer_kwargs,
+        )
     return rows_written
 
 
@@ -272,6 +292,18 @@ def _iter_batches(reader: Iterable[RecordBatch]) -> Iterable[RecordBatch]:
         Record batches to process.
     """
     return reader
+
+
+def _parquet_writer_kwargs(
+    *,
+    dictionary_encode: bool,
+    dictionary_columns: Sequence[str] | None,
+) -> _ParquetWriterKwargs:
+    if dictionary_columns:
+        return {"use_dictionary": True}
+    if dictionary_encode:
+        return {"use_dictionary": True}
+    return {}
 
 
 def _json_rows_from_batch(

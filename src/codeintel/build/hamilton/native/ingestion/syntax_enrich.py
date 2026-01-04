@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
-import polars as pl
 import pyarrow as pa
-from polars.exceptions import PolarsError
+import pyarrow.compute as pc
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -20,14 +19,19 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import (
-    align_reader_to_contract,
-    arrow_join_lazyframes,
+    ArrowJoinSpec,
+    align_table_to_contract,
+    arrow_join_tables,
+    concat_tables_unified,
+    dedupe_table_for_table,
 )
-from codeintel.build.tabular.conversion import lazyframe_to_reader, tabular_to_lazyframe
-from codeintel.build.tabular.frames import (
-    JoinSpec,
-    join_validated,
+from codeintel.build.tabular.compute_masks import (
+    and_kleene,
+    invert_mask,
+    is_null_mask,
+    is_valid_mask,
 )
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table
 
@@ -56,15 +60,21 @@ def _ordered_columns(table_key: str) -> list[str]:
     return list(schema.column_names())
 
 
-def _select_for_table(frame: pl.LazyFrame, table_key: str) -> pl.LazyFrame:
+def _select_for_table(table: pa.Table, table_key: str) -> pa.Table:
     columns = _ordered_columns(table_key)
     if not columns:
-        return frame
-    existing = set(frame.collect_schema().names())
-    missing = [name for name in columns if name not in existing]
-    if missing:
-        frame = frame.with_columns([pl.lit(None).alias(name) for name in missing])
-    return frame.select(columns)
+        return table
+    return _ensure_table_columns(table, columns).select(columns)
+
+
+def _ensure_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    if not columns:
+        return table
+    existing = set(table.column_names)
+    arrays = [
+        table[name] if name in existing else pa.nulls(table.num_rows) for name in columns
+    ]
+    return pa.Table.from_arrays(arrays, names=list(columns))
 
 
 def _merge_column_names(schemas: list[list[str]]) -> list[str]:
@@ -79,88 +89,90 @@ def _merge_column_names(schemas: list[list[str]]) -> list[str]:
     return ordered
 
 
-def _align_frames_for_concat(frames: list[pl.LazyFrame]) -> list[pl.LazyFrame]:
-    schemas: list[list[str]] = []
-    for frame in frames:
-        try:
-            schemas.append(list(frame.collect_schema().names()))
-        except PolarsError:
-            return frames
+def _align_tables_for_concat(tables: list[pa.Table]) -> list[pa.Table]:
+    schemas: list[list[str]] = [list(table.column_names) for table in tables]
     all_columns = _merge_column_names(schemas)
-    aligned: list[pl.LazyFrame] = []
-    for frame, names in zip(frames, schemas, strict=True):
+    aligned: list[pa.Table] = []
+    for table, names in zip(tables, schemas, strict=True):
         missing = [name for name in all_columns if name not in names]
-        resolved = frame
+        resolved = table
         if missing:
-            resolved = frame.with_columns([pl.lit(None).alias(name) for name in missing])
+            resolved = _ensure_table_columns(resolved, [*names, *missing])
         aligned.append(resolved.select(all_columns))
     return aligned
 
 
-def _dedupe_for_table(frame: pl.LazyFrame, *, table_key: str) -> pl.LazyFrame:
-    schema = get_schema_service().get_table_schema(table_key)
-    if schema is None or not schema.primary_key:
-        return frame
-    try:
-        columns = set(frame.collect_schema().names())
-    except PolarsError:
-        return frame
-    key_columns = [name for name in schema.primary_key if name in columns]
-    if not key_columns:
-        return frame
-    return frame.unique(subset=key_columns, keep="first", maintain_order=True)
+def _dedupe_for_table(table: pa.Table, *, table_key: str) -> pa.Table:
+    return dedupe_table_for_table(table_key, table)
 
 
-def _occurrence_resolution_frame(
+def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
+    new_names = [mapping.get(name, name) for name in table.column_names]
+    if new_names == list(table.column_names):
+        return table
+    return table.rename_columns(new_names)
+
+
+def _coerce_occurrence_ints(table: pa.Table) -> pa.Table:
+    arrays = []
+    for name in table.column_names:
+        column = table[name]
+        if name in _OCCURRENCE_INT_COLUMNS:
+            arrays.append(pc.cast(column, pa.int64(), safe=False))
+        else:
+            arrays.append(column)
+    return pa.Table.from_arrays(arrays, names=list(table.column_names))
+
+
+def _drop_occurrence_bytes(table: pa.Table) -> pa.Table:
+    drop_columns = [
+        name
+        for name in ("occ_start_byte", "occ_end_byte")
+        if name in table.column_names
+    ]
+    if not drop_columns:
+        return table
+    return table.drop(drop_columns)
+
+
+def _occurrence_resolution_table(
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
-) -> pl.LazyFrame:
-    def _coerce_occurrence_ints(frame: pl.LazyFrame) -> pl.LazyFrame:
-        try:
-            columns = set(frame.collect_schema().names())
-        except PolarsError:
-            return frame
-        casts = [
-            pl.col(name).cast(pl.Int64, strict=False).alias(name)
-            for name in _OCCURRENCE_INT_COLUMNS
-            if name in columns
-        ]
-        if not casts:
-            return frame
-        return frame.with_columns(casts)
-
-    def _drop_occurrence_bytes(frame: pl.LazyFrame) -> pl.LazyFrame:
-        try:
-            columns = set(frame.collect_schema().names())
-        except PolarsError:
-            return frame
-        drop_columns = [name for name in ("occ_start_byte", "occ_end_byte") if name in columns]
-        if not drop_columns:
-            return frame
-        return frame.drop(drop_columns)
-
-    span = tabular_to_lazyframe(q__core__scip_occurrence_span_xref).select(
+) -> pa.Table:
+    span = tabular_to_arrow_table(q__core__scip_occurrence_span_xref).select(
         "repo",
         "commit",
         "rel_path",
         "scip_symbol",
-        pl.col("roles").alias("scip_roles"),
+        "roles",
         "is_definition",
         "is_reference",
         "is_import",
         "is_write",
         "is_read",
         "goid_h128",
-        pl.col("start_line").alias("occ_start_line"),
-        pl.col("start_col").alias("occ_start_col"),
-        pl.col("end_line").alias("occ_end_line"),
-        pl.col("end_col").alias("occ_end_col"),
-        pl.col("start_byte").alias("occ_start_byte"),
-        pl.col("end_byte").alias("occ_end_byte"),
+        "start_line",
+        "start_col",
+        "end_line",
+        "end_col",
+        "start_byte",
+        "end_byte",
+    )
+    span = _rename_columns(
+        span,
+        {
+            "roles": "scip_roles",
+            "start_line": "occ_start_line",
+            "start_col": "occ_start_col",
+            "end_line": "occ_end_line",
+            "end_col": "occ_end_col",
+            "start_byte": "occ_start_byte",
+            "end_byte": "occ_end_byte",
+        },
     )
     span = _coerce_occurrence_ints(span)
     span = _drop_occurrence_bytes(span)
-    syntax = tabular_to_lazyframe(q__core__scip_occurrence_syntax_xref).select(
+    syntax = tabular_to_arrow_table(q__core__scip_occurrence_syntax_xref).select(
         "repo",
         "commit",
         "rel_path",
@@ -189,20 +201,20 @@ def _occurrence_resolution_frame(
         "occ_end_col",
     ]
     # Contract: span rows are unique per occurrence join key.
-    return arrow_join_lazyframes(
+    return arrow_join_tables(
         syntax,
         span,
-        spec=JoinSpec(on=join_keys, how="left", validate="m:1"),
+        spec=ArrowJoinSpec(on=join_keys, how="left", validate="m:1"),
     )
 
 
 def _resolve_facts(
-    facts: pl.LazyFrame,
-    occurrences: pl.LazyFrame,
+    facts: pa.Table,
+    occurrences: pa.Table,
     *,
     table_key: str,
 ) -> pa.RecordBatchReader:
-    fact_columns = list(facts.collect_schema().names())
+    fact_columns = list(facts.column_names)
     if not fact_columns:
         return empty_reader_for_table(table_key)
     resolved_columns = _ordered_columns(table_key)
@@ -218,49 +230,61 @@ def _resolve_facts(
             _select_for_table(line_join, table_key),
         ]
     else:
-        aligned = _align_frames_for_concat([matched_bytes, fallback_join, line_join])
-    combined = pl.concat(aligned, how="vertical_relaxed")
+        aligned = _align_tables_for_concat([matched_bytes, fallback_join, line_join])
+    tables = [table for table in aligned if table.num_rows > 0]
+    if not tables:
+        return empty_reader_for_table(table_key)
+    combined = concat_tables_unified(tables)
     if resolved_columns:
         combined = combined.select(resolved_columns)
     combined = _dedupe_for_table(combined, table_key=table_key)
-    reader = lazyframe_to_reader(combined)
-    schema = get_schema_service().get_table_schema(table_key)
-    if schema is None:
-        return reader
-    return align_reader_to_contract(table_key, reader)
+    combined = align_table_to_contract(table_key, combined)
+    return table_to_reader(combined)
 
 
 def _resolve_occurrence_joins(
-    facts: pl.LazyFrame,
-    occurrences: pl.LazyFrame,
+    facts: pa.Table,
+    occurrences: pa.Table,
     fact_columns: Sequence[str],
-) -> tuple[pl.LazyFrame, pl.LazyFrame, pl.LazyFrame]:
-    bytes_predicate = pl.col("start_byte").is_not_null() & pl.col("end_byte").is_not_null()
-    facts_with_bytes = facts.filter(bytes_predicate)
-    facts_without_bytes = facts.filter(~bytes_predicate)
+) -> tuple[pa.Table, pa.Table, pa.Table]:
+    bytes_mask = _null_mask(facts, "start_byte", "end_byte")
+    facts_with_bytes = _filter_table(facts, bytes_mask)
+    facts_without_bytes = _filter_table(facts, invert_mask(bytes_mask))
 
-    occ_bytes = occurrences.filter(
-        pl.col("occ_start_byte").is_not_null() & pl.col("occ_end_byte").is_not_null()
-    )
-    bytes_join = join_validated(
+    occ_bytes_mask = _null_mask(occurrences, "occ_start_byte", "occ_end_byte")
+    occ_bytes = _filter_table(occurrences, occ_bytes_mask)
+    bytes_join = arrow_join_tables(
         facts_with_bytes,
         occ_bytes,
         spec=_occurrence_byte_join_spec(),
     )
-    fallback = bytes_join.filter(pl.col("scip_symbol").is_null()).select(fact_columns)
+    fallback = _filter_table(bytes_join, is_null_mask(bytes_join["scip_symbol"]))
+    fallback = fallback.select(fact_columns)
     line_join = _line_join_occurrences(facts_without_bytes, occurrences)
     fallback_join = _line_join_occurrences(fallback, occurrences)
-    matched_bytes = bytes_join.filter(pl.col("scip_symbol").is_not_null())
+    matched_bytes = _filter_table(bytes_join, is_valid_mask(bytes_join["scip_symbol"]))
     return matched_bytes, fallback_join, line_join
 
 
-def _line_join_occurrences(left: pl.LazyFrame, occurrences: pl.LazyFrame) -> pl.LazyFrame:
-    return join_validated(left, occurrences, spec=_occurrence_line_join_spec())
+def _null_mask(table: pa.Table, start_col: str, end_col: str) -> pa.BooleanArray:
+    if start_col not in table.column_names or end_col not in table.column_names:
+        return pa.array([False] * table.num_rows)
+    return and_kleene(is_valid_mask(table[start_col]), is_valid_mask(table[end_col]))
 
 
-def _occurrence_byte_join_spec() -> JoinSpec:
+def _filter_table(table: pa.Table, mask: pa.BooleanArray) -> pa.Table:
+    if table.num_rows == 0:
+        return table
+    return table.filter(mask)
+
+
+def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:
+    return arrow_join_tables(left, occurrences, spec=_occurrence_line_join_spec())
+
+
+def _occurrence_byte_join_spec() -> ArrowJoinSpec:
     # Contract: occurrence spans are unique per byte span.
-    return JoinSpec(
+    return ArrowJoinSpec(
         left_on=["repo", "commit", "rel_path", "producer", "start_byte", "end_byte"],
         right_on=[
             "repo",
@@ -275,9 +299,9 @@ def _occurrence_byte_join_spec() -> JoinSpec:
     )
 
 
-def _occurrence_line_join_spec() -> JoinSpec:
+def _occurrence_line_join_spec() -> ArrowJoinSpec:
     # Contract: occurrence spans are unique per line/col span.
-    return JoinSpec(
+    return ArrowJoinSpec(
         left_on=[
             "repo",
             "commit",
@@ -306,15 +330,15 @@ def _occurrence_line_join_spec() -> JoinSpec:
 def syntax_enrich__occurrence_resolution(
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.Table:
     """Return occurrence rows merged with SCIP roles and GOID metadata.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame containing merged occurrence metadata for resolution joins.
+    pa.Table
+        Arrow table containing merged occurrence metadata for resolution joins.
     """
-    return _occurrence_resolution_frame(
+    return _occurrence_resolution_table(
         q__core__scip_occurrence_span_xref,
         q__core__scip_occurrence_syntax_xref,
     )
@@ -331,8 +355,8 @@ def syntax_enrich__defs_resolved__base(
     pa.RecordBatchReader
         Arrow reader for core.syntax_defs_resolved.
     """
-    facts = tabular_to_lazyframe(q__core__syntax_defs)
-    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_arrow_table(q__core__syntax_defs)
+    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
         occurrences,
@@ -351,8 +375,8 @@ def syntax_enrich__refs_resolved__base(
     pa.RecordBatchReader
         Arrow reader for core.syntax_refs_resolved.
     """
-    facts = tabular_to_lazyframe(q__core__syntax_refs)
-    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_arrow_table(q__core__syntax_refs)
+    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
         occurrences,
@@ -371,8 +395,8 @@ def syntax_enrich__calls_resolved__base(
     pa.RecordBatchReader
         Arrow reader for core.syntax_calls_resolved.
     """
-    facts = tabular_to_lazyframe(q__core__syntax_calls)
-    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_arrow_table(q__core__syntax_calls)
+    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
         occurrences,
@@ -391,8 +415,8 @@ def syntax_enrich__imports_resolved__base(
     pa.RecordBatchReader
         Arrow reader for core.syntax_imports_resolved.
     """
-    facts = tabular_to_lazyframe(q__core__syntax_imports)
-    occurrences = tabular_to_lazyframe(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_arrow_table(q__core__syntax_imports)
+    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
     return _resolve_facts(
         facts,
         occurrences,

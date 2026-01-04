@@ -6,6 +6,12 @@ import ast
 import dataclasses
 from pathlib import Path
 
+from codeintel.build.graphs.assembly import (
+    empty_reader,
+    reader_for_rows,
+    reader_to_table,
+    tabular_to_reader,
+)
 from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
     ImportEdge,
@@ -17,9 +23,7 @@ from codeintel.build.graphs.compute.imports import (
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.graphs.compute_filters import filter_python_modules
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
@@ -84,7 +88,7 @@ def import_graph_analysis(
     ImportAnalysisResult
         Import graph analysis derived from module sources.
     """
-    modules_table = tabular_to_arrow_table(q__core__modules)
+    modules_table = reader_to_table(tabular_to_reader(q__core__modules))
     modules_table = filter_python_modules(modules_table)
     modules: set[str] = set()
     edges: list[ImportEdge] = []
@@ -125,12 +129,11 @@ def import_modules_compute(
     """
     rows = build_import_module_rows(env.repo, env.commit, import_graph_analysis)
     if not rows:
-        return empty_reader_for_table(IMPORT_MODULES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_reader(IMPORT_MODULES_TABLE_KEY)
+    return reader_for_rows(
         IMPORT_MODULES_TABLE_KEY,
         (dataclasses.asdict(row) for row in rows),
     )
-    return reader
 
 
 def import_graph_edges_compute(
@@ -148,8 +151,7 @@ def import_graph_edges_compute(
         dataclasses.asdict(row)
         for row in build_import_edge_rows(env.repo, env.commit, import_graph_analysis)
     )
-    reader, _ = record_batch_reader_for_rows(IMPORT_GRAPH_EDGES_TABLE_KEY, rows)
-    return reader
+    return reader_for_rows(IMPORT_GRAPH_EDGES_TABLE_KEY, rows)
 
 
 def import_modules_existing(env: BuildEnv) -> InferableTabularInput:
@@ -191,7 +193,7 @@ def import_modules_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for import modules.
     """
     _ = env
-    return empty_reader_for_table(IMPORT_MODULES_TABLE_KEY)
+    return empty_reader(IMPORT_MODULES_TABLE_KEY)
 
 
 def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -203,7 +205,7 @@ def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for import graph edges.
     """
     _ = env
-    return empty_reader_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    return empty_reader(IMPORT_GRAPH_EDGES_TABLE_KEY)
 
 
 __all__ = [

@@ -35,6 +35,10 @@ cardinality. This keeps Arrow-first joins deterministic and auditable.
 - `scip_resolution._occurrence_span_xref_frame`: occurrences + symbol_info on
   `(repo, commit, scip_symbol)` (`m:1`), then + goid lookup on the same keys (`m:1`).
 
+## Analytics joins (Arrow-first)
+- `subsystems.cache.build_subsystem_profile_cache_frame`: `analytics.subsystems` +
+  `analytics.subsystem_graph_metrics` on `(repo, commit, subsystem_id)` (`m:1`).
+
 ## Maintenance
 When introducing new joins (Arrow or Polars), add an entry here with the join
 keys and expected cardinality so join validation stays consistent.

@@ -13,7 +13,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import polars as pl
 import pyarrow as pa
 from sqlglot import exp
 
@@ -330,20 +329,20 @@ def validate_contract_rows(
             resolved_profile = dataset.validation_profile
     records: list[dict[str, object]]
     if table_schema is None:
-        frame = pl.from_dicts(rows)
-        records = frame.to_dicts()
+        table = pa.Table.from_pylist(rows)
+        records = table.to_pylist()
     else:
         expected_columns = [col.name for col in table_schema.columns]
-        frame = pl.from_dicts(rows)
-        extra = [name for name in frame.columns if name not in expected_columns]
+        table = pa.Table.from_pylist(rows)
+        extra = [name for name in table.column_names if name not in expected_columns]
         if extra:
             extras = ", ".join(sorted(extra))
             message = f"Unexpected columns for {table_key}: {extras}"
             raise ValueError(message)
-        missing = [name for name in expected_columns if name not in frame.columns]
+        missing = [name for name in expected_columns if name not in table.column_names]
         for name in missing:
-            frame = frame.with_columns(pl.lit(None).alias(name))
-        frame = frame.select(expected_columns)
+            table = table.append_column(name, pa.array([None] * table.num_rows))
+        table = table.select(expected_columns)
         context = ColumnarValidationContext(
             table_schema=table_schema,
             schema_observation=observation,
@@ -351,11 +350,11 @@ def validate_contract_rows(
         )
         validate_table(
             table_key,
-            frame.to_arrow(),
+            table,
             context=context,
             mode="strict",
         )
-        records = frame.to_dicts()
+        records = table.to_pylist()
     column_types: dict[str, ColumnType] = (
         {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
     )

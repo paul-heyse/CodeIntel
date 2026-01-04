@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.storage.catalog import CatalogService, build_function_catalog_from_rows
 
 _FUNCTION_KINDS = {"function", "method"}
 
 
-def module_map_from_frame(modules_frame: pl.DataFrame) -> dict[str, str]:
+def module_map_from_frame(modules_frame: pa.Table) -> dict[str, str]:
     """Build module mapping from core.modules frame.
 
     Returns
@@ -20,7 +20,7 @@ def module_map_from_frame(modules_frame: pl.DataFrame) -> dict[str, str]:
         Mapping of file path to module name.
     """
     module_map: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
+    for row in modules_frame.to_pylist():
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
@@ -30,8 +30,8 @@ def module_map_from_frame(modules_frame: pl.DataFrame) -> dict[str, str]:
 
 def catalog_provider_from_frames(
     *,
-    goids_frame: pl.DataFrame,
-    modules_frame: pl.DataFrame,
+    goids_frame: pa.Table,
+    modules_frame: pa.Table,
     module_map_override: Mapping[str, str] | None = None,
 ) -> CatalogService:
     """Build a CatalogService from goids and modules frames.
@@ -43,7 +43,7 @@ def catalog_provider_from_frames(
     """
     module_map = dict(module_map_override or module_map_from_frame(modules_frame))
     rows: list[dict[str, object]] = []
-    for row in goids_frame.iter_rows(named=True):
+    for row in goids_frame.to_pylist():
         kind = row.get("kind")
         if kind is not None and str(kind) not in _FUNCTION_KINDS:
             continue

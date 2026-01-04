@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
@@ -141,10 +141,10 @@ class EntrypointContextInputs:
 
     module_map_override: dict[str, str] | None = None
     features: Mapping[int, FunctionAstFeatures] | None = None
-    modules_frame: pl.DataFrame | None = None
-    test_catalog_frame: pl.DataFrame | None = None
-    subsystem_modules_frame: pl.DataFrame | None = None
-    subsystems_frame: pl.DataFrame | None = None
+    modules_frame: pa.Table | None = None
+    test_catalog_frame: pa.Table | None = None
+    subsystem_modules_frame: pa.Table | None = None
+    subsystems_frame: pa.Table | None = None
 
 
 def collect_entrypoint_rows(
@@ -328,16 +328,16 @@ def _decimal(value: int) -> Decimal:
 
 
 def _module_context_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, ModuleContext]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
     context: dict[str, ModuleContext] = {}
-    for row in filtered.iter_rows(named=True):
+    for row in filtered:
         rel_path = row.get("path")
         module = row.get("module")
         tags = row.get("tags")
@@ -352,16 +352,16 @@ def _module_context_from_frame(
 
 
 def _test_meta_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, TestMeta]:
     meta: dict[str, TestMeta] = {}
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return meta
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    for row in filtered.iter_rows(named=True):
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    for row in filtered:
         test_id = row.get("test_id")
         test_goid_h128 = row.get("test_goid_h128")
         status = row.get("status")
@@ -380,21 +380,21 @@ def _test_meta_from_frame(
 
 
 def _subsystem_maps_from_frame(
-    subsystem_modules_frame: pl.DataFrame | None,
-    subsystems_frame: pl.DataFrame | None,
+    subsystem_modules_frame: pa.Table | None,
+    subsystems_frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> tuple[dict[str, str], dict[str, str]]:
     subsystem_by_module: dict[str, str] = {}
     subsystem_names: dict[str, str] = {}
-    if subsystem_modules_frame is not None and not subsystem_modules_frame.is_empty():
-        filtered = _filter_frame_by_snapshot(
+    if subsystem_modules_frame is not None and subsystem_modules_frame.num_rows > 0:
+        filtered = _rows_for_snapshot(
             subsystem_modules_frame,
             repo=repo,
             commit=commit,
         )
-        for row in filtered.iter_rows(named=True):
+        for row in filtered:
             module = row.get("module")
             subsystem_id = row.get("subsystem_id")
             if module is None or subsystem_id is None:
@@ -403,9 +403,9 @@ def _subsystem_maps_from_frame(
                 subsystem_id, ctx="subsystem_modules.subsystem_id"
             )
 
-    if subsystems_frame is not None and not subsystems_frame.is_empty():
-        filtered = _filter_frame_by_snapshot(subsystems_frame, repo=repo, commit=commit)
-        for row in filtered.iter_rows(named=True):
+    if subsystems_frame is not None and subsystems_frame.num_rows > 0:
+        filtered = _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit)
+        for row in filtered:
             subsystem_id = row.get("subsystem_id")
             name = row.get("name")
             if subsystem_id is None or name is None:
@@ -416,18 +416,21 @@ def _subsystem_maps_from_frame(
     return subsystem_by_module, subsystem_names
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _rows_for_snapshot(
+    frame: pa.Table,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
-    return filtered
+) -> list[dict[str, object]]:
+    rows = frame.to_pylist()
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
+    return [
+        row
+        for row in rows
+        if (repo == row.get("repo") if has_repo else True)
+        and (commit == row.get("commit") if has_commit else True)
+    ]
 
 
 def _summarize_tests(

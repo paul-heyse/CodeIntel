@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.build.analytics.compute.dependencies.compute import ExternalDependencyInputs
@@ -24,12 +24,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.serialization.json import decode_json_list
 from codeintel.core.serialization.payload import decode_payload
@@ -70,9 +67,9 @@ def _parse_json_list(value: object) -> list[str]:
     return []
 
 
-def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
+def _module_map(modules_frame: pa.Table) -> dict[str, str]:
     module_map: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
+    for row in modules_frame.to_pylist():
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
@@ -80,9 +77,9 @@ def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
     return module_map
 
 
-def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeatures]:
+def _features_by_goid(features_frame: pa.Table) -> dict[int, FunctionAstFeatures]:
     features_map: dict[int, FunctionAstFeatures] = {}
-    for row in features_frame.iter_rows(named=True):
+    for row in features_frame.to_pylist():
         goid_raw = row.get("function_goid_h128")
         goid_value = normalize_decimal_id(goid_raw)
         if goid_value is None:
@@ -124,20 +121,20 @@ def external_dependency_calls__base(
     q__core__modules: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
     q__core__goids: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build external dependency call rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing external dependency call rows.
+    pa.RecordBatchReader
+        Reader containing external dependency call rows.
     """
-    modules_frame = tabular_to_frame(q__core__modules)
-    goids_frame = tabular_to_frame(q__core__goids)
-    features_frame = tabular_to_frame(q__analytics__function_ast_features)
+    modules_frame = tabular_to_arrow_table(q__core__modules)
+    goids_frame = tabular_to_arrow_table(q__core__goids)
+    features_frame = tabular_to_arrow_table(q__analytics__function_ast_features)
     module_map = _module_map(modules_frame)
     if not module_map:
-        return empty_frame_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
+        return empty_reader_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -154,35 +151,41 @@ def external_dependency_calls__base(
         missing_goids=missing,
     )
     result = compute_dependency_calls_pure(env.snapshot, inputs)
-    return rows_to_frame(
+    if not result.rows:
+        return empty_reader_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
         result.rows,
     )
+    return reader
 
 
 def external_dependencies__base(
     env: BuildEnv,
     q__analytics__external_dependency_calls: InferableTabularInput,
     q__analytics__config_values: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build external dependencies summary rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing external dependency summary rows.
+    pa.RecordBatchReader
+        Reader containing external dependency summary rows.
     """
-    dependency_calls_frame = tabular_to_frame(q__analytics__external_dependency_calls)
-    config_values_frame = tabular_to_frame(q__analytics__config_values)
+    dependency_calls_frame = tabular_to_arrow_table(q__analytics__external_dependency_calls)
+    config_values_frame = tabular_to_arrow_table(q__analytics__config_values)
     result = compute_external_dependencies_pure(
         env.snapshot,
         dependency_calls_frame=dependency_calls_frame,
         config_values_frame=config_values_frame,
     )
-    return rows_to_frame(
+    if not result.rows:
+        return empty_reader_for_table(EXTERNAL_DEPENDENCIES_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         EXTERNAL_DEPENDENCIES_TABLE_KEY,
         result.rows,
     )
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -196,6 +199,7 @@ _EXTERNAL_DEPS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
             node_name="external_dependency_calls__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
@@ -203,6 +207,7 @@ _EXTERNAL_DEPS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=EXTERNAL_DEPENDENCIES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY),
             node_name="external_dependencies__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="external_deps__table_materializations",

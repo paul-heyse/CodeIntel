@@ -26,7 +26,7 @@ from codeintel.build.analytics.dependencies.core import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import polars as pl
+    import pyarrow as pa
 
     from codeintel.build.analytics.compute.dependencies.compute import ExternalDependencyInputs
     from codeintel.config.primitives import SnapshotRef
@@ -62,8 +62,8 @@ def compute_dependency_calls_pure(
 def compute_external_dependencies_pure(
     snapshot: SnapshotRef,
     *,
-    dependency_calls_frame: pl.DataFrame | None = None,
-    config_values_frame: pl.DataFrame | None = None,
+    dependency_calls_frame: pa.Table | None = None,
+    config_values_frame: pa.Table | None = None,
     dependency_patterns_path: Path | None = None,
     language: str = "python",
 ) -> ExternalDependenciesResult:

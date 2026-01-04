@@ -5,6 +5,7 @@ from __future__ import annotations
 import pyarrow as pa
 
 from codeintel.build.hamilton.native.graphs.compute_filters import (
+    filter_function_ast_nodes,
     filter_goids_with_spans,
     filter_modules_with_language,
     filter_python_goids,
@@ -15,6 +16,7 @@ from codeintel.build.tabular.compute_columns import append_constant_columns, emp
 from codeintel.build.tabular.compute_masks import (
     kind_is_function_or_method,
     language_is_python_or_null,
+    node_type_is_function,
     non_empty_string_mask,
 )
 from tests._helpers.assertions.expectation_assertions import expect_equal
@@ -61,6 +63,15 @@ def test_kind_is_function_or_method() -> None:
     values = pa.array(["function", "method", "class"])
 
     mask = kind_is_function_or_method(values)
+
+    expect_equal(mask.to_pylist(), [True, True, False])
+
+
+def test_node_type_is_function() -> None:
+    """node_type_is_function should match function/async function nodes."""
+    values = pa.array(["FunctionDef", "AsyncFunctionDef", "ClassDef"])
+
+    mask = node_type_is_function(values)
 
     expect_equal(mask.to_pylist(), [True, True, False])
 
@@ -140,3 +151,19 @@ def test_filter_goids_with_spans() -> None:
     filtered = filter_goids_with_spans(table)
 
     expect_equal(filtered.column("goid_h128").to_pylist(), [1])
+
+
+def test_filter_function_ast_nodes() -> None:
+    """filter_function_ast_nodes should keep function nodes with valid metadata."""
+    table = pa.Table.from_pylist(
+        [
+            {"path": "a.py", "node_type": "FunctionDef", "name": "func", "lineno": 1},
+            {"path": "b.py", "node_type": "ClassDef", "name": "Cls", "lineno": 2},
+            {"path": "", "node_type": "AsyncFunctionDef", "name": "run", "lineno": 3},
+            {"path": "c.py", "node_type": "AsyncFunctionDef", "name": "", "lineno": 4},
+        ]
+    )
+
+    filtered = filter_function_ast_nodes(table)
+
+    expect_equal(filtered.column("path").to_pylist(), ["a.py"])

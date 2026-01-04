@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 from google.protobuf.struct_pb2 import NullValue, Struct
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -19,10 +21,22 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.arrow_ops import arrow_join_lazyframes
-from codeintel.build.tabular.conversion import tabular_to_frame, tabular_to_lazyframe
-from codeintel.build.tabular.frames import JoinSpec, dedupe_frame_for_table, rows_to_frame
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    align_table_to_contract,
+    arrow_join_tables,
+    dedupe_table_for_table,
+)
+from codeintel.build.tabular.compute_masks import (
+    and_kleene,
+    bit_wise_and,
+    equal_mask,
+    is_valid_mask,
+    not_equal_mask,
+)
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
 
 _HAMILTON_TYPE_HINTS = (
@@ -47,8 +61,8 @@ _ROLE_READ = 0x8
 class ScipResolutionFrames:
     """Derived frames for SCIP resolution outputs."""
 
-    symbol_goid_xref: pl.LazyFrame
-    occurrence_span_xref: pl.LazyFrame
+    symbol_goid_xref: pa.Table
+    occurrence_span_xref: pa.Table
 
 
 @dataclass(slots=True)
@@ -57,104 +71,168 @@ class _SyntaxNodeIndex:
     line_exact: dict[tuple[int, int, int, int], list[str]]
 
 
-def _symbol_info_frame(symbol_info: InferableTabularInput) -> pl.LazyFrame:
-    frame = tabular_to_lazyframe(symbol_info)
-    return frame.select(
+def _rename_columns(table: pa.Table, mapping: dict[str, str]) -> pa.Table:
+    new_names = [mapping.get(name, name) for name in table.column_names]
+    if new_names == list(table.column_names):
+        return table
+    return table.rename_columns(new_names)
+
+
+def _cast_int64(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    arrays = []
+    for name in table.column_names:
+        column = table[name]
+        if name in columns:
+            arrays.append(pc.cast(column, pa.int64(), safe=False))
+        else:
+            arrays.append(column)
+    return pa.Table.from_arrays(arrays, names=list(table.column_names))
+
+
+def _symbol_info_table(symbol_info: InferableTabularInput) -> pa.Table:
+    table = tabular_to_arrow_table(symbol_info).select(
         "repo",
         "commit",
         "symbol",
         "enclosing_symbol",
-    ).rename({"symbol": "scip_symbol"})
-
-
-def _goids_frame(goids: InferableTabularInput) -> pl.LazyFrame:
-    frame = tabular_to_lazyframe(goids)
-    return (
-        frame.select(
-            "goid_h128",
-            "rel_path",
-            "start_line",
-            "end_line",
-        )
-        .with_columns(
-            pl.col("start_line").cast(pl.Int64),
-            pl.col("end_line").cast(pl.Int64),
-        )
-        .filter(pl.col("start_line").is_not_null() & pl.col("end_line").is_not_null())
     )
+    return _rename_columns(table, {"symbol": "scip_symbol"})
 
 
-def _occurrences_frame(occurrences: InferableTabularInput) -> pl.LazyFrame:
-    frame = tabular_to_lazyframe(occurrences)
-    return frame.rename({"symbol": "scip_symbol"}).with_columns(
-        pl.col("start_line").cast(pl.Int64),
-        pl.col("end_line").cast(pl.Int64),
+def _goids_table(goids: InferableTabularInput) -> pa.Table:
+    table = tabular_to_arrow_table(goids).select(
+        "goid_h128",
+        "rel_path",
+        "start_line",
+        "end_line",
     )
+    table = _cast_int64(table, ["start_line", "end_line"])
+    if table.num_rows == 0:
+        return table
+    mask = and_kleene(
+        is_valid_mask(table["start_line"]),
+        is_valid_mask(table["end_line"]),
+    )
+    return table.filter(mask)
 
 
-def _symbol_goid_xref_frame(
+def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
+    table = tabular_to_arrow_table(occurrences)
+    table = _rename_columns(table, {"symbol": "scip_symbol"})
+    return _cast_int64(table, ["start_line", "end_line"])
+
+
+def _symbol_goid_xref_table(
     *,
-    occurrences: pl.LazyFrame,
-    goids: pl.LazyFrame,
+    occurrences: pa.Table,
+    goids: pa.Table,
     created_at: datetime,
-) -> pl.LazyFrame:
-    definitions = occurrences.filter((pl.col("roles") & _ROLE_DEFINITION) != 0)
-    # Contract: goids are unique per (rel_path, start_line, end_line).
-    joined = arrow_join_lazyframes(
+) -> pa.Table:
+    if occurrences.num_rows == 0 or goids.num_rows == 0:
+        return pa.Table.from_pylist([])
+    roles = occurrences["roles"] if "roles" in occurrences.column_names else None
+    if roles is None:
+        return pa.Table.from_pylist([])
+    def_mask = not_equal_mask(
+        bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
+        pa.scalar(0, type=roles.type),
+    )
+    definitions = occurrences.filter(def_mask)
+    joined = arrow_join_tables(
         definitions,
         goids,
-        spec=JoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1"),
+        spec=ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1"),
     )
-    return joined.select(
+    joined = joined.select(
         "repo",
         "commit",
         "scip_symbol",
         "goid_h128",
-        pl.col("rel_path").alias("def_rel_path"),
-        pl.col("start_line").alias("def_start_line"),
-        pl.col("start_col").alias("def_start_col"),
-        pl.col("end_line").alias("def_end_line"),
-        pl.col("end_col").alias("def_end_col"),
+        "rel_path",
+        "start_line",
+        "start_col",
+        "end_line",
+        "end_col",
         "position_encoding",
         "text_document_encoding",
-        pl.lit(created_at).alias("created_at"),
     )
+    joined = _rename_columns(
+        joined,
+        {
+            "rel_path": "def_rel_path",
+            "start_line": "def_start_line",
+            "start_col": "def_start_col",
+            "end_line": "def_end_line",
+            "end_col": "def_end_col",
+        },
+    )
+    created = pa.array([created_at] * joined.num_rows)
+    return joined.append_column("created_at", created)
 
 
-def _occurrence_span_xref_frame(
+def _occurrence_span_xref_table(
     *,
-    occurrences: pl.LazyFrame,
-    symbol_info: pl.LazyFrame,
-    symbol_goid_xref: pl.LazyFrame,
+    occurrences: pa.Table,
+    symbol_info: pa.Table,
+    symbol_goid_xref: pa.Table,
     created_at: datetime,
-) -> pl.LazyFrame:
+) -> pa.Table:
     goid_lookup = symbol_goid_xref.select(
         "repo",
         "commit",
         "scip_symbol",
         "goid_h128",
     )
-    # Contract: symbol_info/goid_lookup are unique per (repo, commit, scip_symbol).
-    base = arrow_join_lazyframes(
+    base = arrow_join_tables(
         occurrences,
         symbol_info,
-        spec=JoinSpec(on=["repo", "commit", "scip_symbol"], how="left", validate="m:1"),
+        spec=ArrowJoinSpec(
+            on=["repo", "commit", "scip_symbol"],
+            how="left",
+            validate="m:1",
+        ),
     )
-    base = arrow_join_lazyframes(
+    base = arrow_join_tables(
         base,
         goid_lookup,
-        spec=JoinSpec(on=["repo", "commit", "scip_symbol"], how="left", validate="m:1"),
+        spec=ArrowJoinSpec(
+            on=["repo", "commit", "scip_symbol"],
+            how="left",
+            validate="m:1",
+        ),
     )
-
-    roles = pl.col("roles")
-    return base.with_columns(
-        ((roles & _ROLE_DEFINITION) != 0).alias("is_definition"),
-        ((roles & _ROLE_IMPORT) != 0).alias("is_import"),
-        ((roles & _ROLE_WRITE) != 0).alias("is_write"),
-        ((roles & _ROLE_READ) != 0).alias("is_read"),
-        ((roles & _ROLE_DEFINITION) == 0).alias("is_reference"),
-        pl.lit(created_at).alias("created_at"),
-    ).select(
+    roles = base["roles"] if "roles" in base.column_names else None
+    if roles is None:
+        return pa.Table.from_pylist([])
+    role_scalar = pa.scalar(0, type=roles.type)
+    is_definition = not_equal_mask(
+        bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
+        role_scalar,
+    )
+    is_import = not_equal_mask(
+        bit_wise_and(roles, pa.scalar(_ROLE_IMPORT, type=roles.type)),
+        role_scalar,
+    )
+    is_write = not_equal_mask(
+        bit_wise_and(roles, pa.scalar(_ROLE_WRITE, type=roles.type)),
+        role_scalar,
+    )
+    is_read = not_equal_mask(
+        bit_wise_and(roles, pa.scalar(_ROLE_READ, type=roles.type)),
+        role_scalar,
+    )
+    is_reference = equal_mask(
+        bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
+        role_scalar,
+    )
+    base = base.append_column("is_definition", is_definition)
+    base = base.append_column("is_reference", is_reference)
+    base = base.append_column("is_import", is_import)
+    base = base.append_column("is_write", is_write)
+    base = base.append_column("is_read", is_read)
+    created = pa.array([created_at] * base.num_rows)
+    base = base.append_column("created_at", created)
+    return base.select(
         "repo",
         "commit",
         "rel_path",
@@ -202,10 +280,10 @@ def _stable_occurrence_id(row: dict[str, object]) -> str:
 
 
 def _build_syntax_node_indexes(
-    nodes_frame: pl.DataFrame,
+    nodes_table: pa.Table,
 ) -> dict[tuple[str, str], _SyntaxNodeIndex]:
     indexes: dict[tuple[str, str], _SyntaxNodeIndex] = {}
-    for row in nodes_frame.iter_rows(named=True):
+    for row in nodes_table.to_pylist():
         rel_path = row.get("rel_path")
         producer = row.get("producer")
         node_id = row.get("node_id")
@@ -280,14 +358,14 @@ def _match_occurrence_to_node(
 
 
 def _occurrence_syntax_xref_rows(
-    occurrences_frame: pl.DataFrame,
-    nodes_frame: pl.DataFrame,
+    occurrences_table: pa.Table,
+    nodes_table: pa.Table,
 ) -> list[dict[str, object]]:
-    if occurrences_frame.is_empty() or nodes_frame.is_empty():
+    if occurrences_table.num_rows == 0 or nodes_table.num_rows == 0:
         return []
-    indexes = _build_syntax_node_indexes(nodes_frame)
+    indexes = _build_syntax_node_indexes(nodes_table)
     occurrences_by_path: dict[str, list[dict[str, object]]] = {}
-    for row in occurrences_frame.iter_rows(named=True):
+    for row in occurrences_table.to_pylist():
         rel_path = row.get("rel_path")
         if not isinstance(rel_path, str):
             continue
@@ -353,15 +431,15 @@ def scip_resolution__frames(
         Frames for SCIP symbol and occurrence xref tables.
     """
     created_at = datetime.now(tz=UTC)
-    occurrences = _occurrences_frame(q__core__scip_occurrences)
-    symbol_info = _symbol_info_frame(q__core__scip_symbol_information)
-    goids = _goids_frame(q__core__goids)
-    symbol_goid_xref = _symbol_goid_xref_frame(
+    occurrences = _occurrences_table(q__core__scip_occurrences)
+    symbol_info = _symbol_info_table(q__core__scip_symbol_information)
+    goids = _goids_table(q__core__goids)
+    symbol_goid_xref = _symbol_goid_xref_table(
         occurrences=occurrences,
         goids=goids,
         created_at=created_at,
     )
-    occurrence_span_xref = _occurrence_span_xref_frame(
+    occurrence_span_xref = _occurrence_span_xref_table(
         occurrences=occurrences,
         symbol_info=symbol_info,
         symbol_goid_xref=symbol_goid_xref,
@@ -375,52 +453,64 @@ def scip_resolution__frames(
 
 def scip_resolution__symbol_goid_xref__base(
     scip_resolution__frames: ScipResolutionFrames,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Return rows for core.scip_symbol_goid_xref.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame for core.scip_symbol_goid_xref.
+    pa.RecordBatchReader
+        Arrow reader for core.scip_symbol_goid_xref.
     """
-    return dedupe_frame_for_table(
+    table = dedupe_table_for_table(
+        SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
         scip_resolution__frames.symbol_goid_xref,
-        table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
     )
+    if table.num_rows == 0:
+        return empty_reader_for_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
+    table = align_table_to_contract(SCIP_SYMBOL_GOID_XREF_TABLE_KEY, table)
+    return table_to_reader(table)
 
 
 def scip_resolution__occurrence_span_xref__base(
     scip_resolution__frames: ScipResolutionFrames,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Return rows for core.scip_occurrence_span_xref.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame for core.scip_occurrence_span_xref.
+    pa.RecordBatchReader
+        Arrow reader for core.scip_occurrence_span_xref.
     """
-    return dedupe_frame_for_table(
+    table = dedupe_table_for_table(
+        SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
         scip_resolution__frames.occurrence_span_xref,
-        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
     )
+    if table.num_rows == 0:
+        return empty_reader_for_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
+    table = align_table_to_contract(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY, table)
+    return table_to_reader(table)
 
 
 def scip_resolution__occurrence_syntax_xref__base(
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__syntax_nodes: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Return rows for core.scip_occurrence_syntax_xref.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame for core.scip_occurrence_syntax_xref.
+    pa.RecordBatchReader
+        Arrow reader for core.scip_occurrence_syntax_xref.
     """
-    occurrences_frame = tabular_to_frame(q__core__scip_occurrence_span_xref)
-    nodes_frame = tabular_to_frame(q__core__syntax_nodes)
-    rows = _occurrence_syntax_xref_rows(occurrences_frame, nodes_frame)
-    frame = rows_to_frame(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, rows)
-    return dedupe_frame_for_table(frame, table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+    occurrences_table = tabular_to_arrow_table(q__core__scip_occurrence_span_xref)
+    nodes_table = tabular_to_arrow_table(q__core__syntax_nodes)
+    rows = _occurrence_syntax_xref_rows(occurrences_table, nodes_table)
+    if not rows:
+        return empty_reader_for_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+    table = pa.Table.from_pylist(rows)
+    table = dedupe_table_for_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
+    table = align_table_to_contract(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
+    return table_to_reader(table)
 
 
 _MODULE = sys.modules[__name__]
@@ -433,21 +523,21 @@ _SCIP_RESOLUTION_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="scip_resolution__symbol_goid_xref__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY),
             node_name="scip_resolution__symbol_goid_xref",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
             base_node="scip_resolution__occurrence_span_xref__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY),
             node_name="scip_resolution__occurrence_span_xref",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
             base_node="scip_resolution__occurrence_syntax_xref__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY),
             node_name="scip_resolution__occurrence_syntax_xref",
-            input_type=pl.LazyFrame,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="scip_resolution__table_materializations",

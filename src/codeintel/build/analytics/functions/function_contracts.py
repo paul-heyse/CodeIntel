@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -57,8 +57,8 @@ class FunctionContractInputs:
 
     function_ast_map: dict[int, FunctionAst] | None = None
     catalog: FunctionCatalogProvider | None = None
-    docstrings_frame: pl.DataFrame | None = None
-    function_types_frame: pl.DataFrame | None = None
+    docstrings_frame: pa.Table | None = None
+    function_types_frame: pa.Table | None = None
     max_conditions_per_func: int = 64
 
 
@@ -172,20 +172,21 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
 
 
 def _doc_map_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[tuple[str, str], dict[str, object]]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return {}
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
     mapping: dict[tuple[str, str], dict[str, object]] = {}
-    for row in filtered.iter_rows(named=True):
+    for row in frame.to_pylist():
+        if has_repo and row.get("repo") != repo:
+            continue
+        if has_commit and row.get("commit") != commit:
+            continue
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
@@ -200,20 +201,21 @@ def _doc_map_from_frame(
 
 
 def _type_map_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[int, dict[str, object]]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return {}
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
     mapping: dict[int, dict[str, object]] = {}
-    for row in filtered.iter_rows(named=True):
+    for row in frame.to_pylist():
+        if has_repo and row.get("repo") != repo:
+            continue
+        if has_commit and row.get("commit") != commit:
+            continue
         goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue

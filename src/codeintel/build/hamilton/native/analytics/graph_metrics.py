@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import networkx as nx
-import polars as pl
+import pyarrow as pa
 from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.graphs.config_graph_metrics import (
@@ -47,12 +47,10 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
+from codeintel.build.tabular.compute_masks import equal_mask
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_optional_int
 
@@ -200,49 +198,65 @@ def _collect_rows(
     *,
     repo: str | None,
     commit: str | None,
-) -> pl.DataFrame:
-    frame = tabular_to_lazyframe(value)
-    available = set(frame.columns)
-    if repo is not None and "repo" in available:
-        frame = frame.filter(pl.col("repo") == repo)
-    if commit is not None and "commit" in available:
-        frame = frame.filter(pl.col("commit") == commit)
-    return frame.select(list(columns)).collect()
+) -> list[dict[str, object]]:
+    table = tabular_to_arrow_table(value)
+    if repo is not None and "repo" in table.column_names:
+        table = table.filter(equal_mask(table["repo"], pa.scalar(repo)))
+    if commit is not None and "commit" in table.column_names:
+        table = table.filter(equal_mask(table["commit"], pa.scalar(commit)))
+    if columns:
+        missing = [col for col in columns if col not in table.column_names]
+        if missing:
+            msg = f"Missing columns in graph_metrics inputs: {missing}"
+            raise ValueError(msg)
+        table = table.select(list(columns))
+    if table.num_rows == 0:
+        return []
+    return table.to_pylist()
 
 
-def _matches_optional_scope_expr(column: str, expected: str) -> pl.Expr:
-    col = pl.col(column)
-    col_str = col.cast(pl.Utf8, strict=False)
-    stripped = col_str.str.strip_chars()
-    return col.is_null() | (stripped.str.len_chars() == 0) | (col_str == expected)
+def _matches_optional_scope_value(value: object, expected: str) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip() or value == expected
+    return str(value).strip() == expected
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _filter_rows_by_snapshot(
+    rows: list[dict[str, object]],
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(_matches_optional_scope_expr("repo", repo))
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(_matches_optional_scope_expr("commit", commit))
+) -> list[dict[str, object]]:
+    filtered: list[dict[str, object]] = []
+    for row in rows:
+        repo_value = row.get("repo")
+        commit_value = row.get("commit")
+        if repo_value is not None and not _matches_optional_scope_value(repo_value, repo):
+            continue
+        if commit_value is not None and not _matches_optional_scope_value(commit_value, commit):
+            continue
+        filtered.append(row)
     return filtered
 
 
-def _allowed_modules_from_frame(
-    frame: pl.DataFrame,
+def _allowed_modules_from_rows(
+    rows: list[dict[str, object]],
     *,
     repo: str,
     commit: str,
 ) -> set[str]:
-    if frame.is_empty() or "module" not in frame.columns:
+    if not rows:
         return set()
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.is_empty():
+    filtered = _filter_rows_by_snapshot(rows, repo=repo, commit=commit)
+    if not filtered:
         return set()
-    return {str(module) for module in filtered.get_column("module").drop_nulls().to_list()}
+    return {
+        str(row.get("module"))
+        for row in filtered
+        if row.get("module") is not None
+    }
 
 
 def _load_module_inputs(
@@ -298,7 +312,7 @@ def _load_call_graph(
         repo=None,
         commit=None,
     )
-    return _call_graph_from_frames(call_edge_rows, call_node_rows)
+    return _call_graph_from_rows(call_edge_rows, call_node_rows)
 
 
 def _load_import_graph(
@@ -318,12 +332,12 @@ def _load_import_graph(
         repo=env.repo,
         commit=env.commit,
     )
-    return _import_graph_from_frames(import_edge_rows, import_module_rows)
+    return _import_graph_from_rows(import_edge_rows, import_module_rows)
 
 
-def _call_graph_from_frames(
-    edges: pl.DataFrame,
-    nodes: pl.DataFrame,
+def _call_graph_from_rows(
+    edges: list[dict[str, object]],
+    nodes: list[dict[str, object]],
 ) -> nx.DiGraph:
     graph = nx.DiGraph()
     _add_call_graph_edges(graph, edges)
@@ -336,16 +350,12 @@ def _increment_edge_weight(attrs: Mapping[str, object], *, ctx: str) -> int:
     return (weight if weight is not None else 0) + 1
 
 
-def _add_call_graph_edges(graph: nx.DiGraph, edges: pl.DataFrame) -> None:
-    if edges.is_empty():
+def _add_call_graph_edges(graph: nx.DiGraph, edges: list[dict[str, object]]) -> None:
+    if not edges:
         return
-    if "caller_goid_h128" not in edges.columns or "callee_goid_h128" not in edges.columns:
-        return
-    callers = edges.get_column("caller_goid_h128").to_list()
-    callees = edges.get_column("callee_goid_h128").to_list()
-    for caller_raw, callee_raw in zip(callers, callees, strict=True):
-        caller = normalize_decimal_id(caller_raw)
-        callee = normalize_decimal_id(callee_raw)
+    for row in edges:
+        caller = normalize_decimal_id(row.get("caller_goid_h128"))
+        callee = normalize_decimal_id(row.get("callee_goid_h128"))
         if caller is None or callee is None:
             continue
         if graph.has_edge(caller, callee):
@@ -355,57 +365,47 @@ def _add_call_graph_edges(graph: nx.DiGraph, edges: pl.DataFrame) -> None:
             graph.add_edge(caller, callee, weight=1)
 
 
-def _add_call_graph_nodes(graph: nx.DiGraph, nodes: pl.DataFrame) -> None:
-    if nodes.is_empty() or "goid_h128" not in nodes.columns:
+def _add_call_graph_nodes(graph: nx.DiGraph, nodes: list[dict[str, object]]) -> None:
+    if not nodes:
         return
-    node_ids = nodes.get_column("goid_h128").to_list()
-    kinds = (
-        nodes.get_column("kind").to_list() if "kind" in nodes.columns else [None] * len(node_ids)
-    )
-    for node_raw, kind in zip(node_ids, kinds, strict=True):
-        node_id = normalize_decimal_id(node_raw)
+    for row in nodes:
+        node_id = normalize_decimal_id(row.get("goid_h128"))
         if node_id is None or node_id in graph:
             continue
         attrs: dict[str, object] = {}
+        kind = row.get("kind")
         if kind is not None:
             attrs["kind"] = str(kind)
         graph.add_node(node_id, **attrs)
 
 
-def _import_graph_from_frames(
-    edges: pl.DataFrame,
-    modules: pl.DataFrame,
+def _import_graph_from_rows(
+    edges: list[dict[str, object]],
+    modules: list[dict[str, object]],
 ) -> tuple[nx.DiGraph, ComponentMeta | None]:
     graph = nx.DiGraph()
     fallback_layer_by_module: dict[str, int] = {}
     _add_import_edges(graph, edges, fallback_layer_by_module)
-    component_meta = _component_meta_from_import_frame(modules)
+    component_meta = _component_meta_from_import_rows(modules)
     _apply_import_module_frame(graph, modules, fallback_layer_by_module)
     return graph, component_meta
 
 
 def _add_import_edges(
     graph: nx.DiGraph,
-    edges: pl.DataFrame,
+    edges: list[dict[str, object]],
     fallback_layer_by_module: dict[str, int],
 ) -> None:
-    if edges.is_empty():
+    if not edges:
         return
-    if "src_module" not in edges.columns or "dst_module" not in edges.columns:
-        return
-    sources = edges.get_column("src_module").to_list()
-    targets = edges.get_column("dst_module").to_list()
-    layers = (
-        edges.get_column("module_layer").to_list()
-        if "module_layer" in edges.columns
-        else [None] * len(sources)
-    )
-    for source_raw, target_raw, layer_raw in zip(sources, targets, layers, strict=True):
+    for row in edges:
+        source_raw = row.get("src_module")
+        target_raw = row.get("dst_module")
         if source_raw is None or target_raw is None:
             continue
         source = str(source_raw)
         target = str(target_raw)
-        layer = coerce_optional_int(layer_raw, ctx="module_layer")
+        layer = coerce_optional_int(row.get("module_layer"), ctx="module_layer")
         if layer is not None:
             fallback_layer_by_module[source] = layer
         if graph.has_edge(source, target):
@@ -415,28 +415,24 @@ def _add_import_edges(
             graph.add_edge(source, target, weight=1)
 
 
-def _component_meta_from_import_frame(frame: pl.DataFrame) -> ComponentMeta | None:
-    if frame.is_empty() or "module" not in frame.columns:
+def _component_meta_from_import_rows(
+    rows: list[dict[str, object]],
+) -> ComponentMeta | None:
+    if not rows:
         return None
-    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(as_series=False)
     comp_id: dict[str, int] = {}
     in_cycle: dict[str, bool] = {}
     layer_by_module: dict[str, int] = {}
     found = False
-    for module, scc_id, component_size, layer in zip(
-        data["module"],
-        data["scc_id"],
-        data["component_size"],
-        data["layer"],
-        strict=True,
-    ):
+    for row in rows:
+        module = row.get("module")
         if module is None:
             continue
         found = True
         module_name = str(module)
-        scc_value = coerce_optional_int(scc_id, ctx="scc_id")
-        size_value = coerce_optional_int(component_size, ctx="component_size")
-        layer_value = coerce_optional_int(layer, ctx="layer")
+        scc_value = coerce_optional_int(row.get("scc_id"), ctx="scc_id")
+        size_value = coerce_optional_int(row.get("component_size"), ctx="component_size")
+        layer_value = coerce_optional_int(row.get("layer"), ctx="layer")
         comp_id[module_name] = scc_value if scc_value is not None else -1
         in_cycle[module_name] = bool(size_value and size_value > 1)
         layer_by_module[module_name] = layer_value if layer_value is not None else 0
@@ -451,26 +447,20 @@ def _component_meta_from_import_frame(frame: pl.DataFrame) -> ComponentMeta | No
 
 def _apply_import_module_frame(
     graph: nx.DiGraph,
-    frame: pl.DataFrame,
+    rows: list[dict[str, object]],
     fallback_layer_by_module: Mapping[str, int],
 ) -> None:
-    if frame.is_empty() or "module" not in frame.columns:
+    if not rows:
         return
-    data = frame.select(["module", "scc_id", "component_size", "layer"]).to_dict(as_series=False)
-    for module, scc_id, component_size, layer in zip(
-        data["module"],
-        data["scc_id"],
-        data["component_size"],
-        data["layer"],
-        strict=True,
-    ):
+    for row in rows:
+        module = row.get("module")
         if module is None:
             continue
         module_name = str(module)
         attrs: dict[str, object] = {}
-        scc_value = coerce_optional_int(scc_id, ctx="scc_id")
-        size_value = coerce_optional_int(component_size, ctx="component_size")
-        layer_value = coerce_optional_int(layer, ctx="layer")
+        scc_value = coerce_optional_int(row.get("scc_id"), ctx="scc_id")
+        size_value = coerce_optional_int(row.get("component_size"), ctx="component_size")
+        layer_value = coerce_optional_int(row.get("layer"), ctx="layer")
         attrs["scc_id"] = scc_value
         attrs["component_size"] = size_value
         attrs["layer"] = layer_value
@@ -485,97 +475,68 @@ def _map_path_to_module(value: object, module_by_path: Mapping[str, str]) -> str
     return module_by_path.get(str(value))
 
 
-def _symbol_module_edges_from_frame(
-    frame: pl.DataFrame,
+def _symbol_module_edges_from_rows(
+    rows: list[dict[str, object]],
     module_by_path: Mapping[str, str],
 ) -> SymbolModuleEdges:
-    if frame.is_empty():
+    if not rows:
         return set(), {}, {}
-    mapped = frame.select(
-        pl.col("def_path")
-        .map_elements(
-            lambda value: _map_path_to_module(value, module_by_path),
-            return_dtype=pl.Utf8,
-        )
-        .alias("def_module"),
-        pl.col("use_path")
-        .map_elements(
-            lambda value: _map_path_to_module(value, module_by_path),
-            return_dtype=pl.Utf8,
-        )
-        .alias("use_module"),
-    )
-    mapped = mapped.drop_nulls(subset=["def_module", "use_module"]).filter(
-        pl.col("def_module") != pl.col("use_module")
-    )
-    if mapped.is_empty():
-        return set(), {}, {}
-    def_modules = mapped.get_column("def_module").unique().to_list()
-    use_modules = mapped.get_column("use_module").unique().to_list()
-    modules = {str(module) for module in def_modules + use_modules}
-    inbound_rows = mapped.group_by("def_module").agg(pl.col("use_module").unique())
-    outbound_rows = mapped.group_by("use_module").agg(pl.col("def_module").unique())
-    inbound = {str(row[0]): {str(item) for item in row[1]} for row in inbound_rows.iter_rows()}
-    outbound = {str(row[0]): {str(item) for item in row[1]} for row in outbound_rows.iter_rows()}
+    modules: set[str] = set()
+    inbound: dict[str, set[str]] = {}
+    outbound: dict[str, set[str]] = {}
+    for row in rows:
+        def_module = _map_path_to_module(row.get("def_path"), module_by_path)
+        use_module = _map_path_to_module(row.get("use_path"), module_by_path)
+        if def_module is None or use_module is None:
+            continue
+        if def_module == use_module:
+            continue
+        modules.update({def_module, use_module})
+        inbound.setdefault(def_module, set()).add(use_module)
+        outbound.setdefault(use_module, set()).add(def_module)
     return modules, inbound, outbound
 
 
-def _symbol_module_graph_from_frame(
-    frame: pl.DataFrame,
+def _symbol_module_graph_from_rows(
+    rows: list[dict[str, object]],
     module_by_path: Mapping[str, str],
 ) -> nx.Graph:
     graph = nx.Graph()
-    if frame.is_empty():
+    if not rows:
         return graph
-    mapped = frame.select(
-        pl.col("def_path")
-        .map_elements(
-            lambda value: _map_path_to_module(value, module_by_path),
-            return_dtype=pl.Utf8,
-        )
-        .alias("def_module"),
-        pl.col("use_path")
-        .map_elements(
-            lambda value: _map_path_to_module(value, module_by_path),
-            return_dtype=pl.Utf8,
-        )
-        .alias("use_module"),
-    )
-    mapped = mapped.drop_nulls(subset=["def_module", "use_module"]).filter(
-        pl.col("def_module") != pl.col("use_module")
-    )
-    if mapped.is_empty():
-        return graph
-    edges = mapped.group_by(["use_module", "def_module"]).agg(pl.len().alias("weight"))
-    for use_module, def_module, weight in edges.iter_rows():
-        graph.add_edge(str(use_module), str(def_module), weight=int(weight))
+    edge_weights: dict[tuple[str, str], int] = {}
+    for row in rows:
+        def_module = _map_path_to_module(row.get("def_path"), module_by_path)
+        use_module = _map_path_to_module(row.get("use_path"), module_by_path)
+        if def_module is None or use_module is None:
+            continue
+        if def_module == use_module:
+            continue
+        key = (use_module, def_module)
+        edge_weights[key] = edge_weights.get(key, 0) + 1
+    for (use_module, def_module), weight in edge_weights.items():
+        graph.add_edge(use_module, def_module, weight=weight)
     return graph
 
 
-def _symbol_function_graph_from_frame(
-    frame: pl.DataFrame,
+def _symbol_function_graph_from_rows(
+    rows: list[dict[str, object]],
 ) -> nx.Graph:
     graph = nx.Graph()
-    if frame.is_empty():
+    if not rows:
         return graph
-    if "def_goid_h128" not in frame.columns or "use_goid_h128" not in frame.columns:
-        return graph
-    normalized = frame.select(
-        pl.col("def_goid_h128")
-        .map_elements(normalize_decimal_id, return_dtype=pl.Int64)
-        .alias("def_goid"),
-        pl.col("use_goid_h128")
-        .map_elements(normalize_decimal_id, return_dtype=pl.Int64)
-        .alias("use_goid"),
-    )
-    normalized = normalized.drop_nulls(subset=["def_goid", "use_goid"]).filter(
-        pl.col("def_goid") != pl.col("use_goid")
-    )
-    if normalized.is_empty():
-        return graph
-    edges = normalized.group_by(["use_goid", "def_goid"]).agg(pl.len().alias("weight"))
-    for use_goid, def_goid, weight in edges.iter_rows():
-        graph.add_edge(int(use_goid), int(def_goid), weight=int(weight))
+    edge_weights: dict[tuple[int, int], int] = {}
+    for row in rows:
+        def_goid = normalize_decimal_id(row.get("def_goid_h128"))
+        use_goid = normalize_decimal_id(row.get("use_goid_h128"))
+        if def_goid is None or use_goid is None:
+            continue
+        if def_goid == use_goid:
+            continue
+        key = (use_goid, def_goid)
+        edge_weights[key] = edge_weights.get(key, 0) + 1
+    for (use_goid, def_goid), weight in edge_weights.items():
+        graph.add_edge(use_goid, def_goid, weight=weight)
     return graph
 
 
@@ -589,57 +550,58 @@ def _load_symbol_graphs(
         repo=None,
         commit=None,
     )
-    symbol_module_edges = _symbol_module_edges_from_frame(symbol_rows, module_by_path)
-    symbol_module_graph = _symbol_module_graph_from_frame(symbol_rows, module_by_path)
-    symbol_function_graph = _symbol_function_graph_from_frame(symbol_rows)
+    symbol_module_edges = _symbol_module_edges_from_rows(symbol_rows, module_by_path)
+    symbol_module_graph = _symbol_module_graph_from_rows(symbol_rows, module_by_path)
+    symbol_function_graph = _symbol_function_graph_from_rows(symbol_rows)
     return symbol_module_edges, symbol_module_graph, symbol_function_graph
 
 
 def _module_inputs_from_rows(
-    rows: pl.DataFrame,
+    rows: list[dict[str, object]],
     *,
     repo: str,
     commit: str,
 ) -> tuple[dict[str, str], set[str]]:
     module_by_path: dict[str, str] = {}
     module_names: set[str] = set()
-    if rows.is_empty():
+    if not rows:
         return module_by_path, module_names
-    filtered = _filter_frame_by_snapshot(rows, repo=repo, commit=commit)
-    if filtered.is_empty() or "module" not in filtered.columns:
+    filtered = _filter_rows_by_snapshot(rows, repo=repo, commit=commit)
+    if not filtered:
         return module_by_path, module_names
-    module_series = filtered.get_column("module").drop_nulls()
-    module_names = {str(module) for module in module_series.to_list()}
-    if "path" in filtered.columns:
-        paths = filtered.get_column("path").to_list()
-        modules = filtered.get_column("module").to_list()
-        for path, module in zip(paths, modules, strict=True):
-            if path is None or module is None:
-                continue
-            module_by_path[str(path)] = str(module)
+    for row in filtered:
+        module = row.get("module")
+        if module is not None:
+            module_names.add(str(module))
+        path = row.get("path")
+        if path is None or module is None:
+            continue
+        module_by_path[str(path)] = str(module)
     return module_by_path, module_names
 
 
-def _function_goids_from_rows(rows: pl.DataFrame) -> set[int]:
+def _function_goids_from_rows(rows: list[dict[str, object]]) -> set[int]:
     function_goids: set[int] = set()
-    if rows.is_empty() or "goid_h128" not in rows.columns:
+    if not rows:
         return function_goids
-    filtered = rows
-    if "kind" in rows.columns:
-        filtered = rows.filter(pl.col("kind").cast(pl.Utf8, strict=False).is_in(_FUNCTION_KINDS))
-    for value in filtered.get_column("goid_h128").to_list():
-        goid = normalize_decimal_id(value)
+    for row in rows:
+        kind = row.get("kind")
+        if kind is not None and kind not in _FUNCTION_KINDS:
+            continue
+        goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is not None:
             function_goids.add(goid)
     return function_goids
 
 
-def _subsystem_ids_from_rows(rows: pl.DataFrame) -> set[str]:
+def _subsystem_ids_from_rows(rows: list[dict[str, object]]) -> set[str]:
     subsystem_ids: set[str] = set()
-    if rows.is_empty() or "subsystem_id" not in rows.columns:
+    if not rows:
         return subsystem_ids
-    for subsystem_id in rows.get_column("subsystem_id").drop_nulls().to_list():
-        subsystem_ids.add(str(subsystem_id))
+    for row in rows:
+        subsystem_id = row.get("subsystem_id")
+        if subsystem_id is not None:
+            subsystem_ids.add(str(subsystem_id))
     return subsystem_ids
 
 
@@ -763,42 +725,54 @@ def graph_metrics_result(
     )
 
 
-def graph_metrics_functions__base(graph_metrics_result: GraphMetricsRows) -> pl.LazyFrame:
+def graph_metrics_functions__base(
+    graph_metrics_result: GraphMetricsRows,
+) -> pa.RecordBatchReader:
     """Build base graph metrics rows for functions.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing function graph metrics rows.
+    pyarrow.RecordBatchReader
+        Reader containing function graph metrics rows.
     """
     if not graph_metrics_result.function_rows:
-        return empty_frame_for_table(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)
-    return rows_to_frame(GRAPH_METRICS_FUNCTIONS_TABLE_KEY, graph_metrics_result.function_rows)
+        return empty_reader_for_table(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
+        GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+        graph_metrics_result.function_rows,
+    )
+    return reader
 
 
-def graph_metrics_modules__base(graph_metrics_result: GraphMetricsRows) -> pl.LazyFrame:
+def graph_metrics_modules__base(
+    graph_metrics_result: GraphMetricsRows,
+) -> pa.RecordBatchReader:
     """Build base graph metrics rows for modules.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing module graph metrics rows.
+    pyarrow.RecordBatchReader
+        Reader containing module graph metrics rows.
     """
     if not graph_metrics_result.module_rows:
-        return empty_frame_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
-    return rows_to_frame(GRAPH_METRICS_MODULES_TABLE_KEY, graph_metrics_result.module_rows)
+        return empty_reader_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
+        GRAPH_METRICS_MODULES_TABLE_KEY,
+        graph_metrics_result.module_rows,
+    )
+    return reader
 
 
 def graph_metrics_functions_ext__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build extended graph metrics rows for functions.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing extended function metrics rows.
+    pyarrow.RecordBatchReader
+        Reader containing extended function metrics rows.
     """
     rows = build_graph_metrics_functions_ext_rows(
         repo=env.repo,
@@ -807,19 +781,22 @@ def graph_metrics_functions_ext__base(
         runtime=graph_metric_inputs.runtime_options,
         filters=graph_metric_inputs.filters,
     )
-    return rows_to_frame(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
+    if not rows:
+        return empty_reader_for_table(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
+    return reader
 
 
 def graph_metrics_modules_ext__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build extended graph metrics rows for modules.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing extended module metrics rows.
+    pyarrow.RecordBatchReader
+        Reader containing extended module metrics rows.
     """
     rows = build_graph_metrics_modules_ext_rows(
         repo=env.repo,
@@ -828,19 +805,22 @@ def graph_metrics_modules_ext__base(
         runtime=graph_metric_inputs.runtime_options,
         filters=graph_metric_inputs.filters,
     )
-    return rows_to_frame(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
+    if not rows:
+        return empty_reader_for_table(GRAPH_METRICS_MODULES_EXT_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
+    return reader
 
 
 def symbol_graph_metrics_functions__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build symbol graph metrics rows for functions.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing symbol function metrics rows.
+    pyarrow.RecordBatchReader
+        Reader containing symbol function metrics rows.
     """
     rows = build_symbol_graph_metrics_function_rows(
         repo=env.repo,
@@ -849,19 +829,22 @@ def symbol_graph_metrics_functions__base(
         known_functions=graph_metric_inputs.function_goids or None,
         runtime=graph_metric_inputs.runtime_options,
     )
-    return rows_to_frame(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
+    if not rows:
+        return empty_reader_for_table(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
+    return reader
 
 
 def symbol_graph_metrics_modules__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build symbol graph metrics rows for modules.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing symbol module metrics rows.
+    pyarrow.RecordBatchReader
+        Reader containing symbol module metrics rows.
     """
     rows = build_symbol_graph_metrics_module_rows(
         repo=env.repo,
@@ -870,7 +853,10 @@ def symbol_graph_metrics_modules__base(
         known_modules=graph_metric_inputs.module_names or None,
         runtime=graph_metric_inputs.runtime_options,
     )
-    return rows_to_frame(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
+    if not rows:
+        return empty_reader_for_table(SYMBOL_GRAPH_MODULES_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
+    return reader
 
 
 def graph_stats__base(
@@ -878,13 +864,13 @@ def graph_stats__base(
     graph_metric_inputs: GraphMetricInputs,
     q__analytics__config_values: InferableTabularInput,
     q__core__modules: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build base graph stats rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing graph stats rows.
+    pyarrow.RecordBatchReader
+        Reader containing graph stats rows.
     """
     config_value_rows = _collect_rows(
         q__analytics__config_values,
@@ -898,7 +884,7 @@ def graph_stats__base(
         repo=env.repo,
         commit=env.commit,
     )
-    allowed_modules = _allowed_modules_from_frame(
+    allowed_modules = _allowed_modules_from_rows(
         module_rows,
         repo=env.repo,
         commit=env.commit,
@@ -921,7 +907,10 @@ def graph_stats__base(
             use_gpu=graph_metric_inputs.runtime_options.use_gpu,
         )
     )
-    return rows_to_frame(GRAPH_STATS_TABLE_KEY, rows)
+    if not rows:
+        return empty_reader_for_table(GRAPH_STATS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(GRAPH_STATS_TABLE_KEY, rows)
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -937,6 +926,7 @@ _GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
                 table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
                 collect_group=GRAPH_METRICS_COLLECT_GROUP,
             ),
+            input_type=pa.RecordBatchReader,
             node_name="graph_metrics_functions__table",
         ),
         TableTargetTableSpec(
@@ -947,6 +937,7 @@ _GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
                 table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
                 collect_group=GRAPH_METRICS_COLLECT_GROUP,
             ),
+            input_type=pa.RecordBatchReader,
             node_name="graph_metrics_modules__table",
         ),
     ),
@@ -968,6 +959,7 @@ _GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="graph_metrics_functions_ext__base",
             contract=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
+            input_type=pa.RecordBatchReader,
             node_name="graph_metrics_functions_ext__table",
         ),
         TableTargetTableSpec(
@@ -975,6 +967,7 @@ _GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="graph_metrics_modules_ext__base",
             contract=GRAPH_METRICS_MODULES_EXT_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
+            input_type=pa.RecordBatchReader,
             node_name="graph_metrics_modules_ext__table",
         ),
     ),
@@ -996,6 +989,7 @@ _SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="symbol_graph_metrics_functions__base",
             contract=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY),
+            input_type=pa.RecordBatchReader,
             node_name="symbol_graph_metrics_functions__table",
         ),
         TableTargetTableSpec(
@@ -1003,6 +997,7 @@ _SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="symbol_graph_metrics_modules__base",
             contract=SYMBOL_GRAPH_MODULES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY),
+            input_type=pa.RecordBatchReader,
             node_name="symbol_graph_metrics_modules__table",
         ),
     ),
@@ -1024,6 +1019,7 @@ _GRAPH_STATS_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="graph_stats__base",
             contract=GRAPH_STATS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=GRAPH_STATS_TABLE_KEY),
+            input_type=pa.RecordBatchReader,
             node_name="graph_stats__table",
         ),
     ),

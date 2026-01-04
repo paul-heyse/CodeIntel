@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.functions.function_effects import (
     FunctionEffectsInputs,
@@ -22,9 +22,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import rows_to_frame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import record_batch_reader_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -48,20 +48,18 @@ def function_effects__base(
     q__core__modules: InferableTabularInput,
     q__graph__call_graph_edges: InferableTabularInput,
     q__graph__call_graph_nodes: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build function effects rows using tabular inputs.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame with function effects columns.
+    pa.RecordBatchReader
+        Reader with function effects rows.
     """
-    goids_frame = (
-        tabular_to_lazyframe(q__core__goids)
-        .select(["goid_h128", "rel_path", "qualname", "start_line", "end_line", "urn", "kind"])
-        .collect()
+    goids_frame = tabular_to_arrow_table(q__core__goids).select(
+        ["goid_h128", "rel_path", "qualname", "start_line", "end_line", "urn", "kind"]
     )
-    modules_frame = tabular_to_lazyframe(q__core__modules).select(["path", "module"]).collect()
+    modules_frame = tabular_to_arrow_table(q__core__modules).select(["path", "module"])
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -74,17 +72,16 @@ def function_effects__base(
         catalog_provider=catalog,
         ast_map=ast_map,
         missing_goids=missing,
-        call_graph_edges=(
-            tabular_to_lazyframe(q__graph__call_graph_edges)
-            .select(["repo", "commit", "caller_goid_h128", "callee_goid_h128"])
-            .collect()
+        call_graph_edges=tabular_to_arrow_table(q__graph__call_graph_edges).select(
+            ["repo", "commit", "caller_goid_h128", "callee_goid_h128"]
         ),
-        call_graph_nodes=(
-            tabular_to_lazyframe(q__graph__call_graph_nodes).select(["goid_h128", "kind"]).collect()
+        call_graph_nodes=tabular_to_arrow_table(q__graph__call_graph_nodes).select(
+            ["goid_h128", "kind"]
         ),
     )
     rows = build_function_effects_rows(env.snapshot, inputs=inputs)
-    return rows_to_frame(FUNCTION_EFFECTS_TABLE_KEY, rows)
+    reader, _ = record_batch_reader_for_rows(FUNCTION_EFFECTS_TABLE_KEY, rows)
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -98,6 +95,7 @@ _FUNCTION_EFFECTS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=FUNCTION_EFFECTS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=FUNCTION_EFFECTS_TABLE_KEY),
             node_name="function_effects__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="function_effects__table_materializations",

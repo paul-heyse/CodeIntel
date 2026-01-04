@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -18,8 +19,6 @@ from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
-
     from codeintel.core.schemas.primitives import ColumnType
 
 ColumnarRows = dict[str, list[object]]
@@ -185,12 +184,23 @@ def columnar_batch_collector_for_table_key(
 
 def record_batch_reader_for_rows(
     table_key: str,
-    rows: Iterable[Mapping[str, object]],
+    rows: Iterable[Mapping[str, object]] | Iterable[Sequence[object]],
     *,
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
     extras_policy: ExtrasPolicy | None = None,
 ) -> tuple[pa.RecordBatchReader, int]:
     """Build a RecordBatchReader from row mappings using the contract schema.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    rows
+        Row mappings or row sequences aligned to the table schema columns.
+    batch_size
+        Target batch size for buffering row data.
+    extras_policy
+        Optional extras policy to apply when aligning to the contract schema.
 
     Returns
     -------
@@ -202,10 +212,57 @@ def record_batch_reader_for_rows(
         batch_size=batch_size,
         extras_policy=extras_policy,
     )
-    collector.extend(rows)
+    collector.extend(_iter_row_mappings(table_key, rows))
     if collector.row_count == 0:
         return empty_reader_for_table(table_key), 0
     return collector.to_reader(), collector.row_count
+
+
+def _iter_row_mappings(
+    table_key: str,
+    rows: Iterable[Mapping[str, object]] | Iterable[Sequence[object]],
+) -> Iterable[Mapping[str, object]]:
+    rows_iter = iter(rows)
+    try:
+        first = next(rows_iter)
+    except StopIteration:
+        return iter(())
+    if isinstance(first, Mapping):
+        return _iter_mapping_rows(first, rows_iter)
+    if _is_row_sequence(first):
+        columns = tuple(get_schema_service().require_table_schema(table_key).column_names())
+        return _iter_sequence_rows(first, rows_iter, columns)
+    msg = f"Unsupported row payload for {table_key}: {type(first)}"
+    raise TypeError(msg)
+
+
+def _iter_mapping_rows(
+    first: Mapping[str, object],
+    rows_iter: Iterable[Mapping[str, object] | Sequence[object]],
+) -> Iterable[Mapping[str, object]]:
+    yield first
+    for row in rows_iter:
+        if not isinstance(row, Mapping):
+            msg = f"Mixed row payloads in mapping stream: {type(row)}"
+            raise TypeError(msg)
+        yield row
+
+
+def _iter_sequence_rows(
+    first: Sequence[object],
+    rows_iter: Iterable[Mapping[str, object] | Sequence[object]],
+    columns: Sequence[str],
+) -> Iterable[Mapping[str, object]]:
+    yield dict(zip(columns, first, strict=True))
+    for row in rows_iter:
+        if not _is_row_sequence(row):
+            msg = f"Mixed row payloads in sequence stream: {type(row)}"
+            raise TypeError(msg)
+        yield dict(zip(columns, row, strict=True))
+
+
+def _is_row_sequence(row: object) -> bool:
+    return isinstance(row, Sequence) and not isinstance(row, (bytes, str))
 
 
 def record_batch_reader_for_columnar_rows(

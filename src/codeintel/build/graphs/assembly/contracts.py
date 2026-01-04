@@ -1,0 +1,64 @@
+"""Contract alignment helpers for Arrow-first graph assembly."""
+
+from __future__ import annotations
+
+import pyarrow as pa
+
+from codeintel.build.tabular.arrow_ops import (
+    align_reader_to_contract as _align_reader_to_contract,
+)
+from codeintel.build.tabular.arrow_ops import (
+    align_table_to_contract as _align_table_to_contract,
+)
+from codeintel.core.columnar.rows import empty_reader_for_table
+from codeintel.core.schemas.arrow_gen import ExtrasPolicy
+
+
+def align_reader_to_contract(
+    table_key: str,
+    reader: pa.RecordBatchReader,
+    *,
+    extras_policy: ExtrasPolicy | None = None,
+) -> pa.RecordBatchReader:
+    """Align a RecordBatchReader to the contract schema for the table key.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Reader aligned to the contract schema.
+    """
+    return _align_reader_to_contract(table_key, reader, extras_policy=extras_policy)
+
+
+def align_table_to_contract(
+    table_key: str,
+    table: pa.Table,
+    *,
+    extras_policy: ExtrasPolicy | None = None,
+) -> pa.Table:
+    """Align a Table to the contract schema for the table key.
+
+    Returns
+    -------
+    pyarrow.Table
+        Table aligned to the contract schema.
+    """
+    return _align_table_to_contract(table_key, table, extras_policy=extras_policy)
+
+
+def empty_contract_reader(table_key: str) -> pa.RecordBatchReader:
+    """Return an empty reader aligned to the table contract.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Empty reader with the contract schema.
+    """
+    return empty_reader_for_table(table_key)
+
+
+__all__ = [
+    "align_reader_to_contract",
+    "align_table_to_contract",
+    "empty_contract_reader",
+]

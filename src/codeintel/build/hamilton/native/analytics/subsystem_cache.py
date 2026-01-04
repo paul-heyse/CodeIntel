@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import sys
+from contextlib import suppress
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_cache_frame
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -17,7 +18,8 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
+from codeintel.build.tabular.arrow_ops import align_table_to_contract
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -40,21 +42,24 @@ def subsystem_profile_cache__base(
     env: BuildEnv,
     q__analytics__subsystems: InferableTabularInput,
     q__analytics__subsystem_graph_metrics: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build cached subsystem profile rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing subsystem profile cache rows.
+    pa.RecordBatchReader
+        Reader containing subsystem profile cache rows.
     """
-    subsystems_frame = tabular_to_lazyframe(q__analytics__subsystems)
-    metrics_frame = tabular_to_lazyframe(q__analytics__subsystem_graph_metrics)
-    return build_subsystem_profile_cache_frame(
+    subsystems_frame = tabular_to_arrow_table(q__analytics__subsystems)
+    metrics_frame = tabular_to_arrow_table(q__analytics__subsystem_graph_metrics)
+    table = build_subsystem_profile_cache_frame(
         env.snapshot,
         subsystems_frame=subsystems_frame,
         subsystem_graph_metrics_frame=metrics_frame,
     )
+    with suppress(KeyError, RuntimeError, ValueError):
+        table = align_table_to_contract(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY, table)
+    return table_to_reader(table)
 
 
 _MODULE = sys.modules[__name__]
@@ -68,6 +73,7 @@ _SUBSYSTEM_CACHES_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEM_PROFILE_CACHE_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
             node_name="subsystem_profile_cache__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="subsystem_caches__table_materializations",

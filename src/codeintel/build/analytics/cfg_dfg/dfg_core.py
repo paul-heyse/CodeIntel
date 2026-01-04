@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
 from codeintel.build.analytics.compute.graphs import (
@@ -80,7 +80,7 @@ class DfgInputs:
 
 
 def load_dfg_edges(
-    dfg_edges_frame: pl.DataFrame,
+    dfg_edges_frame: pa.Table,
 ) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
     """
     Load DFG edges grouped by function GOID.
@@ -91,7 +91,7 @@ def load_dfg_edges(
         Mapping of GOID -> edge tuples.
     """
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = defaultdict(list)
-    for row in dfg_edges_frame.iter_rows(named=True):
+    for row in dfg_edges_frame.to_pylist():
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
             continue

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import (
@@ -650,8 +650,8 @@ def _coerce_int(value: object) -> int | None:
 
 
 def _load_class_metadata(
-    goids_frame: pl.DataFrame,
-    modules_frame: pl.DataFrame,
+    goids_frame: pa.Table,
+    modules_frame: pa.Table,
     *,
     repo: str,
     commit: str,
@@ -663,27 +663,25 @@ def _load_class_metadata(
     list[ClassMeta]
         Class metadata entries for the snapshot.
     """
-    goids_filtered = _filter_frame_by_snapshot(goids_frame, repo=repo, commit=commit)
-    if "kind" in goids_filtered.columns:
-        goids_filtered = goids_filtered.filter(pl.col("kind") == "class")
-    modules_filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
-    if {"path", "module"}.issubset(modules_filtered.columns):
-        joined = goids_filtered.join(
-            modules_filtered.select(["path", "module"]),
-            left_on="rel_path",
-            right_on="path",
-            how="left",
-        )
-    else:
-        joined = goids_filtered
+    goids_filtered = _rows_for_snapshot(goids_frame, repo=repo, commit=commit)
+    modules_filtered = _rows_for_snapshot(modules_frame, repo=repo, commit=commit)
+    module_by_path: dict[str, str] = {}
+    for row in modules_filtered:
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and module is not None:
+            module_by_path[path] = str(module)
     metas: list[ClassMeta] = []
-    for row in joined.iter_rows(named=True):
+    for row in goids_filtered:
+        kind = row.get("kind")
+        if kind is not None and str(kind) != "class":
+            continue
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         start_line = _coerce_int(row.get("start_line"))
         if not isinstance(rel_path, str) or not isinstance(qualname, str) or start_line is None:
             continue
-        module = row.get("module")
+        module = module_by_path.get(rel_path, row.get("module"))
         end_line = _coerce_int(row.get("end_line")) or start_line
         goid = _coerce_int(row.get("goid_h128"))
         metas.append(
@@ -700,7 +698,7 @@ def _load_class_metadata(
 
 
 def _doc_map(
-    docstrings_frame: pl.DataFrame,
+    docstrings_frame: pa.Table,
     *,
     repo: str,
     commit: str,
@@ -712,11 +710,12 @@ def _doc_map(
     dict[tuple[str, str], tuple[str | None, str | None]]
         Mapping of (path, qualname) to short and long docstring summaries.
     """
-    filtered = _filter_frame_by_snapshot(docstrings_frame, repo=repo, commit=commit)
-    if "kind" in filtered.columns:
-        filtered = filtered.filter(pl.col("kind") == "class")
+    filtered = _rows_for_snapshot(docstrings_frame, repo=repo, commit=commit)
     mapping: dict[tuple[str, str], tuple[str | None, str | None]] = {}
-    for row in filtered.iter_rows(named=True):
+    for row in filtered:
+        kind = row.get("kind")
+        if kind is not None and str(kind) != "class":
+            continue
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
@@ -730,25 +729,21 @@ def _doc_map(
     return mapping
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _rows_for_snapshot(
+    frame: pa.Table,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    """Filter a frame to a specific repo/commit snapshot.
-
-    Returns
-    -------
-    pl.DataFrame
-        Filtered frame containing only rows for the snapshot.
-    """
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
-    return filtered
+) -> list[dict[str, object]]:
+    rows = frame.to_pylist()
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
+    return [
+        row
+        for row in rows
+        if (repo == row.get("repo") if has_repo else True)
+        and (commit == row.get("commit") if has_commit else True)
+    ]
 
 
 def _class_decorators(node: ast.ClassDef) -> list[str]:

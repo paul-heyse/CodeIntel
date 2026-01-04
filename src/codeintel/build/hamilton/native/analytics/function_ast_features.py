@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.ast_features.extract import compute_function_features
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
@@ -21,9 +21,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import empty_frame_for_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -114,9 +114,9 @@ def _default_feature_row(row: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
+def _module_by_path(modules_frame: pa.Table) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
+    for row in modules_frame.to_pylist():
         rel_path = row.get("path")
         module_name = row.get("module")
         language = row.get("language")
@@ -212,25 +212,25 @@ def function_ast_features__base(
     env: BuildEnv,
     q__core__goids: InferableTabularInput,
     q__core__modules: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build function AST features using parsed source files.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame with function AST feature columns.
+    pa.RecordBatchReader
+        Reader with function AST feature rows.
     """
-    goids = tabular_to_frame(q__core__goids)
-    if goids.is_empty():
-        return empty_frame_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
+    goids = tabular_to_arrow_table(q__core__goids)
+    if goids.num_rows == 0:
+        return empty_reader_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
 
-    modules = tabular_to_frame(q__core__modules)
+    modules = tabular_to_arrow_table(q__core__modules)
     module_by_path = _module_by_path(modules)
     nodes_by_path, lines_by_path = _load_module_nodes(env, module_by_path)
 
     rows: list[dict[str, object]] = []
     repo_root = Path(env.snapshot.repo_root)
-    for row in goids.iter_rows(named=True):
+    for row in goids.to_pylist():
         if row.get("kind") not in {"function", "method"}:
             continue
         rows.append(
@@ -243,34 +243,9 @@ def function_ast_features__base(
         )
 
     if not rows:
-        return empty_frame_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
-    frame = pl.DataFrame(rows)
-    return frame.lazy().select(
-        [
-            "repo",
-            "commit",
-            "function_goid_h128",
-            "rel_path",
-            "qualname",
-            "is_async",
-            "uses_network",
-            "uses_db",
-            "uses_filesystem",
-            "uses_subprocess",
-            "uses_concurrency_lib",
-            "uses_threading",
-            "uses_asyncio_lib",
-            "http_client_libs",
-            "http_server_libs",
-            "db_libs",
-            "message_libs",
-            "config_read_count",
-            "feature_flag_count",
-            "decorators",
-            "libraries_used",
-            "created_at",
-        ]
-    )
+        return empty_reader_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(FUNCTION_AST_FEATURES_TABLE_KEY, rows)
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -284,6 +259,7 @@ _FUNCTION_AST_FEATURES_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=FUNCTION_AST_FEATURES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=FUNCTION_AST_FEATURES_TABLE_KEY),
             node_name="function_ast_features__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="function_ast_features__table_materializations",

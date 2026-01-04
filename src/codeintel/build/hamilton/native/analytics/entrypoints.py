@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-import polars as pl
+import pyarrow as pa
 from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
@@ -29,13 +29,11 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.serialization.json import decode_json_list
 from codeintel.core.serialization.payload import decode_payload
 
@@ -70,24 +68,24 @@ ENTRYPOINT_TESTS_CONTRACT = TableContractSpec(
 class EntrypointModuleFrames:
     """Frame inputs for entrypoint module context."""
 
-    modules_frame: pl.DataFrame
-    goids_frame: pl.DataFrame
-    features_frame: pl.DataFrame
+    modules_frame: pa.Table
+    goids_frame: pa.Table
+    features_frame: pa.Table
 
 
 @dataclass(frozen=True)
 class EntrypointTestFrames:
     """Frame inputs for entrypoint test context."""
 
-    test_catalog_frame: pl.DataFrame
+    test_catalog_frame: pa.Table
 
 
 @dataclass(frozen=True)
 class EntrypointSubsystemFrames:
     """Frame inputs for entrypoint subsystem context."""
 
-    subsystems_frame: pl.DataFrame
-    subsystem_modules_frame: pl.DataFrame
+    subsystems_frame: pa.Table
+    subsystem_modules_frame: pa.Table
 
 
 def _parse_json_list(value: object) -> list[str]:
@@ -99,29 +97,26 @@ def _parse_json_list(value: object) -> list[str]:
     return []
 
 
-def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
+def _module_map(modules_frame: pa.Table) -> dict[str, str]:
     module_map: dict[str, str] = {}
-    if modules_frame.is_empty():
+    if modules_frame.num_rows == 0:
         return module_map
-    if not {"path", "module"}.issubset(set(modules_frame.columns)):
+    if not {"path", "module"}.issubset(set(modules_frame.column_names)):
         return module_map
-    data = modules_frame.select(["path", "module"]).to_dict(as_series=False)
-    module_map.update(
-        {
-            path: module
-            for path, module in zip(data["path"], data["module"], strict=True)
-            if isinstance(path, str) and isinstance(module, str)
-        }
-    )
+    for row in modules_frame.select(["path", "module"]).to_pylist():
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_map[path] = module
     return module_map
 
 
-def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeatures]:
+def _features_by_goid(features_frame: pa.Table) -> dict[int, FunctionAstFeatures]:
     features_map: dict[int, FunctionAstFeatures] = {}
-    if features_frame.is_empty():
+    if features_frame.num_rows == 0:
         return features_map
     required = {"function_goid_h128", "rel_path", "qualname"}
-    if not required.issubset(set(features_frame.columns)):
+    if not required.issubset(set(features_frame.column_names)):
         return features_map
     columns = [
         "function_goid_h128",
@@ -144,80 +139,53 @@ def _features_by_goid(features_frame: pl.DataFrame) -> dict[int, FunctionAstFeat
         "config_read_count",
         "feature_flag_count",
     ]
-    data = features_frame.select(columns).to_dict(as_series=False)
-    for (
-        goid_raw,
-        rel_path,
-        qualname,
-        is_async,
-        decorators,
-        libraries_used,
-        uses_network,
-        uses_db,
-        uses_filesystem,
-        uses_subprocess,
-        uses_concurrency_lib,
-        uses_threading,
-        uses_asyncio_lib,
-        http_client_libs,
-        http_server_libs,
-        db_libs,
-        message_libs,
-        config_read_count,
-        feature_flag_count,
-    ) in zip(
-        data["function_goid_h128"],
-        data["rel_path"],
-        data["qualname"],
-        data["is_async"],
-        data["decorators"],
-        data["libraries_used"],
-        data["uses_network"],
-        data["uses_db"],
-        data["uses_filesystem"],
-        data["uses_subprocess"],
-        data["uses_concurrency_lib"],
-        data["uses_threading"],
-        data["uses_asyncio_lib"],
-        data["http_client_libs"],
-        data["http_server_libs"],
-        data["db_libs"],
-        data["message_libs"],
-        data["config_read_count"],
-        data["feature_flag_count"],
-        strict=True,
-    ):
-        goid_value = normalize_decimal_id(goid_raw)
-        if goid_value is None:
+    for row in features_frame.select(columns).to_pylist():
+        feature = _feature_from_row(row)
+        if feature is None:
             continue
-        if not isinstance(rel_path, str) or not isinstance(qualname, str):
-            continue
-        features_map[int(goid_value)] = FunctionAstFeatures(
-            goid=int(goid_value),
-            rel_path=rel_path,
-            qualname=qualname,
-            is_async=bool(is_async),
-            decorators=tuple(_parse_json_list(decorators)),
-            imports={},
-            libraries_used=frozenset(_parse_json_list(libraries_used)),
-            io_flags=IoFlags(
-                uses_network=bool(uses_network),
-                uses_db=bool(uses_db),
-                uses_filesystem=bool(uses_filesystem),
-                uses_subprocess=bool(uses_subprocess),
-            ),
-            uses_concurrency_lib=bool(uses_concurrency_lib),
-            uses_threading=bool(uses_threading),
-            uses_asyncio_lib=bool(uses_asyncio_lib),
-            http_client_libs=frozenset(_parse_json_list(http_client_libs)),
-            http_server_libs=frozenset(_parse_json_list(http_server_libs)),
-            db_libs=frozenset(_parse_json_list(db_libs)),
-            message_libs=frozenset(_parse_json_list(message_libs)),
-            config_read_count=int(config_read_count or 0),
-            feature_flag_count=int(feature_flag_count or 0),
-            extra={},
-        )
+        features_map[feature.goid] = feature
     return features_map
+
+
+def _feature_from_row(row: dict[str, object]) -> FunctionAstFeatures | None:
+    goid_value = normalize_decimal_id(row.get("function_goid_h128"))
+    rel_path = row.get("rel_path")
+    qualname = row.get("qualname")
+    if goid_value is None or not isinstance(rel_path, str) or not isinstance(qualname, str):
+        return None
+    return FunctionAstFeatures(
+        goid=int(goid_value),
+        rel_path=rel_path,
+        qualname=qualname,
+        is_async=bool(row.get("is_async")),
+        decorators=tuple(_parse_json_list(row.get("decorators"))),
+        imports={},
+        libraries_used=frozenset(_parse_json_list(row.get("libraries_used"))),
+        io_flags=IoFlags(
+            uses_network=bool(row.get("uses_network")),
+            uses_db=bool(row.get("uses_db")),
+            uses_filesystem=bool(row.get("uses_filesystem")),
+            uses_subprocess=bool(row.get("uses_subprocess")),
+        ),
+        uses_concurrency_lib=bool(row.get("uses_concurrency_lib")),
+        uses_threading=bool(row.get("uses_threading")),
+        uses_asyncio_lib=bool(row.get("uses_asyncio_lib")),
+        http_client_libs=frozenset(_parse_json_list(row.get("http_client_libs"))),
+        http_server_libs=frozenset(_parse_json_list(row.get("http_server_libs"))),
+        db_libs=frozenset(_parse_json_list(row.get("db_libs"))),
+        message_libs=frozenset(_parse_json_list(row.get("message_libs"))),
+        config_read_count=coerce_optional_int(
+            row.get("config_read_count"),
+            ctx="entrypoints.config_read_count",
+        )
+        or 0,
+        feature_flag_count=coerce_optional_int(
+            row.get("feature_flag_count"),
+            ctx="entrypoints.feature_flag_count",
+        )
+        or 0,
+        extra={},
+    )
 
 
 def entrypoint_module_frames(
@@ -233,9 +201,9 @@ def entrypoint_module_frames(
         Frame bundle with modules, goids, and AST features.
     """
     return EntrypointModuleFrames(
-        modules_frame=tabular_to_frame(q__core__modules),
-        goids_frame=tabular_to_frame(q__core__goids),
-        features_frame=tabular_to_frame(q__analytics__function_ast_features),
+        modules_frame=tabular_to_arrow_table(q__core__modules),
+        goids_frame=tabular_to_arrow_table(q__core__goids),
+        features_frame=tabular_to_arrow_table(q__analytics__function_ast_features),
     )
 
 
@@ -250,7 +218,7 @@ def entrypoint_test_frames(
         Frame bundle with the test catalog snapshot.
     """
     return EntrypointTestFrames(
-        test_catalog_frame=tabular_to_frame(q__analytics__test_catalog),
+        test_catalog_frame=tabular_to_arrow_table(q__analytics__test_catalog),
     )
 
 
@@ -266,8 +234,8 @@ def entrypoint_subsystem_frames(
         Frame bundle with subsystem metadata and module mapping.
     """
     return EntrypointSubsystemFrames(
-        subsystems_frame=tabular_to_frame(q__analytics__subsystems),
-        subsystem_modules_frame=tabular_to_frame(q__analytics__subsystem_modules),
+        subsystems_frame=tabular_to_arrow_table(q__analytics__subsystems),
+        subsystem_modules_frame=tabular_to_arrow_table(q__analytics__subsystem_modules),
     )
 
 
@@ -316,34 +284,38 @@ def entrypoints_result(
     )
 
 
-def entrypoints__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:
+def entrypoints__base(entrypoints_result: EntrypointsResult) -> pa.RecordBatchReader:
     """Build entrypoint rows from computed entrypoints metadata.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing entrypoint rows.
+    pa.RecordBatchReader
+        Reader containing entrypoint rows.
     """
-    return rows_to_frame(
+    if not entrypoints_result.entrypoint_rows:
+        return empty_reader_for_table(ENTRYPOINTS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         ENTRYPOINTS_TABLE_KEY,
         entrypoints_result.entrypoint_rows,
     )
+    return reader
 
 
-def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pl.LazyFrame:
+def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.RecordBatchReader:
     """Build entrypoint test rows from computed entrypoints metadata.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing entrypoint test rows.
+    pa.RecordBatchReader
+        Reader containing entrypoint test rows.
     """
     if not entrypoints_result.test_rows:
-        return empty_frame_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
-    return rows_to_frame(
+        return empty_reader_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         ENTRYPOINT_TESTS_TABLE_KEY,
         entrypoints_result.test_rows,
     )
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -357,6 +329,7 @@ _ENTRYPOINTS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=ENTRYPOINTS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=ENTRYPOINTS_TABLE_KEY),
             node_name="entrypoints__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=ENTRYPOINT_TESTS_TABLE_KEY,
@@ -364,6 +337,7 @@ _ENTRYPOINTS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=ENTRYPOINT_TESTS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=ENTRYPOINT_TESTS_TABLE_KEY),
             node_name="entrypoint_tests__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="entrypoints__table_materializations",

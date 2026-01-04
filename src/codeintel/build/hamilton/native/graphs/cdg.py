@@ -127,9 +127,8 @@ def _edge_indexes(
         if src_idx is None or dst_idx is None:
             continue
         edges_idx.append((src_idx, dst_idx))
-        edge_kind_by_pair[src_idx, dst_idx] = (
-            row.get("edge_kind") if isinstance(row.get("edge_kind"), str) else None
-        )
+        edge_kind_raw = row.get("edge_kind")
+        edge_kind_by_pair[src_idx, dst_idx] = edge_kind_raw if isinstance(edge_kind_raw, str) else None
     return edges_idx, edge_kind_by_pair
 
 

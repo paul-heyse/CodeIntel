@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.graphs.graph_metrics import (
     build_graph_metric_filters_from_sets,
@@ -25,9 +25,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import rows_to_frame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -62,13 +62,18 @@ def _collect_rows(
     repo: str | None,
     commit: str | None,
 ) -> list[dict[str, object]]:
-    frame = tabular_to_lazyframe(value)
-    available = set(frame.columns)
-    if repo is not None and "repo" in available:
-        frame = frame.filter(pl.col("repo") == repo)
-    if commit is not None and "commit" in available:
-        frame = frame.filter(pl.col("commit") == commit)
-    return frame.select(list(columns)).collect().to_dicts()
+    table = tabular_to_arrow_table(value).select(list(columns))
+    rows = table.to_pylist()
+    if repo is None and commit is None:
+        return rows
+    filtered: list[dict[str, object]] = []
+    for row in rows:
+        if repo is not None and row.get("repo") not in {None, repo, ""}:
+            continue
+        if commit is not None and row.get("commit") not in {None, commit, ""}:
+            continue
+        filtered.append(row)
+    return filtered
 
 
 def subsystem_graph_metrics__base(
@@ -76,13 +81,13 @@ def subsystem_graph_metrics__base(
     q__analytics__subsystem_modules: InferableTabularInput,
     q__graph__import_graph_edges: InferableTabularInput,
     q__graph__import_modules: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build subsystem graph metrics rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing subsystem graph metrics rows.
+    pa.RecordBatchReader
+        Reader containing subsystem graph metrics rows.
     """
     membership_rows = _collect_rows(
         q__analytics__subsystem_modules,
@@ -122,10 +127,10 @@ def subsystem_graph_metrics__base(
             filters=filters,
         )
     )
-    return rows_to_frame(
-        SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
-        rows,
-    )
+    if not rows:
+        return empty_reader_for_table(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY, rows)
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -139,6 +144,7 @@ _SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEM_GRAPH_METRICS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
             node_name="subsystem_graph_metrics__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="subsystem_graph_metrics__table_materializations",

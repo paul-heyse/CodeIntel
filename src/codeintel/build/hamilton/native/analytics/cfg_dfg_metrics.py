@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.cfg_dfg.cfg_core import CfgInputs, cfg_rows_for_fn
 from codeintel.build.analytics.cfg_dfg.compute import CfgMetricsResult, DfgMetricsResult
@@ -38,9 +38,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import empty_frame_for_table, rows_to_frame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -125,25 +125,26 @@ class _CfgDfgMetricsAnalysis:
 
 @dataclass(frozen=True, slots=True)
 class _CfgDfgMetricsInputs:
-    cfg_blocks: pl.DataFrame
-    cfg_edges: pl.DataFrame
-    dfg_edges: pl.DataFrame
-    goids: pl.DataFrame
-    modules: pl.DataFrame
+    cfg_blocks: pa.Table
+    cfg_edges: pa.Table
+    dfg_edges: pa.Table
+    goids: pa.Table
+    modules: pa.Table
 
 
-def _rows_to_frame(
+def _rows_to_reader(
     rows: tuple[tuple[object, ...], ...],
     table_key: str,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     if not rows:
-        return empty_frame_for_table(table_key)
-    return rows_to_frame(table_key, rows)
+        return empty_reader_for_table(table_key)
+    reader, _ = record_batch_reader_for_rows(table_key, rows)
+    return reader
 
 
-def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
+def _module_by_path(modules_frame: pa.Table) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
+    for row in modules_frame.to_pylist():
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
@@ -152,12 +153,12 @@ def _module_by_path(modules_frame: pl.DataFrame) -> dict[str, str]:
 
 
 def _function_metadata(
-    goids_frame: pl.DataFrame,
-    modules_frame: pl.DataFrame,
+    goids_frame: pa.Table,
+    modules_frame: pa.Table,
 ) -> dict[int, tuple[str, str | None, str | None]]:
     module_by_path = _module_by_path(modules_frame)
     metadata: dict[int, tuple[str, str | None, str | None]] = {}
-    for row in goids_frame.iter_rows(named=True):
+    for row in goids_frame.to_pylist():
         if row.get("kind") not in {"function", "method"}:
             continue
         goid_raw = row.get("goid_h128")
@@ -174,10 +175,10 @@ def _function_metadata(
 
 
 def _cfg_blocks_by_fn(
-    cfg_blocks_frame: pl.DataFrame,
+    cfg_blocks_frame: pa.Table,
 ) -> dict[int, list[tuple[int, str, int, int]]]:
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = {}
-    for row in cfg_blocks_frame.iter_rows(named=True):
+    for row in cfg_blocks_frame.to_pylist():
         fn = normalize_decimal_id(row.get("function_goid_h128"))
         block_idx = normalize_decimal_id(row.get("block_idx"))
         if fn is None or block_idx is None:
@@ -192,10 +193,10 @@ def _cfg_blocks_by_fn(
 
 
 def _cfg_edges_by_fn(
-    cfg_edges_frame: pl.DataFrame,
+    cfg_edges_frame: pa.Table,
 ) -> dict[int, list[tuple[int, int, str]]]:
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = {}
-    for row in cfg_edges_frame.iter_rows(named=True):
+    for row in cfg_edges_frame.to_pylist():
         fn = normalize_decimal_id(row.get("function_goid_h128"))
         if fn is None:
             continue
@@ -211,10 +212,10 @@ def _cfg_edges_by_fn(
 
 
 def _dfg_edges_by_fn(
-    dfg_edges_frame: pl.DataFrame,
+    dfg_edges_frame: pa.Table,
 ) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = {}
-    for row in dfg_edges_frame.iter_rows(named=True):
+    for row in dfg_edges_frame.to_pylist():
         fn = normalize_decimal_id(row.get("function_goid_h128"))
         if fn is None:
             continue
@@ -262,8 +263,8 @@ def _graph_context(
 def _build_cfg_metrics(
     env: BuildEnv,
     metadata: dict[int, tuple[str, str | None, str | None]],
-    cfg_blocks_frame: pl.DataFrame,
-    cfg_edges_frame: pl.DataFrame,
+    cfg_blocks_frame: pa.Table,
+    cfg_edges_frame: pa.Table,
     graph_ctx: GraphContext,
 ) -> CfgMetricsResult:
     fn_rows: list[tuple[object, ...]] = []
@@ -294,7 +295,7 @@ def _build_cfg_metrics(
 def _build_dfg_metrics(
     env: BuildEnv,
     metadata: dict[int, tuple[str, str | None, str | None]],
-    dfg_edges_frame: pl.DataFrame,
+    dfg_edges_frame: pa.Table,
     graph_ctx: GraphContext,
 ) -> DfgMetricsResult:
     fn_rows: list[tuple[object, ...]] = []
@@ -340,11 +341,11 @@ def cfg_dfg_metrics_inputs(
         Collected frames for CFG/DFG metrics computation.
     """
     return _CfgDfgMetricsInputs(
-        cfg_blocks=tabular_to_frame(q__graph__cfg_blocks),
-        cfg_edges=tabular_to_frame(q__graph__cfg_edges),
-        dfg_edges=tabular_to_frame(q__graph__dfg_edges),
-        goids=tabular_to_frame(q__core__goids),
-        modules=tabular_to_frame(q__core__modules),
+        cfg_blocks=tabular_to_arrow_table(q__graph__cfg_blocks),
+        cfg_edges=tabular_to_arrow_table(q__graph__cfg_edges),
+        dfg_edges=tabular_to_arrow_table(q__graph__dfg_edges),
+        goids=tabular_to_arrow_table(q__core__goids),
+        modules=tabular_to_arrow_table(q__core__modules),
     )
 
 
@@ -399,29 +400,33 @@ def cfg_dfg_metrics_analysis(
     return _CfgDfgMetricsAnalysis(cfg=cfg, dfg=dfg)
 
 
-def cfg_function_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+def cfg_function_metrics__base(
+    cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
+) -> pa.RecordBatchReader:
     """Build CFG function metrics rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of CFG function metrics rows.
+    pa.RecordBatchReader
+        Reader of CFG function metrics rows.
     """
-    return _rows_to_frame(
+    return _rows_to_reader(
         cfg_dfg_metrics_analysis.cfg.fn_rows,
         CFG_FUNCTION_METRICS_TABLE_KEY,
     )
 
 
-def cfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+def cfg_block_metrics__base(
+    cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
+) -> pa.RecordBatchReader:
     """Build CFG block metrics rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of CFG block metrics rows.
+    pa.RecordBatchReader
+        Reader of CFG block metrics rows.
     """
-    return _rows_to_frame(
+    return _rows_to_reader(
         cfg_dfg_metrics_analysis.cfg.block_rows,
         CFG_BLOCK_METRICS_TABLE_KEY,
     )
@@ -429,43 +434,47 @@ def cfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) ->
 
 def cfg_function_metrics_ext__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build CFG function metrics ext rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of CFG function metrics ext rows.
+    pa.RecordBatchReader
+        Reader of CFG function metrics ext rows.
     """
-    return _rows_to_frame(
+    return _rows_to_reader(
         cfg_dfg_metrics_analysis.cfg.ext_rows,
         CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
     )
 
 
-def dfg_function_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+def dfg_function_metrics__base(
+    cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
+) -> pa.RecordBatchReader:
     """Build DFG function metrics rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of DFG function metrics rows.
+    pa.RecordBatchReader
+        Reader of DFG function metrics rows.
     """
-    return _rows_to_frame(
+    return _rows_to_reader(
         cfg_dfg_metrics_analysis.dfg.fn_rows,
         DFG_FUNCTION_METRICS_TABLE_KEY,
     )
 
 
-def dfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) -> pl.LazyFrame:
+def dfg_block_metrics__base(
+    cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
+) -> pa.RecordBatchReader:
     """Build DFG block metrics rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of DFG block metrics rows.
+    pa.RecordBatchReader
+        Reader of DFG block metrics rows.
     """
-    return _rows_to_frame(
+    return _rows_to_reader(
         cfg_dfg_metrics_analysis.dfg.block_rows,
         DFG_BLOCK_METRICS_TABLE_KEY,
     )
@@ -473,15 +482,15 @@ def dfg_block_metrics__base(cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis) ->
 
 def dfg_function_metrics_ext__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build DFG function metrics ext rows from the analysis payload.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame of DFG function metrics ext rows.
+    pa.RecordBatchReader
+        Reader of DFG function metrics ext rows.
     """
-    return _rows_to_frame(
+    return _rows_to_reader(
         cfg_dfg_metrics_analysis.dfg.ext_rows,
         DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
     )
@@ -501,6 +510,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="cfg_function_metrics__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=CFG_BLOCK_METRICS_TABLE_KEY,
@@ -511,6 +521,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="cfg_block_metrics__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
@@ -521,6 +532,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="cfg_function_metrics_ext__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
@@ -531,6 +543,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="dfg_function_metrics__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=DFG_BLOCK_METRICS_TABLE_KEY,
@@ -541,6 +554,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="dfg_block_metrics__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
@@ -551,6 +565,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="dfg_function_metrics_ext__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="cfg_dfg_metrics__table_materializations",

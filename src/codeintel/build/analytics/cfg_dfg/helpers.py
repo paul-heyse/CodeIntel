@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -72,8 +72,8 @@ def parse_block_idx(block_id: str | int | None) -> int | None:
 
 
 def load_function_metadata(
-    goids_frame: pl.DataFrame,
-    modules_frame: pl.DataFrame,
+    goids_frame: pa.Table,
+    modules_frame: pa.Table,
     *,
     repo: str,
     commit: str,
@@ -97,14 +97,14 @@ def load_function_metadata(
         Mapping of GOID -> (rel_path, module, qualname).
     """
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.iter_rows(named=True):
+    for row in modules_frame.to_pylist():
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
             module_by_path[path] = module
 
     metadata: dict[int, tuple[str, str | None, str | None]] = {}
-    for row in goids_frame.iter_rows(named=True):
+    for row in goids_frame.to_pylist():
         if row.get("repo") != repo or row.get("commit") != commit:
             continue
         if row.get("kind") not in {"function", "method"}:

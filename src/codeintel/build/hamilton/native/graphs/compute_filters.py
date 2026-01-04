@@ -10,6 +10,7 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     kind_is_function_or_method,
     language_is_python_or_null,
+    node_type_is_function,
     non_empty_string_mask,
 )
 
@@ -139,7 +140,34 @@ def filter_goids_with_spans(goids_table: pa.Table) -> pa.Table:
         return goids_table
 
 
+def filter_function_ast_nodes(ast_nodes_table: pa.Table) -> pa.Table:
+    """Filter AST node rows to function definitions with valid metadata.
+
+    Returns
+    -------
+    pa.Table
+        Filtered table or the original on failure.
+    """
+    if ast_nodes_table.num_rows == 0:
+        return ast_nodes_table
+    required = {"path", "node_type", "name", "lineno"}
+    if not required.issubset(set(ast_nodes_table.column_names)):
+        return ast_nodes_table
+    try:
+        path_mask = non_empty_string_mask(ast_nodes_table.column("path"))
+        node_mask = node_type_is_function(ast_nodes_table.column("node_type"))
+        name_mask = non_empty_string_mask(ast_nodes_table.column("name"))
+        line_mask = is_valid_mask(ast_nodes_table.column("lineno"))
+        mask = and_kleene(path_mask, node_mask)
+        mask = and_kleene(mask, name_mask)
+        mask = and_kleene(mask, line_mask)
+        return safe_filter(ast_nodes_table, mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return ast_nodes_table
+
+
 __all__ = [
+    "filter_function_ast_nodes",
     "filter_goids_with_spans",
     "filter_modules_with_language",
     "filter_python_goids",

@@ -12,8 +12,13 @@ import pyarrow as pa
 from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.compute_filters import filter_python_goids
+from codeintel.build.hamilton.native.graphs.compute_filters import (
+    filter_function_ast_nodes,
+    filter_python_goids,
+)
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import non_empty_string_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
@@ -60,12 +65,18 @@ def _collect_ast_function_keys(
         return function_keys_by_path, paths
     if not {"node_type", "name", "lineno"}.issubset(set(ast_nodes_table.column_names)):
         return function_keys_by_path, paths
-    for row in ast_nodes_table.to_pylist():
-        path = row.get("path")
+    path_table = ast_nodes_table
+    try:
+        path_mask = non_empty_string_mask(ast_nodes_table.column("path"))
+        path_table = safe_filter(ast_nodes_table, path_mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        path_table = ast_nodes_table
+    for path in path_table.column("path").to_pylist():
         if isinstance(path, str) and path:
             paths.add(path)
-        if row.get("node_type") not in {"FunctionDef", "AsyncFunctionDef"}:
-            continue
+    filtered = filter_function_ast_nodes(ast_nodes_table)
+    for row in filtered.to_pylist():
+        path = row.get("path")
         name = row.get("name")
         lineno = row.get("lineno")
         if not isinstance(path, str) or not path:
@@ -88,7 +99,8 @@ def _collect_goids_by_path(
     required = {"kind", "rel_path", "qualname", "goid_h128", "start_line"}
     if not required.issubset(set(goids_table.column_names)):
         return goids_by_path
-    for row in goids_table.to_pylist():
+    filtered = filter_python_goids(goids_table)
+    for row in filtered.to_pylist():
         if row.get("kind") not in {"function", "method"}:
             continue
         language = row.get("language")

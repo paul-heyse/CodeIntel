@@ -12,6 +12,9 @@ columnar. The focus is on vectorized filters, projections, and aggregations usin
 The goal is to shrink Python work in graph-building pipelines, reduce per-row overhead, and
 align with Arrow’s compute patterns while preserving current behavior and type safety.
 
+Related plan:
+- `plans/pyarrow_repo_intensification_plan.md`
+
 ## Goals
 - Replace Python-level masks and row filters with Arrow compute expressions.
 - Reduce `to_pylist()` usage to only cases that require Python AST analysis or bespoke logic.

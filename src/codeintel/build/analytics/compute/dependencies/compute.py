@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.compute.dependencies.classification import (
     LibraryPattern,
@@ -96,8 +96,8 @@ class ExternalDependencyInputs:
 class ExternalDependenciesInputs:
     """Inputs for aggregated external dependencies."""
 
-    dependency_calls_frame: pl.DataFrame | None = None
-    config_values_frame: pl.DataFrame | None = None
+    dependency_calls_frame: pa.Table | None = None
+    config_values_frame: pa.Table | None = None
     patterns: Mapping[str, LibraryPattern] | None = None
     language: str = "python"
 
@@ -215,14 +215,14 @@ def _function_call_rows_pure(
 
 
 def _dependency_call_rows_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> Iterable[tuple[object, ...]]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return ()
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
     return [
         (
             row.get("dep_id"),
@@ -235,7 +235,7 @@ def _dependency_call_rows_from_frame(
             row.get("criticality"),
             row.get("risk_score"),
         )
-        for row in filtered.iter_rows(named=True)
+        for row in filtered
     ]
 
 
@@ -387,16 +387,16 @@ def _ensure_str_list(value: object) -> list[str]:
 
 
 def _config_keys_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, set[str]]:
     mapping: dict[str, set[str]] = {}
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return mapping
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    for row in filtered.iter_rows(named=True):
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    for row in filtered:
         ref_modules = row.get("reference_modules")
         key = row.get("key")
         if key is None or ref_modules is None:
@@ -407,22 +407,25 @@ def _config_keys_from_frame(
     return mapping
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _rows_for_snapshot(
+    frame: pa.Table,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
-    return filtered
+) -> list[dict[str, object]]:
+    rows = frame.to_pylist()
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
+    return [
+        row
+        for row in rows
+        if (repo == row.get("repo") if has_repo else True)
+        and (commit == row.get("commit") if has_commit else True)
+    ]
 
 
 def load_config_key_map(
-    config_values_frame: pl.DataFrame | None,
+    config_values_frame: pa.Table | None,
     *,
     repo: str,
     commit: str,

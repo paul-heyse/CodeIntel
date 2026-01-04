@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.functions.function_contracts import (
     FunctionContractInputs,
@@ -22,9 +22,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import rows_to_frame
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -48,18 +48,18 @@ def function_contracts__base(
     q__analytics__function_types: InferableTabularInput,
     q__core__goids: InferableTabularInput,
     q__core__modules: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build function contracts rows using tabular inputs.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing function contract rows.
+    pa.RecordBatchReader
+        Reader containing function contract rows.
     """
-    goids_frame = tabular_to_frame(q__core__goids)
-    modules_frame = tabular_to_frame(q__core__modules)
-    docstrings_frame = tabular_to_frame(q__core__docstrings)
-    function_types_frame = tabular_to_frame(q__analytics__function_types)
+    goids_frame = tabular_to_arrow_table(q__core__goids)
+    modules_frame = tabular_to_arrow_table(q__core__modules)
+    docstrings_frame = tabular_to_arrow_table(q__core__docstrings)
+    function_types_frame = tabular_to_arrow_table(q__analytics__function_types)
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -77,7 +77,10 @@ def function_contracts__base(
             function_types_frame=function_types_frame,
         ),
     )
-    return rows_to_frame(FUNCTION_CONTRACTS_TABLE_KEY, rows)
+    if not rows:
+        return empty_reader_for_table(FUNCTION_CONTRACTS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(FUNCTION_CONTRACTS_TABLE_KEY, rows)
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -91,6 +94,7 @@ _FUNCTION_CONTRACTS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=FUNCTION_CONTRACTS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=FUNCTION_CONTRACTS_TABLE_KEY),
             node_name="function_contracts__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="function_contracts__table_materializations",

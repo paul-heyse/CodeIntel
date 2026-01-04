@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from numbers import Integral
 
-import polars as pl
 import pyarrow as pa
 
 from codeintel.build.hamilton.env import BuildEnv
@@ -22,16 +21,15 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.tabular.arrow_ops import (
     align_table_to_contract,
-    arrow_join_lazyframes,
+    concat_tables_unified,
     dedupe_table_for_table,
 )
+from codeintel.build.tabular.compute_masks import and_kleene, equal_mask, invert_mask, is_in_mask
 from codeintel.build.tabular.conversion import (
     reader_to_table,
     table_to_reader,
     tabular_to_arrow_table,
-    tabular_to_frame,
 )
-from codeintel.build.tabular.frames import JoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -68,11 +66,11 @@ class SyntaxAugmentFrames:
 
 @dataclass(frozen=True, slots=True)
 class _SyntaxAugmentInputs:
-    syntax_nodes: pl.DataFrame
-    syntax_edges: pl.DataFrame
-    ts_nodes: pl.DataFrame
-    ts_edges: pl.DataFrame
-    parse_manifest: pl.DataFrame
+    syntax_nodes: pa.Table
+    syntax_edges: pa.Table
+    ts_nodes: pa.Table
+    ts_edges: pa.Table
+    parse_manifest: pa.Table
 
 
 def syntax_augment__options(env: BuildEnv) -> SyntaxAugmentOptions:
@@ -105,30 +103,38 @@ def syntax_augment__inputs(
         Collected input frames for syntax augmentation.
     """
     return _SyntaxAugmentInputs(
-        syntax_nodes=tabular_to_frame(q__core__syntax_nodes),
-        syntax_edges=tabular_to_frame(q__core__syntax_edges),
-        ts_nodes=tabular_to_frame(q__core__ts_nodes),
-        ts_edges=tabular_to_frame(q__core__ts_edges),
-        parse_manifest=tabular_to_frame(q__core__parse_manifest),
+        syntax_nodes=tabular_to_arrow_table(q__core__syntax_nodes),
+        syntax_edges=tabular_to_arrow_table(q__core__syntax_edges),
+        ts_nodes=tabular_to_arrow_table(q__core__ts_nodes),
+        ts_edges=tabular_to_arrow_table(q__core__ts_edges),
+        parse_manifest=tabular_to_arrow_table(q__core__parse_manifest),
     )
 
 
-def _failure_paths(parse_manifest: pl.DataFrame) -> set[str]:
-    if not parse_manifest.columns:
+def _failure_paths(parse_manifest: pa.Table) -> set[str]:
+    if not parse_manifest.column_names:
         return set()
-    if "producer" not in parse_manifest.columns or "parse_ok" not in parse_manifest.columns:
+    if (
+        "producer" not in parse_manifest.column_names
+        or "parse_ok" not in parse_manifest.column_names
+    ):
         return set()
-    failures = parse_manifest.filter(
-        (pl.col("producer") == SYNTAX_PRODUCER_LIBCST)
-        & (~pl.col("parse_ok").fill_null(value=False))
-    )
-    paths = failures.get_column("rel_path") if "rel_path" in failures.columns else []
-    return {path for path in paths if isinstance(path, str)}
+    failures: set[str] = set()
+    for row in parse_manifest.to_pylist():
+        if row.get("producer") != SYNTAX_PRODUCER_LIBCST:
+            continue
+        parse_ok = row.get("parse_ok")
+        if parse_ok is True:
+            continue
+        rel_path = row.get("rel_path")
+        if isinstance(rel_path, str):
+            failures.add(rel_path)
+    return failures
 
 
-def _build_syntax_index(nodes_frame: pl.DataFrame) -> dict[str, _SyntaxNodeIndex]:
+def _build_syntax_index(nodes_table: pa.Table) -> dict[str, _SyntaxNodeIndex]:
     indexes: dict[str, _SyntaxNodeIndex] = {}
-    for row in nodes_frame.iter_rows(named=True):
+    for row in nodes_table.to_pylist():
         rel_path = row.get("rel_path")
         node_id = row.get("node_id")
         if not isinstance(rel_path, str) or not isinstance(node_id, str):
@@ -161,11 +167,11 @@ def _match_syntax_node(
     return match.payload, match.match_kind, match.candidate_count
 
 
-def _producer_by_path(nodes_frame: pl.DataFrame) -> dict[str, str]:
+def _producer_by_path(nodes_table: pa.Table) -> dict[str, str]:
     mapping: dict[str, str] = {}
-    if not nodes_frame.columns:
+    if not nodes_table.column_names:
         return mapping
-    for row in nodes_frame.iter_rows(named=True):
+    for row in nodes_table.to_pylist():
         rel_path = row.get("rel_path")
         producer = row.get("producer")
         if isinstance(rel_path, str) and isinstance(producer, str):
@@ -175,15 +181,15 @@ def _producer_by_path(nodes_frame: pl.DataFrame) -> dict[str, str]:
 
 def _xref_rows(
     *,
-    ts_nodes: pl.DataFrame,
-    syntax_nodes: pl.DataFrame,
+    ts_nodes: pa.Table,
+    syntax_nodes: pa.Table,
 ) -> list[dict[str, object]]:
-    if ts_nodes.is_empty():
+    if ts_nodes.num_rows == 0:
         return []
     index_by_path = _build_syntax_index(syntax_nodes)
     producer_by_path = _producer_by_path(syntax_nodes)
     rows: list[dict[str, object]] = []
-    for row in ts_nodes.iter_rows(named=True):
+    for row in ts_nodes.to_pylist():
         xref_row = _xref_row_for_ts_node(
             row,
             index_by_path=index_by_path,
@@ -309,7 +315,7 @@ def _ts_node_payload(ts_row: dict[str, object], match_kind: str) -> dict[str, ob
 
 def _merge_ts_extras(
     nodes_rows: list[dict[str, object]],
-    ts_nodes: pl.DataFrame,
+    ts_nodes: pa.Table,
     xref_rows: list[dict[str, object]],
 ) -> None:
     ts_index = _ts_node_index(ts_nodes)
@@ -317,9 +323,9 @@ def _merge_ts_extras(
     _apply_ts_payloads(nodes_rows, payloads_by_node)
 
 
-def _ts_node_index(ts_nodes: pl.DataFrame) -> dict[str, dict[str, object]]:
+def _ts_node_index(ts_nodes: pa.Table) -> dict[str, dict[str, object]]:
     ts_index: dict[str, dict[str, object]] = {}
-    for row in ts_nodes.iter_rows(named=True):
+    for row in ts_nodes.to_pylist():
         node_id = row.get("node_id")
         if isinstance(node_id, str):
             ts_index[node_id] = row
@@ -362,40 +368,45 @@ def _apply_ts_payloads(
         row["extras_json"] = extras
 
 
-def _weld_coverage_frame(
-    ts_nodes: pl.DataFrame,
+def _weld_coverage_table(
+    ts_nodes: pa.Table,
     xref_rows: list[dict[str, object]],
-) -> pl.DataFrame:
-    if ts_nodes.is_empty():
-        return pl.DataFrame()
-    group_keys = ["repo", "commit", "rel_path", "language"]
-    ts_counts = ts_nodes.lazy().group_by(group_keys).agg(pl.len().alias("ts_node_count"))
-    mapped: pl.LazyFrame | None = None
-    if xref_rows:
-        xref_frame = pl.DataFrame(xref_rows)
-        if set(group_keys).issubset(xref_frame.columns):
-            mapped = (
-                xref_frame.lazy()
-                .filter(pl.col("syntax_node_id").is_not_null() & (pl.col("match_kind") != "NONE"))
-                .group_by(group_keys)
-                .agg(pl.len().alias("mapped_count"))
-            )
-    if mapped is None:
-        coverage = ts_counts.with_columns(pl.lit(0).alias("mapped_count"))
-    else:
-        coverage = arrow_join_lazyframes(
-            ts_counts,
-            mapped,
-            spec=JoinSpec(on=group_keys, how="left"),
-        ).with_columns(pl.col("mapped_count").fill_null(0))
-    coverage = coverage.with_columns(
-        pl.col("mapped_count").cast(pl.Int64),
-        pl.when(pl.col("ts_node_count") > 0)
-        .then(pl.col("mapped_count") / pl.col("ts_node_count"))
-        .otherwise(pl.lit(0.0))
-        .alias("coverage_ratio"),
-    )
-    return coverage.collect()
+) -> pa.Table:
+    if ts_nodes.num_rows == 0:
+        return pa.Table.from_pylist([])
+    counts: dict[tuple[str, str, str, str], int] = {}
+    for row in ts_nodes.to_pylist():
+        key = _coverage_key_from_row(row)
+        if key is None:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+    mapped_counts: dict[tuple[str, str, str, str], int] = {}
+    for row in xref_rows:
+        if row.get("syntax_node_id") is None:
+            continue
+        if row.get("match_kind") == "NONE":
+            continue
+        key = _coverage_key_from_row(row)
+        if key is None:
+            continue
+        mapped_counts[key] = mapped_counts.get(key, 0) + 1
+    rows: list[dict[str, object]] = []
+    for key, total in counts.items():
+        mapped = mapped_counts.get(key, 0)
+        repo, commit, rel_path, language = key
+        ratio = float(mapped) / float(total) if total else 0.0
+        rows.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "rel_path": rel_path,
+                "language": language,
+                "ts_node_count": total,
+                "mapped_count": mapped,
+                "coverage_ratio": ratio,
+            }
+        )
+    return pa.Table.from_pylist(rows)
 
 
 def _merge_ts_node_payloads(
@@ -426,6 +437,24 @@ def _ts_payload_sort_key(item: dict[str, object]) -> tuple[int, int]:
     return start_value, end_value
 
 
+def _coverage_key_from_row(
+    row: Mapping[str, object],
+) -> tuple[str, str, str, str] | None:
+    repo = row.get("repo")
+    if not isinstance(repo, str):
+        return None
+    commit = row.get("commit")
+    if not isinstance(commit, str):
+        return None
+    rel_path = row.get("rel_path")
+    if not isinstance(rel_path, str):
+        return None
+    language = row.get("language")
+    if not isinstance(language, str):
+        return None
+    return repo, commit, rel_path, language
+
+
 def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.RecordBatchReader:
     try:
         reader, _ = record_batch_reader_for_rows(table_key, rows)
@@ -445,10 +474,9 @@ def _empty_reader(table_key: str) -> pa.RecordBatchReader:
         return pa.RecordBatchReader.from_batches(pa.schema([]), [])
 
 
-def _reader_from_frame(table_key: str, frame: pl.DataFrame) -> pa.RecordBatchReader:
-    if frame.is_empty():
+def _reader_from_table(table_key: str, table: pa.Table) -> pa.RecordBatchReader:
+    if table.num_rows == 0:
         return _empty_reader(table_key)
-    table = tabular_to_arrow_table(frame)
     try:
         aligned = align_table_to_contract(table_key, table)
     except (KeyError, RuntimeError):
@@ -457,77 +485,151 @@ def _reader_from_frame(table_key: str, frame: pl.DataFrame) -> pa.RecordBatchRea
     return table_to_reader(deduped)
 
 
-def _ts_nodes_to_syntax_nodes(ts_nodes: pl.DataFrame) -> pl.DataFrame:
-    if ts_nodes.is_empty():
-        return pl.DataFrame()
-    return ts_nodes.select(
-        pl.col("repo"),
-        pl.col("commit"),
-        pl.col("rel_path"),
-        pl.lit(TS_PRODUCER).alias("producer"),
-        pl.col("language"),
-        pl.col("node_id"),
-        pl.col("node_type").alias("node_kind"),
-        pl.col("node_type").alias("raw_kind"),
-        pl.col("start_row").alias("start_line"),
-        pl.col("start_col"),
-        pl.col("end_row").alias("end_line"),
-        pl.col("end_col"),
-        pl.col("start_byte"),
-        pl.col("end_byte"),
-        pl.col("text_preview"),
-        pl.lit(None).alias("extras_json"),
+def _constant_array(value: object, length: int) -> pa.Array:
+    return pa.array([value] * length)
+
+
+def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
+    if not mapping:
+        return table
+    rename: dict[str, str] = {}
+    for name in table.column_names:
+        rename[name] = mapping.get(name, name)
+    return table.rename_columns([rename[name] for name in table.column_names])
+
+
+def _ts_nodes_to_syntax_nodes(ts_nodes: pa.Table) -> pa.Table:
+    if ts_nodes.num_rows == 0:
+        return pa.Table.from_pylist([])
+    columns = [
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "node_id",
+        "node_type",
+        "start_row",
+        "start_col",
+        "end_row",
+        "end_col",
+        "start_byte",
+        "end_byte",
+        "text_preview",
+    ]
+    existing = [name for name in columns if name in ts_nodes.column_names]
+    selected = ts_nodes.select(existing)
+    renamed = _rename_columns(
+        selected,
+        {
+            "node_type": "node_kind",
+            "start_row": "start_line",
+            "end_row": "end_line",
+        },
     )
-
-
-def _ts_edges_to_syntax_edges(ts_edges: pl.DataFrame) -> pl.DataFrame:
-    if ts_edges.is_empty():
-        return pl.DataFrame()
-    return ts_edges.select(
-        pl.col("repo"),
-        pl.col("commit"),
-        pl.col("rel_path"),
-        pl.lit(TS_PRODUCER).alias("producer"),
-        pl.col("parent_node_id"),
-        pl.col("child_node_id"),
-        pl.lit(EDGE_KIND).alias("edge_kind"),
-        pl.col("field_name"),
-        pl.col("child_ordinal"),
+    renamed = renamed.append_column("raw_kind", renamed.column("node_kind"))
+    renamed = renamed.append_column(
+        "producer", _constant_array(TS_PRODUCER, renamed.num_rows)
     )
+    renamed = renamed.append_column("extras_json", _constant_array(None, renamed.num_rows))
+    ordered = [
+        "repo",
+        "commit",
+        "rel_path",
+        "producer",
+        "language",
+        "node_id",
+        "node_kind",
+        "raw_kind",
+        "start_line",
+        "start_col",
+        "end_line",
+        "end_col",
+        "start_byte",
+        "end_byte",
+        "text_preview",
+        "extras_json",
+    ]
+    return renamed.select([name for name in ordered if name in renamed.column_names])
 
 
-def _filter_libcst_rows(frame: pl.DataFrame, fallback_paths: set[str]) -> pl.DataFrame:
-    if not {"producer", "rel_path"}.issubset(frame.columns):
+def _ts_edges_to_syntax_edges(ts_edges: pa.Table) -> pa.Table:
+    if ts_edges.num_rows == 0:
+        return pa.Table.from_pylist([])
+    columns = [
+        "repo",
+        "commit",
+        "rel_path",
+        "parent_node_id",
+        "child_node_id",
+        "field_name",
+        "child_ordinal",
+    ]
+    existing = [name for name in columns if name in ts_edges.column_names]
+    selected = ts_edges.select(existing)
+    selected = selected.append_column("producer", _constant_array(TS_PRODUCER, selected.num_rows))
+    selected = selected.append_column("edge_kind", _constant_array(EDGE_KIND, selected.num_rows))
+    ordered = [
+        "repo",
+        "commit",
+        "rel_path",
+        "producer",
+        "parent_node_id",
+        "child_node_id",
+        "edge_kind",
+        "field_name",
+        "child_ordinal",
+    ]
+    return selected.select([name for name in ordered if name in selected.column_names])
+
+
+def _filter_libcst_rows(frame: pa.Table, fallback_paths: set[str]) -> pa.Table:
+    if not {"producer", "rel_path"}.issubset(frame.column_names):
         return frame
-    libcst_mask = (pl.col("producer") == SYNTAX_PRODUCER_LIBCST) & (
-        pl.col("rel_path").is_in(fallback_paths)
+    if not fallback_paths:
+        return frame
+    fallback_values = pa.array(sorted(fallback_paths))
+    libcst_mask = and_kleene(
+        equal_mask(frame["producer"], pa.scalar(SYNTAX_PRODUCER_LIBCST)),
+        is_in_mask(frame["rel_path"], value_set=fallback_values),
     )
-    return frame.filter(~libcst_mask)
+    return frame.filter(invert_mask(libcst_mask))
 
 
-def _concat_if_non_empty(base: pl.DataFrame, extra: pl.DataFrame) -> pl.DataFrame:
-    if extra.is_empty():
+def _align_tables_for_concat(left: pa.Table, right: pa.Table) -> tuple[pa.Table, pa.Table]:
+    if left.schema == right.schema:
+        return left, right
+    unified = pa.unify_schemas([left.schema, right.schema], promote_options="permissive")
+    return left.cast(unified), right.cast(unified)
+
+
+def _concat_if_non_empty(base: pa.Table, extra: pa.Table) -> pa.Table:
+    if extra.num_rows == 0:
         return base
-    return pl.concat([base, extra], how="vertical_relaxed")
+    left, right = _align_tables_for_concat(base, extra)
+    return concat_tables_unified([left, right])
+
+
+def _filter_by_paths(table: pa.Table, paths: set[str]) -> pa.Table:
+    if not paths or "rel_path" not in table.column_names:
+        return table
+    path_values = pa.array(sorted(paths))
+    mask = is_in_mask(table["rel_path"], value_set=path_values)
+    return table.filter(mask)
 
 
 def _apply_fallback_paths(
-    syntax_nodes: pl.DataFrame,
-    syntax_edges: pl.DataFrame,
-    ts_nodes: pl.DataFrame,
-    ts_edges: pl.DataFrame,
+    syntax_nodes: pa.Table,
+    syntax_edges: pa.Table,
+    ts_nodes: pa.Table,
+    ts_edges: pa.Table,
     fallback_paths: set[str],
-) -> tuple[pl.DataFrame, pl.DataFrame]:
+) -> tuple[pa.Table, pa.Table]:
     if not fallback_paths:
         return syntax_nodes, syntax_edges
     syntax_nodes = _filter_libcst_rows(syntax_nodes, fallback_paths)
     syntax_edges = _filter_libcst_rows(syntax_edges, fallback_paths)
-    ts_fallback_nodes = _ts_nodes_to_syntax_nodes(
-        ts_nodes.filter(pl.col("rel_path").is_in(fallback_paths))
-    )
-    ts_fallback_edges = _ts_edges_to_syntax_edges(
-        ts_edges.filter(pl.col("rel_path").is_in(fallback_paths))
-    )
+    ts_fallback_nodes = _ts_nodes_to_syntax_nodes(_filter_by_paths(ts_nodes, fallback_paths))
+    ts_fallback_edges = _ts_edges_to_syntax_edges(_filter_by_paths(ts_edges, fallback_paths))
     syntax_nodes = _concat_if_non_empty(syntax_nodes, ts_fallback_nodes)
     syntax_edges = _concat_if_non_empty(syntax_edges, ts_fallback_edges)
     return syntax_nodes, syntax_edges
@@ -558,24 +660,24 @@ def syntax_augment__frames(
         fallback_paths,
     )
     xref_rows = _xref_rows(ts_nodes=inputs.ts_nodes, syntax_nodes=syntax_nodes)
-    nodes_rows = syntax_nodes.to_dicts()
+    nodes_rows = syntax_nodes.to_pylist()
     _merge_ts_extras(nodes_rows, inputs.ts_nodes, xref_rows)
 
     syntax_nodes_frame = _reader_from_rows(SYNTAX_NODES_AUGMENTED_TABLE_KEY, nodes_rows)
-    if not syntax_edges.columns or syntax_edges.is_empty():
+    if not syntax_edges.column_names or syntax_edges.num_rows == 0:
         syntax_edges_frame = _empty_reader(SYNTAX_EDGES_AUGMENTED_TABLE_KEY)
     else:
-        syntax_edges_frame = _reader_from_frame(SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
+        syntax_edges_frame = _reader_from_table(SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
     if syntax_augment__options.emit_ts_xref:
         xref_frame = _reader_from_rows(TS_XREF_TABLE_KEY, xref_rows)
     else:
         xref_frame = _empty_reader(TS_XREF_TABLE_KEY)
 
-    coverage_rows = _weld_coverage_frame(inputs.ts_nodes, xref_rows)
-    if coverage_rows.is_empty():
+    coverage_table = _weld_coverage_table(inputs.ts_nodes, xref_rows)
+    if coverage_table.num_rows == 0:
         coverage_frame = _empty_reader(TS_WELD_COVERAGE_TABLE_KEY)
     else:
-        coverage_frame = _reader_from_frame(TS_WELD_COVERAGE_TABLE_KEY, coverage_rows)
+        coverage_frame = _reader_from_table(TS_WELD_COVERAGE_TABLE_KEY, coverage_table)
 
     return SyntaxAugmentFrames(
         syntax_nodes=syntax_nodes_frame,

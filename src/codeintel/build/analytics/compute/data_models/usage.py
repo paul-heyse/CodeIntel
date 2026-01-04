@@ -16,14 +16,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.tabular.frames import (
-    empty_lazyframe_for_table,
-    lazyframe_for_table_columns,
-)
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
@@ -32,8 +28,6 @@ from codeintel.core.schemas.generated_rows import columns_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    from polars import LazyFrame
 
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
@@ -88,10 +82,10 @@ class DataModelUsageInputs:
 
     module_map: dict[str, str]
     ast_by_goid: dict[int, FunctionAst]
-    models_frame: pl.DataFrame | None = None
-    subsystem_modules_frame: pl.DataFrame | None = None
-    subsystems_frame: pl.DataFrame | None = None
-    function_types_frame: pl.DataFrame | None = None
+    models_frame: pa.Table | None = None
+    subsystem_modules_frame: pa.Table | None = None
+    subsystems_frame: pa.Table | None = None
+    function_types_frame: pa.Table | None = None
     missing_goids: set[int] | None = None
 
 
@@ -438,16 +432,15 @@ class ModelUsageVisitor(ast.NodeVisitor):
 
 
 def _load_models_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> list[ModelInfo]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return []
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
     models: list[ModelInfo] = []
-    for row in filtered.iter_rows(named=True):
+    for row in _rows_for_snapshot(frame, repo=repo, commit=commit):
         model_id = row.get("model_id")
         model_name = row.get("model_name")
         module = row.get("module")
@@ -458,34 +451,30 @@ def _load_models_from_frame(
 
 
 def _subsystem_by_module_from_frames(
-    subsystem_modules_frame: pl.DataFrame | None,
-    subsystems_frame: pl.DataFrame | None,
+    subsystem_modules_frame: pa.Table | None,
+    subsystems_frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, tuple[str, str]]:
     mapping: dict[str, tuple[str, str]] = {}
-    if subsystem_modules_frame is None or subsystem_modules_frame.is_empty():
+    if subsystem_modules_frame is None or subsystem_modules_frame.num_rows == 0:
         return mapping
-    modules_filtered = _filter_frame_by_snapshot(
-        subsystem_modules_frame,
-        repo=repo,
-        commit=commit,
-    )
+    modules_filtered = _rows_for_snapshot(subsystem_modules_frame, repo=repo, commit=commit)
     subsystems_filtered = (
-        _filter_frame_by_snapshot(subsystems_frame, repo=repo, commit=commit)
-        if subsystems_frame is not None and not subsystems_frame.is_empty()
+        _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit)
+        if subsystems_frame is not None and subsystems_frame.num_rows > 0
         else None
     )
     name_by_id: dict[str, str] = {}
     if subsystems_filtered is not None:
-        for row in subsystems_filtered.iter_rows(named=True):
+        for row in subsystems_filtered:
             subsystem_id = row.get("subsystem_id")
             name = row.get("name")
             if subsystem_id is None or name is None:
                 continue
             name_by_id[str(subsystem_id)] = coerce_str(name, ctx="subsystems.name")
-    for row in modules_filtered.iter_rows(named=True):
+    for row in modules_filtered:
         module = row.get("module")
         subsystem_id = row.get("subsystem_id")
         if module is None or subsystem_id is None:
@@ -515,7 +504,7 @@ def _context_for_module(
 def build_data_model_usage_rows(
     snapshot: SnapshotRef,
     inputs: DataModelUsageInputs,
-) -> LazyFrame:
+) -> list[dict[str, object]]:
     """Build data_model_usage rows without writing to database.
 
     Analyze per-function data model read/write usage patterns and return
@@ -530,10 +519,8 @@ def build_data_model_usage_rows(
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame with columns: repo, commit, model_id, function_goid_h128,
-        usage_kinds_json, evidence_json, context_json, created_at. Empty
-        frame if no models found.
+    list[dict[str, object]]
+        Row mappings with usage_kinds_json, evidence_json, context_json, created_at.
 
     Notes
     -----
@@ -558,7 +545,7 @@ def build_data_model_usage_rows(
             snapshot.repo,
             snapshot.commit,
         )
-        return empty_lazyframe_for_table(DATA_MODEL_USAGE_TABLE_KEY)
+        return []
 
     model_index = _build_model_index(models)
     subsystem_map = _subsystem_by_module_from_frames(
@@ -576,13 +563,13 @@ def build_data_model_usage_rows(
         )
 
     param_types: dict[int, dict[str, str]] = {}
-    if inputs.function_types_frame is not None and not inputs.function_types_frame.is_empty():
-        filtered = _filter_frame_by_snapshot(
+    if inputs.function_types_frame is not None and inputs.function_types_frame.num_rows > 0:
+        filtered = _rows_for_snapshot(
             inputs.function_types_frame,
             repo=snapshot.repo,
             commit=snapshot.commit,
         )
-        for row in filtered.iter_rows(named=True):
+        for row in filtered:
             goid_int = normalize_decimal_id(row.get("function_goid_h128"))
             if goid_int is None:
                 continue
@@ -604,21 +591,28 @@ def build_data_model_usage_rows(
         max_examples_per_usage=max_examples_per_usage,
         buffer=buffer,
     )
-    return lazyframe_for_table_columns(DATA_MODEL_USAGE_TABLE_KEY, buffer.data)
+    rows: list[dict[str, object]] = []
+    for idx in range(buffer.row_count):
+        row = {name: buffer.data[name][idx] for name in buffer.columns}
+        rows.append(row)
+    return rows
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _rows_for_snapshot(
+    frame: pa.Table,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
-    return filtered
+) -> list[dict[str, object]]:
+    rows = frame.to_pylist()
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
+    return [
+        row
+        for row in rows
+        if (repo == row.get("repo") if has_repo else True)
+        and (commit == row.get("commit") if has_commit else True)
+    ]
 
 
 def _build_usage_rows(

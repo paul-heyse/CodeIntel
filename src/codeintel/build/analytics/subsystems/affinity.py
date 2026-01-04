@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import networkx as nx
-import polars as pl
+import pyarrow as pa
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -35,10 +35,10 @@ class AffinityWeights:
 class AffinityFrames:
     """Frames used to compute subsystem affinity."""
 
-    import_graph_edges_frame: pl.DataFrame | None = None
-    symbol_use_edges_frame: pl.DataFrame | None = None
-    config_values_frame: pl.DataFrame | None = None
-    modules_frame: pl.DataFrame | None = None
+    import_graph_edges_frame: pa.Table | None = None
+    symbol_use_edges_frame: pa.Table | None = None
+    config_values_frame: pa.Table | None = None
+    modules_frame: pa.Table | None = None
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ class AffinityContext:
 
 
 def load_modules_from_frame(
-    modules_frame: pl.DataFrame | None,
+    modules_frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
@@ -64,12 +64,12 @@ def load_modules_from_frame(
     tuple[set[str], dict[str, list[str]]]
         Set of module names and tag mappings keyed by module.
     """
-    if modules_frame is None or modules_frame.is_empty():
+    if modules_frame is None or modules_frame.num_rows == 0:
         return set(), {}
-    filtered = _filter_frame_by_snapshot(modules_frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(modules_frame, repo=repo, commit=commit)
     modules: set[str] = set()
     tags_by_module: dict[str, list[str]] = {}
-    for row in filtered.iter_rows(named=True):
+    for row in filtered:
         module = row.get("module")
         if module is None:
             continue
@@ -108,12 +108,12 @@ def parse_tags(raw: object) -> list[str]:
 def _add_import_edges(
     graph: nx.Graph,
     ctx: AffinityContext,
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
 ) -> None:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return
-    edges_filtered = _filter_frame_by_snapshot(frame, repo=ctx.repo, commit=ctx.commit)
-    for row in edges_filtered.iter_rows(named=True):
+    edges_filtered = _rows_for_snapshot(frame, repo=ctx.repo, commit=ctx.commit)
+    for row in edges_filtered:
         src = row.get("src_module")
         dst = row.get("dst_module")
         if src is None or dst is None:
@@ -127,29 +127,29 @@ def _add_import_edges(
 def _add_symbol_edges(
     graph: nx.Graph,
     ctx: AffinityContext,
-    symbol_use_edges_frame: pl.DataFrame | None,
-    modules_frame: pl.DataFrame | None,
+    symbol_use_edges_frame: pa.Table | None,
+    modules_frame: pa.Table | None,
 ) -> None:
-    if symbol_use_edges_frame is None or symbol_use_edges_frame.is_empty():
+    if symbol_use_edges_frame is None or symbol_use_edges_frame.num_rows == 0:
         return
     module_by_path: dict[str, str] = {}
-    if modules_frame is not None and not modules_frame.is_empty():
-        modules_filtered = _filter_frame_by_snapshot(
+    if modules_frame is not None and modules_frame.num_rows > 0:
+        modules_filtered = _rows_for_snapshot(
             modules_frame,
             repo=ctx.repo,
             commit=ctx.commit,
         )
-        for row in modules_filtered.iter_rows(named=True):
+        for row in modules_filtered:
             path = row.get("path")
             module = row.get("module")
             if isinstance(path, str) and module is not None:
                 module_by_path[path] = str(module)
-    symbol_filtered = _filter_frame_by_snapshot(
+    symbol_filtered = _rows_for_snapshot(
         symbol_use_edges_frame,
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    for row in symbol_filtered.iter_rows(named=True):
+    for row in symbol_filtered:
         use_path = row.get("use_path")
         def_path = row.get("def_path")
         if not isinstance(use_path, str) or not isinstance(def_path, str):
@@ -165,16 +165,16 @@ def _add_symbol_edges(
 def _add_config_edges(
     graph: nx.Graph,
     ctx: AffinityContext,
-    config_values_frame: pl.DataFrame | None,
+    config_values_frame: pa.Table | None,
 ) -> None:
-    if config_values_frame is None or config_values_frame.is_empty():
+    if config_values_frame is None or config_values_frame.num_rows == 0:
         return
-    config_filtered = _filter_frame_by_snapshot(
+    config_filtered = _rows_for_snapshot(
         config_values_frame,
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    for row in config_filtered.iter_rows(named=True):
+    for row in config_filtered:
         modules_list = parse_tags(row.get("reference_modules"))
         filtered = [module for module in modules_list if module in ctx.modules]
         if len(filtered) < MIN_SHARED_MODULES:
@@ -253,18 +253,21 @@ def build_weighted_graph(
     return graph
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _rows_for_snapshot(
+    frame: pa.Table,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
-    return filtered
+) -> list[dict[str, object]]:
+    rows = frame.to_pylist()
+    has_repo = "repo" in frame.column_names
+    has_commit = "commit" in frame.column_names
+    return [
+        row
+        for row in rows
+        if (repo == row.get("repo") if has_repo else True)
+        and (commit == row.get("commit") if has_commit else True)
+    ]
 
 
 def add_graph_weight(graph: nx.Graph, left: str, right: str, weight: float) -> None:

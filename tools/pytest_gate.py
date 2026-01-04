@@ -7,9 +7,9 @@ import logging
 import shlex
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 LOG = logging.getLogger(__name__)
 
@@ -106,6 +106,13 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Run the pytest gate with targeted and segmented runs.
+
+    Returns
+    -------
+    int
+        Process exit code (0 for success).
+    """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = _parse_args()
 
@@ -121,8 +128,10 @@ def main() -> int:
     if not args.skip_targeted and targeted:
         runs.append(PytestRun(label="targeted", paths=_normalize_paths(targeted)))
     if not args.skip_segments and segments:
-        for segment in segments:
-            runs.append(PytestRun(label=f"segment:{segment}", paths=_normalize_paths([segment])))
+        runs.extend(
+            PytestRun(label=f"segment:{segment}", paths=_normalize_paths([segment]))
+            for segment in segments
+        )
 
     if not runs:
         LOG.info("pytest_gate.skip reason=no_runs_configured")

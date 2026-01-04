@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import msgspec
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.analytics.utilities.ast import safe_unparse
+from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
@@ -193,11 +194,11 @@ class SemanticRoleInputs:
     module_by_path: dict[str, str]
     ast_map: dict[int, FunctionAst]
     features_map: dict[int, FunctionAstFeatures]
-    goids_frame: pl.DataFrame | None = None
-    function_effects_frame: pl.DataFrame | None = None
-    function_contracts_frame: pl.DataFrame | None = None
-    graph_metrics_frame: pl.DataFrame | None = None
-    modules_frame: pl.DataFrame | None = None
+    goids_frame: pa.Table | None = None
+    function_effects_frame: pa.Table | None = None
+    function_contracts_frame: pa.Table | None = None
+    graph_metrics_frame: pa.Table | None = None
+    modules_frame: pa.Table | None = None
 
 
 def build_semantic_roles_rows(
@@ -336,34 +337,25 @@ def _build_function_role_rows(
 
 
 def _function_rows_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> list[tuple[int, str, str, int | None]]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return []
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.is_empty():
+    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.num_rows == 0:
         return []
-    data = filtered.select(
-        [
-            "function_goid_h128",
-            "rel_path",
-            "qualname",
-            "start_line",
-            "end_line",
-        ]
-    ).to_dict(as_series=False)
     result: list[tuple[int, str, str, int | None]] = []
-    for goid_raw, rel_path, qualname, start_line_raw, end_line_raw in zip(
-        data["function_goid_h128"],
-        data["rel_path"],
-        data["qualname"],
-        data["start_line"],
-        data["end_line"],
-        strict=True,
-    ):
+    for row in filtered.select(
+        ["function_goid_h128", "rel_path", "qualname", "start_line", "end_line"]
+    ).to_pylist():
+        goid_raw = row.get("function_goid_h128")
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        start_line_raw = row.get("start_line")
+        end_line_raw = row.get("end_line")
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -382,17 +374,18 @@ def _function_rows_from_frame(
 
 
 def _effects_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[int, dict[str, object]]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.is_empty():
+    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.num_rows == 0:
         return {}
-    data = filtered.select(
+    mapping: dict[int, dict[str, object]] = {}
+    for row in filtered.select(
         [
             "function_goid_h128",
             "touches_db",
@@ -403,28 +396,15 @@ def _effects_from_frame(
             "modifies_closure",
             "spawns_threads_or_tasks",
         ]
-    ).to_dict(as_series=False)
-    mapping: dict[int, dict[str, object]] = {}
-    for (
-        goid_raw,
-        touches_db,
-        uses_io,
-        uses_time,
-        uses_randomness,
-        modifies_globals,
-        modifies_closure,
-        spawns_threads_or_tasks,
-    ) in zip(
-        data["function_goid_h128"],
-        data["touches_db"],
-        data["uses_io"],
-        data["uses_time"],
-        data["uses_randomness"],
-        data["modifies_globals"],
-        data["modifies_closure"],
-        data["spawns_threads_or_tasks"],
-        strict=True,
-    ):
+    ).to_pylist():
+        goid_raw = row.get("function_goid_h128")
+        touches_db = row.get("touches_db")
+        uses_io = row.get("uses_io")
+        uses_time = row.get("uses_time")
+        uses_randomness = row.get("uses_randomness")
+        modifies_globals = row.get("modifies_globals")
+        modifies_closure = row.get("modifies_closure")
+        spawns_threads_or_tasks = row.get("spawns_threads_or_tasks")
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -441,32 +421,29 @@ def _effects_from_frame(
 
 
 def _contracts_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[int, dict[str, object]]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.is_empty():
+    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.num_rows == 0:
         return {}
-    data = filtered.select(
+    mapping: dict[int, dict[str, object]] = {}
+    for row in filtered.select(
         [
             "function_goid_h128",
             "preconditions_json",
             "raises_json",
             "param_nullability_json",
         ]
-    ).to_dict(as_series=False)
-    mapping: dict[int, dict[str, object]] = {}
-    for goid_raw, preconditions, raises, param_nullability in zip(
-        data["function_goid_h128"],
-        data["preconditions_json"],
-        data["raises_json"],
-        data["param_nullability_json"],
-        strict=True,
-    ):
+    ).to_pylist():
+        goid_raw = row.get("function_goid_h128")
+        preconditions = row.get("preconditions_json")
+        raises = row.get("raises_json")
+        param_nullability = row.get("param_nullability_json")
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -479,30 +456,21 @@ def _contracts_from_frame(
 
 
 def _graph_metrics_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[int, dict[str, int]]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.is_empty():
+    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.num_rows == 0:
         return {}
-    data = filtered.select(
-        [
-            "function_goid_h128",
-            "call_fan_in",
-            "call_fan_out",
-        ]
-    ).to_dict(as_series=False)
     mapping: dict[int, dict[str, int]] = {}
-    for goid_raw, call_fan_in, call_fan_out in zip(
-        data["function_goid_h128"],
-        data["call_fan_in"],
-        data["call_fan_out"],
-        strict=True,
-    ):
+    for row in filtered.select(["function_goid_h128", "call_fan_in", "call_fan_out"]).to_pylist():
+        goid_raw = row.get("function_goid_h128")
+        call_fan_in = row.get("call_fan_in")
+        call_fan_out = row.get("call_fan_out")
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -514,24 +482,21 @@ def _graph_metrics_from_frame(
 
 
 def _module_meta_from_frame(
-    frame: pl.DataFrame | None,
+    frame: pa.Table | None,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, ModuleRecord]:
-    if frame is None or frame.is_empty():
+    if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_frame_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.is_empty():
+    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    if filtered.num_rows == 0:
         return {}
-    data = filtered.select(["module", "path", "tags"]).to_dict(as_series=False)
     meta: dict[str, ModuleRecord] = {}
-    for module, path, tags in zip(
-        data["module"],
-        data["path"],
-        data["tags"],
-        strict=True,
-    ):
+    for row in filtered.select(["module", "path", "tags"]).to_pylist():
+        module = row.get("module")
+        path = row.get("path")
+        tags = row.get("tags")
         path_value = coerce_optional_str(path, ctx="core.modules.path")
         normalized_path = normalize_path(path_value) if path_value else ""
         normalized_tags = _normalize_tags(tags)
@@ -542,18 +507,19 @@ def _module_meta_from_frame(
     return meta
 
 
-def _filter_frame_by_snapshot(
-    frame: pl.DataFrame,
+def _filter_table_by_snapshot(
+    frame: pa.Table,
     *,
     repo: str,
     commit: str,
-) -> pl.DataFrame:
-    filtered = frame
-    if "repo" in filtered.columns:
-        filtered = filtered.filter(pl.col("repo") == repo)
-    if "commit" in filtered.columns:
-        filtered = filtered.filter(pl.col("commit") == commit)
-    return filtered
+) -> pa.Table:
+    mask = None
+    if "repo" in frame.column_names:
+        mask = equal_mask(frame["repo"], pa.scalar(repo))
+    if "commit" in frame.column_names:
+        commit_mask = equal_mask(frame["commit"], pa.scalar(commit))
+        mask = commit_mask if mask is None else and_kleene(mask, commit_mask)
+    return frame.filter(mask) if mask is not None else frame
 
 
 def _classify_function(

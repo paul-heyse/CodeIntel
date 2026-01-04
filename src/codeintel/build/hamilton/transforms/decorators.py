@@ -6,7 +6,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import ModuleType
 
-import polars as pl
 from hamilton.function_modifiers import (
     pipe_input,
     pipe_output,
@@ -24,6 +23,7 @@ from codeintel.build.hamilton.transforms.tabular_steps import (
 )
 from codeintel.build.hamilton.transforms.with_columns_backend import select_with_columns
 from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.tabular.types import InferableTabularInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +71,11 @@ class _CanonicalizationRuntimeConfig:
     enable_canonicalization: bool
 
 
-def _canonicalize_output(frame: pl.LazyFrame, *, table_key: str) -> pl.LazyFrame:
+def _canonicalize_output(
+    frame: InferableTabularInput,
+    *,
+    table_key: str,
+) -> InferableTabularInput:
     try:
         column_order = column_order_for_table_key(table_key)
     except (KeyError, RuntimeError, TypeError, ValueError):

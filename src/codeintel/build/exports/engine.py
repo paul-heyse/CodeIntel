@@ -53,6 +53,7 @@ from codeintel.build.exports.writers import (
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.errors.schema import SCHEMA_VALIDATION_FAILED
 from codeintel.core.exports.formats import normalize_export_format, suffix_for_export_format
+from codeintel.storage.datasets.contracts import tuning_metadata_from_manifest
 from codeintel.storage.datasets.manifests import load_dataset_manifest
 
 if TYPE_CHECKING:
@@ -159,9 +160,12 @@ def export_parquet_for_table(
         table_key,
         batch_size=_EXPORT_RECORD_BATCH_SIZE,
     )
+    dictionary_encode, dictionary_columns = _dictionary_options_for_export(gateway, table_key)
     rows_written = write_parquet_reader(
         reader=reader,
         output_path=output_path,
+        dictionary_encode=dictionary_encode,
+        dictionary_columns=dictionary_columns,
     )
     duration = perf_counter() - start
     write_audit_entry(
@@ -176,6 +180,32 @@ def export_parquet_for_table(
         settings=settings,
     )
     return rows_written
+
+
+def _dictionary_options_for_export(
+    gateway: BuildGateway,
+    table_key: str,
+) -> tuple[bool, tuple[str, ...] | None]:
+    dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
+    manifest = load_dataset_manifest(
+        dataset_root=dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    if manifest is None:
+        return False, None
+    tuning = tuning_metadata_from_manifest(manifest)
+    if tuning is None:
+        return False, None
+    write_settings = tuning.write_settings or {}
+    inferred_settings = tuning.inferred_settings or {}
+    columns = write_settings.get("dictionary_encode_columns")
+    if not columns:
+        columns = inferred_settings.get("dictionary_encode_columns")
+    if isinstance(columns, list) and columns:
+        return True, tuple(str(col) for col in columns)
+    dictionary_encode = bool(write_settings.get("dictionary_encode"))
+    return (dictionary_encode, None) if dictionary_encode else (False, None)
 
 
 def _format_spec(gateway: BuildGateway, fmt: ExportFormat) -> _ExportFormatSpec:

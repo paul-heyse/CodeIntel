@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -209,6 +209,11 @@ def write_dataset(
         snapshot_dir=snapshot_dir,
         request=request,
     )
+    _write_parquet_metadata_sidecars(
+        snapshot_dir=snapshot_dir,
+        schema=prepared.schema,
+        files=manifest.files,
+    )
     if resolved.persist_manifest:
         manifest_path = dataset_manifest_path(
             dataset_root=dataset_root,
@@ -226,6 +231,49 @@ def write_dataset(
             duration_ms,
         )
     return manifest
+
+
+def _write_parquet_metadata_sidecars(
+    *,
+    snapshot_dir: Path,
+    schema: pa.Schema,
+    files: Sequence[str],
+) -> None:
+    if not files:
+        _write_common_metadata(snapshot_dir=snapshot_dir, schema=schema)
+        return
+    metadata_path = snapshot_dir / "_metadata"
+    metadata_collector: list[pq.FileMetaData] = []
+    for entry in files:
+        path = _resolve_parquet_path(snapshot_dir, entry)
+        try:
+            parquet_file = pq.ParquetFile(str(path))
+        except (OSError, ValueError, pa.ArrowInvalid):
+            continue
+        metadata = parquet_file.metadata
+        if metadata is not None:
+            metadata_collector.append(metadata)
+    if metadata_collector:
+        try:
+            pq.write_metadata(schema, metadata_path, metadata_collector=metadata_collector)
+        except (OSError, ValueError, pa.ArrowInvalid):
+            LOG.debug("Failed to write _metadata sidecar for %s", snapshot_dir)
+    _write_common_metadata(snapshot_dir=snapshot_dir, schema=schema)
+
+
+def _write_common_metadata(*, snapshot_dir: Path, schema: pa.Schema) -> None:
+    common_path = snapshot_dir / "_common_metadata"
+    try:
+        pq.write_metadata(schema, common_path)
+    except (OSError, ValueError, pa.ArrowInvalid):
+        LOG.debug("Failed to write _common_metadata sidecar for %s", snapshot_dir)
+
+
+def _resolve_parquet_path(snapshot_dir: Path, entry: str) -> Path:
+    path = Path(entry)
+    if path.is_absolute():
+        return path
+    return snapshot_dir / path
 
 
 def scan_dataset(
@@ -500,10 +548,24 @@ def _apply_dictionary_options(
             table = _unify_dictionaries(table)
             table = _combine_chunks(table)
         return table
-    if isinstance(data, pa.RecordBatchReader) and options.dictionary_encode:
-        LOG.debug("Dictionary encode skipped for stream input")
-    if options.unify_dictionaries:
-        LOG.debug("Dictionary unify skipped for stream input")
+    if isinstance(data, pa.RecordBatchReader):
+        if not encode_enabled and not options.unify_dictionaries:
+            return data
+        try:
+            table = pa.Table.from_batches(data, schema=data.schema)
+        except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
+            LOG.debug("Dictionary encode skipped for stream input")
+            return data
+        if encode_enabled:
+            table = _dictionary_encode_table(
+                table,
+                max_cardinality=options.dictionary_max_cardinality,
+                encode_columns=encode_columns,
+            )
+        if options.unify_dictionaries:
+            table = _unify_dictionaries(table)
+            table = _combine_chunks(table)
+        return table
     return data
 
 

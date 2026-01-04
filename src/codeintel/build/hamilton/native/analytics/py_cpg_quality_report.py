@@ -7,7 +7,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import polars as pl
 import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -21,13 +20,11 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_reader
-from codeintel.build.tabular.frames import rows_to_frame
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.execution.ids import RUN_PREFIX_ANALYTICS, new_run_id
 from codeintel.core.serialization.payload import decode_payload
-
-_POLARS_REQUIRED = pl
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -298,13 +295,13 @@ def py_cpg_quality_report__base(
     env: BuildEnv,
     inputs_a: _PyCpgQualityInputsA,
     inputs_b: _PyCpgQualityInputsB,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build run-level Python CPG quality metrics.
 
     Returns
     -------
-    pl.LazyFrame
-        LazyFrame containing run-level quality metrics.
+    pyarrow.RecordBatchReader
+        Reader containing run-level quality metrics.
     """
     instruction_rate = _anchor_rate(
         tabular_to_arrow_reader(inputs_a.instructions),
@@ -354,7 +351,10 @@ def py_cpg_quality_report__base(
             "created_at": datetime.now(UTC),
         }
     ]
-    return rows_to_frame(PY_CPG_QUALITY_REPORT_TABLE_KEY, rows)
+    if not rows:
+        return empty_reader_for_table(PY_CPG_QUALITY_REPORT_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(PY_CPG_QUALITY_REPORT_TABLE_KEY, rows)
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -367,6 +367,7 @@ _PY_CPG_QUALITY_REPORT_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="py_cpg_quality_report__base",
             contract=PY_CPG_QUALITY_REPORT_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY),
+            input_type=pa.RecordBatchReader,
             node_name="py_cpg_quality_report__table",
         ),
     ),

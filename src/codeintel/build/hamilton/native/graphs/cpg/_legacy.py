@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import inspect
-import json
 import opcode
 import re
 from collections import defaultdict
@@ -15,26 +13,50 @@ from typing import TypedDict, cast
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.build.graphs.compute.goid import DECIMAL_38_MAX
+from codeintel.build.graphs.assembly import (
+    ensure_table_columns as _ensure_table_columns,
+)
+from codeintel.build.graphs.assembly import (
+    reader_to_table,
+    tabular_to_reader,
+)
+from codeintel.build.graphs.assembly import (
+    rename_table_columns as _rename_table_columns,
+)
+from codeintel.build.graphs.assembly import (
+    select_table_columns as _select_table_columns,
+)
+from codeintel.build.graphs.assembly import (
+    stable_decimal_id as _stable_decimal_id,
+)
+from codeintel.build.graphs.assembly import (
+    stable_int_hash as _stable_int_hash_core,
+)
+from codeintel.build.graphs.assembly import (
+    table_rows as _table_rows,
+)
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.options.graphs import CpgOptions
+from codeintel.build.hamilton.native.options.ingestion import (
+    BytecodeExtractOptions,
+    InspectExtractOptions,
+    SymtableExtractOptions,
+)
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
     align_table_to_contract,
     arrow_join_tables,
+    concat_tables_unified,
     dedupe_table_for_table,
 )
 from codeintel.build.tabular.compute_columns import (
     append_constant_columns as _append_constant_columns,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
-from codeintel.build.tabular.conversion import (
-    table_to_reader,
-    tabular_to_arrow_table,
-)
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.frames import JoinStrategy, JoinValidation
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table
@@ -119,6 +141,49 @@ def cpg__options(env: BuildEnv) -> CpgOptions:
         env,
         target_name=CPG_TARGET_NAME,
         options_type=CpgOptions,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CpgOverlayOptions:
+    """Enablement flags for optional CPG overlays."""
+
+    enable_symtable: bool
+    enable_bytecode: bool
+    enable_inspect: bool
+    inspect_allowlist: tuple[str, ...]
+
+
+def cpg__overlay_options(env: BuildEnv) -> CpgOverlayOptions:
+    """Load overlay enablement flags from ingestion options.
+
+    Returns
+    -------
+    CpgOverlayOptions
+        Overlay gating options for CPG edge assembly.
+    """
+    symtable_options = load_target_options(
+        env,
+        target_name="symtable",
+        options_type=SymtableExtractOptions,
+    )
+    bytecode_options = load_target_options(
+        env,
+        target_name="bytecode",
+        options_type=BytecodeExtractOptions,
+    )
+    inspect_options = load_target_options(
+        env,
+        target_name="inspect",
+        options_type=InspectExtractOptions,
+    )
+    allowlist = tuple(inspect_options.module_allowlist)
+    enable_inspect = inspect_options.enable and bool(allowlist)
+    return CpgOverlayOptions(
+        enable_symtable=symtable_options.enable,
+        enable_bytecode=bytecode_options.enable,
+        enable_inspect=enable_inspect,
+        inspect_allowlist=allowlist,
     )
 
 
@@ -344,20 +409,25 @@ class _CpgEdgeCoreInputs:
     syntax_nodes: _CpgSyntaxNodeInputs
 
 
+@dataclass(frozen=True, slots=True)
+class _CpgOverlayRegistryEntry:
+    name: str
+    enabled: bool
+    builder: Callable[[], Sequence[pa.Table]]
+
+
 def _stable_int_hash(
     payload: object,
     *,
     digest_size: int,
     modulus: int,
 ) -> int:
-    serialized = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
-    digest = hashlib.blake2b(serialized.encode("utf-8"), digest_size=digest_size).digest()
-    return int.from_bytes(digest, "big") % modulus
+    return _stable_int_hash_core(payload, digest_size=digest_size, modulus=modulus)
 
 
 def _stable_cpg_id(table_key: str, pk: Mapping[str, object]) -> int:
     payload = {"table_key": table_key, "pk": dict(pk)}
-    return _stable_int_hash(payload, digest_size=16, modulus=DECIMAL_38_MAX)
+    return _stable_decimal_id(payload, digest_size=16)
 
 
 def _stable_ordinal(table_key: str, payload: Mapping[str, object]) -> int:
@@ -447,31 +517,6 @@ def _filter_valid_values(table: pa.Table, columns: Sequence[str]) -> pa.Table:
         return table.filter(mask)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return table
-
-
-def _table_rows(table: pa.Table) -> list[dict[str, object]]:
-    if table.num_rows == 0:
-        return []
-    return table.to_pylist()
-
-
-def _select_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
-    if not columns:
-        return table
-    present = [column for column in columns if column in table.column_names]
-    if not present:
-        return _empty_table(columns)
-    return table.select(present)
-
-
-def _ensure_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
-    if not columns:
-        return table
-    existing = set(table.column_names)
-    arrays = [
-        table[column] if column in existing else pa.nulls(table.num_rows) for column in columns
-    ]
-    return pa.Table.from_arrays(arrays, names=list(columns))
 
 
 def _pk_from_row(table_key: str, values: Mapping[str, object]) -> int:
@@ -589,15 +634,6 @@ def _goids_to_cpg(goids: pa.Table) -> pa.Table:
         )
     table = _node_rows_to_table(rows)
     return _select_node_columns(table)
-
-
-def _rename_table_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
-    if not mapping:
-        return table
-    new_names = [mapping.get(name, name) for name in table.column_names]
-    if new_names == list(table.column_names):
-        return table
-    return table.rename_columns(new_names)
 
 
 def _cfg_block_index(
@@ -1400,27 +1436,33 @@ def cpg_nodes__inputs(
 
 def _core_lazyframes(core_inputs: _CpgNodeCoreInputs) -> _CpgNodeCoreLazyFrames:
     return _CpgNodeCoreLazyFrames(
-        syntax_nodes=tabular_to_arrow_table(core_inputs.syntax_nodes),
-        ast_nodes=tabular_to_arrow_table(core_inputs.ast_nodes),
-        scip_symbol_information=tabular_to_arrow_table(core_inputs.scip_symbol_information),
-        goids=tabular_to_arrow_table(core_inputs.goids),
-        py_sym_scopes=tabular_to_arrow_table(core_inputs.py_sym_scopes),
-        py_sym_bindings=tabular_to_arrow_table(core_inputs.py_sym_bindings),
-        py_bc_code_units=tabular_to_arrow_table(core_inputs.py_bc_code_units),
-        py_bc_instructions=tabular_to_arrow_table(core_inputs.py_bc_instructions),
-        py_bc_blocks=tabular_to_arrow_table(core_inputs.py_bc_blocks),
-        py_inspect_objects=tabular_to_arrow_table(core_inputs.py_inspect_objects),
-        py_inspect_signatures=tabular_to_arrow_table(core_inputs.py_inspect_signatures),
-        py_inspect_signature_params=tabular_to_arrow_table(core_inputs.py_inspect_signature_params),
-        ts_tokens=tabular_to_arrow_table(core_inputs.ts_tokens),
-        ts_trivia=tabular_to_arrow_table(core_inputs.ts_trivia),
+        syntax_nodes=reader_to_table(tabular_to_reader(core_inputs.syntax_nodes)),
+        ast_nodes=reader_to_table(tabular_to_reader(core_inputs.ast_nodes)),
+        scip_symbol_information=reader_to_table(
+            tabular_to_reader(core_inputs.scip_symbol_information)
+        ),
+        goids=reader_to_table(tabular_to_reader(core_inputs.goids)),
+        py_sym_scopes=reader_to_table(tabular_to_reader(core_inputs.py_sym_scopes)),
+        py_sym_bindings=reader_to_table(tabular_to_reader(core_inputs.py_sym_bindings)),
+        py_bc_code_units=reader_to_table(tabular_to_reader(core_inputs.py_bc_code_units)),
+        py_bc_instructions=reader_to_table(tabular_to_reader(core_inputs.py_bc_instructions)),
+        py_bc_blocks=reader_to_table(tabular_to_reader(core_inputs.py_bc_blocks)),
+        py_inspect_objects=reader_to_table(tabular_to_reader(core_inputs.py_inspect_objects)),
+        py_inspect_signatures=reader_to_table(
+            tabular_to_reader(core_inputs.py_inspect_signatures)
+        ),
+        py_inspect_signature_params=reader_to_table(
+            tabular_to_reader(core_inputs.py_inspect_signature_params)
+        ),
+        ts_tokens=reader_to_table(tabular_to_reader(core_inputs.ts_tokens)),
+        ts_trivia=reader_to_table(tabular_to_reader(core_inputs.ts_trivia)),
     )
 
 
 def _graph_lazyframes(graph_inputs: _CpgNodeGraphInputs) -> _CpgNodeGraphLazyFrames:
     return _CpgNodeGraphLazyFrames(
-        cfg_blocks=tabular_to_arrow_table(graph_inputs.cfg_blocks),
-        import_modules=tabular_to_arrow_table(graph_inputs.import_modules),
+        cfg_blocks=reader_to_table(tabular_to_reader(graph_inputs.cfg_blocks)),
+        import_modules=reader_to_table(tabular_to_reader(graph_inputs.import_modules)),
     )
 
 
@@ -1483,7 +1525,7 @@ def cpg_nodes(
     ]
     tables = [frame for frame in frames if frame.num_rows > 0]
     if tables:
-        combined = pa.concat_tables(tables, promote=True)
+        combined = concat_tables_unified(tables)
         combined = _select_node_columns(combined)
         combined = dedupe_table_for_table(CPG_NODES_TABLE_KEY, combined)
         return _frame_to_reader(CPG_NODES_TABLE_KEY, combined)
@@ -6820,7 +6862,11 @@ def _runtime_state_edges_for_instr(
                 "commit": context.commit,
                 "src_cpg_node_id": _stable_cpg_id(
                     PY_INSPECT_OBJECTS_TABLE_KEY,
-                    {"repo": context.repo, "commit": context.commit, "object_id": context.object_id},
+                    {
+                        "repo": context.repo,
+                        "commit": context.commit,
+                        "object_id": context.object_id,
+                    },
                 ),
                 "dst_cpg_node_id": _instruction_cpg_id(
                     repo=context.repo,
@@ -6873,7 +6919,7 @@ def _py_inspect_runtime_state_edges_to_cpg(
     tables = [table for table in (has_state_edges, instr_edges) if table.num_rows > 0]
     if not tables:
         return _empty_table(_CPG_EDGE_COLUMNS)
-    combined = pa.concat_tables(tables, promote=True)
+    combined = concat_tables_unified(tables)
     return _select_edge_columns(combined)
 
 
@@ -6962,11 +7008,11 @@ def cpg_edge_symbol_inputs(
         Symbol inputs for CPG edge assembly.
     """
     return _CpgSymbolInputs(
-        syntax_edges=tabular_to_arrow_table(q__core__syntax_edges),
-        occ_syntax=tabular_to_arrow_table(q__core__scip_occurrence_syntax_xref),
-        occ_span=tabular_to_arrow_table(q__core__scip_occurrence_span_xref),
-        symbol_rels=tabular_to_arrow_table(q__core__scip_symbol_relationships),
-        symbol_goid=tabular_to_arrow_table(q__core__scip_symbol_goid_xref),
+        syntax_edges=reader_to_table(tabular_to_reader(q__core__syntax_edges)),
+        occ_syntax=reader_to_table(tabular_to_reader(q__core__scip_occurrence_syntax_xref)),
+        occ_span=reader_to_table(tabular_to_reader(q__core__scip_occurrence_span_xref)),
+        symbol_rels=reader_to_table(tabular_to_reader(q__core__scip_symbol_relationships)),
+        symbol_goid=reader_to_table(tabular_to_reader(q__core__scip_symbol_goid_xref)),
     )
 
 
@@ -6985,11 +7031,11 @@ def cpg_edge_flow_inputs(
         Flow inputs for CPG edge assembly.
     """
     return _CpgFlowInputs(
-        goids=tabular_to_arrow_table(q__core__goids),
-        cfg_edges=tabular_to_arrow_table(q__graph__cfg_edges),
-        dfg_edges=tabular_to_arrow_table(q__graph__dfg_edges),
-        cfg_blocks=tabular_to_arrow_table(q__graph__cfg_blocks),
-        cdg_edges=tabular_to_arrow_table(q__graph__cdg_edges),
+        goids=reader_to_table(tabular_to_reader(q__core__goids)),
+        cfg_edges=reader_to_table(tabular_to_reader(q__graph__cfg_edges)),
+        dfg_edges=reader_to_table(tabular_to_reader(q__graph__dfg_edges)),
+        cfg_blocks=reader_to_table(tabular_to_reader(q__graph__cfg_blocks)),
+        cdg_edges=reader_to_table(tabular_to_reader(q__graph__cdg_edges)),
     )
 
 
@@ -7005,8 +7051,8 @@ def cpg_edge_link_inputs(
         Graph-link inputs for CPG edge assembly.
     """
     return _CpgLinkInputs(
-        call_edges=tabular_to_arrow_table(q__graph__call_graph_edges),
-        import_edges=tabular_to_arrow_table(q__graph__import_graph_edges),
+        call_edges=reader_to_table(tabular_to_reader(q__graph__call_graph_edges)),
+        import_edges=reader_to_table(tabular_to_reader(q__graph__import_graph_edges)),
     )
 
 
@@ -7023,9 +7069,9 @@ def cpg_edge_call_wiring_inputs(
         Call wiring inputs for CPG edge assembly.
     """
     return _CpgCallWiringInputs(
-        call_edges=tabular_to_arrow_table(q__graph__cpg_edges_calls),
-        arg_to_param_edges=tabular_to_arrow_table(q__graph__cpg_edges_arg_to_param),
-        ret_to_call_edges=tabular_to_arrow_table(q__graph__cpg_edges_ret_to_call),
+        call_edges=reader_to_table(tabular_to_reader(q__graph__cpg_edges_calls)),
+        arg_to_param_edges=reader_to_table(tabular_to_reader(q__graph__cpg_edges_arg_to_param)),
+        ret_to_call_edges=reader_to_table(tabular_to_reader(q__graph__cpg_edges_ret_to_call)),
     )
 
 
@@ -7040,7 +7086,7 @@ def cpg_edge_syntax_node_inputs(
         Syntax node inputs for CPG edge assembly.
     """
     return _CpgSyntaxNodeInputs(
-        syntax_nodes=tabular_to_arrow_table(q__core__syntax_nodes),
+        syntax_nodes=reader_to_table(tabular_to_reader(q__core__syntax_nodes)),
     )
 
 
@@ -7059,11 +7105,15 @@ def cpg_edge_overlay_scope_inputs(
         Scope overlay inputs for CPG edge assembly.
     """
     return _CpgOverlayScopeInputs(
-        py_sym_scopes=tabular_to_arrow_table(q__core__py_sym_scopes),
-        py_sym_bindings=tabular_to_arrow_table(q__core__py_sym_bindings),
-        py_sym_scope_edges=tabular_to_arrow_table(q__core__py_sym_scope_edges),
-        py_sym_namespace_edges=tabular_to_arrow_table(q__core__py_sym_namespace_edges),
-        py_sym_resolution_edges=tabular_to_arrow_table(q__core__py_sym_resolution_edges),
+        py_sym_scopes=reader_to_table(tabular_to_reader(q__core__py_sym_scopes)),
+        py_sym_bindings=reader_to_table(tabular_to_reader(q__core__py_sym_bindings)),
+        py_sym_scope_edges=reader_to_table(tabular_to_reader(q__core__py_sym_scope_edges)),
+        py_sym_namespace_edges=reader_to_table(
+            tabular_to_reader(q__core__py_sym_namespace_edges)
+        ),
+        py_sym_resolution_edges=reader_to_table(
+            tabular_to_reader(q__core__py_sym_resolution_edges)
+        ),
     )
 
 
@@ -7080,8 +7130,8 @@ def cpg_edge_overlay_symbol_inputs(
         Symbol overlay inputs for CPG edge assembly.
     """
     return _CpgOverlaySymbolInputs(
-        ast_nodes=tabular_to_arrow_table(q__core__ast_nodes),
-        scip_symbols=tabular_to_arrow_table(q__core__scip_symbol_information),
+        ast_nodes=reader_to_table(tabular_to_reader(q__core__ast_nodes)),
+        scip_symbols=reader_to_table(tabular_to_reader(q__core__scip_symbol_information)),
         scope_inputs=cpg_edge_overlay_scope_inputs,
     )
 
@@ -7101,11 +7151,11 @@ def cpg_edge_overlay_bytecode_inputs(
         Bytecode overlay inputs for CPG edge assembly.
     """
     return _CpgOverlayBytecodeInputs(
-        py_bc_code_units=tabular_to_arrow_table(q__core__py_bc_code_units),
-        py_bc_instructions=tabular_to_arrow_table(q__core__py_bc_instructions),
-        py_bc_blocks=tabular_to_arrow_table(q__core__py_bc_blocks),
-        py_bc_cfg_edges=tabular_to_arrow_table(q__core__py_bc_cfg_edges),
-        py_bc_defuse_events=tabular_to_arrow_table(q__core__py_bc_defuse_events),
+        py_bc_code_units=reader_to_table(tabular_to_reader(q__core__py_bc_code_units)),
+        py_bc_instructions=reader_to_table(tabular_to_reader(q__core__py_bc_instructions)),
+        py_bc_blocks=reader_to_table(tabular_to_reader(q__core__py_bc_blocks)),
+        py_bc_cfg_edges=reader_to_table(tabular_to_reader(q__core__py_bc_cfg_edges)),
+        py_bc_defuse_events=reader_to_table(tabular_to_reader(q__core__py_bc_defuse_events)),
     )
 
 
@@ -7121,8 +7171,8 @@ def cpg_edge_overlay_syntax_call_inputs(
         Syntax call inputs for inspect overlays.
     """
     return _CpgOverlaySyntaxCallInputs(
-        syntax_calls=tabular_to_arrow_table(q__core__syntax_calls),
-        syntax_call_args=tabular_to_arrow_table(q__core__syntax_call_args),
+        syntax_calls=reader_to_table(tabular_to_reader(q__core__syntax_calls)),
+        syntax_call_args=reader_to_table(tabular_to_reader(q__core__syntax_call_args)),
     )
 
 
@@ -7141,11 +7191,15 @@ def cpg_edge_overlay_inspect_core_inputs(
         Core inspect inputs for CPG edge assembly.
     """
     return _CpgOverlayInspectCoreInputs(
-        py_inspect_objects=tabular_to_arrow_table(q__core__py_inspect_objects),
-        py_inspect_class_mro=tabular_to_arrow_table(q__core__py_inspect_class_mro),
-        py_inspect_class_attrs=tabular_to_arrow_table(q__core__py_inspect_class_attrs),
-        py_inspect_unwrap_hops=tabular_to_arrow_table(q__core__py_inspect_unwrap_hops),
-        py_inspect_source=tabular_to_arrow_table(q__core__py_inspect_source),
+        py_inspect_objects=reader_to_table(tabular_to_reader(q__core__py_inspect_objects)),
+        py_inspect_class_mro=reader_to_table(tabular_to_reader(q__core__py_inspect_class_mro)),
+        py_inspect_class_attrs=reader_to_table(
+            tabular_to_reader(q__core__py_inspect_class_attrs)
+        ),
+        py_inspect_unwrap_hops=reader_to_table(
+            tabular_to_reader(q__core__py_inspect_unwrap_hops)
+        ),
+        py_inspect_source=reader_to_table(tabular_to_reader(q__core__py_inspect_source)),
     )
 
 
@@ -7162,9 +7216,13 @@ def cpg_edge_overlay_inspect_runtime_inputs(
         Runtime inspect inputs for CPG edge assembly.
     """
     return _CpgOverlayInspectRuntimeInputs(
-        py_inspect_signatures=tabular_to_arrow_table(q__core__py_inspect_signatures),
-        py_inspect_signature_params=tabular_to_arrow_table(q__core__py_inspect_signature_params),
-        py_inspect_runtime_state=tabular_to_arrow_table(q__core__py_inspect_runtime_state),
+        py_inspect_signatures=reader_to_table(tabular_to_reader(q__core__py_inspect_signatures)),
+        py_inspect_signature_params=reader_to_table(
+            tabular_to_reader(q__core__py_inspect_signature_params)
+        ),
+        py_inspect_runtime_state=reader_to_table(
+            tabular_to_reader(q__core__py_inspect_runtime_state)
+        ),
     )
 
 
@@ -7257,9 +7315,144 @@ def cpg_edge_core_inputs(
     )
 
 
+def _overlay_frames(
+    *,
+    overlay_inputs: _CpgOverlayEdgeInputs,
+    overlay_options: CpgOverlayOptions,
+    cpg_options: CpgOptions,
+) -> list[pa.Table]:
+    def _symtable_frames() -> list[pa.Table]:
+        return [
+            _py_sym_scope_edges_to_cpg(overlay_inputs.py_sym_scope_edges),
+            _py_sym_namespace_edges_to_cpg(
+                overlay_inputs.py_sym_namespace_edges,
+                overlay_inputs.py_sym_bindings,
+            ),
+            _py_sym_binding_edges_to_cpg(overlay_inputs.py_sym_bindings),
+            _py_sym_resolution_edges_to_cpg(overlay_inputs.py_sym_resolution_edges),
+            _py_sym_binding_symbol_edges_to_cpg(
+                overlay_inputs.py_sym_bindings,
+                overlay_inputs.py_sym_scopes,
+                overlay_inputs.scip_symbols,
+            ),
+            _ast_binding_edges_to_cpg(
+                overlay_inputs.ast_nodes,
+                overlay_inputs.py_sym_scopes,
+                overlay_inputs.py_sym_bindings,
+                overlay_inputs.py_sym_resolution_edges,
+            ),
+        ]
+
+    def _bytecode_frames() -> list[pa.Table]:
+        frames = [
+            _py_bc_instruction_ast_edges_to_cpg(
+                overlay_inputs.py_bc_instructions,
+                overlay_inputs.ast_nodes,
+            ),
+            _py_bc_callsite_edges_to_cpg(
+                overlay_inputs.py_bc_instructions,
+                overlay_inputs.syntax_calls,
+            ),
+            _py_bc_callsite_symbol_edges_to_cpg(
+                overlay_inputs.py_bc_instructions,
+                overlay_inputs.syntax_calls,
+                overlay_inputs.scip_symbols,
+            ),
+            _py_bc_cfg_edges_to_cpg(overlay_inputs.py_bc_cfg_edges),
+            _py_bc_defuse_binding_edges_to_cpg(
+                overlay_inputs.py_bc_defuse_events,
+                overlay_inputs.py_bc_code_units,
+                overlay_inputs.py_sym_scopes,
+                overlay_inputs.py_sym_bindings,
+                overlay_inputs.py_sym_resolution_edges,
+            ),
+            _py_bc_memory_edges_to_cpg(
+                overlay_inputs.py_bc_defuse_events,
+                overlay_inputs.py_bc_instructions,
+                overlay_inputs.ast_nodes,
+            ),
+            _py_bc_stack_edges_to_cpg(
+                overlay_inputs.py_bc_instructions,
+                overlay_inputs.py_bc_blocks,
+            ),
+        ]
+        if cpg_options.enable_reaches:
+            frames.append(
+                _py_bc_reaches_edges_to_cpg(
+                    _PyBcReachesInputs(
+                        defuse_events=overlay_inputs.py_bc_defuse_events,
+                        code_units=overlay_inputs.py_bc_code_units,
+                        scopes=overlay_inputs.py_sym_scopes,
+                        bindings=overlay_inputs.py_sym_bindings,
+                        resolution_edges=overlay_inputs.py_sym_resolution_edges,
+                        blocks=overlay_inputs.py_bc_blocks,
+                        cfg_edges=overlay_inputs.py_bc_cfg_edges,
+                    )
+                )
+            )
+        return frames
+
+    def _inspect_frames() -> list[pa.Table]:
+        return [
+            _py_inspect_signature_edges_to_cpg(
+                overlay_inputs.py_inspect_signatures,
+                overlay_inputs.py_inspect_signature_params,
+            ),
+            _inspect_arg_to_param_edges_to_cpg(
+                overlay_inputs.syntax_calls,
+                overlay_inputs.syntax_call_args,
+                overlay_inputs.py_inspect_objects,
+                overlay_inputs.py_inspect_signatures,
+                overlay_inputs.py_inspect_signature_params,
+            ),
+            _py_inspect_unwrap_edges_to_cpg(overlay_inputs.py_inspect_unwrap_hops),
+            _py_inspect_class_mro_edges_to_cpg(overlay_inputs.py_inspect_class_mro),
+            _py_inspect_class_attr_edges_to_cpg(overlay_inputs.py_inspect_class_attrs),
+            _py_inspect_runtime_state_edges_to_cpg(
+                overlay_inputs.py_inspect_runtime_state,
+                overlay_inputs.py_bc_code_units,
+                overlay_inputs.py_bc_instructions,
+            ),
+            _inspect_to_ast_edges_to_cpg(
+                overlay_inputs.py_inspect_objects,
+                overlay_inputs.py_inspect_source,
+                overlay_inputs.ast_nodes,
+            ),
+            _inspect_to_scip_edges_to_cpg(
+                overlay_inputs.py_inspect_objects,
+                overlay_inputs.scip_symbols,
+            ),
+        ]
+
+    registry = [
+        _CpgOverlayRegistryEntry(
+            name="symtable",
+            enabled=overlay_options.enable_symtable,
+            builder=_symtable_frames,
+        ),
+        _CpgOverlayRegistryEntry(
+            name="bytecode",
+            enabled=overlay_options.enable_bytecode,
+            builder=_bytecode_frames,
+        ),
+        _CpgOverlayRegistryEntry(
+            name="inspect",
+            enabled=overlay_options.enable_inspect,
+            builder=_inspect_frames,
+        ),
+    ]
+    frames: list[pa.Table] = []
+    for entry in registry:
+        if not entry.enabled:
+            continue
+        frames.extend(entry.builder())
+    return frames
+
+
 def cpg_edges(
     cpg_edge_core_inputs: _CpgEdgeCoreInputs,
     cpg_edge_overlay_inputs: _CpgOverlayEdgeInputs,
+    cpg__overlay_options: CpgOverlayOptions,
     cpg__options: CpgOptions,
 ) -> InferableTabularInput:
     """Build CPG edges from syntax, symbol, and flow sources.
@@ -7312,104 +7505,17 @@ def cpg_edges(
             cfg_blocks,
             syntax_nodes,
         ),
-        _py_sym_scope_edges_to_cpg(overlay_inputs.py_sym_scope_edges),
-        _py_sym_namespace_edges_to_cpg(
-            overlay_inputs.py_sym_namespace_edges,
-            overlay_inputs.py_sym_bindings,
-        ),
-        _py_sym_binding_edges_to_cpg(overlay_inputs.py_sym_bindings),
-        _py_sym_resolution_edges_to_cpg(overlay_inputs.py_sym_resolution_edges),
-        _py_sym_binding_symbol_edges_to_cpg(
-            overlay_inputs.py_sym_bindings,
-            overlay_inputs.py_sym_scopes,
-            overlay_inputs.scip_symbols,
-        ),
-        _ast_binding_edges_to_cpg(
-            overlay_inputs.ast_nodes,
-            overlay_inputs.py_sym_scopes,
-            overlay_inputs.py_sym_bindings,
-            overlay_inputs.py_sym_resolution_edges,
-        ),
-        _py_bc_instruction_ast_edges_to_cpg(
-            overlay_inputs.py_bc_instructions,
-            overlay_inputs.ast_nodes,
-        ),
-        _py_bc_callsite_edges_to_cpg(
-            overlay_inputs.py_bc_instructions,
-            overlay_inputs.syntax_calls,
-        ),
-        _py_bc_callsite_symbol_edges_to_cpg(
-            overlay_inputs.py_bc_instructions,
-            overlay_inputs.syntax_calls,
-            overlay_inputs.scip_symbols,
-        ),
-        _py_bc_cfg_edges_to_cpg(overlay_inputs.py_bc_cfg_edges),
-        _py_bc_defuse_binding_edges_to_cpg(
-            overlay_inputs.py_bc_defuse_events,
-            overlay_inputs.py_bc_code_units,
-            overlay_inputs.py_sym_scopes,
-            overlay_inputs.py_sym_bindings,
-            overlay_inputs.py_sym_resolution_edges,
-        ),
-        _py_bc_memory_edges_to_cpg(
-            overlay_inputs.py_bc_defuse_events,
-            overlay_inputs.py_bc_instructions,
-            overlay_inputs.ast_nodes,
-        ),
-        _py_bc_stack_edges_to_cpg(
-            overlay_inputs.py_bc_instructions,
-            overlay_inputs.py_bc_blocks,
-        ),
     ]
-    if cpg__options.enable_reaches:
-        frames.append(
-            _py_bc_reaches_edges_to_cpg(
-                _PyBcReachesInputs(
-                    defuse_events=overlay_inputs.py_bc_defuse_events,
-                    code_units=overlay_inputs.py_bc_code_units,
-                    scopes=overlay_inputs.py_sym_scopes,
-                    bindings=overlay_inputs.py_sym_bindings,
-                    resolution_edges=overlay_inputs.py_sym_resolution_edges,
-                    blocks=overlay_inputs.py_bc_blocks,
-                    cfg_edges=overlay_inputs.py_bc_cfg_edges,
-                )
-            )
-        )
     frames.extend(
-        [
-            _py_inspect_signature_edges_to_cpg(
-                overlay_inputs.py_inspect_signatures,
-                overlay_inputs.py_inspect_signature_params,
-            ),
-            _inspect_arg_to_param_edges_to_cpg(
-                overlay_inputs.syntax_calls,
-                overlay_inputs.syntax_call_args,
-                overlay_inputs.py_inspect_objects,
-                overlay_inputs.py_inspect_signatures,
-                overlay_inputs.py_inspect_signature_params,
-            ),
-            _py_inspect_unwrap_edges_to_cpg(overlay_inputs.py_inspect_unwrap_hops),
-            _py_inspect_class_mro_edges_to_cpg(overlay_inputs.py_inspect_class_mro),
-            _py_inspect_class_attr_edges_to_cpg(overlay_inputs.py_inspect_class_attrs),
-            _py_inspect_runtime_state_edges_to_cpg(
-                overlay_inputs.py_inspect_runtime_state,
-                overlay_inputs.py_bc_code_units,
-                overlay_inputs.py_bc_instructions,
-            ),
-            _inspect_to_ast_edges_to_cpg(
-                overlay_inputs.py_inspect_objects,
-                overlay_inputs.py_inspect_source,
-                overlay_inputs.ast_nodes,
-            ),
-            _inspect_to_scip_edges_to_cpg(
-                overlay_inputs.py_inspect_objects,
-                overlay_inputs.scip_symbols,
-            ),
-        ]
+        _overlay_frames(
+            overlay_inputs=overlay_inputs,
+            overlay_options=cpg__overlay_options,
+            cpg_options=cpg__options,
+        )
     )
     tables = [frame for frame in frames if frame.num_rows > 0]
     if tables:
-        combined = pa.concat_tables(tables, promote=True)
+        combined = concat_tables_unified(tables)
         combined = _select_edge_columns(combined)
         combined = dedupe_table_for_table(CPG_EDGES_TABLE_KEY, combined)
         return _frame_to_reader(CPG_EDGES_TABLE_KEY, combined)

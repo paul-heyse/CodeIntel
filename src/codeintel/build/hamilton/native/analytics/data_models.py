@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-import polars as pl
+import pyarrow as pa
 from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.compute.data_models.usage import (
@@ -28,12 +28,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_frame
-from codeintel.build.tabular.frames import (
-    empty_frame_for_table,
-    rows_to_frame,
-)
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -87,16 +84,16 @@ DATA_MODEL_USAGE_CONTRACT = TableContractSpec(
 
 @dataclass(frozen=True)
 class DataModelUsageCoreFrames:
-    modules_frame: pl.DataFrame
-    goids_frame: pl.DataFrame
-    data_models_frame: pl.DataFrame
+    modules_frame: pa.Table
+    goids_frame: pa.Table
+    data_models_frame: pa.Table
 
 
 @dataclass(frozen=True)
 class DataModelUsageSubsystemFrames:
-    subsystem_modules_frame: pl.DataFrame
-    subsystems_frame: pl.DataFrame
-    function_types_frame: pl.DataFrame
+    subsystem_modules_frame: pa.Table
+    subsystems_frame: pa.Table
+    function_types_frame: pa.Table
 
 
 @dataclass(frozen=True)
@@ -111,9 +108,9 @@ def data_model_usage_core_frames(
     q__analytics__data_models: InferableTabularInput,
 ) -> DataModelUsageCoreFrames:
     return DataModelUsageCoreFrames(
-        modules_frame=tabular_to_frame(q__core__modules),
-        goids_frame=tabular_to_frame(q__core__goids),
-        data_models_frame=tabular_to_frame(q__analytics__data_models),
+        modules_frame=tabular_to_arrow_table(q__core__modules),
+        goids_frame=tabular_to_arrow_table(q__core__goids),
+        data_models_frame=tabular_to_arrow_table(q__analytics__data_models),
     )
 
 
@@ -123,9 +120,9 @@ def data_model_usage_subsystem_frames(
     q__analytics__function_types: InferableTabularInput,
 ) -> DataModelUsageSubsystemFrames:
     return DataModelUsageSubsystemFrames(
-        subsystem_modules_frame=tabular_to_frame(q__analytics__subsystem_modules),
-        subsystems_frame=tabular_to_frame(q__analytics__subsystems),
-        function_types_frame=tabular_to_frame(q__analytics__function_types),
+        subsystem_modules_frame=tabular_to_arrow_table(q__analytics__subsystem_modules),
+        subsystems_frame=tabular_to_arrow_table(q__analytics__subsystems),
+        function_types_frame=tabular_to_arrow_table(q__analytics__function_types),
     )
 
 
@@ -139,20 +136,17 @@ def data_model_usage_frames(
     )
 
 
-def _module_map(modules_frame: pl.DataFrame) -> dict[str, str]:
+def _module_map(modules_frame: pa.Table) -> dict[str, str]:
     module_map: dict[str, str] = {}
-    if modules_frame.is_empty():
+    if modules_frame.num_rows == 0:
         return module_map
-    if not {"path", "module"}.issubset(set(modules_frame.columns)):
+    if not {"path", "module"}.issubset(set(modules_frame.column_names)):
         return module_map
-    data = modules_frame.select(["path", "module"]).to_dict(as_series=False)
-    module_map.update(
-        {
-            path: module
-            for path, module in zip(data["path"], data["module"], strict=True)
-            if isinstance(path, str) and isinstance(module, str)
-        }
-    )
+    for row in modules_frame.select(["path", "module"]).to_pylist():
+        path = row.get("path")
+        module = row.get("module")
+        if isinstance(path, str) and isinstance(module, str):
+            module_map[path] = module
     return module_map
 
 
@@ -170,9 +164,9 @@ def data_models_result(
     DataModelsResult
         Computed data model rows and metadata.
     """
-    goids_frame = tabular_to_frame(q__core__goids)
-    modules_frame = tabular_to_frame(q__core__modules)
-    docstrings_frame = tabular_to_frame(q__core__docstrings)
+    goids_frame = tabular_to_arrow_table(q__core__goids)
+    modules_frame = tabular_to_arrow_table(q__core__modules)
+    docstrings_frame = tabular_to_arrow_table(q__core__docstrings)
     return compute_data_models_pure(
         env.snapshot,
         goids_frame=goids_frame,
@@ -181,46 +175,57 @@ def data_models_result(
     )
 
 
-def data_models__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
+def data_models__base(data_models_result: DataModelsResult) -> pa.RecordBatchReader:
     """Build data model summary rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing data model rows.
+    pa.RecordBatchReader
+        Reader containing data model rows.
     """
-    return rows_to_frame(
+    if not data_models_result.model_rows:
+        return empty_reader_for_table(DATA_MODELS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         DATA_MODELS_TABLE_KEY,
         data_models_result.model_rows,
     )
+    return reader
 
 
-def data_model_fields__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
+def data_model_fields__base(data_models_result: DataModelsResult) -> pa.RecordBatchReader:
     """Build data model field rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing data model field rows.
+    pa.RecordBatchReader
+        Reader containing data model field rows.
     """
-    return rows_to_frame(
+    if not data_models_result.field_rows:
+        return empty_reader_for_table(DATA_MODEL_FIELDS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         DATA_MODEL_FIELDS_TABLE_KEY,
         data_models_result.field_rows,
     )
+    return reader
 
 
-def data_model_relationships__base(data_models_result: DataModelsResult) -> pl.LazyFrame:
+def data_model_relationships__base(
+    data_models_result: DataModelsResult,
+) -> pa.RecordBatchReader:
     """Build data model relationship rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing data model relationship rows.
+    pa.RecordBatchReader
+        Reader containing data model relationship rows.
     """
-    return rows_to_frame(
+    if not data_models_result.relationship_rows:
+        return empty_reader_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(
         DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
         data_models_result.relationship_rows,
     )
+    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -234,6 +239,7 @@ _DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODELS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODELS_TABLE_KEY),
             node_name="data_models__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=DATA_MODEL_FIELDS_TABLE_KEY,
@@ -241,6 +247,7 @@ _DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODEL_FIELDS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODEL_FIELDS_TABLE_KEY),
             node_name="data_model_fields__table",
+            input_type=pa.RecordBatchReader,
         ),
         TableTargetTableSpec(
             table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
@@ -248,6 +255,7 @@ _DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
             node_name="data_model_relationships__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="data_models__table_materializations",
@@ -264,13 +272,13 @@ t__data_models = _MODULE.t__data_models
 def data_model_usage__base(
     env: BuildEnv,
     data_model_usage_frames: DataModelUsageFrames,
-) -> pl.LazyFrame:
+) -> pa.RecordBatchReader:
     """Build data model usage rows.
 
     Returns
     -------
-    pl.LazyFrame
-        Lazy frame containing data model usage rows.
+    pa.RecordBatchReader
+        Reader containing data model usage rows.
     """
     modules_frame = data_model_usage_frames.core.modules_frame
     goids_frame = data_model_usage_frames.core.goids_frame
@@ -280,7 +288,7 @@ def data_model_usage__base(
     function_types_frame = data_model_usage_frames.subsystems.function_types_frame
     module_map = _module_map(modules_frame)
     if not module_map:
-        return empty_frame_for_table(DATA_MODEL_USAGE_TABLE_KEY)
+        return empty_reader_for_table(DATA_MODEL_USAGE_TABLE_KEY)
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -289,7 +297,7 @@ def data_model_usage__base(
         catalog_provider=catalog,
     )
     ast_map, missing = load_function_asts(request)
-    return build_data_model_usage_rows(
+    rows = build_data_model_usage_rows(
         env.snapshot,
         DataModelUsageInputs(
             module_map=module_map,
@@ -301,6 +309,10 @@ def data_model_usage__base(
             missing_goids=missing,
         ),
     )
+    if not rows:
+        return empty_reader_for_table(DATA_MODEL_USAGE_TABLE_KEY)
+    reader, _ = record_batch_reader_for_rows(DATA_MODEL_USAGE_TABLE_KEY, rows)
+    return reader
 
 
 _DATA_MODEL_USAGE_TABLE_TARGET_SPEC = TableTargetSpec(
@@ -313,6 +325,7 @@ _DATA_MODEL_USAGE_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODEL_USAGE_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODEL_USAGE_TABLE_KEY),
             node_name="data_model_usage__table",
+            input_type=pa.RecordBatchReader,
         ),
     ),
     table_materializations_node="data_model_usage__table_materializations",

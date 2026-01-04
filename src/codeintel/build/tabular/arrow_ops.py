@@ -229,6 +229,18 @@ def _call_compute(
         return None
 
 
+def _array_from_compute(
+    name: str,
+    args: Sequence[object],
+    *,
+    options: pc.FunctionOptions | None = None,
+) -> pa.Array | pa.ChunkedArray | None:
+    result = _call_compute(name, args, options=options)
+    if isinstance(result, (pa.Array, pa.ChunkedArray)):
+        return result
+    return None
+
+
 def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     if not keys:
         return
@@ -426,6 +438,38 @@ def align_table_to_contract(
     return reader_to_table(aligned)
 
 
+def concat_tables_unified(tables: Sequence[pa.Table]) -> pa.Table:
+    """Concatenate tables after unifying schemas.
+
+    Returns
+    -------
+    pyarrow.Table
+        Concatenated Arrow table with a unified schema.
+    """
+    if not tables:
+        return pa.table({})
+    if len(tables) == 1:
+        return tables[0]
+    schemas = [table.schema for table in tables]
+    try:
+        unified = pa.unify_schemas(schemas, promote_options="permissive")
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        unified = pa.unify_schemas(schemas)
+    aligned: list[pa.Table] = []
+    for table in tables:
+        if table.schema == unified:
+            aligned.append(table)
+            continue
+        try:
+            aligned.append(table.cast(unified, safe=False))
+        except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
+            aligned.append(table)
+    try:
+        return pa.concat_tables(aligned, promote=True)
+    except (pa.ArrowInvalid, pa.ArrowTypeError):
+        return pa.concat_tables(aligned)
+
+
 def dedupe_table_for_table(
     table_key: str,
     table: pa.Table,
@@ -451,6 +495,9 @@ def dedupe_table_for_table(
     try:
         return table.drop_duplicates(key_columns)
     except (AttributeError, pa.ArrowNotImplementedError, pa.ArrowTypeError):
+        deduped = _dedupe_table_via_compute(table, key_columns=key_columns)
+        if deduped is not None:
+            return deduped
         seen: set[tuple[object, ...]] = set()
         rows: list[dict[str, object]] = []
         for row in table.to_pylist():
@@ -462,6 +509,49 @@ def dedupe_table_for_table(
         if not rows:
             return pa.Table.from_batches([], schema=table.schema)
         return pa.Table.from_pylist(rows, schema=table.schema)
+
+
+def _dedupe_table_via_compute(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+) -> pa.Table | None:
+    if table.num_rows == 0:
+        return table
+    row_index_name = _row_index_name(table, base="_row_index")
+    row_index = _row_index_array(table.num_rows)
+    if row_index is None:
+        return None
+    try:
+        indexed = table.append_column(row_index_name, row_index)
+        grouped = indexed.group_by(list(key_columns)).aggregate([(row_index_name, "min")])
+        index_column = f"{row_index_name}_min"
+        if index_column not in grouped.column_names:
+            return None
+        indices = grouped.column(index_column)
+        mask = _array_from_compute("is_in", [row_index, indices])
+        if mask is None:
+            return None
+        return table.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return None
+
+
+def _row_index_array(length: int) -> pa.Array | None:
+    try:
+        return pa.array(range(length), type=pa.int64())
+    except (pa.ArrowInvalid, pa.ArrowTypeError):
+        return None
+
+
+def _row_index_name(table: pa.Table, *, base: str) -> str:
+    existing = set(table.column_names)
+    name = base
+    suffix = 1
+    while name in existing:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
 
 
 def _sort_table_for_preference(table: pa.Table, prefer_columns: Sequence[str]) -> pa.Table:
@@ -613,6 +703,7 @@ __all__ = [
     "arrow_join_tables",
     "arrow_table_from_lazyframe",
     "arrow_table_from_tabular",
+    "concat_tables_unified",
     "dedupe_table_for_table",
     "scan_parquet_dataset",
     "scan_parquet_table",

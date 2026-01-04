@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import cast
 
-import polars as pl
+import pyarrow as pa
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -302,10 +302,12 @@ def _resolve_save_spec(
 
 def _resolve_input_type(table_spec: TableTargetTableSpec) -> object:
     if table_spec.input_type is not None:
+        if table_spec.contract is not None and table_spec.input_type is pa.RecordBatchReader:
+            return InferableTabularInput
         return table_spec.input_type
     if table_spec.contract is None:
         return InferableTabularInput
-    return pl.LazyFrame
+    return InferableTabularInput
 
 
 def _merge_tags(
