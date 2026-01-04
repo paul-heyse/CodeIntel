@@ -18,6 +18,7 @@ from codeintel.build.tabular.arrow_ops import (
     arrow_join_tables,
     dedupe_table_for_table,
 )
+from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table
@@ -549,11 +550,6 @@ def _table_rows(table: pa.Table) -> list[dict[str, object]]:
     if table.num_rows == 0:
         return []
     return table.to_pylist()
-
-
-def _empty_table(columns: Sequence[str]) -> pa.Table:
-    arrays = [pa.array([], type=pa.null()) for _ in columns]
-    return pa.Table.from_arrays(arrays, names=list(columns))
 
 
 def _select_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:

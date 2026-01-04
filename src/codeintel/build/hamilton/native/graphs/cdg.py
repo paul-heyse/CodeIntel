@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-import polars as pl
+import pyarrow as pa
 
-from codeintel.build.tabular.conversion import tabular_to_lazyframe
-from codeintel.build.tabular.frames import dedupe_frame_for_table, empty_frame_for_table
+from codeintel.build.tabular.arrow_ops import align_table_to_contract, dedupe_table_for_table
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_reader_for_table
 
 CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
 
@@ -86,17 +88,21 @@ def _compute_postdom_bitsets(
     return post, idx
 
 
-def _block_indexes(blocks: pl.DataFrame) -> tuple[dict[str, int], dict[int, str]]:
+def _coerce_int(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _block_indexes(blocks: Sequence[Mapping[str, object]]) -> tuple[dict[str, int], dict[int, str]]:
     block_idx_by_id: dict[str, int] = {}
     block_id_by_idx: dict[int, str] = {}
-    if blocks.is_empty():
+    if not blocks:
         return block_idx_by_id, block_id_by_idx
-    required = {"block_id", "block_idx"}
-    if not required.issubset(set(blocks.columns)):
-        return block_idx_by_id, block_id_by_idx
-    data = blocks.select(["block_id", "block_idx"]).to_dict(as_series=False)
-    for block_id, block_idx in zip(data["block_id"], data["block_idx"], strict=True):
-        if not isinstance(block_id, str) or not isinstance(block_idx, int):
+    for row in blocks:
+        block_id = row.get("block_id")
+        block_idx = _coerce_int(row.get("block_idx"))
+        if not isinstance(block_id, str) or block_idx is None:
             continue
         block_idx_by_id[block_id] = block_idx
         block_id_by_idx[block_idx] = block_id
@@ -104,23 +110,16 @@ def _block_indexes(blocks: pl.DataFrame) -> tuple[dict[str, int], dict[int, str]
 
 
 def _edge_indexes(
-    edges: pl.DataFrame, block_idx_by_id: dict[str, int]
+    edges: Sequence[Mapping[str, object]],
+    block_idx_by_id: dict[str, int],
 ) -> tuple[list[tuple[int, int]], dict[tuple[int, int], str | None]]:
     edges_idx: list[tuple[int, int]] = []
     edge_kind_by_pair: dict[tuple[int, int], str | None] = {}
-    if edges.is_empty():
+    if not edges:
         return edges_idx, edge_kind_by_pair
-    required = {"src_block_id", "dst_block_id"}
-    if not required.issubset(set(edges.columns)):
-        return edges_idx, edge_kind_by_pair
-    columns = ["src_block_id", "dst_block_id"]
-    if "edge_kind" in edges.columns:
-        columns.append("edge_kind")
-    data = edges.select(columns).to_dict(as_series=False)
-    kinds = data.get("edge_kind")
-    for idx, (src_id, dst_id) in enumerate(
-        zip(data["src_block_id"], data["dst_block_id"], strict=True)
-    ):
+    for row in edges:
+        src_id = row.get("src_block_id")
+        dst_id = row.get("dst_block_id")
         if not isinstance(src_id, str) or not isinstance(dst_id, str):
             continue
         src_idx = block_idx_by_id.get(src_id)
@@ -128,7 +127,9 @@ def _edge_indexes(
         if src_idx is None or dst_idx is None:
             continue
         edges_idx.append((src_idx, dst_idx))
-        edge_kind_by_pair[src_idx, dst_idx] = kinds[idx] if kinds is not None else None
+        edge_kind_by_pair[src_idx, dst_idx] = (
+            row.get("edge_kind") if isinstance(row.get("edge_kind"), str) else None
+        )
     return edges_idx, edge_kind_by_pair
 
 
@@ -200,8 +201,8 @@ def _cdg_edge_rows_for_pair(
 
 def _cdg_edges_for_function(
     function_goid: int,
-    blocks: pl.DataFrame,
-    edges: pl.DataFrame,
+    blocks: Sequence[Mapping[str, object]],
+    edges: Sequence[Mapping[str, object]],
 ) -> list[_CdgEdgeRow]:
     block_idx_by_id, block_id_by_idx = _block_indexes(blocks)
     if not block_idx_by_id:
@@ -245,34 +246,40 @@ def _cdg_edges_for_function(
 def cdg_edges(
     q__graph__cfg_blocks: InferableTabularInput,
     q__graph__cfg_edges: InferableTabularInput,
-) -> pl.LazyFrame:
+) -> InferableTabularInput:
     """Build control dependence edges from CFG blocks/edges.
 
     Returns
     -------
-    polars.LazyFrame
-        Lazy frame for graph.cdg_edges.
+    InferableTabularInput
+        Arrow reader for graph.cdg_edges.
     """
-    blocks_frame = (
-        tabular_to_lazyframe(q__graph__cfg_blocks)
-        .select(["function_goid_h128", "block_id", "block_idx"])
-        .collect()
+    blocks_table = tabular_to_arrow_table(q__graph__cfg_blocks).select(
+        ["function_goid_h128", "block_id", "block_idx"]
     )
-    edges_frame = (
-        tabular_to_lazyframe(q__graph__cfg_edges)
-        .select(["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"])
-        .collect()
+    edges_table = tabular_to_arrow_table(q__graph__cfg_edges).select(
+        ["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"]
     )
-    if blocks_frame.is_empty() or edges_frame.is_empty():
-        return empty_frame_for_table(CDG_EDGES_TABLE_KEY)
+    if blocks_table.num_rows == 0 or edges_table.num_rows == 0:
+        return empty_reader_for_table(CDG_EDGES_TABLE_KEY)
+
+    blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for row in blocks_table.to_pylist():
+        function_goid = _coerce_int(row.get("function_goid_h128"))
+        if function_goid is None:
+            continue
+        blocks_by_goid[function_goid].append(row)
+    edges_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for row in edges_table.to_pylist():
+        function_goid = _coerce_int(row.get("function_goid_h128"))
+        if function_goid is None:
+            continue
+        edges_by_goid[function_goid].append(row)
 
     rows: list[dict[str, object]] = []
-    for function_goid in blocks_frame.get_column("function_goid_h128").unique().to_list():
-        if not isinstance(function_goid, int):
-            continue
-        blocks = blocks_frame.filter(pl.col("function_goid_h128") == function_goid)
-        edges = edges_frame.filter(pl.col("function_goid_h128") == function_goid)
-        if blocks.is_empty() or edges.is_empty():
+    for function_goid, blocks in blocks_by_goid.items():
+        edges = edges_by_goid.get(function_goid)
+        if not edges:
             continue
         rows.extend(
             {
@@ -287,11 +294,9 @@ def cdg_edges(
         )
 
     if not rows:
-        return empty_frame_for_table(CDG_EDGES_TABLE_KEY)
+        return empty_reader_for_table(CDG_EDGES_TABLE_KEY)
 
-    frame = pl.DataFrame(rows)
-    frame = dedupe_frame_for_table(frame.lazy(), table_key=CDG_EDGES_TABLE_KEY)
-    return frame.select(
+    table = pa.Table.from_pylist(rows).select(
         [
             "function_goid_h128",
             "src_block_id",
@@ -301,6 +306,9 @@ def cdg_edges(
             "via_edge_kind",
         ]
     )
+    table = dedupe_table_for_table(CDG_EDGES_TABLE_KEY, table)
+    table = align_table_to_contract(CDG_EDGES_TABLE_KEY, table)
+    return table_to_reader(table)
 
 
 __all__ = [

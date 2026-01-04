@@ -1,4 +1,11 @@
-"""Arrow-first join and materialization helpers for build pipelines."""
+"""Arrow-first join and materialization helpers for build pipelines.
+
+Policy
+------
+- Graph compute modules use Arrow tables/readers end-to-end and call these helpers.
+- Polars fallbacks are reserved for legacy or view/export paths only.
+- Join keys and cardinality expectations live in `docs/arrow_join_policy.md`.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +13,6 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 import polars as pl
 import pyarrow as pa
@@ -14,6 +20,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.compute_helpers import scalar_from_compute
 from codeintel.build.tabular.conversion import (
     lazyframe_to_reader,
     reader_to_table,
@@ -222,20 +229,6 @@ def _call_compute(
         return None
 
 
-def _compute_scalar(
-    name: str,
-    args: Sequence[object],
-    *,
-    options: pc.FunctionOptions | None = None,
-) -> object | None:
-    result = _call_compute(name, args, options=options)
-    if result is None:
-        return None
-    if isinstance(result, pa.Scalar):
-        return cast("pa.Scalar", result).as_py()
-    return result
-
-
 def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     if not keys:
         return
@@ -248,7 +241,7 @@ def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> 
     count_name = f"{count_source}_count"
     if grouped.num_rows == 0 or count_name not in grouped.column_names:
         return
-    max_value = _compute_scalar(
+    max_value = scalar_from_compute(
         "max",
         [grouped[count_name]],
         options=pc.ScalarAggregateOptions(skip_nulls=True),

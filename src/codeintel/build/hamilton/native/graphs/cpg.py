@@ -27,6 +27,10 @@ from codeintel.build.tabular.arrow_ops import (
     arrow_join_tables,
     dedupe_table_for_table,
 )
+from codeintel.build.tabular.compute_columns import (
+    append_constant_columns as _append_constant_columns,
+)
+from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.conversion import (
     table_to_reader,
     tabular_to_arrow_table,
@@ -390,11 +394,6 @@ def _encode_optional_payload(value: object) -> bytes | None:
     return None
 
 
-def _empty_table(columns: Sequence[str]) -> pa.Table:
-    arrays = [pa.array([], type=pa.null()) for _ in columns]
-    return pa.Table.from_arrays(arrays, names=list(columns))
-
-
 _CPG_DECIMAL_TYPE = pa.decimal128(38, 0)
 _CPG_NODE_DECIMAL_COLUMNS = frozenset({"cpg_node_id"})
 _CPG_EDGE_DECIMAL_COLUMNS = frozenset({"src_cpg_node_id", "dst_cpg_node_id"})
@@ -432,32 +431,6 @@ def _edge_rows_to_table(rows: Sequence[Mapping[str, object]]) -> pa.Table:
         columns=_CPG_EDGE_COLUMNS,
         decimal_columns=_CPG_EDGE_DECIMAL_COLUMNS,
     )
-
-
-def _constant_array(value: object, length: int) -> pa.Array | pa.ChunkedArray:
-    if value is None:
-        return pa.nulls(length)
-    try:
-        true_value = True
-        return pc.call_function(
-            "if_else",
-            [pc.scalar(true_value), pc.scalar(value), pc.scalar(value)],
-            length=length,
-        )
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return pa.array([value] * length)
-
-
-def _append_constant_columns(table: pa.Table, constants: Mapping[str, object]) -> pa.Table:
-    if table.num_rows == 0 or not constants:
-        return table
-    existing = set(table.column_names)
-    for name, value in constants.items():
-        if name in existing:
-            continue
-        table = table.append_column(name, _constant_array(value, table.num_rows))
-        existing.add(name)
-    return table
 
 
 def _filter_valid_values(table: pa.Table, columns: Sequence[str]) -> pa.Table:

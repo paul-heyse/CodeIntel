@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.compute_filters import (
+    filter_python_goids,
+    filter_python_modules,
+)
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -22,6 +26,8 @@ CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
 CALL_GRAPH_EDGES_TABLE_KEY = "graph.call_graph_edges"
 
 _FUNCTION_KINDS: tuple[str, ...] = ("function", "method")
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,76 +121,6 @@ def _call_name(node: ast.AST) -> str | None:
     return None
 
 
-def _and_kleene(
-    left: pa.Array | pa.ChunkedArray,
-    right: pa.Array | pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("and_kleene", [left, right])
-
-
-def _or_kleene(
-    left: pa.Array | pa.ChunkedArray,
-    right: pa.Array | pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("or_kleene", [left, right])
-
-
-def _non_empty_string_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    is_valid = pc.call_function("is_valid", [values])
-    lengths = pc.call_function("utf8_length", [values])
-    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
-    return _and_kleene(is_valid, non_empty)
-
-
-def _language_python_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    is_null = pc.call_function("is_null", [values])
-    is_python = pc.call_function("equal", [values, pc.scalar("python")])
-    return _or_kleene(is_null, is_python)
-
-
-def _filter_python_modules_table(modules_table: pa.Table) -> pa.Table:
-    if modules_table.num_rows == 0:
-        return modules_table
-    columns = set(modules_table.column_names)
-    required = {"path", "module"}
-    if not required.issubset(columns):
-        return modules_table
-    try:
-        path_mask = _non_empty_string_mask(modules_table.column("path"))
-        module_mask = _non_empty_string_mask(modules_table.column("module"))
-        mask = _and_kleene(path_mask, module_mask)
-        if "language" in columns:
-            language_mask = _language_python_mask(modules_table.column("language"))
-            mask = _and_kleene(mask, language_mask)
-        return modules_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return modules_table
-
-
-def _filter_python_goids_table(goids_table: pa.Table) -> pa.Table:
-    if goids_table.num_rows == 0:
-        return goids_table
-    columns = set(goids_table.column_names)
-    required = {"kind", "rel_path", "goid_h128"}
-    if not required.issubset(columns):
-        return goids_table
-    try:
-        kind_col = goids_table.column("kind")
-        is_function = pc.call_function("equal", [kind_col, pc.scalar("function")])
-        is_method = pc.call_function("equal", [kind_col, pc.scalar("method")])
-        kind_mask = _or_kleene(is_function, is_method)
-        rel_path_mask = _non_empty_string_mask(goids_table.column("rel_path"))
-        goid_mask = pc.call_function("is_valid", [goids_table.column("goid_h128")])
-        mask = _and_kleene(kind_mask, rel_path_mask)
-        mask = _and_kleene(mask, goid_mask)
-        if "language" in columns:
-            language_mask = _language_python_mask(goids_table.column("language"))
-            mask = _and_kleene(mask, language_mask)
-        return goids_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return goids_table
-
-
 def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
     if modules_table.num_rows == 0:
@@ -192,7 +128,7 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     required = {"path", "module"}
     if not required.issubset(set(modules_table.column_names)):
         return module_by_path
-    filtered = _filter_python_modules_table(modules_table)
+    filtered = filter_python_modules(modules_table)
     for row in filtered.to_pylist():
         rel_path = row.get("path")
         module_name = row.get("module")
@@ -252,7 +188,7 @@ def _call_graph_index_rows(
     required = {"kind", "qualname", "rel_path", "goid_h128"}
     if not required.issubset(set(goids_table.column_names)):
         return None
-    filtered = _filter_python_goids_table(goids_table)
+    filtered = filter_python_goids(goids_table)
     rows: list[dict[str, object]] = []
     for row in filtered.to_pylist():
         if row.get("kind") not in _FUNCTION_KINDS:
@@ -373,15 +309,20 @@ def _call_graph_node_rows(
         (row["rel_path"], row["qualname"]): row for row in function_rows if "rel_path" in row
     }
     output_rows: list[dict[str, object]] = []
+    matched_defs = 0
+    total_defs = 0
     for row in goids_table.to_pylist():
         kind = row.get("kind")
         if kind not in _FUNCTION_KINDS:
             continue
+        total_defs += 1
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
         enrich = function_index.get((rel_path, qualname))
+        if enrich is not None:
+            matched_defs += 1
         arity = enrich.get("arity") if enrich is not None else 0
         is_public = enrich.get("is_public") if enrich is not None else None
         if is_public is None:
@@ -396,6 +337,12 @@ def _call_graph_node_rows(
                 "is_public": bool(is_public),
                 "rel_path": rel_path,
             }
+        )
+    if total_defs:
+        LOG.info(
+            "call_graph_nodes join coverage goids_to_defs matched=%d total=%d",
+            matched_defs,
+            total_defs,
         )
     return output_rows
 

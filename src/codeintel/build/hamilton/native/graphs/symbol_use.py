@@ -6,7 +6,6 @@ import dataclasses
 import sys
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
@@ -17,6 +16,11 @@ from codeintel.build.graphs.compute.symbols import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.compute_filters import (
+    filter_goids_with_spans,
+    filter_python_modules,
+    filter_symbol_occurrences,
+)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -37,76 +41,13 @@ SYMBOL_USES_TARGET_NAME = "symbol_uses"
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
 
 
-def _and_kleene(
-    left: pa.Array | pa.ChunkedArray,
-    right: pa.Array | pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("and_kleene", [left, right])
-
-
-def _non_empty_string_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    is_valid = pc.call_function("is_valid", [values])
-    lengths = pc.call_function("utf8_length", [values])
-    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
-    return _and_kleene(is_valid, non_empty)
-
-
-def _filter_occurrences_table(occurrences_table: pa.Table) -> pa.Table:
-    if occurrences_table.num_rows == 0:
-        return occurrences_table
-    required = {"symbol", "rel_path", "start_line"}
-    if not required.issubset(set(occurrences_table.column_names)):
-        return occurrences_table
-    try:
-        symbol_mask = _non_empty_string_mask(occurrences_table.column("symbol"))
-        path_mask = _non_empty_string_mask(occurrences_table.column("rel_path"))
-        line_mask = pc.call_function("is_valid", [occurrences_table.column("start_line")])
-        mask = _and_kleene(symbol_mask, path_mask)
-        mask = _and_kleene(mask, line_mask)
-        return occurrences_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return occurrences_table
-
-
-def _filter_modules_table(modules_table: pa.Table) -> pa.Table:
-    if modules_table.num_rows == 0:
-        return modules_table
-    required = {"path", "module"}
-    if not required.issubset(set(modules_table.column_names)):
-        return modules_table
-    try:
-        path_mask = _non_empty_string_mask(modules_table.column("path"))
-        module_mask = _non_empty_string_mask(modules_table.column("module"))
-        mask = _and_kleene(path_mask, module_mask)
-        return modules_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return modules_table
-
-
-def _filter_goids_table(goids_table: pa.Table) -> pa.Table:
-    if goids_table.num_rows == 0:
-        return goids_table
-    required = {"rel_path", "goid_h128", "start_line"}
-    if not required.issubset(set(goids_table.column_names)):
-        return goids_table
-    try:
-        path_mask = _non_empty_string_mask(goids_table.column("rel_path"))
-        goid_mask = pc.call_function("is_valid", [goids_table.column("goid_h128")])
-        line_mask = pc.call_function("is_valid", [goids_table.column("start_line")])
-        mask = _and_kleene(path_mask, goid_mask)
-        mask = _and_kleene(mask, line_mask)
-        return goids_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return goids_table
-
-
 def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
     if modules_table.num_rows == 0:
         return module_by_path
     if not {"path", "module"}.issubset(set(modules_table.column_names)):
         return module_by_path
-    filtered = _filter_modules_table(modules_table)
+    filtered = filter_python_modules(modules_table)
     for row in filtered.to_pylist():
         path = row.get("path")
         module = row.get("module")
@@ -121,7 +62,7 @@ def _goid_resolver(
     resolver = SpanResolver.for_lines(path_normalizer=lambda value: value)
     if goids_table.num_rows == 0 or "rel_path" not in goids_table.column_names:
         return resolver
-    filtered = _filter_goids_table(goids_table)
+    filtered = filter_goids_with_spans(goids_table)
     for row in filtered.to_pylist():
         rel_path = row.get("rel_path")
         goid_raw = row.get("goid_h128")
@@ -159,7 +100,7 @@ def _symbol_occurrences(occurrences_table: pa.Table) -> list[SymbolOccurrence]:
     required = {"symbol", "rel_path", "start_line"}
     if not required.issubset(set(occurrences_table.column_names)):
         return occurrences
-    filtered = _filter_occurrences_table(occurrences_table)
+    filtered = filter_symbol_occurrences(occurrences_table)
     for row in filtered.to_pylist():
         symbol = row.get("symbol")
         rel_path = row.get("rel_path")

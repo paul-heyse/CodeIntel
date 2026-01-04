@@ -177,6 +177,61 @@ Checklist:
 Acceptance:
 - Helper functions covered by small unit tests (if applicable).
 
+## Workstream F: Compute Helper Modules (recommended follow-up)
+Targets:
+- `src/codeintel/build/tabular/compute_masks.py`
+- `src/codeintel/build/tabular/compute_columns.py`
+- `src/codeintel/build/hamilton/native/graphs/compute_filters.py`
+
+### F1. Common mask helpers (`compute_masks.py`)
+Checklist:
+- Introduce module-level helpers:
+  - `and_kleene(left, right)` / `or_kleene(left, right)`
+  - `non_empty_string_mask(values)`
+  - `is_valid_mask(values)`
+  - `language_is_python_or_null(values)`
+  - `kind_is_function_or_method(values)`
+- Use `pc.call_function` for all compute operations.
+- Handle Arrow kernel exceptions and fall back to safe defaults (e.g., pass-through mask).
+
+Acceptance:
+- Used by at least two graph modules for filter construction.
+- No new lint/type errors.
+
+### F2. Column/constant helpers (`compute_columns.py`)
+Checklist:
+- Add helpers for:
+  - `empty_table(columns)` (schema-safe empty tables)
+  - `constant_array(value, length)`
+  - `append_constant_columns(table, constants)`
+- Keep implementations Arrow-only (no Python row loops).
+- Replace duplicated helpers in `cpg.py` and `call_wiring.py`.
+
+Acceptance:
+- Duplicated helper logic removed from at least two modules.
+- Output schemas unchanged (contract alignment still passes).
+
+### F3. Graph filter helpers (`graphs/compute_filters.py`)
+Checklist:
+- Provide graph-specific filters that wrap common masks:
+  - `filter_python_modules(table)` for `core.modules` (valid path/module + language)
+  - `filter_python_goids(table)` for `core.goids` (kind/function + rel_path/goid + language)
+  - `filter_symbol_occurrences(table)` for `core.scip_occurrences` (symbol/rel_path/start_line)
+- Guard by required columns and fall back to unfiltered table on missing kernels.
+- Apply in `call_graph.py`, `import_graph.py`, `goids.py`, `cfg_dfg.py`, `symbol_use.py`.
+
+Acceptance:
+- Graph modules use helper filters instead of local mask definitions.
+- Behavior unchanged in existing tests.
+
+### F4. Optional tests for helpers
+Checklist:
+- Add lightweight tests for mask correctness and column helpers.
+- Use small `pa.Table` fixtures to validate filters and constants.
+
+Acceptance:
+- Tests are fast and pass in existing CI/local flows.
+
 ## Testing Strategy
 - Run targeted tests for each modified module.
   - Graphs: `tests/graphs` and `tests/ingestion` (subset tied to touched modules).
@@ -188,20 +243,43 @@ Acceptance:
 - After each workstream, run the quality gates and a small targeted test subset.
 - Keep changes per workstream small to reduce regression risk.
 
+## Rollout Strategy (expanded for helper modules)
+Phase 1: Extract shared compute helpers
+- Add `compute_masks.py` and `compute_columns.py` with no call sites.
+- Add `graphs/compute_filters.py` with wrapper filters (no call sites yet).
+
+Phase 2: Wire in call sites incrementally
+- Migrate one graph module at a time to `graphs/compute_filters.py`.
+- Replace local `and_kleene`/`non_empty_string_mask` helpers as each module is migrated.
+- Update `cpg.py` and `call_wiring.py` to use `compute_columns.py`.
+
+Phase 3: Clean up and stabilize
+- Remove redundant helper functions from graph modules.
+- Confirm schema alignment is unchanged by sampling outputs or using existing contract helpers.
+- Run targeted tests for graphs/ingestion and any CPG-specific subsets.
+
+Phase 4: Hardening (optional)
+- Add small helper tests if desired.
+- Confirm lint/type checks are still clean across touched modules.
+
 ## Detailed Checklist Summary
-- [ ] A1: Arrow uniqueness check via compute
-- [ ] A2: Optional compute helpers
-- [ ] B1: call_graph compute pre-filters
-- [ ] B2: import_graph compute pre-filters
-- [ ] B3: goids compute pre-filters
-- [ ] B4: cfg_dfg compute mask/filter
-- [ ] B5: symbol_use compute pre-filters
-- [ ] C1: pdg compute projections (remove to_pylist)
-- [ ] C2: call_wiring compute projections on constant-only transforms
-- [ ] D1: cpg constant-column refactors
-- [ ] D2: cpg pre-filtering before loops
-- [ ] E1: shared compute utilities
-- [ ] Quality gates (ruff/pyright/pyrefly) after each workstream
+- [x] A1: Arrow uniqueness check via compute
+- [x] A2: Optional compute helpers
+- [x] B1: call_graph compute pre-filters
+- [x] B2: import_graph compute pre-filters
+- [x] B3: goids compute pre-filters
+- [x] B4: cfg_dfg compute mask/filter
+- [x] B5: symbol_use compute pre-filters
+- [x] C1: pdg compute projections (remove to_pylist)
+- [x] C2: call_wiring compute projections on constant-only transforms
+- [x] D1: cpg constant-column refactors
+- [x] D2: cpg pre-filtering before loops
+- [x] E1: shared compute utilities
+- [x] Quality gates (ruff/pyright/pyrefly) after full scope
+- [x] F1: compute_masks helper module
+- [x] F2: compute_columns helper module
+- [x] F3: graph-specific compute filters module
+- [x] F4: helper tests (optional)
 
 ## Implementation Notes
 - Prefer `pc.call_function` over direct `pc.sum`/`pc.min` to avoid typing issues.

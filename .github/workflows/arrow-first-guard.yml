@@ -1,0 +1,17 @@
+name: Arrow-First Guard
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  arrow-first-guard:
+    name: Arrow-First Graph Guard
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Arrow-first guard
+        run: scripts/ci/arrow_first_guard.sh

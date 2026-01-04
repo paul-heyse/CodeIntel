@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.compute_filters import filter_python_goids
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -125,29 +125,6 @@ def _collect_goids_by_path(
     return goids_by_path
 
 
-def _filter_goids_table(goids_table: pa.Table) -> pa.Table:
-    if goids_table.num_rows == 0:
-        return goids_table
-    columns = set(goids_table.column_names)
-    if "kind" not in columns:
-        return goids_table
-    try:
-        kind_col = goids_table.column("kind")
-        is_function = pc.call_function("equal", [kind_col, pc.scalar("function")])
-        is_method = pc.call_function("equal", [kind_col, pc.scalar("method")])
-        kind_mask = pc.call_function("or_kleene", [is_function, is_method])
-        mask = kind_mask
-        if "language" in columns:
-            language_col = goids_table.column("language")
-            is_null = pc.call_function("is_null", [language_col])
-            is_python = pc.call_function("equal", [language_col, pc.scalar("python")])
-            language_mask = pc.call_function("or_kleene", [is_null, is_python])
-            mask = pc.call_function("and_kleene", [mask, language_mask])
-        return goids_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return goids_table
-
-
 def _build_cfg_dfg_rows(
     repo_root: Path,
     goids_by_path: dict[str, list[_FunctionGoidInfo]],
@@ -246,7 +223,7 @@ def cfg_dfg_analysis(
             "language",
         ]
     )
-    goids_table = _filter_goids_table(goids_table)
+    goids_table = filter_python_goids(goids_table)
     if goids_table.num_rows == 0:
         return _CfgDfgAnalysis(cfg_blocks=(), cfg_edges=(), dfg_edges=())
 

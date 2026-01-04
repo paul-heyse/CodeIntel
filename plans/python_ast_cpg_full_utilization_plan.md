@@ -174,28 +174,30 @@ Reference anchors:
   - [x] symtable anchor rate
   - [x] CFG reachability sanity
   - [x] DFG def/use resolution coverage
-- [ ] Gate regressions with targeted pytest subsets and segmented runs.
+- [x] Gate regressions with targeted pytest subsets and segmented runs.
+  - [x] Add `tools/pytest_gate.py` helper for targeted + segmented pytest runs.
+  - [x] Default targeted subset covers symtable/dis/ast/inspect ingestion tests.
 
 ### Phase 8: Performance and incrementalization
 - [x] Add incremental caching for code unit compilation where possible.
-- [ ] Bound memory by streaming row buffers and lazy materialization.
-  - [ ] Replace ColumnarRowBuffer with ColumnarBatchCollector for CST/symtable/dis/inspect extractors.
-  - [ ] Flush collectors per module to emit per-file RecordBatches (bounded peak memory).
-  - [ ] Expose batch_size options for ingestion extractors (default to DEFAULT_ARROW_BATCH_SIZE).
-  - [ ] Align streamed readers to contracts via align_reader_to_contract; unify schemas when needed.
-  - [ ] Avoid list(reader)/table materialization; prefer LazyFrameStream.to_reader and streaming readers.
-  - [ ] Use RecordBatchReader.from_stream / __arrow_c_stream__ for iterable batch sources.
-  - [ ] Enforce single-consume semantics for RecordBatchReader-backed datasets (no double scans).
-  - [ ] Update ingestion tests to validate RecordBatchReader outputs (not ColumnarRows).
-  - [ ] Refactor analytics counters to use streamed batches (avoid tabular_to_frame collect()).
+- [x] Bound memory by streaming row buffers and lazy materialization.
+  - [x] Replace ColumnarRowBuffer with ColumnarBatchCollector for CST/symtable/dis/inspect extractors.
+  - [x] Flush collectors per module to emit per-file RecordBatches (bounded peak memory).
+  - [x] Expose batch_size options for ingestion extractors (default to DEFAULT_ARROW_BATCH_SIZE).
+  - [x] Align streamed readers to contracts via align_reader_to_contract; unify schemas when needed.
+  - [x] Avoid list(reader)/table materialization; prefer LazyFrameStream.to_reader and streaming readers.
+  - [x] Use RecordBatchReader.from_stream / __arrow_c_stream__ for iterable batch sources.
+  - [x] Enforce single-consume semantics for RecordBatchReader-backed datasets (no double scans).
+  - [x] Update ingestion tests to validate RecordBatchReader outputs (not ColumnarRows).
+  - [x] Refactor analytics counters to use streamed batches (avoid tabular_to_frame collect()).
 - [x] Add per-file size thresholds and timeouts for dis/inspect. (Per-module time budgets are warn-only.)
 - [x] Add configurable parallelism for dis extraction by file.
 
 ### Phase 9: Rollout and monitoring
-- [ ] Ship symtable tables first (low risk, high value).
-- [ ] Ship bytecode CFG next with validation gates.
-- [ ] Enable DFG reachability in staged rollout.
-- [ ] Enable inspect overlay only for curated allowlists.
+- [x] Ship symtable tables first (low risk, high value).
+- [x] Ship bytecode CFG next with validation gates.
+- [x] Enable DFG reachability in staged rollout.
+- [x] Enable inspect overlay only for curated allowlists.
 
 ## File-by-File Change List (Initial Pass)
 
@@ -339,34 +341,35 @@ Reference anchors:
 - [x] Add CFG fixtures for try/except/finally/with
 - [x] Add tests for symtable/dis/inspect extraction outputs
 - [x] Add quality report metrics (anchoring rates, DFG coverage)
-- [ ] Segment pytest runs by affected directories
+- [x] Segment pytest runs by affected directories
+  - [x] Default segment list: ingestion, build, graphs, storage, serving, runtime, analytics
 
 ### Performance + rollout
 - [x] Add incremental caching for code unit compilation
   - [x] Cache key = (repo, commit, rel_path, python_version, flags)
   - [x] Reuse compiled code objects across runs
-- [ ] Bound memory by streaming row buffers and lazy materialization
-  - [ ] Stream ColumnarBatchCollector flushes per file for CST/symtable/dis/inspect
-  - [ ] Emit RecordBatchReader streams directly from extractors (no intermediate tables)
-  - [ ] Align streamed readers to contracts (align_reader_to_contract + optional unify_schemas)
-  - [ ] Replace arrow_table_from_lazyframe with LazyFrameStream.to_reader for CPG nodes/edges
-  - [ ] Avoid list(reader) and pa.Table.from_batches(list(reader)) in ingestion/graph paths
-  - [ ] Document and enforce single-consume semantics for RecordBatchReader datasets
-  - [ ] Update ingestion tests to consume RecordBatchReader outputs
-  - [ ] Refactor py_cpg_quality_report metrics to stream counts (no eager collect)
+- [x] Bound memory by streaming row buffers and lazy materialization
+  - [x] Stream ColumnarBatchCollector flushes per file for CST/symtable/dis/inspect
+  - [x] Emit RecordBatchReader streams directly from extractors (no intermediate tables)
+  - [x] Align streamed readers to contracts (align_reader_to_contract + optional unify_schemas)
+  - [x] Replace arrow_table_from_lazyframe with LazyFrameStream.to_reader for CPG nodes/edges
+  - [x] Avoid list(reader) and pa.Table.from_batches(list(reader)) in ingestion/graph paths
+  - [x] Document and enforce single-consume semantics for RecordBatchReader datasets
+  - [x] Update ingestion tests to consume RecordBatchReader outputs
+  - [x] Refactor py_cpg_quality_report metrics to stream counts (no eager collect)
 - [x] Add per-file size thresholds and timeouts for dis/inspect (per-module timeouts warn-only)
   - [x] Size cutoff (bytes/lines) per module
   - [x] Per-file timeout guard (warn-only)
 - [x] Add configurable parallelism for dis extraction
   - [x] Per-run worker limit with backpressure
   - [x] Deterministic scheduling and ordering
-- [ ] Stage rollout: symtable -> bytecode CFG -> DFG -> inspect overlay
-  - [ ] Default-on symtable tables (ingestion.symtable.enable = true)
-  - [ ] Bytecode CFG behind flag + validation gate (ingestion.bytecode.include_cfg)
-  - [ ] DFG reachability behind flag (graph.cpg.enable_reaches or equivalent)
-  - [ ] Inspect overlay allowlist-only (ingestion.inspect.enable + allowlist)
-  - [ ] Wire gating into build config (codeintel.build.toml / profile yaml)
-  - [ ] Add rollout checklist and notes for profile sequencing (full vs fast)
+- [x] Stage rollout: symtable -> bytecode CFG -> DFG -> inspect overlay
+  - [x] Default-on symtable tables (ingestion.symtable.enable = true)
+  - [x] Bytecode CFG behind flag + validation gate (ingestion.bytecode.include_cfg)
+  - [x] DFG reachability behind flag (graph.cpg.enable_reaches or equivalent)
+  - [x] Inspect overlay allowlist-only (ingestion.inspect.enable + allowlist)
+  - [x] Wire gating into build config (codeintel.build.toml / profile yaml)
+  - [x] Add rollout checklist and notes for profile sequencing (full vs fast)
 
 ## Acceptance Criteria
 - AST nodes and syntax nodes have consistent byte spans and stable ids.
@@ -395,3 +398,9 @@ Reference anchors:
 - Add bytecode CFG with exception edges next; verify with fixtures.
 - Add DFG reachability once CFG is stable and binding resolution is trusted.
 - Add inspect overlay last and keep disabled by default.
+
+## Rollout Checklist (Profiles)
+- [x] Build config toggles are present in `codeintel.build.toml.example`.
+- [x] Full profile enables symtable + bytecode CFG/DFG reachability; inspect remains allowlist-only.
+- [x] Fast profile disables bytecode/DFG/inspect by default, keeps symtable on.
+- [x] Documented gate runner: `uv run python -m tools.pytest_gate`.

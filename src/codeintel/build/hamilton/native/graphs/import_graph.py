@@ -6,9 +6,6 @@ import ast
 import dataclasses
 from pathlib import Path
 
-import pyarrow as pa
-import pyarrow.compute as pc
-
 from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
     ImportEdge,
@@ -18,6 +15,7 @@ from codeintel.build.graphs.compute.imports import (
     collect_import_edges,
 )
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.compute_filters import filter_python_modules
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -26,52 +24,6 @@ from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
 IMPORT_GRAPH_EDGES_TABLE_KEY = "graph.import_graph_edges"
-
-
-def _and_kleene(
-    left: pa.Array | pa.ChunkedArray,
-    right: pa.Array | pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("and_kleene", [left, right])
-
-
-def _or_kleene(
-    left: pa.Array | pa.ChunkedArray,
-    right: pa.Array | pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("or_kleene", [left, right])
-
-
-def _non_empty_string_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    is_valid = pc.call_function("is_valid", [values])
-    lengths = pc.call_function("utf8_length", [values])
-    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
-    return _and_kleene(is_valid, non_empty)
-
-
-def _language_python_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    is_null = pc.call_function("is_null", [values])
-    is_python = pc.call_function("equal", [values, pc.scalar("python")])
-    return _or_kleene(is_null, is_python)
-
-
-def _filter_python_modules_table(modules_table: pa.Table) -> pa.Table:
-    if modules_table.num_rows == 0:
-        return modules_table
-    columns = set(modules_table.column_names)
-    required = {"path", "module"}
-    if not required.issubset(columns):
-        return modules_table
-    try:
-        path_mask = _non_empty_string_mask(modules_table.column("path"))
-        module_mask = _non_empty_string_mask(modules_table.column("module"))
-        mask = _and_kleene(path_mask, module_mask)
-        if "language" in columns:
-            language_mask = _language_python_mask(modules_table.column("language"))
-            mask = _and_kleene(mask, language_mask)
-        return modules_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return modules_table
 
 
 def _resolve_import_from(
@@ -133,7 +85,7 @@ def import_graph_analysis(
         Import graph analysis derived from module sources.
     """
     modules_table = tabular_to_arrow_table(q__core__modules)
-    modules_table = _filter_python_modules_table(modules_table)
+    modules_table = filter_python_modules(modules_table)
     modules: set[str] = set()
     edges: list[ImportEdge] = []
     repo_root = env.snapshot.repo_root

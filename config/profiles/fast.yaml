@@ -15,6 +15,9 @@ plugins:
     include_stdlib: false
     include_third_party: false
 
+  graphs.cpg:
+    enable_reaches: false
+
   ingest.scip_python:
     include_references: false
     include_implementations: false
@@ -22,3 +25,19 @@ plugins:
 
   ingest.modules:
     include_tests: false
+
+  ingestion.symtable:
+    enable: true
+    batch_size: 5000
+
+  ingestion.bytecode:
+    enable: false
+    include_cfg: false
+    include_defuse: false
+    batch_size: 5000
+    max_workers: 1
+
+  ingestion.inspect:
+    enable: false
+    module_allowlist: []
+    batch_size: 5000

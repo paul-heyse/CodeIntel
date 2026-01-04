@@ -15,7 +15,26 @@ plugins:
     include_stdlib: true
     include_third_party: true
 
+  graphs.cpg:
+    enable_reaches: true
+
   ingest.scip_python:
     include_references: true
     include_implementations: true
     timeout_seconds: 600
+
+  ingestion.symtable:
+    enable: true
+    batch_size: 10000
+
+  ingestion.bytecode:
+    enable: true
+    include_cfg: true
+    include_defuse: true
+    batch_size: 10000
+    max_workers: 1
+
+  ingestion.inspect:
+    enable: false
+    module_allowlist: []
+    batch_size: 10000

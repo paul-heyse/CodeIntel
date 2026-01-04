@@ -1,4 +1,12 @@
-"""Columnar frame helpers for build and analytics pipelines."""
+"""Columnar frame helpers for build and analytics pipelines.
+
+Arrow-first policy
+------------------
+- Build graphs operate on Arrow readers/tables; Polars conversions happen at
+  explicit view/export boundaries only.
+- Arrow join keys and expected cardinalities are tracked in
+  `docs/arrow_join_policy.md`.
+"""
 
 from __future__ import annotations
 

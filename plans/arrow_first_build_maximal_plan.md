@@ -28,8 +28,7 @@ Polars data at the final view/export boundary (if at all).
   joins still include Polars).
 - `call_wiring.py` now performs call target joins in Arrow tables (remaining
   internal joins still include Polars).
-- `cpg.py` + `call_wiring.py` internal joins now use Arrow tables (no Polars
-  join fallback), while non-join transforms still use Polars expressions.
+- `cpg.py` + `call_wiring.py` now run Arrow-first end-to-end (joins and transforms).
 - Ingestion targets now Arrow-first:
   - `ingest_targets.py` emits Arrow readers.
   - `extraction_targets.py`, `syntax_augment.py`, `syntax_enrich.py` emit Arrow readers.
@@ -40,6 +39,11 @@ Polars data at the final view/export boundary (if at all).
   - `graphs/engine/views.py` scans Arrow readers directly (no Polars dependency).
   - `exports/engine.py`, `exports/common.py`, `exports/jsonl.py`, `exports/parquet.py`
     read Parquet snapshots as Arrow readers and write Arrow-native outputs.
+- `cdg.py` now emits Arrow readers end-to-end.
+- Join coverage logs added to `call_graph.py` and `goids.py`.
+- Arrow join policy documented (`docs/arrow_join_policy.md`).
+- Arrow-first guard script + CI workflow added (`scripts/ci/arrow_first_guard.sh`,
+  `.github/workflows/arrow-first-guard.yml`).
 
 ---
 
@@ -64,6 +68,8 @@ File targets:
 Acceptance:
 - Join policy inventory exists with explicit keys and expected shapes.
 - A single Arrow-first contract is documented and referenced by build graphs.
+
+Status: done.
 
 ---
 
@@ -159,8 +165,7 @@ Acceptance:
 - CPG graph functions are Arrow-only end-to-end.
 - Join outputs are stable vs prior baseline (row counts and key coverage).
 
-Status: in progress (joins are Arrow-only; remaining Polars transforms still
-exist in `cpg.py` and `call_wiring.py`).
+Status: done.
 
 ---
 
@@ -206,7 +211,7 @@ Acceptance:
 - No Polars usage remains in graph compute code.
 - Arrow-first policy is documented and enforced.
 
-Status: pending.
+Status: done.
 
 ---
 

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.goid import (
     GoidDescriptor,
@@ -19,6 +19,7 @@ from codeintel.build.graphs.compute.goid import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.compute_filters import filter_modules_with_language
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -38,6 +39,8 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 GOIDS_TARGET_NAME = "goids"
 GOIDS_TABLE_KEY = "core.goids"
 GOID_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
+
+LOG = logging.getLogger(__name__)
 
 
 def _columns_for_table(table_key: str) -> tuple[str, ...]:
@@ -89,7 +92,7 @@ def _module_frame(modules_table: pa.Table) -> list[dict[str, str]]:
     required = {"path", "module", "language"}
     if not required.issubset(set(modules_table.column_names)):
         return []
-    modules_table = _filter_modules_table(modules_table)
+    modules_table = filter_modules_with_language(modules_table)
     rows: list[dict[str, str]] = []
     for row in modules_table.to_pylist():
         path = row.get("path")
@@ -103,37 +106,6 @@ def _module_frame(modules_table: pa.Table) -> list[dict[str, str]]:
             continue
         rows.append({"path": path, "module": module, "language": language})
     return rows
-
-
-def _and_kleene(
-    left: pa.Array | pa.ChunkedArray,
-    right: pa.Array | pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("and_kleene", [left, right])
-
-
-def _non_empty_string_mask(values: pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    is_valid = pc.call_function("is_valid", [values])
-    lengths = pc.call_function("utf8_length", [values])
-    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
-    return _and_kleene(is_valid, non_empty)
-
-
-def _filter_modules_table(modules_table: pa.Table) -> pa.Table:
-    if modules_table.num_rows == 0:
-        return modules_table
-    required = {"path", "module", "language"}
-    if not required.issubset(set(modules_table.column_names)):
-        return modules_table
-    try:
-        path_mask = _non_empty_string_mask(modules_table.column("path"))
-        module_mask = _non_empty_string_mask(modules_table.column("module"))
-        language_mask = _non_empty_string_mask(modules_table.column("language"))
-        mask = _and_kleene(path_mask, module_mask)
-        mask = _and_kleene(mask, language_mask)
-        return modules_table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return modules_table
 
 
 def _resolve_qualname(
@@ -250,17 +222,27 @@ def _joined_ast_nodes(
         return []
     module_by_path = {row["path"]: row for row in modules}
     joined: list[dict[str, object]] = []
+    total = 0
+    matched = 0
     for row in ast_nodes_table.to_pylist():
         node_type = row.get("node_type")
         if node_type not in _ALLOWED_NODE_TYPES:
             continue
+        total += 1
         path = row.get("path")
         if not isinstance(path, str):
             continue
         module_row = module_by_path.get(path)
         if module_row is None:
             continue
+        matched += 1
         joined.append({**row, **module_row})
+    if total:
+        LOG.info(
+            "goids join coverage ast_nodes_to_modules matched=%d total=%d",
+            matched,
+            total,
+        )
     return joined
 
 
