@@ -231,12 +231,17 @@ def safe_count_non_positive(
     int
         Count of values less than or equal to zero.
     """
-    table = _table_for_column(
+    dataset = _open_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        column=column,
     )
+    if dataset is None or column not in dataset.schema.names:
+        return 0
+    filtered_count = _count_non_positive_filtered(dataset, column=column)
+    if filtered_count is not None:
+        return filtered_count
+    table = _read_table(dataset, columns=[column])
     if table is None:
         return 0
     values = table.column(column)
@@ -485,12 +490,26 @@ def _count_options_only_valid() -> pc.FunctionOptions | None:
         return None
 
 
+def _set_lookup_options(
+    value_set: pa.Array | pa.ChunkedArray,
+) -> pc.FunctionOptions | None:
+    options_type = getattr(pc, "SetLookupOptions", None)
+    if options_type is None:
+        return None
+    try:
+        return options_type(value_set=value_set)
+    except TypeError:
+        return None
+
+
 def _compute_array(
     name: str,
     args: list[object],
+    *,
+    options: pc.FunctionOptions | None = None,
 ) -> pa.Array | pa.ChunkedArray | None:
     try:
-        result = pc.call_function(name, args)
+        result = pc.call_function(name, args, options=options)
     except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
         return None
     if isinstance(result, (pa.Array, pa.ChunkedArray)):
@@ -586,18 +605,15 @@ def _count_orphan_refs(
     allow_null: bool,
 ) -> int | None:
     filtered_target = _filter_valid_values(target_values)
-    in_mask = (
-        _compute_array("is_in", [source_values, filtered_target])
-        if filtered_target is not None
-        else None
-    )
+    options = _set_lookup_options(filtered_target) if filtered_target is not None else None
+    in_mask = _compute_array("is_in", [source_values], options=options) if options else None
     not_in_mask = _compute_array("invert", [in_mask]) if in_mask is not None else None
     valid_mask = _compute_array("is_valid", [source_values]) if not_in_mask is not None else None
     orphan_mask = (
-        _compute_array("and_kleene", [valid_mask, not_in_mask])
-        if valid_mask is not None
-        else None
+        _compute_array("and_kleene", [valid_mask, not_in_mask]) if valid_mask is not None else None
     )
+    if orphan_mask is None:
+        return None
     orphan_count = _sum_mask(orphan_mask)
     if allow_null:
         null_mask = _compute_array("is_null", [source_values])
@@ -614,6 +630,26 @@ def _filter_valid_values(
     if mask is None:
         return None
     return _compute_array("filter", [values, mask])
+
+
+def _count_non_positive_filtered(dataset: ds.Dataset, *, column: str) -> int | None:
+    if column not in dataset.schema.names:
+        return None
+    try:
+        field = dataset.schema.field(column)
+    except KeyError:
+        return None
+    if not _is_numeric_type(field.type) or pa.types.is_dictionary(field.type):
+        return None
+    try:
+        filter_expr = ds.field(column) <= 0
+        scanner = dataset.scanner(columns=[column], filter=filter_expr)
+        counter = getattr(scanner, "count_rows", None)
+        if callable(counter):
+            return _as_int(counter())
+        return scanner.to_table().num_rows
+    except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError, TypeError):
+        return None
 
 
 __all__ = [

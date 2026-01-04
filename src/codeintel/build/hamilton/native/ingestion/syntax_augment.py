@@ -527,9 +527,7 @@ def _ts_nodes_to_syntax_nodes(ts_nodes: pa.Table) -> pa.Table:
         },
     )
     renamed = renamed.append_column("raw_kind", renamed.column("node_kind"))
-    renamed = renamed.append_column(
-        "producer", _constant_array(TS_PRODUCER, renamed.num_rows)
-    )
+    renamed = renamed.append_column("producer", _constant_array(TS_PRODUCER, renamed.num_rows))
     renamed = renamed.append_column("extras_json", _constant_array(None, renamed.num_rows))
     ordered = [
         "repo",

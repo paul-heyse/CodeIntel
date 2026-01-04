@@ -1,0 +1,140 @@
+{
+  "dataset_id": "core.scip_occurrences",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.scip_occurrences",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "8ea592963e6986478b832655c7a4224c9588d62f12ee53a908b9ee66cd2ab607",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:45.508869+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "scip"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "start_line",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "start_col",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_line",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_col",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "roles",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "position_encoding",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "text_document_encoding",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "start_byte",
+          "nullable": true,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "end_byte",
+          "nullable": true,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "SCIP symbol occurrences (definitions and references)",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_occ_symbol",
+          "unique": false
+        },
+        {
+          "columns": [
+            "rel_path"
+          ],
+          "name": "idx_core_scip_occ_path",
+          "unique": false
+        }
+      ],
+      "name": "scip_occurrences",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path",
+        "symbol",
+        "start_line",
+        "start_col"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_occurrences"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

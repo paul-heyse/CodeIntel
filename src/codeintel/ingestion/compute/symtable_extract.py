@@ -206,6 +206,7 @@ def _build_symtable_collectors(options: SymtableExtractOptions) -> _SymtableColl
         ),
     )
 
+
 def _flush_symtable_collectors(collectors: _SymtableCollectors) -> None:
     collectors.scopes.flush()
     collectors.symbols.flush()

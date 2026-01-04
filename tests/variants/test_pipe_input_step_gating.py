@@ -17,10 +17,10 @@ def _names(variables: Iterable[object]) -> set[str]:
     return names
 
 
-def _build_driver(clean_mode: str) -> h_driver.Driver:
+def _build_driver(clean_mode: str, *, df_backend: str = "polars_lazy") -> h_driver.Driver:
     config = {
         "hamilton.enable_power_user_mode": True,
-        "df_backend": "polars_lazy",
+        "df_backend": df_backend,
         "clean_mode": clean_mode,
         "null_policy": "preserve",
         "max_loc_clip": 10_000,
@@ -52,3 +52,12 @@ def test_pipe_input_step_gating() -> None:
     assert _has_prep_step(strict_names, "with_drop_bad_rows")
     assert not _has_prep_step(off_names, "nulls")
     assert not _has_prep_step(off_names, "with_drop_bad_rows")
+
+
+def test_pipe_input_step_gating_arrow_backend() -> None:
+    """Ensure prep pipeline steps are available for the arrow backend."""
+    arrow_driver = _build_driver("strict", df_backend="arrow")
+    arrow_names = _names(arrow_driver.list_available_variables())
+
+    assert _has_prep_step(arrow_names, "nulls")
+    assert _has_prep_step(arrow_names, "with_drop_bad_rows")

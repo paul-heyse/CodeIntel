@@ -1,0 +1,94 @@
+{
+  "dataset_id": "core.py_compiler_metadata",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.py_compiler_metadata",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "aea900a9a83407d26bdc6686d2ddd10643c8f17773394fb7cb84bcecb4418273",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:41.895603+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "bytecode"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "run_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "python_version",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "magic_number",
+          "nullable": true,
+          "type": "BLOB"
+        },
+        {
+          "description": null,
+          "name": "optimize",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dont_inherit",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "flags",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Compiler/runtime metadata for Python ingestion runs.",
+      "indexes": [
+        {
+          "columns": [
+            "run_id"
+          ],
+          "name": "idx_core_py_compiler_meta_run_id",
+          "unique": false
+        }
+      ],
+      "name": "py_compiler_metadata",
+      "primary_key": [
+        "repo",
+        "commit",
+        "run_id"
+      ],
+      "schema": "core",
+      "table_key": "core.py_compiler_metadata"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

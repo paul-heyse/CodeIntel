@@ -29,11 +29,12 @@ to reduce Polars/Python-row overhead, while preserving the hard boundary between
 Purpose: establish an auditable map of where Arrow should replace Polars.
 
 Checklist
-- Inventory Polars usage under `src/codeintel/build` and `src/codeintel/ingestion`.
-- Expand `docs/arrow_join_policy.md` with any new ingestion/analytics joins.
-- Document Arrow-first policy in shared helpers (already started in
-  `src/codeintel/build/tabular/arrow_ops.py` and
-  `src/codeintel/build/tabular/frames.py`).
+- [ ] Inventory Polars usage under `src/codeintel/build` and `src/codeintel/ingestion`.
+- [x] Expand `docs/arrow_join_policy.md` with any new ingestion/analytics joins.
+- [x] Link `plans/pyarrow_compute_deployment_plan.md` back to this plan.
+- [x] Centralize Arrow mask helpers + string_view handling
+  (`src/codeintel/build/tabular/compute_masks.py`,
+  `src/codeintel/build/tabular/arrow_ops.py`).
 
 File targets
 - `docs/arrow_join_policy.md`
@@ -50,10 +51,13 @@ Acceptance
 Purpose: remove Polars from ingestion joins and enrich steps.
 
 Checklist
-- Convert join-heavy ingestion modules to Arrow tables + `arrow_join_tables`.
-- Replace `pl.LazyFrame` filters with `pyarrow.compute` expressions.
-- Align outputs to contract schema using `align_table_to_contract`.
-- Preserve existing dedupe behavior with `dedupe_table_for_table`.
+- [x] Convert join-heavy ingestion modules to Arrow tables + `arrow_join_tables`
+  (`syntax_enrich.py`, `syntax_augment.py`, `scip_resolution.py`).
+- [x] Replace LazyFrame filters with Arrow compute + shared mask helpers.
+- [x] Align outputs to contract schema using `align_table_to_contract`.
+- [x] Preserve existing dedupe behavior with `dedupe_table_for_table`.
+- [ ] Sweep remaining ingestion modules for Polars usage
+  (`scip.py`, `file_line_index.py`, `frame_utils.py`).
 
 File targets
 - `src/codeintel/build/hamilton/native/ingestion/syntax_enrich.py`
@@ -73,9 +77,12 @@ Acceptance
 Purpose: move high-volume analytics calculations to Arrow kernels.
 
 Checklist
-- Replace Polars groupby/agg with `Table.group_by().aggregate(...)`.
-- Use `pyarrow.compute` for filters and boolean masks.
-- Keep Python loops only where AST introspection is required.
+- [x] Use `pyarrow.compute` mask helpers in analytics + validation paths
+  (`graph_metrics.py`, `semantic_roles/core.py`,
+  `graphs/validation/runner.py`).
+- [x] Convert analytics joins to Arrow where touched (subsystem cache join).
+- [ ] Replace remaining Polars groupby/agg with `Table.group_by().aggregate(...)`
+  across `src/codeintel/build/analytics/**`.
 
 File targets (examples)
 - `src/codeintel/build/analytics/**`
@@ -92,9 +99,10 @@ Acceptance
 Purpose: avoid Polars conversion in build-time validation and dataset scans.
 
 Checklist
-- Use `pyarrow.dataset.Scanner` for dataset scans with projection + filters.
-- Replace `scan_snapshot_lazyframe` call sites with Arrow readers/tables.
-- Apply row-group pruning where filters are present.
+- [x] Arrow-first validation filters in `graphs/validation/runner.py`.
+- [ ] Use `pyarrow.dataset.Scanner` for dataset scans with projection + filters.
+- [ ] Replace `scan_snapshot_lazyframe` call sites with Arrow readers/tables.
+- [ ] Apply row-group pruning where filters are present.
 
 File targets
 - `src/codeintel/build/graphs/engine/datasets.py`
@@ -111,9 +119,11 @@ Purpose: make Arrow schema metadata a first-class signal without changing
 the build/storage boundary.
 
 Checklist
-- Attach schema-level metadata on build outputs (snapshot, tool version).
-- Use `pa.unify_schemas(..., promote_options="permissive")` before concat.
-- If needed, use `Table.cast` to normalize types before concat.
+- [x] Normalize Arrow join behavior and string_view handling
+  (`arrow_ops.py`, `view_outputs.py`).
+- [ ] Attach schema-level metadata on build outputs (snapshot, tool version).
+- [ ] Use `pa.unify_schemas(..., promote_options="permissive")` before concat.
+- [ ] If needed, use `Table.cast` to normalize types before concat.
 
 File targets
 - `src/codeintel/build/tabular/arrow_ops.py`
@@ -129,10 +139,11 @@ Acceptance
 Purpose: reduce memory and improve join/groupby speed.
 
 Checklist
-- Identify categorical columns (kinds, enums, languages, roles).
-- Apply dictionary encoding before export with `Table.dictionary_encode()`.
-- Normalize dictionaries across batches with `Table.unify_dictionaries()`.
-- Ensure exporters preserve dictionary types.
+- [x] Preserve dictionary encode toggles in export writers (`writers.py`).
+- [ ] Identify categorical columns (kinds, enums, languages, roles).
+- [ ] Apply dictionary encoding before export with `Table.dictionary_encode()`.
+- [ ] Normalize dictionaries across batches with `Table.unify_dictionaries()`.
+- [ ] Ensure exporters preserve dictionary types.
 
 File targets
 - `src/codeintel/build/exports/writers.py`
@@ -149,10 +160,10 @@ Acceptance
 Purpose: speed dataset discovery and scanning.
 
 Checklist
-- Collect `FileMetaData` when writing Parquet shards.
-- Emit `_metadata` / `_common_metadata` sidecars via
+- [ ] Collect `FileMetaData` when writing Parquet shards.
+- [ ] Emit `_metadata` / `_common_metadata` sidecars via
   `pyarrow.parquet.write_metadata`.
-- Use sidecars in dataset scanners where available.
+- [ ] Use sidecars in dataset scanners where available.
 
 File targets
 - `src/codeintel/build/exports/writers.py`
@@ -168,10 +179,10 @@ Acceptance
 Purpose: improve storage performance without crossing build/storage boundary.
 
 Checklist
-- Keep storage APIs unchanged, but use Arrow readers internally where possible.
-- Replace Polars in `src/codeintel/storage/repositories/datasets.py` with Arrow
+- [ ] Keep storage APIs unchanged, but use Arrow readers internally where possible.
+- [ ] Replace Polars in `src/codeintel/storage/repositories/datasets.py` with Arrow
   tables/readers (optional).
-- Use Arrow compute for validation checks in storage (optional).
+- [ ] Use Arrow compute for validation checks in storage (optional).
 
 File targets
 - `src/codeintel/storage/repositories/datasets.py`
@@ -187,8 +198,8 @@ Acceptance
 Purpose: prevent regression back to Polars in compute paths.
 
 Checklist
-- Extend the Arrow-first guard to cover ingestion/analytics if desired.
-- Add a lightweight CI check (ripgrep or grep) for disallowed Polars usage.
+- [ ] Extend the Arrow-first guard to cover ingestion/analytics if desired.
+- [ ] Add a lightweight CI check (ripgrep or grep) for disallowed Polars usage.
 
 File targets
 - `scripts/ci/arrow_first_guard.sh`

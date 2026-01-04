@@ -19,8 +19,9 @@ from codeintel.ingestion.ports.change_detection import (
     FileDigest,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.storage.datasets.registry import DatasetRegistry
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, DuckDBError
 from codeintel.storage.query_results import (
     iter_tuples_from_arrow_reader,
     iter_tuples_from_relation,
@@ -162,22 +163,43 @@ class HashChangeDetectionAdapter:
         """
         gateway = getattr(self._storage, "_gateway", None)
         if gateway is not None:
-            gateway.policy.ensure_table(FILE_STATE_TABLE_KEY)
             predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
                 ColumnExpression("language") == ConstantExpression(language)
             )
-            ranked = (
-                gateway.relation_from_table_key(FILE_STATE_TABLE_KEY)
-                .filter(predicate)
-                .select(
-                    "rel_path",
-                    "size_bytes",
-                    "mtime_ns",
-                    "content_hash",
-                    "row_number() over (partition by rel_path order by mtime_ns desc) as rn",
+            try:
+                base_relation = gateway.relation_from_table_key(FILE_STATE_TABLE_KEY)
+            except (DuckDBError, FileNotFoundError) as exc:
+                datasets = getattr(gateway, "datasets", None)
+                config = getattr(gateway, "config", None)
+                dataset_root_dir = getattr(config, "dataset_root_dir", None)
+                snapshot_id = getattr(config, "commit", None)
+                if isinstance(datasets, DatasetRegistry):
+                    dataset = datasets.by_table_key.get(FILE_STATE_TABLE_KEY)
+                    if (
+                        dataset is not None
+                        and not dataset.is_view
+                        and dataset_root_dir is not None
+                        and snapshot_id is not None
+                    ):
+                        log.info(
+                            "file_state dataset missing for repo=%s language=%s snapshot=%s; "
+                            "skipping previous state: %s",
+                            repo,
+                            language,
+                            snapshot_id,
+                            exc,
+                        )
+                        return {}
+                gateway.policy.ensure_table(FILE_STATE_TABLE_KEY)
+                log.info(
+                    "file_state manifest missing for repo=%s language=%s; "
+                    "falling back to DuckDB table: %s",
+                    repo,
+                    language,
+                    exc,
                 )
-            )
-            relation = ranked.filter(ColumnExpression("rn") == ConstantExpression(1)).select(
+                base_relation = gateway.table(FILE_STATE_TABLE_KEY)
+            relation = base_relation.filter(predicate).select(
                 "rel_path",
                 "size_bytes",
                 "mtime_ns",
@@ -209,11 +231,14 @@ class HashChangeDetectionAdapter:
         state: dict[str, FileDigest] = {}
         for rel_path, size_bytes, mtime_ns, content_hash in rows_iter:
             normalized = normalize_path(str(rel_path))
-            state[normalized] = FileDigest(
+            digest = FileDigest(
                 size_bytes=int(cast("SupportsInt", size_bytes)),
                 mtime_ns=int(cast("SupportsInt", mtime_ns)),
                 content_hash=str(content_hash),
             )
+            existing = state.get(normalized)
+            if existing is None or digest.mtime_ns >= existing.mtime_ns:
+                state[normalized] = digest
 
         if not state:
             log.info("No previous file_state rows found for %s", repo)

@@ -37,6 +37,13 @@ Primary references:
   - `src/codeintel/build/tabular/compute_masks.py`
   - `src/codeintel/build/hamilton/native/graphs/compute_filters.py`
 
+## Status Summary (Current)
+- Workstream A: Completed (A1-A3 done; A4 deferred).
+- Workstream B: Completed (B1 complete; `is_in_mask` now supports sequence value sets).
+- Workstream C: Completed.
+- Workstream D: Completed.
+- Workstream E: Partial (E1 covered by existing tests, E2 partial, E3 done, E4 targeted checks done; full guardrails/pytest blocked by Hamilton runtime type mismatch).
+
 ## Assumptions
 - Dataset columns are Arrow-native types in most storage-query cases.
 - Graph pipelines still require Python-level AST parsing; compute is for prefiltering.
@@ -56,6 +63,8 @@ Acceptance:
 - Numeric columns use compute; non-numeric fall back to existing behavior.
 - Returned count matches current logic for mixed nulls/booleans.
 
+Status: Completed (compute-first path implemented with safe fallbacks).
+
 ### A2. `safe_count_duplicates` compute path
 Checklist:
 - Use `pc.call_function("count", ...)` with `ScalarAggregateOptions(skip_nulls=True)` to get
@@ -66,6 +75,8 @@ Checklist:
 
 Acceptance:
 - Duplicate counts match prior output for numeric, string, and dictionary-encoded columns.
+
+Status: Completed (compute path implemented with safe fallbacks).
 
 ### A3. `safe_count_orphan_refs` compute path
 Checklist:
@@ -79,6 +90,8 @@ Checklist:
 Acceptance:
 - Orphan counts match current behavior for allow-null True/False.
 
+Status: Completed (compute path implemented with safe fallbacks).
+
 ### A4. Optional helper extraction
 Checklist:
 - Introduce small helpers in `compute_helpers` for:
@@ -88,6 +101,8 @@ Checklist:
 
 Acceptance:
 - Helper usage in at least two call sites without changing behavior.
+
+Status: Deferred (existing local helpers in `parquet.py` already handle failures).
 
 ## Workstream B: Graph Prefiltering With Compute
 Targets: `call_graph.py`, `import_graph.py`, `goids.py`, `cfg_dfg.py`, `symbol_use.py`
@@ -101,6 +116,8 @@ Checklist:
 Acceptance:
 - Masks are unit-tested with mixed nulls and unexpected types.
 
+Status: Completed for `node_type_is_function`; `is_in_mask` now supports sequence value sets.
+
 ### B2. `call_graph.py` prefilter `core.modules` and `core.goids`
 Checklist:
 - Use `filter_python_modules` before `to_pylist()` (already available).
@@ -110,6 +127,8 @@ Checklist:
 Acceptance:
 - Output graph rows unchanged for existing tests.
 
+Status: Completed (filters already in place).
+
 ### B3. `import_graph.py` module filter
 Checklist:
 - Apply `filter_python_modules` to `modules_table` before iteration.
@@ -117,6 +136,8 @@ Checklist:
 
 Acceptance:
 - No behavioral change; fewer rows hit Python.
+
+Status: Completed (filters already in place).
 
 ### B4. `goids.py` module frame filter
 Checklist:
@@ -126,6 +147,8 @@ Checklist:
 Acceptance:
 - Module row list is identical after filtering for valid inputs.
 
+Status: Completed (filters already in place).
+
 ### B5. `cfg_dfg.py` goid/ast prefilter
 Checklist:
 - Filter `goids_table` using `filter_python_goids` before `to_pylist()`.
@@ -134,6 +157,8 @@ Checklist:
 Acceptance:
 - CFG/DFG outputs unchanged for existing fixtures.
 
+Status: Completed (compute prefilter added for AST function nodes and goids).
+
 ### B6. `symbol_use.py` occurrences/goids prefilter
 Checklist:
 - Apply `filter_symbol_occurrences` to occurrences before `to_pylist()`.
@@ -141,6 +166,8 @@ Checklist:
 
 Acceptance:
 - Symbol use edges unchanged; fewer rows processed in Python.
+
+Status: Completed (filters already in place).
 
 ## Workstream C: Constant Column Injection
 Target: `src/codeintel/build/hamilton/native/graphs/pdg.py`
@@ -154,6 +181,8 @@ Checklist:
 Acceptance:
 - Output table equals current output for DFG/CDG inputs.
 
+Status: Completed (constant columns now added via compute helpers).
+
 ## Workstream D: Dedupe Fallback Without `to_pylist`
 Target: `src/codeintel/build/tabular/arrow_ops.py`
 
@@ -161,13 +190,15 @@ Target: `src/codeintel/build/tabular/arrow_ops.py`
 Checklist:
 - When `drop_duplicates` fails, append a row index column (`pa.array(range(n))`).
 - Group by key columns and aggregate min row index (`group_by(...).aggregate([("row_idx","min")])`).
-- Use `pc.call_function("take", ...)` with indices to select first rows.
-- Drop the temporary row index column.
+- Use an `is_in` mask over row indices and `table.filter(mask)` to keep first rows.
+- Keep temporary row index internal (not surfaced to output).
 - Keep Python fallback only if compute path fails.
 
 Acceptance:
 - Dedupe behavior matches existing Python fallback.
 - No `to_pylist()` needed in the fallback path.
+
+Status: Completed (compute fallback preserves order and keeps Python fallback).
 
 ## Workstream E: Tests and Validation
 
@@ -178,15 +209,21 @@ Checklist:
   - `safe_count_duplicates` for string + numeric columns.
   - `safe_count_orphan_refs` with allow-null true/false.
 
+Status: Covered by existing ingestion tests in `tests/ingestion/test_db_queries.py`; no new tests added.
+
 ### E2. Graph prefiltering tests
 Checklist:
 - Add minimal fixtures to assert outputs unchanged after filtering.
 - Ensure column presence checks still behave the same.
 
+Status: Partial (compute mask/filter unit tests added; no new end-to-end graph fixtures).
+
 ### E3. Dedupe fallback test
 Checklist:
 - Add a small table fixture where `drop_duplicates` raises and fallback is used.
 - Validate row order and key uniqueness.
+
+Status: Completed (added Arrow ops dedupe test).
 
 ### E4. Quality gates
 Checklist:
@@ -194,6 +231,8 @@ Checklist:
 - `uv run pyright --warnings --pythonversion=3.13` (touched files).
 - `uv run pyrefly check` (touched files).
 - Targeted pytest selection for affected modules.
+
+Status: Targeted ruff/pyright/pyrefly passed. Pytest and full guardrails/quality report blocked by Hamilton runtime type mismatch (RecordBatchReader vs LazyFrame) in test/guardrail setup.
 
 ## Rollout Plan (Sequenced)
 1) Add/extend compute helpers and masks (Workstream A4, B1).
@@ -212,3 +251,15 @@ Checklist:
 - No behavioral regressions in graph outputs or dataset validation.
 - All touched files pass Ruff, Pyright, and Pyrefly with zero errors.
 - Tests for storage queries and dedupe fallbacks are updated or added.
+
+## Additional Opportunities (Implemented)
+- `src/codeintel/build/hamilton/native/graphs/cdg.py`: added compute prefilters for required columns
+  (`function_goid_h128`, `block_id`, `block_idx`, `edge_kind`) before `to_pylist()` loops.
+- `src/codeintel/build/hamilton/native/graphs/goids.py`: applied compute prefilter on AST node
+  rows to allowed node types (`Module`, `ClassDef`, `FunctionDef`, `AsyncFunctionDef`) and
+  validated `path/name/lineno` before Python iteration (module nodes allow null name/lineno).
+- `src/codeintel/build/hamilton/native/graphs/call_graph.py` and `import_graph.py`: compute masks
+  for non-empty `rel_path/module/qualname` are satisfied via `filter_python_modules` plus
+  `filter_python_goids` enforcing non-empty `qualname` when present.
+- `src/codeintel/storage/queries/parquet.py`: switched `is_in` to `SetLookupOptions(value_set=...)`
+  and added a dataset-scanner filter path for `safe_count_non_positive` to avoid full column reads.

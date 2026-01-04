@@ -3773,8 +3773,25 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
     )
 
 
+_GRAPH_OVERRIDE_TABLE_KEYS: set[str] = {
+    table.table_key
+    for table in (
+        *CALL_GRAPH_OVERRIDE_TABLES,
+        *CALL_WIRING_OVERRIDE_TABLES,
+        *CDG_OVERRIDE_TABLES,
+        *CFG_OVERRIDE_TABLES,
+        *CPG_OVERRIDE_TABLES,
+        *DFG_OVERRIDE_TABLES,
+        *IMPORT_GRAPH_OVERRIDE_TABLES,
+        *PDG_OVERRIDE_TABLES,
+        *SYMBOL_USES_OVERRIDE_TABLES,
+    )
+}
+
+
 NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
     {
+        "analytics.py_cpg_quality_report",
         "analytics.static_diagnostics",
         "ci.plan_entries",
         "core.ast_metrics",
@@ -3822,12 +3839,16 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.scip_symbols",
         "core.syntax_call_args",
         "core.syntax_calls",
+        "core.syntax_calls_resolved",
         "core.syntax_defs",
+        "core.syntax_defs_resolved",
         "core.syntax_edges_augmented",
         "core.syntax_func_params",
         "core.syntax_imports",
+        "core.syntax_imports_resolved",
         "core.syntax_nodes_augmented",
         "core.syntax_refs",
+        "core.syntax_refs_resolved",
         "core.syntax_scopes",
         "core.syntax_spans",
         "core.ts_captures",
@@ -3841,7 +3862,7 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.ts_tokens",
         "core.ts_trivia",
         "core.ts_weld_coverage",
-    }
+    }.union(_GRAPH_OVERRIDE_TABLE_KEYS)
 )
 
 

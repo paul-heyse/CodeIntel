@@ -50,6 +50,8 @@ from codeintel.core.validation.schema_constraints import (
 )
 
 if TYPE_CHECKING:
+    from polars import DataFrame as PolarsDataFrame
+
     from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 ValidationMode = Literal["strict", "warn", "skip"]
@@ -344,6 +346,23 @@ def _pandera_schema(
     )
 
 
+def _normalize_pandera_frame(frame: PolarsDataFrame) -> PolarsDataFrame:
+    if pl is None:
+        return frame
+    tz_columns: list[str] = []
+    for name, dtype in frame.schema.items():
+        if not isinstance(dtype, pl.Datetime):
+            continue
+        if getattr(dtype, "time_zone", None) is None:
+            continue
+        tz_columns.append(name)
+    if not tz_columns:
+        return frame
+    return frame.with_columns(
+        [pl.col(name).dt.replace_time_zone(None).alias(name) for name in tz_columns]
+    )
+
+
 def _pandera_table_errors(
     table_key: str,
     table: pa.Table,
@@ -357,6 +376,7 @@ def _pandera_table_errors(
     frame = pl.from_arrow(table)
     if not isinstance(frame, pl.DataFrame):
         return []
+    frame = _normalize_pandera_frame(frame)
     validate = getattr(schema, "validate", None)
     if not callable(validate):
         return []
@@ -380,6 +400,7 @@ def _pandera_batch_errors(
     frame = pl.from_arrow(pa.Table.from_batches([batch]))
     if not isinstance(frame, pl.DataFrame):
         return []
+    frame = _normalize_pandera_frame(frame)
     validate = getattr(schema, "validate", None)
     if not callable(validate):
         return []

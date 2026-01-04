@@ -1390,9 +1390,7 @@ def _seed_parquet_foreign_key_tables(seed: ParquetForeignKeySeed) -> None:
             f"{seed.parent_table}, {seed.child_table}"
         )
         raise ValueError(message)
-    parent_payload = [
-        {"id": row_id, "name": name} for row_id, name in seed.parent_rows
-    ]
+    parent_payload = [{"id": row_id, "name": name} for row_id, name in seed.parent_rows]
     child_payload = [
         {"id": row_id, "parent_id": parent_id} for row_id, parent_id in seed.child_rows
     ]

@@ -1,0 +1,88 @@
+{
+  "dataset_id": "core.scip_external_symbols",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.scip_external_symbols",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "9da90223074134c26813b5cd6f03cfe1d0f83951a6b8eab567ffbf2b09a5bcd5",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:46.292548+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "scip"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "package_manager",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "package_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "package_version",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "External SCIP symbols referenced by the index",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_external_symbol",
+          "unique": false
+        }
+      ],
+      "name": "scip_external_symbols",
+      "primary_key": [
+        "repo",
+        "commit",
+        "symbol"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_external_symbols"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

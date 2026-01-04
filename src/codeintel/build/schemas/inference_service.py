@@ -70,6 +70,7 @@ from codeintel.core.schemas.arrow_polars import (
     table_schema_from_polars_dataframe,
     table_schema_from_polars_lazyframe,
 )
+from codeintel.core.schemas.output_registry import NON_INFERABLE_OUTPUT_KEYS
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 
@@ -1294,6 +1295,8 @@ def inferable_native_table_keys(*, driver: h_driver.Driver, catalog: DagCatalog)
     context = _InferenceContext(driver=driver, catalog=catalog)
     inferable: set[str] = set()
     for table_key in catalog.table_outputs:
+        if table_key in NON_INFERABLE_OUTPUT_KEYS:
+            continue
         try:
             _resolve_inference_job(context=context, table_key=table_key)
         except (KeyError, ValueError):

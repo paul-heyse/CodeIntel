@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
+from codeintel.core.errors.storage import StorageError
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
@@ -600,8 +601,12 @@ class DuckDBPolicyBackend:
         dataset = registry.by_table_key.get(table_key)
         if dataset is None or dataset.is_view:
             return
+        if registry.dataset_root_dir is None:
+            return
+        if registry.dataset_manifest_for_table(table_key) is None:
+            return
         msg = f"DuckDB {action} disabled for parquet-backed dataset: {table_key}"
-        raise RuntimeError(msg)
+        raise StorageError(msg, table=table_key)
 
     def _qualified_table_ref(
         self,

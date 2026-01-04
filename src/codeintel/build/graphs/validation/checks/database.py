@@ -831,9 +831,7 @@ def _freevars_by_unit(code_units_table: pa.Table) -> dict[tuple[str, str], list[
             continue
         if not isinstance(freevars, list):
             continue
-        freevars_by_unit[rel_path, qualpath] = [
-            item for item in freevars if isinstance(item, str)
-        ]
+        freevars_by_unit[rel_path, qualpath] = [item for item in freevars if isinstance(item, str)]
     return freevars_by_unit
 
 

@@ -93,8 +93,7 @@ def test_py_bc_stack_edges_basic() -> None:
     }
     assert set(edges.column("src_cpg_node_id").to_pylist()) == expected_src_ids
     payloads = [
-        cast("dict[str, object]", decode_payload(row["extras_json"]))
-        for row in edges.to_pylist()
+        cast("dict[str, object]", decode_payload(row["extras_json"])) for row in edges.to_pylist()
     ]
     assert {payload["stack_pop_index"] for payload in payloads} == {0, 1}
     assert {payload["src_opname"] for payload in payloads} == {"LOAD_CONST"}

@@ -1,0 +1,99 @@
+{
+  "dataset_id": "core.py_bc_cfg_edges",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.py_bc_cfg_edges",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "4735153e65188c992d8ab0c5ef3266225937981844d9eeedb0a693b3fbc7ec17",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:42.683676+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "bytecode"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "edge_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "code_unit_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "src_block_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "dst_block_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "cond_instr_id",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "exc_entry_index",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "CFG edges derived from bytecode and exception tables.",
+      "indexes": [],
+      "name": "py_bc_cfg_edges",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path",
+        "edge_id"
+      ],
+      "schema": "core",
+      "table_key": "core.py_bc_cfg_edges"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

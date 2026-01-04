@@ -9,12 +9,12 @@ from typing import Literal, cast
 
 from codeintel.core.hashing.fingerprint import fingerprint
 
-DataFrameBackend = Literal["polars_lazy"]
+DataFrameBackend = Literal["polars_lazy", "arrow"]
 CleanMode = Literal["off", "lenient", "strict"]
 NullPolicy = Literal["preserve", "drop_bad_rows"]
 FeatureSetName = str
 
-_ALLOWED_BACKENDS: set[str] = {"polars_lazy"}
+_ALLOWED_BACKENDS: set[str] = {"arrow", "polars_lazy"}
 _ALLOWED_CLEAN_MODES: set[str] = {"off", "lenient", "strict"}
 _ALLOWED_NULL_POLICIES: set[str] = {"preserve", "drop_bad_rows"}
 
@@ -96,7 +96,7 @@ class VariantConfig:
     Attributes
     ----------
     df_backend
-        DataFrame backend for column-subDAG execution.
+        DataFrame backend for column-subDAG execution (polars_lazy or arrow).
     clean_mode
         Cleaning strictness for table input pipelines.
     feature_sets
@@ -222,12 +222,21 @@ class VariantConfig:
         VariantConfig
             Validated configuration (self).
 
+        Raises
+        ------
+        ValueError
+            If a variant option violates allowed backend or feature constraints.
         """
         _validate_choice(self.df_backend, _ALLOWED_BACKENDS, "df_backend")
         _validate_choice(self.clean_mode, _ALLOWED_CLEAN_MODES, "clean_mode")
         _validate_choice(self.null_policy, _ALLOWED_NULL_POLICIES, "null_policy")
         _validate_max_loc_clip(self.max_loc_clip)
         _validate_feature_sets(self.feature_sets, allowed_ops)
+        if self.df_backend == "arrow":
+            invalid = {key: ops for key, ops in self.feature_sets.items() if ops}
+            if invalid:
+                msg = "feature_sets are not supported for df_backend='arrow'"
+                raise ValueError(msg)
         return self
 
     def as_hamilton_config(self) -> dict[str, object]:

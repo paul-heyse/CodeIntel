@@ -53,6 +53,7 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.build.schemas.schema_index import SchemaIndex
+from codeintel.build.semantic.registry_compiler import compile_semantic_registry
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.tabular.frames import lazyframe_for_table_columns
@@ -60,8 +61,7 @@ from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
-from codeintel.serving.semantic.registry_compiler import compile_semantic_registry
-from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
+from codeintel.core.schemas.schema_catalog_models import SchemaCatalogRequest
 
 LOG = logging.getLogger(__name__)
 

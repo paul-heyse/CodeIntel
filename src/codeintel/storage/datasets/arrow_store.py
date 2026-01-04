@@ -196,7 +196,7 @@ def write_dataset(
         max_rows_per_file=resolved.max_rows_per_file,
         max_rows_per_group=resolved.row_group_size,
     )
-    dataset = ds.dataset(str(snapshot_dir), format="parquet")
+    dataset = ds.dataset(str(snapshot_dir), format="parquet", exclude_invalid_files=True)
     request = ArrowDatasetManifestRequest(
         table_key=table_key,
         snapshot_id=snapshot_id,
@@ -322,7 +322,7 @@ def scan_dataset(
             return dataset_for_manifest(manifest=manifest, manifest_path=manifest_path)
         except (OSError, ValueError, pa.ArrowInvalid):
             LOG.debug("Falling back to raw dataset scan for %s", manifest_path)
-    return ds.dataset(str(snapshot_dir), format="parquet")
+    return ds.dataset(str(snapshot_dir), format="parquet", exclude_invalid_files=True)
 
 
 def scan_dataset_scanner(

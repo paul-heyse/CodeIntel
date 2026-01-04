@@ -1,0 +1,75 @@
+{
+  "dataset_id": "core.cst_nodes",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.cst_nodes",
+  "partition_columns": [],
+  "files": [],
+  "schema_hash": "ac262f04a64aff32408a3cebb563a32ac20598d88a8a3b2ea7063e33a8d09912",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:43.036854+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "cst"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "node_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "span",
+          "nullable": false,
+          "type": "STRUCT(start LIST(INTEGER), end LIST(INTEGER))"
+        },
+        {
+          "description": null,
+          "name": "text_preview",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "parents",
+          "nullable": true,
+          "type": "LIST(VARCHAR)"
+        },
+        {
+          "description": null,
+          "name": "qnames",
+          "nullable": true,
+          "type": "LIST(VARCHAR)"
+        }
+      ],
+      "description": "Concrete syntax tree nodes",
+      "indexes": [],
+      "name": "cst_nodes",
+      "primary_key": [
+        "node_id"
+      ],
+      "schema": "core",
+      "table_key": "core.cst_nodes"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

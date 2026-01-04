@@ -7,12 +7,17 @@ import pyarrow as pa
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
+    equal_mask,
+    is_in_mask,
     is_valid_mask,
     kind_is_function_or_method,
     language_is_python_or_null,
     node_type_is_function,
     non_empty_string_mask,
+    or_kleene,
 )
+
+_GOID_NODE_TYPES = ("Module", "ClassDef", "FunctionDef", "AsyncFunctionDef")
 
 
 def filter_python_modules(modules_table: pa.Table) -> pa.Table:
@@ -84,6 +89,9 @@ def filter_python_goids(goids_table: pa.Table) -> pa.Table:
         goid_mask = is_valid_mask(goids_table.column("goid_h128"))
         mask = and_kleene(kind_mask, path_mask)
         mask = and_kleene(mask, goid_mask)
+        if "qualname" in columns:
+            qualname_mask = non_empty_string_mask(goids_table.column("qualname"))
+            mask = and_kleene(mask, qualname_mask)
         if "language" in columns:
             language_mask = language_is_python_or_null(goids_table.column("language"))
             mask = and_kleene(mask, language_mask)
@@ -166,8 +174,37 @@ def filter_function_ast_nodes(ast_nodes_table: pa.Table) -> pa.Table:
         return ast_nodes_table
 
 
+def filter_goid_ast_nodes(ast_nodes_table: pa.Table) -> pa.Table:
+    """Filter AST node rows to GOID-relevant entries with valid metadata.
+
+    Returns
+    -------
+    pa.Table
+        Filtered table or the original on failure.
+    """
+    if ast_nodes_table.num_rows == 0:
+        return ast_nodes_table
+    required = {"path", "node_type", "name", "lineno"}
+    if not required.issubset(set(ast_nodes_table.column_names)):
+        return ast_nodes_table
+    try:
+        path_mask = non_empty_string_mask(ast_nodes_table.column("path"))
+        node_mask = is_in_mask(ast_nodes_table.column("node_type"), value_set=_GOID_NODE_TYPES)
+        module_mask = equal_mask(ast_nodes_table.column("node_type"), pa.scalar("Module"))
+        name_mask = non_empty_string_mask(ast_nodes_table.column("name"))
+        line_mask = is_valid_mask(ast_nodes_table.column("lineno"))
+        non_module_mask = and_kleene(name_mask, line_mask)
+        type_mask = or_kleene(module_mask, non_module_mask)
+        mask = and_kleene(path_mask, node_mask)
+        mask = and_kleene(mask, type_mask)
+        return safe_filter(ast_nodes_table, mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return ast_nodes_table
+
+
 __all__ = [
     "filter_function_ast_nodes",
+    "filter_goid_ast_nodes",
     "filter_goids_with_spans",
     "filter_modules_with_language",
     "filter_python_goids",

@@ -1,0 +1,96 @@
+{
+  "dataset_id": "core.file_state",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.file_state",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "a9f3e2aa045eeea7e23361593e0b0a1d0cac6cadc62cf45e3cb4f99e4baad9f1",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:41.135647+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "modules"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "size_bytes",
+          "nullable": false,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "mtime_ns",
+          "nullable": false,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "content_hash",
+          "nullable": false,
+          "type": "VARCHAR"
+        }
+      ],
+      "description": "Per-commit file digests used for incremental ingestion",
+      "indexes": [
+        {
+          "columns": [
+            "rel_path"
+          ],
+          "name": "idx_core_file_state_path",
+          "unique": false
+        },
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_core_file_state_repo_commit",
+          "unique": false
+        }
+      ],
+      "name": "file_state",
+      "primary_key": [
+        "repo",
+        "rel_path",
+        "language"
+      ],
+      "schema": "core",
+      "table_key": "core.file_state"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

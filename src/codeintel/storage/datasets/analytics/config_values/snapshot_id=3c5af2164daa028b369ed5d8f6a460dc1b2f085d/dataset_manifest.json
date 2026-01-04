@@ -1,0 +1,87 @@
+{
+  "dataset_id": "analytics.config_values",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "analytics.config_values",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "26739bd1a32cbbcbe91bdf9445e4c2e2f70de1d37dabb0a8746ab5696e53668e",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:39.670416+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "config_ingest"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "config_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "format",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "key",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "reference_paths",
+          "nullable": true,
+          "type": "BLOB"
+        },
+        {
+          "description": null,
+          "name": "reference_modules",
+          "nullable": true,
+          "type": "BLOB"
+        },
+        {
+          "description": null,
+          "name": "reference_count",
+          "nullable": false,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Flattened config key/value paths",
+      "indexes": [],
+      "name": "config_values",
+      "primary_key": [
+        "repo",
+        "commit",
+        "config_path",
+        "key"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.config_values"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

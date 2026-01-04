@@ -104,7 +104,7 @@ def _pipe_cleaning(
 ) -> NodeTransformLifecycle:
     if config.clean_mode == "off":
         return _NoOpTransform()
-    if config.df_backend != "polars_lazy":
+    if config.df_backend not in {"polars_lazy", "arrow"}:
         msg = f"Unsupported df_backend={config.df_backend!r}"
         raise ValueError(msg)
     drop = drop_bad_rows
@@ -221,6 +221,9 @@ def _decorate_features(
     selected = feature_sets.get(table_key, ())
     if not selected:
         return _NoOpTransform()
+    if df_backend == "arrow":
+        msg = "with_features is not supported for df_backend='arrow'"
+        raise ValueError(msg)
     with_columns = select_with_columns(df_backend)
     return with_columns(
         ops_module,

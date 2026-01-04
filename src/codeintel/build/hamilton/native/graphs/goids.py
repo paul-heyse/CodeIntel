@@ -19,7 +19,10 @@ from codeintel.build.graphs.compute.goid import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.compute_filters import filter_modules_with_language
+from codeintel.build.hamilton.native.graphs.compute_filters import (
+    filter_goid_ast_nodes,
+    filter_modules_with_language,
+)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     TableTargetSpec,
@@ -224,7 +227,8 @@ def _joined_ast_nodes(
     joined: list[dict[str, object]] = []
     total = 0
     matched = 0
-    for row in ast_nodes_table.to_pylist():
+    filtered = filter_goid_ast_nodes(ast_nodes_table)
+    for row in filtered.to_pylist():
         node_type = row.get("node_type")
         if node_type not in _ALLOWED_NODE_TYPES:
             continue

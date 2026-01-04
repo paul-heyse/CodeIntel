@@ -122,12 +122,8 @@ def subsystem_rows(
             import_graph_edges_frame=tabular_to_arrow_table(
                 subsystem_core_frames.import_graph_edges
             ),
-            symbol_use_edges_frame=tabular_to_arrow_table(
-                subsystem_core_frames.symbol_use_edges
-            ),
-            config_values_frame=tabular_to_arrow_table(
-                subsystem_analytics_frames.config_values
-            ),
+            symbol_use_edges_frame=tabular_to_arrow_table(subsystem_core_frames.symbol_use_edges),
+            config_values_frame=tabular_to_arrow_table(subsystem_analytics_frames.config_values),
         ),
     )
 

@@ -10,13 +10,19 @@ All DuckDB access is encapsulated here, following the storage layer pattern.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
+from codeintel.core.columnar.rows import record_batch_reader_for_rows
+from codeintel.core.columnar.schema_alignment import align_reader_to_contract
 from codeintel.core.gateway import ScipRunRecordProtocol
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.serialization.json import (
     decode_json_dict,
     deserialize_str_tuple,
@@ -26,6 +32,12 @@ from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.datasets.arrow_store import (
+    ArrowDatasetWriteOptions,
+    scan_dataset,
+    write_dataset,
+)
+from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.upsert import UpsertSpec
@@ -33,12 +45,15 @@ from codeintel.storage.upsert import UpsertSpec
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
+    from pathlib import Path
 
     from codeintel.core.build_manifest import BuildStatus
     from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
     from codeintel.storage.gateway.protocol import StorageGateway
 
 log = logging.getLogger(__name__)
+_MANIFEST_TABLE_KEY = "build.output_manifests"
+_MANIFEST_WRITE_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -169,6 +184,29 @@ def _manifest_select_exprs(impl_column: str) -> list[exp.Expression]:
     ]
 
 
+def _manifest_row_payload(
+    manifest: OutputManifest,
+    *,
+    impl_column: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "target": manifest.target,
+        "repo": manifest.repo,
+        "commit": manifest.commit,
+        "impl_kind": manifest.impl_kind,
+        "computed_at": manifest.computed_at,
+        "duration_ms": manifest.duration_ms,
+        "input_hash": manifest.input_hash,
+        "output_hash": manifest.output_hash,
+        "row_count": manifest.row_count,
+        "options_hash": manifest.options_hash,
+        "change_delta": manifest.change_delta,
+    }
+    if impl_column != "impl_kind":
+        payload[impl_column] = payload.pop("impl_kind")
+    return payload
+
+
 def _run_select_exprs() -> list[exp.Expression]:
     return [
         exp.Column(this=exp.to_identifier("run_id")),
@@ -219,9 +257,10 @@ class BuildTracking:
         self._con = gateway.con
         self._backend = gateway.policy
         self._impl_kind_columns: dict[str, str] = {}
+        self._table_columns_cache: dict[str, set[str]] = {}
 
-    def _impl_kind_column(self, table_key: str) -> str:
-        cached = self._impl_kind_columns.get(table_key)
+    def _table_columns(self, table_key: str) -> set[str]:
+        cached = self._table_columns_cache.get(table_key)
         if cached is not None:
             return cached
         schema, table = split_table_key(table_key)
@@ -248,6 +287,14 @@ class BuildTracking:
             [schema, table],
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         columns = {str(row[0]) for row in iter_tuples_from_arrow_reader(reader)}
+        self._table_columns_cache[table_key] = columns
+        return columns
+
+    def _impl_kind_column(self, table_key: str) -> str:
+        cached = self._impl_kind_columns.get(table_key)
+        if cached is not None:
+            return cached
+        columns = self._table_columns(table_key)
         if "impl_kind" in columns:
             column = "impl_kind"
         elif "plugin" in columns:
@@ -256,6 +303,232 @@ class BuildTracking:
             column = "impl_kind"
         self._impl_kind_columns[table_key] = column
         return column
+
+    def _manifest_impl_column(self, table_key: str) -> str:
+        try:
+            table_schema = get_schema_service().require_table_schema(table_key)
+        except (KeyError, RuntimeError):
+            return self._impl_kind_column(table_key)
+        columns = {col.name for col in table_schema.columns}
+        if "impl_kind" in columns:
+            return "impl_kind"
+        if "plugin" in columns:
+            return "plugin"
+        return "impl_kind"
+
+    @staticmethod
+    def _manifest_arrow_schema(table_key: str) -> pa.Schema:
+        schema_service = get_schema_service()
+        table_schema = schema_service.require_table_schema(table_key)
+        return arrow_contract_for_table_schema(table_schema=table_schema)
+
+    def _manifest_dataset_context(self, *, commit: str | None) -> tuple[Path, str]:
+        dataset_root_dir = self._gateway.config.dataset_root_dir
+        snapshot_id = self._gateway.config.commit or commit
+        if dataset_root_dir is None or snapshot_id is None:
+            msg = f"Dataset root and snapshot id required for {_MANIFEST_TABLE_KEY}"
+            raise RuntimeError(msg)
+        return dataset_root_dir, snapshot_id
+
+    def _is_parquet_backed(self, table_key: str) -> bool:
+        dataset = self._gateway.datasets.by_table_key.get(table_key)
+        return dataset is not None and not dataset.is_view
+
+    @staticmethod
+    def _load_manifest_table(
+        *,
+        table_key: str,
+        dataset_root_dir: Path,
+        snapshot_id: str,
+        arrow_schema: pa.Schema,
+    ) -> pa.Table | None:
+        snapshot_dir = dataset_snapshot_dir(
+            dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+        if not snapshot_dir.is_dir():
+            return None
+        try:
+            dataset = scan_dataset(
+                dataset_root=dataset_root_dir,
+                table_key=table_key,
+                snapshot_id=snapshot_id,
+            )
+        except FileNotFoundError:
+            return None
+        table = dataset.to_table()
+        if table.num_rows == 0:
+            return None
+        if table.schema == arrow_schema:
+            return table
+        reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+        aligned = align_reader_to_contract(reader, arrow_schema)
+        return aligned.read_all()
+
+    @staticmethod
+    def _manifest_match_mask(
+        table: pa.Table,
+        *,
+        target: str,
+        repo: str,
+        commit: str,
+    ) -> pa.Array:
+        targets = table.column("target").to_pylist()
+        repos = table.column("repo").to_pylist()
+        commits = table.column("commit").to_pylist()
+        mask = [
+            row_target == target and row_repo == repo and row_commit == commit
+            for row_target, row_repo, row_commit in zip(targets, repos, commits, strict=True)
+        ]
+        return pa.array(mask, type=pa.bool_())
+
+    @staticmethod
+    def _manifest_repo_commit_mask(
+        table: pa.Table,
+        *,
+        repo: str,
+        commit: str,
+    ) -> pa.Array:
+        repos = table.column("repo").to_pylist()
+        commits = table.column("commit").to_pylist()
+        mask = [
+            row_repo == repo and row_commit == commit
+            for row_repo, row_commit in zip(repos, commits, strict=True)
+        ]
+        return pa.array(mask, type=pa.bool_())
+
+    @staticmethod
+    def _invert_mask(mask: pa.Array) -> pa.Array:
+        values = [not value for value in mask.to_pylist()]
+        return pa.array(values, type=pa.bool_())
+
+    @staticmethod
+    def _manifest_rows_from_table(
+        table: pa.Table,
+        *,
+        impl_column: str,
+    ) -> tuple[OutputManifest, ...]:
+        columns = [
+            "target",
+            "repo",
+            "commit",
+            impl_column,
+            "computed_at",
+            "duration_ms",
+            "input_hash",
+            "output_hash",
+            "row_count",
+            "options_hash",
+            "change_delta",
+        ]
+        selected = table.select(columns)
+        reader = pa.RecordBatchReader.from_batches(selected.schema, selected.to_batches())
+        return tuple(_parse_manifest_row(row) for row in iter_tuples_from_arrow_reader(reader))
+
+    def _save_manifest_parquet(self, manifest: OutputManifest) -> None:
+        table_key = _MANIFEST_TABLE_KEY
+        dataset_root_dir, snapshot_id = self._manifest_dataset_context(commit=manifest.commit)
+        impl_column = self._manifest_impl_column(table_key)
+        payload = _manifest_row_payload(manifest, impl_column=impl_column)
+        reader, _ = record_batch_reader_for_rows(table_key, [payload])
+        new_table = reader.read_all()
+
+        with _MANIFEST_WRITE_LOCK:
+            existing_table = self._load_manifest_table(
+                table_key=table_key,
+                dataset_root_dir=dataset_root_dir,
+                snapshot_id=snapshot_id,
+                arrow_schema=new_table.schema,
+            )
+            if existing_table is not None:
+                match_mask = self._manifest_match_mask(
+                    existing_table,
+                    target=manifest.target,
+                    repo=manifest.repo,
+                    commit=manifest.commit,
+                )
+                filtered = existing_table.filter(self._invert_mask(match_mask))
+                if filtered.num_rows > 0:
+                    new_table = pa.concat_tables([filtered, new_table], promote=True)
+            manifest_entry = write_dataset(
+                dataset_root=dataset_root_dir,
+                table_key=table_key,
+                snapshot_id=snapshot_id,
+                data=new_table,
+                options=ArrowDatasetWriteOptions(existing_data_behavior="delete_matching"),
+            )
+            manifests = dict(self._gateway.datasets.dataset_manifests)
+            manifests[table_key] = manifest_entry
+            self._gateway.datasets = self._gateway.datasets.with_dataset_manifests(manifests)
+
+        log.debug(
+            "build.manifest.parquet.saved target=%s input_hash=%s",
+            manifest.target,
+            manifest.input_hash,
+        )
+
+    def _load_manifest_parquet(
+        self,
+        *,
+        target: str,
+        repo: str,
+        commit: str,
+    ) -> OutputManifest | None:
+        table_key = _MANIFEST_TABLE_KEY
+        dataset_root_dir, snapshot_id = self._manifest_dataset_context(commit=commit)
+        arrow_schema = self._manifest_arrow_schema(table_key)
+        table = self._load_manifest_table(
+            table_key=table_key,
+            dataset_root_dir=dataset_root_dir,
+            snapshot_id=snapshot_id,
+            arrow_schema=arrow_schema,
+        )
+        if table is None:
+            return None
+        match_mask = self._manifest_match_mask(
+            table,
+            target=target,
+            repo=repo,
+            commit=commit,
+        )
+        matched = table.filter(match_mask)
+        if matched.num_rows == 0:
+            return None
+        if matched.num_rows > 1 and "computed_at" in matched.column_names:
+            matched = matched.sort_by([("computed_at", "ascending")]).slice(
+                matched.num_rows - 1,
+                1,
+            )
+        impl_column = self._manifest_impl_column(table_key)
+        manifests = self._manifest_rows_from_table(matched, impl_column=impl_column)
+        return manifests[-1] if manifests else None
+
+    def _list_manifests_parquet(
+        self,
+        *,
+        repo: str,
+        commit: str,
+    ) -> tuple[OutputManifest, ...]:
+        table_key = _MANIFEST_TABLE_KEY
+        dataset_root_dir, snapshot_id = self._manifest_dataset_context(commit=commit)
+        arrow_schema = self._manifest_arrow_schema(table_key)
+        table = self._load_manifest_table(
+            table_key=table_key,
+            dataset_root_dir=dataset_root_dir,
+            snapshot_id=snapshot_id,
+            arrow_schema=arrow_schema,
+        )
+        if table is None:
+            return ()
+        filter_mask = self._manifest_repo_commit_mask(table, repo=repo, commit=commit)
+        filtered = table.filter(filter_mask)
+        if filtered.num_rows == 0:
+            return ()
+        if "target" in filtered.column_names:
+            filtered = filtered.sort_by([("target", "ascending")])
+        impl_column = self._manifest_impl_column(table_key)
+        return self._manifest_rows_from_table(filtered, impl_column=impl_column)
 
     def save_manifest(self, manifest: OutputManifest) -> None:
         """Save or update an output manifest.
@@ -267,10 +540,13 @@ class BuildTracking:
         manifest
             The manifest to save.
         """
+        if self._is_parquet_backed(_MANIFEST_TABLE_KEY):
+            self._save_manifest_parquet(manifest)
+            return
         change_delta = dict(manifest.change_delta) if manifest.change_delta is not None else None
-        impl_column = self._impl_kind_column("build.output_manifests")
+        impl_column = self._impl_kind_column(_MANIFEST_TABLE_KEY)
         self._backend.upsert(
-            "build.output_manifests",
+            _MANIFEST_TABLE_KEY,
             [
                 (
                     manifest.target,
@@ -331,7 +607,9 @@ class BuildTracking:
         OutputManifest | None
             The manifest if found, None otherwise.
         """
-        impl_column = self._impl_kind_column("build.output_manifests")
+        if self._is_parquet_backed(_MANIFEST_TABLE_KEY):
+            return self._load_manifest_parquet(target=target, repo=repo, commit=commit)
+        impl_column = self._impl_kind_column(_MANIFEST_TABLE_KEY)
         where_expr = _combine_conditions(
             [
                 exp.EQ(
@@ -378,7 +656,9 @@ class BuildTracking:
         tuple[OutputManifest, ...]
             All manifests for the given repo/commit.
         """
-        impl_column = self._impl_kind_column("build.output_manifests")
+        if self._is_parquet_backed(_MANIFEST_TABLE_KEY):
+            return self._list_manifests_parquet(repo=repo, commit=commit)
+        impl_column = self._impl_kind_column(_MANIFEST_TABLE_KEY)
         where_expr = _combine_conditions(
             [
                 exp.EQ(
@@ -415,7 +695,7 @@ class BuildTracking:
             Commit SHA.
         """
         delete_expr = exp.Delete(
-            this=table_expr_from_ref("build.output_manifests"),
+            this=table_expr_from_ref(_MANIFEST_TABLE_KEY),
             where=exp.Where(
                 this=_combine_conditions(
                     [
@@ -664,51 +944,64 @@ class BuildTracking:
         if not records:
             return 0
 
+        self._backend.ensure_table("build.run_targets", create_if_missing=True)
         recorded_at = utc_now()
         impl_column = self._impl_kind_column("build.run_targets")
+        available_columns = self._table_columns("build.run_targets")
+        include_drift = "drift_summaries" in available_columns
+        include_dep_hashes = "dep_hashes" in available_columns
+        columns = [
+            "run_id",
+            "repo",
+            "commit",
+            "target",
+            impl_column,
+            "status",
+            "input_hash",
+            "options_hash",
+            "duration_ms",
+            "row_counts",
+        ]
+        if include_drift:
+            columns.append("drift_summaries")
+        columns.append("error")
+        if include_dep_hashes:
+            columns.append("dep_hashes")
+        columns.append("recorded_at")
         rows: list[tuple[object, ...]] = []
 
         for rec in records:
             row_counts_payload = encode_payload(dict(rec.row_counts) if rec.row_counts else {})
-            drift_summaries_payload = encode_payload(
-                {table_key: dict(summary) for table_key, summary in rec.drift_summaries.items()}
-            )
-            rows.append(
-                (
-                    run_id,
-                    repo,
-                    commit,
-                    rec.target,
-                    rec.impl_kind,
-                    rec.status,
-                    rec.input_hash,
-                    rec.options_hash,
-                    rec.duration_ms,
-                    row_counts_payload,
-                    drift_summaries_payload,
-                    rec.error,
-                    recorded_at,
+            row_values: list[object] = [
+                run_id,
+                repo,
+                commit,
+                rec.target,
+                rec.impl_kind,
+                rec.status,
+                rec.input_hash,
+                rec.options_hash,
+                rec.duration_ms,
+                row_counts_payload,
+            ]
+            if include_drift:
+                drift_summaries_payload = encode_payload(
+                    {
+                        table_key: dict(summary)
+                        for table_key, summary in rec.drift_summaries.items()
+                    }
                 )
-            )
+                row_values.append(drift_summaries_payload)
+            row_values.append(rec.error)
+            if include_dep_hashes:
+                row_values.append(None)
+            row_values.append(recorded_at)
+            rows.append(tuple(row_values))
 
         return self._backend.bulk_insert(
             "build.run_targets",
             rows,
-            columns=(
-                "run_id",
-                "repo",
-                "commit",
-                "target",
-                impl_column,
-                "status",
-                "input_hash",
-                "options_hash",
-                "duration_ms",
-                "row_counts",
-                "drift_summaries",
-                "error",
-                "recorded_at",
-            ),
+            columns=tuple(columns),
         )
 
     def list_run_targets(self, run_id: str) -> list[dict[str, Any]]:
@@ -790,6 +1083,7 @@ class BuildTracking:
         if not records:
             return 0
 
+        deduped_records = self._dedupe_run_nodes(records)
         rows = [
             (
                 run_id,
@@ -803,10 +1097,10 @@ class BuildTracking:
                 r.error,
                 encode_payload(r.tags or {}),
             )
-            for r in records
+            for r in deduped_records
         ]
 
-        return self._backend.bulk_insert(
+        return self._backend.upsert(
             "build.run_nodes",
             rows,
             columns=(
@@ -821,7 +1115,49 @@ class BuildTracking:
                 "error",
                 "tags",
             ),
+            upsert=UpsertSpec(
+                conflict_columns=("run_id", "node_name"),
+                update_columns=(
+                    "target",
+                    "node_type",
+                    "status",
+                    "started_at",
+                    "completed_at",
+                    "duration_ms",
+                    "error",
+                    "tags",
+                ),
+            ),
         )
+
+    @staticmethod
+    def _pick_node_record(
+        existing: NodeExecutionRecord,
+        candidate: NodeExecutionRecord,
+    ) -> NodeExecutionRecord:
+        if existing.status != candidate.status:
+            if candidate.status == "failed":
+                return candidate
+            if existing.status == "failed":
+                return existing
+        existing_completed = existing.completed_at or existing.started_at
+        candidate_completed = candidate.completed_at or candidate.started_at
+        if candidate_completed >= existing_completed:
+            return candidate
+        return existing
+
+    @staticmethod
+    def _dedupe_run_nodes(
+        records: Sequence[NodeExecutionRecord],
+    ) -> list[NodeExecutionRecord]:
+        deduped: dict[str, NodeExecutionRecord] = {}
+        for record in records:
+            current = deduped.get(record.node_name)
+            if current is None:
+                deduped[record.node_name] = record
+                continue
+            deduped[record.node_name] = BuildTracking._pick_node_record(current, record)
+        return [deduped[name] for name in sorted(deduped)]
 
     def record_scip_run(self, record: ScipRunRecordProtocol) -> None:
         """Upsert a SCIP telemetry record into build.scip_runs."""

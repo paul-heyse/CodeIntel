@@ -53,10 +53,18 @@ def native_module_paths() -> tuple[str, ...]:
         domain_dir = root / domain
         if not domain_dir.is_dir():
             continue
-        for path in sorted(domain_dir.glob("*.py")):
-            if path.name == "__init__.py":
+        module_names: list[str] = []
+        for path in domain_dir.iterdir():
+            if path.is_file() and path.suffix == ".py":
+                if path.name == "__init__.py":
+                    continue
+                module_names.append(path.stem)
                 continue
-            module_paths.append(f"{_NATIVE_PACKAGE_PREFIX}.{domain}.{path.stem}")
+            if path.is_dir() and (path / "__init__.py").is_file():
+                module_names.append(path.name)
+        module_paths.extend(
+            f"{_NATIVE_PACKAGE_PREFIX}.{domain}.{name}" for name in sorted(module_names)
+        )
     return tuple(module_paths)
 
 

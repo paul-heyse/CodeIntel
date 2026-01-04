@@ -1,0 +1,112 @@
+{
+  "dataset_id": "build.output_manifests",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "build.output_manifests",
+  "partition_columns": [],
+  "files": [
+    "part-0.parquet"
+  ],
+  "schema_hash": "7cf278111e7778e947ed8ddaf0cb5fd7a6f15bdcd3d941ac83c73dfba49940f7",
+  "row_count": 8,
+  "stats": {
+    "dictionary_encoding": {
+      "columns": {
+        "change_delta": 8,
+        "commit": 8,
+        "computed_at": 8,
+        "duration_ms": 8,
+        "impl_kind": 8,
+        "input_hash": 8,
+        "options_hash": 8,
+        "output_hash": 8,
+        "repo": 8,
+        "row_count": 8,
+        "target": 8
+      },
+      "row_groups": 8
+    },
+    "file_count": 1,
+    "min_max": {
+      "commit": {
+        "max": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+        "min": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d"
+      },
+      "computed_at": {
+        "max": "2026-01-04T14:26:45.121850+00:00",
+        "min": "2026-01-04T14:26:34.582644+00:00"
+      },
+      "duration_ms": {
+        "max": 288.9118338935077,
+        "min": 0.005250098183751106
+      },
+      "impl_kind": {
+        "max": "native",
+        "min": "native"
+      },
+      "input_hash": {
+        "max": "",
+        "min": ""
+      },
+      "repo": {
+        "max": "github.com/paul-heyse/CodeIntel",
+        "min": "github.com/paul-heyse/CodeIntel"
+      },
+      "row_count": {
+        "max": 0,
+        "min": 0
+      },
+      "target": {
+        "max": "scip_proto",
+        "min": "call_graph"
+      }
+    },
+    "row_group_stats": {
+      "bytes": {
+        "avg": 875.375,
+        "max": 901.0,
+        "min": 851.0
+      },
+      "rows": {
+        "avg": 1.0,
+        "max": 1.0,
+        "min": 1.0
+      }
+    },
+    "row_groups": 8,
+    "rows_from_metadata": 8,
+    "total_bytes": 25022
+  },
+  "created_at": "2026-01-04T14:26:45.130872+00:00",
+  "extras": {
+    "parquet_stats": {
+      "dictionary_encoding": {
+        "columns": {
+          "change_delta": 8,
+          "commit": 8,
+          "computed_at": 8,
+          "duration_ms": 8,
+          "impl_kind": 8,
+          "input_hash": 8,
+          "options_hash": 8,
+          "output_hash": 8,
+          "repo": 8,
+          "row_count": 8,
+          "target": 8
+        },
+        "row_groups": 8
+      },
+      "row_group_stats": {
+        "bytes": {
+          "avg": 875.375,
+          "max": 901.0,
+          "min": 851.0
+        },
+        "rows": {
+          "avg": 1.0,
+          "max": 1.0,
+          "min": 1.0
+        }
+      }
+    }
+  }
+}

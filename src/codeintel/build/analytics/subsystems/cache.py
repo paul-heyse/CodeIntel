@@ -81,7 +81,9 @@ def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Tabl
         if (snapshot.repo == row.get("repo") if "repo" in available else True)
         and (snapshot.commit == row.get("commit") if "commit" in available else True)
     ]
-    return pa.Table.from_pylist(filtered) if filtered else pa.Table.from_pylist([])
+    if not filtered:
+        return frame.slice(0, 0)
+    return pa.Table.from_pylist(filtered, schema=frame.schema)
 
 
 def _profile_cache_columns() -> tuple[str, ...]:

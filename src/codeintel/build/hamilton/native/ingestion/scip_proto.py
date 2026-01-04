@@ -9,6 +9,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from hamilton.function_modifiers import cache
+
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -202,6 +204,7 @@ def scip_proto__materializations(
     return {SCIP_PROTO_ARTIFACT: m__artifact__scip_pb2}
 
 
+@cache(behavior="disable")
 @tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
 def scip_proto__finalize_context(
     env: BuildEnv,

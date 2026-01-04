@@ -119,6 +119,8 @@ def _maybe_set_schema_service_from_catalog(con: duckdb.DuckDBPyConnection) -> No
         service = get_schema_service()
     except RuntimeError:
         service = None
+    if service is not None and not _is_catalog_provider(service.table_provider):
+        return
     schemas = contract_catalog_table_schemas()
     fallback_provider = MappingSchemaProvider(schemas) if schemas else None
     if _registry_has_schemas(con):

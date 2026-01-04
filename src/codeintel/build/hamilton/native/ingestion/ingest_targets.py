@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 from hamilton.function_modifiers import (
     apply_to,
+    cache,
     parameterize,
     resolve_from_config,
     source,
@@ -576,6 +577,7 @@ modules__repo_map_rows = _MODULE.modules__repo_map_rows
 modules__table_materializations = _MODULE.modules__table_materializations
 
 
+@cache(behavior="disable")
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
 def modules__finalize_context(
     env: BuildEnv,
@@ -849,7 +851,7 @@ def t__config_ingest__ingest(
         "label": value("tests ingest"),
     },
 )
-def _extract_ingest_rows(
+def extract_ingest_rows(
     ingest_step: IngestStep[dict[str, InferableTabularInput]],
     table_key: str,
     label: str,
@@ -926,6 +928,7 @@ config_ingest__rows = _MODULE.config_ingest__rows
 config_ingest__table_materializations = _MODULE.config_ingest__table_materializations
 
 
+@cache(behavior="disable")
 @tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def config_ingest__finalize_context(
     env: BuildEnv,
@@ -1154,6 +1157,7 @@ tests__rows = _MODULE.tests__rows
 tests_ingest__table_materializations = _MODULE.tests_ingest__table_materializations
 
 
+@cache(behavior="disable")
 @tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def tests_ingest__finalize_context(
     env: BuildEnv,
@@ -1363,6 +1367,7 @@ typing__diagnostic_rows = _MODULE.typing__diagnostic_rows
 typing__table_materializations = _MODULE.typing__table_materializations
 
 
+@cache(behavior="disable")
 @tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
 def typing__finalize_context(
     env: BuildEnv,

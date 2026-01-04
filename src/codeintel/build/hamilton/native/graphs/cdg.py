@@ -9,6 +9,12 @@ from dataclasses import dataclass
 import pyarrow as pa
 
 from codeintel.build.tabular.arrow_ops import align_table_to_contract, dedupe_table_for_table
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import (
+    and_kleene,
+    is_valid_mask,
+    non_empty_string_mask,
+)
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table
@@ -128,7 +134,9 @@ def _edge_indexes(
             continue
         edges_idx.append((src_idx, dst_idx))
         edge_kind_raw = row.get("edge_kind")
-        edge_kind_by_pair[src_idx, dst_idx] = edge_kind_raw if isinstance(edge_kind_raw, str) else None
+        edge_kind_by_pair[src_idx, dst_idx] = (
+            edge_kind_raw if isinstance(edge_kind_raw, str) else None
+        )
     return edges_idx, edge_kind_by_pair
 
 
@@ -242,6 +250,38 @@ def _cdg_edges_for_function(
     return rows
 
 
+def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
+    if blocks_table.num_rows == 0:
+        return blocks_table
+    required = {"function_goid_h128", "block_id", "block_idx"}
+    if not required.issubset(set(blocks_table.column_names)):
+        return blocks_table
+    try:
+        goid_mask = is_valid_mask(blocks_table.column("function_goid_h128"))
+        block_id_mask = is_valid_mask(blocks_table.column("block_id"))
+        block_idx_mask = is_valid_mask(blocks_table.column("block_idx"))
+        mask = and_kleene(goid_mask, block_id_mask)
+        mask = and_kleene(mask, block_idx_mask)
+        return safe_filter(blocks_table, mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return blocks_table
+
+
+def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
+    if edges_table.num_rows == 0:
+        return edges_table
+    required = {"function_goid_h128", "edge_kind"}
+    if not required.issubset(set(edges_table.column_names)):
+        return edges_table
+    try:
+        goid_mask = is_valid_mask(edges_table.column("function_goid_h128"))
+        kind_mask = non_empty_string_mask(edges_table.column("edge_kind"))
+        mask = and_kleene(goid_mask, kind_mask)
+        return safe_filter(edges_table, mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return edges_table
+
+
 def cdg_edges(
     q__graph__cfg_blocks: InferableTabularInput,
     q__graph__cfg_edges: InferableTabularInput,
@@ -259,6 +299,8 @@ def cdg_edges(
     edges_table = tabular_to_arrow_table(q__graph__cfg_edges).select(
         ["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"]
     )
+    blocks_table = _prefilter_cdg_blocks(blocks_table)
+    edges_table = _prefilter_cdg_edges(edges_table)
     if blocks_table.num_rows == 0 or edges_table.num_rows == 0:
         return empty_reader_for_table(CDG_EDGES_TABLE_KEY)
 

@@ -1,0 +1,87 @@
+{
+  "dataset_id": "core.py_inspect_class_mro",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.py_inspect_class_mro",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "5c5957958ad090fa15e4541762af6e4085b99d402e9831b170c04557380c9c2a",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:43.745354+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "inspect"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "mode",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "class_object_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "mro_index",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "base_object_id",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "base_kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "status",
+          "nullable": true,
+          "type": "STRUCT(ok BOOLEAN, error_type VARCHAR, error_msg VARCHAR)"
+        }
+      ],
+      "description": "Class MRO inventory from inspect.getmro.",
+      "indexes": [],
+      "name": "py_inspect_class_mro",
+      "primary_key": [
+        "repo",
+        "commit",
+        "class_object_id",
+        "mro_index"
+      ],
+      "schema": "core",
+      "table_key": "core.py_inspect_class_mro"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

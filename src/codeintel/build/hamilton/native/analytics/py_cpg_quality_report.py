@@ -293,8 +293,8 @@ def py_cpg_quality_report__inputs_b(
 
 def py_cpg_quality_report__base(
     env: BuildEnv,
-    inputs_a: _PyCpgQualityInputsA,
-    inputs_b: _PyCpgQualityInputsB,
+    py_cpg_quality_report__inputs_a: _PyCpgQualityInputsA,
+    py_cpg_quality_report__inputs_b: _PyCpgQualityInputsB,
 ) -> pa.RecordBatchReader:
     """Build run-level Python CPG quality metrics.
 
@@ -304,28 +304,30 @@ def py_cpg_quality_report__base(
         Reader containing run-level quality metrics.
     """
     instruction_rate = _anchor_rate(
-        tabular_to_arrow_reader(inputs_a.instructions),
+        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.instructions),
         anchor_column="span_start_byte",
     )
     symtable_rate = _anchor_rate(
-        tabular_to_arrow_reader(inputs_a.scopes),
+        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.scopes),
         anchor_column="anchor_ast_node_id",
     )
     cfg_rate = _cfg_reachability(
-        tabular_to_arrow_reader(inputs_a.blocks),
-        tabular_to_arrow_reader(inputs_b.cfg_edges),
+        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.blocks),
+        tabular_to_arrow_reader(py_cpg_quality_report__inputs_b.cfg_edges),
     )
     defuse_event_count = _defuse_event_count(
-        tabular_to_arrow_reader(inputs_b.defuse_events),
+        tabular_to_arrow_reader(py_cpg_quality_report__inputs_b.defuse_events),
     )
     defuse_edge_count, inspect_anchor_ids = _scan_cpg_edges(
-        tabular_to_arrow_reader(inputs_b.cpg_edges),
+        tabular_to_arrow_reader(py_cpg_quality_report__inputs_b.cpg_edges),
     )
     defuse_rate = _DefuseCoverage(
         event_count=defuse_event_count,
         edge_count=defuse_edge_count,
     )
-    inspect_total = _count_rows(tabular_to_arrow_reader(inputs_a.inspect_objects))
+    inspect_total = _count_rows(
+        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.inspect_objects)
+    )
     inspect_rate = _AnchorRate(total=inspect_total, anchored=len(inspect_anchor_ids))
 
     rows = [

@@ -1,0 +1,105 @@
+{
+  "dataset_id": "graph.import_graph_edges",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "graph.import_graph_edges",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "b88c8067308bc1a3a69575046f68497effe3fdb2fdf8593afe85266830764eb7",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:40.627342+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "import_graph"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "src_module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "dst_module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "src_fan_out",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dst_fan_in",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cycle_group",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "module_layer",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Module-level import edges with fan-in/out metrics",
+      "indexes": [
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_import_edges_repo_commit",
+          "unique": false
+        },
+        {
+          "columns": [
+            "src_module"
+          ],
+          "name": "idx_graph_import_edges_src",
+          "unique": false
+        },
+        {
+          "columns": [
+            "dst_module"
+          ],
+          "name": "idx_graph_import_edges_dst",
+          "unique": false
+        }
+      ],
+      "name": "import_graph_edges",
+      "primary_key": [],
+      "schema": "graph",
+      "table_key": "graph.import_graph_edges"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

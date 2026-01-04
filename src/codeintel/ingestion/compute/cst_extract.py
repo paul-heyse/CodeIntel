@@ -1796,6 +1796,7 @@ def _build_cst_collectors(batch_size: int) -> _CstCollectors:
         ),
     )
 
+
 def _flush_cst_collectors(collectors: _CstCollectors) -> None:
     collectors.cst.flush()
     collectors.parse_manifest.flush()

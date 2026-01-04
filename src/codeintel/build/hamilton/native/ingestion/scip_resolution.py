@@ -38,6 +38,8 @@ from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_reader_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
@@ -89,22 +91,46 @@ def _cast_int64(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     return pa.Table.from_arrays(arrays, names=list(table.column_names))
 
 
+def _empty_reader_for_output_table(table_key: str) -> pa.RecordBatchReader:
+    try:
+        return empty_reader_for_table(table_key)
+    except KeyError:
+        table_schema = OUTPUT_TABLE_SCHEMAS.get(table_key)
+        if table_schema is None:
+            raise
+        arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+        return pa.RecordBatchReader.from_batches(arrow_schema, [])
+
+
+def _empty_table_for_output_table(table_key: str) -> pa.Table:
+    table_schema = OUTPUT_TABLE_SCHEMAS.get(table_key)
+    if table_schema is None:
+        msg = f"Missing output schema for {table_key}"
+        raise KeyError(msg)
+    arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+    return pa.Table.from_batches([], schema=arrow_schema)
+
+
 def _symbol_info_table(symbol_info: InferableTabularInput) -> pa.Table:
     table = tabular_to_arrow_table(symbol_info).select(
-        "repo",
-        "commit",
-        "symbol",
-        "enclosing_symbol",
+        [
+            "repo",
+            "commit",
+            "symbol",
+            "enclosing_symbol",
+        ]
     )
     return _rename_columns(table, {"symbol": "scip_symbol"})
 
 
 def _goids_table(goids: InferableTabularInput) -> pa.Table:
     table = tabular_to_arrow_table(goids).select(
-        "goid_h128",
-        "rel_path",
-        "start_line",
-        "end_line",
+        [
+            "goid_h128",
+            "rel_path",
+            "start_line",
+            "end_line",
+        ]
     )
     table = _cast_int64(table, ["start_line", "end_line"])
     if table.num_rows == 0:
@@ -129,10 +155,10 @@ def _symbol_goid_xref_table(
     created_at: datetime,
 ) -> pa.Table:
     if occurrences.num_rows == 0 or goids.num_rows == 0:
-        return pa.Table.from_pylist([])
+        return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
     roles = occurrences["roles"] if "roles" in occurrences.column_names else None
     if roles is None:
-        return pa.Table.from_pylist([])
+        return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
     def_mask = not_equal_mask(
         bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
         pa.scalar(0, type=roles.type),
@@ -144,17 +170,19 @@ def _symbol_goid_xref_table(
         spec=ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1"),
     )
     joined = joined.select(
-        "repo",
-        "commit",
-        "scip_symbol",
-        "goid_h128",
-        "rel_path",
-        "start_line",
-        "start_col",
-        "end_line",
-        "end_col",
-        "position_encoding",
-        "text_document_encoding",
+        [
+            "repo",
+            "commit",
+            "scip_symbol",
+            "goid_h128",
+            "rel_path",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+            "position_encoding",
+            "text_document_encoding",
+        ]
     )
     joined = _rename_columns(
         joined,
@@ -178,10 +206,12 @@ def _occurrence_span_xref_table(
     created_at: datetime,
 ) -> pa.Table:
     goid_lookup = symbol_goid_xref.select(
-        "repo",
-        "commit",
-        "scip_symbol",
-        "goid_h128",
+        [
+            "repo",
+            "commit",
+            "scip_symbol",
+            "goid_h128",
+        ]
     )
     base = arrow_join_tables(
         occurrences,
@@ -203,7 +233,7 @@ def _occurrence_span_xref_table(
     )
     roles = base["roles"] if "roles" in base.column_names else None
     if roles is None:
-        return pa.Table.from_pylist([])
+        return _empty_table_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
     role_scalar = pa.scalar(0, type=roles.type)
     is_definition = not_equal_mask(
         bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
@@ -230,30 +260,34 @@ def _occurrence_span_xref_table(
     base = base.append_column("is_import", is_import)
     base = base.append_column("is_write", is_write)
     base = base.append_column("is_read", is_read)
+    if "created_at" in base.column_names:
+        base = base.drop_columns(["created_at"])
     created = pa.array([created_at] * base.num_rows)
     base = base.append_column("created_at", created)
     return base.select(
-        "repo",
-        "commit",
-        "rel_path",
-        "scip_symbol",
-        "roles",
-        "is_definition",
-        "is_reference",
-        "is_import",
-        "is_write",
-        "is_read",
-        "enclosing_symbol",
-        "start_line",
-        "start_col",
-        "end_line",
-        "end_col",
-        "position_encoding",
-        "text_document_encoding",
-        "start_byte",
-        "end_byte",
-        "goid_h128",
-        "created_at",
+        [
+            "repo",
+            "commit",
+            "rel_path",
+            "scip_symbol",
+            "roles",
+            "is_definition",
+            "is_reference",
+            "is_import",
+            "is_write",
+            "is_read",
+            "enclosing_symbol",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+            "position_encoding",
+            "text_document_encoding",
+            "start_byte",
+            "end_byte",
+            "goid_h128",
+            "created_at",
+        ]
     )
 
 
@@ -466,7 +500,7 @@ def scip_resolution__symbol_goid_xref__base(
         scip_resolution__frames.symbol_goid_xref,
     )
     if table.num_rows == 0:
-        return empty_reader_for_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
+        return _empty_reader_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
     table = align_table_to_contract(SCIP_SYMBOL_GOID_XREF_TABLE_KEY, table)
     return table_to_reader(table)
 
@@ -486,13 +520,13 @@ def scip_resolution__occurrence_span_xref__base(
         scip_resolution__frames.occurrence_span_xref,
     )
     if table.num_rows == 0:
-        return empty_reader_for_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
+        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
     table = align_table_to_contract(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY, table)
     return table_to_reader(table)
 
 
 def scip_resolution__occurrence_syntax_xref__base(
-    q__core__scip_occurrence_span_xref: InferableTabularInput,
+    scip_resolution__frames: ScipResolutionFrames,
     q__core__syntax_nodes: InferableTabularInput,
 ) -> pa.RecordBatchReader:
     """Return rows for core.scip_occurrence_syntax_xref.
@@ -502,11 +536,11 @@ def scip_resolution__occurrence_syntax_xref__base(
     pa.RecordBatchReader
         Arrow reader for core.scip_occurrence_syntax_xref.
     """
-    occurrences_table = tabular_to_arrow_table(q__core__scip_occurrence_span_xref)
+    occurrences_table = scip_resolution__frames.occurrence_span_xref
     nodes_table = tabular_to_arrow_table(q__core__syntax_nodes)
     rows = _occurrence_syntax_xref_rows(occurrences_table, nodes_table)
     if not rows:
-        return empty_reader_for_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
     table = pa.Table.from_pylist(rows)
     table = dedupe_table_for_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
     table = align_table_to_contract(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)

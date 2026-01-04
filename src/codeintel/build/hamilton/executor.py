@@ -34,7 +34,11 @@ from codeintel.build.hamilton.build_log import (
     record_build_event,
     start_build_log,
 )
-from codeintel.build.hamilton.cache_adapter import CacheAdapterOptions, ManifestBackedCacheAdapter
+from codeintel.build.hamilton.cache_adapter import (
+    ArrowFileResultStore,
+    CacheAdapterOptions,
+    ManifestBackedCacheAdapter,
+)
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
 from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
@@ -161,6 +165,7 @@ _EXECUTOR_CLASS_NAMES: dict[str, str] = {
     "thread": "MultiThreadingExecutor",
     "process": "MultiProcessingExecutor",
 }
+_INTRINSIC_TARGETS: tuple[str, ...] = ("scip",)
 
 
 @dataclass(frozen=True)
@@ -203,6 +208,14 @@ def _generate_run_id() -> str:
         Unique run identifier for this Hamilton execution.
     """
     return new_run_id("hamilton")
+
+
+def _ensure_intrinsic_targets(targets: list[str]) -> list[str]:
+    resolved = list(targets)
+    for target in _INTRINSIC_TARGETS:
+        if target not in resolved:
+            resolved.append(target)
+    return resolved
 
 
 def _coerce_project_id(value: str) -> int | str:
@@ -513,6 +526,7 @@ def _build_cache_adapter(
         default_loader_behavior="disable",
         default_saver_behavior="disable",
         log_to_file=True,
+        result_store=ArrowFileResultStore(path=str(cache_dir)),
     )
     return ManifestBackedCacheAdapter(
         path=cache_dir,
@@ -1353,11 +1367,12 @@ class HamiltonBuildExecutor:
         HamiltonBuildResult
             Structured result containing outputs and status details.
         """
+        resolved_targets = _ensure_intrinsic_targets(targets)
         run_id = _generate_run_id()
         start_build_log(env=env, run_id=run_id)
         record_build_event(
             "build.run.start",
-            requested_targets_count=len(targets),
+            requested_targets_count=len(resolved_targets),
         )
         writer = BuildRunWriter(env.gateway)
         cache_dir = self._options.resolved_cache_dir(env=env)
@@ -1372,7 +1387,7 @@ class HamiltonBuildExecutor:
 
         context = _RunState(
             env=env,
-            targets=tuple(targets),
+            targets=tuple(resolved_targets),
             runtime=runtime,
             run_id=run_id,
             cache_dir=cache_dir,

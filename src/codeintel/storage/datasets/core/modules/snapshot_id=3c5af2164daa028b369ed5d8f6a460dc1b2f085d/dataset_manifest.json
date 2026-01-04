@@ -1,0 +1,118 @@
+{
+  "dataset_id": "core.modules",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.modules",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674db86928872aa2a81",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:40.958822+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "modules"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tags",
+          "nullable": true,
+          "type": "LIST(VARCHAR)"
+        },
+        {
+          "description": null,
+          "name": "owners",
+          "nullable": true,
+          "type": "LIST(VARCHAR)"
+        },
+        {
+          "description": null,
+          "name": "row_hash",
+          "nullable": true,
+          "type": "VARCHAR"
+        }
+      ],
+      "description": "Discovered modules per repo/commit",
+      "indexes": [
+        {
+          "columns": [
+            "path"
+          ],
+          "name": "idx_core_modules_path",
+          "unique": false
+        },
+        {
+          "columns": [
+            "module"
+          ],
+          "name": "idx_core_modules_module",
+          "unique": false
+        }
+      ],
+      "name": "modules",
+      "primary_key": [
+        "module",
+        "path"
+      ],
+      "schema": "core",
+      "table_key": "core.modules",
+      "write_policy": {
+        "conflict_columns": [
+          "module",
+          "path"
+        ],
+        "hash_column": "row_hash",
+        "mode": "upsert",
+        "replace_scope": "snapshot",
+        "update_columns": [
+          "repo",
+          "commit",
+          "language",
+          "tags",
+          "owners",
+          "row_hash"
+        ],
+        "use_staging": true
+      }
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

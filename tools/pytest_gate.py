@@ -119,8 +119,8 @@ def main() -> int:
     targeted = (
         DEFAULT_TARGETED if args.targeted is None or not args.targeted else tuple(args.targeted)
     )
-    segments = DEFAULT_SEGMENTS if args.segments is None or not args.segments else tuple(
-        args.segments
+    segments = (
+        DEFAULT_SEGMENTS if args.segments is None or not args.segments else tuple(args.segments)
     )
     pytest_args = tuple(args.pytest_args)
 

@@ -1,0 +1,100 @@
+{
+  "dataset_id": "core.scip_symbol_information",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.scip_symbol_information",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "c9bcfef6e2a91661d2e1f38771dedc87e18efcfba3f9423b7ce3e00a166988a3",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:45.705194+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "scip"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "display_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "signature",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "enclosing_symbol",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "SCIP symbol metadata and documentation",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_symbol_info_symbol",
+          "unique": false
+        }
+      ],
+      "name": "scip_symbol_information",
+      "primary_key": [
+        "repo",
+        "commit",
+        "symbol"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_symbol_information"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

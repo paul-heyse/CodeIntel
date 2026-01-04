@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
+from hamilton.function_modifiers import cache
+
 from codeintel.build.hamilton.cache_index import CacheIndex
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -42,22 +44,12 @@ class PlanGraphInputs:
     preflight_block_map: Mapping[str, tuple[str, ...]]
 
 
-def plan_request(plan_request: PlanRequest) -> PlanRequest:
-    """Identity node for injected plan requests.
-
-    Returns
-    -------
-    PlanRequest
-        Plan request payload.
-    """
-    return plan_request
-
-
+@cache(behavior="disable")
 def plan_context(
     catalog: DagCatalog,
     env: BuildEnv,
-    plan_request: PlanRequest,
     runtime_fingerprint: str,
+    plan_request: PlanRequest | None = None,
 ) -> PlanContext:
     """Bundle plan inputs shared across nodes.
 
@@ -66,17 +58,18 @@ def plan_context(
     PlanContext
         Bundled planning inputs for downstream nodes.
     """
+    resolved_request = _resolve_plan_request(plan_request)
     return PlanContext(
         catalog=catalog,
         env=env,
-        plan_request=plan_request,
+        plan_request=resolved_request,
         runtime_fingerprint=runtime_fingerprint,
     )
 
 
 def plan_target_closure(
     catalog: DagCatalog,
-    plan_request: PlanRequest,
+    plan_request: PlanRequest | None = None,
 ) -> tuple[str, ...]:
     """Return the dependency closure for requested targets.
 
@@ -85,9 +78,10 @@ def plan_target_closure(
     tuple[str, ...]
         Closure of target names.
     """
-    if not plan_request.requested_targets:
+    resolved_request = _resolve_plan_request(plan_request)
+    if not resolved_request.requested_targets:
         return ()
-    return catalog.closure(plan_request.requested_targets)
+    return catalog.closure(resolved_request.requested_targets)
 
 
 def plan_target_subgraph_nodes(
@@ -327,6 +321,18 @@ def _predicted_action(
     return "compute"
 
 
+def _resolve_plan_request(plan_request: PlanRequest | None) -> PlanRequest:
+    if plan_request is not None:
+        return plan_request
+    return PlanRequest(
+        requested_targets=(),
+        mode="predict",
+        include_node_details=False,
+        include_io_details=False,
+        include_cache_details=False,
+    )
+
+
 def _collect_target_nodes(
     *,
     catalog: DagCatalog,
@@ -388,7 +394,6 @@ __all__ = [
     "plan",
     "plan_cache_probe",
     "plan_node_versions",
-    "plan_request",
     "plan_target_closure",
     "plan_target_subgraph_nodes",
 ]

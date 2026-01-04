@@ -1,0 +1,256 @@
+{
+  "dataset_id": "core.py_bc_instructions",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.py_bc_instructions",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "2b7d0e5860c275644718b7c58adb9ce32a6092f88b7bbb38ef8ccce72a71b9e5",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:42.208222+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "bytecode"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "code_unit_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "instr_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "instr_physical_id",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "instr_index",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "start_offset",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "offset",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cache_offset",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_offset",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "ext_arg_len",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "op_len",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cache_len",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "opcode",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "opname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "baseopcode",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "baseopname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "arg",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "argrepr",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "argval_kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "argval_str",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "argval_int",
+          "nullable": true,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "argval_repr",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "is_jump_target",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "jump_target_offset",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "jump_target_label",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "label",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "starts_line",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "line_number",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "pos",
+          "nullable": true,
+          "type": "STRUCT(lineno INTEGER, end_lineno INTEGER, col INTEGER, end_col INTEGER)"
+        },
+        {
+          "description": null,
+          "name": "span_start_byte",
+          "nullable": true,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "span_end_byte",
+          "nullable": true,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "cache_info",
+          "nullable": true,
+          "type": "LIST(STRUCT(name VARCHAR, size INTEGER, data BLOB))"
+        },
+        {
+          "description": null,
+          "name": "cache_bytes",
+          "nullable": true,
+          "type": "BLOB"
+        },
+        {
+          "description": null,
+          "name": "op_bytes",
+          "nullable": true,
+          "type": "BLOB"
+        }
+      ],
+      "description": "Python bytecode instruction facts.",
+      "indexes": [],
+      "name": "py_bc_instructions",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path",
+        "code_unit_id",
+        "instr_id"
+      ],
+      "schema": "core",
+      "table_key": "core.py_bc_instructions"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

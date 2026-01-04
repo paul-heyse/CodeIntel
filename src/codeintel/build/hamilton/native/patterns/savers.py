@@ -227,9 +227,11 @@ def save_artifact(
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
+        data_node_name = fn.__name__
         tagged = tag_compute(
             domain=context.domain,
             target=context.target,
+            target_=data_node_name,
             extra_tags=context.extra_tags,
         )(fn)
         return decorator(tagged)
@@ -278,10 +280,12 @@ def save_dataset(
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
+        data_node_name = fn.__name__
         tagged = tag_dataset(
             domain=context.domain,
             target=context.target,
             table_key=spec.table_key,
+            target_=data_node_name,
             extra_tags=context.extra_tags,
         )(fn)
         coerced = _coerce_none_output(tagged, table_key=spec.table_key)
@@ -330,10 +334,12 @@ def save_relation_table(
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
+        data_node_name = fn.__name__
         tagged = tag_dataset(
             domain=context.domain,
             target=context.target,
             table_key=spec.table_key,
+            target_=data_node_name,
             extra_tags=context.extra_tags,
         )(fn)
         coerced = _coerce_none_output(tagged, table_key=spec.table_key)

@@ -445,6 +445,7 @@ def _build_dis_collectors(options: BytecodeExtractOptions) -> _DisCollectors:
         ),
     )
 
+
 def _flush_dis_collectors(collectors: _DisCollectors) -> None:
     collectors.code_units.flush()
     collectors.instructions.flush()

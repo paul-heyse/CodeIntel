@@ -1448,9 +1448,7 @@ def _core_lazyframes(core_inputs: _CpgNodeCoreInputs) -> _CpgNodeCoreLazyFrames:
         py_bc_instructions=reader_to_table(tabular_to_reader(core_inputs.py_bc_instructions)),
         py_bc_blocks=reader_to_table(tabular_to_reader(core_inputs.py_bc_blocks)),
         py_inspect_objects=reader_to_table(tabular_to_reader(core_inputs.py_inspect_objects)),
-        py_inspect_signatures=reader_to_table(
-            tabular_to_reader(core_inputs.py_inspect_signatures)
-        ),
+        py_inspect_signatures=reader_to_table(tabular_to_reader(core_inputs.py_inspect_signatures)),
         py_inspect_signature_params=reader_to_table(
             tabular_to_reader(core_inputs.py_inspect_signature_params)
         ),
@@ -1772,9 +1770,7 @@ def _scip_occurrence_edges_to_cpg(
             "symbol": row.get("scip_symbol"),
         }
         is_def = bool(row.get("is_definition")) if row.get("is_definition") is not None else False
-        is_import = (
-            bool(row.get("is_import")) if row.get("is_import") is not None else False
-        )
+        is_import = bool(row.get("is_import")) if row.get("is_import") is not None else False
         is_write = bool(row.get("is_write")) if row.get("is_write") is not None else False
         is_read = bool(row.get("is_read")) if row.get("is_read") is not None else False
         edge_kind = "REFERS_TO"
@@ -7108,9 +7104,7 @@ def cpg_edge_overlay_scope_inputs(
         py_sym_scopes=reader_to_table(tabular_to_reader(q__core__py_sym_scopes)),
         py_sym_bindings=reader_to_table(tabular_to_reader(q__core__py_sym_bindings)),
         py_sym_scope_edges=reader_to_table(tabular_to_reader(q__core__py_sym_scope_edges)),
-        py_sym_namespace_edges=reader_to_table(
-            tabular_to_reader(q__core__py_sym_namespace_edges)
-        ),
+        py_sym_namespace_edges=reader_to_table(tabular_to_reader(q__core__py_sym_namespace_edges)),
         py_sym_resolution_edges=reader_to_table(
             tabular_to_reader(q__core__py_sym_resolution_edges)
         ),
@@ -7193,12 +7187,8 @@ def cpg_edge_overlay_inspect_core_inputs(
     return _CpgOverlayInspectCoreInputs(
         py_inspect_objects=reader_to_table(tabular_to_reader(q__core__py_inspect_objects)),
         py_inspect_class_mro=reader_to_table(tabular_to_reader(q__core__py_inspect_class_mro)),
-        py_inspect_class_attrs=reader_to_table(
-            tabular_to_reader(q__core__py_inspect_class_attrs)
-        ),
-        py_inspect_unwrap_hops=reader_to_table(
-            tabular_to_reader(q__core__py_inspect_unwrap_hops)
-        ),
+        py_inspect_class_attrs=reader_to_table(tabular_to_reader(q__core__py_inspect_class_attrs)),
+        py_inspect_unwrap_hops=reader_to_table(tabular_to_reader(q__core__py_inspect_unwrap_hops)),
         py_inspect_source=reader_to_table(tabular_to_reader(q__core__py_inspect_source)),
     )
 

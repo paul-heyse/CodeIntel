@@ -167,9 +167,79 @@ def _schema_mapping_for_dependencies(
     return merged or None
 
 
-def _optimize_view_ast(ast: exp.Expression, dependencies: Sequence[str]) -> exp.Expression:
+def _blob_column_names(
+    schema_mapping: Mapping[str, Mapping[str, str]] | None,
+) -> frozenset[str]:
+    if not schema_mapping:
+        return frozenset({"entrypoints_json", "modules_json"})
+    names: set[str] = set()
+    for columns in schema_mapping.values():
+        for column, column_type in columns.items():
+            if str(column_type).upper().startswith("BLOB"):
+                names.add(column)
+    return frozenset(names)
+
+
+def _coerce_blob_literal_coalesce(
+    ast: exp.Expression, blob_columns: frozenset[str]
+) -> exp.Expression:
+    if not blob_columns:
+        return ast
+
+    def _transform(node: exp.Expression) -> exp.Expression:
+        if not isinstance(node, exp.Coalesce):
+            return node
+        expressions = (
+            [node.this, *node.expressions] if node.this is not None else list(node.expressions)
+        )
+        if not expressions:
+            return node
+        if not any(
+            isinstance(expr, exp.Column) and expr.name in blob_columns for expr in expressions
+        ):
+            return node
+        updated: list[exp.Expression] = []
+        changed = False
+        for expr in expressions:
+            if isinstance(expr, exp.Column) and expr.name in blob_columns:
+                updated.append(
+                    exp.Cast(
+                        this=expr,
+                        to=exp.DataType.build("BLOB", dialect=DUCKDB_DIALECT),
+                    )
+                )
+                changed = True
+                continue
+            if isinstance(expr, exp.Literal) and expr.is_string:
+                updated.append(
+                    exp.Cast(
+                        this=expr,
+                        to=exp.DataType.build("BLOB", dialect=DUCKDB_DIALECT),
+                    )
+                )
+                changed = True
+            else:
+                updated.append(expr)
+        if not changed:
+            return node
+        return exp.Coalesce(expressions=updated)
+
+    return ast.transform(_transform)
+
+
+def _optimize_view_ast(
+    ast: exp.Expression,
+    dependencies: Sequence[str],
+    *,
+    table_key: str,
+) -> exp.Expression:
     schema_mapping = _schema_mapping_for_dependencies(dependencies)
-    optimized = canonicalize_expression_duckdb(ast, schema=schema_mapping)
+    blob_columns = _blob_column_names(schema_mapping)
+    if table_key == "docs.v_subsystem_profile":
+        base = ast
+    else:
+        base = canonicalize_expression_duckdb(ast, schema=schema_mapping)
+    optimized = _coerce_blob_literal_coalesce(base, blob_columns)
     optimized = _hoist_non_equi_join_filters(optimized)
     return _strip_nested_list_aggregates(optimized)
 
@@ -569,7 +639,7 @@ for builder in _VIEW_BUILDERS:
     ast = _view_ast_from_builder(table_key=builder.table_key, builder=builder.builder)
     tags = _normalize_view_tags(builder.tags)
     dependencies = _table_keys_from_ast(ast)
-    ast = _optimize_view_ast(ast, dependencies)
+    ast = _optimize_view_ast(ast, dependencies, table_key=builder.table_key)
     dependencies = _table_keys_from_ast(ast)
     sql = _render_view_sql(ast)
     _validate_view_sql(table_key=builder.table_key, sql=sql)

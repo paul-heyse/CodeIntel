@@ -150,6 +150,30 @@ class TagSpec:
         )
 
     @classmethod
+    def for_dataset_ref(
+        cls,
+        *,
+        domain: str,
+        target: str | None = None,
+        table_key: str,
+        extra_tags: Mapping[TagKey, TagValue] | None = None,
+    ) -> TagSpec:
+        """Create a TagSpec for dataset reference helper nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a dataset reference helper node.
+        """
+        return cls(
+            node_type=NodeType.HELPER,
+            domain=domain,
+            target=target,
+            table_key=table_key,
+            extra_tags=_copy_extra_tags(extra_tags),
+        )
+
+    @classmethod
     def for_artifact(
         cls,
         *,

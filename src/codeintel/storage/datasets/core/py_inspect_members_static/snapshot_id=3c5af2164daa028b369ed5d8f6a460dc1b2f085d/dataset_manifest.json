@@ -1,0 +1,129 @@
+{
+  "dataset_id": "core.py_inspect_members_static",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "core.py_inspect_members_static",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "e16299416ac36376f8c4c42c05ece8aaa5a29dfd58ec52eca698c115a28e8b2e",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:43.589446+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "explicit_override",
+      "derivation_source": "inspect"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "mode",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "owner_object_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "owner_kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "attr_name",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "value_kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "value_object_id",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "value_ref",
+          "nullable": true,
+          "type": "STRUCT(kind VARCHAR, type_qualname VARCHAR, repr_trunc VARCHAR, repr_len INTEGER, repr_sha256 BLOB, is_callable BOOLEAN, is_descriptor BOOLEAN, is_builtin BOOLEAN)"
+        },
+        {
+          "description": null,
+          "name": "desc_kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "desc_is_data",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "desc_is_methoddesc",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "desc_is_getset",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "desc_is_member",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "status",
+          "nullable": true,
+          "type": "STRUCT(ok BOOLEAN, error_type VARCHAR, error_msg VARCHAR)"
+        }
+      ],
+      "description": "Static member enumeration from inspect.",
+      "indexes": [],
+      "name": "py_inspect_members_static",
+      "primary_key": [
+        "repo",
+        "commit",
+        "owner_object_id",
+        "attr_name"
+      ],
+      "schema": "core",
+      "table_key": "core.py_inspect_members_static"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}

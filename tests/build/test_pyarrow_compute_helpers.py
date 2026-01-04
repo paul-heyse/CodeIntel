@@ -6,6 +6,7 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.native.graphs.compute_filters import (
     filter_function_ast_nodes,
+    filter_goid_ast_nodes,
     filter_goids_with_spans,
     filter_modules_with_language,
     filter_python_goids,
@@ -14,6 +15,7 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns, empty_table
 from codeintel.build.tabular.compute_masks import (
+    is_in_mask,
     kind_is_function_or_method,
     language_is_python_or_null,
     node_type_is_function,
@@ -67,6 +69,15 @@ def test_kind_is_function_or_method() -> None:
     expect_equal(mask.to_pylist(), [True, True, False])
 
 
+def test_is_in_mask_sequence() -> None:
+    """is_in_mask should accept sequence value sets."""
+    values = pa.array(["a", "b", "c"])
+
+    mask = is_in_mask(values, value_set=["a", "c"])
+
+    expect_equal(mask.to_pylist(), [True, False, True])
+
+
 def test_node_type_is_function() -> None:
     """node_type_is_function should match function/async function nodes."""
     values = pa.array(["FunctionDef", "AsyncFunctionDef", "ClassDef"])
@@ -110,11 +121,48 @@ def test_filter_python_goids() -> None:
     """filter_python_goids should keep Python function/method rows."""
     table = pa.Table.from_pylist(
         [
-            {"kind": "function", "rel_path": "a.py", "goid_h128": 1, "language": "python"},
-            {"kind": "class", "rel_path": "a.py", "goid_h128": 2, "language": "python"},
-            {"kind": "method", "rel_path": "", "goid_h128": 3, "language": "python"},
-            {"kind": "function", "rel_path": "b.py", "goid_h128": None, "language": None},
-            {"kind": "method", "rel_path": "c.py", "goid_h128": 4, "language": None},
+            {
+                "kind": "function",
+                "rel_path": "a.py",
+                "goid_h128": 1,
+                "language": "python",
+                "qualname": "mod.fn",
+            },
+            {
+                "kind": "class",
+                "rel_path": "a.py",
+                "goid_h128": 2,
+                "language": "python",
+                "qualname": "mod.Class",
+            },
+            {
+                "kind": "method",
+                "rel_path": "",
+                "goid_h128": 3,
+                "language": "python",
+                "qualname": "mod.Class.method",
+            },
+            {
+                "kind": "function",
+                "rel_path": "b.py",
+                "goid_h128": None,
+                "language": None,
+                "qualname": "mod.other",
+            },
+            {
+                "kind": "method",
+                "rel_path": "c.py",
+                "goid_h128": 4,
+                "language": None,
+                "qualname": "mod.Class.method",
+            },
+            {
+                "kind": "function",
+                "rel_path": "d.py",
+                "goid_h128": 5,
+                "language": "python",
+                "qualname": "",
+            },
         ]
     )
 
@@ -167,3 +215,21 @@ def test_filter_function_ast_nodes() -> None:
     filtered = filter_function_ast_nodes(table)
 
     expect_equal(filtered.column("path").to_pylist(), ["a.py"])
+
+
+def test_filter_goid_ast_nodes() -> None:
+    """filter_goid_ast_nodes should keep GOID-relevant AST nodes."""
+    table = pa.Table.from_pylist(
+        [
+            {"path": "a.py", "node_type": "Module", "name": None, "lineno": None},
+            {"path": "b.py", "node_type": "ClassDef", "name": "Cls", "lineno": 1},
+            {"path": "c.py", "node_type": "FunctionDef", "name": "fn", "lineno": 2},
+            {"path": "d.py", "node_type": "AsyncFunctionDef", "name": "run", "lineno": 3},
+            {"path": "e.py", "node_type": "Expr", "name": "x", "lineno": 4},
+            {"path": "f.py", "node_type": "ClassDef", "name": "", "lineno": 5},
+        ]
+    )
+
+    filtered = filter_goid_ast_nodes(table)
+
+    expect_equal(filtered.column("path").to_pylist(), ["a.py", "b.py", "c.py", "d.py"])

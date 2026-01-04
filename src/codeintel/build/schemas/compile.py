@@ -30,6 +30,7 @@ from codeintel.core.hamilton.tag_filters import tf_schema_tables
 from codeintel.core.schemas.declared import declared_schema_provider
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.resolution import ResolvedSchemaProvider
+from codeintel.core.schemas.type_mappings import normalize_table_schema_types
 from codeintel.core.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -584,9 +585,14 @@ def _schema_hash_for_table_key(
     if schema is None:
         msg = f"Unknown table schema for provenance: {table_key}"
         raise KeyError(msg)
-    computed = schema_hash(schema)
+    computed = _normalized_schema_hash(schema)
     known_hashes[table_key] = computed
     return computed
+
+
+def _normalized_schema_hash(schema: TableSchema) -> str:
+    normalized = normalize_table_schema_types(schema)
+    return schema_hash(normalized)
 
 
 def _collect_manifest_provenance(
@@ -678,7 +684,7 @@ def _table_provenance_entry(
     inference_error = (
         schema_index.get_inference_error(table.table_key) if inference_status == "error" else None
     )
-    table_hash = schema_hash(table)
+    table_hash = _normalized_schema_hash(table)
     known_hashes[table.table_key] = table_hash
     return TableProvenance(
         schema_hash=table_hash,
@@ -693,7 +699,7 @@ def _table_provenance_entry(
 
 
 def _view_provenance_entry(view: TableSchema) -> TableProvenance:
-    view_hash = schema_hash(view)
+    view_hash = _normalized_schema_hash(view)
     return TableProvenance(
         schema_hash=view_hash,
         derivation_kind=VIEW_DERIVATION_KIND,

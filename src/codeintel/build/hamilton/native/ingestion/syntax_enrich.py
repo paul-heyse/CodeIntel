@@ -71,9 +71,7 @@ def _ensure_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     if not columns:
         return table
     existing = set(table.column_names)
-    arrays = [
-        table[name] if name in existing else pa.nulls(table.num_rows) for name in columns
-    ]
+    arrays = [table[name] if name in existing else pa.nulls(table.num_rows) for name in columns]
     return pa.Table.from_arrays(arrays, names=list(columns))
 
 
@@ -126,9 +124,7 @@ def _coerce_occurrence_ints(table: pa.Table) -> pa.Table:
 
 def _drop_occurrence_bytes(table: pa.Table) -> pa.Table:
     drop_columns = [
-        name
-        for name in ("occ_start_byte", "occ_end_byte")
-        if name in table.column_names
+        name for name in ("occ_start_byte", "occ_end_byte") if name in table.column_names
     ]
     if not drop_columns:
         return table
@@ -140,23 +136,25 @@ def _occurrence_resolution_table(
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
 ) -> pa.Table:
     span = tabular_to_arrow_table(q__core__scip_occurrence_span_xref).select(
-        "repo",
-        "commit",
-        "rel_path",
-        "scip_symbol",
-        "roles",
-        "is_definition",
-        "is_reference",
-        "is_import",
-        "is_write",
-        "is_read",
-        "goid_h128",
-        "start_line",
-        "start_col",
-        "end_line",
-        "end_col",
-        "start_byte",
-        "end_byte",
+        [
+            "repo",
+            "commit",
+            "rel_path",
+            "scip_symbol",
+            "roles",
+            "is_definition",
+            "is_reference",
+            "is_import",
+            "is_write",
+            "is_read",
+            "goid_h128",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+            "start_byte",
+            "end_byte",
+        ]
     )
     span = _rename_columns(
         span,
@@ -173,21 +171,23 @@ def _occurrence_resolution_table(
     span = _coerce_occurrence_ints(span)
     span = _drop_occurrence_bytes(span)
     syntax = tabular_to_arrow_table(q__core__scip_occurrence_syntax_xref).select(
-        "repo",
-        "commit",
-        "rel_path",
-        "producer",
-        "scip_symbol",
-        "scip_occurrence_id",
-        "occ_start_byte",
-        "occ_end_byte",
-        "occ_start_line",
-        "occ_start_col",
-        "occ_end_line",
-        "occ_end_col",
-        "syntax_node_id",
-        "match_kind",
-        "candidate_count",
+        [
+            "repo",
+            "commit",
+            "rel_path",
+            "producer",
+            "scip_symbol",
+            "scip_occurrence_id",
+            "occ_start_byte",
+            "occ_end_byte",
+            "occ_start_line",
+            "occ_start_col",
+            "occ_end_line",
+            "occ_end_col",
+            "syntax_node_id",
+            "match_kind",
+            "candidate_count",
+        ]
     )
     syntax = _coerce_occurrence_ints(syntax)
     join_keys = [
@@ -250,17 +250,24 @@ def _resolve_occurrence_joins(
     bytes_mask = _null_mask(facts, "start_byte", "end_byte")
     facts_with_bytes = _filter_table(facts, bytes_mask)
     facts_without_bytes = _filter_table(facts, invert_mask(bytes_mask))
+    facts_with_bytes, extras_bytes = _detach_column(facts_with_bytes, "extras_json")
+    facts_without_bytes, extras_no_bytes = _detach_column(facts_without_bytes, "extras_json")
 
     occ_bytes_mask = _null_mask(occurrences, "occ_start_byte", "occ_end_byte")
     occ_bytes = _filter_table(occurrences, occ_bytes_mask)
+    byte_spec = _occurrence_byte_join_spec()
+    facts_with_bytes = _cast_join_key_int64(facts_with_bytes, byte_spec.left_on)
+    occ_bytes = _cast_join_key_int64(occ_bytes, byte_spec.right_on)
     bytes_join = arrow_join_tables(
         facts_with_bytes,
         occ_bytes,
-        spec=_occurrence_byte_join_spec(),
+        spec=byte_spec,
     )
+    bytes_join = _attach_column(bytes_join, "extras_json", extras_bytes)
     fallback = _filter_table(bytes_join, is_null_mask(bytes_join["scip_symbol"]))
     fallback = fallback.select(fact_columns)
     line_join = _line_join_occurrences(facts_without_bytes, occurrences)
+    line_join = _attach_column(line_join, "extras_json", extras_no_bytes)
     fallback_join = _line_join_occurrences(fallback, occurrences)
     matched_bytes = _filter_table(bytes_join, is_valid_mask(bytes_join["scip_symbol"]))
     return matched_bytes, fallback_join, line_join
@@ -279,7 +286,59 @@ def _filter_table(table: pa.Table, mask: pa.BooleanArray) -> pa.Table:
 
 
 def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:
-    return arrow_join_tables(left, occurrences, spec=_occurrence_line_join_spec())
+    stripped_left, extras_json = _detach_column(left, "extras_json")
+    line_spec = _occurrence_line_join_spec()
+    stripped_left = _cast_join_key_int64(stripped_left, line_spec.left_on)
+    occurrences = _cast_join_key_int64(occurrences, line_spec.right_on)
+    joined = arrow_join_tables(stripped_left, occurrences, spec=line_spec)
+    return _attach_column(joined, "extras_json", extras_json)
+
+
+def _detach_column(
+    table: pa.Table,
+    column_name: str,
+) -> tuple[pa.Table, pa.Array | pa.ChunkedArray | None]:
+    if column_name not in table.column_names:
+        return table, None
+    return table.drop_columns([column_name]), table[column_name]
+
+
+def _attach_column(
+    table: pa.Table,
+    column_name: str,
+    column: pa.Array | pa.ChunkedArray | None,
+) -> pa.Table:
+    if column is None:
+        return table
+    return table.append_column(column_name, column)
+
+
+def _cast_join_key_int64(table: pa.Table, keys: Sequence[str] | None) -> pa.Table:
+    if not keys:
+        return table
+    columns: list[pa.Array | pa.ChunkedArray] = []
+    changed = False
+    key_set = set(keys)
+    for name in table.column_names:
+        column = table[name]
+        if name in key_set and pa.types.is_integer(column.type) and column.type != pa.int64():
+            casted = _cast_to_int64(column)
+            if casted is not column:
+                column = casted
+                changed = True
+        columns.append(column)
+    if not changed:
+        return table
+    return pa.Table.from_arrays(columns, names=list(table.column_names))
+
+
+def _cast_to_int64(
+    column: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    try:
+        return pc.cast(column, pa.int64(), safe=False)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
+        return column
 
 
 def _occurrence_byte_join_spec() -> ArrowJoinSpec:

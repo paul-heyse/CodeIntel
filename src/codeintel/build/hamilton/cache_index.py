@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,13 +16,15 @@ class CacheProbeResult:
     hit: bool
 
 
-class CacheIndex(Protocol):
+class CacheIndex(ABC):
     """Read-only cache probe interface for planning."""
 
+    @abstractmethod
     def has(self, *, node: str, version: str) -> bool:
         """Return True if the node/version pair is cached."""
         ...
 
+    @abstractmethod
     def batch_has(self, pairs: Iterable[tuple[str, str]]) -> tuple[CacheProbeResult, ...]:
         """Probe multiple node/version pairs in one call."""
         ...

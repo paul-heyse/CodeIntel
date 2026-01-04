@@ -241,6 +241,125 @@ def _array_from_compute(
     return None
 
 
+def _is_list_type(data_type: pa.DataType) -> bool:
+    return (
+        pa.types.is_list(data_type)
+        or pa.types.is_large_list(data_type)
+        or pa.types.is_fixed_size_list(data_type)
+    )
+
+
+def _string_view_cast_dictionary(data_type: pa.DataType) -> pa.DataType:
+    value_type = _string_view_cast_type(data_type.value_type)
+    if value_type == data_type.value_type:
+        return data_type
+    return pa.dictionary(data_type.index_type, value_type, ordered=data_type.ordered)
+
+
+def _string_view_cast_list(data_type: pa.DataType) -> pa.DataType:
+    value_type = _string_view_cast_type(data_type.value_type)
+    if value_type == data_type.value_type:
+        return data_type
+    if pa.types.is_large_list(data_type):
+        return pa.large_list(value_type)
+    if pa.types.is_list(data_type):
+        return pa.list_(value_type)
+    return pa.list_(value_type, list_size=data_type.list_size)
+
+
+def _string_view_cast_struct(data_type: pa.DataType) -> pa.DataType:
+    fields: list[pa.Field] = []
+    changed = False
+    for field in data_type:
+        next_type = _string_view_cast_type(field.type)
+        if next_type != field.type:
+            changed = True
+        fields.append(
+            pa.field(
+                field.name,
+                next_type,
+                nullable=field.nullable,
+                metadata=field.metadata,
+            )
+        )
+    if not changed:
+        return data_type
+    return pa.struct(fields)
+
+
+def _string_view_cast_map(data_type: pa.DataType) -> pa.DataType:
+    key_type = _string_view_cast_type(data_type.key_type)
+    item_type = _string_view_cast_type(data_type.item_type)
+    if key_type == data_type.key_type and item_type == data_type.item_type:
+        return data_type
+    return pa.map_(key_type, item_type, keys_sorted=data_type.keys_sorted)
+
+
+def _string_view_cast_type(data_type: pa.DataType) -> pa.DataType:
+    if pa.types.is_string_view(data_type):
+        return pa.string()
+    if pa.types.is_dictionary(data_type):
+        return _string_view_cast_dictionary(data_type)
+    if _is_list_type(data_type):
+        return _string_view_cast_list(data_type)
+    if pa.types.is_struct(data_type):
+        return _string_view_cast_struct(data_type)
+    if pa.types.is_map(data_type):
+        return _string_view_cast_map(data_type)
+    return data_type
+
+
+def _cast_string_view_column(
+    column: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    target_type = _string_view_cast_type(column.type)
+    if target_type == column.type:
+        return column
+    try:
+        return pc.cast(column, target_type, safe=False)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
+        return column
+
+
+def _group_by_table_keys(table: pa.Table, keys: Sequence[str]) -> pa.Table:
+    columns = [_cast_string_view_column(table[key]) for key in keys]
+    return pa.Table.from_arrays(columns, names=list(keys))
+
+
+def _normalize_join_key_columns(table: pa.Table, keys: Sequence[str]) -> pa.Table:
+    if not keys:
+        return table
+    columns: list[pa.Array | pa.ChunkedArray] = []
+    changed = False
+    key_set = set(keys)
+    for name in table.column_names:
+        column = table[name]
+        if name in key_set:
+            casted = _cast_string_view_column(column)
+            if casted is not column:
+                column = casted
+                changed = True
+        columns.append(column)
+    if not changed:
+        return table
+    return pa.Table.from_arrays(columns, names=list(table.column_names))
+
+
+def _normalize_table_string_views(table: pa.Table) -> pa.Table:
+    columns: list[pa.Array | pa.ChunkedArray] = []
+    changed = False
+    for name in table.column_names:
+        column = table[name]
+        casted = _cast_string_view_column(column)
+        if casted is not column:
+            column = casted
+            changed = True
+        columns.append(column)
+    if not changed:
+        return table
+    return pa.Table.from_arrays(columns, names=list(table.column_names))
+
+
 def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     if not keys:
         return
@@ -249,7 +368,9 @@ def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> 
         msg = f"Missing join keys on {label}: {', '.join(missing)}"
         raise ValueError(msg)
     count_source = keys[0]
-    grouped = table.group_by(list(keys)).aggregate([(count_source, "count")])
+    grouped = (
+        _group_by_table_keys(table, keys).group_by(list(keys)).aggregate([(count_source, "count")])
+    )
     count_name = f"{count_source}_count"
     if grouped.num_rows == 0 or count_name not in grouped.column_names:
         return
@@ -365,6 +486,11 @@ def arrow_join_tables(
         coalesced = set(keys) & set(resolved_right_keys) if spec.coalesce_keys else set()
         if overlapping - coalesced:
             right_suffix = "_right"
+    resolved_right_keys = keys if right_keys is None else right_keys
+    left = _normalize_table_string_views(_normalize_join_key_columns(left, keys))
+    right = _normalize_table_string_views(
+        _normalize_join_key_columns(right, resolved_right_keys)
+    )
     _validate_join(
         left,
         right,

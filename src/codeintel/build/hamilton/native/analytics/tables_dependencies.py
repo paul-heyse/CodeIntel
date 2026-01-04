@@ -162,7 +162,7 @@ def external_dependency_calls__base(
 
 def external_dependencies__base(
     env: BuildEnv,
-    q__analytics__external_dependency_calls: InferableTabularInput,
+    external_dependency_calls__base: InferableTabularInput,
     q__analytics__config_values: InferableTabularInput,
 ) -> pa.RecordBatchReader:
     """Build external dependencies summary rows.
@@ -172,7 +172,7 @@ def external_dependencies__base(
     pa.RecordBatchReader
         Reader containing external dependency summary rows.
     """
-    dependency_calls_frame = tabular_to_arrow_table(q__analytics__external_dependency_calls)
+    dependency_calls_frame = tabular_to_arrow_table(external_dependency_calls__base)
     config_values_frame = tabular_to_arrow_table(q__analytics__config_values)
     result = compute_external_dependencies_pure(
         env.snapshot,

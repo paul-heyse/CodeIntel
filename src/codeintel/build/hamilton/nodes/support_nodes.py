@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -99,8 +100,47 @@ def _normalize_seeded_datasets(
     return seeded
 
 
+@dataclass(frozen=True, slots=True)
+class _SupportDatasetConfig:
+    table_key: str
+    producer_target: str | None
+    domain: str
+
+
+@dataclass(frozen=True, slots=True)
+class _DatasetSeed:
+    repo: str
+    commit: str
+
+
+def _parse_support_dataset_spec(
+    spec: Mapping[str, str | None],
+) -> _SupportDatasetConfig:
+    table_key_raw = spec.get("table_key")
+    if not isinstance(table_key_raw, str) or not table_key_raw:
+        msg = "Support dataset spec missing table_key"
+        raise ValueError(msg)
+    domain_raw = spec.get("domain")
+    if not isinstance(domain_raw, str) or not domain_raw:
+        msg = f"Support dataset spec missing domain for {table_key_raw}"
+        raise ValueError(msg)
+    producer_raw = spec.get("producer_target")
+    producer_target = producer_raw if isinstance(producer_raw, str) and producer_raw else None
+    return _SupportDatasetConfig(
+        table_key=table_key_raw,
+        producer_target=producer_target,
+        domain=domain_raw,
+    )
+
+
+def _parse_support_dataset_specs(
+    ci_support_datasets: Sequence[Mapping[str, str | None]],
+) -> list[_SupportDatasetConfig]:
+    return [_parse_support_dataset_spec(spec) for spec in ci_support_datasets]
+
+
 def _decorate_dataset_nodes(
-    ci_support_datasets: Sequence[Mapping[str, str]] | None = None,
+    ci_support_datasets: Sequence[Mapping[str, str | None]] | None = None,
     ci_seeded_datasets: Sequence[Mapping[str, str]] | None = None,
     *,
     ci_support_include_dataset_nodes: bool = True,
@@ -111,7 +151,8 @@ def _decorate_dataset_nodes(
         return _ParameterizeWithTags(tags_by_output={})
 
     seeded_by_table = _normalize_seeded_datasets(ci_seeded_datasets)
-    supported_keys = {spec["table_key"] for spec in ci_support_datasets}
+    parsed_specs = _parse_support_dataset_specs(ci_support_datasets)
+    supported_keys = {spec.table_key for spec in parsed_specs}
     unsupported = set(seeded_by_table).difference(supported_keys)
     if unsupported:
         details = ", ".join(sorted(unsupported))
@@ -119,27 +160,28 @@ def _decorate_dataset_nodes(
         raise ValueError(msg)
     mapping: dict[str, dict[str, ParametrizedDependency]] = {}
     tags_by_output: dict[str, dict[str, str]] = {}
-    for spec in ci_support_datasets:
-        table_key = spec["table_key"]
-        producer_target = spec["producer_target"]
-        domain = spec["domain"]
+    for spec in parsed_specs:
+        table_key = spec.table_key
+        producer_target = spec.producer_target
+        domain = spec.domain
         node_name = dataset_node(table_key)
         seed_spec = seeded_by_table.get(table_key)
         if seed_spec is None:
             mapping[node_name] = {
-                "record": source(target_node(producer_target)),
                 "table_key": value(table_key),
                 "producer_target": value(producer_target),
             }
+            if producer_target is not None:
+                mapping[node_name]["record"] = source(target_node(producer_target))
         else:
+            seed = _DatasetSeed(repo=seed_spec["repo"], commit=seed_spec["commit"])
             mapping[node_name] = {
                 "table_key": value(table_key),
                 "producer_target": value(producer_target),
-                "repo": value(seed_spec["repo"]),
-                "commit": value(seed_spec["commit"]),
+                "seed": value(seed),
             }
         tags_by_output[node_name] = _normalize_tags(
-            TagSpec.for_dataset(
+            TagSpec.for_dataset_ref(
                 domain=domain,
                 target=producer_target,
                 table_key=table_key,
@@ -151,11 +193,11 @@ def _decorate_dataset_nodes(
 
 @resolve_from_config(decorate_with=_decorate_dataset_nodes)
 def dataset_ref(
+    env: BuildEnv,
     table_key: str,
-    producer_target: str,
+    producer_target: str | None,
     record: TargetRunRecord | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
+    seed: _DatasetSeed | None = None,
 ) -> DatasetRef:
     """Return DatasetRef for a target output.
 
@@ -167,36 +209,77 @@ def dataset_ref(
     Raises
     ------
     ValueError
-        If the dataset reference is missing for the producer target.
+        If the dataset reference is missing for the producer target on a failed run.
     """
     if record is not None:
         ds = record.get_dataset(table_key)
-        if ds is None:
-            msg = f"Missing DatasetRef for {table_key} from {producer_target}"
-            raise ValueError(msg)
-        if isinstance(ds, DatasetRef):
-            return ds
-        return DatasetRef(
-            table_key=ds.table_key,
-            repo=ds.repo,
-            commit=ds.commit,
-            row_count=ds.row_count,
-            source_target=producer_target,
-        )
+        if ds is not None:
+            if isinstance(ds, DatasetRef):
+                return ds
+            return DatasetRef(
+                table_key=ds.table_key,
+                repo=ds.repo,
+                commit=ds.commit,
+                row_count=ds.row_count,
+                source_target=producer_target,
+            )
+        if record.success or record.skipped:
+            row_count = record.row_counts.get(table_key) if record.row_counts else None
+            return DatasetRef(
+                table_key=table_key,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
+                row_count=row_count,
+                source_target=producer_target,
+            )
+        msg = f"Missing DatasetRef for {table_key} from {producer_target}"
+        raise ValueError(msg)
 
-    if not repo or not commit:
+    if seed is None:
+        resolved_repo = env.snapshot.repo
+        resolved_commit = env.snapshot.commit
+    else:
+        resolved_repo = seed.repo
+        resolved_commit = seed.commit
+    if not resolved_repo or not resolved_commit:
         msg = f"Seeded DatasetRef missing repo/commit for {table_key}"
         raise ValueError(msg)
     return DatasetRef(
         table_key=table_key,
-        repo=repo,
-        commit=commit,
+        repo=resolved_repo,
+        commit=resolved_commit,
         source_target=producer_target,
     )
 
 
+def _requires_scip_gate(table_key: str) -> bool:
+    return table_key.startswith("core.scip_")
+
+
+def scip_ready(t__scip: TargetRunRecord) -> TargetRunRecord:
+    """Ensure SCIP completed before dependent nodes run.
+
+    Returns
+    -------
+    TargetRunRecord
+        SCIP target run record for the current execution.
+
+    Raises
+    ------
+    RuntimeError
+        If the SCIP target was skipped or failed.
+    """
+    if t__scip.skipped:
+        msg = "SCIP target skipped; SCIP-backed data is required for this run"
+        raise RuntimeError(msg)
+    if not t__scip.success:
+        msg = t__scip.error or "SCIP target failed"
+        raise RuntimeError(msg)
+    return t__scip
+
+
 def _decorate_query_nodes(
-    ci_support_datasets: Sequence[Mapping[str, str]] | None = None,
+    ci_support_datasets: Sequence[Mapping[str, str | None]] | None = None,
     *,
     ci_support_include_loader_nodes: bool = True,
 ) -> NodeTransformLifecycle:
@@ -207,12 +290,15 @@ def _decorate_query_nodes(
 
     mapping: dict[str, dict[str, ParametrizedDependency]] = {}
     tags_by_output: dict[str, dict[str, str]] = {}
-    for spec in ci_support_datasets:
-        table_key = spec["table_key"]
-        producer_target = spec["producer_target"]
-        domain = spec["domain"]
+    for spec in _parse_support_dataset_specs(ci_support_datasets):
+        table_key = spec.table_key
+        producer_target = spec.producer_target
+        domain = spec.domain
         node_name = query_node(table_key)
-        mapping[node_name] = {"ref": source(dataset_node(table_key))}
+        params: dict[str, ParametrizedDependency] = {"ref": source(dataset_node(table_key))}
+        if _requires_scip_gate(table_key):
+            params["scip_ready"] = source("scip_ready")
+        mapping[node_name] = params
         tags_by_output[node_name] = _normalize_tags(
             TagSpec.for_loader_query(
                 domain=domain,
@@ -225,7 +311,11 @@ def _decorate_query_nodes(
 
 
 @resolve_from_config(decorate_with=_decorate_query_nodes)
-def load_relation(env: BuildEnv, ref: DatasetRef) -> TabularInput:
+def load_relation(
+    env: BuildEnv,
+    ref: DatasetRef,
+    scip_ready: TargetRunRecord | None = None,
+) -> TabularInput:
     """Load a dataset as an inferable tabular input.
 
     Returns
@@ -238,6 +328,7 @@ def load_relation(env: BuildEnv, ref: DatasetRef) -> TabularInput:
     ValueError
         If the snapshot_id cannot be resolved for the dataset reference.
     """
+    _ = scip_ready
     snapshot_id = ref.commit or env.commit
     if not snapshot_id:
         msg = f"Missing snapshot_id for {ref.table_key}"
@@ -361,4 +452,5 @@ __all__ = [
     "artifact_ref",
     "dataset_ref",
     "load_relation",
+    "scip_ready",
 ]

@@ -252,11 +252,7 @@ def _allowed_modules_from_rows(
     filtered = _filter_rows_by_snapshot(rows, repo=repo, commit=commit)
     if not filtered:
         return set()
-    return {
-        str(row.get("module"))
-        for row in filtered
-        if row.get("module") is not None
-    }
+    return {str(row.get("module")) for row in filtered if row.get("module") is not None}
 
 
 def _load_module_inputs(

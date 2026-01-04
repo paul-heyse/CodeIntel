@@ -12,6 +12,8 @@ from codeintel.build.hamilton.naming import (
     path_node,
     query_node,
 )
+from codeintel.core.imports.lazy import lazy_import
+from codeintel.core.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -22,7 +24,7 @@ class SupportDatasetSpec:
     """Dataset entry used to generate support nodes."""
 
     table_key: str
-    producer_target: str
+    producer_target: str | None
     domain: str
 
 
@@ -81,6 +83,8 @@ class SupportNodeSpec:
         for spec in self.datasets:
             _require_identifier(dataset_node(spec.table_key), label="dataset_node")
             _require_identifier(query_node(spec.table_key), label="query_node")
+            if spec.producer_target is None:
+                continue
             if catalog is not None and spec.producer_target not in catalog.targets:
                 msg = f"Unknown producer target in dataset spec: {spec.producer_target}"
                 raise ValueError(msg)
@@ -165,6 +169,19 @@ def support_spec_from_catalog(
             )
         )
 
+    dataset_keys = {spec.table_key for spec in datasets}
+    for table_key in _view_base_table_keys():
+        if table_key in dataset_keys:
+            continue
+        datasets.append(
+            SupportDatasetSpec(
+                table_key=table_key,
+                producer_target=None,
+                domain=_domain_from_table_key(table_key),
+            )
+        )
+        dataset_keys.add(table_key)
+
     for artifact_name, output in sorted(catalog.artifact_outputs.items()):
         target = catalog.targets.get(output.producer_target)
         if target is None:
@@ -192,13 +209,41 @@ def support_spec_from_catalog(
     return spec
 
 
-def _dataset_dicts(specs: Iterable[SupportDatasetSpec]) -> Iterable[dict[str, str]]:
+def _dataset_dicts(specs: Iterable[SupportDatasetSpec]) -> Iterable[dict[str, str | None]]:
     for spec in specs:
         yield {
             "table_key": spec.table_key,
             "producer_target": spec.producer_target,
             "domain": spec.domain,
         }
+
+
+def _view_base_table_keys() -> tuple[str, ...]:
+    try:
+        module = lazy_import("codeintel.build.hamilton.native.views.view_outputs")
+    except ImportError:
+        return ()
+    plans = module.view_plan_map()
+    if not plans:
+        return ()
+    view_keys = set(plans)
+    base_keys = {
+        dep
+        for plan in plans.values()
+        for dep in plan.dependencies
+        if dep not in view_keys
+    }
+    return tuple(sorted(base_keys))
+
+
+def _domain_from_table_key(table_key: str) -> str:
+    try:
+        schema, _ = split_table_key(table_key)
+    except ValueError:
+        return "external"
+    if schema:
+        return schema
+    return "external"
 
 
 def _artifact_dicts(specs: Iterable[SupportArtifactSpec]) -> Iterable[dict[str, str]]:

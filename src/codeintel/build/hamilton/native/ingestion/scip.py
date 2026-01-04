@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
+from hamilton.function_modifiers import cache
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -120,7 +121,6 @@ from codeintel.observability.teardown import (
     emit_scip_teardown_telemetry,
     emit_shutdown_error_event,
 )
-from codeintel.storage.tracking.build_tracking import ScipRunRecord
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -165,6 +165,43 @@ class ScipRunResult(ToolStepOutput):
 
     run_id: str = ""
     mode: ScipRunMode = "unknown"
+
+
+@dataclass(frozen=True)
+class ScipRunRecord:
+    """Structured record for build.scip_runs telemetry rows."""
+
+    run_id: str
+    repo: str
+    commit: str
+    mode: str
+    options_hash: str | None
+    tool_version: str | None
+    total_modules: int
+    changed_modules: int
+    deleted_modules: int
+    changed_ratio: float | None
+    batch_size: int | None
+    batch_count: int
+    decision: str | None
+    ratio_gate_applied: bool | None
+    ratio_gate_min_modules: int | None
+    ratio_gate_min_changed: int | None
+    hash_source: str | None
+    hash_source_breakdown: str | None
+    hash_reused: int
+    hash_computed: int
+    plan_ms: float | None
+    hash_ms: float | None
+    tool_ms: float | None
+    parse_ms: float | None
+    merge_ms: float | None
+    write_ms: float | None
+    total_ms: float | None
+    status: str
+    error_summary: str | None
+    output_scip: str | None
+    recorded_at: datetime
 
 
 @dataclass(frozen=True)
@@ -837,9 +874,10 @@ def _execute_scip_incremental(
         options_hash=options_hash,
     )
     file_state_rows = module_inputs.scan.file_state_rows
-    if module_inputs.scan.file_state_row_count == 0 and columnar_row_count(
-        change_set.state_rows
-    ) > 0:
+    if (
+        module_inputs.scan.file_state_row_count == 0
+        and columnar_row_count(change_set.state_rows) > 0
+    ):
         file_state_rows, _ = record_batch_reader_for_columnar_rows(
             FILE_STATE_TABLE_KEY,
             change_set.state_rows,
@@ -1371,6 +1409,7 @@ scip__module_state_rows = _MODULE.scip__module_state_rows
 scip__table_materializations = _MODULE.scip__table_materializations
 
 
+@cache(behavior="disable")
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__finalize_context(
     env: BuildEnv,

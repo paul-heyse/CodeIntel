@@ -75,7 +75,7 @@ def test_cpg_bytecode_edges_patterns(tmp_path: Path) -> None:
                     "    for i in range(2):",
                     "        call_loop(i)",
                     "    try:",
-                    "        with open(\"x\") as handle:",
+                    '        with open("x") as handle:',
                     "            call_with(handle.read())",
                     "    except OSError:",
                     "        call_except()",

@@ -97,8 +97,11 @@ def load_canonical_catalog(
     if row is None:
         return None
     payload_raw, inputs_raw, created_at = row
-    payload = _coerce_json_payload(payload_raw)
-    inputs = _coerce_json_payload(inputs_raw) if inputs_raw is not None else None
+    try:
+        payload = _coerce_json_payload(payload_raw)
+        inputs = _coerce_json_payload(inputs_raw) if inputs_raw is not None else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
     return CanonicalCatalogEntry(
         catalog_kind=catalog_kind,
         catalog_hash=catalog_hash,
@@ -140,8 +143,11 @@ def load_latest_canonical_catalog(
     if row is None:
         return None
     catalog_hash, payload_raw, inputs_raw, created_at = row
-    payload = _coerce_json_payload(payload_raw)
-    inputs = _coerce_json_payload(inputs_raw) if inputs_raw is not None else None
+    try:
+        payload = _coerce_json_payload(payload_raw)
+        inputs = _coerce_json_payload(inputs_raw) if inputs_raw is not None else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
     return CanonicalCatalogEntry(
         catalog_kind=catalog_kind,
         catalog_hash=catalog_hash,
@@ -183,8 +189,11 @@ def load_latest_canonical_catalog_from_connection(
     if row is None:
         return None
     catalog_hash, payload_raw, inputs_raw, created_at = row
-    payload = _coerce_json_payload(payload_raw)
-    inputs = _coerce_json_payload(inputs_raw) if inputs_raw is not None else None
+    try:
+        payload = _coerce_json_payload(payload_raw)
+        inputs = _coerce_json_payload(inputs_raw) if inputs_raw is not None else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
     return CanonicalCatalogEntry(
         catalog_kind=catalog_kind,
         catalog_hash=catalog_hash,

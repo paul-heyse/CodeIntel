@@ -36,6 +36,27 @@ def or_kleene(
     return pc.call_function("or_kleene", [left, right])
 
 
+def _normalize_string_view(
+    values: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    if pa.types.is_string_view(values.type):
+        return pc.cast(values, pa.string())
+    return values
+
+
+def _coerce_scalar_like(
+    left: pa.Array | pa.ChunkedArray,
+    right: pa.Array | pa.ChunkedArray | pa.Scalar,
+) -> pa.Array | pa.ChunkedArray | pa.Scalar:
+    if isinstance(right, (pa.Array, pa.ChunkedArray)):
+        return _normalize_string_view(right)
+    if not isinstance(right, pa.Scalar):
+        return right
+    if right.type == left.type:
+        return right
+    return pa.scalar(right.as_py(), type=left.type)
+
+
 def equal_mask(
     left: pa.Array | pa.ChunkedArray,
     right: pa.Array | pa.ChunkedArray | pa.Scalar,
@@ -47,7 +68,8 @@ def equal_mask(
     pa.Array | pa.ChunkedArray
         Boolean mask of equality comparisons.
     """
-    return pc.call_function("equal", [left, right])
+    left_norm = _normalize_string_view(left)
+    return pc.call_function("equal", [left_norm, _coerce_scalar_like(left_norm, right)])
 
 
 def not_equal_mask(
@@ -61,7 +83,8 @@ def not_equal_mask(
     pa.Array | pa.ChunkedArray
         Boolean mask of inequality comparisons.
     """
-    return pc.call_function("not_equal", [left, right])
+    left_norm = _normalize_string_view(left)
+    return pc.call_function("not_equal", [left_norm, _coerce_scalar_like(left_norm, right)])
 
 
 def bit_wise_and(
@@ -123,7 +146,13 @@ def is_in_mask(
     pa.Array | pa.ChunkedArray
         Boolean mask for membership in the value set.
     """
-    options = pc.SetLookupOptions(value_set=value_set)
+    resolved = value_set
+    if not isinstance(value_set, (pa.Array, pa.ChunkedArray)):
+        if isinstance(value_set, (str, bytes, bytearray)):
+            resolved = pa.array([value_set])
+        else:
+            resolved = pa.array(list(value_set))
+    options = pc.SetLookupOptions(value_set=resolved)
     return pc.call_function("is_in", [values], options=options)
 
 
@@ -150,7 +179,7 @@ def language_is_python_or_null(values: pa.Array | pa.ChunkedArray) -> pa.Array |
         Boolean mask for Python or NULL values.
     """
     is_null = pc.call_function("is_null", [values])
-    is_python = pc.call_function("equal", [values, pc.scalar("python")])
+    is_python = equal_mask(values, pc.scalar("python"))
     return or_kleene(is_null, is_python)
 
 
@@ -162,8 +191,8 @@ def kind_is_function_or_method(values: pa.Array | pa.ChunkedArray) -> pa.Array |
     pa.Array | pa.ChunkedArray
         Boolean mask for function/method kinds.
     """
-    is_function = pc.call_function("equal", [values, pc.scalar("function")])
-    is_method = pc.call_function("equal", [values, pc.scalar("method")])
+    is_function = equal_mask(values, pc.scalar("function"))
+    is_method = equal_mask(values, pc.scalar("method"))
     return or_kleene(is_function, is_method)
 
 
@@ -175,8 +204,8 @@ def node_type_is_function(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.C
     pa.Array | pa.ChunkedArray
         Boolean mask for function/async function node types.
     """
-    is_function = pc.call_function("equal", [values, pc.scalar("FunctionDef")])
-    is_async = pc.call_function("equal", [values, pc.scalar("AsyncFunctionDef")])
+    is_function = equal_mask(values, pc.scalar("FunctionDef"))
+    is_async = equal_mask(values, pc.scalar("AsyncFunctionDef"))
     return or_kleene(is_function, is_async)
 
 

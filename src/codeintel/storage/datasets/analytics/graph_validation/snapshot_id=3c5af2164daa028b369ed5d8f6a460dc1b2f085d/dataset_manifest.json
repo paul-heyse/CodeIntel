@@ -1,0 +1,109 @@
+{
+  "dataset_id": "analytics.graph_validation",
+  "snapshot_id": "3c5af2164daa028b369ed5d8f6a460dc1b2f085d",
+  "table_key": "analytics.graph_validation",
+  "partition_columns": [
+    "repo",
+    "commit"
+  ],
+  "files": [],
+  "schema_hash": "1672bfe08473dbcb7ec68dca3ba8ff16365f4401afd055d9aa3d951f4affd281",
+  "row_count": 0,
+  "created_at": "2026-01-04T14:26:40.184604+00:00",
+  "extras": {
+    "provenance": {
+      "derivation_kind": "inferred_relation",
+      "derivation_source": "graph_validation"
+    },
+    "settings_fingerprint": "d084197d240ab41f2f8aaf3f4fba09c61eddb74e218bcbd4a288e68f33c189d6",
+    "table_schema": {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "graph_name",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "entity_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "issue",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "severity",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "detail",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "metadata",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Validation findings for analytics graph consistency checks",
+      "indexes": [
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_validation_repo_commit",
+          "unique": false
+        }
+      ],
+      "name": "graph_validation",
+      "primary_key": [
+        "repo",
+        "commit",
+        "graph_name",
+        "entity_id",
+        "issue"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.graph_validation"
+    },
+    "write_settings": {
+      "dictionary_encode": false,
+      "unify_dictionaries": false
+    }
+  }
+}
