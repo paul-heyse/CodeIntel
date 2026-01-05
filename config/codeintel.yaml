@@ -12,6 +12,7 @@ storage:
   document_output_dir: document_output
   dataset_root_dir: datasets
 hamilton:
+  graph_backend: compute
   dynamic_execution:
     enabled: false
     local_executor: null

@@ -185,11 +185,24 @@ class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePo
 
         saved = self._writer.save_run_nodes(self._run_id, records)
         if self._output_path is not None:
-            _write_node_telemetry(self._output_path, records)
+            try:
+                _write_node_telemetry(self._output_path, records)
+            except (OSError, TypeError, ValueError) as exc:
+                log.warning(
+                    "build.node.telemetry_write_failed run_id=%s error=%s",
+                    self._run_id,
+                    exc,
+                )
         return saved
 
     def last_flushed_records(self) -> tuple[NodeExecutionRecord, ...]:
-        """Return the most recently flushed records."""
+        """Return the most recently flushed records.
+
+        Returns
+        -------
+        tuple[NodeExecutionRecord, ...]
+            Records most recently flushed from the buffer.
+        """
         with self._lock:
             return tuple(self._last_flushed)
 

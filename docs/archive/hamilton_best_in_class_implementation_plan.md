@@ -56,11 +56,11 @@ Acceptance
 ### Phase 1 - Schema and Tag Metadata Foundation
 
 Tasks
-- Apply `schema_output(...)` on all table-producing nodes via
+- [ ] Apply `schema_output(...)` on all table-producing nodes via
   `src/codeintel/sdk/annotations.py`.
-- Enforce tag completeness for table outputs (domain, target, table_key,
+- [ ] Enforce tag completeness for table outputs (domain, target, table_key,
   output_kind).
-- Add materialization-related tags on saver nodes where missing.
+- [ ] Add materialization-related tags on saver nodes where missing.
 
 Primary files
 - `src/codeintel/sdk/annotations.py`

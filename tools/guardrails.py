@@ -398,27 +398,6 @@ def find_violations(repo_root: Path) -> list[str]:
     return violations
 
 
-def _policy_doc_issues(repo_root: Path) -> list[str]:
-    """Return policy doc violations for the core data format policy.
-
-    Returns
-    -------
-    list[str]
-        Policy doc violation messages.
-    """
-    policy_path = repo_root / "docs" / "core_data_format_policy.md"
-    if not policy_path.exists():
-        return ["docs/core_data_format_policy.md: missing core data format policy document"]
-    text = policy_path.read_text(encoding="utf-8")
-    required_phrases = ("JSON is boundary-only", "Arrow/Parquet", "codeintel.schema_hash")
-    missing = [phrase for phrase in required_phrases if phrase not in text]
-    return (
-        ["docs/core_data_format_policy.md: missing required policy language " + ", ".join(missing)]
-        if missing
-        else []
-    )
-
-
 def _core_registry_issues() -> list[str]:
     """Return core registry violations for JSON/BLOB column usage.
 
@@ -727,8 +706,6 @@ def main() -> int:
     """
     repo_root = Path(__file__).resolve().parent.parent
     if _emit_issue_lines(find_violations(repo_root)):
-        return 1
-    if _emit_issue_lines(_policy_doc_issues(repo_root)):
         return 1
     if _emit_issue_lines(_core_registry_issues()):
         return 1

@@ -12,6 +12,7 @@ from typing import TypedDict, cast
 
 import pyarrow as pa
 import pyarrow.compute as pc
+from hamilton.function_modifiers import cache
 
 from codeintel.build.graphs.assembly import (
     ensure_table_columns as _ensure_table_columns,
@@ -127,6 +128,7 @@ _CPG_EDGE_COLUMNS = columns_for_table_key(CPG_EDGES_TABLE_KEY) or (
 )
 
 
+@cache(behavior="ignore")
 def cpg__options(env: BuildEnv) -> CpgOptions:
     """Load CPG options from the build environment.
 
@@ -152,6 +154,7 @@ class CpgOverlayOptions:
     inspect_allowlist: tuple[str, ...]
 
 
+@cache(behavior="ignore")
 def cpg__overlay_options(env: BuildEnv) -> CpgOverlayOptions:
     """Load overlay enablement flags from ingestion options.
 

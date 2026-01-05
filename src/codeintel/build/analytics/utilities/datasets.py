@@ -27,6 +27,7 @@ from codeintel.build.schemas import (
     ContractResolutionSettings,
     get_contract_for_table_key,
 )
+from codeintel.build.validation.columnar import ColumnarValidationContext, validate_table
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -35,10 +36,6 @@ from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.validation.profiles import ValidationProfile
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.storage.validation.columnar import (
-    ColumnarValidationContext,
-    validate_table,
-)
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 

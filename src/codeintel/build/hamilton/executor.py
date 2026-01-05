@@ -43,7 +43,12 @@ from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
 )
-from codeintel.build.hamilton.diagnostics import diagnostics_dir, emit_diagnostics
+from codeintel.build.hamilton.diagnostics import (
+    DiagnosticsInputs,
+    DiagnosticsTargets,
+    diagnostics_dir,
+    emit_diagnostics,
+)
 from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
@@ -190,6 +195,16 @@ class _RunState:
 class _MissingInputs:
     required: tuple[str, ...]
     optional: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _TrackerTagContext:
+    env: BuildEnv
+    run_id: str
+    domain: str | None
+    deployment_environment: str | None
+    cache_dir: Path | None
+    diagnostics_path: Path | None
 
 
 class _TrackingConstants(Protocol):
@@ -510,7 +525,7 @@ def _build_cache_adapter(
     if not enable_cache:
         return None
     cache_options = CacheAdapterOptions(
-        default_behavior="default",
+        default_behavior="disable",
         default_loader_behavior="disable",
         default_saver_behavior="disable",
         log_to_file=True,
@@ -527,24 +542,25 @@ def _build_cache_adapter(
 def _build_tracker_tags(
     *,
     settings: HamiltonTrackerSettings,
-    env: BuildEnv,
-    run_id: str,
-    domain: str | None,
-    deployment_environment: str | None,
+    context: _TrackerTagContext,
 ) -> dict[str, str]:
     tags = dict(settings.tags)
-    if deployment_environment and "environment" not in tags:
-        tags["environment"] = deployment_environment
-    tags.setdefault("repo", env.snapshot.repo)
-    tags.setdefault("commit", env.snapshot.commit)
-    tags.setdefault("run_id", run_id)
-    if domain and "domain" not in tags:
-        tags["domain"] = domain
+    if context.deployment_environment and "environment" not in tags:
+        tags["environment"] = context.deployment_environment
+    tags.setdefault("repo", context.env.snapshot.repo)
+    tags.setdefault("commit", context.env.snapshot.commit)
+    tags.setdefault("run_id", context.run_id)
+    if context.domain and "domain" not in tags:
+        tags["domain"] = context.domain
     tags.setdefault("build.decision_trace_artifact", DECISION_TRACE_ARTIFACT_NAME)
     tags.setdefault(
         "build.decision_trace_path",
-        DECISION_TRACE_PATH_TEMPLATE.format(build_dir=env.paths.build_dir.name),
+        DECISION_TRACE_PATH_TEMPLATE.format(build_dir=context.env.paths.build_dir.name),
     )
+    if context.cache_dir is not None:
+        tags.setdefault("build.cache_dir", str(context.cache_dir))
+    if context.diagnostics_path is not None:
+        tags.setdefault("build.diagnostics_dir", str(context.diagnostics_path))
     return tags
 
 
@@ -553,6 +569,8 @@ def _build_hamilton_tracker_adapter(
     env: BuildEnv,
     run_id: str,
     domain: str | None,
+    cache_dir: Path | None,
+    diagnostics_path: Path | None,
 ) -> object | None:
     runtime_settings = load_runtime_settings().observability
     tracker_settings = runtime_settings.hamilton_tracker
@@ -573,12 +591,17 @@ def _build_hamilton_tracker_adapter(
         return None
 
     _apply_tracker_constants(tracker_settings)
-    tags = _build_tracker_tags(
-        settings=tracker_settings,
+    tag_context = _TrackerTagContext(
         env=env,
         run_id=run_id,
         domain=domain,
         deployment_environment=runtime_settings.deployment_environment,
+        cache_dir=cache_dir,
+        diagnostics_path=diagnostics_path,
+    )
+    tags = _build_tracker_tags(
+        settings=tracker_settings,
+        context=tag_context,
     )
     dag_name = tracker_settings.dag_name or env.snapshot.repo
     kwargs = {
@@ -1536,7 +1559,13 @@ class HamiltonBuildExecutor:
                 ),
             )
             try:
-                emit_diagnostics(
+                diagnostics_targets = DiagnosticsTargets(
+                    requested=context.targets,
+                    computed=result.computed_targets,
+                    skipped=result.skipped_targets,
+                    failed=result.failed_targets,
+                )
+                diagnostics_inputs = DiagnosticsInputs(
                     env=context.env,
                     runtime=context.runtime,
                     run_id=context.run_id,
@@ -1545,12 +1574,11 @@ class HamiltonBuildExecutor:
                     telemetry_records=telemetry_hook.last_flushed_records()
                     if telemetry_hook is not None
                     else None,
-                    requested_targets=context.targets,
-                    computed_targets=result.computed_targets,
-                    skipped_targets=result.skipped_targets,
-                    failed_targets=result.failed_targets,
+                    targets=diagnostics_targets,
                     duration_ms=result.duration_ms,
+                    domain=context.domain,
                 )
+                emit_diagnostics(diagnostics_inputs)
             except (OSError, RuntimeError, TypeError, ValueError) as exc:
                 log.warning(
                     "build.hamilton.diagnostics_failed run_id=%s error=%s",
@@ -1589,7 +1617,8 @@ class HamiltonBuildExecutor:
         materializers = _resolve_materializers(env.execution_settings.materializers)
         telemetry_hook: NodeTelemetryHook | None = None
 
-        telemetry_output = diagnostics_dir(env.paths.build_dir) / "node_telemetry.jsonl"
+        diagnostics_path = diagnostics_dir(env.paths.build_dir)
+        telemetry_output = diagnostics_path / "node_telemetry.jsonl"
         hook_options = self._options.hook_options(telemetry_output_path=telemetry_output)
         cache_adapter = _build_cache_adapter(
             run_id=run_id,
@@ -1627,6 +1656,8 @@ class HamiltonBuildExecutor:
                 env=env,
                 run_id=run_id,
                 domain=domain,
+                cache_dir=cache_dir,
+                diagnostics_path=diagnostics_path,
             )
             if tracker_adapter is not None:
                 adapters.append(cast("LifecycleAdapter", tracker_adapter))

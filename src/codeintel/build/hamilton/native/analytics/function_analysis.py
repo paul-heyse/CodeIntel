@@ -16,7 +16,7 @@ from codeintel.build.tabular.types import InferableTabularInput
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
 
-@cache()
+@cache(behavior="default")
 def function_analytics_result(
     env: BuildEnv, q__core__goids: InferableTabularInput
 ) -> FunctionAnalyticsResult:

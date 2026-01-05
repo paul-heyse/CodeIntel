@@ -248,6 +248,7 @@ class ScipIngestInputs:
     options: ScipIngestOptions
 
 
+@cache(behavior="ignore")
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__options(env: BuildEnv) -> ScipIngestOptions:
     """Load SCIP ingestion options for the target.

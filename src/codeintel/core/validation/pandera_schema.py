@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -33,6 +34,10 @@ from codeintel.core.validation.profiles import (
 
 if TYPE_CHECKING:
     from pandera.polars import Check as PanderaCheck
+
+
+_PANDERA_MAX_DECIMAL_PRECISION = 28
+_DECIMAL_PATTERN = re.compile(r"DECIMAL\\((\\d+)(?:,\\s*(\\d+))?\\)", re.IGNORECASE)
 
 
 class PanderaDiagnostics(msgspec.Struct, frozen=True):
@@ -139,6 +144,9 @@ def pandera_schema_for_table(
     for column in table_schema.columns:
         polars_type = polars_type_from_column_type(column.type)
         dtype = _pandera_dtype(polars_type) or pl.Object
+        precision = _decimal_precision(column.type)
+        if precision is not None and precision > _PANDERA_MAX_DECIMAL_PRECISION:
+            dtype = pl.Object
         checks = _range_checks(stats_by_name.get(column.name)) if include_checks else []
         columns[column.name] = pandera_polars.Column(
             dtype=dtype,
@@ -164,6 +172,16 @@ def _pandera_dtype(polars_type: object | None) -> type | str | None:
     if isinstance(dtype_type, type):
         return dtype_type
     return None
+
+
+def _decimal_precision(column_type: str) -> int | None:
+    match = _DECIMAL_PATTERN.search(str(column_type))
+    if match is None:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
 
 
 def _range_checks(stats: Mapping[str, object] | None) -> list[PanderaCheck]:

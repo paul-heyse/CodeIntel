@@ -11,15 +11,15 @@ from hamilton.data_quality.base import DataValidationLevel, DataValidator, Valid
 from polars.exceptions import PolarsError
 
 from codeintel.build.schemas import get_schema_provider
-from codeintel.core.schemas.primitives import TableSchema
-from codeintel.core.schemas.resolution import resolve_table_schema
-from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
-from codeintel.storage.validation.columnar import (
+from codeintel.build.validation.columnar import (
     ColumnarValidationContext,
     TableValidationError,
     validate_record_batch_reader,
     validate_table,
 )
+from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class ColumnarSchemaValidator(DataValidator):
-    """Validate table outputs using storage columnar validation."""
+    """Validate table outputs using build columnar validation."""
 
     table_key: str
     validation_profile: ValidationProfile

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 import pyarrow as pa
+from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.graphs.graph_metrics import (
     build_graph_metric_filters_from_sets,
@@ -45,6 +46,7 @@ SUBSYSTEM_GRAPH_METRICS_CONTRACT = TableContractSpec(
 )
 
 
+@cache(behavior="ignore")
 def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
     if env.execution_context is None:
         return GraphRuntimeOptions(snapshot=env.snapshot)

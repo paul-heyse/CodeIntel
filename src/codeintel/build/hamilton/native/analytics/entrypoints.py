@@ -239,7 +239,7 @@ def entrypoint_subsystem_frames(
     )
 
 
-@cache()
+@cache(behavior="default")
 def entrypoints_result(
     env: BuildEnv,
     entrypoint_module_frames: EntrypointModuleFrames,

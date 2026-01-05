@@ -209,7 +209,7 @@ def _feature_from_row(row: dict[str, object]) -> FunctionAstFeatures | None:
     )
 
 
-@cache()
+@cache(behavior="default")
 def semantic_roles_result(
     env: BuildEnv,
     semantic_role_module_frames: SemanticRoleModuleFrames,

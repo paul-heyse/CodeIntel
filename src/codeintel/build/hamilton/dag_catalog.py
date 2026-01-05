@@ -9,6 +9,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, cast
 
+from hamilton.caching import fingerprinting
+
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import required_dataset_node_tags, required_table_output_tags
 from codeintel.core.hamilton import tags as ht
@@ -821,6 +823,22 @@ class _ForbiddenImportScanner(ast.NodeVisitor):
 
 def _is_forbidden_import(module_name: str) -> bool:
     return module_name.startswith(("codeintel.storage", "codeintel.serving"))
+
+
+def register_dag_catalog_hashing() -> None:
+    """Register deterministic hashing for DAG catalogs."""
+
+    @fingerprinting.hash_value.register(DagCatalog)
+    def _hash_dag_catalog(
+        value: DagCatalog,
+        *args: object,
+        **kwargs: object,
+    ) -> str:
+        _ = (value, args, kwargs)
+        return fingerprinting.hash_value("codeintel.dag_catalog")
+
+
+register_dag_catalog_hashing()
 
 
 __all__ = [

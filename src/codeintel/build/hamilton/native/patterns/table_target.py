@@ -37,6 +37,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.hamilton import tags as ht
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,11 +148,16 @@ def attach_table_target_template(module: ModuleType, *, spec: TableTargetSpec) -
             table_collector_node=collector_node,
             node_name=anchor_node,
         )
+        anchor_tags: dict[TagKey, TagValue] = {
+            cast("TagKey", ht.TAG_KIND): "target",
+            cast("TagKey", ht.TAG_SCHEMA_REF): spec.target_name,
+        }
         tagged_attach_node(
             module,
             node_name=anchor_node,
             fn=anchor_fn,
             tag_spec=TagSpec.for_materialize(domain=spec.domain, target=spec.target_name),
+            extra_tags=anchor_tags,
         )
 
 

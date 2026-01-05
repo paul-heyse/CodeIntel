@@ -1,0 +1,1700 @@
+{
+  "requested": [
+    "ast",
+    "bytecode",
+    "call_graph",
+    "call_wiring",
+    "cdg",
+    "cfg",
+    "cfg_dfg_metrics",
+    "ci_plan",
+    "config_data_flow",
+    "config_graph_metrics",
+    "config_ingest",
+    "cpg",
+    "cst",
+    "data_model_usage",
+    "data_models",
+    "dfg",
+    "docstrings",
+    "entrypoints",
+    "export_jsonl",
+    "export_parquet",
+    "external_deps",
+    "file_line_index",
+    "function_ast_features",
+    "function_contracts",
+    "function_effects",
+    "function_types",
+    "function_validation",
+    "goids",
+    "graph_metrics",
+    "graph_metrics_ext",
+    "graph_stats",
+    "graph_validation",
+    "import_graph",
+    "inspect",
+    "modules",
+    "pdg",
+    "py_cpg_quality_report",
+    "scip",
+    "scip_proto",
+    "scip_resolution",
+    "semantic_roles",
+    "serving_artifacts",
+    "subsystem_agreement",
+    "subsystem_caches",
+    "subsystem_graph_metrics",
+    "subsystems",
+    "symbol_graph_metrics",
+    "symbol_uses",
+    "symtable",
+    "syntax_augment",
+    "syntax_enrich",
+    "syntax_index",
+    "tests_ingest",
+    "tree_sitter_index",
+    "typing",
+    "views"
+  ],
+  "closure": [
+    "call_graph",
+    "cfg",
+    "ci_plan",
+    "config_ingest",
+    "dfg",
+    "graph_validation",
+    "import_graph",
+    "modules",
+    "ast",
+    "bytecode",
+    "cst",
+    "docstrings",
+    "inspect",
+    "scip_proto",
+    "scip",
+    "cdg",
+    "config_graph_metrics",
+    "export_jsonl",
+    "export_parquet",
+    "file_line_index",
+    "goids",
+    "cfg_dfg_metrics",
+    "data_models",
+    "function_ast_features",
+    "external_deps",
+    "function_effects",
+    "function_types",
+    "function_contracts",
+    "function_validation",
+    "pdg",
+    "serving_artifacts",
+    "symbol_uses",
+    "subsystems",
+    "data_model_usage",
+    "graph_metrics",
+    "graph_metrics_ext",
+    "graph_stats",
+    "semantic_roles",
+    "subsystem_agreement",
+    "subsystem_graph_metrics",
+    "subsystem_caches",
+    "symbol_graph_metrics",
+    "symtable",
+    "syntax_index",
+    "scip_resolution",
+    "syntax_enrich",
+    "call_wiring",
+    "tests_ingest",
+    "entrypoints",
+    "config_data_flow",
+    "tree_sitter_index",
+    "cpg",
+    "py_cpg_quality_report",
+    "syntax_augment",
+    "typing",
+    "views"
+  ],
+  "nodes": [
+    {
+      "name": "call_graph",
+      "node_name": "t__call_graph",
+      "module": "graphs",
+      "tables": [
+        "graph.call_graph_edges",
+        "graph.call_graph_nodes"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "cfg",
+      "node_name": "t__cfg",
+      "module": "graphs",
+      "tables": [
+        "graph.cfg_blocks",
+        "graph.cfg_edges"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "ci_plan",
+      "node_name": "t__ci_plan",
+      "module": "ops",
+      "tables": [
+        "ci.plan_entries"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "config_ingest",
+      "node_name": "t__config_ingest",
+      "module": "ingestion",
+      "tables": [
+        "analytics.config_values"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "dfg",
+      "node_name": "t__dfg",
+      "module": "graphs",
+      "tables": [
+        "graph.dfg_edges"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "graph_validation",
+      "node_name": "t__graph_validation",
+      "module": "analytics",
+      "tables": [
+        "analytics.graph_validation"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "import_graph",
+      "node_name": "t__import_graph",
+      "module": "graphs",
+      "tables": [
+        "graph.import_graph_edges",
+        "graph.import_modules"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "modules",
+      "node_name": "t__modules",
+      "module": "ingestion",
+      "tables": [
+        "core.file_state",
+        "core.modules",
+        "core.repo_map"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "ast",
+      "node_name": "t__ast",
+      "module": "ingestion",
+      "tables": [
+        "core.ast_metrics",
+        "core.ast_nodes"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "bytecode",
+      "node_name": "t__bytecode",
+      "module": "ingestion",
+      "tables": [
+        "core.py_bc_blocks",
+        "core.py_bc_cfg_edges",
+        "core.py_bc_code_units",
+        "core.py_compiler_metadata",
+        "core.py_bc_defuse_events",
+        "core.py_bc_exception_table",
+        "core.py_bc_instructions"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "cst",
+      "node_name": "t__cst",
+      "module": "ingestion",
+      "tables": [
+        "core.cst_nodes"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "docstrings",
+      "node_name": "t__docstrings",
+      "module": "ingestion",
+      "tables": [
+        "core.docstrings"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "inspect",
+      "node_name": "t__inspect",
+      "module": "ingestion",
+      "tables": [
+        "core.py_inspect_annotations_kv",
+        "core.py_inspect_class_attrs",
+        "core.py_inspect_class_mro",
+        "core.py_inspect_members_static",
+        "core.py_inspect_objects",
+        "core.py_inspect_runtime_state",
+        "core.py_inspect_signature_params",
+        "core.py_inspect_signatures",
+        "core.py_inspect_source",
+        "core.py_inspect_unwrap_hops"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "scip_proto",
+      "node_name": "t__scip_proto",
+      "module": "ingestion",
+      "tables": [],
+      "dependencies": []
+    },
+    {
+      "name": "scip",
+      "node_name": "t__scip",
+      "module": "ingestion",
+      "tables": [
+        "core.scip_diagnostics",
+        "core.scip_external_symbols",
+        "core.scip_module_state",
+        "core.scip_occurrences",
+        "core.scip_symbol_relationships",
+        "core.scip_symbol_information",
+        "core.scip_symbols"
+      ],
+      "dependencies": [
+        "modules",
+        "scip_proto"
+      ]
+    },
+    {
+      "name": "cdg",
+      "node_name": "t__cdg",
+      "module": "graphs",
+      "tables": [
+        "graph.cdg_edges"
+      ],
+      "dependencies": [
+        "cfg",
+        "scip"
+      ]
+    },
+    {
+      "name": "config_graph_metrics",
+      "node_name": "t__config_graph_metrics",
+      "module": "analytics",
+      "tables": [
+        "analytics.config_graph_metrics_keys",
+        "analytics.config_graph_metrics_modules",
+        "analytics.config_projection_key_edges",
+        "analytics.config_projection_module_edges"
+      ],
+      "dependencies": [
+        "config_ingest",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "export_jsonl",
+      "node_name": "t__export_jsonl",
+      "module": "export",
+      "tables": [],
+      "dependencies": [
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "export_parquet",
+      "node_name": "t__export_parquet",
+      "module": "export",
+      "tables": [],
+      "dependencies": [
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "file_line_index",
+      "node_name": "t__file_line_index",
+      "module": "ingestion",
+      "tables": [
+        "core.file_line_index"
+      ],
+      "dependencies": [
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "goids",
+      "node_name": "t__goids",
+      "module": "ingestion",
+      "tables": [
+        "core.goid_crosswalk",
+        "core.goids"
+      ],
+      "dependencies": [
+        "ast",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "cfg_dfg_metrics",
+      "node_name": "t__cfg_dfg_metrics",
+      "module": "analytics",
+      "tables": [
+        "analytics.cfg_block_metrics",
+        "analytics.cfg_function_metrics",
+        "analytics.cfg_function_metrics_ext",
+        "analytics.dfg_block_metrics",
+        "analytics.dfg_function_metrics",
+        "analytics.dfg_function_metrics_ext"
+      ],
+      "dependencies": [
+        "cfg",
+        "dfg",
+        "goids",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "data_models",
+      "node_name": "t__data_models",
+      "module": "analytics",
+      "tables": [
+        "analytics.data_model_fields",
+        "analytics.data_model_relationships",
+        "analytics.data_models"
+      ],
+      "dependencies": [
+        "docstrings",
+        "goids",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "function_ast_features",
+      "node_name": "t__function_ast_features",
+      "module": "analytics",
+      "tables": [
+        "analytics.function_ast_features"
+      ],
+      "dependencies": [
+        "goids",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "external_deps",
+      "node_name": "t__external_deps",
+      "module": "analytics",
+      "tables": [
+        "analytics.external_dependencies",
+        "analytics.external_dependency_calls"
+      ],
+      "dependencies": [
+        "config_ingest",
+        "function_ast_features",
+        "goids",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "function_effects",
+      "node_name": "t__function_effects",
+      "module": "analytics",
+      "tables": [
+        "analytics.function_effects"
+      ],
+      "dependencies": [
+        "call_graph",
+        "goids",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "function_types",
+      "node_name": "t__function_types",
+      "module": "analytics",
+      "tables": [
+        "analytics.function_types"
+      ],
+      "dependencies": [
+        "goids",
+        "scip"
+      ]
+    },
+    {
+      "name": "function_contracts",
+      "node_name": "t__function_contracts",
+      "module": "analytics",
+      "tables": [
+        "analytics.function_contracts"
+      ],
+      "dependencies": [
+        "docstrings",
+        "function_types",
+        "goids",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "function_validation",
+      "node_name": "t__function_validation",
+      "module": "analytics",
+      "tables": [
+        "analytics.function_validation"
+      ],
+      "dependencies": [
+        "goids",
+        "scip"
+      ]
+    },
+    {
+      "name": "pdg",
+      "node_name": "t__pdg",
+      "module": "graphs",
+      "tables": [
+        "graph.pdg_edges"
+      ],
+      "dependencies": [
+        "cdg",
+        "dfg",
+        "scip"
+      ]
+    },
+    {
+      "name": "serving_artifacts",
+      "node_name": "t__serving_artifacts",
+      "module": "export",
+      "tables": [
+        "core.schema_inference_errors"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "symbol_uses",
+      "node_name": "t__symbol_uses",
+      "module": "graphs",
+      "tables": [
+        "graph.symbol_use_edges"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "subsystems",
+      "node_name": "t__subsystems",
+      "module": "analytics",
+      "tables": [
+        "analytics.subsystem_modules",
+        "analytics.subsystems"
+      ],
+      "dependencies": [
+        "config_ingest",
+        "import_graph",
+        "modules",
+        "scip",
+        "symbol_uses"
+      ]
+    },
+    {
+      "name": "data_model_usage",
+      "node_name": "t__data_model_usage",
+      "module": "analytics",
+      "tables": [
+        "analytics.data_model_usage"
+      ],
+      "dependencies": [
+        "data_models",
+        "function_types",
+        "goids",
+        "modules",
+        "scip",
+        "subsystems"
+      ]
+    },
+    {
+      "name": "graph_metrics",
+      "node_name": "t__graph_metrics",
+      "module": "analytics",
+      "tables": [
+        "analytics.graph_metrics_functions",
+        "analytics.graph_metrics_modules"
+      ],
+      "dependencies": [
+        "call_graph",
+        "goids",
+        "import_graph",
+        "modules",
+        "scip",
+        "subsystems",
+        "symbol_uses"
+      ]
+    },
+    {
+      "name": "graph_metrics_ext",
+      "node_name": "t__graph_metrics_ext",
+      "module": "analytics",
+      "tables": [
+        "analytics.graph_metrics_functions_ext",
+        "analytics.graph_metrics_modules_ext"
+      ],
+      "dependencies": [
+        "call_graph",
+        "goids",
+        "import_graph",
+        "modules",
+        "scip",
+        "subsystems",
+        "symbol_uses"
+      ]
+    },
+    {
+      "name": "graph_stats",
+      "node_name": "t__graph_stats",
+      "module": "analytics",
+      "tables": [
+        "analytics.graph_stats"
+      ],
+      "dependencies": [
+        "call_graph",
+        "config_ingest",
+        "goids",
+        "import_graph",
+        "modules",
+        "scip",
+        "subsystems",
+        "symbol_uses"
+      ]
+    },
+    {
+      "name": "semantic_roles",
+      "node_name": "t__semantic_roles",
+      "module": "analytics",
+      "tables": [
+        "analytics.semantic_roles_functions",
+        "analytics.semantic_roles_modules"
+      ],
+      "dependencies": [
+        "function_ast_features",
+        "function_contracts",
+        "function_effects",
+        "goids",
+        "graph_metrics",
+        "modules",
+        "scip"
+      ]
+    },
+    {
+      "name": "subsystem_agreement",
+      "node_name": "t__subsystem_agreement",
+      "module": "analytics",
+      "tables": [
+        "analytics.subsystem_agreement"
+      ],
+      "dependencies": [
+        "graph_metrics_ext",
+        "scip",
+        "subsystems"
+      ]
+    },
+    {
+      "name": "subsystem_graph_metrics",
+      "node_name": "t__subsystem_graph_metrics",
+      "module": "analytics",
+      "tables": [
+        "analytics.subsystem_graph_metrics"
+      ],
+      "dependencies": [
+        "import_graph",
+        "scip",
+        "subsystems"
+      ]
+    },
+    {
+      "name": "subsystem_caches",
+      "node_name": "t__subsystem_caches",
+      "module": "analytics",
+      "tables": [
+        "analytics.subsystem_profile_cache"
+      ],
+      "dependencies": [
+        "scip",
+        "subsystem_graph_metrics",
+        "subsystems"
+      ]
+    },
+    {
+      "name": "symbol_graph_metrics",
+      "node_name": "t__symbol_graph_metrics",
+      "module": "analytics",
+      "tables": [
+        "analytics.symbol_graph_metrics_functions",
+        "analytics.symbol_graph_metrics_modules"
+      ],
+      "dependencies": [
+        "call_graph",
+        "goids",
+        "import_graph",
+        "modules",
+        "scip",
+        "subsystems",
+        "symbol_uses"
+      ]
+    },
+    {
+      "name": "symtable",
+      "node_name": "t__symtable",
+      "module": "ingestion",
+      "tables": [
+        "core.py_sym_bindings",
+        "core.py_sym_function_partitions",
+        "core.py_sym_namespace_edges",
+        "core.py_sym_resolution_edges",
+        "core.py_sym_scope_edges",
+        "core.py_sym_scopes",
+        "core.py_sym_symbols"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "syntax_index",
+      "node_name": "t__syntax_index",
+      "module": "ingestion",
+      "tables": [
+        "core.syntax_call_args",
+        "core.syntax_calls",
+        "core.syntax_defs",
+        "core.syntax_edges",
+        "core.syntax_func_params",
+        "core.syntax_imports",
+        "core.syntax_nodes",
+        "core.parse_manifest",
+        "core.syntax_refs",
+        "core.syntax_scopes",
+        "core.syntax_spans"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "scip_resolution",
+      "node_name": "t__scip_resolution",
+      "module": "ingestion",
+      "tables": [
+        "core.scip_occurrence_span_xref",
+        "core.scip_occurrence_syntax_xref",
+        "core.scip_symbol_goid_xref"
+      ],
+      "dependencies": [
+        "goids",
+        "scip",
+        "syntax_index"
+      ]
+    },
+    {
+      "name": "syntax_enrich",
+      "node_name": "t__syntax_enrich",
+      "module": "ingestion",
+      "tables": [
+        "core.syntax_calls_resolved",
+        "core.syntax_defs_resolved",
+        "core.syntax_imports_resolved",
+        "core.syntax_refs_resolved"
+      ],
+      "dependencies": [
+        "scip",
+        "scip_resolution",
+        "syntax_index"
+      ]
+    },
+    {
+      "name": "call_wiring",
+      "node_name": "t__call_wiring",
+      "module": "graphs",
+      "tables": [
+        "graph.cpg_call_targets",
+        "graph.cpg_edges_arg_to_param",
+        "graph.cpg_edges_calls",
+        "graph.cpg_edges_ret_to_call"
+      ],
+      "dependencies": [
+        "cfg",
+        "scip",
+        "scip_resolution",
+        "syntax_enrich",
+        "syntax_index"
+      ]
+    },
+    {
+      "name": "tests_ingest",
+      "node_name": "t__tests_ingest",
+      "module": "ingestion",
+      "tables": [
+        "analytics.test_catalog"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "entrypoints",
+      "node_name": "t__entrypoints",
+      "module": "analytics",
+      "tables": [
+        "analytics.entrypoint_tests",
+        "analytics.entrypoints"
+      ],
+      "dependencies": [
+        "function_ast_features",
+        "goids",
+        "modules",
+        "scip",
+        "subsystems",
+        "tests_ingest"
+      ]
+    },
+    {
+      "name": "config_data_flow",
+      "node_name": "t__config_data_flow",
+      "module": "analytics",
+      "tables": [
+        "analytics.config_data_flow"
+      ],
+      "dependencies": [
+        "call_graph",
+        "config_ingest",
+        "entrypoints",
+        "goids",
+        "scip"
+      ]
+    },
+    {
+      "name": "tree_sitter_index",
+      "node_name": "t__tree_sitter_index",
+      "module": "ingestion",
+      "tables": [
+        "core.ts_captures",
+        "core.ts_changed_ranges",
+        "core.ts_edges",
+        "core.ts_language_metadata",
+        "core.ts_nodes",
+        "core.ts_parse_errors",
+        "core.ts_parse_manifest",
+        "core.ts_tokens",
+        "core.ts_trivia"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "cpg",
+      "node_name": "t__cpg",
+      "module": "graphs",
+      "tables": [
+        "graph.cpg_edges",
+        "graph.cpg_nodes"
+      ],
+      "dependencies": [
+        "ast",
+        "bytecode",
+        "call_graph",
+        "call_wiring",
+        "cdg",
+        "cfg",
+        "dfg",
+        "goids",
+        "import_graph",
+        "inspect",
+        "scip",
+        "scip_resolution",
+        "symtable",
+        "syntax_index",
+        "tree_sitter_index"
+      ]
+    },
+    {
+      "name": "py_cpg_quality_report",
+      "node_name": "t__py_cpg_quality_report",
+      "module": "analytics",
+      "tables": [
+        "analytics.py_cpg_quality_report"
+      ],
+      "dependencies": [
+        "bytecode",
+        "cpg",
+        "inspect",
+        "scip",
+        "symtable"
+      ]
+    },
+    {
+      "name": "syntax_augment",
+      "node_name": "t__syntax_augment",
+      "module": "ingestion",
+      "tables": [
+        "core.syntax_edges_augmented",
+        "core.syntax_nodes_augmented",
+        "core.ts_syntax_node_xref",
+        "core.ts_weld_coverage"
+      ],
+      "dependencies": [
+        "scip",
+        "syntax_index",
+        "tree_sitter_index"
+      ]
+    },
+    {
+      "name": "typing",
+      "node_name": "t__typing",
+      "module": "ingestion",
+      "tables": [
+        "analytics.static_diagnostics"
+      ],
+      "dependencies": [
+        "modules"
+      ]
+    },
+    {
+      "name": "views",
+      "node_name": "t__views",
+      "module": "views",
+      "tables": [
+        "docs.v_call_graph_enriched",
+        "graph.v_call_graph_degree",
+        "docs.v_behavioral_classification_input",
+        "docs.v_cfg_block_architecture",
+        "docs.v_config_data_flow",
+        "docs.v_data_model_fields",
+        "docs.v_data_model_relationships",
+        "docs.v_data_model_usage",
+        "docs.v_data_models",
+        "docs.v_data_models_normalized",
+        "docs.v_dfg_block_architecture",
+        "docs.v_entrypoints",
+        "docs.v_external_dependencies",
+        "docs.v_external_dependency_calls",
+        "docs.v_file_summary",
+        "docs.v_function_architecture",
+        "docs.v_function_history",
+        "docs.v_function_history_timeseries",
+        "docs.v_ide_hints",
+        "docs.v_module_architecture",
+        "docs.v_module_architecture_full",
+        "docs.v_module_history_timeseries",
+        "docs.v_module_with_subsystem",
+        "docs.v_subsystem_agreement",
+        "docs.v_subsystem_profile",
+        "docs.v_subsystem_summary",
+        "docs.v_symbol_module_graph",
+        "docs.v_test_architecture",
+        "docs.v_test_to_function",
+        "docs.v_validation_summary",
+        "core.v_goid_crosswalk_join",
+        "core.v_goid_crosswalk_mismatches",
+        "graph.v_import_graph_degree"
+      ],
+      "dependencies": [
+        "ast",
+        "call_graph",
+        "cfg",
+        "cfg_dfg_metrics",
+        "config_data_flow",
+        "config_graph_metrics",
+        "data_model_usage",
+        "data_models",
+        "entrypoints",
+        "external_deps",
+        "function_validation",
+        "goids",
+        "graph_metrics",
+        "graph_metrics_ext",
+        "graph_validation",
+        "import_graph",
+        "modules",
+        "subsystem_agreement",
+        "subsystem_caches",
+        "subsystem_graph_metrics",
+        "subsystems",
+        "symbol_graph_metrics",
+        "tests_ingest",
+        "typing"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "modules",
+      "to": "ast"
+    },
+    {
+      "from": "modules",
+      "to": "bytecode"
+    },
+    {
+      "from": "modules",
+      "to": "cst"
+    },
+    {
+      "from": "modules",
+      "to": "docstrings"
+    },
+    {
+      "from": "modules",
+      "to": "inspect"
+    },
+    {
+      "from": "modules",
+      "to": "scip"
+    },
+    {
+      "from": "scip_proto",
+      "to": "scip"
+    },
+    {
+      "from": "cfg",
+      "to": "cdg"
+    },
+    {
+      "from": "scip",
+      "to": "cdg"
+    },
+    {
+      "from": "config_ingest",
+      "to": "config_graph_metrics"
+    },
+    {
+      "from": "modules",
+      "to": "config_graph_metrics"
+    },
+    {
+      "from": "scip",
+      "to": "config_graph_metrics"
+    },
+    {
+      "from": "modules",
+      "to": "export_jsonl"
+    },
+    {
+      "from": "scip",
+      "to": "export_jsonl"
+    },
+    {
+      "from": "modules",
+      "to": "export_parquet"
+    },
+    {
+      "from": "scip",
+      "to": "export_parquet"
+    },
+    {
+      "from": "modules",
+      "to": "file_line_index"
+    },
+    {
+      "from": "scip",
+      "to": "file_line_index"
+    },
+    {
+      "from": "ast",
+      "to": "goids"
+    },
+    {
+      "from": "modules",
+      "to": "goids"
+    },
+    {
+      "from": "scip",
+      "to": "goids"
+    },
+    {
+      "from": "cfg",
+      "to": "cfg_dfg_metrics"
+    },
+    {
+      "from": "dfg",
+      "to": "cfg_dfg_metrics"
+    },
+    {
+      "from": "goids",
+      "to": "cfg_dfg_metrics"
+    },
+    {
+      "from": "modules",
+      "to": "cfg_dfg_metrics"
+    },
+    {
+      "from": "scip",
+      "to": "cfg_dfg_metrics"
+    },
+    {
+      "from": "docstrings",
+      "to": "data_models"
+    },
+    {
+      "from": "goids",
+      "to": "data_models"
+    },
+    {
+      "from": "modules",
+      "to": "data_models"
+    },
+    {
+      "from": "scip",
+      "to": "data_models"
+    },
+    {
+      "from": "goids",
+      "to": "function_ast_features"
+    },
+    {
+      "from": "modules",
+      "to": "function_ast_features"
+    },
+    {
+      "from": "scip",
+      "to": "function_ast_features"
+    },
+    {
+      "from": "config_ingest",
+      "to": "external_deps"
+    },
+    {
+      "from": "function_ast_features",
+      "to": "external_deps"
+    },
+    {
+      "from": "goids",
+      "to": "external_deps"
+    },
+    {
+      "from": "modules",
+      "to": "external_deps"
+    },
+    {
+      "from": "scip",
+      "to": "external_deps"
+    },
+    {
+      "from": "call_graph",
+      "to": "function_effects"
+    },
+    {
+      "from": "goids",
+      "to": "function_effects"
+    },
+    {
+      "from": "modules",
+      "to": "function_effects"
+    },
+    {
+      "from": "scip",
+      "to": "function_effects"
+    },
+    {
+      "from": "goids",
+      "to": "function_types"
+    },
+    {
+      "from": "scip",
+      "to": "function_types"
+    },
+    {
+      "from": "docstrings",
+      "to": "function_contracts"
+    },
+    {
+      "from": "function_types",
+      "to": "function_contracts"
+    },
+    {
+      "from": "goids",
+      "to": "function_contracts"
+    },
+    {
+      "from": "modules",
+      "to": "function_contracts"
+    },
+    {
+      "from": "scip",
+      "to": "function_contracts"
+    },
+    {
+      "from": "goids",
+      "to": "function_validation"
+    },
+    {
+      "from": "scip",
+      "to": "function_validation"
+    },
+    {
+      "from": "cdg",
+      "to": "pdg"
+    },
+    {
+      "from": "dfg",
+      "to": "pdg"
+    },
+    {
+      "from": "scip",
+      "to": "pdg"
+    },
+    {
+      "from": "config_ingest",
+      "to": "subsystems"
+    },
+    {
+      "from": "import_graph",
+      "to": "subsystems"
+    },
+    {
+      "from": "modules",
+      "to": "subsystems"
+    },
+    {
+      "from": "scip",
+      "to": "subsystems"
+    },
+    {
+      "from": "symbol_uses",
+      "to": "subsystems"
+    },
+    {
+      "from": "data_models",
+      "to": "data_model_usage"
+    },
+    {
+      "from": "function_types",
+      "to": "data_model_usage"
+    },
+    {
+      "from": "goids",
+      "to": "data_model_usage"
+    },
+    {
+      "from": "modules",
+      "to": "data_model_usage"
+    },
+    {
+      "from": "scip",
+      "to": "data_model_usage"
+    },
+    {
+      "from": "subsystems",
+      "to": "data_model_usage"
+    },
+    {
+      "from": "call_graph",
+      "to": "graph_metrics"
+    },
+    {
+      "from": "goids",
+      "to": "graph_metrics"
+    },
+    {
+      "from": "import_graph",
+      "to": "graph_metrics"
+    },
+    {
+      "from": "modules",
+      "to": "graph_metrics"
+    },
+    {
+      "from": "scip",
+      "to": "graph_metrics"
+    },
+    {
+      "from": "subsystems",
+      "to": "graph_metrics"
+    },
+    {
+      "from": "symbol_uses",
+      "to": "graph_metrics"
+    },
+    {
+      "from": "call_graph",
+      "to": "graph_metrics_ext"
+    },
+    {
+      "from": "goids",
+      "to": "graph_metrics_ext"
+    },
+    {
+      "from": "import_graph",
+      "to": "graph_metrics_ext"
+    },
+    {
+      "from": "modules",
+      "to": "graph_metrics_ext"
+    },
+    {
+      "from": "scip",
+      "to": "graph_metrics_ext"
+    },
+    {
+      "from": "subsystems",
+      "to": "graph_metrics_ext"
+    },
+    {
+      "from": "symbol_uses",
+      "to": "graph_metrics_ext"
+    },
+    {
+      "from": "call_graph",
+      "to": "graph_stats"
+    },
+    {
+      "from": "config_ingest",
+      "to": "graph_stats"
+    },
+    {
+      "from": "goids",
+      "to": "graph_stats"
+    },
+    {
+      "from": "import_graph",
+      "to": "graph_stats"
+    },
+    {
+      "from": "modules",
+      "to": "graph_stats"
+    },
+    {
+      "from": "scip",
+      "to": "graph_stats"
+    },
+    {
+      "from": "subsystems",
+      "to": "graph_stats"
+    },
+    {
+      "from": "symbol_uses",
+      "to": "graph_stats"
+    },
+    {
+      "from": "function_ast_features",
+      "to": "semantic_roles"
+    },
+    {
+      "from": "function_contracts",
+      "to": "semantic_roles"
+    },
+    {
+      "from": "function_effects",
+      "to": "semantic_roles"
+    },
+    {
+      "from": "goids",
+      "to": "semantic_roles"
+    },
+    {
+      "from": "graph_metrics",
+      "to": "semantic_roles"
+    },
+    {
+      "from": "modules",
+      "to": "semantic_roles"
+    },
+    {
+      "from": "scip",
+      "to": "semantic_roles"
+    },
+    {
+      "from": "graph_metrics_ext",
+      "to": "subsystem_agreement"
+    },
+    {
+      "from": "scip",
+      "to": "subsystem_agreement"
+    },
+    {
+      "from": "subsystems",
+      "to": "subsystem_agreement"
+    },
+    {
+      "from": "import_graph",
+      "to": "subsystem_graph_metrics"
+    },
+    {
+      "from": "scip",
+      "to": "subsystem_graph_metrics"
+    },
+    {
+      "from": "subsystems",
+      "to": "subsystem_graph_metrics"
+    },
+    {
+      "from": "scip",
+      "to": "subsystem_caches"
+    },
+    {
+      "from": "subsystem_graph_metrics",
+      "to": "subsystem_caches"
+    },
+    {
+      "from": "subsystems",
+      "to": "subsystem_caches"
+    },
+    {
+      "from": "call_graph",
+      "to": "symbol_graph_metrics"
+    },
+    {
+      "from": "goids",
+      "to": "symbol_graph_metrics"
+    },
+    {
+      "from": "import_graph",
+      "to": "symbol_graph_metrics"
+    },
+    {
+      "from": "modules",
+      "to": "symbol_graph_metrics"
+    },
+    {
+      "from": "scip",
+      "to": "symbol_graph_metrics"
+    },
+    {
+      "from": "subsystems",
+      "to": "symbol_graph_metrics"
+    },
+    {
+      "from": "symbol_uses",
+      "to": "symbol_graph_metrics"
+    },
+    {
+      "from": "modules",
+      "to": "symtable"
+    },
+    {
+      "from": "modules",
+      "to": "syntax_index"
+    },
+    {
+      "from": "goids",
+      "to": "scip_resolution"
+    },
+    {
+      "from": "scip",
+      "to": "scip_resolution"
+    },
+    {
+      "from": "syntax_index",
+      "to": "scip_resolution"
+    },
+    {
+      "from": "scip",
+      "to": "syntax_enrich"
+    },
+    {
+      "from": "scip_resolution",
+      "to": "syntax_enrich"
+    },
+    {
+      "from": "syntax_index",
+      "to": "syntax_enrich"
+    },
+    {
+      "from": "cfg",
+      "to": "call_wiring"
+    },
+    {
+      "from": "scip",
+      "to": "call_wiring"
+    },
+    {
+      "from": "scip_resolution",
+      "to": "call_wiring"
+    },
+    {
+      "from": "syntax_enrich",
+      "to": "call_wiring"
+    },
+    {
+      "from": "syntax_index",
+      "to": "call_wiring"
+    },
+    {
+      "from": "modules",
+      "to": "tests_ingest"
+    },
+    {
+      "from": "function_ast_features",
+      "to": "entrypoints"
+    },
+    {
+      "from": "goids",
+      "to": "entrypoints"
+    },
+    {
+      "from": "modules",
+      "to": "entrypoints"
+    },
+    {
+      "from": "scip",
+      "to": "entrypoints"
+    },
+    {
+      "from": "subsystems",
+      "to": "entrypoints"
+    },
+    {
+      "from": "tests_ingest",
+      "to": "entrypoints"
+    },
+    {
+      "from": "call_graph",
+      "to": "config_data_flow"
+    },
+    {
+      "from": "config_ingest",
+      "to": "config_data_flow"
+    },
+    {
+      "from": "entrypoints",
+      "to": "config_data_flow"
+    },
+    {
+      "from": "goids",
+      "to": "config_data_flow"
+    },
+    {
+      "from": "scip",
+      "to": "config_data_flow"
+    },
+    {
+      "from": "modules",
+      "to": "tree_sitter_index"
+    },
+    {
+      "from": "ast",
+      "to": "cpg"
+    },
+    {
+      "from": "bytecode",
+      "to": "cpg"
+    },
+    {
+      "from": "call_graph",
+      "to": "cpg"
+    },
+    {
+      "from": "call_wiring",
+      "to": "cpg"
+    },
+    {
+      "from": "cdg",
+      "to": "cpg"
+    },
+    {
+      "from": "cfg",
+      "to": "cpg"
+    },
+    {
+      "from": "dfg",
+      "to": "cpg"
+    },
+    {
+      "from": "goids",
+      "to": "cpg"
+    },
+    {
+      "from": "import_graph",
+      "to": "cpg"
+    },
+    {
+      "from": "inspect",
+      "to": "cpg"
+    },
+    {
+      "from": "scip",
+      "to": "cpg"
+    },
+    {
+      "from": "scip_resolution",
+      "to": "cpg"
+    },
+    {
+      "from": "symtable",
+      "to": "cpg"
+    },
+    {
+      "from": "syntax_index",
+      "to": "cpg"
+    },
+    {
+      "from": "tree_sitter_index",
+      "to": "cpg"
+    },
+    {
+      "from": "bytecode",
+      "to": "py_cpg_quality_report"
+    },
+    {
+      "from": "cpg",
+      "to": "py_cpg_quality_report"
+    },
+    {
+      "from": "inspect",
+      "to": "py_cpg_quality_report"
+    },
+    {
+      "from": "scip",
+      "to": "py_cpg_quality_report"
+    },
+    {
+      "from": "symtable",
+      "to": "py_cpg_quality_report"
+    },
+    {
+      "from": "scip",
+      "to": "syntax_augment"
+    },
+    {
+      "from": "syntax_index",
+      "to": "syntax_augment"
+    },
+    {
+      "from": "tree_sitter_index",
+      "to": "syntax_augment"
+    },
+    {
+      "from": "modules",
+      "to": "typing"
+    },
+    {
+      "from": "ast",
+      "to": "views"
+    },
+    {
+      "from": "call_graph",
+      "to": "views"
+    },
+    {
+      "from": "cfg",
+      "to": "views"
+    },
+    {
+      "from": "cfg_dfg_metrics",
+      "to": "views"
+    },
+    {
+      "from": "config_data_flow",
+      "to": "views"
+    },
+    {
+      "from": "config_graph_metrics",
+      "to": "views"
+    },
+    {
+      "from": "data_model_usage",
+      "to": "views"
+    },
+    {
+      "from": "data_models",
+      "to": "views"
+    },
+    {
+      "from": "entrypoints",
+      "to": "views"
+    },
+    {
+      "from": "external_deps",
+      "to": "views"
+    },
+    {
+      "from": "function_validation",
+      "to": "views"
+    },
+    {
+      "from": "goids",
+      "to": "views"
+    },
+    {
+      "from": "graph_metrics",
+      "to": "views"
+    },
+    {
+      "from": "graph_metrics_ext",
+      "to": "views"
+    },
+    {
+      "from": "graph_validation",
+      "to": "views"
+    },
+    {
+      "from": "import_graph",
+      "to": "views"
+    },
+    {
+      "from": "modules",
+      "to": "views"
+    },
+    {
+      "from": "subsystem_agreement",
+      "to": "views"
+    },
+    {
+      "from": "subsystem_caches",
+      "to": "views"
+    },
+    {
+      "from": "subsystem_graph_metrics",
+      "to": "views"
+    },
+    {
+      "from": "subsystems",
+      "to": "views"
+    },
+    {
+      "from": "symbol_graph_metrics",
+      "to": "views"
+    },
+    {
+      "from": "tests_ingest",
+      "to": "views"
+    },
+    {
+      "from": "typing",
+      "to": "views"
+    }
+  ],
+  "node_count": 56,
+  "edge_count": 184
+}

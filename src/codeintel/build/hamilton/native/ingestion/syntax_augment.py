@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from numbers import Integral
 
 import pyarrow as pa
+from hamilton.function_modifiers import cache
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import materialize_node
@@ -69,6 +70,7 @@ class _SyntaxAugmentInputs:
     parse_manifest: pa.Table
 
 
+@cache(behavior="ignore")
 def syntax_augment__options(env: BuildEnv) -> SyntaxAugmentOptions:
     """Load syntax augmentation options from the build environment.
 

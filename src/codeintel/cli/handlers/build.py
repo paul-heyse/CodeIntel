@@ -87,7 +87,7 @@ from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.manifests import DatasetSuiteManifest, ServingSnapshotManifest
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.time import utc_now
-from codeintel.observability.runtime import flush_observability
+from codeintel.observability.runtime import flush_observability, shutdown_observability
 from codeintel.observability.semconv_keys import BUILD_COMMIT, BUILD_REPO, BUILD_RUN_ID
 from codeintel.observability.teardown import (
     ArtifactSummary,
@@ -497,7 +497,13 @@ def _build_status_result(state: BuildState) -> BuildStatusResult:
 
 
 def _with_decision_trace_targets(targets: Sequence[str]) -> list[str]:
-    """Return the requested targets without forcing decision_trace."""
+    """Return the requested targets without forcing decision_trace.
+
+    Returns
+    -------
+    list[str]
+        Requested targets for execution.
+    """
     return list(targets)
 
 
@@ -526,6 +532,7 @@ def _execute_build_hamilton(
         LOG.info("build.cli.hamilton.dry_run goals=%s", execution.goals)
         return None
 
+    _disable_observability_for_build()
     LOG.info(
         "build.cli.hamilton.execute goals=%s force=%s validate=%s",
         execution.goals,
@@ -612,6 +619,18 @@ def _execute_build_hamilton(
         )
 
     return _BuildExecutionOutcome(result=hamilton_result, cache_report=cache_report)
+
+
+def _disable_observability_for_build() -> None:
+    result = shutdown_observability()
+    if result is None:
+        return
+    if result.flush_ok is not True:
+        LOG.warning(
+            "build.cli.telemetry.shutdown_failed flush_ok=%s errors=%s",
+            result.flush_ok,
+            result.errors,
+        )
 
 
 def _maybe_publish_serving_snapshot(

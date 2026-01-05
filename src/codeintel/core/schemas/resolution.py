@@ -215,8 +215,25 @@ def resolve_table_schema(
         table_key=table_key,
         observation_provider=observation_provider,
     )
+
+    provider = schema_provider or _schema_provider_from_service()
+    use_observed_schema = observation is not None
+    derivation_provider: SchemaDerivationProvider | None = None
+    if isinstance(provider, ResolvedSchemaProvider):
+        fallback = provider.fallback_provider
+        if isinstance(fallback, SchemaDerivationProvider):
+            derivation_provider = fallback
+    elif isinstance(provider, SchemaDerivationProvider):
+        derivation_provider = provider
+
+    if use_observed_schema and derivation_provider is not None:
+        derivation = derivation_provider.derivation(table_key)
+        if derivation is not None and derivation.source_kind in {"explicit_override", "override"}:
+            use_observed_schema = False
     observed_schema = (
-        _table_schema_from_observation(table_key, observation) if observation else None
+        _table_schema_from_observation(table_key, observation)
+        if observation is not None and use_observed_schema
+        else None
     )
     if observed_schema is not None:
         return SchemaResolutionResult(
@@ -226,7 +243,6 @@ def resolve_table_schema(
             source=SchemaResolutionSource.OBSERVED,
         )
 
-    provider = schema_provider or _schema_provider_from_service()
     if provider is None:
         return SchemaResolutionResult(
             table_key=table_key,

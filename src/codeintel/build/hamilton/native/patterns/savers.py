@@ -8,7 +8,13 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
 import hamilton.node as h_node
-from hamilton.function_modifiers import check_output_custom, resolve_from_config, source, value
+from hamilton.function_modifiers import (
+    cache,
+    check_output_custom,
+    resolve_from_config,
+    source,
+    value,
+)
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.data_quality import build_table_schema_validators
@@ -290,7 +296,8 @@ def save_dataset(
         )(fn)
         coerced = _coerce_none_output(tagged, table_key=spec.table_key)
         validated = validator(coerced)
-        return materializer(validated)
+        cached = cache(behavior="default", format="parquet", target_=data_node_name)(validated)
+        return materializer(cached)
 
     return apply
 
@@ -344,7 +351,8 @@ def save_relation_table(
         )(fn)
         coerced = _coerce_none_output(tagged, table_key=spec.table_key)
         validated = validator(coerced)
-        return materializer(validated)
+        cached = cache(behavior="default", format="parquet", target_=data_node_name)(validated)
+        return materializer(cached)
 
     return apply
 

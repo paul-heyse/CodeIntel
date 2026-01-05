@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
@@ -30,6 +31,7 @@ from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
+_FUNCTION_GOID_TYPE = pa.decimal128(38, 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,8 +272,8 @@ def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInp
     if not cfg_dfg_analysis.cfg_blocks:
         return empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_blocks)
-    reader, _ = table_for_rows(CFG_BLOCKS_TABLE_KEY, rows)
-    return reader
+    table, _ = table_for_rows(CFG_BLOCKS_TABLE_KEY, rows)
+    return _cast_function_goid(table)
 
 
 def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
@@ -285,8 +287,8 @@ def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
     if not cfg_dfg_analysis.cfg_edges:
         return empty_table_for_table(CFG_EDGES_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_edges)
-    reader, _ = table_for_rows(CFG_EDGES_TABLE_KEY, rows)
-    return reader
+    table, _ = table_for_rows(CFG_EDGES_TABLE_KEY, rows)
+    return _cast_function_goid(table)
 
 
 def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
@@ -300,8 +302,8 @@ def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
     if not cfg_dfg_analysis.dfg_edges:
         return empty_table_for_table(DFG_EDGES_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.dfg_edges)
-    reader, _ = table_for_rows(DFG_EDGES_TABLE_KEY, rows)
-    return reader
+    table, _ = table_for_rows(DFG_EDGES_TABLE_KEY, rows)
+    return _cast_function_goid(table)
 
 
 def cfg_blocks_existing(env: BuildEnv) -> InferableTabularInput:
@@ -312,11 +314,12 @@ def cfg_blocks_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing CFG blocks.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=CFG_BLOCKS_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _cast_function_goid(table)
 
 
 def cfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -327,11 +330,12 @@ def cfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing CFG edges.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=CFG_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _cast_function_goid(table)
 
 
 def dfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -342,11 +346,12 @@ def dfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing DFG edges.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=DFG_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _cast_function_goid(table)
 
 
 def cfg_blocks_empty(env: BuildEnv) -> InferableTabularInput:
@@ -383,6 +388,20 @@ def dfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
     """
     _ = env
     return empty_table_for_table(DFG_EDGES_TABLE_KEY)
+
+
+def _cast_function_goid(table: pa.Table) -> pa.Table:
+    if "function_goid_h128" not in table.column_names:
+        return table
+    index = table.schema.get_field_index("function_goid_h128")
+    if index == -1:
+        return table
+    field = table.schema.field(index)
+    if field.type == _FUNCTION_GOID_TYPE:
+        return table
+    column = table.column(index)
+    casted = pc.cast(column, _FUNCTION_GOID_TYPE)
+    return table.set_column(index, field.name, casted)
 
 
 __all__ = [

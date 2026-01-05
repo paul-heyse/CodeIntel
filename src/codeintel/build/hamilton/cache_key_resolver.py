@@ -207,6 +207,22 @@ def _peek_cache_version(
     return data_version if isinstance(data_version, str) else None
 
 
+def register_cache_key_resolver_hashing() -> None:
+    """Register deterministic hashing for cache key resolvers."""
+
+    @fingerprinting.hash_value.register(CacheKeyResolver)
+    def _hash_cache_key_resolver(
+        value: CacheKeyResolver,
+        *args: object,
+        **kwargs: object,
+    ) -> str:
+        _ = (value, args, kwargs)
+        return fingerprinting.hash_value("codeintel.cache_key_resolver")
+
+
+register_cache_key_resolver_hashing()
+
+
 __all__ = [
     "CacheKeyResolver",
     "CacheKeySnapshot",

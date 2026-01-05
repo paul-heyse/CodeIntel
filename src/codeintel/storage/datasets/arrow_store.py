@@ -17,7 +17,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
-from codeintel.core.columnar.schema_metadata import merge_metadata
+from codeintel.core.columnar.schema_metadata import decode_metadata, merge_metadata
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.core.validation.schema_constraints import schema_metadata_errors
 from codeintel.storage.datasets.manifests import (
@@ -254,11 +254,35 @@ def _write_parquet_metadata_sidecars(
         if metadata is not None:
             metadata_collector.append(metadata)
     if metadata_collector:
+        metadata_schema = _metadata_schema_for_sidecar(
+            base_schema=schema,
+            metadata_collector=metadata_collector,
+        )
         try:
-            pq.write_metadata(schema, metadata_path, metadata_collector=metadata_collector)
+            pq.write_metadata(
+                metadata_schema,
+                metadata_path,
+                metadata_collector=metadata_collector,
+            )
         except (OSError, ValueError, pa.ArrowInvalid):
             LOG.debug("Failed to write _metadata sidecar for %s", snapshot_dir)
     _write_common_metadata(snapshot_dir=snapshot_dir, schema=schema)
+
+
+def _metadata_schema_for_sidecar(
+    *,
+    base_schema: pa.Schema,
+    metadata_collector: Sequence[pq.FileMetaData],
+) -> pa.Schema:
+    if not metadata_collector:
+        return base_schema
+    metadata_schema = metadata_collector[0].schema.to_arrow_schema()
+    if metadata_schema.metadata == base_schema.metadata:
+        return metadata_schema
+    merged = merge_metadata(metadata_schema.metadata, decode_metadata(base_schema.metadata))
+    if merged is None:
+        return metadata_schema
+    return metadata_schema.with_metadata(merged)
 
 
 def _write_common_metadata(*, snapshot_dir: Path, schema: pa.Schema) -> None:

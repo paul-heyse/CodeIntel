@@ -66,7 +66,12 @@ def codeintel_target(
             resolved.estimated_duration_ms
         )
 
-    merged: dict[TagKey, TagValue] = dict(resolved.extra_tags or {})
+    merged: dict[TagKey, TagValue] = {
+        cast("TagKey", ht.TAG_KIND): "target",
+        cast("TagKey", ht.TAG_SCHEMA_REF): target,
+    }
+    if resolved.extra_tags:
+        merged.update(resolved.extra_tags)
     merged.update(spec_tags)
 
     return tag_materialize(domain=domain, target=target, extra_tags=merged)

@@ -182,6 +182,7 @@ class GraphMetricSupportFrames:
 _FUNCTION_KINDS: frozenset[str] = frozenset({"function", "method"})
 
 
+@cache(behavior="ignore")
 def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
     if env.execution_context is None:
         return GraphRuntimeOptions(snapshot=env.snapshot)
@@ -692,7 +693,7 @@ def graph_metric_inputs(
     )
 
 
-@cache()
+@cache(behavior="default")
 def graph_metrics_result(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,

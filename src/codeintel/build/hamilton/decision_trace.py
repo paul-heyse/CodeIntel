@@ -18,6 +18,7 @@ from codeintel.core.serialization.msgspec_json import decode_json_bytes, encode_
 DECISION_TRACE_TARGET_NAME = "decision_trace"
 DECISION_TRACE_ARTIFACT_NAME = "build_decision_trace"
 DECISION_TRACE_PATH_TEMPLATE = "{build_dir}/decision_trace.json"
+CACHE_LOG_KEY_TUPLE_LEN = 2
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -126,8 +127,8 @@ def build_cache_manifest_entries(
         Cache manifest entries derived from cache logs.
     """
     entries: list[CacheManifestEntry] = []
-    logs_by_node = cache_adapter.logs(run_id=run_id, level="info")
-    if not isinstance(logs_by_node, dict):
+    logs_by_node = _safe_cache_logs(cache_adapter, run_id)
+    if not logs_by_node:
         return entries
     for key, events in logs_by_node.items():
         node_name, task_id = _cache_log_key_parts(key)
@@ -211,9 +212,26 @@ def read_decision_trace(path: Path) -> list[DecisionTracePayload]:
 def _cache_log_key_parts(key: object) -> tuple[str, str | None]:
     if isinstance(key, str):
         return key, None
-    if isinstance(key, tuple) and len(key) == 2 and all(isinstance(item, str) for item in key):
+    if (
+        isinstance(key, tuple)
+        and len(key) == CACHE_LOG_KEY_TUPLE_LEN
+        and all(isinstance(item, str) for item in key)
+    ):
         return key[0], key[1]
     return str(key), None
+
+
+def _safe_cache_logs(
+    cache_adapter: HamiltonCacheAdapter,
+    run_id: str,
+) -> dict[object, object]:
+    try:
+        logs_by_node = cache_adapter.logs(run_id=run_id, level="info")
+    except KeyError:
+        return {}
+    if not isinstance(logs_by_node, dict):
+        return {}
+    return logs_by_node
 
 
 def _cache_event_status(event: object) -> CacheEventStatus | None:

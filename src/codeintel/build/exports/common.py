@@ -19,12 +19,11 @@ from codeintel.build.schemas import iter_contracts
 from codeintel.build.tabular.arrow_ops import ParquetScanOptions, scan_parquet_dataset
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.errors.taxonomy import ErrorCode
+from codeintel.core.ports.export import ExportRelation
 from codeintel.core.schemas.hashing import schema_digest
 from codeintel.core.validation.profiles import ValidationProfile
-from codeintel.storage.datasets.manifests import dataset_manifest_path
-from codeintel.storage.exports import ExportAuditRecord as AuditRecord
-from codeintel.storage.protocols import ExportRelation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -92,6 +91,17 @@ def log_export_error(
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExportAuditRecord:
+    """Structured export audit record for build-first logging."""
+
+    table_name: str
+    macro: str
+    rows: int
+    duration_s: float
+    output_path: Path
 
 
 @dataclass(frozen=True)
@@ -235,6 +245,48 @@ def build_export_reader(
         If the dataset snapshot is missing.
     """
     dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
+    reader = scan_parquet_dataset(
+        dataset_root=dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        options=ParquetScanOptions(batch_size=batch_size),
+    )
+    if reader is None:
+        msg = f"Dataset snapshot missing for {table_key}@{snapshot_id}"
+        raise FileNotFoundError(msg)
+    return reader
+
+
+def build_export_reader_from_snapshot(
+    *,
+    dataset_root_dir: Path,
+    snapshot_id: str,
+    table_key: str,
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+) -> pa.RecordBatchReader:
+    """Return a RecordBatchReader for an exportable dataset snapshot.
+
+    Parameters
+    ----------
+    dataset_root_dir
+        Root directory containing parquet dataset snapshots.
+    snapshot_id
+        Snapshot identifier (commit).
+    table_key
+        Fully qualified table key.
+    batch_size
+        Batch size for Arrow readers.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Streaming reader for the dataset snapshot.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the dataset snapshot is missing.
+    """
     reader = scan_parquet_dataset(
         dataset_root=dataset_root_dir,
         table_key=table_key,
@@ -396,9 +448,9 @@ def build_export_relation(
 
 
 def write_audit_entry(
-    record: AuditRecord,
+    record: ExportAuditRecord,
     *,
-    gateway: BuildGateway,
+    gateway: BuildGateway | None,
     settings: ExportAuditSettings,
     metadata_bundle: BuildMetadataBundleWriter | None = None,
 ) -> None:
@@ -431,12 +483,13 @@ def write_audit_entry(
             schema_version="v1",
         )
         return
-    _ = gateway
     if settings.log_path is None and not settings.table_enabled:
         return
+    gateway_name = type(gateway).__name__ if gateway is not None else "none"
     log.warning(
-        "build.export.audit_skipped dataset=%s reason=missing_bundle",
+        "build.export.audit_skipped dataset=%s gateway=%s reason=missing_bundle",
         record.table_name,
+        gateway_name,
     )
 
 
@@ -462,9 +515,11 @@ def default_validation_schemas() -> list[str]:
 
 __all__ = [
     "MAX_EXPORT_LIMIT",
-    "AuditRecord",
+    "ExportAuditRecord",
     "ExportCallOptions",
     "ExportTarget",
+    "build_export_reader",
+    "build_export_reader_from_snapshot",
     "build_export_relation",
     "compute_schema_digest",
     "default_validation_schemas",

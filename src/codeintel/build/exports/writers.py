@@ -11,7 +11,7 @@ import pyarrow.parquet as pq
 
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
-from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
+from codeintel.core.ports.export import ExportRelation, RecordBatch, RecordBatchReader
 
 if TYPE_CHECKING:
     from pathlib import Path

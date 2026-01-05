@@ -18,7 +18,12 @@ from typing import TYPE_CHECKING
 from hamilton.function_modifiers import cache, source, value
 
 from codeintel.build.exports.common import ExportCallOptions
-from codeintel.build.exports.engine import ExportFormat, ExportRunConfig, export_all_datasets
+from codeintel.build.exports.engine import (
+    ExportFormat,
+    ExportRunConfig,
+    SnapshotExportSource,
+    export_all_datasets_from_snapshot,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -38,10 +43,11 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.resources import TargetResources
+from codeintel.build.schemas import iter_contracts
 from codeintel.build.tabular.types import InferableTabularInput
 
 if TYPE_CHECKING:
-    from codeintel.core.gateway import BuildGateway
+    from codeintel.core.schemas.contract_primitives import DatasetContract
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput, Path)
 
@@ -56,7 +62,7 @@ EXPORT_PARQUET_ARTIFACT_NAME = "datasets_manifest_parquet"
 DEFAULT_JSONL_DATASETS: tuple[str, ...] = ("modules",)
 DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("modules",)
 
-_EXPORT_TARGET_SPEC = TargetSpecDescriptor(resources=TargetResources(gateway=True))
+_EXPORT_TARGET_SPEC = TargetSpecDescriptor(resources=TargetResources())
 
 
 @dataclass(frozen=True)
@@ -77,11 +83,14 @@ def _export_manifest_plan(
 ) -> ArtifactWritePlan | None:
     target_name = request.target_name
     _ = catalog
-    gateway = env.gateway
-    if gateway is None:
-        log.warning("export skipped: storage gateway unavailable for %s", target_name)
+    dataset_root_dir = env.paths.dataset_root_dir
+    if dataset_root_dir is None:
+        log.warning("export skipped: dataset_root_dir unavailable for %s", target_name)
         return None
-    build_gateway = gateway
+    snapshot_id = env.commit
+    if not snapshot_id:
+        log.warning("export skipped: snapshot id unavailable for %s", target_name)
+        return None
     export_options = load_target_options(
         env,
         target_name=target_name,
@@ -90,16 +99,24 @@ def _export_manifest_plan(
     if export_options.datasets is None:
         export_options = replace(export_options, datasets=list(request.default_datasets))
 
-    def _write(output_path: Path, *, build_gateway: BuildGateway = build_gateway) -> int:
-        export_all_datasets(
-            build_gateway,
-            output_path.parent,
+    contracts: tuple[DatasetContract, ...] = tuple(iter_contracts())
+
+    source = SnapshotExportSource(
+        dataset_root_dir=dataset_root_dir,
+        snapshot_id=snapshot_id,
+    )
+
+    def _write(output_path: Path) -> int:
+        export_all_datasets_from_snapshot(
+            source=source,
+            document_output_dir=output_path.parent,
             fmt=request.fmt,
             run_config=ExportRunConfig(
                 settings=env.settings.export_audit,
                 options=export_options,
                 metadata_bundle=env.metadata_bundle,
             ),
+            contracts=contracts,
         )
         if not output_path.exists():
             msg = f"Export manifest not written: {output_path}"

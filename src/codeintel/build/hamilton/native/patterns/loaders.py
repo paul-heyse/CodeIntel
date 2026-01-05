@@ -19,6 +19,11 @@ from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, reader_to_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
+from codeintel.build.validation.columnar import (
+    ColumnarValidationContext,
+    ValidationMode,
+    validate_table,
+)
 from codeintel.core.columnar.schema_alignment import align_table_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import (
@@ -30,11 +35,6 @@ from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.validation.mode import ContractValidationMode
 from codeintel.core.validation.profiles import ValidationProfile
 from codeintel.core.validation.schema_constraints import schema_errors, schema_metadata_errors
-from codeintel.storage.validation.columnar import (
-    ColumnarValidationContext,
-    ValidationMode,
-    validate_table,
-)
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema

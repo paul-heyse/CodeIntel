@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import os
 import sys
 import time
 import uuid
@@ -64,6 +65,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 _CLI_CAPTURE_MODE_NAMES_ONLY = "names-only"
 _CLI_CAPTURE_MODE_ALLOWLIST = "allowlist"
+_OTEL_DISABLED_ENV = "OTEL_SDK_DISABLED"
+_BUILD_COMMAND = "build"
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +143,7 @@ def run_cli_with_telemetry(
     SystemExit
         Raised with the resolved CLI exit code.
     """
+    _disable_opentelemetry_for_build(argv)
     state = _InvocationState(
         invocation_id=uuid.uuid4().hex,
         start_ns=time.time_ns(),
@@ -190,6 +194,17 @@ def run_cli_with_telemetry(
         if should_shutdown_observability_per_command():
             resolved_deps.shutdown()
     raise SystemExit(exit_code)
+
+
+def _disable_opentelemetry_for_build(argv: Sequence[str] | None) -> None:
+    args = tuple(argv) if argv is not None else tuple(sys.argv[1:])
+    if not args:
+        return
+    if args[0] != _BUILD_COMMAND:
+        return
+    if _OTEL_DISABLED_ENV in os.environ:
+        return
+    os.environ[_OTEL_DISABLED_ENV] = "true"
 
 
 def _execute_invocation(

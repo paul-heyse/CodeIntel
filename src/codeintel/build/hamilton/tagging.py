@@ -313,7 +313,10 @@ def tag_dataset(
     Decorator[P, R]
         Decorator applying dataset node tags.
     """
-    merged_tags: dict[TagKey, TagValue] = {cast("TagKey", ht.TAG_OUTPUT_KIND): ht.OUTPUT_KIND_TABLE}
+    merged_tags: dict[TagKey, TagValue] = {
+        cast("TagKey", ht.TAG_OUTPUT_KIND): ht.OUTPUT_KIND_TABLE,
+        cast("TagKey", ht.TAG_SCHEMA_REF): table_key,
+    }
     if extra_tags:
         merged_tags = {**merged_tags, **extra_tags}
     spec = TagSpec.for_dataset(

@@ -1574,6 +1574,32 @@
       "table_key":"core.ts_weld_coverage"
     },
     {
+      "filename":"v_goid_crosswalk_join.jsonl",
+      "kind":"jsonl",
+      "provenance":{
+        "source_schema_hashes":[
+          "3ada79ac86eb23a52b884ee5dc4a48df2941fed6b44ef90cfd3f659f9c79f9c3"
+        ],
+        "source_table_keys":[
+          "core.v_goid_crosswalk_join"
+        ]
+      },
+      "table_key":"core.v_goid_crosswalk_join"
+    },
+    {
+      "filename":"v_goid_crosswalk_mismatches.jsonl",
+      "kind":"jsonl",
+      "provenance":{
+        "source_schema_hashes":[
+          "be3f3e021d1a940111f7f68f17bd58c017f37285fa7e0d70dde0e11923639c6e"
+        ],
+        "source_table_keys":[
+          "core.v_goid_crosswalk_mismatches"
+        ]
+      },
+      "table_key":"core.v_goid_crosswalk_mismatches"
+    },
+    {
       "filename":"call_graph_edges.jsonl",
       "kind":"jsonl",
       "provenance":{
@@ -3340,6 +3366,32 @@
         ]
       },
       "table_key":"core.ts_weld_coverage"
+    },
+    {
+      "filename":"v_goid_crosswalk_join.parquet",
+      "kind":"parquet",
+      "provenance":{
+        "source_schema_hashes":[
+          "3ada79ac86eb23a52b884ee5dc4a48df2941fed6b44ef90cfd3f659f9c79f9c3"
+        ],
+        "source_table_keys":[
+          "core.v_goid_crosswalk_join"
+        ]
+      },
+      "table_key":"core.v_goid_crosswalk_join"
+    },
+    {
+      "filename":"v_goid_crosswalk_mismatches.parquet",
+      "kind":"parquet",
+      "provenance":{
+        "source_schema_hashes":[
+          "be3f3e021d1a940111f7f68f17bd58c017f37285fa7e0d70dde0e11923639c6e"
+        ],
+        "source_table_keys":[
+          "core.v_goid_crosswalk_mismatches"
+        ]
+      },
+      "table_key":"core.v_goid_crosswalk_mismatches"
     },
     {
       "filename":"call_graph_edges.parquet",
@@ -18429,8 +18481,7 @@
       "derivation_source":"views",
       "description":"View schema derived from Hamilton view definitions.",
       "indexes":[],
-      "inference_error":"KeyError: \"Failed to infer schema for docs.v_file_summary: 'Unknown table schema: analytics.typedness'\"",
-      "inference_status":"error",
+      "inference_status":"inferred",
       "name":"v_file_summary",
       "primary_key":[],
       "producer_module":"views",

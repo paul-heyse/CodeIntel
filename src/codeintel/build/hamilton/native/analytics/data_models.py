@@ -150,7 +150,7 @@ def _module_map(modules_frame: pa.Table) -> dict[str, str]:
     return module_map
 
 
-@cache()
+@cache(behavior="default")
 def data_models_result(
     env: BuildEnv,
     q__core__goids: InferableTabularInput,

@@ -67,6 +67,7 @@ def plan_context(
     )
 
 
+@cache(behavior="ignore")
 def plan_target_closure(
     catalog: DagCatalog,
     plan_request: PlanRequest | None = None,
@@ -84,6 +85,7 @@ def plan_target_closure(
     return catalog.closure(resolved_request.requested_targets)
 
 
+@cache(behavior="ignore")
 def plan_target_subgraph_nodes(
     catalog: DagCatalog,
     plan_target_closure: tuple[str, ...],
@@ -106,6 +108,7 @@ def plan_target_subgraph_nodes(
     return subgraphs
 
 
+@cache(behavior="ignore")
 def plan_node_versions(
     cache_key_resolver: CacheKeyResolver | None,
     plan_context: PlanContext,
@@ -134,6 +137,7 @@ def plan_node_versions(
     return cache_key_resolver.resolve_node_versions(nodes=nodes, input_values=input_values)
 
 
+@cache(behavior="ignore")
 def plan_cache_probe(
     cache_index: CacheIndex | None,
     plan_node_versions: Mapping[str, str],
@@ -162,6 +166,7 @@ def plan_cache_probe(
     return statuses
 
 
+@cache(behavior="ignore")
 def plan_graph_inputs(
     plan_target_closure: tuple[str, ...],
     plan_target_subgraph_nodes: Mapping[str, tuple[str, ...]],
@@ -183,6 +188,7 @@ def plan_graph_inputs(
     )
 
 
+@cache(behavior="ignore")
 def plan(
     plan_context: PlanContext,
     plan_graph_inputs: PlanGraphInputs,

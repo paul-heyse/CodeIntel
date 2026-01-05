@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypeGuard, c
 
 import polars as pl
 import pyarrow as pa
+from hamilton.caching import fingerprinting
 from hamilton.caching.adapter import (
     CachingBehavior,
     CachingEventType,
@@ -19,10 +20,14 @@ from hamilton.caching.adapter import (
 )
 from hamilton.caching.stores.base import ResultStore
 from hamilton.caching.stores.file import FileResultStore
+from hamilton.function_modifiers import cache as cache_decorator
 
 from codeintel.build.hamilton.arrow_hashing import register_arrow_hashing
 from codeintel.build.hamilton.cache_index import CacheIndex, CacheProbeResult
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+from codeintel.build.hamilton.materializers.arrow_parquet_cache import (
+    register_arrow_parquet_cache_adapters,
+)
 from codeintel.build.manifest.records import CacheManifestEntry
 from codeintel.build.manifest.writer import CacheManifestWriter
 from codeintel.build.tabular.conversion import reader_to_table, table_to_frame, table_to_lazyframe
@@ -36,6 +41,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 register_arrow_hashing()
+register_arrow_parquet_cache_adapters()
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,15 +82,18 @@ class ArrowFileResultStore(ResultStore):
         **kwargs: object,
     ) -> None:
         """Store a cached result, materializing Arrow readers."""
-        normalized = _normalize_arrow_cached_result(result)
-        saver_cls = cast("DataSaver | None", kwargs.get("saver_cls"))
-        loader_cls = cast("DataLoader | None", kwargs.get("loader_cls"))
+        saver_cls = cast("type[DataSaver] | None", kwargs.get("saver_cls"))
+        loader_cls = cast("type[DataLoader] | None", kwargs.get("loader_cls"))
+        if saver_cls is None:
+            normalized = _normalize_arrow_cached_result(result)
+        else:
+            normalized = _normalize_for_saver(result, saver_cls)
         FileResultStore.set(
             self._store,
             data_version=data_version,
             result=normalized,
-            saver_cls=saver_cls,
-            loader_cls=loader_cls,
+            saver_cls=cast("DataSaver | None", saver_cls),
+            loader_cls=cast("DataLoader | None", loader_cls),
         )
 
     def get(self, data_version: str, **_kwargs: object) -> object | None:
@@ -115,6 +124,16 @@ class ArrowFileResultStore(ResultStore):
             True when the cache entry is present.
         """
         return FileResultStore.exists(self._store, data_version)
+
+    def _materialized_path(self, data_version: str, saver_cls: type[DataSaver]) -> Path:
+        """Return the materialized cache path for formatted saves.
+
+        Returns
+        -------
+        Path
+            Filesystem path to the materialized cache artifact.
+        """
+        return self.path.joinpath(data_version).with_suffix(f".{saver_cls.name()}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,10 +206,38 @@ class CacheStore(CacheIndex):
         return self.metadata_store.get(cache_key)
 
 
+def register_cache_store_hashing() -> None:
+    """Register deterministic hashing for cache store instances."""
+
+    @fingerprinting.hash_value.register(CacheStore)
+    def _hash_cache_store(
+        value: CacheStore,
+        *args: object,
+        **kwargs: object,
+    ) -> str:
+        _ = (value, args, kwargs)
+        return fingerprinting.hash_value("codeintel.cache_store")
+
+
+register_cache_store_hashing()
+
+
 _ARROW_CACHE_BEHAVIORS = {
     CachingBehavior.DEFAULT,
     CachingBehavior.RECOMPUTE,
     CachingBehavior.IGNORE,
+}
+_NON_CACHEABLE_NODE_NAMES: set[str] = {
+    "cache_index",
+    "cache_key_resolver",
+    "catalog",
+    "env",
+    "plan_context",
+    "plan_request",
+    "runtime_fingerprint",
+    "schema_index",
+    "semantic_registry",
+    "tag_query",
 }
 
 
@@ -280,12 +327,15 @@ class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
         task_id = cast("str | None", kwargs.get("task_id"))
         future_kwargs = _future_kwargs(kwargs)
         node_name = getattr(node_, "name", None)
+        cache_format = _cache_format_from_node(node_)
         table: pa.Table | None = None
         if isinstance(node_name, str):
             cache_key = _arrow_cache_key(run_id, node_name, task_id)
             table = self._arrow_cache_tables.pop(cache_key, None)
+        if cache_format is not None and isinstance(result, pa.RecordBatchReader):
+            result = reader_to_table(result)
         if table is not None and isinstance(result, (pa.RecordBatchReader, pa.Table)):
-            result = ArrowCachedResult(kind="table", table=table)
+            result = ArrowCachedResult(kind="table", table=table) if cache_format is None else table
         super().post_node_execute(
             run_id=run_id,
             node_=node_,
@@ -309,6 +359,14 @@ class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
         if graph is None:
             return behaviors
         for node in graph.get_nodes():
+            if (
+                node.name in _NON_CACHEABLE_NODE_NAMES
+                or node.name.startswith("plan_")
+                or node.name == "plan"
+                or node.name.endswith("__finalize_context")
+            ):
+                behaviors[node.name] = CachingBehavior.DISABLE
+                continue
             tags = node.tags if isinstance(node.tags, dict) else {}
             if tags.get(ht.TAG_NODE_TYPE) == ht.NODE_TYPE_MATERIALIZE:
                 behaviors[node.name] = CachingBehavior.RECOMPUTE
@@ -515,6 +573,17 @@ def _target_for_node(fn_graph: object | None, node_name: str) -> str | None:
     return target if isinstance(target, str) else None
 
 
+def _cache_format_from_node(node: object) -> str | None:
+    tags = getattr(node, "tags", None)
+    if not isinstance(tags, dict):
+        return None
+    value = tags.get(cache_decorator.FORMAT_KEY)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def _future_kwargs(values: Mapping[str, object]) -> dict[str, object]:
     ignored = {"run_id", "node_", "result", "success", "error", "task_id"}
     return {key: value for key, value in values.items() if key not in ignored}
@@ -574,9 +643,36 @@ def _normalize_arrow_cached_result(result: object) -> object:
     return normalized
 
 
+def _normalize_for_saver(
+    result: object,
+    saver_cls: type[DataSaver],
+) -> object:
+    applicable_types = saver_cls.applicable_types()
+    if any(applicable is pa.Table for applicable in applicable_types):
+        return _coerce_arrow_table(result)
+    return result
+
+
+def _coerce_arrow_table(result: object) -> pa.Table:
+    if isinstance(result, pa.Table):
+        return result
+    if isinstance(result, pa.RecordBatchReader):
+        return reader_to_table(result)
+    if isinstance(result, ArrowCachedResult):
+        return result.table
+    if isinstance(result, pl.LazyFrame):
+        return result.collect().to_arrow()
+    if isinstance(result, pl.DataFrame):
+        return result.to_arrow()
+    msg = f"Unsupported cache materialization type: {type(result)!r}"
+    raise TypeError(msg)
+
+
 def _normalize_dataclass[T: _DataclassInstance](result: T) -> T | None:
     updates: dict[str, object] = {}
     for field_info in fields(result):
+        if not field_info.init:
+            continue
         value = getattr(result, field_info.name)
         normalized = _normalize_arrow_cached_result(value)
         if normalized is not value:
@@ -589,6 +685,8 @@ def _normalize_dataclass[T: _DataclassInstance](result: T) -> T | None:
 def _resolve_dataclass[T: _DataclassInstance](result: T) -> T | None:
     updates: dict[str, object] = {}
     for field_info in fields(result):
+        if not field_info.init:
+            continue
         value = getattr(result, field_info.name)
         resolved = _resolve_arrow_cached_result(value)
         if resolved is not value:

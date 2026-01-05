@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from hamilton.function_modifiers import cache
+
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.planning.preflight import (
@@ -14,6 +16,7 @@ from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.duckdb_types import DuckDBError
 
 
+@cache(behavior="ignore")
 def preflight_issues(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -65,6 +68,7 @@ def preflight_issues(
     return tuple(issues)
 
 
+@cache(behavior="ignore")
 def preflight_block_map(
     catalog: DagCatalog,
     plan_target_closure: tuple[str, ...],

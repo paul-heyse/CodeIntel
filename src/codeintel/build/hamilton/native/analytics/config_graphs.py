@@ -128,6 +128,7 @@ class ConfigDataFlowFrames:
     goids: InferableTabularInput
 
 
+@cache(behavior="ignore")
 def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
     if env.execution_context is None:
         return GraphRuntimeOptions(snapshot=env.snapshot)
@@ -410,7 +411,7 @@ def config_data_flow__base(
     return reader
 
 
-@cache()
+@cache(behavior="default")
 def config_graph_metrics_result(
     env: BuildEnv,
     q__analytics__config_values: InferableTabularInput,

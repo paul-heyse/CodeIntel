@@ -392,16 +392,16 @@ def _materialize_dataset(
 ) -> tuple[ArrowDatasetManifest, Path]:
     normalized = _normalize_tabular_data(data)
     plan = _build_materialization_plan(ctx=ctx, data=normalized)
+    write_ctx = _DatasetWriteContext(
+        dataset_root=plan.dataset_root,
+        table_key=ctx.table_key,
+        snapshot_id=plan.snapshot_id,
+        options=plan.options,
+        arrow_settings=ctx.env.settings.arrow_dataset,
+        build_settings=ctx.env.settings,
+    )
 
     if isinstance(normalized, pl.LazyFrame):
-        write_ctx = _DatasetWriteContext(
-            dataset_root=plan.dataset_root,
-            table_key=ctx.table_key,
-            snapshot_id=plan.snapshot_id,
-            options=plan.options,
-            arrow_settings=ctx.env.settings.arrow_dataset,
-            build_settings=ctx.env.settings,
-        )
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
             data=normalized,
@@ -422,20 +422,16 @@ def _materialize_dataset(
         return manifest, manifest_path
 
     arrow_input = _coerce_arrow_input(normalized)
-    observed_reader = instrument_reader_for_observation(
-        _align_reader_to_contract(
-            arrow_input,
-            contract_schema=plan.contract_schema,
-            schema_promote_options=ctx.env.settings.schema_promote_options,
-        ),
-        accumulator=plan.observation,
-    )
-    manifest = write_dataset(
-        dataset_root=plan.dataset_root,
+    aligned_reader = _align_reader_to_contract(
+        arrow_input,
         table_key=ctx.table_key,
-        snapshot_id=plan.snapshot_id,
-        data=observed_reader,
-        options=plan.options,
+        contract_schema=plan.contract_schema,
+        schema_promote_options=ctx.env.settings.schema_promote_options,
+    )
+    manifest = _write_dataset_from_reader(
+        ctx=write_ctx,
+        reader=aligned_reader,
+        observation=plan.observation,
     )
     manifest_path = dataset_manifest_path(
         dataset_root=plan.dataset_root,
@@ -567,7 +563,9 @@ def _resolve_materialization_inputs(
     arrow_schema = _arrow_schema_for_data(data=data)
     observation = setup.accumulator
     resolved_partitions = _resolve_partition_columns(
+        ctx=ctx,
         table_schema=table_schema,
+        observed_schema=observed_schema,
         requested=ctx.partition_columns,
     )
     schema_hash_value = schema_hash(table_schema)
@@ -718,6 +716,12 @@ def _write_dataset_from_reader(
 ) -> ArrowDatasetManifest:
     if observation is not None:
         reader = instrument_reader_for_observation(reader, accumulator=observation)
+    snapshot_dir = dataset_snapshot_dir(
+        ctx.dataset_root,
+        table_key=ctx.table_key,
+        snapshot_id=ctx.snapshot_id,
+    )
+    _prepare_snapshot_dir(snapshot_dir, behavior=ctx.options.existing_data_behavior)
     return write_dataset(
         dataset_root=ctx.dataset_root,
         table_key=ctx.table_key,
@@ -744,6 +748,7 @@ def _write_profiled_dataset(
     )
     aligned = _align_reader_to_contract(
         reader,
+        table_key=ctx.table_key,
         contract_schema=contract_schema,
         schema_promote_options=ctx.build_settings.schema_promote_options,
     )
@@ -761,6 +766,7 @@ def _write_contract_dataset(
     reader = _lazyframe_reader(ctx=ctx, data=data, query_opt_flags=query_opt_flags)
     aligned = _align_reader_to_contract(
         reader,
+        table_key=ctx.table_key,
         contract_schema=contract_schema,
         schema_promote_options=ctx.build_settings.schema_promote_options,
     )
@@ -1236,24 +1242,58 @@ def _authoritative_table_schema(table_key: str) -> TableSchema:
 
 
 def _resolve_partition_columns(
-    *, table_schema: TableSchema, requested: tuple[str, ...]
+    *,
+    ctx: _MaterializeContext,
+    table_schema: TableSchema,
+    observed_schema: TableSchema,
+    requested: tuple[str, ...],
 ) -> tuple[str, ...]:
     if requested:
-        _validate_partition_columns(table_schema, requested)
-        return requested
-    return tuple(
-        column for column in _DEFAULT_PARTITION_COLUMNS if column in table_schema.column_names()
-    )
+        missing_declared = _missing_partition_columns(table_schema, requested)
+        if missing_declared:
+            record_build_event(
+                "build.schema.partition_columns_missing",
+                table_key=ctx.table_key,
+                target=ctx.target_name,
+                stage="declared",
+                missing=missing_declared,
+            )
+            LOG.warning(
+                "build.schema.partition_columns_missing table_key=%s stage=declared missing=%s",
+                ctx.table_key,
+                missing_declared,
+            )
+        resolved = tuple(column for column in requested if column not in missing_declared)
+    else:
+        resolved = tuple(
+            column
+            for column in _DEFAULT_PARTITION_COLUMNS
+            if column in table_schema.column_names()
+        )
+    missing_observed = _missing_partition_columns(observed_schema, resolved)
+    if missing_observed:
+        record_build_event(
+            "build.schema.partition_columns_missing",
+            table_key=ctx.table_key,
+            target=ctx.target_name,
+            stage="observed",
+            missing=missing_observed,
+        )
+        LOG.warning(
+            "build.schema.partition_columns_missing table_key=%s stage=observed missing=%s",
+            ctx.table_key,
+            missing_observed,
+        )
+        resolved = tuple(column for column in resolved if column not in missing_observed)
+    return resolved
 
 
-def _validate_partition_columns(table_schema: TableSchema, columns: tuple[str, ...]) -> None:
-    if not columns:
-        return
+def _missing_partition_columns(
+    table_schema: TableSchema,
+    columns: Sequence[str],
+) -> list[str]:
     column_set = set(table_schema.column_names())
-    missing = [column for column in columns if column not in column_set]
-    if missing:
-        msg = f"Partition columns missing from {table_schema.table_key}: {missing}"
-        raise ValueError(msg)
+    return [column for column in columns if column not in column_set]
 
 
 def _normalize_settings_payload(value: object) -> object:
@@ -1332,11 +1372,13 @@ def _handle_schema_drift(
             mode=mode,
             details=drift_summary,
         )
-        msg = (
-            f"Schema drift detected for {ctx.table_key}: missing={missing_count} "
-            f"extra={extra_count} type_changes={type_change_count}"
+        LOG.warning(
+            "build.schema.drift.strict_override table_key=%s missing=%d extra=%d type_changes=%d",
+            ctx.table_key,
+            missing_count,
+            extra_count,
+            type_change_count,
         )
-        raise ValueError(msg)
     return drift_summary
 
 
@@ -1536,17 +1578,40 @@ def _coerce_arrow_input(data: TabularData) -> ArrowDatasetInput:
 def _align_reader_to_contract(
     reader: ArrowDatasetInput,
     *,
+    table_key: str,
     contract_schema: pa.Schema | None,
     schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS,
 ) -> ArrowDatasetInput:
     if contract_schema is None:
         return reader
-    return align_reader_to_contract(
-        reader,
-        contract_schema,
-        extras_policy=extras_policy_from_schema(contract_schema),
-        schema_promote_options=schema_promote_options,
-    )
+    extras_policy = extras_policy_from_schema(contract_schema)
+    try:
+        return align_reader_to_contract(
+            reader,
+            contract_schema,
+            extras_policy=extras_policy,
+            schema_promote_options=schema_promote_options,
+        )
+    except (
+        ValueError,
+        TypeError,
+        pa.ArrowInvalid,
+        pa.ArrowTypeError,
+        pa.ArrowNotImplementedError,
+    ) as exc:
+        record_build_event(
+            "build.schema.contract_alignment_failed",
+            table_key=table_key,
+            extras_policy=extras_policy,
+            error=str(exc),
+        )
+        LOG.warning(
+            "build.schema.contract_alignment_failed table_key=%s extras_policy=%s error=%s",
+            table_key,
+            extras_policy,
+            exc,
+        )
+        return reader
 
 
 def _schema_tag_sets_for_table(

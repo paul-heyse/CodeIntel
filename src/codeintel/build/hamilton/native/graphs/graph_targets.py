@@ -123,13 +123,19 @@ _CFG_TABLE_TARGET_SPEC = TableTargetSpec(
         TableTargetTableSpec(
             table_key=CFG_BLOCKS_TABLE_KEY,
             base_node="cfg_blocks",
-            save_spec=DatasetSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY),
+            save_spec=DatasetSaveSpec(
+                table_key=CFG_BLOCKS_TABLE_KEY,
+                validation_profile="strict",
+            ),
             node_name="cfg__blocks_table",
         ),
         TableTargetTableSpec(
             table_key=CFG_EDGES_TABLE_KEY,
             base_node="cfg_edges",
-            save_spec=DatasetSaveSpec(table_key=CFG_EDGES_TABLE_KEY),
+            save_spec=DatasetSaveSpec(
+                table_key=CFG_EDGES_TABLE_KEY,
+                validation_profile="strict",
+            ),
             node_name="cfg__edges_table",
         ),
     ),
@@ -149,7 +155,10 @@ _DFG_TABLE_TARGET_SPEC = TableTargetSpec(
         TableTargetTableSpec(
             table_key=DFG_EDGES_TABLE_KEY,
             base_node="dfg_edges",
-            save_spec=DatasetSaveSpec(table_key=DFG_EDGES_TABLE_KEY),
+            save_spec=DatasetSaveSpec(
+                table_key=DFG_EDGES_TABLE_KEY,
+                validation_profile="strict",
+            ),
             node_name="dfg__edges_table",
         ),
     ),

@@ -1,7 +1,7 @@
 """Validate exported JSONL/Parquet datasets against TableSchema contracts.
 
-This module validates exported dataset files using the authoritative TableSchema,
-with Arrow structural checks and optional Pandera semantic validation.
+This module validates exported dataset files using the authoritative TableSchema
+with Arrow structural checks and observation-based constraints.
 """
 
 from __future__ import annotations
@@ -15,18 +15,18 @@ import pyarrow.json as pa_json
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import log_export_error
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.validation.columnar import (
+    ColumnarValidationContext,
+    TableValidationError,
+    validate_parquet_path,
+    validate_record_batch_reader,
+)
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED
 from codeintel.core.errors.taxonomy import NOT_FOUND
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.validation.profiles import ValidationProfile
-from codeintel.storage.validation.columnar import (
-    ColumnarValidationContext,
-    TableValidationError,
-    validate_parquet_path,
-    validate_record_batch_reader,
-)
 
 if TYPE_CHECKING:
     from pathlib import Path

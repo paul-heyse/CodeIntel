@@ -1,5 +1,5 @@
 {
-  "commit":"eaa57a9de9563033b6979adfe4cc703947730ab3",
+  "commit":"fe69e16c00b5e6e73685d19fe1057dbb98b98da2",
   "contracts":{
     "analytics.behavioral_coverage":{
       "composition":null,
@@ -105,7 +105,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"c59b60e8d8d2fcafd94f2a36ed7568e13bbd741e4aa2ec5c11f2e3d5f16fbfe3",
       "stable_id":null,
       "table_key":"analytics.behavioral_coverage",
       "tags":[
@@ -221,15 +221,7 @@
           }
         ],
         "description":"Control-flow graph block-level metrics per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_cfg_block_fn",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"cfg_block_metrics",
         "primary_key":[
           "function_goid_h128",
@@ -239,13 +231,29 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"bfd52893bcac939b2dcdbb656760191635dc5e27a83cc07d5173e5fd82e7860d",
       "stable_id":null,
       "table_key":"analytics.cfg_block_metrics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "dfg_edges",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.cfg_function_metrics":{
@@ -395,15 +403,7 @@
           }
         ],
         "description":"Control-flow graph summary metrics per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_cfg_fn_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"cfg_function_metrics",
         "primary_key":[
           "function_goid_h128",
@@ -412,13 +412,29 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"fbe16f1a256c60911eb50a195e7e6551aa054c492d6b54c378f4ed04e8b1d5bf",
       "stable_id":null,
       "table_key":"analytics.cfg_function_metrics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "dfg_edges",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.cfg_function_metrics_ext":{
@@ -508,15 +524,7 @@
           }
         ],
         "description":"Extended control-flow graph metrics per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_cfg_fn_ext_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"cfg_function_metrics_ext",
         "primary_key":[
           "function_goid_h128",
@@ -525,13 +533,29 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"80e1d3e9999f5b6c5c4a72de2958ad1536bec52b950a4fd0838c396b9f9f97c8",
       "stable_id":null,
       "table_key":"analytics.cfg_function_metrics_ext",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "dfg_edges",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.config_data_flow":{
@@ -614,13 +638,28 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"8cff2ff7916ca7f8114e8b851e84216489262c13b3c21d810f96f6dd5d22b2e5",
       "stable_id":null,
       "table_key":"analytics.config_data_flow",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "config_values",
+        "entrypoint_tests",
+        "entrypoints",
+        "goid_crosswalk",
+        "goids",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.config_graph_metrics_keys":{
@@ -694,13 +733,25 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"1c5159d419ba477a9b59c338bc2c4c41d26acab1f5c7ce77a832965d64a836d2",
       "stable_id":null,
       "table_key":"analytics.config_graph_metrics_keys",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.config_graph_metrics_modules":{
@@ -774,13 +825,25 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"af693c91149335d3b0be77752015cffa4a208de1492575169ccba917bfc2740d",
       "stable_id":null,
       "table_key":"analytics.config_graph_metrics_modules",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.config_projection_key_edges":{
@@ -840,13 +903,25 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"cf324bd1d25f8b770c215d3368e4986a38f07c100f5bb5ded6885a0399765fdd",
       "stable_id":null,
       "table_key":"analytics.config_projection_key_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.config_projection_module_edges":{
@@ -906,13 +981,25 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"b1285f435ae72dce5a804b0010aebf92e3ef3b0a0ce04617fe7267945bd7d2ca",
       "stable_id":null,
       "table_key":"analytics.config_projection_module_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.config_values":{
@@ -982,7 +1069,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"26739bd1a32cbbcbe91bdf9445e4c2e2f70de1d37dabb0a8746ab5696e53668e",
       "stable_id":null,
       "table_key":"analytics.config_values",
       "tags":[
@@ -1083,13 +1170,27 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"8349d21487333b91f78fb0befae36ffa8ea816017041270c04f8455961d2f3ae",
       "stable_id":null,
       "table_key":"analytics.data_model_fields",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "docstrings",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.data_model_relationships":{
@@ -1191,13 +1292,27 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"7b24e32aec1cb41f248e3e76cc46107c135057df1ed3089ca4da4a49125fc6c1",
       "stable_id":null,
       "table_key":"analytics.data_model_relationships",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "docstrings",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.data_model_usage":{
@@ -1267,13 +1382,32 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"e61aae2ea6f4ff48f1dd53431a5daac7a19640b02912b335a89daf399535649c",
       "stable_id":null,
       "table_key":"analytics.data_model_usage",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "data_model_fields",
+        "data_model_relationships",
+        "data_models",
+        "file_state",
+        "function_types",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.data_models":{
@@ -1362,13 +1496,27 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"520081ae649ede53d6c2e1438331420760ef69828a2a51c7850d7a54e61d0823",
       "stable_id":null,
       "table_key":"analytics.data_models",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "docstrings",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.dfg_block_metrics":{
@@ -1463,15 +1611,7 @@
           }
         ],
         "description":"Data-flow graph block-level metrics per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_dfg_block_fn",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"dfg_block_metrics",
         "primary_key":[
           "function_goid_h128",
@@ -1481,13 +1621,29 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"c8bbb5105d85fb1ac6377160a86fc39c61b97b95680f1a6a35b7b49cafc1c4a9",
       "stable_id":null,
       "table_key":"analytics.dfg_block_metrics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "dfg_edges",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.dfg_function_metrics":{
@@ -1632,15 +1788,7 @@
           }
         ],
         "description":"Data-flow graph summary metrics per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_dfg_fn_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"dfg_function_metrics",
         "primary_key":[
           "function_goid_h128",
@@ -1649,13 +1797,29 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"28ac0075ca1d196cde1fb309970787e1d1ef52e7f6461162932ccc17ece12aa2",
       "stable_id":null,
       "table_key":"analytics.dfg_function_metrics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "dfg_edges",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.dfg_function_metrics_ext":{
@@ -1740,15 +1904,7 @@
           }
         ],
         "description":"Extended data-flow graph metrics per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_dfg_fn_ext_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"dfg_function_metrics_ext",
         "primary_key":[
           "function_goid_h128",
@@ -1757,13 +1913,29 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"5198ef39497a6ee2a0bb3456348344dae4ea5eb63dee460076035d83d2bf3e40",
       "stable_id":null,
       "table_key":"analytics.dfg_function_metrics_ext",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "dfg_edges",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.entrypoint_tests":{
@@ -1833,13 +2005,30 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"49a51880c1764cd55c37e666e9d59cdf41e453ca2c08126413e9130e6a922a6e",
       "stable_id":null,
       "table_key":"analytics.entrypoint_tests",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "function_ast_features",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.entrypoints":{
@@ -2013,13 +2202,30 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"e79e83fec746015f2812973ead30dd92849d46f0783fa0e6f63a1c39ceffc007",
       "stable_id":null,
       "table_key":"analytics.entrypoints",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "function_ast_features",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.external_dependencies":{
@@ -2133,13 +2339,28 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"b9e9c4e18864e3b9aa0fae582fe7256b751921c97fc4b1ab3d92ff388fd0dad8",
       "stable_id":null,
       "table_key":"analytics.external_dependencies",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "function_ast_features",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.external_dependency_calls":{
@@ -2264,13 +2485,28 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"6f1e26d7882b4a6364c49bf758eb1cbdc5c893d1500e1d464758bbdf82896d25",
       "stable_id":null,
       "table_key":"analytics.external_dependency_calls",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "function_ast_features",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.function_ast_features":{
@@ -2400,16 +2636,7 @@
           }
         ],
         "description":"Per-function AST-derived semantic features for explainability and classification.",
-        "indexes":[
-          {
-            "columns":[
-              "repo",
-              "commit"
-            ],
-            "name":"idx_analytics_function_ast_features_repo_commit",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"function_ast_features",
         "primary_key":[
           "repo",
@@ -2418,13 +2645,26 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"e03286aa7f4541c690f9042bf0bf776640ef0165300f639caacb5ee15d5d4c07",
       "stable_id":null,
       "table_key":"analytics.function_ast_features",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.function_contracts":{
@@ -2494,15 +2734,7 @@
           }
         ],
         "description":"Inferred pre/postconditions and nullability per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_function_contracts_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"function_contracts",
         "primary_key":[
           "repo",
@@ -2511,13 +2743,28 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"d7f290c30314deba97780d28c9412ef7bd32a832eb905d9ebbd76a7e3c61c3b3",
       "stable_id":null,
       "table_key":"analytics.function_contracts",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "docstrings",
+        "file_state",
+        "function_types",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.function_effects":{
@@ -2612,15 +2859,7 @@
           }
         ],
         "description":"Side-effect and purity classification per function GOID",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_function_effects_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"function_effects",
         "primary_key":[
           "repo",
@@ -2629,13 +2868,28 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"a9974b6091062d3a79b3ca45675c44f1c02d2e45f958d4debe9b80a9cb45c138",
       "stable_id":null,
       "table_key":"analytics.function_effects",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.function_history":{
@@ -2787,7 +3041,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"aad3304cd55b21fd0729910c31000dd91241452534bdd2148013c16df7386d6d",
       "stable_id":null,
       "table_key":"analytics.function_history",
       "tags":[
@@ -2975,7 +3229,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"fc4923def086847974b1c868aa23dbc72f15d6c4b203e46586f696795ecca395",
       "stable_id":null,
       "table_key":"analytics.function_metrics",
       "tags":[
@@ -3513,7 +3767,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"331f5f1b8e9c64a46285ef50d13d9c4b393240fe7d787edfc2f2f2b61dc51d2d",
       "stable_id":null,
       "table_key":"analytics.function_profile",
       "tags":[
@@ -3614,26 +3868,28 @@
           }
         ],
         "description":"Per-function parameter and return type annotations",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_function_types_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"function_types",
         "primary_key":[],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"d4c3af0d756f5f331785b458f97f10320f3ebaa9f62e4d03489c12c9e9e6485b",
       "stable_id":null,
       "table_key":"analytics.function_types",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "goid_crosswalk",
+        "goids",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.function_validation":{
@@ -3693,16 +3949,7 @@
           }
         ],
         "description":"Validation findings for function analytics gaps",
-        "indexes":[
-          {
-            "columns":[
-              "repo",
-              "commit"
-            ],
-            "name":"idx_function_validation_repo_commit",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"function_validation",
         "primary_key":[
           "repo",
@@ -3712,13 +3959,23 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"86af3821b6fb0de90f48b57526d7dc6b543ef83a3b27df13c7be378ba8a8415a",
       "stable_id":null,
       "table_key":"analytics.function_validation",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "goid_crosswalk",
+        "goids",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.goid_risk_factors":{
@@ -3905,7 +4162,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"1ed1ee2d571c14a06ba228b8fb114411216b073a30ffc1f71591d0f62182a8f6",
       "stable_id":null,
       "table_key":"analytics.goid_risk_factors",
       "tags":[
@@ -4001,15 +4258,7 @@
           }
         ],
         "description":"Graph metrics per function computed from the call graph",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_graph_metrics_fn_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"graph_metrics_functions",
         "primary_key":[
           "repo",
@@ -4018,13 +4267,33 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"d0bac37476b12f6fabfd4bb38ae0ea244ff49bd66cfbaeac7f3230c2ec3d2d5e",
       "stable_id":null,
       "table_key":"analytics.graph_metrics_functions",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.graph_metrics_functions_ext":{
@@ -4149,15 +4418,7 @@
           }
         ],
         "description":"Extended call graph metrics per function (centralities, components)",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_graph_metrics_ext_fn_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"graph_metrics_functions_ext",
         "primary_key":[
           "repo",
@@ -4166,13 +4427,33 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"ce16f128e6d641fba6e31b0e4ba3fa611d86d9389d45348c42a602ec13d705a3",
       "stable_id":null,
       "table_key":"analytics.graph_metrics_functions_ext",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.graph_metrics_modules":{
@@ -4272,15 +4553,7 @@
           }
         ],
         "description":"Graph metrics per module computed from imports and symbol uses",
-        "indexes":[
-          {
-            "columns":[
-              "module"
-            ],
-            "name":"idx_analytics_graph_metrics_module",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"graph_metrics_modules",
         "primary_key":[
           "repo",
@@ -4289,13 +4562,33 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"d1a6caea468d40a24d2c650959624d94405ece00038c3130aab49b2da08e558e",
       "stable_id":null,
       "table_key":"analytics.graph_metrics_modules",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.graph_metrics_modules_ext":{
@@ -4405,15 +4698,7 @@
           }
         ],
         "description":"Extended import-graph metrics per module (centralities, cores, structural holes)",
-        "indexes":[
-          {
-            "columns":[
-              "module"
-            ],
-            "name":"idx_analytics_graph_metrics_modules_ext_module",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"graph_metrics_modules_ext",
         "primary_key":[
           "repo",
@@ -4422,13 +4707,33 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"6a6f6415c9765574974bb3a2ed3aabc4383c50f8d45fd9c2b1d7296dfb3af1cd",
       "stable_id":null,
       "table_key":"analytics.graph_metrics_modules_ext",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.graph_stats":{
@@ -4517,13 +4822,34 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"39293f9e45b328395a81fe8d6a8ff6847296d322a1fcbff5c5be549af2447a74",
       "stable_id":null,
       "table_key":"analytics.graph_stats",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "config_values",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.graph_validation":{
@@ -4593,16 +4919,7 @@
           }
         ],
         "description":"Validation findings for analytics graph consistency checks",
-        "indexes":[
-          {
-            "columns":[
-              "repo",
-              "commit"
-            ],
-            "name":"idx_graph_validation_repo_commit",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"graph_validation",
         "primary_key":[
           "repo",
@@ -4613,7 +4930,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"75e2b00a8db1593227785a15cd1f96dc0a615f8550f156fb2e8303749a2f2deb",
       "stable_id":null,
       "table_key":"analytics.graph_validation",
       "tags":[
@@ -4654,7 +4971,7 @@
         "primary_key":[],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"f74781987027ba5fa14fc87debfa876ac9bedb4da05a7ffb0864db2da7424de0",
       "stable_id":null,
       "table_key":"analytics.hello_example",
       "tags":[
@@ -4803,7 +5120,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"2f1788c0e1f9ca47d4cf23341bb7de6b160291b218d6fe7102820b6cfc274be5",
       "stable_id":null,
       "table_key":"analytics.history_timeseries",
       "tags":[
@@ -4871,7 +5188,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"525a2a75a6d17adff75058418e432a2ea108f7ac35c2c1c63feb5bdd8ed1d5fc",
       "stable_id":null,
       "table_key":"analytics.hotspots",
       "tags":[
@@ -5064,7 +5381,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"db3b5165e88d1a404e7cd6ce61c7bd75a28688a94dca0e3913833fa7cb9c7438",
       "stable_id":null,
       "table_key":"analytics.module_profile",
       "tags":[
@@ -5202,13 +5519,47 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"9e7926f76d2cf0afb8b073639afbbece0c7f568fdd1bfbafa94c048f6d6ada34",
       "stable_id":null,
       "table_key":"analytics.py_cpg_quality_report",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cpg_edges",
+        "cpg_nodes",
+        "py_bc_blocks",
+        "py_bc_cfg_edges",
+        "py_bc_code_units",
+        "py_bc_defuse_events",
+        "py_bc_exception_table",
+        "py_bc_instructions",
+        "py_compiler_metadata",
+        "py_inspect_annotations_kv",
+        "py_inspect_class_attrs",
+        "py_inspect_class_mro",
+        "py_inspect_members_static",
+        "py_inspect_objects",
+        "py_inspect_runtime_state",
+        "py_inspect_signature_params",
+        "py_inspect_signatures",
+        "py_inspect_source",
+        "py_inspect_unwrap_hops",
+        "py_sym_bindings",
+        "py_sym_function_partitions",
+        "py_sym_namespace_edges",
+        "py_sym_resolution_edges",
+        "py_sym_scope_edges",
+        "py_sym_scopes",
+        "py_sym_symbols",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.semantic_roles_functions":{
@@ -5268,15 +5619,7 @@
           }
         ],
         "description":"Semantic role classification per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_analytics_semantic_roles_fn",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"semantic_roles_functions",
         "primary_key":[
           "repo",
@@ -5285,13 +5628,31 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"8a2c6db931a1f1aa5290dd2c9e4c331aefd0172f51f33762f3906ddcf3bfc366",
       "stable_id":null,
       "table_key":"analytics.semantic_roles_functions",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "function_ast_features",
+        "function_contracts",
+        "function_effects",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.semantic_roles_modules":{
@@ -5346,15 +5707,7 @@
           }
         ],
         "description":"Semantic role classification per module",
-        "indexes":[
-          {
-            "columns":[
-              "module"
-            ],
-            "name":"idx_analytics_semantic_roles_mod",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"semantic_roles_modules",
         "primary_key":[
           "repo",
@@ -5363,13 +5716,31 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"9f2071fdfb3c796f519c897beb370cecdd2ac250a31189d567e392db70a8a7b5",
       "stable_id":null,
       "table_key":"analytics.semantic_roles_modules",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "function_ast_features",
+        "function_contracts",
+        "function_effects",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.static_diagnostics":{
@@ -5438,13 +5809,17 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"f0367834b641b32157e013bc209d35c7d2d341dabf8bcc0d54b2f8255841b2ba",
       "stable_id":null,
       "table_key":"analytics.static_diagnostics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.subsystem_agreement":{
@@ -5508,13 +5883,25 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"99dc1fdbac049b68801f872ef03e24acc95b6a88423fd322a15d8a4edee64e61",
       "stable_id":null,
       "table_key":"analytics.subsystem_agreement",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules_ext",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.subsystem_graph_metrics":{
@@ -5593,13 +5980,25 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"ee8a482ef8564969646c9c052c04b84d35562ac2a98e8621d8a2caccdb08ff46",
       "stable_id":null,
       "table_key":"analytics.subsystem_graph_metrics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "import_graph_edges",
+        "import_modules",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.subsystem_modules":{
@@ -5644,15 +6043,7 @@
           }
         ],
         "description":"Mapping of subsystems to member modules",
-        "indexes":[
-          {
-            "columns":[
-              "module"
-            ],
-            "name":"idx_analytics_subsystem_modules_module",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"subsystem_modules",
         "primary_key":[
           "repo",
@@ -5662,13 +6053,28 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"d440a90c02ad5bfa674db86f2d410a2a7a0f0ef3dd719209e7db6e9b703f6e96",
       "stable_id":null,
       "table_key":"analytics.subsystem_modules",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.subsystem_profile_cache":{
@@ -5817,13 +6223,24 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"07f8895540f244a2c606babb01134b3a8f5f6a0d8b95b92aaadcc8f1babb818f",
       "stable_id":null,
       "table_key":"analytics.subsystem_profile_cache",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystems"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.subsystems":{
@@ -5933,17 +6350,7 @@
           }
         ],
         "description":"Inferred architectural subsystems with summary metrics",
-        "indexes":[
-          {
-            "columns":[
-              "repo",
-              "commit",
-              "subsystem_id"
-            ],
-            "name":"idx_analytics_subsystems_repo_commit_id",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"subsystems",
         "primary_key":[
           "repo",
@@ -5952,13 +6359,28 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"5ac9a905a9849ed0f6eebe7abdf505f04a85e31edac30782301f7d065351a062",
       "stable_id":null,
       "table_key":"analytics.subsystems",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "config_values",
+        "file_state",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.symbol_graph_metrics_functions":{
@@ -6048,15 +6470,7 @@
           }
         ],
         "description":"Symbol-coupling graph metrics per function",
-        "indexes":[
-          {
-            "columns":[
-              "function_goid_h128"
-            ],
-            "name":"idx_symbol_graph_metrics_fn",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"symbol_graph_metrics_functions",
         "primary_key":[
           "repo",
@@ -6065,13 +6479,33 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"9317af8a1adbbd1f3fe06084b8e7e8d62cbc2915c7124ceb0dabe0e86878fcae",
       "stable_id":null,
       "table_key":"analytics.symbol_graph_metrics_functions",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.symbol_graph_metrics_modules":{
@@ -6170,13 +6604,33 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"ec5b4ee870996ca9df31c81073143673ba5c3f17823bbb1653893d2df4bacad7",
       "stable_id":null,
       "table_key":"analytics.symbol_graph_metrics_modules",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "call_graph_edges",
+        "call_graph_nodes",
+        "file_state",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "subsystem_modules",
+        "subsystems",
+        "symbol_use_edges"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.tags_index":{
@@ -6228,7 +6682,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"c45f5d21876050552c32a38a057705ff03879cae37984cfb59ea571f27b225c9",
       "stable_id":null,
       "table_key":"analytics.tags_index",
       "tags":[
@@ -6339,13 +6793,17 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"5763cc23b7f449cf7c804846b118c620203c9439b9f4df02c07a453cd98d1a40",
       "stable_id":null,
       "table_key":"analytics.test_catalog",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "analytics.test_coverage_edges":{
@@ -6455,7 +6913,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"271ac4a8b28017f119d8bc722ebd04764a7f71efce8bd1a3a37a304d2610407e",
       "stable_id":null,
       "table_key":"analytics.test_coverage_edges",
       "tags":[
@@ -6558,7 +7016,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"a16dbc54ec3467fab7a28f21b19b1ec518b53d80c7239ab114bd82fdf1579b44",
       "stable_id":null,
       "table_key":"analytics.test_graph_metrics_functions",
       "tags":[
@@ -6801,7 +7259,7 @@
         ],
         "schema":"analytics"
       },
-      "schema_version":null,
+      "schema_version":"9fe93cf8f4ddf1efaa64817d49a14377d94ff92b5e25a2327799295fce6eb3e4",
       "stable_id":null,
       "table_key":"analytics.test_profile",
       "tags":[
@@ -6887,7 +7345,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"b9f1a33f7884b8b1e24065684a98f5cfcc6d9bb83a9e33fd049b2deacdf983e3",
       "stable_id":null,
       "table_key":"build.asset_aliases",
       "tags":[
@@ -6975,7 +7433,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"33dfceb43cbf7516ba3e748b0b77947cc38030b0a8e81cebac4404dd2b60169e",
       "stable_id":null,
       "table_key":"build.asset_diffs",
       "tags":[
@@ -7079,7 +7537,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"cb4f4d15fb8f1a66e95520529834578a1576ef87b9cc2e0216be1901e63389ad",
       "stable_id":null,
       "table_key":"build.asset_lineage",
       "tags":[
@@ -7222,7 +7680,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"ce6dad82a419a8df3be425cf85b495aa4dce42a5021e1d4539e76025864b450a",
       "stable_id":null,
       "table_key":"build.asset_version_events",
       "tags":[
@@ -7321,7 +7779,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"2ab9f06e25bdd98ebd90d5fe4e59d9a15840ad573c8e6c3b5e94f8e4d4f6036a",
       "stable_id":null,
       "table_key":"build.asset_versions",
       "tags":[
@@ -7438,7 +7896,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"7cf278111e7778e947ed8ddaf0cb5fd7a6f15bdcd3d941ac83c73dfba49940f7",
       "stable_id":null,
       "table_key":"build.output_manifests",
       "tags":[
@@ -7557,7 +8015,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"3b57d9030536bdbf6d7fe6385c3a5c19c695c608db62f14ced00f4ffc1c461ad",
       "stable_id":null,
       "table_key":"build.run_asset_versions",
       "tags":[
@@ -7646,7 +8104,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"1a20c09a4b82d8487485d6da33e01abcf4444caed1438bcf6ef55a0d61128052",
       "stable_id":null,
       "table_key":"build.run_environments",
       "tags":[
@@ -7758,7 +8216,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"0c73ae0334b1f39a1cccf5db4f7763e0040dacc3c318d93646259a6a43e698bf",
       "stable_id":null,
       "table_key":"build.run_nodes",
       "tags":[
@@ -7885,7 +8343,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"92064be6c9ef898f690b9a192aa5606531071654cd996810c18b40dcef425305",
       "stable_id":null,
       "table_key":"build.run_targets",
       "tags":[
@@ -8000,7 +8458,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"82e2e42c17169f8858e5c556c4dc69e62a8ae8e83691a92850355d0f51b7b032",
       "stable_id":null,
       "table_key":"build.runs",
       "tags":[
@@ -8211,7 +8669,7 @@
         ],
         "schema":"build"
       },
-      "schema_version":null,
+      "schema_version":"c24426b457a067e29da846197ad8e38af6e85b3b7829f64b5d5fef10aca4f653",
       "stable_id":null,
       "table_key":"build.scip_runs",
       "tags":[
@@ -8323,7 +8781,7 @@
         ],
         "schema":"ci"
       },
-      "schema_version":null,
+      "schema_version":"82917050f1be6806ca0f33f9a38a196dda47ea03eb6fdff5d7825bba9a3df6c8",
       "stable_id":null,
       "table_key":"ci.plan_entries",
       "tags":[
@@ -8396,13 +8854,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"6aa6e250fc1ca6c73100da4b9ff88d6168440d9e3af84040ae79b5ed2b01193b",
       "stable_id":null,
       "table_key":"core.ast_metrics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ast_nodes":{
@@ -8560,13 +9022,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"e234bd76abd216eeb28e236a678a0e0d5416296a2830e4eb7b96318eceb12a41",
       "stable_id":null,
       "table_key":"core.ast_nodes",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.cst_nodes":{
@@ -8628,13 +9094,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"ac262f04a64aff32408a3cebb563a32ac20598d88a8a3b2ea7063e33a8d09912",
       "stable_id":null,
       "table_key":"core.cst_nodes",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.docstrings":{
@@ -8744,13 +9214,17 @@
         "primary_key":[],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"a461c8e1ca6c513948fc73eb9ee974b485ee25af7e89dc8ffb115996a54e4419",
       "stable_id":null,
       "table_key":"core.docstrings",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.file_line_index":{
@@ -8823,13 +9297,24 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"025af17ea2213cd19f466a8b8327cc5afbfdfdb881580b18e6cbf95f2e086417",
       "stable_id":null,
       "table_key":"core.file_line_index",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "core.file_state":{
@@ -8909,7 +9394,7 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"a9f3e2aa045eeea7e23361593e0b0a1d0cac6cadc62cf45e3cb4f99e4baad9f1",
       "stable_id":null,
       "table_key":"core.file_state",
       "tags":[
@@ -9005,15 +9490,7 @@
           }
         ],
         "description":"Crosswalk from GOIDs to language-specific symbols/paths",
-        "indexes":[
-          {
-            "columns":[
-              "goid"
-            ],
-            "name":"idx_core_gcw_goid",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"goid_crosswalk",
         "primary_key":[
           "repo",
@@ -9022,13 +9499,26 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"4550f108a1b499e5204423153a39a4168d8158063e4763e60285b3f61310a8ee",
       "stable_id":null,
       "table_key":"core.goid_crosswalk",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "file_state",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "core.goids":{
@@ -9103,42 +9593,33 @@
           }
         ],
         "description":"Global object identifiers for code entities",
-        "indexes":[
-          {
-            "columns":[
-              "goid_h128"
-            ],
-            "name":"idx_core_goids_h128",
-            "unique":true
-          },
-          {
-            "columns":[
-              "urn"
-            ],
-            "name":"idx_core_goids_urn",
-            "unique":true
-          },
-          {
-            "columns":[
-              "rel_path"
-            ],
-            "name":"idx_core_goids_path",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"goids",
         "primary_key":[
           "goid_h128"
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"3e866ab4b566a5a63db836dfcef10e4623895bf233be2655363d0d9d716a41d2",
       "stable_id":null,
       "table_key":"core.goids",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "file_state",
+        "modules",
+        "repo_map",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "core.ingest_runs":{
@@ -9263,7 +9744,7 @@
         "primary_key":[],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"3dcfda62d0f9c20a4920040319d3b603cfb746d8b2f7012f706af2150d440ee1",
       "stable_id":null,
       "table_key":"core.ingest_runs",
       "tags":[
@@ -9370,7 +9851,7 @@
           "use_staging":true
         }
       },
-      "schema_version":null,
+      "schema_version":"0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674db86928872aa2a81",
       "stable_id":null,
       "table_key":"core.modules",
       "tags":[
@@ -9504,13 +9985,17 @@
           "use_staging":false
         }
       },
-      "schema_version":null,
+      "schema_version":"bf853e5a9b4f2cc3b457292fc10f1799f3e70699d756fc00f1e37162ab3613ee",
       "stable_id":null,
       "table_key":"core.parse_manifest",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_bc_blocks":{
@@ -9605,13 +10090,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"c5bc62d4620bbf71d44aadce4cb47bf14ead142f32741b87ee8849e9d0beb78b",
       "stable_id":null,
       "table_key":"core.py_bc_blocks",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_bc_cfg_edges":{
@@ -9691,13 +10180,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"4735153e65188c992d8ab0c5ef3266225937981844d9eeedb0a693b3fbc7ec17",
       "stable_id":null,
       "table_key":"core.py_bc_cfg_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_bc_code_units":{
@@ -9867,13 +10360,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"2f54d5f9951b2221ac20632e0bdda752bf5d237c5efde4f01c36a92561a28216",
       "stable_id":null,
       "table_key":"core.py_bc_code_units",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_bc_defuse_events":{
@@ -9958,13 +10455,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"83f537e0004136d766ac8734cd02d4b9464c9ada0154c1accb62cb325d5f3576",
       "stable_id":null,
       "table_key":"core.py_bc_defuse_events",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_bc_exception_table":{
@@ -10060,13 +10561,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"9568a319d5dc9bef34f41ff9341ec6a35a86166018dae3f0965462b42426568e",
       "stable_id":null,
       "table_key":"core.py_bc_exception_table",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_bc_instructions":{
@@ -10277,13 +10782,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"2b7d0e5860c275644718b7c58adb9ce32a6092f88b7bbb38ef8ccce72a71b9e5",
       "stable_id":null,
       "table_key":"core.py_bc_instructions",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_compiler_metadata":{
@@ -10360,13 +10869,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"aea900a9a83407d26bdc6686d2ddd10643c8f17773394fb7cb84bcecb4418273",
       "stable_id":null,
       "table_key":"core.py_compiler_metadata",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_annotations_kv":{
@@ -10436,13 +10949,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"e5208ddac0783839d17cfc3ff583f1bb0e801525eca1d6e5ab0d7b10d6c08370",
       "stable_id":null,
       "table_key":"core.py_inspect_annotations_kv",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_class_attrs":{
@@ -10547,13 +11064,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"c6534bc3c60ff7c0a639ae38ec8b0032dc0254b16977de52d0e02f6a7bae1fe0",
       "stable_id":null,
       "table_key":"core.py_inspect_class_attrs",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_class_mro":{
@@ -10623,13 +11144,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"5c5957958ad090fa15e4541762af6e4085b99d402e9831b170c04557380c9c2a",
       "stable_id":null,
       "table_key":"core.py_inspect_class_mro",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_members_static":{
@@ -10734,13 +11259,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"e16299416ac36376f8c4c42c05ece8aaa5a29dfd58ec52eca698c115a28e8b2e",
       "stable_id":null,
       "table_key":"core.py_inspect_members_static",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_objects":{
@@ -10854,13 +11383,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"24bd5f1f255ad42e1b1dd2a52b0c3e59da9f779c9f3d6b324a5b60f6db246bae",
       "stable_id":null,
       "table_key":"core.py_inspect_objects",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_runtime_state":{
@@ -10995,13 +11528,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"0566eb09a1353ad9d10fd40d400e9adf4043079859e39b7cfb857c9292b04ffd",
       "stable_id":null,
       "table_key":"core.py_inspect_runtime_state",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_signature_params":{
@@ -11091,13 +11628,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"2d3a636367d404050be1eac0a512828b1afb45c66447cf197a752187c4da8b86",
       "stable_id":null,
       "table_key":"core.py_inspect_signature_params",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_signatures":{
@@ -11201,13 +11742,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"4748e629b3206fcdb145e458298ad6317f42500c24ce54689d870ec1b0a6dde0",
       "stable_id":null,
       "table_key":"core.py_inspect_signatures",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_source":{
@@ -11286,13 +11831,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"1912982f1ce00a4fd17651afb3d266ab8e3cb2c72b78dbe7c97626fd000fe2a6",
       "stable_id":null,
       "table_key":"core.py_inspect_source",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_inspect_unwrap_hops":{
@@ -11372,13 +11921,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"41d06c8616b535caf9d49b7d14463e583012cf9821c92c0ec9fd4e537d86e207",
       "stable_id":null,
       "table_key":"core.py_inspect_unwrap_hops",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_sym_bindings":{
@@ -11468,13 +12021,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"9f3b880c67b0750a8834ca32ec3856d0639497fedd0d6e72a849879cf9d301b3",
       "stable_id":null,
       "table_key":"core.py_sym_bindings",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_sym_function_partitions":{
@@ -11549,13 +12106,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"d8b7b7e8b6ccdfd67aa36bf69e0c1c24b7683b3a4f21336e97ba813a473ad3ee",
       "stable_id":null,
       "table_key":"core.py_sym_function_partitions",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_sym_namespace_edges":{
@@ -11632,13 +12193,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"b3c6900de18d2cb24c57634656081d15ea6e9bec3931c8029d8780df428a5de1",
       "stable_id":null,
       "table_key":"core.py_sym_namespace_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_sym_resolution_edges":{
@@ -11713,13 +12278,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"511761038d66474a8e586f3d508e111f0ba49c68dcb843b14d343e9ce085d990",
       "stable_id":null,
       "table_key":"core.py_sym_resolution_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_sym_scope_edges":{
@@ -11780,13 +12349,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"999aa30ef6609424ed20c421b71bc0fc0424b8b3089e815c7d7df3bd59326da8",
       "stable_id":null,
       "table_key":"core.py_sym_scope_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_sym_scopes":{
@@ -11906,13 +12479,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"dda5b0c23910749698f1093c0ce12379678c3704a57968bbf66c7942f50122ae",
       "stable_id":null,
       "table_key":"core.py_sym_scopes",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.py_sym_symbols":{
@@ -12032,13 +12609,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"4f17a9ef00ee5dc92a0f452d2158eab2413b3cc14ebe7c87d3be3cf8e0b7cea3",
       "stable_id":null,
       "table_key":"core.py_sym_symbols",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.repo_map":{
@@ -12091,7 +12672,7 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"faed8ffe21d24948bb6f261c118ccb33fd0b731dc0723afeb47722f28a300837",
       "stable_id":null,
       "table_key":"core.repo_map",
       "tags":[
@@ -12172,7 +12753,7 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"ab32d3a8c2a88b105b6baedb101b6cec5432ff4c92222457c9b5c4fd5b1acf84",
       "stable_id":null,
       "table_key":"core.schema_inference_errors",
       "tags":[
@@ -12288,13 +12869,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"ffcd6ff2336f1bcd5e6881660420b01c9093c6ef00f1bc1e8ebeb6ff579c86d0",
       "stable_id":null,
       "table_key":"core.scip_diagnostics",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_external_symbols":{
@@ -12366,13 +12951,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"9da90223074134c26813b5cd6f03cfe1d0f83951a6b8eab567ffbf2b09a5bcd5",
       "stable_id":null,
       "table_key":"core.scip_external_symbols",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_module_state":{
@@ -12457,13 +13046,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"3f65d61fa1b0f4e78dfe5cb40632786f65d836c95a4b730dd8053ea4efc3cc96",
       "stable_id":null,
       "table_key":"core.scip_module_state",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_occurrence_span_xref":{
@@ -12624,13 +13217,34 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"1dd982cd6131450bdeb034b1a25a008dd8291011882230a615ed3bff503d9b8a",
       "stable_id":null,
       "table_key":"core.scip_occurrence_span_xref",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "goid_crosswalk",
+        "goids",
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_occurrence_syntax_xref":{
@@ -12725,15 +13339,7 @@
           }
         ],
         "description":"SCIP occurrence to syntax-node weld table.",
-        "indexes":[
-          {
-            "columns":[
-              "scip_symbol"
-            ],
-            "name":"idx_core_scip_occ_syntax_symbol",
-            "unique":false
-          }
-        ],
+        "indexes":[],
         "name":"scip_occurrence_syntax_xref",
         "primary_key":[
           "repo",
@@ -12744,13 +13350,34 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"e67d36d42f5da64b642b67f52d1b0e0d028aa0a50585f8a6b239d1b810c48384",
       "stable_id":null,
       "table_key":"core.scip_occurrence_syntax_xref",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "goid_crosswalk",
+        "goids",
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_occurrences":{
@@ -12867,13 +13494,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"8ea592963e6986478b832655c7a4224c9588d62f12ee53a908b9ee66cd2ab607",
       "stable_id":null,
       "table_key":"core.scip_occurrences",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_symbol_goid_xref":{
@@ -12977,13 +13608,34 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"b9b91d004244a9be3aa0f3baee5d077d75f2a5bd5ea5bcb1884d37c09c33ce1a",
       "stable_id":null,
       "table_key":"core.scip_symbol_goid_xref",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "goid_crosswalk",
+        "goids",
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_symbol_information":{
@@ -13065,13 +13717,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"c9bcfef6e2a91661d2e1f38771dedc87e18efcfba3f9423b7ce3e00a166988a3",
       "stable_id":null,
       "table_key":"core.scip_symbol_information",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_symbol_relationships":{
@@ -13140,13 +13796,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"8090fd224c11fcae0357db31b34d1e60ca67210857513e10b62ed0239aaed03c",
       "stable_id":null,
       "table_key":"core.scip_symbol_relationships",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.scip_symbols":{
@@ -13214,13 +13874,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"fec4c4ac83a25a249e4a750685e5d59dda2982a969723d1ec55c06528e1bc617",
       "stable_id":null,
       "table_key":"core.scip_symbols",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_call_args":{
@@ -13337,13 +14001,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"1f4a52efcbe10c3f7a1140a4938c7f764b6f7a9251b6146efbfe2992ccc236a0",
       "stable_id":null,
       "table_key":"core.syntax_call_args",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_calls":{
@@ -13474,13 +14142,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"2b552045988e06dd6cb89a4a7b490f5cf90d796e4c30ac4b6d4a7ea03e31b61f",
       "stable_id":null,
       "table_key":"core.syntax_calls",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_calls_resolved":{
@@ -13671,13 +14343,35 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"3c9df545872ed277fe83da6e6a9cc3d4706e1f284139bbf72597de01ec933194",
       "stable_id":null,
       "table_key":"core.syntax_calls_resolved",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_defs":{
@@ -13788,13 +14482,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"e32bf039140aed0aff48ac0004c3c730124ef000cd7f060dda3a7fbb0ba053b3",
       "stable_id":null,
       "table_key":"core.syntax_defs",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_defs_resolved":{
@@ -13965,13 +14663,35 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"8d8841d05ca61ded35196691b85078802358dc741a05f357960f36e34fe834b6",
       "stable_id":null,
       "table_key":"core.syntax_defs_resolved",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_edges":{
@@ -14050,13 +14770,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"cd1c78c48e4c172a60e8c17aab76d2566e173a37a1418b3611afd2abc44e507b",
       "stable_id":null,
       "table_key":"core.syntax_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_edges_augmented":{
@@ -14135,13 +14859,41 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"cd1c78c48e4c172a60e8c17aab76d2566e173a37a1418b3611afd2abc44e507b",
       "stable_id":null,
       "table_key":"core.syntax_edges_augmented",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans",
+        "ts_captures",
+        "ts_changed_ranges",
+        "ts_edges",
+        "ts_language_metadata",
+        "ts_nodes",
+        "ts_parse_errors",
+        "ts_parse_manifest",
+        "ts_tokens",
+        "ts_trivia"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_func_params":{
@@ -14263,13 +15015,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"7fbbbb08c12f7ebd03d8f5156162a8943b19b1e5ccac57af27aa932342d52f2e",
       "stable_id":null,
       "table_key":"core.syntax_func_params",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_imports":{
@@ -14395,13 +15151,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"9826198869fc6f148c607be99ab77cf45b98dc28397345cb8d7c37f1a1634481",
       "stable_id":null,
       "table_key":"core.syntax_imports",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_imports_resolved":{
@@ -14587,13 +15347,35 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"5614c23ff80f8c757a1801fb7f1d287aed82daab4093845a2d421834803a1576",
       "stable_id":null,
       "table_key":"core.syntax_imports_resolved",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_nodes":{
@@ -14704,13 +15486,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"b57629fa99f1b2746e0d74d8d6e9af50355a9d01b7cdce41f2f15f5ba455d560",
       "stable_id":null,
       "table_key":"core.syntax_nodes",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_nodes_augmented":{
@@ -14821,13 +15607,41 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"b57629fa99f1b2746e0d74d8d6e9af50355a9d01b7cdce41f2f15f5ba455d560",
       "stable_id":null,
       "table_key":"core.syntax_nodes_augmented",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans",
+        "ts_captures",
+        "ts_changed_ranges",
+        "ts_edges",
+        "ts_language_metadata",
+        "ts_nodes",
+        "ts_parse_errors",
+        "ts_parse_manifest",
+        "ts_tokens",
+        "ts_trivia"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_refs":{
@@ -14938,13 +15752,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"b8ba06734708c26768b7574daa8d6a3d3f461857c55edde22b021e037953dd9b",
       "stable_id":null,
       "table_key":"core.syntax_refs",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_refs_resolved":{
@@ -15115,13 +15933,35 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"bf86f9b9d58aa533ebe18bf82a1ebbfae0ba70c55923e070d8adfa33da9bb6fc",
       "stable_id":null,
       "table_key":"core.syntax_refs_resolved",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_scopes":{
@@ -15207,13 +16047,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"871167ffada38cceab14a09eaa787b4782de2bbd00c3016922e24607735557c4",
       "stable_id":null,
       "table_key":"core.syntax_scopes",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.syntax_spans":{
@@ -15304,13 +16148,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"031a2c312ef83069ca19b2ec3e1f56d509eb224efcda8731100bf9f94e6aa2d6",
       "stable_id":null,
       "table_key":"core.syntax_spans",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_captures":{
@@ -15435,13 +16283,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"d3a0f1e95784b5f233e6a48ba38e221f31c7121701dd408e96412f9ed2d1c104",
       "stable_id":null,
       "table_key":"core.ts_captures",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_changed_ranges":{
@@ -15531,13 +16383,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"d5f8596c67b05adbf07db27f0e45e0783b33e4168e02137de1f580df1625b794",
       "stable_id":null,
       "table_key":"core.ts_changed_ranges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_edges":{
@@ -15630,13 +16486,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"c7814e2b45ff4edb6d5f323219b47e4891645de3c425f2ac4db1d0eaaa80a83f",
       "stable_id":null,
       "table_key":"core.ts_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_language_metadata":{
@@ -15712,13 +16572,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"7ad5e4ea83fe4d85df533998658f0af1ceb1d1559487418d2f680bd57d90f546",
       "stable_id":null,
       "table_key":"core.ts_language_metadata",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_nodes":{
@@ -15874,13 +16738,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"8a2408b58c97a7395ef9461ae8a7fad8efdda8b08247426afc85965439ea9f3f",
       "stable_id":null,
       "table_key":"core.ts_nodes",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_parse_errors":{
@@ -15991,13 +16859,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"b4a4b6eecc7baff3db67ebc19623a5f4e6210cea7e0b523f8c76ed12e36b2bdd",
       "stable_id":null,
       "table_key":"core.ts_parse_errors",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_parse_manifest":{
@@ -16125,13 +16997,17 @@
           "use_staging":false
         }
       },
-      "schema_version":null,
+      "schema_version":"bf853e5a9b4f2cc3b457292fc10f1799f3e70699d756fc00f1e37162ab3613ee",
       "stable_id":null,
       "table_key":"core.ts_parse_manifest",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_syntax_node_xref":{
@@ -16223,13 +17099,41 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"140ff897d3116a78851e1c132fba2286934dbd962f75703e7e8f05e08547f134",
       "stable_id":null,
       "table_key":"core.ts_syntax_node_xref",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans",
+        "ts_captures",
+        "ts_changed_ranges",
+        "ts_edges",
+        "ts_language_metadata",
+        "ts_nodes",
+        "ts_parse_errors",
+        "ts_parse_manifest",
+        "ts_tokens",
+        "ts_trivia"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_tokens":{
@@ -16350,13 +17254,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"5b5df9d95c7a6a8328ce91379920eeb3cfa663f34c1a310cea66f8157944030f",
       "stable_id":null,
       "table_key":"core.ts_tokens",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_trivia":{
@@ -16477,13 +17385,17 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"f7f8664acd22bdd05bd3a68f0bb92a1243e4a0aeb918f6d9381540733d688ea7",
       "stable_id":null,
       "table_key":"core.ts_trivia",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "file_state",
+        "modules",
+        "repo_map"
+      ],
       "validation_profile":"lenient"
     },
     "core.ts_weld_coverage":{
@@ -16556,13 +17468,41 @@
         ],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"8bc6926fd79df6a13f5e73150e9c29e678b70b04c6b318e62717f66080464ccf",
       "stable_id":null,
       "table_key":"core.ts_weld_coverage",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans",
+        "ts_captures",
+        "ts_changed_ranges",
+        "ts_edges",
+        "ts_language_metadata",
+        "ts_nodes",
+        "ts_parse_errors",
+        "ts_parse_manifest",
+        "ts_tokens",
+        "ts_trivia"
+      ],
       "validation_profile":"lenient"
     },
     "core.v_goid_crosswalk_join":{
@@ -16666,13 +17606,61 @@
         "primary_key":[],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"3ada79ac86eb23a52b884ee5dc4a48df2941fed6b44ef90cfd3f659f9c79f9c3",
       "stable_id":null,
       "table_key":"core.v_goid_crosswalk_join",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "core.v_goid_crosswalk_mismatches":{
@@ -16756,13 +17744,61 @@
         "primary_key":[],
         "schema":"core"
       },
-      "schema_version":null,
+      "schema_version":"be3f3e021d1a940111f7f68f17bd58c017f37285fa7e0d70dde0e11923639c6e",
       "stable_id":null,
       "table_key":"core.v_goid_crosswalk_mismatches",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_behavioral_classification_input":{
@@ -16867,14 +17903,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"e28f58b95df09db15e661d347844cd0d753abc1a2580873c00b1e78d55910b8b",
       "stable_id":null,
       "table_key":"docs.v_behavioral_classification_input",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_call_graph_enriched":{
@@ -17019,14 +18103,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"2860d1a17c99964bf17410bfd31f568567565ae378ef249a47e05f1ac61c754d",
       "stable_id":null,
       "table_key":"docs.v_call_graph_enriched",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_cfg_block_architecture":{
@@ -17206,14 +18338,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"6ab03c635a980566f4d9c948864d32d9308372290e4ef8f610679c9cb59ba52c",
       "stable_id":null,
       "table_key":"docs.v_cfg_block_architecture",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_config_data_flow":{
@@ -17308,14 +18488,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"e59a76abbd50ec2ab9b27526625a7b498846ce8219d64604b7ac72ac1defeb2e",
       "stable_id":null,
       "table_key":"docs.v_config_data_flow",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_data_model_fields":{
@@ -17405,14 +18633,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"8349d21487333b91f78fb0befae36ffa8ea816017041270c04f8455961d2f3ae",
       "stable_id":null,
       "table_key":"docs.v_data_model_fields",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_data_model_relationships":{
@@ -17507,14 +18783,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"7b24e32aec1cb41f248e3e76cc46107c135057df1ed3089ca4da4a49125fc6c1",
       "stable_id":null,
       "table_key":"docs.v_data_model_relationships",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_data_model_usage":{
@@ -17609,14 +18933,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"5c6e9392622a3e6e5a4c5b1853228af8e02a03c8942dde9182c407651d30d417",
       "stable_id":null,
       "table_key":"docs.v_data_model_usage",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_data_models":{
@@ -17711,14 +19083,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"ebd57e29ed43d25b78f6e039404cf5cac3424eb6ba78a553e0b2eec8ecb69720",
       "stable_id":null,
       "table_key":"docs.v_data_models",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_data_models_normalized":{
@@ -17813,14 +19233,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"a749f1c298996d78400532692fe3804a99357343dc7ce5eb1505baa344766c0f",
       "stable_id":null,
       "table_key":"docs.v_data_models_normalized",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_dfg_block_architecture":{
@@ -17975,14 +19443,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"322f295b52a04e6c922e2e501b3e4951afaf6282becdd2d2d24a9932b97364e2",
       "stable_id":null,
       "table_key":"docs.v_dfg_block_architecture",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_entrypoints":{
@@ -18152,14 +19668,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"e79e83fec746015f2812973ead30dd92849d46f0783fa0e6f63a1c39ceffc007",
       "stable_id":null,
       "table_key":"docs.v_entrypoints",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_external_dependencies":{
@@ -18269,14 +19833,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"b9e9c4e18864e3b9aa0fae582fe7256b751921c97fc4b1ab3d92ff388fd0dad8",
       "stable_id":null,
       "table_key":"docs.v_external_dependencies",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_external_dependency_calls":{
@@ -18396,14 +20008,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"6f1e26d7882b4a6364c49bf758eb1cbdc5c893d1500e1d464758bbdf82896d25",
       "stable_id":null,
       "table_key":"docs.v_external_dependency_calls",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_file_summary":{
@@ -18553,14 +20213,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"cbc722696720a0d7866a35a025026d00588b79d517c41f3f520f5bcef80b9057",
       "stable_id":null,
       "table_key":"docs.v_file_summary",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_function_architecture":{
@@ -19245,14 +20953,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"8805c17c9e74103ebbaf73b6b61f1a40b4204400ae9d8bd45b18362d32f160ff",
       "stable_id":null,
       "table_key":"docs.v_function_architecture",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_function_history":{
@@ -19367,14 +21123,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"052bdfb0da81e858e8574c76e0db89dfaf1ccbb05ef1f85ec4a670d8a29c2825",
       "stable_id":null,
       "table_key":"docs.v_function_history",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_function_history_timeseries":{
@@ -19474,14 +21278,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"278a1f095662716faab18083ade46bd086a15cd2cbfaa508efb3d673f916a1f4",
       "stable_id":null,
       "table_key":"docs.v_function_history_timeseries",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_ide_hints":{
@@ -19616,14 +21468,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"4a882187f066e88a4c65e40d6eb9251df0f50c3002f22425008daae29129363b",
       "stable_id":null,
       "table_key":"docs.v_ide_hints",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_module_architecture":{
@@ -19713,14 +21613,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"a86221c34fc971a35d8d008391cddf717f3f2065388724f70edd43aae9fa6f7f",
       "stable_id":null,
       "table_key":"docs.v_module_architecture",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_module_architecture_full":{
@@ -20045,14 +21993,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"7c2271c27f9e5fa60e33d3b017990a4393331ea43e8bc6cafcb14784c212a525",
       "stable_id":null,
       "table_key":"docs.v_module_architecture_full",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_module_history_timeseries":{
@@ -20127,14 +22123,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"80cef3079c360ede659f7744dc5661500276b2deef56d1b5e223ac5dae25dbf2",
       "stable_id":null,
       "table_key":"docs.v_module_history_timeseries",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_module_with_subsystem":{
@@ -20239,14 +22283,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"87e17ca9ac97aba800cbc8b032eb52d8405aacee0ca79df7a7f012f65e0c581f",
       "stable_id":null,
       "table_key":"docs.v_module_with_subsystem",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_subsystem_agreement":{
@@ -20306,14 +22398,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"99dc1fdbac049b68801f872ef03e24acc95b6a88423fd322a15d8a4edee64e61",
       "stable_id":null,
       "table_key":"docs.v_subsystem_agreement",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_subsystem_profile":{
@@ -20458,14 +22598,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"07f8895540f244a2c606babb01134b3a8f5f6a0d8b95b92aaadcc8f1babb818f",
       "stable_id":null,
       "table_key":"docs.v_subsystem_profile",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_subsystem_summary":{
@@ -20595,14 +22783,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"870f146ae4e4636d53c78aebc1713319abf716e2a9d4b2495c59ce6ffccef82d",
       "stable_id":null,
       "table_key":"docs.v_subsystem_summary",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_symbol_module_graph":{
@@ -20697,14 +22933,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"ec5b4ee870996ca9df31c81073143673ba5c3f17823bbb1653893d2df4bacad7",
       "stable_id":null,
       "table_key":"docs.v_symbol_module_graph",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_test_architecture":{
@@ -20944,14 +23228,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"6bec56207895bfbb82a3f4326e47bf3534a60144b1ae9c9a295be228a65094aa",
       "stable_id":null,
       "table_key":"docs.v_test_architecture",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_test_to_function":{
@@ -21106,14 +23438,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"36cb965931293bcf195dc124b72e68cda6c6e643689ee3734cd63c47e45ee8ba",
       "stable_id":null,
       "table_key":"docs.v_test_to_function",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "docs.v_validation_summary":{
@@ -21168,14 +23548,62 @@
         "primary_key":[],
         "schema":"docs"
       },
-      "schema_version":null,
+      "schema_version":"58411e253fb83bc10d0d51ad123d8b84b8731ebc65d71c4740667fcc377a8d19",
       "stable_id":null,
       "table_key":"docs.v_validation_summary",
       "tags":[
         "docs_view",
         "read_only"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "graph.call_graph_edges":{
@@ -21283,7 +23711,7 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"dc3205afd7bd555e74ae0d031cc82fe0c9addbc1522840af7b224488b2df73ed",
       "stable_id":null,
       "table_key":"graph.call_graph_edges",
       "tags":[
@@ -21346,7 +23774,7 @@
         ],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"01f41265f97c9995b589c5fcd7ece677cc3b165620500425cbfbae717c847fbf",
       "stable_id":null,
       "table_key":"graph.call_graph_nodes",
       "tags":[
@@ -21415,13 +23843,23 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"78d84997772e8dd2e1d14f5e01b524b73354c0d28df3d61671b8ca5d49fcb03d",
       "stable_id":null,
       "table_key":"graph.cdg_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "graph.cfg_blocks":{
@@ -21512,14 +23950,14 @@
         ],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"a3b1ef27eedcd1b082b7c34cb17f1d45266278dc2966d4a285d041952ac5ee38",
       "stable_id":null,
       "table_key":"graph.cfg_blocks",
       "tags":[
         "base_table"
       ],
       "upstream_dependencies":[],
-      "validation_profile":"lenient"
+      "validation_profile":"strict"
     },
     "graph.cfg_edges":{
       "composition":null,
@@ -21571,14 +24009,14 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"83f5e12505cbd2278102ea256ddf06c702f5d54ba0639f6444d5fc963877a3e3",
       "stable_id":null,
       "table_key":"graph.cfg_edges",
       "tags":[
         "base_table"
       ],
       "upstream_dependencies":[],
-      "validation_profile":"lenient"
+      "validation_profile":"strict"
     },
     "graph.cpg_call_targets":{
       "composition":null,
@@ -21709,13 +24147,41 @@
         ],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"739a730eb49ce18502f00afcd583d83cb5d6936ae70e88f8837205ddf42ee817",
       "stable_id":null,
       "table_key":"graph.cpg_call_targets",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_calls_resolved",
+        "syntax_defs",
+        "syntax_defs_resolved",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_imports_resolved",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_refs_resolved",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "graph.cpg_edges":{
@@ -21815,13 +24281,84 @@
         ],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"75c1cfe99f5f2ee2692729fbee840b5fb7f4b69ca3a86938451d50bb5d681a9c",
       "stable_id":null,
       "table_key":"graph.cpg_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cdg_edges",
+        "cfg_blocks",
+        "cfg_edges",
+        "cpg_call_targets",
+        "cpg_edges_arg_to_param",
+        "cpg_edges_calls",
+        "cpg_edges_ret_to_call",
+        "dfg_edges",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "parse_manifest",
+        "py_bc_blocks",
+        "py_bc_cfg_edges",
+        "py_bc_code_units",
+        "py_bc_defuse_events",
+        "py_bc_exception_table",
+        "py_bc_instructions",
+        "py_compiler_metadata",
+        "py_inspect_annotations_kv",
+        "py_inspect_class_attrs",
+        "py_inspect_class_mro",
+        "py_inspect_members_static",
+        "py_inspect_objects",
+        "py_inspect_runtime_state",
+        "py_inspect_signature_params",
+        "py_inspect_signatures",
+        "py_inspect_source",
+        "py_inspect_unwrap_hops",
+        "py_sym_bindings",
+        "py_sym_function_partitions",
+        "py_sym_namespace_edges",
+        "py_sym_resolution_edges",
+        "py_sym_scope_edges",
+        "py_sym_scopes",
+        "py_sym_symbols",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans",
+        "ts_captures",
+        "ts_changed_ranges",
+        "ts_edges",
+        "ts_language_metadata",
+        "ts_nodes",
+        "ts_parse_errors",
+        "ts_parse_manifest",
+        "ts_tokens",
+        "ts_trivia"
+      ],
       "validation_profile":"lenient"
     },
     "graph.cpg_edges_arg_to_param":{
@@ -21939,13 +24476,41 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"2c6016199e6885b98f2c398b5230a1c4e34d95b5442bf542ae695b4bd5ff2cbb",
       "stable_id":null,
       "table_key":"graph.cpg_edges_arg_to_param",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_calls_resolved",
+        "syntax_defs",
+        "syntax_defs_resolved",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_imports_resolved",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_refs_resolved",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "graph.cpg_edges_calls":{
@@ -22018,13 +24583,41 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"e1467f9bf147898289223af71601d57d7d09cba490afa944662a3abe25b4a1e1",
       "stable_id":null,
       "table_key":"graph.cpg_edges_calls",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_calls_resolved",
+        "syntax_defs",
+        "syntax_defs_resolved",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_imports_resolved",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_refs_resolved",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "graph.cpg_edges_ret_to_call":{
@@ -22112,13 +24705,41 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"654a7eb459cbbc5cd83852b137b270b908fce6158d06740793981239f4244459",
       "stable_id":null,
       "table_key":"graph.cpg_edges_ret_to_call",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cfg_blocks",
+        "cfg_edges",
+        "parse_manifest",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_calls_resolved",
+        "syntax_defs",
+        "syntax_defs_resolved",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_imports_resolved",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_refs_resolved",
+        "syntax_scopes",
+        "syntax_spans"
+      ],
       "validation_profile":"lenient"
     },
     "graph.cpg_nodes":{
@@ -22205,13 +24826,84 @@
         ],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"39d7e56a30f48fd647bcb52fd44355340c29ad00ec11ff9b03fa3037f16bc8b4",
       "stable_id":null,
       "table_key":"graph.cpg_nodes",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cdg_edges",
+        "cfg_blocks",
+        "cfg_edges",
+        "cpg_call_targets",
+        "cpg_edges_arg_to_param",
+        "cpg_edges_calls",
+        "cpg_edges_ret_to_call",
+        "dfg_edges",
+        "goid_crosswalk",
+        "goids",
+        "import_graph_edges",
+        "import_modules",
+        "parse_manifest",
+        "py_bc_blocks",
+        "py_bc_cfg_edges",
+        "py_bc_code_units",
+        "py_bc_defuse_events",
+        "py_bc_exception_table",
+        "py_bc_instructions",
+        "py_compiler_metadata",
+        "py_inspect_annotations_kv",
+        "py_inspect_class_attrs",
+        "py_inspect_class_mro",
+        "py_inspect_members_static",
+        "py_inspect_objects",
+        "py_inspect_runtime_state",
+        "py_inspect_signature_params",
+        "py_inspect_signatures",
+        "py_inspect_source",
+        "py_inspect_unwrap_hops",
+        "py_sym_bindings",
+        "py_sym_function_partitions",
+        "py_sym_namespace_edges",
+        "py_sym_resolution_edges",
+        "py_sym_scope_edges",
+        "py_sym_scopes",
+        "py_sym_symbols",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrence_span_xref",
+        "scip_occurrence_syntax_xref",
+        "scip_occurrences",
+        "scip_symbol_goid_xref",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols",
+        "syntax_call_args",
+        "syntax_calls",
+        "syntax_defs",
+        "syntax_edges",
+        "syntax_func_params",
+        "syntax_imports",
+        "syntax_nodes",
+        "syntax_refs",
+        "syntax_scopes",
+        "syntax_spans",
+        "ts_captures",
+        "ts_changed_ranges",
+        "ts_edges",
+        "ts_language_metadata",
+        "ts_nodes",
+        "ts_parse_errors",
+        "ts_parse_manifest",
+        "ts_tokens",
+        "ts_trivia"
+      ],
       "validation_profile":"lenient"
     },
     "graph.dfg_edges":{
@@ -22284,14 +24976,14 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"9c6f5586e18ca6c4980b407238c55fb30a39d63a8de53735985814a8b7a724ba",
       "stable_id":null,
       "table_key":"graph.dfg_edges",
       "tags":[
         "base_table"
       ],
       "upstream_dependencies":[],
-      "validation_profile":"lenient"
+      "validation_profile":"strict"
     },
     "graph.import_graph_edges":{
       "composition":null,
@@ -22378,7 +25070,7 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"b88c8067308bc1a3a69575046f68497effe3fdb2fdf8593afe85266830764eb7",
       "stable_id":null,
       "table_key":"graph.import_graph_edges",
       "tags":[
@@ -22460,7 +25152,7 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"c1289d1f3103eccc6aced55aeec25ad47e796c370c89de460fda8b06b5a5baa0",
       "stable_id":null,
       "table_key":"graph.import_modules",
       "tags":[
@@ -22549,13 +25241,23 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"a55d7c4087eda80c1444ad651b1002c5469f1586044e774a3fec80f36699a762",
       "stable_id":null,
       "table_key":"graph.pdg_edges",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "cdg_edges",
+        "dfg_edges",
+        "scip_diagnostics",
+        "scip_external_symbols",
+        "scip_module_state",
+        "scip_occurrences",
+        "scip_symbol_information",
+        "scip_symbol_relationships",
+        "scip_symbols"
+      ],
       "validation_profile":"lenient"
     },
     "graph.symbol_use_edges":{
@@ -22627,7 +25329,7 @@
         ],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"9169c05ed8d7a35ae1a06d6bb49f33fa0d6e60ad4180dae265754d99a6e39a92",
       "stable_id":null,
       "table_key":"graph.symbol_use_edges",
       "tags":[
@@ -22683,13 +25385,61 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"6531a63f70c080237ad1df547955b1eeb4afb69289dd1d33e0065d7b4f3cf203",
       "stable_id":null,
       "table_key":"graph.v_call_graph_degree",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     },
     "graph.v_import_graph_degree":{
@@ -22739,17 +25489,65 @@
         "primary_key":[],
         "schema":"graph"
       },
-      "schema_version":null,
+      "schema_version":"4695de24aef1b2980664283004a1db5efcc163a614868843815109fb8f756594",
       "stable_id":null,
       "table_key":"graph.v_import_graph_degree",
       "tags":[
         "base_table"
       ],
-      "upstream_dependencies":[],
+      "upstream_dependencies":[
+        "ast_metrics",
+        "ast_nodes",
+        "call_graph_edges",
+        "call_graph_nodes",
+        "cfg_block_metrics",
+        "cfg_blocks",
+        "cfg_edges",
+        "cfg_function_metrics",
+        "cfg_function_metrics_ext",
+        "config_data_flow",
+        "config_graph_metrics_keys",
+        "config_graph_metrics_modules",
+        "config_projection_key_edges",
+        "config_projection_module_edges",
+        "data_model_fields",
+        "data_model_relationships",
+        "data_model_usage",
+        "data_models",
+        "dfg_block_metrics",
+        "dfg_function_metrics",
+        "dfg_function_metrics_ext",
+        "entrypoint_tests",
+        "entrypoints",
+        "external_dependencies",
+        "external_dependency_calls",
+        "file_state",
+        "function_validation",
+        "goid_crosswalk",
+        "goids",
+        "graph_metrics_functions",
+        "graph_metrics_functions_ext",
+        "graph_metrics_modules",
+        "graph_metrics_modules_ext",
+        "graph_validation",
+        "import_graph_edges",
+        "import_modules",
+        "modules",
+        "repo_map",
+        "static_diagnostics",
+        "subsystem_agreement",
+        "subsystem_graph_metrics",
+        "subsystem_modules",
+        "subsystem_profile_cache",
+        "subsystems",
+        "symbol_graph_metrics_functions",
+        "symbol_graph_metrics_modules",
+        "test_catalog"
+      ],
       "validation_profile":"lenient"
     }
   },
-  "generated_at":"2026-01-05T02:08:04.363102+00:00",
+  "generated_at":"2026-01-05T13:31:06.713898+00:00",
   "repo":"github.com/paul-heyse/CodeIntel",
   "version":1
 }
