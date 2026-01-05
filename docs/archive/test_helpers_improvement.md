@@ -822,7 +822,7 @@ Start with canonical + seed packs to stabilize semantics; switch to repo_writers
 
 ### Pattern C: Config realism (options hashes + behavior toggles)
 
-Because harness loads `codeintel.build.toml` by default, you can easily do:
+Because harness loads `config/codeintel.build.toml` by default, you can easily do:
 
 1. write a config file into `repo_root`
 2. run a target

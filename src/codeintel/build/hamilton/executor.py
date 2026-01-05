@@ -48,7 +48,7 @@ from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
-from codeintel.build.hamilton.native.views.view_outputs import view_plan_map
+from codeintel.build.hamilton.native.views.view_outputs import view_lineage_payload
 from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
 from codeintel.build.hamilton.result_builder import BuildResultBuilder
 from codeintel.build.hamilton.run_records import (
@@ -59,19 +59,26 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.run_writer import BuildRunWriter, RunReportInputs
 from codeintel.build.manifest.writer import CacheManifestWriter
+from codeintel.build.meta.bundle import (
+    BuildMetadataBundleWriter,
+    DerivedLineageContext,
+    dataflow_from_contracts,
+    derived_lineage_from_catalog,
+    schema_registry_from_manifest,
+)
+from codeintel.build.meta.contract_catalog import build_contract_catalog_payload
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.compile import (
     SchemaManifestContext,
     SchemaManifestRequest,
     compile_schema_manifest,
 )
+from codeintel.build.schemas.contract_service import iter_contracts
 from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.execution.ids import new_run_id
-from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.manifests import DatasetSuiteManifest
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.core.schemas.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 from codeintel.core.table_key import split_table_key
 from codeintel.observability.cache_log_ingest import (
     CacheLogIngestConfigError,
@@ -84,8 +91,6 @@ from codeintel.observability.telemetry_context import (
 from codeintel.runtime.compose import compose_runtime, set_execution_active
 from codeintel.runtime.inputs import ExecutionInputs, execution_input_mapping
 from codeintel.runtime.runtime_bundle import RuntimeBundle
-from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
-from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -521,6 +526,9 @@ def _build_cache_adapter(
 ) -> ManifestBackedCacheAdapter | None:
     if not enable_cache:
         return None
+    manifest_writer = None
+    if env.gateway is not None and env.metadata_bundle is None:
+        manifest_writer = CacheManifestWriter(env.gateway)
     cache_options = CacheAdapterOptions(
         default_behavior="default",
         default_loader_behavior="disable",
@@ -530,7 +538,7 @@ def _build_cache_adapter(
     )
     return ManifestBackedCacheAdapter(
         path=cache_dir,
-        manifest_writer=CacheManifestWriter(env.gateway),
+        manifest_writer=manifest_writer,
         manifest_run_id=run_id,
         options=cache_options,
     )
@@ -806,6 +814,10 @@ def _cache_adapter_for_runtime(runtime: RuntimeBundle) -> HamiltonCacheAdapter |
 
 
 def _maybe_ingest_cache_logs(*, context: _RunState) -> None:
+    if context.env.metadata_bundle is not None:
+        return
+    if context.env.gateway is None:
+        return
     if context.env.gateway.config.read_only:
         return
     cache_adapter = _cache_adapter_for_runtime(context.runtime)
@@ -875,114 +887,13 @@ def _dataset_manifest_exists(env: BuildEnv, table_key: str) -> bool:
 
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
-    dataset = env.gateway.datasets.by_table_key.get(table_key)
-    if dataset is not None and not dataset.is_view:
-        return _dataset_manifest_exists(env, table_key)
-    schema, table = split_table_key(table_key)
-    return env.gateway.policy.table_exists(schema=schema, table=table)
-
-
-def _view_sql_map() -> dict[str, str] | None:
-    try:
-        plans = view_plan_map()
-    except (RuntimeError, ValueError, TypeError):
-        return None
-    view_sql: dict[str, str] = {}
-    for table_key, plan in plans.items():
-        sql = plan.sql
-        if isinstance(sql, str) and sql:
-            view_sql[table_key] = sql
-    return view_sql or None
-
-
-def _maybe_persist_schema_manifest(
-    *,
-    env: BuildEnv,
-    runtime: RuntimeBundle,
-    run_id: str,
-    domain: str | None,
-) -> None:
-    """Persist the latest schema manifest before executing targets.
-
-    Raises
-    ------
-    ValueError
-        If repo or commit metadata is missing.
-    """
-    if env.gateway.config.read_only:
-        return
-    if not env.repo or not env.commit:
-        msg = "Schema manifest persistence requires repo and commit metadata"
-        raise ValueError(msg)
-
-    request = SchemaManifestRequest(
-        all_targets=True,
-        stable=True,
-        version="v2",
-        include_views=True,
-        include_artifacts=True,
-        include_provenance=True,
-        infer_native=False,
-        batch_infer_native=False,
-    )
-    schema_index = runtime.schema_index
-    if schema_index is None:
-        msg = "RuntimeBundle.schema_index is required to persist schema manifests"
-        raise ValueError(msg)
-    provider = get_schema_provider()
-    manifest = compile_schema_manifest(
-        provider=provider,
-        context=SchemaManifestContext(
-            catalog=runtime.catalog,
-            schema_index=schema_index,
-            tag_query=runtime.tag_query,
-        ),
-        request=request,
-    )
-    catalog_hash = fingerprint(manifest.to_json_obj())
-    latest = load_latest_canonical_catalog_from_connection(
-        env.gateway.con,
-        catalog_kind=DEFAULT_SCHEMA_MANIFEST_KIND,
-    )
-    if latest is not None and latest.catalog_hash == catalog_hash:
-        log.info("build.hamilton.executor.schema_manifest.skip hash=%s", catalog_hash)
-        return
-
-    catalog_inputs: dict[str, object] = {"source": "build.execute"}
-    if domain is not None:
-        catalog_inputs["domain"] = domain
-    view_sql = _view_sql_map()
-    if view_sql is not None:
-        catalog_inputs["view_sql_map"] = view_sql
-
-    catalog_request = SchemaCatalogRequest(
-        run_id=run_id,
-        repo=env.repo,
-        commit=env.commit,
-        catalog_inputs=catalog_inputs,
-    )
-    result = env.gateway.schemas.persist_schema_manifest(
-        manifest,
-        request=catalog_request,
-    )
-    override_result = env.gateway.schemas.refresh_override_registry_from_manifest(
-        manifest,
-        request=catalog_request,
-        catalog_hash=result.catalog_hash,
-    )
-    log.info(
-        "build.hamilton.executor.schema_manifest.persisted hash=%s tables=%d views=%d",
-        result.catalog_hash,
-        result.tables,
-        result.views,
-    )
-    log.info(
-        "build.hamilton.executor.override_registry.%s tables=%d version_id=%s reason=%s",
-        override_result.status,
-        override_result.tables,
-        override_result.version_id,
-        override_result.reason,
-    )
+    if env.gateway is not None:
+        dataset = env.gateway.datasets.by_table_key.get(table_key)
+        if dataset is not None and not dataset.is_view:
+            return _dataset_manifest_exists(env, table_key)
+        schema, table = split_table_key(table_key)
+        return env.gateway.policy.table_exists(schema=schema, table=table)
+    return _dataset_manifest_exists(env, table_key)
 
 
 def _preflight_missing_inputs(
@@ -1195,6 +1106,11 @@ def _finalize_run(
         failed_targets_count=len(failed),
         error=error_summary,
     )
+    _emit_metadata_bundle(
+        env=context.env,
+        runtime=context.runtime,
+        run_id=context.run_id,
+    )
 
     return HamiltonBuildResult(
         requested=context.targets,
@@ -1209,6 +1125,175 @@ def _finalize_run(
         run_id=context.run_id,
         runtime=context.runtime,
     )
+
+
+def _emit_metadata_bundle(
+    *,
+    env: BuildEnv,
+    runtime: RuntimeBundle,
+    run_id: str,
+) -> None:
+    bundle = env.metadata_bundle
+    if bundle is None:
+        return
+    generated_at = bundle.generated_at
+    _emit_contract_catalog(bundle=bundle, env=env, run_id=run_id, generated_at=generated_at)
+    _emit_schema_manifest(bundle=bundle, runtime=runtime, run_id=run_id, generated_at=generated_at)
+    _emit_dataflow(bundle=bundle, run_id=run_id)
+    _emit_lineage(
+        bundle=bundle,
+        env=env,
+        runtime=runtime,
+        run_id=run_id,
+        generated_at=generated_at,
+    )
+    _finalize_bundle(bundle=bundle, run_id=run_id)
+
+
+def _emit_contract_catalog(
+    *,
+    bundle: BuildMetadataBundleWriter,
+    env: BuildEnv,
+    run_id: str,
+    generated_at: datetime,
+) -> None:
+    try:
+        contract_payload = build_contract_catalog_payload(include_views=True)
+        contract_payload = {
+            **contract_payload,
+            "generated_at": generated_at.isoformat(),
+            "repo": env.repo,
+            "commit": env.commit,
+        }
+        contract_record = bundle.write_json(
+            "contracts/contract_catalog.json",
+            contract_payload,
+            schema_version="v1",
+            indent=2,
+        )
+        bundle.write_text("contracts/contract_catalog.hash", f"{contract_record.sha256}\n")
+    except (OSError, TypeError, ValueError) as exc:
+        log.warning("build.metadata.contract_catalog_failed run_id=%s error=%s", run_id, exc)
+
+
+def _emit_schema_manifest(
+    *,
+    bundle: BuildMetadataBundleWriter,
+    runtime: RuntimeBundle,
+    run_id: str,
+    generated_at: datetime,
+) -> None:
+    schema_index = runtime.schema_index
+    if schema_index is None:
+        log.warning(
+            "build.metadata.schema_manifest_skipped run_id=%s reason=missing_schema_index",
+            run_id,
+        )
+        return
+    try:
+        manifest = compile_schema_manifest(
+            provider=get_schema_provider(),
+            context=SchemaManifestContext(
+                catalog=runtime.catalog,
+                schema_index=schema_index,
+                tag_query=runtime.tag_query,
+            ),
+            request=SchemaManifestRequest(
+                all_targets=True,
+                stable=True,
+                version="v2",
+                include_views=True,
+                include_artifacts=True,
+                include_provenance=True,
+                infer_native=False,
+                batch_infer_native=False,
+            ),
+        )
+        bundle.write_json(
+            "schema/schema_manifest.json",
+            manifest.to_json_obj(),
+            schema_version=manifest.version,
+            indent=2,
+        )
+        catalog_hash = bundle.catalog_hash_for_manifest(manifest)
+        versions, registry = schema_registry_from_manifest(
+            manifest,
+            catalog_hash=catalog_hash,
+            generated_at=generated_at,
+        )
+        bundle.write_schema_registry(
+            "schema/schema_registry.json",
+            registry,
+            schema_version="v1",
+        )
+        bundle.write_schema_versions(
+            "schema/schema_versions.jsonl",
+            versions,
+            schema_version="v1",
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        log.warning("build.metadata.schema_manifest_failed run_id=%s error=%s", run_id, exc)
+
+
+def _emit_dataflow(*, bundle: BuildMetadataBundleWriter, run_id: str) -> None:
+    try:
+        contracts = list(iter_contracts())
+        nodes, edges = dataflow_from_contracts(contracts)
+        for node in nodes:
+            bundle.append_jsonl("dataflow/dataset_nodes.jsonl", node, schema_version="v1")
+        for edge in edges:
+            bundle.append_jsonl("dataflow/dataset_edges.jsonl", edge, schema_version="v1")
+    except (RuntimeError, TypeError, ValueError) as exc:
+        log.warning("build.metadata.dataflow_failed run_id=%s error=%s", run_id, exc)
+
+
+def _emit_lineage(
+    *,
+    bundle: BuildMetadataBundleWriter,
+    env: BuildEnv,
+    runtime: RuntimeBundle,
+    run_id: str,
+    generated_at: datetime,
+) -> None:
+    view_lineage, column_lineage = _safe_view_lineage(env=env, runtime=runtime, run_id=run_id)
+    try:
+        lineage_context = DerivedLineageContext(
+            repo=env.repo,
+            commit=env.commit,
+            created_at=generated_at,
+            view_lineage=view_lineage,
+            column_lineage=column_lineage,
+        )
+        edges, columns = derived_lineage_from_catalog(
+            runtime.catalog,
+            context=lineage_context,
+        )
+        for edge in edges:
+            bundle.append_jsonl("lineage/derived_edges.jsonl", edge, schema_version="v1")
+        for column in columns:
+            bundle.append_jsonl("lineage/derived_columns.jsonl", column, schema_version="v1")
+    except (RuntimeError, TypeError, ValueError) as exc:
+        log.warning("build.metadata.lineage_failed run_id=%s error=%s", run_id, exc)
+
+
+def _safe_view_lineage(
+    *,
+    env: BuildEnv,
+    runtime: RuntimeBundle,
+    run_id: str,
+) -> tuple[dict[str, frozenset[str]] | None, dict[str, dict[str, frozenset[str]]] | None]:
+    try:
+        return view_lineage_payload(env=env, catalog=runtime.catalog)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        log.warning("build.metadata.view_lineage_failed run_id=%s error=%s", run_id, exc)
+        return None, None
+
+
+def _finalize_bundle(*, bundle: BuildMetadataBundleWriter, run_id: str) -> None:
+    try:
+        bundle.finalize()
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning("build.metadata.bundle_finalize_failed run_id=%s error=%s", run_id, exc)
 
 
 @dataclass(frozen=True)
@@ -1374,7 +1459,14 @@ class HamiltonBuildExecutor:
             "build.run.start",
             requested_targets_count=len(resolved_targets),
         )
-        writer = BuildRunWriter(env.gateway)
+        metadata_bundle = BuildMetadataBundleWriter(
+            env.paths.build_dir / "metadata",
+            run_id=run_id,
+            repo=env.repo,
+            commit=env.commit,
+        )
+        env = replace(env, metadata_bundle=metadata_bundle)
+        writer = BuildRunWriter(env.gateway, metadata_bundle=metadata_bundle)
         cache_dir = self._options.resolved_cache_dir(env=env)
         runtime, telemetry_hook = self._build_runtime(
             env=env,
@@ -1383,7 +1475,6 @@ class HamiltonBuildExecutor:
             cache_dir=cache_dir,
             domain=domain,
         )
-        _maybe_persist_schema_manifest(env=env, runtime=runtime, run_id=run_id, domain=domain)
 
         context = _RunState(
             env=env,

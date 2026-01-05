@@ -12,7 +12,7 @@ from hamilton.function_modifiers import pipe_input, resolve_from_config, step, v
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.tabular.conversion import tabular_to_arrow_reader
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 
 P = ParamSpec("P")
@@ -28,17 +28,17 @@ def _drop_null_rows(
     rows: InferableTabularInput | None,
     *,
     required_cols: tuple[str, ...],
-) -> pa.RecordBatchReader | None:
+) -> pa.Table | None:
     if rows is None:
         return None
     if not required_cols:
-        return tabular_to_arrow_reader(rows)
-    reader = tabular_to_arrow_reader(rows)
-    required = [name for name in required_cols if name in reader.schema.names]
+        return tabular_to_arrow_table(rows)
+    table = tabular_to_arrow_table(rows)
+    required = [name for name in required_cols if name in table.schema.names]
     if not required:
-        return reader
+        return table
     batches: list[pa.RecordBatch] = []
-    for batch in reader:
+    for batch in table.to_batches():
         mask = _required_columns_mask(batch, required)
         if mask is None:
             batches.append(batch)
@@ -46,7 +46,9 @@ def _drop_null_rows(
         filtered = batch.filter(mask)
         if filtered.num_rows:
             batches.append(filtered)
-    return pa.RecordBatchReader.from_batches(reader.schema, batches)
+    if not batches:
+        return pa.Table.from_batches([], schema=table.schema)
+    return pa.Table.from_batches(batches, schema=table.schema)
 
 
 def _required_columns_mask(

@@ -244,6 +244,8 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
     list[str]
         Module paths from storage; empty when unavailable.
     """
+    if env.gateway is None:
+        return []
     try:
         reader = env.gateway.execute(
             "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",

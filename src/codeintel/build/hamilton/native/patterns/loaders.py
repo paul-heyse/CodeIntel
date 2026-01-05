@@ -17,9 +17,9 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.tagging import tag_loader_query
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, reader_to_table
 from codeintel.build.tabular.types import InferableTabularInput, TabularFrame
-from codeintel.core.columnar.schema_alignment import align_reader_to_contract
+from codeintel.core.columnar.schema_alignment import align_table_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetScanOptions,
@@ -33,7 +33,7 @@ from codeintel.core.validation.schema_constraints import schema_errors, schema_m
 from codeintel.storage.validation.columnar import (
     ColumnarValidationContext,
     ValidationMode,
-    validate_record_batch_reader,
+    validate_table,
 )
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ def _loader_signature(*, dataset_param: str) -> inspect.Signature:
             annotation=DatasetRef,
         ),
     ]
-    return inspect.Signature(params, return_annotation=InferableTabularInput)
+    return inspect.Signature(params, return_annotation=pa.Table)
 
 
 def _snapshot_dir(
@@ -144,8 +144,8 @@ def load_snapshot_tabular(
     env: BuildEnv,
     table_key: str,
     snapshot_id: str,
-) -> pa.RecordBatchReader:
-    """Load a dataset snapshot as a RecordBatchReader.
+) -> pa.Table:
+    """Load a dataset snapshot as an Arrow table.
 
     Parameters
     ----------
@@ -158,8 +158,8 @@ def load_snapshot_tabular(
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Streaming reader for the snapshot dataset.
+    pyarrow.Table
+        Materialized table for the snapshot dataset.
 
     Raises
     ------
@@ -182,20 +182,21 @@ def load_snapshot_tabular(
         raise FileNotFoundError(msg) from exc
     table_schema, contract_schema = _contract_schema_for_table(table_key)
     validation_mode = _validation_mode(env)
+    table = reader_to_table(reader)
     if validation_mode != "skip":
-        schema_for_errors = reader.schema
+        schema_for_errors = table.schema
         if contract_schema.metadata is not None:
-            schema_for_errors = reader.schema.with_metadata(contract_schema.metadata)
+            schema_for_errors = table.schema.with_metadata(contract_schema.metadata)
         errors = schema_errors(table_schema, schema_for_errors)
-        errors.extend(schema_metadata_errors(reader.schema))
+        errors.extend(schema_metadata_errors(table.schema))
         _handle_schema_errors(
             table_key=table_key,
             errors=errors,
             mode=validation_mode,
         )
     try:
-        aligned = align_reader_to_contract(
-            reader,
+        aligned = align_table_to_contract(
+            table,
             contract_schema,
             schema_promote_options=env.settings.schema_promote_options,
         )
@@ -205,7 +206,7 @@ def load_snapshot_tabular(
             errors=[str(exc)],
             mode=validation_mode,
         )
-        return reader
+        return table
     if validation_mode == "skip":
         return aligned
     context = ColumnarValidationContext(
@@ -213,7 +214,7 @@ def load_snapshot_tabular(
         schema_observation=None,
         validation_profile=_validation_profile_for_table(table_key),
     )
-    return validate_record_batch_reader(
+    return validate_table(
         table_key,
         aligned,
         context=context,
@@ -296,7 +297,7 @@ def load_table(
 
     loader = set_signature(loader, _loader_signature(dataset_param=dataset_param))
     loader.__name__ = resolved_node_name
-    loader.__doc__ = f"Load {table_key} as a dataset-backed RecordBatchReader."
+    loader.__doc__ = f"Load {table_key} as a dataset-backed Arrow table."
     return tag_loader_query(domain=domain, target=target, table_key=table_key)(loader)
 
 

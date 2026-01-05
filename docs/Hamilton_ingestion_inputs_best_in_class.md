@@ -758,7 +758,7 @@ This aligns with your best‑in‑class notes:
 
 - [x] `src/codeintel/ingestion/tree_sitter/registry.py`: language registry + ABI checks.
 - [x] `src/codeintel/ingestion/tree_sitter/runner.py`: parse bytes, run query packs, capture errors.
-- [x] `src/codeintel/ingestion/tree_sitter/packs/*`: query pack definitions by language.
+- [x] `config/tree_sitter/packs/*`: query pack definitions by language.
 - [x] `src/codeintel/core/schemas/output_registry.py`: add `core.ts_captures` + `core.ts_parse_errors`.
 - [x] `src/codeintel/build/hamilton/native/ingestion/tree_sitter.py`: new target to materialize tree-sitter tables.
 - [x] `src/codeintel/build/hamilton/native/ingestion/__init__.py`: export the new target.

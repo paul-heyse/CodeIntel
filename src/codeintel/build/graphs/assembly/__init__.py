@@ -24,6 +24,7 @@ from codeintel.build.graphs.assembly.readers import (
     table_rows,
     table_to_reader,
     tabular_to_reader,
+    tabular_to_table,
 )
 
 __all__ = [
@@ -46,4 +47,5 @@ __all__ = [
     "table_rows",
     "table_to_reader",
     "tabular_to_reader",
+    "tabular_to_table",
 ]

@@ -25,9 +25,6 @@ from codeintel.build.graphs.compute.callgraph.types import (
     CallEdge,
     ResolutionResult,
 )
-from codeintel.core.schemas.generated_rows.graph import (
-    GraphCallGraphEdgesRow as CallGraphEdgeRow,
-)
 from codeintel.core.serialization.payload import encode_payload
 
 if TYPE_CHECKING:
@@ -39,6 +36,8 @@ if TYPE_CHECKING:
         ResolutionContext,
     )
     from codeintel.build.graphs.ports.parsing import ParsedModule
+
+CallGraphEdgeRow = dict[str, object]
 
 
 class LocalTypeTracker:
@@ -259,20 +258,20 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
 
         evidence = build_evidence(callee_name, attr_chain, resolution, scip_paths)
         self.edges.append(
-            CallGraphEdgeRow(
-                repo=self.context.repo,
-                commit=self.context.commit,
-                caller_goid_h128=self.current_function_goid,
-                callee_goid_h128=resolution.callee_goid,
-                callsite_path=self.rel_path,
-                callsite_line=start.line,
-                callsite_col=start.column,
-                language="python",
-                kind="direct" if resolution.callee_goid is not None else "unresolved",
-                resolved_via=resolution.resolved_via,
-                confidence=resolution.confidence,
-                evidence_json=encode_payload(evidence),
-            )
+            {
+                "repo": self.context.repo,
+                "commit": self.context.commit,
+                "caller_goid_h128": self.current_function_goid,
+                "callee_goid_h128": resolution.callee_goid,
+                "callsite_path": self.rel_path,
+                "callsite_line": start.line,
+                "callsite_col": start.column,
+                "language": "python",
+                "kind": "direct" if resolution.callee_goid is not None else "unresolved",
+                "resolved_via": resolution.resolved_via,
+                "confidence": resolution.confidence,
+                "evidence_json": encode_payload(evidence),
+            }
         )
 
     def _try_instance_method_resolution(
@@ -461,20 +460,20 @@ class _AstCallGraphVisitor(ast.NodeVisitor):
             resolution = resolve_via_scip(scip_paths, self.context.def_goids_by_path)
         evidence = build_evidence(callee_name, attr_chain, resolution, scip_paths)
         self.edges.append(
-            CallGraphEdgeRow(
-                repo=self.context.repo,
-                commit=self.context.commit,
-                caller_goid_h128=self.current_goid,
-                callee_goid_h128=resolution.callee_goid,
-                callsite_path=self.rel_path,
-                callsite_line=getattr(node, "lineno", 0),
-                callsite_col=getattr(node, "col_offset", 0),
-                language="python",
-                kind="direct" if resolution.callee_goid is not None else "unresolved",
-                resolved_via=resolution.resolved_via,
-                confidence=resolution.confidence,
-                evidence_json=encode_payload(evidence),
-            )
+            {
+                "repo": self.context.repo,
+                "commit": self.context.commit,
+                "caller_goid_h128": self.current_goid,
+                "callee_goid_h128": resolution.callee_goid,
+                "callsite_path": self.rel_path,
+                "callsite_line": getattr(node, "lineno", 0),
+                "callsite_col": getattr(node, "col_offset", 0),
+                "language": "python",
+                "kind": "direct" if resolution.callee_goid is not None else "unresolved",
+                "resolved_via": resolution.resolved_via,
+                "confidence": resolution.confidence,
+                "evidence_json": encode_payload(evidence),
+            }
         )
         self.generic_visit(node)
 

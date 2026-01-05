@@ -49,7 +49,7 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.execution.ids import RUN_PREFIX_INGEST, new_run_id
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
@@ -177,9 +177,7 @@ PY_INSPECT_TABLE_KEYS = (
 class DocstringsToolOutput(ToolStepOutput):
     """Tool step output for docstrings extraction."""
 
-    rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(DOCSTRINGS_TABLE_KEY)
-    )
+    rows: pa.Table = field(default_factory=lambda: empty_table_for_table(DOCSTRINGS_TABLE_KEY))
     row_count: int = 0
 
 
@@ -187,11 +185,9 @@ class DocstringsToolOutput(ToolStepOutput):
 class AstToolOutput(ToolStepOutput):
     """Tool step output for AST extraction."""
 
-    ast_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(AST_NODES_TABLE_KEY)
-    )
-    metric_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(AST_METRICS_TABLE_KEY)
+    ast_rows: pa.Table = field(default_factory=lambda: empty_table_for_table(AST_NODES_TABLE_KEY))
+    metric_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(AST_METRICS_TABLE_KEY)
     )
     ast_row_count: int = 0
     metric_row_count: int = 0
@@ -201,9 +197,7 @@ class AstToolOutput(ToolStepOutput):
 class CstToolOutput(ToolStepOutput):
     """Tool step output for CST extraction."""
 
-    rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(CST_NODES_TABLE_KEY)
-    )
+    rows: pa.Table = field(default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY))
     row_count: int = 0
 
 
@@ -211,38 +205,38 @@ class CstToolOutput(ToolStepOutput):
 class SyntaxIndexToolOutput(ToolStepOutput):
     """Tool step output for syntax index extraction."""
 
-    parse_manifest_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
+    parse_manifest_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY)
     )
-    syntax_spans_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_SPANS_TABLE_KEY)
+    syntax_spans_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY)
     )
-    syntax_nodes_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_NODES_TABLE_KEY)
+    syntax_nodes_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY)
     )
-    syntax_edges_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_EDGES_TABLE_KEY)
+    syntax_edges_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY)
     )
-    syntax_scopes_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    syntax_scopes_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY)
     )
-    syntax_defs_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_DEFS_TABLE_KEY)
+    syntax_defs_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY)
     )
-    syntax_refs_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_REFS_TABLE_KEY)
+    syntax_refs_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY)
     )
-    syntax_calls_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_CALLS_TABLE_KEY)
+    syntax_calls_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY)
     )
-    syntax_call_args_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    syntax_call_args_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
     )
-    syntax_func_params_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    syntax_func_params_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
     )
-    syntax_imports_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    syntax_imports_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY)
     )
     parse_manifest_row_count: int = 0
     syntax_spans_row_count: int = 0
@@ -261,26 +255,26 @@ class SyntaxIndexToolOutput(ToolStepOutput):
 class SymtableToolOutput(ToolStepOutput):
     """Tool step output for symtable extraction."""
 
-    scope_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_SYM_SCOPES_TABLE_KEY)
+    scope_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY)
     )
-    symbol_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_SYM_SYMBOLS_TABLE_KEY)
+    symbol_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY)
     )
-    scope_edge_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY)
+    scope_edge_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY)
     )
-    namespace_edge_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY)
+    namespace_edge_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY)
     )
-    function_partition_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY)
+    function_partition_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY)
     )
-    binding_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_SYM_BINDINGS_TABLE_KEY)
+    binding_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY)
     )
-    resolution_edge_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY)
+    resolution_edge_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY)
     )
     scope_row_count: int = 0
     symbol_row_count: int = 0
@@ -295,26 +289,26 @@ class SymtableToolOutput(ToolStepOutput):
 class BytecodeToolOutput(ToolStepOutput):
     """Tool step output for bytecode extraction."""
 
-    compiler_meta_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_COMPILER_META_TABLE_KEY)
+    compiler_meta_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_COMPILER_META_TABLE_KEY)
     )
-    code_unit_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_BC_CODE_UNITS_TABLE_KEY)
+    code_unit_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY)
     )
-    instruction_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY)
+    instruction_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY)
     )
-    exception_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_BC_EXCEPTION_TABLE_KEY)
+    exception_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY)
     )
-    block_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_BC_BLOCKS_TABLE_KEY)
+    block_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY)
     )
-    cfg_edge_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_BC_CFG_EDGES_TABLE_KEY)
+    cfg_edge_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY)
     )
-    defuse_event_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY)
+    defuse_event_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY)
     )
     compiler_meta_row_count: int = 0
     code_unit_row_count: int = 0
@@ -329,35 +323,35 @@ class BytecodeToolOutput(ToolStepOutput):
 class InspectToolOutput(ToolStepOutput):
     """Tool step output for inspect extraction."""
 
-    object_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
+    object_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
     )
-    member_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
+    member_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
     )
-    class_mro_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
+    class_mro_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
     )
-    class_attr_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
+    class_attr_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
     )
-    unwrap_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
+    unwrap_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
     )
-    signature_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
+    signature_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
     )
-    signature_param_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
+    signature_param_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
     )
-    annotation_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
+    annotation_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
     )
-    source_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
+    source_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
     )
-    runtime_state_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
+    runtime_state_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
     )
     object_row_count: int = 0
     member_row_count: int = 0
@@ -439,8 +433,8 @@ def _coerce_ast_output(
     )
     return AstToolOutput(
         result=merged,
-        ast_rows=empty_reader_for_table(AST_NODES_TABLE_KEY),
-        metric_rows=empty_reader_for_table(AST_METRICS_TABLE_KEY),
+        ast_rows=empty_table_for_table(AST_NODES_TABLE_KEY),
+        metric_rows=empty_table_for_table(AST_METRICS_TABLE_KEY),
         ast_row_count=0,
         metric_row_count=0,
     )
@@ -470,7 +464,7 @@ def _coerce_cst_output(
     )
     return CstToolOutput(
         result=merged,
-        rows=empty_reader_for_table(CST_NODES_TABLE_KEY),
+        rows=empty_table_for_table(CST_NODES_TABLE_KEY),
         row_count=0,
     )
 
@@ -519,17 +513,17 @@ def _coerce_syntax_index_output(
     )
     return SyntaxIndexToolOutput(
         result=merged,
-        parse_manifest_rows=empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY),
-        syntax_spans_rows=empty_reader_for_table(SYNTAX_SPANS_TABLE_KEY),
-        syntax_nodes_rows=empty_reader_for_table(SYNTAX_NODES_TABLE_KEY),
-        syntax_edges_rows=empty_reader_for_table(SYNTAX_EDGES_TABLE_KEY),
-        syntax_scopes_rows=empty_reader_for_table(SYNTAX_SCOPES_TABLE_KEY),
-        syntax_defs_rows=empty_reader_for_table(SYNTAX_DEFS_TABLE_KEY),
-        syntax_refs_rows=empty_reader_for_table(SYNTAX_REFS_TABLE_KEY),
-        syntax_calls_rows=empty_reader_for_table(SYNTAX_CALLS_TABLE_KEY),
-        syntax_call_args_rows=empty_reader_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
-        syntax_func_params_rows=empty_reader_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
-        syntax_imports_rows=empty_reader_for_table(SYNTAX_IMPORTS_TABLE_KEY),
+        parse_manifest_rows=empty_table_for_table(PARSE_MANIFEST_TABLE_KEY),
+        syntax_spans_rows=empty_table_for_table(SYNTAX_SPANS_TABLE_KEY),
+        syntax_nodes_rows=empty_table_for_table(SYNTAX_NODES_TABLE_KEY),
+        syntax_edges_rows=empty_table_for_table(SYNTAX_EDGES_TABLE_KEY),
+        syntax_scopes_rows=empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY),
+        syntax_defs_rows=empty_table_for_table(SYNTAX_DEFS_TABLE_KEY),
+        syntax_refs_rows=empty_table_for_table(SYNTAX_REFS_TABLE_KEY),
+        syntax_calls_rows=empty_table_for_table(SYNTAX_CALLS_TABLE_KEY),
+        syntax_call_args_rows=empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
+        syntax_func_params_rows=empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
+        syntax_imports_rows=empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY),
         parse_manifest_row_count=0,
         syntax_spans_row_count=0,
         syntax_nodes_row_count=0,
@@ -580,13 +574,13 @@ def _coerce_symtable_output(
     )
     return SymtableToolOutput(
         result=merged,
-        scope_rows=empty_reader_for_table(PY_SYM_SCOPES_TABLE_KEY),
-        symbol_rows=empty_reader_for_table(PY_SYM_SYMBOLS_TABLE_KEY),
-        scope_edge_rows=empty_reader_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY),
-        namespace_edge_rows=empty_reader_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY),
-        function_partition_rows=empty_reader_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY),
-        binding_rows=empty_reader_for_table(PY_SYM_BINDINGS_TABLE_KEY),
-        resolution_edge_rows=empty_reader_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY),
+        scope_rows=empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY),
+        symbol_rows=empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY),
+        scope_edge_rows=empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY),
+        namespace_edge_rows=empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY),
+        function_partition_rows=empty_table_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY),
+        binding_rows=empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY),
+        resolution_edge_rows=empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY),
         scope_row_count=0,
         symbol_row_count=0,
         scope_edge_row_count=0,
@@ -633,13 +627,13 @@ def _coerce_bytecode_output(
     )
     return BytecodeToolOutput(
         result=merged,
-        compiler_meta_rows=empty_reader_for_table(PY_COMPILER_META_TABLE_KEY),
-        code_unit_rows=empty_reader_for_table(PY_BC_CODE_UNITS_TABLE_KEY),
-        instruction_rows=empty_reader_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY),
-        exception_rows=empty_reader_for_table(PY_BC_EXCEPTION_TABLE_KEY),
-        block_rows=empty_reader_for_table(PY_BC_BLOCKS_TABLE_KEY),
-        cfg_edge_rows=empty_reader_for_table(PY_BC_CFG_EDGES_TABLE_KEY),
-        defuse_event_rows=empty_reader_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY),
+        compiler_meta_rows=empty_table_for_table(PY_COMPILER_META_TABLE_KEY),
+        code_unit_rows=empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY),
+        instruction_rows=empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY),
+        exception_rows=empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY),
+        block_rows=empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY),
+        cfg_edge_rows=empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY),
+        defuse_event_rows=empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY),
         compiler_meta_row_count=0,
         code_unit_row_count=0,
         instruction_row_count=0,
@@ -660,7 +654,7 @@ def _resolve_ingest_run_id(env: BuildEnv) -> str:
 def _py_compiler_meta_frame(
     env: BuildEnv,
     options: BytecodeExtractOptions,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     run_id = _resolve_ingest_run_id(env)
     rows = [
         {
@@ -674,7 +668,7 @@ def _py_compiler_meta_frame(
             "flags": options.compile_flags,
         }
     ]
-    reader, _ = record_batch_reader_for_rows(PY_COMPILER_META_TABLE_KEY, rows)
+    reader, _ = table_for_rows(PY_COMPILER_META_TABLE_KEY, rows)
     return reader
 
 
@@ -720,16 +714,16 @@ def _coerce_inspect_output(
     )
     return InspectToolOutput(
         result=merged,
-        object_rows=empty_reader_for_table(PY_INSPECT_OBJECTS_TABLE_KEY),
-        member_rows=empty_reader_for_table(PY_INSPECT_MEMBERS_TABLE_KEY),
-        class_mro_rows=empty_reader_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY),
-        class_attr_rows=empty_reader_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
-        unwrap_rows=empty_reader_for_table(PY_INSPECT_UNWRAP_TABLE_KEY),
-        signature_rows=empty_reader_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY),
-        signature_param_rows=empty_reader_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
-        annotation_rows=empty_reader_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
-        source_rows=empty_reader_for_table(PY_INSPECT_SOURCE_TABLE_KEY),
-        runtime_state_rows=empty_reader_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
+        object_rows=empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY),
+        member_rows=empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY),
+        class_mro_rows=empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY),
+        class_attr_rows=empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
+        unwrap_rows=empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY),
+        signature_rows=empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY),
+        signature_param_rows=empty_table_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
+        annotation_rows=empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
+        source_rows=empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY),
+        runtime_state_rows=empty_table_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
         object_row_count=0,
         member_row_count=0,
         class_mro_row_count=0,
@@ -767,7 +761,7 @@ def _coerce_docstrings_output(
     )
     return DocstringsToolOutput(
         result=merged,
-        rows=empty_reader_for_table(DOCSTRINGS_TABLE_KEY),
+        rows=empty_table_for_table(DOCSTRINGS_TABLE_KEY),
         row_count=0,
     )
 

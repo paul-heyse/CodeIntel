@@ -1,0 +1,23 @@
+repo: github.com/paul-heyse/CodeIntel
+default_profile: full
+ingest:
+  recipe: builtin.default
+analytics:
+  profile: full
+graphs:
+  recipe: builtin.full
+storage:
+  build_dir: build
+  db_path: build/db/codeintel.duckdb
+  document_output_dir: document_output
+  dataset_root_dir: datasets
+hamilton:
+  dynamic_execution:
+    enabled: false
+    local_executor: null
+    remote_executor: null
+    remote_max_tasks: null
+  execution:
+    parallel_backend: sequential
+    max_workers: null
+    materializers: []

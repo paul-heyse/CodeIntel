@@ -31,8 +31,12 @@ from codeintel.core.schemas.provider import (
 )
 from codeintel.core.schemas.row_models import (
     GeneratedRowBinding,
+    columns_for_table_key,
+    row_binding_for_table_key,
     row_binding_for_table_schema,
+    row_model_for_table_key,
     row_struct_builder_for_table_schema,
+    row_struct_for_table_key,
     row_struct_for_table_schema,
     row_struct_serializer_for_table_schema,
 )
@@ -71,10 +75,14 @@ __all__ = [
     "arrow_schema_from_table_schema",
     "canonical_type",
     "clear_schema_service",
+    "columns_for_table_key",
     "get_schema_service",
     "json_schema_from_table_schema",
+    "row_binding_for_table_key",
     "row_binding_for_table_schema",
+    "row_model_for_table_key",
     "row_struct_builder_for_table_schema",
+    "row_struct_for_table_key",
     "row_struct_for_table_schema",
     "row_struct_serializer_for_table_schema",
     "schema_hash",

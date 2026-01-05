@@ -1,4 +1,4 @@
-"""Smoke test for exporting datasets to Document Output."""
+"""Smoke test for exporting datasets to the document output directory."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
     AssertionError
         If any expected export is missing after running both exporters.
     """
-    output_dir = tmp_path / "Document Output"
+    output_dir = tmp_path / "build" / "document_output"
     export_all_parquet(
         _build_gateway(docs_export_gateway),
         output_dir,
@@ -114,7 +114,7 @@ def test_export_validation_passes_on_minimal_data(
     docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Ensure validation succeeds when provided with conforming exports."""
-    output_dir = tmp_path / "Document Output"
+    output_dir = tmp_path / "build" / "document_output"
     export_all_parquet(
         _build_gateway(docs_export_gateway),
         output_dir,
@@ -128,7 +128,7 @@ def test_export_validation_passes_on_minimal_data(
 
 def test_export_subset_by_dataset_name(docs_export_gateway: TestContext, tmp_path: Path) -> None:
     """Exports honor dataset-name selection using the registry."""
-    output_dir = tmp_path / "Document Output"
+    output_dir = tmp_path / "build" / "document_output"
     selected = ["function_types", "goids"]
     export_all_parquet(
         _build_gateway(docs_export_gateway),
@@ -174,7 +174,7 @@ def test_export_subset_validates_dataset_names(
     docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Dataset selection rejects unknown names."""
-    output_dir = tmp_path / "Document Output"
+    output_dir = tmp_path / "build" / "document_output"
     with pytest.raises(ValueError, match="Unknown dataset"):
         export_all_jsonl(
             _build_gateway(docs_export_gateway),
@@ -188,7 +188,7 @@ def test_export_helpers_resolve_dataset_names(
     docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Dataset-aware export helpers resolve registry names to filenames."""
-    output_dir = tmp_path / "Document Output"
+    output_dir = tmp_path / "build" / "document_output"
     jsonl_path = export_dataset_to_jsonl(
         _build_gateway(docs_export_gateway),
         "function_types",
@@ -235,7 +235,7 @@ def test_export_validation_runs_against_registry(
     docs_export_gateway: TestContext, tmp_path: Path
 ) -> None:
     """Exports should validate the dataset registry before writing files."""
-    output_dir = tmp_path / "Document Output"
+    output_dir = tmp_path / "build" / "document_output"
 
     broken_contract = DatasetContract(
         table_key="missing.table",

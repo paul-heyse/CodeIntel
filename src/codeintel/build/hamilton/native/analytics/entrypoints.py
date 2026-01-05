@@ -31,7 +31,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.serialization.json import decode_json_list
@@ -284,34 +284,34 @@ def entrypoints_result(
     )
 
 
-def entrypoints__base(entrypoints_result: EntrypointsResult) -> pa.RecordBatchReader:
+def entrypoints__base(entrypoints_result: EntrypointsResult) -> pa.Table:
     """Build entrypoint rows from computed entrypoints metadata.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing entrypoint rows.
     """
     if not entrypoints_result.entrypoint_rows:
-        return empty_reader_for_table(ENTRYPOINTS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(ENTRYPOINTS_TABLE_KEY)
+    reader, _ = table_for_rows(
         ENTRYPOINTS_TABLE_KEY,
         entrypoints_result.entrypoint_rows,
     )
     return reader
 
 
-def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.RecordBatchReader:
+def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.Table:
     """Build entrypoint test rows from computed entrypoints metadata.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing entrypoint test rows.
     """
     if not entrypoints_result.test_rows:
-        return empty_reader_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
+    reader, _ = table_for_rows(
         ENTRYPOINT_TESTS_TABLE_KEY,
         entrypoints_result.test_rows,
     )
@@ -329,7 +329,7 @@ _ENTRYPOINTS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=ENTRYPOINTS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=ENTRYPOINTS_TABLE_KEY),
             node_name="entrypoints__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=ENTRYPOINT_TESTS_TABLE_KEY,
@@ -337,7 +337,7 @@ _ENTRYPOINTS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=ENTRYPOINT_TESTS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=ENTRYPOINT_TESTS_TABLE_KEY),
             node_name="entrypoint_tests__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="entrypoints__table_materializations",

@@ -302,7 +302,7 @@ def _resolve_save_spec(
 
 def _resolve_input_type(table_spec: TableTargetTableSpec) -> object:
     if table_spec.input_type is not None:
-        if table_spec.contract is not None and table_spec.input_type is pa.RecordBatchReader:
+        if table_spec.contract is not None and table_spec.input_type is pa.Table:
             return InferableTabularInput
         return table_spec.input_type
     if table_spec.contract is None:

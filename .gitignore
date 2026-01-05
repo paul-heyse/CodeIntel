@@ -1,7 +1,7 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
-
+.codeintel/
 .hypothesis/
 build/build/db/
 build/db/

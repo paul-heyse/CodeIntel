@@ -19,10 +19,9 @@ from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
-    empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
+    empty_table_for_table,
+    table_for_columnar_rows,
 )
-from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as DocstringRow
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
@@ -32,6 +31,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
+DocstringRow = dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -191,25 +191,25 @@ class DocstringVisitor(ast.NodeVisitor):
         parsed: ParsedDocstring = _parse_docstring(raw_doc)
 
         self.rows.append(
-            DocstringRow(
-                repo=self.ctx.repo,
-                commit=self.ctx.commit,
-                rel_path=self.rel_path,
-                module=self.module_name,
-                qualname=qualname,
-                kind=kind,
-                lineno=lineno,
-                end_lineno=end_lineno,
-                raw_docstring=raw_doc,
-                style=parsed["style"],
-                short_desc=parsed["short_desc"],
-                long_desc=parsed["long_desc"],
-                params=parsed["params"],
-                returns=parsed["returns"],
-                raises=parsed["raises"],
-                examples=parsed["examples"],
-                created_at=self.ctx.created_at,
-            )
+            {
+                "repo": self.ctx.repo,
+                "commit": self.ctx.commit,
+                "rel_path": self.rel_path,
+                "module": self.module_name,
+                "qualname": qualname,
+                "kind": kind,
+                "lineno": lineno,
+                "end_lineno": end_lineno,
+                "raw_docstring": raw_doc,
+                "style": parsed["style"],
+                "short_desc": parsed["short_desc"],
+                "long_desc": parsed["long_desc"],
+                "params": parsed["params"],
+                "returns": parsed["returns"],
+                "raises": parsed["raises"],
+                "examples": parsed["examples"],
+                "created_at": self.ctx.created_at,
+            }
         )
 
 
@@ -260,8 +260,8 @@ class DocstringsExtractResult:
 
     result: ExecutionResult
     rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(DOCSTRINGS_TABLE_KEY)
+    rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(DOCSTRINGS_TABLE_KEY)
     )
     row_count: int = 0
 
@@ -324,7 +324,7 @@ class DocstringsExtractStep(BaseExtractStep):
             buffer.row_count,
         )
 
-        rows_reader, row_count = record_batch_reader_for_columnar_rows(
+        rows_reader, row_count = table_for_columnar_rows(
             DOCSTRINGS_TABLE_KEY,
             buffer.data,
             extras_policy="retain",

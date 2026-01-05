@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, get_type_hints
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,21 +14,7 @@ from codeintel.build.analytics.utilities.datasets import (
 )
 from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.build.schemas import iter_contracts_by_table_key
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsFunctionTypesRow as FunctionTypesRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
-)
+from codeintel.core.schemas.row_models import row_model_for_table_key
 from codeintel.storage.catalog import FunctionCatalog
 from tests._helpers import TestScenario
 from tests._helpers.analytics_domain import make_graph_metric_function_row
@@ -37,7 +23,7 @@ from tests._helpers.db import count_rows
 from tests._helpers.fixtures.rows import function_meta
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterator, Mapping
     from pathlib import Path
 
     from duckdb import DuckDBPyConnection
@@ -55,7 +41,7 @@ class ContractCtx:
     commit: str
 
 
-def _graph_metrics_functions_row(ctx: ContractCtx) -> GraphMetricsFunctionsRow:
+def _graph_metrics_functions_row(ctx: ContractCtx) -> Mapping[str, object]:
     now = datetime.now(UTC)
     catalog = FunctionCatalog(
         functions=[
@@ -176,29 +162,33 @@ def test_dataset_insertion_idempotent(
         extra_assertion(contract_ctx.gateway.con)
 
 
-def _assert_row_matches_table(row_type: type[Mapping[str, object]], table_key: str) -> None:
-    """Verify TypedDict annotations align with the DatasetContract schema."""
+def _assert_row_matches_table(table_key: str) -> None:
+    """Verify row model columns align with the DatasetContract schema."""
     contracts = dict(iter_contracts_by_table_key())
     contract = contracts.get(table_key)
     if contract is None or contract.schema is None:
         pytest.fail(f"{table_key} has no contract schema")
     expected_cols = [col.name for col in contract.schema.columns]
-    annotations = get_type_hints(row_type)
-    actual_cols: Sequence[str] = list(annotations.keys())
-    if list(actual_cols) != list(expected_cols):
+    row_model = row_model_for_table_key(table_key)
+    if row_model is None:
+        pytest.fail(f"{table_key} has no row model")
+    if not is_dataclass(row_model):
+        pytest.fail(f"{table_key} row model is not a dataclass")
+    actual_cols = [field.name for field in fields(row_model)]
+    if actual_cols != list(expected_cols):
         pytest.fail(f"{table_key} mismatch: {actual_cols} != {expected_cols}")
 
 
 @pytest.mark.parametrize(
-    ("row_type", "table_key"),
+    "table_key",
     [
-        (FunctionTypesRow, "analytics.function_types"),
-        (GraphMetricsFunctionsRow, "analytics.graph_metrics_functions"),
-        (GraphMetricsModulesRow, "analytics.graph_metrics_modules"),
-        (GraphMetricsFunctionsExtRow, "analytics.graph_metrics_functions_ext"),
-        (GraphMetricsModulesExtRow, "analytics.graph_metrics_modules_ext"),
+        "analytics.function_types",
+        "analytics.graph_metrics_functions",
+        "analytics.graph_metrics_modules",
+        "analytics.graph_metrics_functions_ext",
+        "analytics.graph_metrics_modules_ext",
     ],
 )
-def test_row_model_matches_contract(row_type: type[Mapping[str, object]], table_key: str) -> None:
-    """Ensure TypedDict row models stay aligned with table schemas."""
-    _assert_row_matches_table(row_type, table_key)
+def test_row_model_matches_contract(table_key: str) -> None:
+    """Ensure row models stay aligned with table schemas."""
+    _assert_row_matches_table(table_key)

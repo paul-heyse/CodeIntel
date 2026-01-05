@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
@@ -29,8 +30,6 @@ from codeintel.build.analytics.graphs.orchestrator import (
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from codeintel.build.analytics.compute.graphs import (
         CentralityBundle,
         ComponentBundle,
@@ -42,9 +41,6 @@ if TYPE_CHECKING:
     )
     from codeintel.build.graphs.runtime import GraphRuntimeOptions
     from codeintel.build.graphs.runtime.context import GraphContext
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
-    )
 
 
 @dataclass(frozen=True)
@@ -148,7 +144,7 @@ def _module_metric_rows(
     ctx: GraphContext,
     views: GraphViews,
     slices: ModuleGraphSlices,
-) -> list[GraphMetricsModulesExtRow]:
+) -> list[dict[str, object]]:
     """Build rows for module-level extended metrics.
 
     Parameters
@@ -166,7 +162,7 @@ def _module_metric_rows(
 
     Returns
     -------
-    list[GraphMetricsModulesExtRow]
+    list[dict[str, object]]
         Rows ready for insertion.
     """
     centralities = {
@@ -208,7 +204,7 @@ def _module_metric_rows(
 
 
 # Configuration for module-level extended metrics
-_MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, GraphMetricsModulesExtRow] = (
+_MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, dict[str, object]] = (
     ExtendedMetricsConfig(
         table_key="analytics.graph_metrics_modules_ext",
         filter_graph=lambda f, g: f.filter_import_graph(g),
@@ -226,7 +222,7 @@ def build_graph_metrics_modules_ext_rows(
     import_graph: nx.DiGraph,
     runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> list[GraphMetricsModulesExtRow]:
+) -> list[dict[str, object]]:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics.
 
     Parameters
@@ -244,7 +240,7 @@ def build_graph_metrics_modules_ext_rows(
 
     Returns
     -------
-    list[GraphMetricsModulesExtRow]
+    list[dict[str, object]]
         Rows ready for insertion into analytics.graph_metrics_modules_ext.
     """
     request = ExtendedMetricsRequest(

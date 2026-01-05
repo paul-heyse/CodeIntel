@@ -2,7 +2,7 @@
 
 This module consolidates all runtime resolution logic with a single,
 unified implementation that handles:
-1. Project file discovery (codeintel.yaml)
+1. Project file discovery (config/codeintel.yaml)
 2. Fallback to explicit CLI parameters
 3. Construction of ResolvedRuntime with all necessary configuration
 
@@ -203,10 +203,12 @@ def _apply_default_scip_project_name(
     return config.model_copy(update={"tools": tools})
 
 
-_MSG_NO_PROJECT_NO_FALLBACK = "No codeintel.yaml found and fallback disabled"
-_MSG_NO_PROJECT_NO_SOURCE = "No codeintel.yaml found and no git repo or src/ directory detected."
+_MSG_NO_PROJECT_NO_FALLBACK = "No config/codeintel.yaml found and fallback disabled"
+_MSG_NO_PROJECT_NO_SOURCE = (
+    "No config/codeintel.yaml found and no git repo or src/ directory detected."
+)
 _MSG_MISSING_PARAMS = (
-    "No codeintel.yaml found. Provide --repo explicitly or set project.repo/project.name."
+    "No config/codeintel.yaml found. Provide --repo explicitly or set project.repo/project.name."
 )
 
 
@@ -305,7 +307,7 @@ def _should_allow_fallback(params: RuntimeParams) -> bool:
 
 
 def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
-    """Resolve from project file (codeintel.yaml).
+    """Resolve from project file (config/codeintel.yaml).
 
     Parameters
     ----------
@@ -328,12 +330,22 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
     commit = detect_commit(resolved_root)
     repo_cfg = RepoConfig(repo=project.repo, commit=commit)
 
-    db_path = resolved_root / project.storage.db_path
+    storage_cfg = project.storage
+    build_dir = storage_cfg.build_dir
+    if not build_dir.is_absolute():
+        build_dir = (resolved_root / build_dir).resolve()
+
+    db_path = storage_cfg.db_path
+    if db_path is None:
+        db_path = build_dir / "db" / "codeintel.duckdb"
+    elif not db_path.is_absolute():
+        db_path = (resolved_root / db_path).resolve()
     paths_cfg = CliPathsInput(
         repo_root=resolved_root,
-        build_dir=resolved_root / ".codeintel",
+        build_dir=build_dir,
         db_path=db_path,
-        document_output_dir=None,
+        document_output_dir=storage_cfg.document_output_dir,
+        dataset_root_dir=storage_cfg.dataset_root_dir,
     )
 
     cfg = CodeIntelConfig.from_cli_args(
@@ -391,7 +403,7 @@ def _resolve_from_runtime_params(params: RuntimeParams) -> ResolvedRuntime:
     repo_root = params.repo_root or Path.cwd()
     repo, commit = _extract_required_params(params, repo_root=repo_root)
 
-    db_path = params.db_path or Path("build/db/codeintel.duckdb")
+    db_path = params.db_path or Path("db/codeintel.duckdb")
     build_dir = params.build_dir or Path("build")
     document_output_dir = params.document_output_dir
 
@@ -416,7 +428,12 @@ def _resolve_from_runtime_params(params: RuntimeParams) -> ResolvedRuntime:
         root=repo_root,
         project=ProjectConfig(
             repo=repo,
-            storage=StorageProjectConfig(db_path=config.build_paths.db_path),
+            storage=StorageProjectConfig(
+                build_dir=config.build_paths.build_dir,
+                db_path=config.build_paths.db_path,
+                document_output_dir=config.build_paths.document_output_dir,
+                dataset_root_dir=config.build_paths.dataset_root_dir,
+            ),
         ),
         primitives=build_runtime_primitives(
             RuntimeInputs(
@@ -496,7 +513,7 @@ def _log_fallback_selection(
     LOG.warning(
         "Selection flag: auto-selected %s root=%s (repo=%s, commit=%s). "
         "To override, pass --root or set project.root/project.repo/project.commit "
-        "in codeintel.toml, ~/.codeintel/config.yaml, or codeintel.yaml.",
+        "in config/codeintel.toml, ~/.codeintel/config.toml, or config/codeintel.yaml.",
         selection.source,
         runtime.repo_root,
         runtime.repo,

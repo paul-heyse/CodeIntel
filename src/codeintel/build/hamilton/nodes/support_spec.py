@@ -228,10 +228,7 @@ def _view_base_table_keys() -> tuple[str, ...]:
         return ()
     view_keys = set(plans)
     base_keys = {
-        dep
-        for plan in plans.values()
-        for dep in plan.dependencies
-        if dep not in view_keys
+        dep for plan in plans.values() for dep in plan.dependencies if dep not in view_keys
     }
     return tuple(sorted(base_keys))
 

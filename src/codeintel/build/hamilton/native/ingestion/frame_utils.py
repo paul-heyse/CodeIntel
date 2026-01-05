@@ -1,6 +1,6 @@
 """Deprecated wrapper for ingestion frame helpers.
 
-These helpers now return Arrow readers to keep ingestion Arrow-first.
+These helpers now return Arrow tables to avoid streaming outputs.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ import pyarrow as pa
 
 from codeintel.core.columnar.rows import (
     columnar_row_count,
-    empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
+    empty_table_for_table,
+    table_for_columnar_rows,
 )
 
 ColumnsSpec = Mapping[str, Sequence[object]] | Sequence[str] | None
@@ -37,50 +37,48 @@ def dedupe_frame_for_table(_table_key: str, frame: pa.Table) -> pa.Table:
     return frame
 
 
-def lazyframe_for_ingest_columns(
-    table_key: str, rows: Mapping[str, Sequence[object]]
-) -> pa.RecordBatchReader:
-    """Return an Arrow reader for ingest columnar rows.
+def lazyframe_for_ingest_columns(table_key: str, rows: Mapping[str, Sequence[object]]) -> pa.Table:
+    """Return an Arrow table for ingest columnar rows.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader aligned to the provided columnar rows.
+    pyarrow.Table
+        Table aligned to the provided columnar rows.
     """
-    reader, _ = record_batch_reader_for_columnar_rows(table_key, rows)
-    return reader
+    table, _ = table_for_columnar_rows(table_key, rows)
+    return table
 
 
 def lazyframe_for_table_columns(
     table_key: str,
     columns: ColumnsSpec,
-) -> pa.RecordBatchReader:
-    """Return an Arrow reader aligned to the table schema.
+) -> pa.Table:
+    """Return an Arrow table aligned to the table schema.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader aligned to the table schema for the requested columns.
+    pyarrow.Table
+        Table aligned to the table schema for the requested columns.
     """
     normalized = _normalize_columns(columns)
     if not normalized or columnar_row_count(normalized) == 0:
         try:
-            return empty_reader_for_table(table_key)
+            return empty_table_for_table(table_key)
         except (KeyError, RuntimeError):
-            return pa.RecordBatchReader.from_batches(pa.schema([]), [])
-    reader, _ = record_batch_reader_for_columnar_rows(table_key, normalized)
-    return reader
+            return pa.Table.from_batches(pa.schema([]), [])
+    table, _ = table_for_columnar_rows(table_key, normalized)
+    return table
 
 
-def empty_lazyframe_for_table(table_key: str) -> pa.RecordBatchReader:
-    """Return an empty Arrow reader using the table schema.
+def empty_lazyframe_for_table(table_key: str) -> pa.Table:
+    """Return an empty Arrow table using the table schema.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Empty reader aligned to the table schema.
+    pyarrow.Table
+        Empty table aligned to the table schema.
     """
-    return empty_reader_for_table(table_key)
+    return empty_table_for_table(table_key)
 
 
 __all__ = [

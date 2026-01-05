@@ -79,7 +79,7 @@ class RepoConfig(BaseModel):
     """
     Repository identity used across the pipeline.
 
-    These values are embedded into GOIDs and exported into the Document Output
+    These values are embedded into GOIDs and exported into document output
     datasets (goids.*, graph.*, etc.).
     """
 
@@ -101,11 +101,11 @@ class CliPathsInput(BaseModel):
     build_dir : Path
         Build directory (holds db/, logs/, etc.).
     db_path : Path
-        DuckDB database path.
+        DuckDB database path (relative to build_dir if not absolute).
     document_output_dir : Path | None
-        Directory for final datasets (defaults to repo_root / 'Document Output').
+        Directory for final datasets (defaults to build_dir / 'document_output').
     dataset_root_dir : Path | None
-        Directory for Arrow datasets (defaults to repo_root / 'src/codeintel/storage/datasets').
+        Directory for Arrow datasets (defaults to build_dir / 'datasets').
 
     Example
     -------
@@ -124,19 +124,16 @@ class CliPathsInput(BaseModel):
         description="Build directory (holds db/, logs/, etc.)",
     )
     db_path: Path = Field(
-        default=Path("build/db/codeintel.duckdb"),
-        description="DuckDB database path",
+        default=Path("db/codeintel.duckdb"),
+        description="DuckDB database path (relative to build_dir if not absolute)",
     )
     document_output_dir: Path | None = Field(
         default=None,
-        description="Directory for final datasets (defaults to repo_root / 'Document Output')",
+        description="Directory for final datasets (defaults to build_dir / 'document_output')",
     )
     dataset_root_dir: Path | None = Field(
         default=None,
-        description=(
-            "Directory for Arrow datasets (defaults to repo_root / "
-            "'src/codeintel/storage/datasets')"
-        ),
+        description=("Directory for Arrow datasets (defaults to build_dir / 'datasets')"),
     )
 
     @field_validator(
@@ -188,15 +185,15 @@ class CliPathsInput(BaseModel):
 
         doc_dir = self.document_output_dir
         if doc_dir is None:
-            doc_dir = (repo_root / "Document Output").resolve()
+            doc_dir = (build_dir / "document_output").resolve()
         elif not doc_dir.is_absolute():
-            doc_dir = (repo_root / doc_dir).resolve()
+            doc_dir = (build_dir / doc_dir).resolve()
 
         dataset_root_dir = self.dataset_root_dir
         if dataset_root_dir is None:
-            dataset_root_dir = (repo_root / "src" / "codeintel" / "storage" / "datasets").resolve()
+            dataset_root_dir = (build_dir / "datasets").resolve()
         elif not dataset_root_dir.is_absolute():
-            dataset_root_dir = (repo_root / dataset_root_dir).resolve()
+            dataset_root_dir = (build_dir / dataset_root_dir).resolve()
 
         self.repo_root = repo_root
         self.build_dir = build_dir
@@ -246,10 +243,8 @@ class CliPathsInput(BaseModel):
         BuildPaths
             Internal paths configuration.
         """
-        doc_dir = self.document_output_dir or (self.repo_root / "Document Output")
-        dataset_root_dir = self.dataset_root_dir or (
-            self.repo_root / "src" / "codeintel" / "storage" / "datasets"
-        )
+        doc_dir = self.document_output_dir or (self.build_dir / "document_output")
+        dataset_root_dir = self.dataset_root_dir or (self.build_dir / "datasets")
         overrides = BuildPathOverrides(
             db_path=self.db_path,
             document_output_dir=doc_dir,
@@ -430,7 +425,7 @@ class CodeIntelConfig(BaseModel):
     @property
     def document_output_dir(self) -> Path:
         """
-        Document Output directory resolved in paths config.
+        Document output directory resolved in paths config.
 
         Returns
         -------

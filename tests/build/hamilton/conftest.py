@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_MANIFEST_PATH = _REPO_ROOT / "config" / "hamilton" / "cli_snapshots" / "manifest.yaml"
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Add CLI snapshot testing options to pytest.
@@ -44,7 +47,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--cli-snapshot-manifest",
         action="store",
         default=None,
-        help="Path to snapshot manifest (defaults to snapshots/manifest.yaml).",
+        help=(
+            "Path to snapshot manifest (defaults to config/hamilton/cli_snapshots/manifest.yaml)."
+        ),
     )
     parser.addoption(
         "--cli-snapshot-tags",
@@ -99,15 +104,8 @@ def _list_cli_snapshots_and_exit(config: pytest.Config) -> None:
     config
         Pytest configuration object.
     """
-    snapshots_dir = Path(__file__).parent / "snapshots"
-
     override = config.getoption("--cli-snapshot-manifest")
-    if override:
-        manifest_path = Path(override)
-    else:
-        manifest_yaml = snapshots_dir / "manifest.yaml"
-        manifest_json = snapshots_dir / "manifest.json"
-        manifest_path = manifest_yaml if manifest_yaml.exists() else manifest_json
+    manifest_path = Path(override) if override else _DEFAULT_MANIFEST_PATH
 
     if not manifest_path.exists():
         pytest.exit(f"Manifest not found: {manifest_path}", returncode=1)

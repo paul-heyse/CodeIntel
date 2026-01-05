@@ -115,6 +115,16 @@ def _needs_row_hash(value: object) -> bool:
     return False
 
 
+def _is_ordered_subset(expected: list[str], actual: list[str]) -> bool:
+    expected_index = 0
+    for name in actual:
+        try:
+            expected_index = expected.index(name, expected_index) + 1
+        except ValueError:
+            return False
+    return True
+
+
 def _compute_row_hash(
     *,
     table_schema: TableSchema,
@@ -1341,6 +1351,22 @@ class DuckDBPolicyBackend:
             actual_columns = self._fetch_table_columns(qualified_name)
             if actual_columns == expected_columns:
                 return
+        if _is_ordered_subset(expected_columns, actual_columns):
+            missing = [name for name in expected_columns if name not in actual_columns]
+            if missing:
+                self._add_named_columns(table_schema, missing=tuple(missing))
+                log.warning(
+                    "Column order mismatch for %s; appended missing columns at end: %s",
+                    table_key,
+                    ", ".join(missing),
+                )
+            return
+        if set(actual_columns) == set(expected_columns):
+            log.warning(
+                "Column order mismatch for %s; preserving existing column order",
+                table_key,
+            )
+            return
 
         message = (
             f"Column order mismatch for {table_key}: "
@@ -1363,8 +1389,31 @@ class DuckDBPolicyBackend:
         missing_columns = table_schema.columns[start_index:]
         for col in missing_columns:
             col_type = col.type
-            nullable_sql = "" if col.nullable else " NOT NULL"
-            sql = f'ALTER TABLE {qualified_name} ADD COLUMN "{col.name}" {col_type}{nullable_sql}'
+            if not col.nullable:
+                log.warning(
+                    "Adding column %s to %s without NOT NULL constraint",
+                    col.name,
+                    table_schema.table_key,
+                )
+            sql = f'ALTER TABLE {qualified_name} ADD COLUMN "{col.name}" {col_type}'
+            self._run_sql(sql)
+
+    def _add_named_columns(self, table_schema: TableSchema, *, missing: tuple[str, ...]) -> None:
+        if not missing:
+            return
+        missing_set = set(missing)
+        qualified_name = self._quoted_table_ref(table_schema.schema, table_schema.name)
+        for col in table_schema.columns:
+            if col.name not in missing_set:
+                continue
+            col_type = col.type
+            if not col.nullable:
+                log.warning(
+                    "Adding column %s to %s without NOT NULL constraint",
+                    col.name,
+                    table_schema.table_key,
+                )
+            sql = f'ALTER TABLE {qualified_name} ADD COLUMN "{col.name}" {col_type}'
             self._run_sql(sql)
 
     def bulk_insert(

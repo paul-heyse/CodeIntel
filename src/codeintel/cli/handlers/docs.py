@@ -126,11 +126,11 @@ def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
     if output_dir is None:
         build_dir = ctx.params.get_path("build_dir")
         if build_dir is not None:
-            output_dir = build_dir / "Document Output"
+            output_dir = build_dir / "document_output"
         else:
             repo_root = ctx.params.get_path("repo_root")
             project_root = ctx.runtime.root if ctx.has_runtime else None
-            output_dir = (repo_root or project_root or Path.cwd()) / "Document Output"
+            output_dir = (repo_root or project_root or Path.cwd()) / "build" / "document_output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     return DocsExportParams(
@@ -185,7 +185,7 @@ def docs_export_handler(
     ctx: CommandContext,
     deps: DocsDependencies | None = None,
 ) -> CliResult[DocsExportResult]:
-    """Export Parquet + JSONL datasets from DuckDB into Document Output/.
+    """Export Parquet + JSONL datasets from DuckDB into the document output directory.
 
     Parameters
     ----------

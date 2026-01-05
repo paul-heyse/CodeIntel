@@ -1,0 +1,8 @@
+{"dst":"docs.v_config_graph_metrics_keys","edge_type":"builds","src":"analytics.config_graph_metrics_keys"}
+{"dst":"docs.v_config_graph_metrics_modules","edge_type":"builds","src":"analytics.config_graph_metrics_modules"}
+{"dst":"docs.v_config_projection_key_edges","edge_type":"builds","src":"analytics.config_projection_key_edges"}
+{"dst":"docs.v_config_projection_module_edges","edge_type":"builds","src":"analytics.config_projection_module_edges"}
+{"dst":"docs.v_config_values","edge_type":"builds","src":"analytics.config_values"}
+{"dst":"docs.v_function_profile","edge_type":"builds","src":"analytics.function_profile"}
+{"dst":"docs.v_module_profile","edge_type":"builds","src":"analytics.module_profile"}
+{"dst":"docs.v_test_profile","edge_type":"builds","src":"analytics.test_profile"}

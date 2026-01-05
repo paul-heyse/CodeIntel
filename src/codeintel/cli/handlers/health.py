@@ -221,7 +221,7 @@ def _check_project() -> CheckResult:
     search_paths = [cwd, *cwd.parents]
 
     for path in search_paths:
-        config_path = path / "codeintel.yaml"
+        config_path = path / "config/codeintel.yaml"
         if config_path.exists():
             return CheckResult(
                 name="project_discovery",
@@ -230,7 +230,7 @@ def _check_project() -> CheckResult:
                 details={"project_root": str(path)},
             )
 
-        toml_path = path / "codeintel.toml"
+        toml_path = path / "config/codeintel.toml"
         if toml_path.exists():
             return CheckResult(
                 name="project_discovery",

@@ -1,0 +1,34 @@
+{
+  "argv0": "/Users/paulheyse/CodeIntel/CodeIntel/.venv/bin/codeintel",
+  "codeintel": {
+    "version": "0.1.0"
+  },
+  "commit": "eaa57a9de9563033b6979adfe4cc703947730ab3",
+  "duckdb": {
+    "connect_env": {
+      "enable_profiling": null,
+      "memory_limit": null,
+      "profiling_output": null,
+      "temp_directory": null,
+      "threads": null
+    },
+    "extensions_env": "",
+    "read_only": false
+  },
+  "generated_at": "2026-01-05T02:11:05.877926+00:00",
+  "platform": {
+    "machine": "arm64",
+    "release": "25.2.0",
+    "system": "Darwin"
+  },
+  "python": {
+    "implementation": "CPython",
+    "version": "3.13.11"
+  },
+  "repo": "github.com/paul-heyse/CodeIntel",
+  "tools": {
+    "duckdb": "1.4.3",
+    "pyarrow": "22.0.0",
+    "sqlglot": "28.5.0"
+  }
+}

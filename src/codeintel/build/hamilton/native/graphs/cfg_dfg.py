@@ -21,7 +21,7 @@ from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import non_empty_string_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 from codeintel.core.spans import normalize_line_span
@@ -268,9 +268,9 @@ def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInp
         Arrow reader of CFG block rows.
     """
     if not cfg_dfg_analysis.cfg_blocks:
-        return empty_reader_for_table(CFG_BLOCKS_TABLE_KEY)
+        return empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_blocks)
-    reader, _ = record_batch_reader_for_rows(CFG_BLOCKS_TABLE_KEY, rows)
+    reader, _ = table_for_rows(CFG_BLOCKS_TABLE_KEY, rows)
     return reader
 
 
@@ -283,9 +283,9 @@ def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
         Tabular input of CFG edge rows.
     """
     if not cfg_dfg_analysis.cfg_edges:
-        return empty_reader_for_table(CFG_EDGES_TABLE_KEY)
+        return empty_table_for_table(CFG_EDGES_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_edges)
-    reader, _ = record_batch_reader_for_rows(CFG_EDGES_TABLE_KEY, rows)
+    reader, _ = table_for_rows(CFG_EDGES_TABLE_KEY, rows)
     return reader
 
 
@@ -298,9 +298,9 @@ def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
         Tabular input of DFG edge rows.
     """
     if not cfg_dfg_analysis.dfg_edges:
-        return empty_reader_for_table(DFG_EDGES_TABLE_KEY)
+        return empty_table_for_table(DFG_EDGES_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.dfg_edges)
-    reader, _ = record_batch_reader_for_rows(DFG_EDGES_TABLE_KEY, rows)
+    reader, _ = table_for_rows(DFG_EDGES_TABLE_KEY, rows)
     return reader
 
 
@@ -358,7 +358,7 @@ def cfg_blocks_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for CFG blocks.
     """
     _ = env
-    return empty_reader_for_table(CFG_BLOCKS_TABLE_KEY)
+    return empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
 
 
 def cfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -370,7 +370,7 @@ def cfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for CFG edges.
     """
     _ = env
-    return empty_reader_for_table(CFG_EDGES_TABLE_KEY)
+    return empty_table_for_table(CFG_EDGES_TABLE_KEY)
 
 
 def dfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -382,7 +382,7 @@ def dfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for DFG edges.
     """
     _ = env
-    return empty_reader_for_table(DFG_EDGES_TABLE_KEY)
+    return empty_table_for_table(DFG_EDGES_TABLE_KEY)
 
 
 __all__ = [

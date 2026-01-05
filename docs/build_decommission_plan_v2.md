@@ -73,7 +73,7 @@
 - Update tests to import from `codeintel.storage.serving.search_index` directly:
   - `tests/build/serving/test_pr90_search_index_builds.py`
 - Delete `src/codeintel/build/serving/search_index.py`.
-- Optional cleanup: update downstream consumer labels in `src/codeintel/core/registry/dag_output_inventory.yaml` to remove the "serving.search_index" label if it is meant to reflect module paths rather than conceptual consumers.
+- Optional cleanup: update downstream consumer labels in `config/registry/dag_output_inventory.yaml` to remove the "serving.search_index" label if it is meant to reflect module paths rather than conceptual consumers.
 
 **Phase 1 acceptance criteria**
 - No references remain to `codeintel.build.types` or `codeintel.build.serving.search_index`.

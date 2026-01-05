@@ -7,10 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 
 from codeintel.build.tabular.arrow_ops import ArrowJoinSpec, arrow_join_tables
-from codeintel.core.schemas.generated_rows import columns_for_table_key
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsSubsystemProfileCacheRow as SubsystemProfileCacheRow,
-)
+from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -55,7 +52,7 @@ def build_subsystem_profile_cache_rows(
     snapshot: SnapshotRef,
     subsystems_frame: pa.Table,
     subsystem_graph_metrics_frame: pa.Table,
-) -> list[SubsystemProfileCacheRow]:
+) -> list[dict[str, object]]:
     """Build cache rows for analytics.subsystem_profile_cache.
 
     Returns
@@ -68,8 +65,7 @@ def build_subsystem_profile_cache_rows(
         subsystems_frame=subsystems_frame,
         subsystem_graph_metrics_frame=subsystem_graph_metrics_frame,
     )
-    rows = frame.to_pylist()
-    return [cast("SubsystemProfileCacheRow", row) for row in rows]
+    return cast("list[dict[str, object]]", frame.to_pylist())
 
 
 def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:

@@ -165,6 +165,7 @@ required-version = ">=0.14.8"
 output-format = "grouped"
 src = ["src"]
 extend-exclude = [
+    ".codeintel/**",
     "build/tmp_docs_views/**",
     "tmp_docs_view_check/**",
     "tmp_docs_view_check_rel/**",

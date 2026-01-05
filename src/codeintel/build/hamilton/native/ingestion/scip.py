@@ -58,8 +58,8 @@ from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
     columnar_row_count,
-    record_batch_reader_for_columnar_rows,
-    record_batch_reader_for_rows,
+    table_for_columnar_rows,
+    table_for_rows,
 )
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -382,6 +382,8 @@ def _load_file_line_index(
     rel_path_list = sorted({path for path in rel_paths if path})
     if not rel_path_list:
         return {}
+    if env.gateway is None:
+        return {}
 
     results: dict[str, _FileLineIndex] = {}
     try:
@@ -696,6 +698,8 @@ def _resolve_change_set(scan: ModuleToolOutput) -> tuple[ChangeSet, bool]:
 
 
 def _load_module_state_rows(env: BuildEnv) -> list[dict[str, object]]:
+    if env.gateway is None:
+        return []
     reader = env.gateway.execute(
         "SELECT * FROM core.scip_module_state WHERE repo = ? AND commit = ?",
         [env.snapshot.repo, env.snapshot.commit],
@@ -770,7 +774,7 @@ def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
     write_manifest(manifest_file, manifest)
 
 
-def _build_file_state_map(file_state_rows: pa.RecordBatchReader) -> dict[str, FileDigest]:
+def _build_file_state_map(file_state_rows: pa.Table) -> dict[str, FileDigest]:
     digest_by_path: dict[str, FileDigest] = {}
     table = reader_to_table(file_state_rows)
     for row in table.to_pylist():
@@ -826,7 +830,8 @@ def _persist_scip_telemetry(env: BuildEnv, telemetry: ScipRunTelemetry) -> None:
         output_scip=telemetry.output_scip,
         recorded_at=telemetry.recorded_at,
     )
-    env.gateway.build.record_scip_run(record)
+    if env.metadata_bundle is None and env.gateway is not None:
+        env.gateway.build.record_scip_run(record)
     _write_scip_run_report(env.paths.scip_dir, telemetry)
 
 
@@ -878,7 +883,7 @@ def _execute_scip_incremental(
         module_inputs.scan.file_state_row_count == 0
         and columnar_row_count(change_set.state_rows) > 0
     ):
-        file_state_rows, _ = record_batch_reader_for_columnar_rows(
+        file_state_rows, _ = table_for_columnar_rows(
             FILE_STATE_TABLE_KEY,
             change_set.state_rows,
         )
@@ -1081,32 +1086,32 @@ def _build_scip_row_payload(
         include_references=options.should_include_references(),
         include_implementations=options.should_include_implementations(),
     )
-    symbol_rows, symbol_row_count = record_batch_reader_for_rows(
+    symbol_rows, symbol_row_count = table_for_rows(
         SCIP_SYMBOLS_TABLE_KEY,
         iter_symbol_rows(parsed.documents, row_context),
         extras_policy="retain",
     )
-    occurrence_rows, occurrence_row_count = record_batch_reader_for_rows(
+    occurrence_rows, occurrence_row_count = table_for_rows(
         SCIP_OCCURRENCES_TABLE_KEY,
         iter_occurrence_rows(parsed.documents, row_context),
         extras_policy="retain",
     )
-    symbol_info_rows, symbol_info_row_count = record_batch_reader_for_rows(
+    symbol_info_rows, symbol_info_row_count = table_for_rows(
         SCIP_SYMBOL_INFO_TABLE_KEY,
         iter_symbol_information_rows(parsed.symbol_infos, row_context),
         extras_policy="retain",
     )
-    relationship_rows, relationship_row_count = record_batch_reader_for_rows(
+    relationship_rows, relationship_row_count = table_for_rows(
         SCIP_RELATIONSHIPS_TABLE_KEY,
         iter_symbol_relationship_rows(parsed.relationships, row_context),
         extras_policy="retain",
     )
-    diagnostic_rows, diagnostic_row_count = record_batch_reader_for_rows(
+    diagnostic_rows, diagnostic_row_count = table_for_rows(
         SCIP_DIAGNOSTICS_TABLE_KEY,
         iter_diagnostic_rows(parsed.diagnostics, row_context),
         extras_policy="retain",
     )
-    external_symbol_rows, external_symbol_row_count = record_batch_reader_for_rows(
+    external_symbol_rows, external_symbol_row_count = table_for_rows(
         SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
         iter_external_symbol_rows(parsed.external_symbols, row_context),
         extras_policy="retain",
@@ -1154,7 +1159,7 @@ def _build_module_state_frame(
         env.snapshot.repo,
         env.snapshot.commit,
     )
-    reader, row_count = record_batch_reader_for_rows(
+    reader, row_count = table_for_rows(
         SCIP_MODULE_STATE_TABLE_KEY,
         rows_iter,
         extras_policy="retain",
@@ -1409,7 +1414,7 @@ scip__module_state_rows = _MODULE.scip__module_state_rows
 scip__table_materializations = _MODULE.scip__table_materializations
 
 
-@cache(behavior="disable")
+@cache(behavior="ignore")
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__finalize_context(
     env: BuildEnv,

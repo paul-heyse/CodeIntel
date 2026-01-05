@@ -46,7 +46,7 @@ Validation mode mapping:
 
 ### 5.2 Contract Validation Surfaces
 - Order of operations:
-  1) Project resolution (missing `codeintel.yaml` must fail before DB open).
+  1) Project resolution (missing `config/codeintel.yaml` must fail before DB open).
   2) Storage open (lenient in default paths).
   3) Explicit validation (strict, only in validation commands or `--validation-mode required`).
 - Exit codes:
@@ -131,7 +131,7 @@ class BuildRunCommand:
 
 #### Acceptance Criteria
 - All tests previously failing on `Dataset contract validation failed` during setup pass.
-- CLI exit codes and error paths match expectations (nonexistent `codeintel.yaml` is reported).
+- CLI exit codes and error paths match expectations (nonexistent `config/codeintel.yaml` is reported).
 - Contract validation remains strict for explicit commands and CI validation paths.
 
 #### Likely Touchpoints
@@ -194,7 +194,7 @@ class BuildRunCommand:
 - Make `SharedFlags` a concrete dataclass for flattening (not just a Protocol).
 - Add explicit `env_var=` values in option metadata for shared flags.
 - Ensure `ProjectResolver` runs before gateway open to produce expected errors
-  (`codeintel.yaml` not found, etc.).
+  (`config/codeintel.yaml` not found, etc.).
 - Update CLI snapshots and help rendering tests if needed.
 
 #### Acceptance Criteria

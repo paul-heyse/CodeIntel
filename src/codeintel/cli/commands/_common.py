@@ -2,7 +2,7 @@
 
 Configuration precedence
 ------------------------
-CLI flags override the optional TOML config file (``codeintel.toml`` or
+CLI flags override the optional TOML config file (``config/codeintel.toml`` or
 ``CODEINTEL_CONFIG_PATH``), which finally falls back to defaults in function
 signatures.
 
@@ -134,7 +134,7 @@ class RuntimeCLI:
         Path | None,
         Parameter(
             name="--db-path",
-            help="Path to DuckDB database. Uses project config if omitted.",
+            help="Path to DuckDB database (relative to build_dir if not absolute).",
         ),
     ] = None
     build_dir: Annotated[
@@ -155,7 +155,7 @@ class RuntimeCLI:
         Path | None,
         Parameter(
             name="--document-output-dir",
-            help="Override Document Output/ directory.",
+            help="Override document output directory (default: build/document_output).",
         ),
     ] = None
     verbose: Verbose = 0

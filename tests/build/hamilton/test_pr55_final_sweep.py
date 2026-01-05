@@ -40,7 +40,7 @@ def _find_repo_root(start: Path) -> Path:
 REPO_ROOT = _find_repo_root(Path(__file__).resolve())
 SRC_ROOT = REPO_ROOT / "src" / "codeintel"
 SNAPSHOTS_DIR = REPO_ROOT / "tests" / "build" / "hamilton" / "snapshots"
-MANIFEST_PATH = SNAPSHOTS_DIR / "manifest.yaml"
+MANIFEST_PATH = REPO_ROOT / "config" / "hamilton" / "cli_snapshots" / "manifest.yaml"
 
 PR_TAG_RE = re.compile(r"^pr\d{2,}$")
 PHASE_TAG_RE = re.compile(r"^phase\d+$")

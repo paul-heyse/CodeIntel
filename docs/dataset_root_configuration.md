@@ -6,16 +6,16 @@ scanning the Parquet snapshot directories referenced by dataset manifests. The
 dataset root is where those snapshot directories live.
 
 ## Default Location
-By default, CodeIntel writes datasets under the repository:
+By default, CodeIntel writes datasets under the build directory:
 
-- `repo_root/src/codeintel/storage/datasets`
+- `repo_root/build/datasets` (or `<build_dir>/datasets` when `build_dir` is overridden)
 
 Snapshots follow the standard layout:
 
-- `datasets/<schema>/<table>/snapshot_id=<snapshot_id>/dataset_manifest.json`
+- `<dataset_root>/<schema>/<table>/snapshot_id=<snapshot_id>/dataset_manifest.json`
 
 ## Configure the Dataset Root
-You can override the dataset root in `codeintel.yaml`:
+You can override the dataset root in `config/codeintel.yaml`:
 
 ```yaml
 paths:
@@ -42,7 +42,7 @@ Common options:
 
 Expected output layout:
 
-- `datasets/<schema>/<table>/snapshot_id=<snapshot_id>/`
+- `<dataset_root>/<schema>/<table>/snapshot_id=<snapshot_id>/`
   - `dataset_manifest.json`
   - `part-*.parquet`
 

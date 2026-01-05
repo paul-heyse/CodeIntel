@@ -88,9 +88,7 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.core.schemas.generated_rows.graph import (
-        GraphCallGraphEdgesRow as CallGraphEdgeRow,
-    )
+CallGraphEdgeRow = dict[str, object]
 
 
 EXPECTED_EDGE_COUNT_ONE: Final[int] = 1

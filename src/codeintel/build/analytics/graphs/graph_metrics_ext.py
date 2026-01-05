@@ -40,9 +40,6 @@ if TYPE_CHECKING:
     )
     from codeintel.build.graphs.runtime import GraphRuntimeOptions
     from codeintel.build.graphs.runtime.context import GraphContext
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
-    )
 
 
 @dataclass(frozen=True)
@@ -153,7 +150,7 @@ def _function_metric_rows(
     ctx: GraphContext,
     views: GraphViews,
     slices: FunctionGraphSlices,
-) -> list[GraphMetricsFunctionsExtRow]:
+) -> list[dict[str, object]]:
     """Build rows for function-level extended metrics.
 
     Parameters
@@ -171,7 +168,7 @@ def _function_metric_rows(
 
     Returns
     -------
-    list[GraphMetricsFunctionsExtRow]
+    list[dict[str, object]]
         Rows ready for insertion.
     """
     node_count = views.graph.number_of_nodes()
@@ -217,7 +214,7 @@ def _function_metric_rows(
 
 
 # Configuration for function-level extended metrics
-_FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, GraphMetricsFunctionsExtRow] = (
+_FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, dict[str, object]] = (
     ExtendedMetricsConfig(
         table_key="analytics.graph_metrics_functions_ext",
         filter_graph=lambda f, g: f.filter_call_graph(g),
@@ -235,7 +232,7 @@ def build_graph_metrics_functions_ext_rows(
     call_graph: nx.DiGraph,
     runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> list[GraphMetricsFunctionsExtRow]:
+) -> list[dict[str, object]]:
     """Populate analytics.graph_metrics_functions_ext with additional centralities.
 
     Parameters
@@ -253,7 +250,7 @@ def build_graph_metrics_functions_ext_rows(
 
     Returns
     -------
-    list[GraphMetricsFunctionsExtRow]
+    list[dict[str, object]]
         Rows ready for insertion into analytics.graph_metrics_functions_ext.
     """
     request = ExtendedMetricsRequest(

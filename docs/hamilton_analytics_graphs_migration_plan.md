@@ -1218,7 +1218,7 @@ Timeseries-specific:
 - [x] `src/codeintel/cli/options/registry.py` (remove timeseries flags).
 - [x] `src/codeintel/cli/core/result_types.py` (remove HistoryTimeseriesResult).
 - [x] `src/codeintel/cli/handlers/__init__.py` (drop export).
-- [x] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
+- [x] `config/registry/dag_output_inventory.yaml` (remove target).
 - [x] `src/codeintel/core/schemas/output_registry.py` (remove history_timeseries).
 - [x] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
 - [x] `src/codeintel/core/schemas/table_registry.py` (remove table key).
@@ -1241,7 +1241,7 @@ History (multi-commit) analytics removal:
 - [x] `src/codeintel/build/hamilton/native/analytics/__init__.py` (drop exports).
 - [x] `src/codeintel/build/analytics/profiles/functions.py` (remove history joins).
 - [x] `src/codeintel/build/hamilton/native/analytics/profiles.py` (drop inputs).
-- [x] `src/codeintel/core/registry/dag_output_inventory.yaml` (remove target).
+- [x] `config/registry/dag_output_inventory.yaml` (remove target).
 - [x] `src/codeintel/core/schemas/output_registry.py` (remove function_history).
 - [x] `src/codeintel/core/schemas/generated_rows/analytics.py` (remove row model).
 - [x] `src/codeintel/core/schemas/table_registry.py` (remove table key).

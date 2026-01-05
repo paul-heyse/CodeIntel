@@ -44,7 +44,7 @@ class BuildRunContext:
     """Factory for build-time environment and execution options."""
 
     snapshot: SnapshotRef
-    gateway: BuildGateway
+    gateway: BuildGateway | None
     paths: BuildPaths
     providers: Providers
     config: BuildConfig
@@ -160,7 +160,7 @@ class BuildRunContext:
         cls,
         *,
         execution_context: ExecutionContext,
-        gateway: BuildGateway,
+        gateway: BuildGateway | None,
         providers: Providers,
         config: BuildConfig,
         overrides: BuildRunContextOverrides | None = None,

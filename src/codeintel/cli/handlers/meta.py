@@ -4,156 +4,96 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.build.meta.contract_catalog import (
-    persist_contract_catalog,
-    persist_contract_catalog_to_connection,
-)
-from codeintel.build.schemas import get_schema_provider
-from codeintel.build.schemas.compile import (
-    SchemaManifestContext,
-    SchemaManifestRequest,
-    compile_schema_manifest,
-)
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import (
     fail_execution_failed,
     fail_invalid_value,
     fail_not_found,
 )
-from codeintel.cli.handlers.runtime_helpers import (
-    CliRuntimeComposeOptions,
-    compose_cli_runtime_bundle,
-)
-from codeintel.core.execution.ids import new_run_id
-from codeintel.core.schemas.provider import MappingSchemaProvider
-from codeintel.storage.duckdb_types import DuckDBConnection
-from codeintel.storage.gateway import open_gateway, open_inference_gateway
-from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
+from codeintel.cli.handlers.metadata_bundle import BundleIngestRequest, ingest_metadata_bundle
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
 
 
 def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
-    """Regenerate and persist canonical meta catalogs.
+    """Ingest build metadata bundles into the meta catalog.
 
     Parameters
     ----------
     ctx
-        Command context with runtime and storage access.
+        Command context with runtime access.
 
     Returns
     -------
     CliResult[dict[str, object]]
-        Summary payload for the sync operation.
+        Summary payload for the ingest operation.
     """
-    if not ctx.has_runtime or not ctx.has_storage:
-        return fail_execution_failed("meta", "meta.sync requires runtime and storage access")
+    if not ctx.has_runtime:
+        return fail_execution_failed("meta", "meta.sync requires runtime access")
 
     snapshot = ctx.runtime.snapshot
     if not snapshot.repo or not snapshot.commit:
         return fail_execution_failed("meta", "repo and commit must be set for meta.sync")
+    bundle_root = ctx.params.get_path("bundle_root") or ctx.runtime.paths.build_dir / "metadata"
+    if not bundle_root.exists():
+        return fail_not_found(
+            "bundle_root",
+            str(bundle_root),
+            suggestion="Run `codeintel build run --all` to generate build metadata",
+        )
 
-    inference_gateway = open_inference_gateway(schema_provider=MappingSchemaProvider({}))
     try:
-        runtime_bundle = compose_cli_runtime_bundle(
-            runtime=ctx.runtime,
-            gateway=inference_gateway,
-            options=CliRuntimeComposeOptions(verbosity=ctx.verbosity),
+        outcome = ingest_metadata_bundle(
+            BundleIngestRequest(
+                bundle_root=bundle_root,
+                db_path=ctx.runtime.db_path,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                catalog_inputs={"source": "meta.sync"},
+            )
         )
-        schema_index = runtime_bundle.schema_index
-        if schema_index is None:
-            return fail_execution_failed("meta", "Runtime schema_index is required")
-        manifest = compile_schema_manifest(
-            provider=get_schema_provider(),
-            context=SchemaManifestContext(
-                catalog=runtime_bundle.catalog,
-                schema_index=schema_index,
-                tag_query=runtime_bundle.tag_query,
-            ),
-            request=SchemaManifestRequest(
-                all_targets=True,
-                stable=True,
-                version="v2",
-                include_views=True,
-                include_artifacts=True,
-                include_provenance=True,
-            ),
-        )
-    except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
         return fail_execution_failed("meta", str(exc), status=500)
-    finally:
-        inference_gateway.close()
 
-    def _seed_contract_catalog(con: DuckDBConnection) -> None:
-        persist_contract_catalog_to_connection(con, inputs={"source": "meta.sync"})
-
-    gateway = open_gateway(
-        StorageConfig(
-            db_path=ctx.runtime.db_path,
-            read_only=False,
-            apply_schema=False,
-            ensure_views=False,
-            validate_schema=False,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        ),
-        seed_contract_catalog=_seed_contract_catalog,
-    )
-    try:
-        run_id = new_run_id("meta")
-        catalog_request = SchemaCatalogRequest(
-            run_id=run_id,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            catalog_inputs={"source": "meta.sync"},
-        )
-        schema_result = gateway.schemas.persist_schema_manifest(
-            manifest,
-            request=catalog_request,
-        )
-        override_result = gateway.schemas.refresh_override_registry_from_manifest(
-            manifest,
-            request=catalog_request,
-            catalog_hash=schema_result.catalog_hash,
-        )
-        backfill_rows = gateway.schemas.backfill_renderer_cache(
-            manifest,
-            include_views=catalog_request.include_views,
-        )
-        contract_result = persist_contract_catalog(
-            gateway,
-            inputs={"source": "meta.sync"},
-        )
-    except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-        return fail_execution_failed("meta", str(exc), status=500)
-    finally:
-        gateway.close()
-
-    return CliResult.ok(
+    payload = outcome.report.to_payload()
+    payload.update(
         {
-            "run_id": run_id,
+            "run_id": outcome.run_id,
             "repo": snapshot.repo,
             "commit": snapshot.commit,
-            "schema_manifest_hash": schema_result.catalog_hash,
-            "schema_manifest_tables": schema_result.tables,
-            "schema_manifest_views": schema_result.views,
-            "schema_versions_rows": schema_result.schema_versions_rows,
-            "table_schema_registry_rows": schema_result.table_schema_registry_rows,
-            "schema_manifest_runs_rows": schema_result.schema_manifest_runs_rows,
-            "override_refresh_status": override_result.status,
-            "override_refresh_reason": override_result.reason,
-            "override_refresh_version_id": override_result.version_id,
-            "override_refresh_tables": override_result.tables,
-            "override_refresh_schema_versions_rows": override_result.schema_versions_rows,
-            "override_refresh_versions_rows": override_result.override_versions_rows,
-            "override_refresh_registry_rows": override_result.override_registry_rows,
-            "renderer_cache_backfill_rows": backfill_rows,
-            "contract_catalog_hash": contract_result.catalog_hash,
-            "contract_count": contract_result.contract_count,
+            "bundle_root": str(bundle_root),
+            "bundle_manifest_repo": outcome.bundle_manifest.repo,
+            "bundle_manifest_commit": outcome.bundle_manifest.commit,
+            "bundle_manifest_run_id": outcome.bundle_manifest.run_id,
+            "renderer_cache_backfill_rows": outcome.renderer_cache_rows,
         }
     )
+    if outcome.override_refresh is None:
+        payload.update(
+            {
+                "override_refresh_status": "skipped",
+                "override_refresh_reason": "schema_manifest_missing",
+                "override_refresh_version_id": None,
+                "override_refresh_tables": 0,
+                "override_refresh_schema_versions_rows": 0,
+                "override_refresh_versions_rows": 0,
+                "override_refresh_registry_rows": 0,
+            }
+        )
+    else:
+        payload.update(
+            {
+                "override_refresh_status": outcome.override_refresh.status,
+                "override_refresh_reason": outcome.override_refresh.reason,
+                "override_refresh_version_id": outcome.override_refresh.version_id,
+                "override_refresh_tables": outcome.override_refresh.tables,
+                "override_refresh_schema_versions_rows": outcome.override_refresh.schema_versions_rows,
+                "override_refresh_versions_rows": outcome.override_refresh.override_versions_rows,
+                "override_refresh_registry_rows": outcome.override_refresh.override_registry_rows,
+            }
+        )
+    return CliResult.ok(payload)
 
 
 def meta_override_pin_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:

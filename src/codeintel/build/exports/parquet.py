@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.build.exports.engine import export_all_datasets
+from codeintel.build.exports.engine import ExportRunConfig, export_all_datasets
 from codeintel.build.exports.engine import (
     export_parquet_for_table as _engine_export_parquet_for_table,
 )
@@ -98,7 +98,7 @@ def export_all_parquet(
     settings: ExportAuditSettings,
     options: ExportCallOptions | None = None,
 ) -> None:
-    """Export configured datasets to Parquet files under `Document Output/`.
+    """Export configured datasets to Parquet files under the document output directory.
 
     Parameters
     ----------
@@ -115,8 +115,10 @@ def export_all_parquet(
         gateway,
         document_output_dir,
         fmt="parquet",
-        settings=settings,
-        options=options,
+        run_config=ExportRunConfig(
+            settings=settings,
+            options=options,
+        ),
     )
 
 

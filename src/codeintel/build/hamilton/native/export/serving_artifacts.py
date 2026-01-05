@@ -41,11 +41,9 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.native.views.view_outputs import view_plan_map
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.meta.contract_catalog import persist_contract_catalog
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.compile import (
     SchemaManifestContext,
@@ -59,9 +57,7 @@ from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.tabular.frames import lazyframe_for_table_columns
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.datasets.manifests import dataset_manifest_path
-from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
-from codeintel.core.schemas.schema_catalog_models import SchemaCatalogRequest
 
 LOG = logging.getLogger(__name__)
 
@@ -84,19 +80,6 @@ def _package_version(name: str) -> str:
         return "unknown"
 
 
-def _view_sql_map() -> dict[str, str] | None:
-    try:
-        plans = view_plan_map()
-    except (RuntimeError, ValueError, TypeError):
-        return None
-    view_sql: dict[str, str] = {}
-    for table_key, plan in plans.items():
-        sql = plan.sql
-        if isinstance(sql, str) and sql:
-            view_sql[table_key] = sql
-    return view_sql or None
-
-
 def _semantic_registry_json(tag_query: TagQuery) -> str:
     schema_provider = get_schema_provider()
     compiled = compile_semantic_registry(
@@ -108,7 +91,6 @@ def _semantic_registry_json(tag_query: TagQuery) -> str:
 
 
 def _schema_manifest_json(
-    env: BuildEnv,
     *,
     catalog: DagCatalog,
     schema_index: SchemaIndex,
@@ -131,30 +113,6 @@ def _schema_manifest_json(
             include_provenance=True,
         ),
     )
-    run_id = env.run_context.run_id if env.run_context is not None else new_run_id("schema")
-    catalog_inputs: dict[str, object] = {"source": "serving_artifacts"}
-    view_sql = _view_sql_map()
-    if view_sql is not None:
-        catalog_inputs["view_sql_map"] = view_sql
-    catalog_request = SchemaCatalogRequest(
-        run_id=run_id,
-        repo=env.repo,
-        commit=env.commit,
-        catalog_inputs=catalog_inputs,
-    )
-    result = env.gateway.schemas.persist_schema_manifest(
-        manifest,
-        request=catalog_request,
-    )
-    env.gateway.schemas.refresh_override_registry_from_manifest(
-        manifest,
-        request=catalog_request,
-        catalog_hash=result.catalog_hash,
-    )
-    persist_contract_catalog(
-        env.gateway,
-        inputs={"source": "serving_artifacts"},
-    )
     return manifest.to_json() + "\n"
 
 
@@ -171,7 +129,7 @@ def _buildspec_json(catalog: DagCatalog) -> str:
 def _environment_json(env: BuildEnv) -> str:
     codeintel_version = _package_version("codeintel")
     duckdb_version = _package_version("duckdb")
-    gateway_cfg = getattr(env.gateway, "config", None)
+    gateway_cfg = env.gateway.config if env.gateway is not None else None
     read_only = bool(getattr(gateway_cfg, "read_only", False))
     execution_settings = env.execution_settings
     extensions = ""
@@ -291,8 +249,8 @@ def serving_artifacts__schema_manifest(
     str
         Newline-terminated schema manifest JSON payload.
     """
+    _ = env
     return _schema_manifest_json(
-        env,
         catalog=catalog,
         schema_index=schema_index,
         tag_query=tag_query,

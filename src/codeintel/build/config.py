@@ -1,12 +1,12 @@
 """TOML-based configuration for build targets.
 
 This module provides a global configuration system for tuning parameters.
-Configuration is loaded from codeintel.build.toml in the project root.
+Configuration is loaded from config/codeintel.build.toml in the project root.
 
 The config file uses TOML format with sections for each module and
 per-target overrides.
 
-Example config file (codeintel.build.toml):
+Example config file (config/codeintel.build.toml):
 ```toml
 [analytics]
 max_parallel_workers = 4
@@ -50,7 +50,7 @@ __all__ = [
 ]
 
 
-CONFIG_FILE_NAME = "codeintel.build.toml"
+CONFIG_FILE_NAME = "config/codeintel.build.toml"
 
 _ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
     {
@@ -536,7 +536,7 @@ class BuildConfigStack(BuildConfig):
 def load_build_config(project_root: Path) -> BuildConfig:
     """Load build configuration from project root.
 
-    Looks for codeintel.build.toml in the project root.
+    Looks for config/codeintel.build.toml in the project root.
     Returns empty config if file doesn't exist.
 
     Parameters

@@ -491,17 +491,97 @@ def row_binding_for_table_schema(
     )
 
 
+def row_model_for_table_key(table_key: str) -> type[object] | None:
+    """Return a cached dataclass row model for a registered table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table key.
+
+    Returns
+    -------
+    type[object] | None
+        Dataclass row model or None when the table key is unknown.
+    """
+    table_schema = TABLE_SCHEMAS.get(table_key)
+    if table_schema is None:
+        return None
+    return row_model_for_table_schema(table_schema=table_schema)
+
+
+def row_struct_for_table_key(table_key: str) -> type[msgspec.Struct] | None:
+    """Return a cached msgspec row struct for a registered table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table key.
+
+    Returns
+    -------
+    type[msgspec.Struct] | None
+        Row struct or None when the table key is unknown.
+    """
+    table_schema = TABLE_SCHEMAS.get(table_key)
+    if table_schema is None:
+        return None
+    return row_struct_for_table_schema(table_schema=table_schema)
+
+
+def row_binding_for_table_key(table_key: str) -> GeneratedRowBinding | None:
+    """Return a cached row binding for a registered table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table key.
+
+    Returns
+    -------
+    GeneratedRowBinding | None
+        Row binding or None when the table key is unknown.
+    """
+    table_schema = TABLE_SCHEMAS.get(table_key)
+    if table_schema is None:
+        return None
+    return row_binding_for_table_schema(table_schema=table_schema)
+
+
+def columns_for_table_key(table_key: str) -> tuple[str, ...] | None:
+    """Return ordered column names for a registered table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table key.
+
+    Returns
+    -------
+    tuple[str, ...] | None
+        Column names or None when the table key is unknown.
+    """
+    table_schema = TABLE_SCHEMAS.get(table_key)
+    if table_schema is None:
+        return None
+    return tuple(column.name for column in table_schema.columns)
+
+
 __all__ = [
     "GeneratedRowBinding",
     "RowSerializer",
     "RowStructBuilder",
     "RowStructSerializer",
+    "columns_for_table_key",
     "normalize_row_value",
     "normalize_row_value_for_type",
+    "row_binding_for_table_key",
     "row_binding_for_table_schema",
+    "row_model_for_table_key",
     "row_model_for_table_schema",
     "row_serializer_for_table_schema",
     "row_struct_builder_for_table_schema",
+    "row_struct_for_table_key",
     "row_struct_for_table_schema",
     "row_struct_serializer_for_table_schema",
 ]

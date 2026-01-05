@@ -21,7 +21,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 log = logging.getLogger(__name__)
 
@@ -97,22 +97,22 @@ def _line_rows_for_bytes(
 def file_line_index__base(
     env: BuildEnv,
     q__core__modules: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build core.file_line_index rows from repository files.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader of line index rows.
     """
     modules_table = tabular_to_arrow_table(q__core__modules)
     if modules_table.num_rows == 0:
-        return empty_reader_for_table(FILE_LINE_INDEX_TABLE_KEY)
+        return empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY)
 
     repo_root = Path(env.snapshot.repo_root)
     path_languages = _resolve_module_paths(modules_table)
     if not path_languages:
-        return empty_reader_for_table(FILE_LINE_INDEX_TABLE_KEY)
+        return empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY)
 
     rows: list[dict[str, object]] = []
     for rel_path, language in sorted(path_languages.items()):
@@ -136,7 +136,7 @@ def file_line_index__base(
             )
         )
 
-    reader, _ = record_batch_reader_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
+    reader, _ = table_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
     return reader
 
 
@@ -153,7 +153,7 @@ _FILE_LINE_INDEX_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="file_line_index__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="file_line_index__table_materializations",

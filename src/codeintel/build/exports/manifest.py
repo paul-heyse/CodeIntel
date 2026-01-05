@@ -1,4 +1,4 @@
-"""Helpers to emit dataset-to-filename manifests for Document Output exports."""
+"""Helpers to emit dataset-to-filename manifests for document output exports."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def write_dataset_manifest(
     Parameters
     ----------
     output_dir
-        Document Output directory where the manifest will be written.
+        Document output directory where the manifest will be written.
     dataset_mapping
         Registry mapping dataset name -> fully qualified table/view name.
     jsonl_mapping

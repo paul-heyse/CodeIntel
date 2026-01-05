@@ -37,7 +37,7 @@ from codeintel.cli.options.types import CommandPath, option_param
 
 docs_app = App(
     name="docs",
-    help="Document export utilities.",
+    help="Document output export utilities.",
 )
 
 _CYCLOPTS_PATH_TYPE = Path
@@ -62,7 +62,7 @@ _DOCS_EXPORT_FLAGS_FIELD = shared_flags_field(DOCS_EXPORT_PATH)
 @docs_app.command(name="export")
 @dataclass
 class DocsExportCommand:
-    """Export datasets to Document Output/."""
+    """Export datasets to the document output directory."""
 
     repo: Annotated[
         str | None,

@@ -98,7 +98,7 @@ LLM recommendation:
 
 * For **normal CLI scripts**: keep the default `result_action` (prints, maps bools to exit codes, etc.).([cyclopts.readthedocs.io][8])
 * For **embedding in tests or orchestrators**: construct a *second* `App` or call with `result_action="return_value"` so parsing doesn’t `sys.exit`.([cyclopts.readthedocs.io][8])
-* Config precedence (CodeIntel): CLI flags > environment (`CODEINTEL_*`) > TOML file (`codeintel.toml` or `CODEINTEL_CONFIG_PATH`) > signature defaults. The root app wires both `Env("CODEINTEL_")` and an optional TOML loader.
+* Config precedence (CodeIntel): CLI flags > environment (`CODEINTEL_*`) > TOML file (`config/codeintel.toml` or `CODEINTEL_CONFIG_PATH`) > signature defaults. The root app wires both `Env("CODEINTEL_")` and an optional TOML loader.
 * Quick harness patterns:
   ```python
   from codeintel.cli.cyclopts_app import app
@@ -1110,7 +1110,7 @@ This mirrors common “CLI > config > env > defaults” expectations.
 Example TOML config:
 
 ```toml
-# codeintel.toml
+# config/codeintel.toml
 [codeintel.run]
 snapshot = "s123"
 workers = 8
@@ -1124,7 +1124,7 @@ from cyclopts.config import Toml
 
 app = cyclopts.App(
     name="codeintel",
-    config=Toml("codeintel.toml"),
+    config=Toml("config/codeintel.toml"),
 )
 ```
 

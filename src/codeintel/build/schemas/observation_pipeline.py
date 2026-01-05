@@ -20,6 +20,7 @@ from codeintel.core.duckdb_types import DuckDBError
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+    from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.build.schemas.observations import SchemaHints
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.primitives import TableSchema
@@ -35,6 +36,24 @@ class ObservationSetup:
     declared_schema: TableSchema | None
     schema_hints: SchemaHints | None
     accumulator: SchemaObservationAccumulator
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationPersistContext:
+    """Persistence context for schema observations."""
+
+    gateway: BuildGateway | None
+    metadata_bundle: BuildMetadataBundleWriter | None
+    log: logging.Logger = LOG
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationPersistPayload:
+    """Payload required to persist a schema observation."""
+
+    observation: SchemaObservationAccumulator
+    arrow_schema: pa.Schema
+    inputs: SchemaObservationInputs
 
 
 def build_observation_setup(
@@ -78,7 +97,7 @@ def build_observation_setup(
 
 def build_observation_inputs(
     *,
-    gateway: BuildGateway,
+    gateway: BuildGateway | None,
     table_key: str,
     base: SchemaObservationInputs,
 ) -> SchemaObservationInputs:
@@ -98,6 +117,8 @@ def build_observation_inputs(
     SchemaObservationInputs
         Observation input bundle.
     """
+    if gateway is None:
+        return base
     drift_history = base.drift_history
     if drift_history is None:
         drift_history = _load_drift_history(gateway=gateway, table_key=table_key)
@@ -115,34 +136,32 @@ def build_observation_inputs(
 
 def persist_observation(
     *,
-    gateway: BuildGateway,
-    observation: SchemaObservationAccumulator,
-    arrow_schema: pa.Schema,
-    inputs: SchemaObservationInputs,
-    log: logging.Logger = LOG,
+    context: ObservationPersistContext,
+    payload: ObservationPersistPayload,
 ) -> None:
     """Finalize and persist schema observations.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for persistence.
-    observation
-        Accumulator with streamed stats.
-    arrow_schema
-        Arrow schema observed for the dataset.
-    inputs
-        Observation inputs (metadata, drift history).
-    log
-        Logger to record errors.
+    context
+        Persistence context (gateway, metadata bundle, logger).
+    payload
+        Observation payload with schema, inputs, and accumulator.
     """
     try:
-        bundle = observation.finalize(arrow_schema=arrow_schema, inputs=inputs)
-        persist_observation_bundle(gateway=gateway, bundle=bundle)
+        bundle = payload.observation.finalize(
+            arrow_schema=payload.arrow_schema,
+            inputs=payload.inputs,
+        )
+        persist_observation_bundle(
+            bundle=bundle,
+            metadata_bundle=context.metadata_bundle,
+            gateway=context.gateway,
+        )
     except (TypeError, ValueError, pa.ArrowInvalid) as exc:
-        log.warning(
+        context.log.warning(
             "Schema observation persistence failed for %s: %s",
-            observation.table_key,
+            payload.observation.table_key,
             exc,
         )
 

@@ -15,9 +15,9 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     non_empty_string_mask,
 )
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table
+from codeintel.core.columnar.rows import empty_table_for_table
 
 CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
 
@@ -302,7 +302,7 @@ def cdg_edges(
     blocks_table = _prefilter_cdg_blocks(blocks_table)
     edges_table = _prefilter_cdg_edges(edges_table)
     if blocks_table.num_rows == 0 or edges_table.num_rows == 0:
-        return empty_reader_for_table(CDG_EDGES_TABLE_KEY)
+        return empty_table_for_table(CDG_EDGES_TABLE_KEY)
 
     blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in blocks_table.to_pylist():
@@ -335,7 +335,7 @@ def cdg_edges(
         )
 
     if not rows:
-        return empty_reader_for_table(CDG_EDGES_TABLE_KEY)
+        return empty_table_for_table(CDG_EDGES_TABLE_KEY)
 
     table = pa.Table.from_pylist(rows).select(
         [
@@ -348,8 +348,7 @@ def cdg_edges(
         ]
     )
     table = dedupe_table_for_table(CDG_EDGES_TABLE_KEY, table)
-    table = align_table_to_contract(CDG_EDGES_TABLE_KEY, table)
-    return table_to_reader(table)
+    return align_table_to_contract(CDG_EDGES_TABLE_KEY, table)
 
 
 __all__ = [

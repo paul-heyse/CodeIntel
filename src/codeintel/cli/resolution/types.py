@@ -34,7 +34,7 @@ class ResolvedRuntime:
     root
         Project root directory.
     project
-        Project configuration from codeintel.yaml or constructed from params.
+        Project configuration from config/codeintel.yaml or constructed from params.
     primitives
         Canonical runtime primitive bundle (snapshot/paths/tools/graph config).
     config

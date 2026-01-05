@@ -7,9 +7,7 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import (
     align_table_to_contract,
     empty_reader,
-    reader_to_table,
-    table_to_reader,
-    tabular_to_reader,
+    tabular_to_table,
 )
 from codeintel.build.tabular.arrow_ops import concat_tables_unified, dedupe_table_for_table
 from codeintel.build.tabular.compute_columns import append_constant_columns
@@ -55,10 +53,10 @@ def pdg_edges(
     Returns
     -------
     InferableTabularInput
-        Arrow reader for graph.pdg_edges.
+        Arrow table for graph.pdg_edges.
     """
-    dfg_edges = reader_to_table(tabular_to_reader(q__graph__dfg_edges))
-    cdg_edges = reader_to_table(tabular_to_reader(q__graph__cdg_edges))
+    dfg_edges = tabular_to_table(q__graph__dfg_edges)
+    cdg_edges = tabular_to_table(q__graph__cdg_edges)
     dfg_table = _dfg_edges_table(dfg_edges)
     cdg_table = _cdg_edges_table(cdg_edges)
     tables = [table for table in (dfg_table, cdg_table) if table.num_rows > 0]
@@ -66,8 +64,7 @@ def pdg_edges(
         return empty_reader(PDG_EDGES_TABLE_KEY)
     combined = concat_tables_unified(tables)
     deduped = dedupe_table_for_table(PDG_EDGES_TABLE_KEY, combined)
-    aligned = align_table_to_contract(PDG_EDGES_TABLE_KEY, deduped)
-    return table_to_reader(aligned)
+    return align_table_to_contract(PDG_EDGES_TABLE_KEY, deduped)
 
 
 __all__ = [

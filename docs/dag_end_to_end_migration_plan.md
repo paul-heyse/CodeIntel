@@ -102,7 +102,7 @@ JSON (machine-first alternative):
   ]
 }
 ```
-Canonical inventory artifact: `src/codeintel/core/registry/dag_output_inventory.yaml`.
+Canonical inventory artifact: `config/registry/dag_output_inventory.yaml`.
 
 Notes on schema behavior:
 - `materialization` is validated to be one of: table, artifact, mixed.
@@ -157,7 +157,7 @@ Acceptance criteria:
 - Inventory is checked in and reviewed.
 - Pilot output selection is documented and agreed.
 Status:
-- Completed: inventory artifact created at `src/codeintel/core/registry/dag_output_inventory.yaml`
+- Completed: inventory artifact created at `config/registry/dag_output_inventory.yaml`
   with analytics, graphs, ingestion, and export targets.
 - Completed: pilot output remains `analytics.function_metrics` (`t__function_metrics`).
 
@@ -308,7 +308,7 @@ materialization helpers, and contract-driven schemas.
 Maintain tool dependencies separately from output inventory so build, CLI, and tests
 have a single source of truth for tool availability, config keys, and install hints.
 
-Canonical artifact: `src/codeintel/core/registry/ingestion_tooling_inventory.yaml`.
+Canonical artifact: `config/registry/ingestion_tooling_inventory.yaml`.
 
 Template:
 ```yaml
@@ -503,7 +503,7 @@ Acceptance criteria:
 - No graph target references a missing contract/schema.
 
 File-level breakdown (Phase I):
-- `src/codeintel/core/registry/dag_output_inventory.yaml`: verify graph targets, table_keys,
+- `config/registry/dag_output_inventory.yaml`: verify graph targets, table_keys,
   upstream_targets, and downstream_consumers.
 - `src/codeintel/core/schemas/generated_rows/graph.py`: confirm row models align with contract
   columns for all graph.* tables and views.
@@ -648,7 +648,7 @@ File-level breakdown (Phase VII):
 - `tests/cli/test_graph_cli.py`: verify CLI graph commands still resolve outputs via DAG metadata.
 
 ## Work completed so far (implementation status)
-- Added canonical inventory artifact: `src/codeintel/core/registry/dag_output_inventory.yaml`.
+- Added canonical inventory artifact: `config/registry/dag_output_inventory.yaml`.
 - Added inventory loader and validation types: `src/codeintel/core/registry/service.py`.
 - Added registry CLI commands: `src/codeintel/cli/commands/registry.py`.
 - Added registry CLI option specs: `src/codeintel/cli/options/registry.py`.
@@ -658,7 +658,7 @@ File-level breakdown (Phase VII):
 - Added shared-flags flattening for Command[T] commands so `--output-format` works
   consistently across new command groups.
 - Added ingestion tooling inventory artifact:
-  `src/codeintel/core/registry/ingestion_tooling_inventory.yaml`.
+  `config/registry/ingestion_tooling_inventory.yaml`.
 - Added ingestion tooling loader and validation helpers:
   `src/codeintel/core/registry/service.py`.
 - Added `registry tools` CLI preflight with resolution status and filters:

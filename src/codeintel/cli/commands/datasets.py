@@ -101,7 +101,7 @@ class LintCommand:
     schema_dir: Annotated[
         Path,
         option_param(DATASETS_SCHEMA_DIR, command_path=DATASETS_LINT_PATH),
-    ] = Path("src/codeintel/config/schemas/export")
+    ] = Path("config/schemas/export")
     sampling: Annotated[
         str,
         option_param(DATASETS_SAMPLING, command_path=DATASETS_LINT_PATH),

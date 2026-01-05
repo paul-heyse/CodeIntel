@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.generated_rows import columns_for_table_key
-from codeintel.core.schemas.row_models import row_serializer_for_table_schema
+from codeintel.core.schemas.row_models import columns_for_table_key, row_serializer_for_table_schema
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 
 if TYPE_CHECKING:

@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.build_log import BuildLogContext
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
 
@@ -178,7 +179,8 @@ class BuildRunWriter:
         Storage gateway used for persistence.
     """
 
-    gateway: BuildGateway
+    gateway: BuildGateway | None
+    metadata_bundle: BuildMetadataBundleWriter | None = None
 
     def start_run(
         self,
@@ -201,6 +203,8 @@ class BuildRunWriter:
         started_at
             Run start timestamp.
         """
+        if self.metadata_bundle is not None:
+            return
         try:
             record = BuildRunRecord(
                 run_id=run_id,
@@ -212,23 +216,25 @@ class BuildRunWriter:
                 started_at=started_at,
                 status="running",
             )
-            self.gateway.build.start_run(record)
+            if self.gateway is not None:
+                self.gateway.build.start_run(record)
         except StorageError as exc:
             log.warning("build.hamilton.writer.start_run_failed run_id=%s error=%s", run_id, exc)
 
         try:
-            self.gateway.assets.record_run_environment(
-                RunEnvironmentRecord(
-                    run_id=run_id,
-                    python_version=platform.python_version(),
-                    os_name=platform.system(),
-                    os_version=platform.release(),
-                    tool_versions=_tool_versions(),
-                    config_hash=_config_hash(env),
-                    git_dirty=_git_dirty(env),
-                    captured_at=started_at,
+            if self.gateway is not None:
+                self.gateway.assets.record_run_environment(
+                    RunEnvironmentRecord(
+                        run_id=run_id,
+                        python_version=platform.python_version(),
+                        os_name=platform.system(),
+                        os_version=platform.release(),
+                        tool_versions=_tool_versions(),
+                        config_hash=_config_hash(env),
+                        git_dirty=_git_dirty(env),
+                        captured_at=started_at,
+                    )
                 )
-            )
         except StorageError as exc:
             log.warning(
                 "build.hamilton.writer.run_environment_failed run_id=%s error=%s",
@@ -260,15 +266,18 @@ class BuildRunWriter:
         error_summary
             Optional error summary if failed.
         """
+        if self.metadata_bundle is not None:
+            return
         try:
             status = "succeeded" if success else "failed"
-            self.gateway.build.complete_run(
-                run_id=run_id,
-                status=status,
-                computed_targets=tuple(computed_targets),
-                skipped_targets=tuple(skipped_targets),
-                error_summary=error_summary,
-            )
+            if self.gateway is not None:
+                self.gateway.build.complete_run(
+                    run_id=run_id,
+                    status=status,
+                    computed_targets=tuple(computed_targets),
+                    skipped_targets=tuple(skipped_targets),
+                    error_summary=error_summary,
+                )
         except StorageError as exc:
             log.warning("build.hamilton.writer.complete_run_failed run_id=%s error=%s", run_id, exc)
 
@@ -290,16 +299,19 @@ class BuildRunWriter:
         records
             Target run records to persist.
         """
+        if self.metadata_bundle is not None:
+            return
         if not records:
             return
         try:
             sorted_records = sorted(records, key=lambda record: record.target)
-            self.gateway.build.save_run_targets(
-                run_id=run_id,
-                repo=env.repo,
-                commit=env.commit,
-                records=sorted_records,
-            )
+            if self.gateway is not None:
+                self.gateway.build.save_run_targets(
+                    run_id=run_id,
+                    repo=env.repo,
+                    commit=env.commit,
+                    records=sorted_records,
+                )
         except StorageError as exc:
             log.warning("build.hamilton.writer.run_targets_failed run_id=%s error=%s", run_id, exc)
 
@@ -322,7 +334,11 @@ class BuildRunWriter:
         int
             Number of records persisted.
         """
+        if self.metadata_bundle is not None:
+            return 0
         try:
+            if self.gateway is None:
+                return 0
             return self.gateway.build.save_run_nodes(run_id, records)
         except StorageError as exc:
             log.warning("build.hamilton.writer.run_nodes_failed run_id=%s error=%s", run_id, exc)
@@ -381,17 +397,20 @@ class BuildRunWriter:
         records
             Target run records to emit as assets.
         """
+        if self.metadata_bundle is not None:
+            return
         if not records:
             return
         try:
             sorted_records = sorted(records, key=lambda record: record.target)
-            env_with_gateway = replace(env, gateway=self.gateway)
-            persist_asset_catalog_for_run(
-                env=env_with_gateway,
-                run_id=run_id,
-                catalog=catalog,
-                records=sorted_records,
-            )
+            if self.gateway is not None:
+                env_with_gateway = replace(env, gateway=self.gateway)
+                persist_asset_catalog_for_run(
+                    env=env_with_gateway,
+                    run_id=run_id,
+                    catalog=catalog,
+                    records=sorted_records,
+                )
         except StorageError as exc:
             log.warning(
                 "build.hamilton.writer.asset_catalog_failed run_id=%s error=%s", run_id, exc
@@ -406,23 +425,19 @@ class BuildRunWriter:
         Path | None
             Path to the run report JSONL, or None when not written.
         """
-        snapshot_root = _snapshot_root(inputs.env, run_id=inputs.run_id)
-        if snapshot_root is None:
-            log.warning(
-                "build.hamilton.writer.run_report_skipped run_id=%s reason=missing_dataset_root",
-                inputs.run_id,
-            )
-            return None
-
         tag_spec = tag_schema_spec()
         spec_hash = _spec_hash(tag_spec)
-        tag_spec_path = snapshot_root / _TAG_SCHEMA_FILENAME
-        tag_spec_written = _write_json_payload(tag_spec_path, tag_spec)
+        snapshot_root = _snapshot_root(inputs.env, run_id=inputs.run_id)
+        tag_spec_path = None
+        tag_spec_written = False
+        if snapshot_root is not None:
+            tag_spec_path = snapshot_root / _TAG_SCHEMA_FILENAME
+            tag_spec_written = _write_json_payload(tag_spec_path, tag_spec)
         tag_summary = tag_schema_summary()
         tag_summary.update(
             {
                 "spec_hash": spec_hash,
-                "spec_path": str(tag_spec_path) if tag_spec_written else None,
+                "spec_path": str(tag_spec_path) if tag_spec_written and tag_spec_path else None,
             }
         )
 
@@ -443,6 +458,34 @@ class BuildRunWriter:
                 snapshot_id=_snapshot_id(inputs.env, run_id=inputs.run_id),
             )
         )
+        run_report_rel = f"runs/{_RUN_REPORT_FILENAME.format(run_id=inputs.run_id)}"
+        bundle = inputs.env.metadata_bundle
+        if bundle is not None:
+            for record in records_payload:
+                bundle.append_jsonl(run_report_rel, record, schema_version="v1")
+            bundle.append_jsonl(
+                "runs/run_index.jsonl",
+                {
+                    "run_id": inputs.run_id,
+                    "repo": inputs.env.repo,
+                    "commit": inputs.env.commit,
+                    "started_at": inputs.started_at.isoformat(),
+                    "duration_ms": inputs.duration_ms,
+                    "success": inputs.success,
+                    "report_path": run_report_rel,
+                    "computed_targets_count": len(inputs.computed_targets),
+                    "skipped_targets_count": len(inputs.skipped_targets),
+                    "failed_targets_count": len(inputs.failed_targets),
+                },
+                schema_version="v1",
+            )
+            return bundle.bundle_root / run_report_rel
+        if snapshot_root is None:
+            log.warning(
+                "build.hamilton.writer.run_report_skipped run_id=%s reason=missing_dataset_root",
+                inputs.run_id,
+            )
+            return None
         run_report_path = snapshot_root / _RUN_REPORT_FILENAME.format(run_id=inputs.run_id)
         if _write_jsonl_payload(run_report_path, records_payload):
             return run_report_path

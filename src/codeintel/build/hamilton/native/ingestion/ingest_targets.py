@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -70,9 +70,9 @@ from codeintel.build.hamilton.transforms.registry_inject import inject_from_regi
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import columnar_row_count, empty_reader_for_table
+from codeintel.core.columnar.rows import columnar_row_count, empty_table_for_table
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
@@ -85,10 +85,11 @@ from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
+from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
+    from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeRequest
 
 log = logging.getLogger(__name__)
 
@@ -117,6 +118,55 @@ STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 _MODULE = sys.modules[__name__]
 
 
+class _NoopChangeDetectionAdapter:
+    def compute_changes(
+        self,
+        request: "ChangeRequest",
+        current_modules: Sequence[ModuleRecord],
+    ) -> ChangeSet:
+        state: dict[str, FileDigest] = {}
+        for module in current_modules:
+            digest = HashChangeDetectionAdapter.compute_file_digest(module.file_path)
+            if digest is None:
+                continue
+            state[normalize_path(module.rel_path)] = digest
+        return ChangeSet(
+            added=list(current_modules),
+            modified=[],
+            deleted=[],
+            state_hash=HashChangeDetectionAdapter.compute_state_hash(state),
+            state_rows=HashChangeDetectionAdapter._build_state_rows(
+                repo=request.repo,
+                commit=request.commit,
+                language=request.language,
+                state=state,
+            ),
+        )
+
+    @staticmethod
+    def load_previous_state(repo: str, language: str) -> dict[str, FileDigest]:
+        _ = repo
+        _ = language
+        return {}
+
+    @staticmethod
+    def save_current_state(
+        repo: str,
+        commit: str,
+        language: str,
+        state: Mapping[str, FileDigest],
+    ) -> None:
+        _ = repo
+        _ = commit
+        _ = language
+        _ = state
+        return None
+
+    @staticmethod
+    def compute_file_digest(path: Path) -> FileDigest | None:
+        return HashChangeDetectionAdapter.compute_file_digest(path)
+
+
 @dataclass(frozen=True)
 class ModuleToolOutput(ToolStepOutput):
     """Tool step output for repository module scanning."""
@@ -124,14 +174,12 @@ class ModuleToolOutput(ToolStepOutput):
     modules: tuple[ModuleRecord, ...] = field(default_factory=tuple)
     change_set: ChangeSet | None = None
     file_state_hash: str | None = None
-    module_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(MODULES_TABLE_KEY)
+    module_rows: pa.Table = field(default_factory=lambda: empty_table_for_table(MODULES_TABLE_KEY))
+    file_state_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(FILE_STATE_TABLE_KEY)
     )
-    file_state_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(FILE_STATE_TABLE_KEY)
-    )
-    repo_map_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(REPO_MAP_TABLE_KEY)
+    repo_map_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(REPO_MAP_TABLE_KEY)
     )
     module_row_count: int = 0
     file_state_row_count: int = 0
@@ -164,9 +212,7 @@ class ConfigScanResult:
 class ConfigToolOutput(ToolStepOutput):
     """Tool step output for config ingestion."""
 
-    rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(CONFIG_VALUES_TABLE_KEY)
-    )
+    rows: pa.Table = field(default_factory=lambda: empty_table_for_table(CONFIG_VALUES_TABLE_KEY))
     row_count: int = 0
 
 
@@ -174,9 +220,7 @@ class ConfigToolOutput(ToolStepOutput):
 class TestsToolOutput(ToolStepOutput):
     """Tool step output for tests ingestion."""
 
-    rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(TEST_CATALOG_TABLE_KEY)
-    )
+    rows: pa.Table = field(default_factory=lambda: empty_table_for_table(TEST_CATALOG_TABLE_KEY))
     row_count: int = 0
 
 
@@ -184,8 +228,8 @@ class TestsToolOutput(ToolStepOutput):
 class TypingToolOutput(ToolStepOutput):
     """Tool step output for typing ingestion."""
 
-    diagnostic_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(STATIC_DIAGNOSTICS_TABLE_KEY)
+    diagnostic_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(STATIC_DIAGNOSTICS_TABLE_KEY)
     )
     diagnostic_row_count: int = 0
 
@@ -209,9 +253,39 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
     tuple[str, ...]
         Tuple of module paths for the current snapshot.
     """
-    if t__modules.status == "failed":
-        return ()
-    return tuple(get_module_paths_from_env(env))
+    paths = get_module_paths_from_env(env)
+    if paths:
+        if t__modules.status != "succeeded":
+            log.warning(
+                "Using stored module paths despite modules target %s: %s",
+                t__modules.status,
+                t__modules.error or "no error recorded",
+            )
+        return tuple(paths)
+    try:
+        options = load_target_options(
+            env,
+            target_name=MODULES_TARGET_NAME,
+            options_type=ModuleIngestOptions,
+        )
+        profile = build_scan_profile(env.snapshot.repo_root, options)
+        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
+        discovered = discovery.discover_modules(env.snapshot.repo_root, profile)
+        filtered = filter_modules(discovered, options)
+        fallback = sorted({module.rel_path for module in filtered})
+        if fallback:
+            if t__modules.status != "succeeded":
+                log.warning(
+                    "Falling back to filesystem module scan after modules target %s: %s",
+                    t__modules.status,
+                    t__modules.error or "unknown error",
+                )
+            else:
+                log.warning("Falling back to filesystem module scan after empty storage query.")
+            return tuple(fallback)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        log.warning("Module path fallback scan failed: %s", exc)
+    return tuple(paths)
 
 
 @tag_helper(domain="ingestion")
@@ -355,8 +429,11 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
     """
     try:
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        storage = DuckDBStorageAdapter(env.gateway)
-        change_detection = HashChangeDetectionAdapter(storage)
+        if env.gateway is None:
+            change_detection = _NoopChangeDetectionAdapter()
+        else:
+            storage = DuckDBStorageAdapter(env.gateway)
+            change_detection = HashChangeDetectionAdapter(storage)
 
         opts = load_target_options(
             env,
@@ -429,14 +506,14 @@ def t__modules__ingest(
 
     module_table = tabular_to_arrow_table(t__modules__run.module_rows)
     module_table = dedupe_table_for_table(MODULES_TABLE_KEY, module_table)
-    module_rows = table_to_reader(module_table)
+    module_rows = module_table
     file_state_table = tabular_to_arrow_table(t__modules__run.file_state_rows)
     file_state_table = dedupe_table_for_table(
         FILE_STATE_TABLE_KEY,
         file_state_table,
         prefer_columns=("mtime_ns", "content_hash"),
     )
-    file_state_rows = table_to_reader(file_state_table)
+    file_state_rows = file_state_table
     repo_map_rows = t__modules__run.repo_map_rows
     payload = {
         MODULES_TABLE_KEY: module_rows,
@@ -577,7 +654,7 @@ modules__repo_map_rows = _MODULE.modules__repo_map_rows
 modules__table_materializations = _MODULE.modules__table_materializations
 
 
-@cache(behavior="disable")
+@cache(behavior="ignore")
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
 def modules__finalize_context(
     env: BuildEnv,
@@ -778,7 +855,7 @@ def t__config_ingest__run(
         if not config_files:
             return ConfigToolOutput(
                 result=ExecutionResult.ok(),
-                rows=empty_reader_for_table(CONFIG_VALUES_TABLE_KEY),
+                rows=empty_table_for_table(CONFIG_VALUES_TABLE_KEY),
                 row_count=0,
             )
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
@@ -799,7 +876,7 @@ def t__config_ingest__run(
         return output
     return ConfigToolOutput(
         result=output.result,
-        rows=empty_reader_for_table(CONFIG_VALUES_TABLE_KEY),
+        rows=empty_table_for_table(CONFIG_VALUES_TABLE_KEY),
         row_count=0,
     )
 
@@ -928,7 +1005,7 @@ config_ingest__rows = _MODULE.config_ingest__rows
 config_ingest__table_materializations = _MODULE.config_ingest__table_materializations
 
 
-@cache(behavior="disable")
+@cache(behavior="ignore")
 @tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def config_ingest__finalize_context(
     env: BuildEnv,
@@ -1032,7 +1109,7 @@ def _coerce_tests_output(
     merged = _merge_result_warnings(output.result, warnings)
     return TestsToolOutput(
         result=merged,
-        rows=empty_reader_for_table(TEST_CATALOG_TABLE_KEY),
+        rows=empty_table_for_table(TEST_CATALOG_TABLE_KEY),
         row_count=0,
     )
 
@@ -1068,7 +1145,7 @@ def t__tests_ingest__run(
             result = ExecutionResult.ok(warnings=warnings)
             return TestsToolOutput(
                 result=result,
-                rows=empty_reader_for_table(TEST_CATALOG_TABLE_KEY),
+                rows=empty_table_for_table(TEST_CATALOG_TABLE_KEY),
                 row_count=0,
             )
 
@@ -1157,7 +1234,7 @@ tests__rows = _MODULE.tests__rows
 tests_ingest__table_materializations = _MODULE.tests_ingest__table_materializations
 
 
-@cache(behavior="disable")
+@cache(behavior="ignore")
 @tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def tests_ingest__finalize_context(
     env: BuildEnv,
@@ -1220,7 +1297,7 @@ def _coerce_typing_output(
     merged = _merge_result_warnings(output.result, warnings)
     return TypingToolOutput(
         result=merged,
-        diagnostic_rows=empty_reader_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
+        diagnostic_rows=empty_table_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
         diagnostic_row_count=0,
     )
 
@@ -1254,7 +1331,7 @@ def t__typing__run(
             result = ExecutionResult.ok(warnings=warnings)
             return TypingToolOutput(
                 result=result,
-                diagnostic_rows=empty_reader_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
+                diagnostic_rows=empty_table_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
                 diagnostic_row_count=0,
             )
 
@@ -1367,7 +1444,7 @@ typing__diagnostic_rows = _MODULE.typing__diagnostic_rows
 typing__table_materializations = _MODULE.typing__table_materializations
 
 
-@cache(behavior="disable")
+@cache(behavior="ignore")
 @tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
 def typing__finalize_context(
     env: BuildEnv,
@@ -1437,7 +1514,7 @@ def t__typing(
 def _normalize_ingest_rows(
     rows: InferableTabularInput | None,
     table_key: str,
-) -> pa.RecordBatchReader | None:
+) -> pa.Table | None:
     """Normalize ingestion outputs with shared alignment/dedupe logic.
 
     Parameters
@@ -1449,7 +1526,7 @@ def _normalize_ingest_rows(
 
     Returns
     -------
-    pa.RecordBatchReader | None
+    pa.Table | None
         Normalized rows for the table.
     """
     return normalize_ingest_frame(rows, table_key=table_key)

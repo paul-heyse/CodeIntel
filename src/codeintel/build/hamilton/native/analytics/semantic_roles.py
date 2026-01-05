@@ -28,7 +28,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.serialization.json import decode_json_list
@@ -254,17 +254,17 @@ def semantic_roles_result(
 
 def semantic_roles_functions__base(
     semantic_roles_result: SemanticRolesResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build semantic role rows for functions.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing semantic role rows for functions.
     """
     if not semantic_roles_result.function_rows:
-        return empty_reader_for_table(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY)
+    reader, _ = table_for_rows(
         SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
         semantic_roles_result.function_rows,
     )
@@ -273,17 +273,17 @@ def semantic_roles_functions__base(
 
 def semantic_roles_modules__base(
     semantic_roles_result: SemanticRolesResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build semantic role rows for modules.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing semantic role rows for modules.
     """
     if not semantic_roles_result.module_rows:
-        return empty_reader_for_table(SEMANTIC_ROLES_MODULES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(SEMANTIC_ROLES_MODULES_TABLE_KEY)
+    reader, _ = table_for_rows(
         SEMANTIC_ROLES_MODULES_TABLE_KEY,
         semantic_roles_result.module_rows,
     )
@@ -301,7 +301,7 @@ _SEMANTIC_ROLES_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SEMANTIC_ROLES_FUNCTIONS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
             node_name="semantic_roles_functions__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY,
@@ -309,7 +309,7 @@ _SEMANTIC_ROLES_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SEMANTIC_ROLES_MODULES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY),
             node_name="semantic_roles_modules__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="semantic_roles__table_materializations",

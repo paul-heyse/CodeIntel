@@ -56,7 +56,7 @@ def test_build_export_smoke(tmp_path: Path) -> None:
         message = "Build run failed"
         raise RuntimeError(message)
 
-    document_output = repo_root / "Document Output"
+    document_output = repo_root / "build" / "document_output"
     goids_parquet = document_output / "goids.parquet"
     if not goids_parquet.is_file():
         message = "GOID export not found"

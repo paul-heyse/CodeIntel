@@ -25,7 +25,7 @@ from codeintel.build.analytics.compute.evidence.collection import EvidenceCollec
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.ast_features.model import FunctionAstFeatures

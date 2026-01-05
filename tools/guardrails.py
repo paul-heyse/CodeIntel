@@ -22,10 +22,11 @@ from codeintel.build.hamilton.graph_validation import (
     validate_graph,
     validation_result_to_json,
 )
-from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
+from codeintel.build.meta.contract_catalog import build_contract_catalog_payload
 from codeintel.build.schemas.contract_service import configure_contract_service
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.cli.resolution import resolve_from_params
+from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
@@ -39,6 +40,8 @@ from codeintel.storage.gateway import (
     open_inference_gateway,
     open_memory_gateway,
 )
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 from codeintel.storage.validation import ContractValidationMode
 
 if TYPE_CHECKING:
@@ -630,7 +633,14 @@ def _run_runtime_guardrails(
             inference_gateway.close()
 
         def _seed_contract_catalog(con: DuckDBConnection) -> None:
-            persist_contract_catalog_to_connection(con, inputs={"source": "guardrails"})
+            payload = build_contract_catalog_payload()
+            entry = build_catalog_entry(
+                catalog_kind="dataset_contracts",
+                catalog_hash=fingerprint(payload),
+                payload=payload,
+                inputs={"source": "guardrails"},
+            )
+            upsert_canonical_catalog(MinimalStorageGateway(con), entry)
 
         gateway = open_memory_gateway(
             options=MemoryGatewayOptions(

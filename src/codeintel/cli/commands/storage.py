@@ -16,6 +16,7 @@ from codeintel.cli.handlers.storage import (
     export_database_handler,
     import_database_handler,
     ingest_cache_logs_handler,
+    ingest_metadata_bundle_handler,
     profile_storage_handler,
     validate_macros_handler,
 )
@@ -25,6 +26,7 @@ from codeintel.cli.options.registry import (
     STORAGE_DB_PATH,
     STORAGE_INCLUDE_VIEWS,
     STORAGE_INPUT_DIR,
+    STORAGE_METADATA_BUNDLE_ROOT,
     STORAGE_OUTPUT_DIR,
     STORAGE_VALIDATION_MODE,
 )
@@ -39,11 +41,13 @@ storage_app = App(
 
 
 _STORAGE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+_STORAGE_INGEST_METADATA_CONFIG = CommandConfig(require_runtime=True, require_gateway=False)
 STORAGE_VALIDATE_PATH: CommandPath = ("storage", "validate-macros")
 STORAGE_PROFILE_PATH: CommandPath = ("storage", "profile")
 STORAGE_EXPORT_PATH: CommandPath = ("storage", "export-db")
 STORAGE_IMPORT_PATH: CommandPath = ("storage", "import-db")
 STORAGE_INGEST_CACHE_LOGS_PATH: CommandPath = ("storage", "ingest-cache-logs")
+STORAGE_INGEST_METADATA_PATH: CommandPath = ("storage", "ingest-metadata")
 
 _STORAGE_VALIDATE_FLAGS_FIELD = shared_flags_field(STORAGE_VALIDATE_PATH)
 _STORAGE_PROFILE_FLAGS_FIELD = shared_flags_field(STORAGE_PROFILE_PATH)
@@ -53,6 +57,7 @@ _STORAGE_INGEST_CACHE_LOGS_FLAGS_FIELD = shared_flags_field(
     STORAGE_INGEST_CACHE_LOGS_PATH,
     default_output_format=OutputFormat.JSONL,
 )
+_STORAGE_INGEST_METADATA_FLAGS_FIELD = shared_flags_field(STORAGE_INGEST_METADATA_PATH)
 
 
 @cli_command("storage.validate_macros", handler=validate_macros_handler, config=_STORAGE_CONFIG)
@@ -146,6 +151,27 @@ class IngestCacheLogsCommand:
         option_param(STORAGE_CACHE_LOG_PATHS, command_path=STORAGE_INGEST_CACHE_LOGS_PATH),
     ] = None
     flags: SharedFlagsProtocol = _STORAGE_INGEST_CACHE_LOGS_FLAGS_FIELD
+
+
+@cli_command(
+    "storage.ingest_metadata",
+    handler=ingest_metadata_bundle_handler,
+    config=_STORAGE_INGEST_METADATA_CONFIG,
+)
+@storage_app.command(name="ingest-metadata")
+@dataclass
+class IngestMetadataCommand:
+    """Ingest a build metadata bundle into the meta catalog."""
+
+    db_path: Annotated[
+        Path | None,
+        option_param(STORAGE_DB_PATH, command_path=STORAGE_INGEST_METADATA_PATH),
+    ] = None
+    bundle_root: Annotated[
+        Path | None,
+        option_param(STORAGE_METADATA_BUNDLE_ROOT, command_path=STORAGE_INGEST_METADATA_PATH),
+    ] = None
+    flags: SharedFlagsProtocol = _STORAGE_INGEST_METADATA_FLAGS_FIELD
 
 
 __all__ = ["storage_app"]

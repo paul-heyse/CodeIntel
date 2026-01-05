@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 from tree_sitter import LANGUAGE_VERSION, MIN_COMPATIBLE_LANGUAGE_VERSION, Language, Parser
 from tree_sitter_language_pack import get_language
 
+from codeintel.core.paths import find_repo_root
+
 if TYPE_CHECKING:
     from tree_sitter_language_pack import SupportedLanguage
 
@@ -43,7 +45,9 @@ class LanguageMetadata:
     parse_state_count: int
 
 
-_PACKS_ROOT = Path(__file__).resolve().parent / "packs"
+def _packs_root() -> Path:
+    return find_repo_root() / "config" / "tree_sitter" / "packs"
+
 
 _LANGUAGE_SPECS: tuple[LanguageSpec, ...] = (
     LanguageSpec(name="python", extensions=(".py", ".pyi"), pack_name="python"),
@@ -140,7 +144,7 @@ def load_query_packs(language: SupportedLanguage) -> tuple[QueryPack, ...]:
     spec = _spec_for_language(language)
     if spec is None:
         return ()
-    pack_dir = _PACKS_ROOT / spec.pack_name
+    pack_dir = _packs_root() / spec.pack_name
     if not pack_dir.is_dir():
         return ()
     return tuple(

@@ -53,8 +53,8 @@ The following paths currently read build-produced datasets through DuckDB tables
 - DuckDB retains only metadata tables (registry, audit, run tracking).
 
 ## Status Update (Completed Scope)
-- Default dataset root now resolves to `src/codeintel/storage/datasets` and is
-  configurable via runtime/CLI overrides.
+- Default dataset root now resolves to `build/datasets` under the repo root (via
+  `BuildPaths.dataset_root_dir`) and is configurable via runtime/CLI overrides.
 - StorageConfig now carries parquet-mode options and dataset root context; the
   config is threaded through gateway creation, CLI gateway openers, pool wiring,
   and serving DB hot-swap management.

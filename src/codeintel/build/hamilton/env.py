@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         FingerprintPolicy,
     )
     from codeintel.build.config import BuildConfig
+    from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
@@ -50,7 +51,7 @@ class BuildEnv:
     Attributes
     ----------
     gateway
-        Storage gateway for database access and build tracking.
+        Optional storage gateway for database access and build tracking.
     snapshot
         Repository snapshot reference (repo, commit, root path).
     paths
@@ -58,7 +59,7 @@ class BuildEnv:
     providers
         DI providers for external tools (SCIP indexer, type checker, etc.).
     config
-        Build configuration loaded from codeintel.build.toml.
+        Build configuration loaded from config/codeintel.build.toml.
     settings
         Build settings injected by the CLI/runtime boundary.
     execution_settings
@@ -89,6 +90,8 @@ class BuildEnv:
         and settings for this build.
     registry
         Optional registry service for dataset and target discovery.
+    metadata_bundle
+        Optional build metadata bundle writer for emitting build-first metadata.
 
     Examples
     --------
@@ -104,7 +107,7 @@ class BuildEnv:
     >>> driver.execute(["t__function_types"], inputs={"env": env})
     """
 
-    gateway: BuildGateway
+    gateway: BuildGateway | None
     snapshot: SnapshotRef
     paths: BuildPaths
     providers: Providers
@@ -122,6 +125,7 @@ class BuildEnv:
     )
     execution_context: ExecutionContext | None = None
     registry: RegistryService | None = None
+    metadata_bundle: BuildMetadataBundleWriter | None = None
 
     @property
     def repo(self) -> str:

@@ -18,7 +18,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -38,17 +38,17 @@ FUNCTION_TYPES_CONTRACT = TableContractSpec(
 
 def function_types__base(
     function_analytics_result: FunctionAnalyticsResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build function typing rows from computed analytics.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader with function typing rows.
     """
     if not function_analytics_result.types_rows:
-        return empty_reader_for_table(FUNCTION_TYPES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(FUNCTION_TYPES_TABLE_KEY)
+    reader, _ = table_for_rows(
         FUNCTION_TYPES_TABLE_KEY,
         function_analytics_result.types_rows,
     )
@@ -66,7 +66,7 @@ _FUNCTION_TYPES_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=FUNCTION_TYPES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=FUNCTION_TYPES_TABLE_KEY),
             node_name="function_types__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="function_types__table_materializations",

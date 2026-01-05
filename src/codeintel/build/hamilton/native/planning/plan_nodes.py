@@ -44,7 +44,7 @@ class PlanGraphInputs:
     preflight_block_map: Mapping[str, tuple[str, ...]]
 
 
-@cache(behavior="disable")
+@cache(behavior="ignore")
 def plan_context(
     catalog: DagCatalog,
     env: BuildEnv,

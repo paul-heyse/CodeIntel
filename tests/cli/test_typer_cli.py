@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def temp_project(tmp_path: Path) -> Path:
-    """Create a temporary project with codeintel.yaml.
+    """Create a temporary project with config/codeintel.yaml.
 
     Parameters
     ----------
@@ -48,6 +48,7 @@ def temp_project(tmp_path: Path) -> Path:
         default_profile=DEFAULT_PROFILE_NAME,
     )
     config_path = tmp_path / PROJECT_FILE
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(f"repo: {config.repo}\ndefault_profile: {config.default_profile}\n")
 
     (tmp_path / ".codeintel").mkdir(exist_ok=True)

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.columnar.schema_alignment import align_reader_to_contract
+from codeintel.core.columnar.schema_alignment import align_table_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.arrow_gen import (
     ArrowSchemaMetadata,
@@ -96,6 +96,19 @@ class ColumnarBatchCollector:
         """Flush any buffered rows into a RecordBatch."""
         self._flush()
 
+    def to_table(self) -> pa.Table:
+        """Return a materialized Arrow table for the collected batches.
+
+        Returns
+        -------
+        pa.Table
+            Table built from the collected RecordBatches.
+        """
+        self._flush()
+        if not self.batches:
+            return pa.Table.from_batches([], schema=self.arrow_schema)
+        return pa.Table.from_batches(self.batches, schema=self.arrow_schema)
+
     def to_reader(self) -> pa.RecordBatchReader:
         """Return a RecordBatchReader for the collected batches.
 
@@ -103,10 +116,6 @@ class ColumnarBatchCollector:
         -------
         pa.RecordBatchReader
             Reader over the collected RecordBatches.
-
-        Notes
-        -----
-        The returned reader is single-consume; materialize the data if reuse is required.
         """
         self._flush()
         return pa.RecordBatchReader.from_batches(self.arrow_schema, self.batches)
@@ -143,16 +152,16 @@ def columnar_buffer_for_table_key(table_key: str) -> ColumnarRowBuffer:
     )
 
 
-def empty_reader_for_table(table_key: str) -> pa.RecordBatchReader:
-    """Return an empty RecordBatchReader using the table schema.
+def empty_table_for_table(table_key: str) -> pa.Table:
+    """Return an empty Arrow table using the table schema.
 
     Returns
     -------
-    pa.RecordBatchReader
-        Empty reader configured with the table schema.
+    pa.Table
+        Empty table configured with the table schema.
     """
     arrow_schema = _arrow_schema_for_table(table_key, extras_policy=None)
-    return pa.RecordBatchReader.from_batches(arrow_schema, [])
+    return pa.Table.from_batches([], schema=arrow_schema)
 
 
 def columnar_batch_collector_for_table_key(
@@ -182,14 +191,14 @@ def columnar_batch_collector_for_table_key(
     )
 
 
-def record_batch_reader_for_rows(
+def table_for_rows(
     table_key: str,
     rows: Iterable[Mapping[str, object]] | Iterable[Sequence[object]],
     *,
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
     extras_policy: ExtrasPolicy | None = None,
-) -> tuple[pa.RecordBatchReader, int]:
-    """Build a RecordBatchReader from row mappings using the contract schema.
+) -> tuple[pa.Table, int]:
+    """Build a table from row mappings using the contract schema.
 
     Parameters
     ----------
@@ -204,8 +213,8 @@ def record_batch_reader_for_rows(
 
     Returns
     -------
-    tuple[pa.RecordBatchReader, int]
-        Reader for the row batches plus the total row count.
+    tuple[pa.Table, int]
+        Table for the row batches plus the total row count.
     """
     collector = columnar_batch_collector_for_table_key(
         table_key,
@@ -214,8 +223,8 @@ def record_batch_reader_for_rows(
     )
     collector.extend(_iter_row_mappings(table_key, rows))
     if collector.row_count == 0:
-        return empty_reader_for_table(table_key), 0
-    return collector.to_reader(), collector.row_count
+        return empty_table_for_table(table_key), 0
+    return collector.to_table(), collector.row_count
 
 
 def _iter_row_mappings(
@@ -265,28 +274,39 @@ def _is_row_sequence(row: object) -> bool:
     return isinstance(row, Sequence) and not isinstance(row, (bytes, str))
 
 
-def record_batch_reader_for_columnar_rows(
+def table_for_columnar_rows(
     table_key: str,
     rows: Mapping[str, Sequence[object]],
     *,
     extras_policy: ExtrasPolicy | None = None,
-) -> tuple[pa.RecordBatchReader, int]:
-    """Build a RecordBatchReader from columnar row data using the contract schema.
+) -> tuple[pa.Table, int]:
+    """Build a table from columnar row data using the contract schema.
 
     Returns
     -------
-    tuple[pa.RecordBatchReader, int]
-        Reader for the row batches plus the total row count.
+    tuple[pa.Table, int]
+        Table for the row batches plus the total row count.
     """
     row_count = columnar_row_count(rows)
     if row_count == 0:
         arrow_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
-        return pa.RecordBatchReader.from_batches(arrow_schema, []), 0
-    normalized = {name: list(values) for name, values in rows.items()}
-    batch = pa.RecordBatch.from_pydict(normalized)
-    reader = pa.RecordBatchReader.from_batches(batch.schema, [batch])
+        return pa.Table.from_batches([], schema=arrow_schema), 0
     contract_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
-    aligned = align_reader_to_contract(reader, contract_schema, extras_policy=extras_policy)
+    normalized = {name: list(values) for name, values in rows.items()}
+    arrays: list[pa.Array] = []
+    fields: list[pa.Field] = []
+    for name, values in normalized.items():
+        if name in contract_schema.names:
+            field = contract_schema.field(name)
+            arrays.append(pa.array(values, type=field.type))
+            fields.append(field)
+            continue
+        array = pa.array(values)
+        arrays.append(array)
+        fields.append(pa.field(name, array.type))
+    batch = pa.record_batch(arrays, schema=pa.schema(fields))
+    table = pa.Table.from_batches([batch], schema=batch.schema)
+    aligned = align_table_to_contract(table, contract_schema, extras_policy=extras_policy)
     return aligned, row_count
 
 
@@ -352,7 +372,7 @@ __all__ = [
     "columnar_batch_collector_for_table_key",
     "columnar_buffer_for_table_key",
     "columnar_row_count",
-    "empty_reader_for_table",
-    "record_batch_reader_for_columnar_rows",
-    "record_batch_reader_for_rows",
+    "empty_table_for_table",
+    "table_for_columnar_rows",
+    "table_for_rows",
 ]

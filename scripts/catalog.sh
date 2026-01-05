@@ -11,8 +11,8 @@ codeintel datasets catalog \
   --repo-root "${REPO_ROOT}" \
   --repo "${CODEINTEL_REPO:-demo/repo}" \
   --commit "${CODEINTEL_COMMIT:-deadbeef}" \
-  --db-path "${CODEINTEL_DB_PATH:-build/db/db.duckdb}" \
+  --db-path "${CODEINTEL_DB_PATH:-build/db/codeintel.duckdb}" \
   --build-dir "${REPO_ROOT}/build" \
-  --document-output-dir "${REPO_ROOT}/Document Output" \
+  --document-output-dir "${REPO_ROOT}/build/document_output" \
   --sample-rows "${SAMPLE_ROWS}" \
   --output-dir "${CATALOG_DIR}"

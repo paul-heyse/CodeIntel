@@ -21,9 +21,9 @@ import pyarrow as pa
 from codeintel.build.graphs.runtime import GraphRuntime
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
-from codeintel.core.schemas.generated_rows import columns_for_table_key
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.validation import (
     BaseValidationOptions,
     GraphValidationReporter,

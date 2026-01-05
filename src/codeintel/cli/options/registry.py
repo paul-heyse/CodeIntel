@@ -717,6 +717,11 @@ META_OVERRIDE_VERSION_ID = OptionSpec(
     names=("--version-id",),
     help="Override version id to pin for the override registry.",
 )
+META_BUNDLE_ROOT = OptionSpec(
+    arg_name="bundle_root",
+    names=("--bundle-root",),
+    help="Path to the build metadata bundle root (default: build/metadata).",
+)
 META_DRIFT_LIMIT = OptionSpec(
     arg_name="limit",
     names=("--limit", "-n"),
@@ -741,7 +746,7 @@ DOCS_COMMIT = OptionSpec(
 DOCS_DB_PATH = OptionSpec(
     arg_name="db_path",
     names=("--db-path",),
-    help="Path to DuckDB database.",
+    help="Path to DuckDB database (relative to build_dir if not absolute).",
 )
 DOCS_BUILD_DIR = OptionSpec(
     arg_name="build_dir",
@@ -756,7 +761,7 @@ DOCS_REPO_ROOT = OptionSpec(
 DOCS_DOCUMENT_OUTPUT_DIR = OptionSpec(
     arg_name="document_output_dir",
     names=("--document-output-dir",),
-    help="Document Output directory for emitted artifacts.",
+    help="Document output directory for emitted artifacts (default: build/document_output).",
 )
 DOCS_NX_BACKEND = OptionSpec(
     arg_name="nx_backend",
@@ -999,6 +1004,11 @@ STORAGE_DB_PATH = OptionSpec(
     names=("--db-path",),
     help="Path to DuckDB database.",
 )
+STORAGE_METADATA_BUNDLE_ROOT = OptionSpec(
+    arg_name="bundle_root",
+    names=("--bundle-root",),
+    help="Path to the build metadata bundle root (default: build/metadata).",
+)
 STORAGE_CACHE_LOG_DIR = OptionSpec(
     arg_name="cache_dir",
     names=("--cache-dir",),
@@ -1216,6 +1226,7 @@ __all__ = [
     "JOBS_MAX_AGE_DAYS",
     "JOBS_STATUS_FILTER",
     "JSON_FLAG",
+    "META_BUNDLE_ROOT",
     "META_DRIFT_LIMIT",
     "META_OVERRIDE_SCHEMA_DIGEST",
     "META_OVERRIDE_VERSION_ID",
@@ -1235,6 +1246,7 @@ __all__ = [
     "STORAGE_DB_PATH",
     "STORAGE_INCLUDE_VIEWS",
     "STORAGE_INPUT_DIR",
+    "STORAGE_METADATA_BUNDLE_ROOT",
     "STORAGE_OUTPUT_DIR",
     "STORAGE_VALIDATION_MODE",
     "TAG_FILTERS",

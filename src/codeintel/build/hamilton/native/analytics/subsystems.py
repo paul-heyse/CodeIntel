@@ -24,7 +24,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -128,34 +128,34 @@ def subsystem_rows(
     )
 
 
-def subsystems__base(subsystem_rows: SubsystemRows) -> pa.RecordBatchReader:
+def subsystems__base(subsystem_rows: SubsystemRows) -> pa.Table:
     """Build subsystem summary rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing subsystem rows.
     """
     if not subsystem_rows.subsystem_rows:
-        return empty_reader_for_table(SUBSYSTEMS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(SUBSYSTEMS_TABLE_KEY)
+    reader, _ = table_for_rows(
         SUBSYSTEMS_TABLE_KEY,
         subsystem_rows.subsystem_rows,
     )
     return reader
 
 
-def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.RecordBatchReader:
+def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.Table:
     """Build subsystem membership rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing subsystem membership rows.
     """
     if not subsystem_rows.membership_rows:
-        return empty_reader_for_table(SUBSYSTEM_MODULES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(SUBSYSTEM_MODULES_TABLE_KEY)
+    reader, _ = table_for_rows(
         SUBSYSTEM_MODULES_TABLE_KEY,
         subsystem_rows.membership_rows,
     )
@@ -173,7 +173,7 @@ _SUBSYSTEMS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEMS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEMS_TABLE_KEY),
             node_name="subsystems__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=SUBSYSTEM_MODULES_TABLE_KEY,
@@ -181,7 +181,7 @@ _SUBSYSTEMS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEM_MODULES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_MODULES_TABLE_KEY),
             node_name="subsystem_modules__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="subsystems__table_materializations",

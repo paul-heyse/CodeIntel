@@ -26,7 +26,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.serialization.json import decode_json_list
 from codeintel.core.serialization.payload import decode_payload
@@ -121,12 +121,12 @@ def external_dependency_calls__base(
     q__core__modules: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
     q__core__goids: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build external dependency call rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing external dependency call rows.
     """
     modules_frame = tabular_to_arrow_table(q__core__modules)
@@ -134,7 +134,7 @@ def external_dependency_calls__base(
     features_frame = tabular_to_arrow_table(q__analytics__function_ast_features)
     module_map = _module_map(modules_frame)
     if not module_map:
-        return empty_reader_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
+        return empty_table_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -152,8 +152,8 @@ def external_dependency_calls__base(
     )
     result = compute_dependency_calls_pure(env.snapshot, inputs)
     if not result.rows:
-        return empty_reader_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
+    reader, _ = table_for_rows(
         EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
         result.rows,
     )
@@ -164,12 +164,12 @@ def external_dependencies__base(
     env: BuildEnv,
     external_dependency_calls__base: InferableTabularInput,
     q__analytics__config_values: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build external dependencies summary rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing external dependency summary rows.
     """
     dependency_calls_frame = tabular_to_arrow_table(external_dependency_calls__base)
@@ -180,8 +180,8 @@ def external_dependencies__base(
         config_values_frame=config_values_frame,
     )
     if not result.rows:
-        return empty_reader_for_table(EXTERNAL_DEPENDENCIES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(EXTERNAL_DEPENDENCIES_TABLE_KEY)
+    reader, _ = table_for_rows(
         EXTERNAL_DEPENDENCIES_TABLE_KEY,
         result.rows,
     )
@@ -199,7 +199,7 @@ _EXTERNAL_DEPS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
             node_name="external_dependency_calls__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
@@ -207,7 +207,7 @@ _EXTERNAL_DEPS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=EXTERNAL_DEPENDENCIES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY),
             node_name="external_dependencies__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="external_deps__table_materializations",

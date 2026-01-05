@@ -14,6 +14,14 @@ if TYPE_CHECKING:
         upsert_canonical_catalog,
     )
     from codeintel.storage.metadata.ddl import apply_metadata_ddl
+    from codeintel.storage.metadata.ingest import (
+        BundleIngestReport,
+        BundleManifest,
+        BundleValidation,
+        bundle_manifest_from_path,
+        load_build_metadata_bundle,
+        validate_build_metadata_bundle,
+    )
     from codeintel.storage.metadata.sync import (
         bootstrap_metadata_datasets,
         load_derived_lineage_columns,
@@ -33,7 +41,18 @@ _EXPORTS: Final[dict[str, tuple[str, str]]] = {
         "bootstrap_metadata_datasets",
     ),
     "build_catalog_entry": ("codeintel.storage.metadata.catalogs", "build_catalog_entry"),
+    "bundle_manifest_from_path": (
+        "codeintel.storage.metadata.ingest",
+        "bundle_manifest_from_path",
+    ),
+    "BundleIngestReport": ("codeintel.storage.metadata.ingest", "BundleIngestReport"),
+    "BundleManifest": ("codeintel.storage.metadata.ingest", "BundleManifest"),
+    "BundleValidation": ("codeintel.storage.metadata.ingest", "BundleValidation"),
     "load_canonical_catalog": ("codeintel.storage.metadata.catalogs", "load_canonical_catalog"),
+    "load_build_metadata_bundle": (
+        "codeintel.storage.metadata.ingest",
+        "load_build_metadata_bundle",
+    ),
     "load_derived_lineage_columns": (
         "codeintel.storage.metadata.sync",
         "load_derived_lineage_columns",
@@ -66,6 +85,10 @@ _EXPORTS: Final[dict[str, tuple[str, str]]] = {
         "codeintel.storage.metadata.validation",
         "SchemaValidationRun",
     ),
+    "validate_build_metadata_bundle": (
+        "codeintel.storage.metadata.ingest",
+        "validate_build_metadata_bundle",
+    ),
     "upsert_canonical_catalog": ("codeintel.storage.metadata.catalogs", "upsert_canonical_catalog"),
 }
 
@@ -85,10 +108,15 @@ def __dir__() -> list[str]:
 
 
 __all__: tuple[str, ...] = (
+    "BundleIngestReport",
+    "BundleManifest",
+    "BundleValidation",
     "SchemaValidationRun",
     "apply_metadata_ddl",
     "bootstrap_metadata_datasets",
     "build_catalog_entry",
+    "bundle_manifest_from_path",
+    "load_build_metadata_bundle",
     "load_canonical_catalog",
     "load_derived_lineage_columns",
     "load_latest_canonical_catalog",
@@ -98,4 +126,5 @@ __all__: tuple[str, ...] = (
     "sync_derived_lineage_columns",
     "sync_table_schema_registry_from_latest_manifest",
     "upsert_canonical_catalog",
+    "validate_build_metadata_bundle",
 )

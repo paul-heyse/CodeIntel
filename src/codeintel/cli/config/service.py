@@ -118,7 +118,7 @@ class ConfigService:
     Precedence (highest to lowest):
 
     1. CLI flags (explicit overrides)
-    2. Config file (codeintel.toml or ~/.codeintel/config.toml)
+    2. Config file (config/codeintel.toml or ~/.codeintel/config.toml)
     3. Built-in defaults from CliConfig
 
     Parameters
@@ -188,7 +188,7 @@ class ConfigService:
         Integrate with Cyclopts' config parameter while maintaining
         our unified precedence. The returned chain:
 
-        1. Applies TOML config if present (codeintel.toml)
+        1. Applies TOML config if present (config/codeintel.toml)
         2. Applies CODEINTEL_* environment overrides
 
         Returns

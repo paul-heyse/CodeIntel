@@ -19,9 +19,9 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.conversion import tabular_to_arrow_reader
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.execution.ids import RUN_PREFIX_ANALYTICS, new_run_id
 from codeintel.core.serialization.payload import decode_payload
@@ -94,30 +94,30 @@ class _PyCpgQualityInputsB:
     cpg_edges: InferableTabularInput
 
 
-def _reader_rows(reader: pa.RecordBatchReader) -> Iterable[dict[str, object]]:
-    for batch in reader:
+def _reader_rows(table: pa.Table) -> Iterable[dict[str, object]]:
+    for batch in table.to_batches():
         if batch.num_rows == 0:
             continue
         yield from batch.to_pylist()
 
 
-def _reader_has_columns(reader: pa.RecordBatchReader, columns: Iterable[str]) -> bool:
-    return set(columns).issubset(reader.schema.names)
+def _reader_has_columns(table: pa.Table, columns: Iterable[str]) -> bool:
+    return set(columns).issubset(table.schema.names)
 
 
-def _count_rows(reader: pa.RecordBatchReader) -> int:
-    return sum(batch.num_rows for batch in reader)
+def _count_rows(table: pa.Table) -> int:
+    return table.num_rows
 
 
 def _anchor_rate(
-    reader: pa.RecordBatchReader,
+    table: pa.Table,
     *,
     anchor_column: str,
 ) -> _AnchorRate:
     total = 0
     anchored = 0
-    has_column = anchor_column in reader.schema.names
-    for batch in reader:
+    has_column = anchor_column in table.schema.names
+    for batch in table.to_batches():
         total += batch.num_rows
         if not has_column or batch.num_rows == 0:
             continue
@@ -126,8 +126,8 @@ def _anchor_rate(
 
 
 def _cfg_reachability(
-    blocks_reader: pa.RecordBatchReader,
-    edges_reader: pa.RecordBatchReader,
+    blocks_reader: pa.Table,
+    edges_reader: pa.Table,
 ) -> _CfgReachability:
     blocks_by_unit = _blocks_by_unit(blocks_reader)
     edges_by_unit = _edges_by_unit(edges_reader)
@@ -144,7 +144,7 @@ def _cfg_reachability(
 
 
 def _blocks_by_unit(
-    blocks_reader: pa.RecordBatchReader,
+    blocks_reader: pa.Table,
 ) -> dict[str, list[tuple[str, int | None, int | None]]]:
     if not _reader_has_columns(
         blocks_reader,
@@ -170,7 +170,7 @@ def _blocks_by_unit(
     return blocks_by_unit
 
 
-def _edges_by_unit(edges_reader: pa.RecordBatchReader) -> dict[str, list[tuple[str, str]]]:
+def _edges_by_unit(edges_reader: pa.Table) -> dict[str, list[tuple[str, str]]]:
     if not _reader_has_columns(
         edges_reader,
         ("code_unit_id", "src_block_id", "dst_block_id"),
@@ -221,7 +221,7 @@ def _reachable_count(entry_block: str, adjacency: dict[str, set[str]]) -> int:
     return len(seen)
 
 
-def _defuse_event_count(reader: pa.RecordBatchReader) -> int:
+def _defuse_event_count(reader: pa.Table) -> int:
     if not _reader_has_columns(reader, ("event_kind", "space")):
         return 0
     count = 0
@@ -236,7 +236,7 @@ def _defuse_event_count(reader: pa.RecordBatchReader) -> int:
 
 
 def _scan_cpg_edges(
-    reader: pa.RecordBatchReader,
+    reader: pa.Table,
 ) -> tuple[int, set[int]]:
     has_edge_kind = "edge_kind" in reader.schema.names
     has_extras = "extras_json" in reader.schema.names
@@ -295,38 +295,38 @@ def py_cpg_quality_report__base(
     env: BuildEnv,
     py_cpg_quality_report__inputs_a: _PyCpgQualityInputsA,
     py_cpg_quality_report__inputs_b: _PyCpgQualityInputsB,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build run-level Python CPG quality metrics.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing run-level quality metrics.
+    pyarrow.Table
+        Table containing run-level quality metrics.
     """
     instruction_rate = _anchor_rate(
-        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.instructions),
+        tabular_to_arrow_table(py_cpg_quality_report__inputs_a.instructions),
         anchor_column="span_start_byte",
     )
     symtable_rate = _anchor_rate(
-        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.scopes),
+        tabular_to_arrow_table(py_cpg_quality_report__inputs_a.scopes),
         anchor_column="anchor_ast_node_id",
     )
     cfg_rate = _cfg_reachability(
-        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.blocks),
-        tabular_to_arrow_reader(py_cpg_quality_report__inputs_b.cfg_edges),
+        tabular_to_arrow_table(py_cpg_quality_report__inputs_a.blocks),
+        tabular_to_arrow_table(py_cpg_quality_report__inputs_b.cfg_edges),
     )
     defuse_event_count = _defuse_event_count(
-        tabular_to_arrow_reader(py_cpg_quality_report__inputs_b.defuse_events),
+        tabular_to_arrow_table(py_cpg_quality_report__inputs_b.defuse_events),
     )
     defuse_edge_count, inspect_anchor_ids = _scan_cpg_edges(
-        tabular_to_arrow_reader(py_cpg_quality_report__inputs_b.cpg_edges),
+        tabular_to_arrow_table(py_cpg_quality_report__inputs_b.cpg_edges),
     )
     defuse_rate = _DefuseCoverage(
         event_count=defuse_event_count,
         edge_count=defuse_edge_count,
     )
     inspect_total = _count_rows(
-        tabular_to_arrow_reader(py_cpg_quality_report__inputs_a.inspect_objects)
+        tabular_to_arrow_table(py_cpg_quality_report__inputs_a.inspect_objects)
     )
     inspect_rate = _AnchorRate(total=inspect_total, anchored=len(inspect_anchor_ids))
 
@@ -354,9 +354,9 @@ def py_cpg_quality_report__base(
         }
     ]
     if not rows:
-        return empty_reader_for_table(PY_CPG_QUALITY_REPORT_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(PY_CPG_QUALITY_REPORT_TABLE_KEY, rows)
-    return reader
+        return empty_table_for_table(PY_CPG_QUALITY_REPORT_TABLE_KEY)
+    table, _ = table_for_rows(PY_CPG_QUALITY_REPORT_TABLE_KEY, rows)
+    return table
 
 
 _MODULE = sys.modules[__name__]
@@ -369,7 +369,7 @@ _PY_CPG_QUALITY_REPORT_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="py_cpg_quality_report__base",
             contract=PY_CPG_QUALITY_REPORT_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="py_cpg_quality_report__table",
         ),
     ),

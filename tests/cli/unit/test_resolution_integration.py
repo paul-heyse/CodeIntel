@@ -28,13 +28,14 @@ def test_resolution_from_explicit_params() -> None:
 
 
 def test_resolution_from_project_config(tmp_path: Path) -> None:
-    """Test runtime resolution from codeintel.yaml."""
+    """Test runtime resolution from config/codeintel.yaml."""
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     db_dir = project_dir / "build" / "db"
     db_dir.mkdir(parents=True)
 
-    config_file = project_dir / "codeintel.yaml"
+    config_file = project_dir / "config/codeintel.yaml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text("repo: test/repo\nstorage:\n  db_path: build/db/codeintel.duckdb\n")
 
     runtime = resolve_from_params({"project_root": project_dir})

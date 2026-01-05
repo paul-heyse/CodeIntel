@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
-    empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
+    empty_table_for_table,
+    table_for_columnar_rows,
 )
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
@@ -59,14 +59,14 @@ class RepoScanResult:
     module_rows: ColumnarRows
     file_state_rows: ColumnarRows
     repo_map_rows: ColumnarRows
-    module_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(MODULES_TABLE_KEY)
+    module_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(MODULES_TABLE_KEY)
     )
-    file_state_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(FILE_STATE_TABLE_KEY)
+    file_state_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(FILE_STATE_TABLE_KEY)
     )
-    repo_map_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(REPO_MAP_TABLE_KEY)
+    repo_map_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(REPO_MAP_TABLE_KEY)
     )
 
 
@@ -169,17 +169,17 @@ class RepoScanStep:
             commit=commit,
             modules=modules,
         )
-        module_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        module_rows_reader, _ = table_for_columnar_rows(
             MODULES_TABLE_KEY,
             module_buffer.data,
             extras_policy="retain",
         )
-        file_state_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        file_state_rows_reader, _ = table_for_columnar_rows(
             FILE_STATE_TABLE_KEY,
             change_set.state_rows,
             extras_policy="retain",
         )
-        repo_map_rows_reader, _ = record_batch_reader_for_columnar_rows(
+        repo_map_rows_reader, _ = table_for_columnar_rows(
             REPO_MAP_TABLE_KEY,
             repo_map_rows,
             extras_policy="retain",

@@ -167,7 +167,7 @@ ensuring tag filters remain expressive.
 **Objective:** Ensure CLI tests pass without fallback.
 
 **Changes:**
-1. **Update CLI test harness to create minimal `codeintel.yaml`.**
+1. **Update CLI test harness to create minimal `config/codeintel.yaml`.**
    - Ensure CLI tests provide a project root when fallback is disabled.
    - Files: `tests/_helpers/cli.py`, `tests/cli/*`.
 

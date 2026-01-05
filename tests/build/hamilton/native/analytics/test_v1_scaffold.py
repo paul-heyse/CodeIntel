@@ -15,7 +15,6 @@ from codeintel.build.hamilton.native.analytics.function_ast_features import (
     function_ast_features__base,
 )
 from codeintel.build.hamilton.native.analytics.function_types import function_types__base
-from codeintel.core.schemas.generated_rows.analytics import AnalyticsFunctionTypesRow
 from codeintel.core.validation.reporters import FunctionValidationReporter
 
 try:
@@ -76,7 +75,7 @@ def _sample_modules_frame() -> pl.DataFrame:
     )
 
 
-def _sample_function_types_row() -> AnalyticsFunctionTypesRow:
+def _sample_function_types_row() -> dict[str, object]:
     return {
         "function_goid_h128": 1,
         "urn": "urn:goid:1",

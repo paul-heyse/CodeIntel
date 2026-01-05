@@ -2,7 +2,7 @@
 
 Load CLI configuration with proper precedence:
 1. Built-in defaults (lowest priority)
-2. Config file (codeintel.toml)
+2. Config file (config/codeintel.toml)
 3. Command-line flags (highest priority)
 """
 
@@ -23,7 +23,7 @@ from codeintel.cli.core.parsing import parse_bool_or_none
 LOG = logging.getLogger(__name__)
 
 TOML_CONFIG_PATHS = [
-    Path("codeintel.toml"),
+    Path("config/codeintel.toml"),
     Path.home() / ".codeintel" / "config.toml",
 ]
 

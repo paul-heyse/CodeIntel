@@ -40,7 +40,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -135,10 +135,10 @@ class _CfgDfgMetricsInputs:
 def _rows_to_reader(
     rows: tuple[tuple[object, ...], ...],
     table_key: str,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     if not rows:
-        return empty_reader_for_table(table_key)
-    reader, _ = record_batch_reader_for_rows(table_key, rows)
+        return empty_table_for_table(table_key)
+    reader, _ = table_for_rows(table_key, rows)
     return reader
 
 
@@ -402,12 +402,12 @@ def cfg_dfg_metrics_analysis(
 
 def cfg_function_metrics__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build CFG function metrics rows from the analysis payload.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader of CFG function metrics rows.
     """
     return _rows_to_reader(
@@ -418,12 +418,12 @@ def cfg_function_metrics__base(
 
 def cfg_block_metrics__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build CFG block metrics rows from the analysis payload.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader of CFG block metrics rows.
     """
     return _rows_to_reader(
@@ -434,12 +434,12 @@ def cfg_block_metrics__base(
 
 def cfg_function_metrics_ext__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build CFG function metrics ext rows from the analysis payload.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader of CFG function metrics ext rows.
     """
     return _rows_to_reader(
@@ -450,12 +450,12 @@ def cfg_function_metrics_ext__base(
 
 def dfg_function_metrics__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build DFG function metrics rows from the analysis payload.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader of DFG function metrics rows.
     """
     return _rows_to_reader(
@@ -466,12 +466,12 @@ def dfg_function_metrics__base(
 
 def dfg_block_metrics__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build DFG block metrics rows from the analysis payload.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader of DFG block metrics rows.
     """
     return _rows_to_reader(
@@ -482,12 +482,12 @@ def dfg_block_metrics__base(
 
 def dfg_function_metrics_ext__base(
     cfg_dfg_metrics_analysis: _CfgDfgMetricsAnalysis,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build DFG function metrics ext rows from the analysis payload.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader of DFG function metrics ext rows.
     """
     return _rows_to_reader(
@@ -510,7 +510,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="cfg_function_metrics__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=CFG_BLOCK_METRICS_TABLE_KEY,
@@ -521,7 +521,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="cfg_block_metrics__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
@@ -532,7 +532,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="cfg_function_metrics_ext__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
@@ -543,7 +543,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="dfg_function_metrics__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=DFG_BLOCK_METRICS_TABLE_KEY,
@@ -554,7 +554,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="dfg_block_metrics__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
@@ -565,7 +565,7 @@ _CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
                 partition_columns=("repo", "commit"),
             ),
             node_name="dfg_function_metrics_ext__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="cfg_dfg_metrics__table_materializations",

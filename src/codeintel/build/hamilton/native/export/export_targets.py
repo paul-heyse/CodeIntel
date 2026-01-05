@@ -10,13 +10,14 @@ Both targets delegate to the canonical export engine and record the shared
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from hamilton.function_modifiers import source, value
+from hamilton.function_modifiers import cache, source, value
 
 from codeintel.build.exports.common import ExportCallOptions
-from codeintel.build.exports.engine import ExportFormat, export_all_datasets
+from codeintel.build.exports.engine import ExportFormat, ExportRunConfig, export_all_datasets
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -35,6 +36,8 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput, Path)
+
+log = logging.getLogger(__name__)
 
 EXPORT_JSONL_TARGET_NAME = "export_jsonl"
 EXPORT_PARQUET_TARGET_NAME = "export_parquet"
@@ -64,6 +67,9 @@ def _export_manifest_plan(
 ) -> ArtifactWritePlan | None:
     target_name = request.target_name
     _ = catalog
+    if env.gateway is None:
+        log.warning("export skipped: storage gateway unavailable for %s", target_name)
+        return None
     export_options = load_target_options(
         env,
         target_name=target_name,
@@ -77,8 +83,11 @@ def _export_manifest_plan(
             env.gateway,
             output_path.parent,
             fmt=request.fmt,
-            settings=env.settings.export_audit,
-            options=export_options,
+            run_config=ExportRunConfig(
+                settings=env.settings.export_audit,
+                options=export_options,
+                metadata_bundle=env.metadata_bundle,
+            ),
         )
         if not output_path.exists():
             msg = f"Export manifest not written: {output_path}"
@@ -94,6 +103,7 @@ def _touch_dependencies(*_deps: object) -> None:
         return
 
 
+@cache(behavior="disable")
 @tag_tool(domain="export", target=EXPORT_JSONL_TARGET_NAME)
 def t__export_jsonl__compute(
     env: BuildEnv,
@@ -120,6 +130,7 @@ def t__export_jsonl__compute(
     )
 
 
+@cache(behavior="disable")
 @SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{EXPORT_JSONL_ARTIFACT_NAME}"),
@@ -149,7 +160,7 @@ def t__export_jsonl(
     catalog: DagCatalog,
     m__artifact__datasets_manifest_jsonl: MaterializationResult,
 ) -> TargetRunRecord:
-    """Export datasets to JSONL format for Document Output.
+    """Export datasets to JSONL format for the document output directory.
 
     Returns
     -------
@@ -168,6 +179,7 @@ def t__export_jsonl(
     )
 
 
+@cache(behavior="disable")
 @tag_compute(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
 def t__export_parquet__compute(
     env: BuildEnv,
@@ -194,6 +206,7 @@ def t__export_parquet__compute(
     )
 
 
+@cache(behavior="disable")
 @SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{EXPORT_PARQUET_ARTIFACT_NAME}"),
@@ -223,7 +236,7 @@ def t__export_parquet(
     catalog: DagCatalog,
     m__artifact__datasets_manifest_parquet: MaterializationResult,
 ) -> TargetRunRecord:
-    """Export datasets to Parquet format for Document Output.
+    """Export datasets to Parquet format for the document output directory.
 
     Returns
     -------

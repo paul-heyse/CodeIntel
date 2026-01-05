@@ -1,4 +1,4 @@
-"""Orchestration helpers for validated Document Output exports."""
+"""Orchestration helpers for validated document output exports."""
 
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ def run_validated_exports(
     gateway
         BuildGateway providing datasets and connection metadata.
     output_dir
-        Document Output directory for emitted artifacts.
+        Document output directory for emitted artifacts.
     options
         ExportOptions controlling validation, schemas, and dataset selection.
 

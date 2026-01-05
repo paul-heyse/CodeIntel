@@ -400,7 +400,7 @@ Check that referenced pages exist and paths are relative to `docs/`.
 The default port is 8000. Either stop the existing process or use:
 
 ```bash
-mkdocs serve -f mkdocs-build/mkdocs.yml -a localhost:8001
+mkdocs serve -f config/mkdocs.yml -a localhost:8001
 ```
 
 **Changes not reflecting**

@@ -20,7 +20,7 @@ from codeintel.build.analytics.utilities.ast import call_name, snippet_from_line
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst

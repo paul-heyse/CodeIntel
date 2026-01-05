@@ -32,9 +32,9 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.spans import normalize_line_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -81,8 +81,8 @@ def _rows_to_reader(
     table_key: str,
 ) -> InferableTabularInput:
     if not rows:
-        return empty_reader_for_table(table_key)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(table_key)
+    reader, _ = table_for_rows(
         table_key,
         (dataclasses.asdict(row) for row in rows),
     )

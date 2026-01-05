@@ -33,7 +33,7 @@ from codeintel.core.query_results import (
     coerce_optional_str,
     coerce_str,
 )
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"

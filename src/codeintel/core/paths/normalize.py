@@ -76,6 +76,38 @@ def ensure_repo_root(repo_root: Path | str) -> Path:
     return Path(repo_root).expanduser().resolve()
 
 
+def find_repo_root(start: Path | None = None) -> Path:
+    """Find the repository root by walking upward from the start path.
+
+    The search prefers a pyproject.toml marker, then config/codeintel.yaml,
+    then a .git directory or file. Falls back to the resolved start path
+    if no marker is found.
+
+    Parameters
+    ----------
+    start
+        Starting directory for the search (defaults to current working directory).
+
+    Returns
+    -------
+    Path
+        Repository root or the resolved start path when no marker is found.
+    """
+    current = (start or Path.cwd()).resolve()
+    markers = ("pyproject.toml",)
+
+    for parent in (current, *current.parents):
+        if any((parent / marker).is_file() for marker in markers):
+            return parent
+        if (parent / "config" / "codeintel.yaml").is_file():
+            return parent
+        git_marker = parent / ".git"
+        if git_marker.is_dir() or git_marker.is_file():
+            return parent
+
+    return current
+
+
 def repo_relpath(repo_root: Path, path: Path | str) -> str:
     """Compute a repository-relative POSIX path for a file under repo_root.
 
@@ -140,6 +172,7 @@ def safe_relpath(path: str | Path, base: str | Path) -> str:
 
 __all__ = [
     "ensure_repo_root",
+    "find_repo_root",
     "normalize_path",
     "repo_relpath",
     "safe_relpath",

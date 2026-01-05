@@ -27,7 +27,7 @@ specific files that need work.
 
 - [ ] Run the inferability audit and capture a report (commit or stash to build outputs).
   Files: `tools/diagnostics/schema_inference_inventory.py`,
-  `src/codeintel/core/registry/dag_output_inventory.yaml`.
+  `config/registry/dag_output_inventory.yaml`.
 - [ ] Refactor any compute nodes that still return `DuckDBRelation` to return inferable
   tabular types and move IO into loaders/savers.
   Files: `src/codeintel/build/hamilton/native/analytics/`,

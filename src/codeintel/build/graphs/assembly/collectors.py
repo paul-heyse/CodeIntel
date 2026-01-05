@@ -9,9 +9,9 @@ import pyarrow as pa
 from codeintel.core.columnar.rows import (
     ColumnarBatchCollector,
     columnar_batch_collector_for_table_key,
-    empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
-    record_batch_reader_for_rows,
+    empty_table_for_table,
+    table_for_columnar_rows,
+    table_for_rows,
 )
 from codeintel.core.schemas.arrow_gen import ExtrasPolicy
 
@@ -44,24 +44,24 @@ def reader_for_rows(
     *,
     batch_size: int | None = None,
     extras_policy: ExtrasPolicy | None = None,
-) -> pa.RecordBatchReader:
-    """Build a reader from row mappings using the table contract.
+) -> pa.Table:
+    """Build a table from row mappings using the table contract.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader aligned to the table contract.
+    pyarrow.Table
+        Table aligned to the table contract.
     """
     if batch_size is None:
-        reader, _ = record_batch_reader_for_rows(table_key, rows, extras_policy=extras_policy)
-        return reader
-    reader, _ = record_batch_reader_for_rows(
+        table, _ = table_for_rows(table_key, rows, extras_policy=extras_policy)
+        return table
+    table, _ = table_for_rows(
         table_key,
         rows,
         batch_size=batch_size,
         extras_policy=extras_policy,
     )
-    return reader
+    return table
 
 
 def reader_for_columnar_rows(
@@ -69,31 +69,31 @@ def reader_for_columnar_rows(
     rows: Mapping[str, Sequence[object]],
     *,
     extras_policy: ExtrasPolicy | None = None,
-) -> pa.RecordBatchReader:
-    """Build a reader from columnar row data using the table contract.
+) -> pa.Table:
+    """Build a table from columnar row data using the table contract.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader aligned to the table contract.
+    pyarrow.Table
+        Table aligned to the table contract.
     """
-    reader, _ = record_batch_reader_for_columnar_rows(
+    table, _ = table_for_columnar_rows(
         table_key,
         rows,
         extras_policy=extras_policy,
     )
-    return reader
+    return table
 
 
-def empty_reader(table_key: str) -> pa.RecordBatchReader:
-    """Return an empty RecordBatchReader for the table.
+def empty_reader(table_key: str) -> pa.Table:
+    """Return an empty Arrow table for the table.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Empty reader configured with the table schema.
+    pyarrow.Table
+        Empty table configured with the table schema.
     """
-    return empty_reader_for_table(table_key)
+    return empty_table_for_table(table_key)
 
 
 __all__ = [

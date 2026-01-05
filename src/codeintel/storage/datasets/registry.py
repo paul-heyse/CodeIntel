@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
@@ -36,6 +37,9 @@ __all__ = [
     "load_dataset_manifests_for_snapshot",
     "load_dataset_registry",
 ]
+
+LOG = logging.getLogger(__name__)
+ISSUE_PREVIEW_LIMIT = 10
 
 
 @dataclass(frozen=True)
@@ -226,11 +230,6 @@ def load_dataset_registry(
     -------
     DatasetRegistry
         Registry constructed from the database and contract defaults.
-
-    Raises
-    ------
-    KeyError
-        If a metadata row lacks a corresponding DatasetContract.
     """
     table_ref = meta_table_ref("metadata.datasets")
     table_expr = table_expr_from_ref(table_ref)
@@ -249,15 +248,11 @@ def load_dataset_registry(
     )
     reader = con.execute(render_sql_duckdb(query)).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
 
-    try:
-        return _registry_from_rows(
-            iter_tuples_from_arrow_reader(reader),
-            dataset_root_dir=dataset_root_dir,
-            dataset_manifests=dataset_manifests,
-        )
-    except KeyError as exc:
-        msg = str(exc)
-        raise KeyError(msg) from exc
+    return _registry_from_rows(
+        iter_tuples_from_arrow_reader(reader),
+        dataset_root_dir=dataset_root_dir,
+        dataset_manifests=dataset_manifests,
+    )
 
 
 def _registry_from_rows(
@@ -270,15 +265,28 @@ def _registry_from_rows(
     by_table: dict[str, DatasetContract] = {}
     jsonl_map: dict[str, str] = {}
     parquet_map: dict[str, str] = {}
+    missing_contracts: list[str] = []
 
     for row in rows:
-        ds = _dataset_contract_from_row(row)
+        try:
+            ds = _dataset_contract_from_row(row)
+        except KeyError:
+            table_key = row[0]
+            missing_contracts.append(table_key if isinstance(table_key, str) else str(table_key))
+            continue
         by_name[ds.name] = ds
         by_table[ds.table_key] = ds
         if ds.jsonl_filename:
             jsonl_map[ds.table_key] = ds.jsonl_filename
         if ds.parquet_filename:
             parquet_map[ds.table_key] = ds.parquet_filename
+    if missing_contracts:
+        preview = ", ".join(missing_contracts[:ISSUE_PREVIEW_LIMIT])
+        LOG.warning(
+            "Skipped %d metadata.datasets rows with missing DatasetContracts%s",
+            len(missing_contracts),
+            f": {preview}" if preview else "",
+        )
 
     return DatasetRegistry(
         by_name=by_name,

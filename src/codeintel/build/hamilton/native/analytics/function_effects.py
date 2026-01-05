@@ -24,7 +24,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import record_batch_reader_for_rows
+from codeintel.core.columnar.rows import table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -48,12 +48,12 @@ def function_effects__base(
     q__core__modules: InferableTabularInput,
     q__graph__call_graph_edges: InferableTabularInput,
     q__graph__call_graph_nodes: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build function effects rows using tabular inputs.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader with function effects rows.
     """
     goids_frame = tabular_to_arrow_table(q__core__goids).select(
@@ -80,7 +80,7 @@ def function_effects__base(
         ),
     )
     rows = build_function_effects_rows(env.snapshot, inputs=inputs)
-    reader, _ = record_batch_reader_for_rows(FUNCTION_EFFECTS_TABLE_KEY, rows)
+    reader, _ = table_for_rows(FUNCTION_EFFECTS_TABLE_KEY, rows)
     return reader
 
 
@@ -95,7 +95,7 @@ _FUNCTION_EFFECTS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=FUNCTION_EFFECTS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=FUNCTION_EFFECTS_TABLE_KEY),
             node_name="function_effects__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="function_effects__table_materializations",

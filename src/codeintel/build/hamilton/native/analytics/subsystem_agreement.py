@@ -22,7 +22,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -44,12 +44,12 @@ def subsystem_agreement__base(
     env: BuildEnv,
     q__analytics__subsystem_modules: InferableTabularInput,
     q__analytics__graph_metrics_modules_ext: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build subsystem agreement rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing subsystem agreement rows.
     """
     subsystem_table = tabular_to_arrow_table(q__analytics__subsystem_modules).select(
@@ -66,8 +66,8 @@ def subsystem_agreement__base(
     )
     rows = build_subsystem_agreement_rows(inputs)
     if not rows:
-        return empty_reader_for_table(SUBSYSTEM_AGREEMENT_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(SUBSYSTEM_AGREEMENT_TABLE_KEY, rows)
+        return empty_table_for_table(SUBSYSTEM_AGREEMENT_TABLE_KEY)
+    reader, _ = table_for_rows(SUBSYSTEM_AGREEMENT_TABLE_KEY, rows)
     return reader
 
 
@@ -82,7 +82,7 @@ _SUBSYSTEM_AGREEMENT_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEM_AGREEMENT_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY),
             node_name="subsystem_agreement__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="subsystem_agreement__table_materializations",

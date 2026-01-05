@@ -32,6 +32,8 @@ from codeintel.build.hamilton.materializers.base import (
 )
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observation_pipeline import (
+    ObservationPersistContext,
+    ObservationPersistPayload,
     build_observation_inputs,
     build_observation_setup,
     persist_observation,
@@ -81,6 +83,7 @@ from codeintel.core.schemas.arrow_polars import (
 )
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.core.schemas.resolution import resolve_table_schema
 
 if TYPE_CHECKING:
@@ -1617,7 +1620,7 @@ def _arrow_schema_for_data(*, data: TabularData) -> pa.Schema:
 def _load_inferred_settings(*, ctx: _MaterializeContext) -> dict[str, object] | None:
     resolution = resolve_table_schema(
         ctx.table_key,
-        observation_provider=ctx.env.gateway.schemas,
+        observation_provider=observation_provider_for_env(ctx.env),
     )
     observation = resolution.observation
     if observation is None or observation.derived_settings is None:
@@ -1743,16 +1746,22 @@ def _persist_observation_if_ready(
         dataset_stats=manifest.stats if manifest is not None else None,
         manifest_row_count=manifest.row_count if manifest is not None else None,
     )
+    gateway = None if ctx.env.metadata_bundle is not None else ctx.env.gateway
     inputs = build_observation_inputs(
-        gateway=ctx.env.gateway,
+        gateway=gateway,
         table_key=ctx.table_key,
         base=base_inputs,
     )
     persist_observation(
-        gateway=ctx.env.gateway,
-        observation=observation,
-        arrow_schema=arrow_schema,
-        inputs=inputs,
+        context=ObservationPersistContext(
+            gateway=gateway,
+            metadata_bundle=ctx.env.metadata_bundle,
+        ),
+        payload=ObservationPersistPayload(
+            observation=observation,
+            arrow_schema=arrow_schema,
+            inputs=inputs,
+        ),
     )
 
 

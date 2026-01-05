@@ -1,16 +1,11 @@
-"""Build-owned contract catalog compilation and persistence."""
+"""Build-owned contract catalog compilation."""
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.contract_service import (
     ContractService,
     get_enriched_contract_service,
 )
-from codeintel.core.duckdb_types import DuckDBConnection
-from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.contract_factory import is_docs_view
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.contract_serde import (
@@ -19,31 +14,8 @@ from codeintel.core.schemas.contract_serde import (
 )
 from codeintel.core.schemas.resolution import SchemaDerivationProvider
 from codeintel.core.views.inventory import discover_derived_docs_views
-from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
-from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from codeintel.core.gateway import BuildGateway
-
-
-_CONTRACT_CATALOG_KIND = "dataset_contracts"
 _DECLARED_SOURCE_KIND = "declared_source"
-
-
-@dataclass(frozen=True, slots=True)
-class ContractCatalogResult:
-    """Summary of a contract catalog persistence operation."""
-
-    catalog_kind: str
-    catalog_hash: str
-    contract_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class _CatalogConnectionGateway:
-    con: DuckDBConnection
 
 
 def _resolve_contract_service() -> ContractService:
@@ -126,91 +98,6 @@ def build_contract_catalog_payload(*, include_views: bool = True) -> dict[str, o
     }
 
 
-def persist_contract_catalog_to_connection(
-    con: DuckDBConnection,
-    *,
-    inputs: Mapping[str, object] | None = None,
-    include_views: bool = True,
-) -> ContractCatalogResult:
-    """Persist the canonical dataset contract catalog using a DuckDB connection.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection for catalog persistence.
-    inputs
-        Optional inputs metadata stored alongside the canonical catalog entry.
-    include_views
-        Whether to include derived docs views in the catalog.
-
-    Returns
-    -------
-    ContractCatalogResult
-        Summary of the persisted catalog entry.
-    """
-    payload = build_contract_catalog_payload(include_views=include_views)
-    catalog_hash = fingerprint(payload)
-    entry = build_catalog_entry(
-        catalog_kind=_CONTRACT_CATALOG_KIND,
-        catalog_hash=catalog_hash,
-        payload=payload,
-        inputs=dict(inputs) if inputs is not None else None,
-    )
-    upsert_canonical_catalog(_CatalogConnectionGateway(con), entry)
-
-    contracts_raw = payload.get("contracts")
-    contract_count = len(contracts_raw) if isinstance(contracts_raw, dict) else 0
-
-    return ContractCatalogResult(
-        catalog_kind=_CONTRACT_CATALOG_KIND,
-        catalog_hash=catalog_hash,
-        contract_count=contract_count,
-    )
-
-
-def persist_contract_catalog(
-    gateway: BuildGateway,
-    *,
-    inputs: Mapping[str, object] | None = None,
-    include_views: bool = True,
-) -> ContractCatalogResult:
-    """Persist the canonical dataset contract catalog.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for persistence.
-    inputs
-        Optional inputs metadata stored alongside the canonical catalog entry.
-    include_views
-        Whether to include derived docs views in the catalog.
-
-    Returns
-    -------
-    ContractCatalogResult
-        Summary of the persisted catalog entry.
-
-    Raises
-    ------
-    RuntimeError
-        If the gateway is read-only.
-    """
-    if gateway.config.read_only:
-        msg = "Cannot persist contract catalog into a read-only storage gateway"
-        raise RuntimeError(msg)
-
-    result = persist_contract_catalog_to_connection(
-        gateway.con,
-        inputs=inputs,
-        include_views=include_views,
-    )
-    load_contract_catalog_from_connection(gateway.con)
-    return result
-
-
 __all__ = [
-    "ContractCatalogResult",
     "build_contract_catalog_payload",
-    "persist_contract_catalog",
-    "persist_contract_catalog_to_connection",
 ]

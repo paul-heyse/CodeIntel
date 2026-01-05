@@ -18,8 +18,8 @@ from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
-    empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
+    empty_table_for_table,
+    table_for_columnar_rows,
 )
 from codeintel.ingestion.engine.results import parse_test_duration, parse_test_markers
 
@@ -146,7 +146,7 @@ class TestsIngestStep:
             len(tests),
         )
 
-        rows_reader, row_count = record_batch_reader_for_columnar_rows(
+        rows_reader, row_count = table_for_columnar_rows(
             TEST_CATALOG_TABLE_KEY,
             buffer.data,
             extras_policy="retain",
@@ -165,8 +165,8 @@ class TestsIngestResult:
 
     result: ExecutionResult
     rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(TEST_CATALOG_TABLE_KEY)
+    rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(TEST_CATALOG_TABLE_KEY)
     )
     row_count: int = 0
 

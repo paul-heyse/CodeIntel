@@ -2,7 +2,7 @@
 
 This module defines exceptions raised during runtime and gateway resolution.
 These errors indicate that the CLI could not resolve the project configuration
-from either a project file (codeintel.yaml) or explicit CLI parameters.
+from either a project file (config/codeintel.yaml) or explicit CLI parameters.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ class ResolutionError(Exception):
     """Raised when runtime or gateway resolution fails.
 
     This exception indicates that the CLI could not resolve the project
-    configuration from either a project file (codeintel.yaml) or explicit
+    configuration from either a project file (config/codeintel.yaml) or explicit
     CLI parameters.
 
     Parameters
@@ -24,7 +24,7 @@ class ResolutionError(Exception):
 
     Examples
     --------
-    >>> raise ResolutionError("No codeintel.yaml found")
+    >>> raise ResolutionError("No config/codeintel.yaml found")
     >>> raise ResolutionError(
     ...     "Missing required parameters",
     ...     missing_params=["repo", "commit"],

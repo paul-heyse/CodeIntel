@@ -18,7 +18,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, FunctionAnalyticsResult)
 
@@ -38,18 +38,18 @@ FUNCTION_VALIDATION_CONTRACT = TableContractSpec(
 
 def function_validation__base(
     function_analytics_result: FunctionAnalyticsResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build function validation rows from the analytics reporter.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader with function validation rows.
     """
     rows = get_validation_rows(function_analytics_result.reporter, None).function_rows
     if not rows:
-        return empty_reader_for_table(FUNCTION_VALIDATION_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(FUNCTION_VALIDATION_TABLE_KEY, rows)
+        return empty_table_for_table(FUNCTION_VALIDATION_TABLE_KEY)
+    reader, _ = table_for_rows(FUNCTION_VALIDATION_TABLE_KEY, rows)
     return reader
 
 
@@ -64,7 +64,7 @@ _FUNCTION_VALIDATION_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=FUNCTION_VALIDATION_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=FUNCTION_VALIDATION_TABLE_KEY),
             node_name="function_validation__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="function_validation__table_materializations",

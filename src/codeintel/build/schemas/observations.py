@@ -6,21 +6,16 @@ import base64
 import json
 import logging
 from contextlib import suppress
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.ipc import schema_from_ipc_payload, schema_to_ipc_payload
-from codeintel.core.columnar.schema_metadata import (
-    decode_metadata,
-    encode_metadata,
-    merge_field_metadata,
-    merge_metadata,
-)
+from codeintel.core.columnar.schema_metadata import merge_field_metadata, merge_metadata
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.arrow_gen import (
@@ -47,6 +42,7 @@ from codeintel.core.time import utc_now
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
+    from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.core.gateway import BuildGateway
 
 
@@ -268,22 +264,39 @@ def observe_batches(
 
 def persist_observation_bundle(
     *,
-    gateway: BuildGateway,
     bundle: SchemaObservationBundle,
+    metadata_bundle: BuildMetadataBundleWriter | None = None,
+    gateway: BuildGateway | None = None,
 ) -> None:
-    """Persist observation data to the schema registry tables."""
-    resolved_bundle = _apply_extras_policy(
-        gateway=gateway,
-        bundle=bundle,
-    )
-    gateway.schemas.record_schema_versions_batch([resolved_bundle.schema_version])
-    gateway.schemas.record_table_schema_registry_batch([resolved_bundle.registry_record])
-    gateway.schemas.record_schema_observations_batch([resolved_bundle.observation])
-    if resolved_bundle.observation.drift_summary:
+    """Persist observation data to build metadata outputs or storage."""
+    if metadata_bundle is not None:
+        metadata_bundle.write_schema_versions(
+            "schema/schema_versions.jsonl",
+            [bundle.schema_version],
+            schema_version="v1",
+        )
+        metadata_bundle.write_schema_observations(
+            "schema/schema_observations.jsonl",
+            [bundle.observation],
+            schema_version="v1",
+        )
+        if bundle.observation.drift_summary:
+            LOG.warning(
+                "schema_drift_observed table=%s drift=%s",
+                bundle.observation.table_key,
+                bundle.observation.drift_summary,
+            )
+        return
+    if gateway is None:
+        return
+    gateway.schemas.record_schema_versions_batch([bundle.schema_version])
+    gateway.schemas.record_table_schema_registry_batch([bundle.registry_record])
+    gateway.schemas.record_schema_observations_batch([bundle.observation])
+    if bundle.observation.drift_summary:
         LOG.warning(
             "schema_drift_observed table=%s drift=%s",
-            resolved_bundle.observation.table_key,
-            resolved_bundle.observation.drift_summary,
+            bundle.observation.table_key,
+            bundle.observation.drift_summary,
         )
 
 
@@ -1014,105 +1027,6 @@ def _renderer_cache_from_arrow_schema(
         "extras_policy": extras_policy,
         "extras_column": extras_column,
     }
-
-
-def _apply_extras_policy(
-    *,
-    gateway: BuildGateway,
-    bundle: SchemaObservationBundle,
-) -> SchemaObservationBundle:
-    desired_policy = _resolve_extras_policy(
-        gateway=gateway,
-        table_key=bundle.table_schema.table_key,
-        drift_summary=bundle.observation.drift_summary,
-    )
-    current_policy = _extras_policy_from_schema(bundle.arrow_schema)
-    if desired_policy == current_policy:
-        return bundle
-    updated_schema = _replace_schema_metadata(
-        bundle.arrow_schema,
-        {"codeintel.extras_policy": desired_policy},
-    )
-    updated_renderer_cache = _renderer_cache_from_arrow_schema(
-        updated_schema,
-        extras_policy=desired_policy,
-        extras_column=DEFAULT_EXTRAS_COLUMN,
-    )
-    derived_settings = bundle.observation.derived_settings
-    if derived_settings is None:
-        updated_settings: DerivedSettingsPayload = {"extras_policy": desired_policy}
-    else:
-        updated_settings = cast("DerivedSettingsPayload", dict(derived_settings))
-        updated_settings["extras_policy"] = desired_policy
-    updated_observation = replace(
-        bundle.observation,
-        arrow_schema_ipc_b64=schema_to_ipc_payload(updated_schema),
-        derived_settings=updated_settings,
-    )
-    updated_schema_version = replace(
-        bundle.schema_version,
-        renderer_cache=updated_renderer_cache,
-    )
-    return SchemaObservationBundle(
-        table_schema=bundle.table_schema,
-        arrow_schema=updated_schema,
-        observation=updated_observation,
-        schema_version=updated_schema_version,
-        registry_record=bundle.registry_record,
-    )
-
-
-def _resolve_extras_policy(
-    *,
-    gateway: BuildGateway,
-    table_key: str,
-    drift_summary: Mapping[str, object] | None,
-) -> ExtrasPolicy:
-    if drift_summary is not None and _has_extra_columns(drift_summary):
-        return "retain"
-    history = gateway.schemas.load_recent_drift_summaries(table_key=table_key, limit=5)
-    extras_count = sum(1 for summary in history if summary and _has_extra_columns(summary))
-    if extras_count >= _EXTRAS_POLICY_RETAIN_COUNT:
-        return "retain"
-    return DEFAULT_EXTRAS_POLICY
-
-
-def _has_extra_columns(summary: Mapping[str, object]) -> bool:
-    extra = summary.get("extra_columns")
-    return isinstance(extra, list) and bool(extra)
-
-
-def _extras_policy_from_schema(schema: pa.Schema) -> ExtrasPolicy:
-    metadata = decode_metadata(schema.metadata)
-    raw = metadata.get("codeintel.extras_policy")
-    if isinstance(raw, str):
-        coerced = _coerce_extras_policy(raw)
-        if coerced is not None:
-            return coerced
-    return DEFAULT_EXTRAS_POLICY
-
-
-def _coerce_extras_policy(raw: str) -> ExtrasPolicy | None:
-    if raw == "retain":
-        return "retain"
-    if raw == "reject":
-        return "reject"
-    if raw == "drop":
-        return "drop"
-    return None
-
-
-def _replace_schema_metadata(
-    schema: pa.Schema,
-    updates: Mapping[str, object],
-) -> pa.Schema:
-    decoded = decode_metadata(schema.metadata)
-    merged = dict(decoded)
-    for key, value in updates.items():
-        if value is None:
-            continue
-        merged[key] = value
-    return schema.with_metadata(encode_metadata(merged))
 
 
 def _null_count(values: pa.Array | pa.ChunkedArray) -> int:

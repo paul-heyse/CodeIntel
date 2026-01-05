@@ -6,7 +6,7 @@ import pyarrow as pa
 import pytest
 
 from codeintel.core.schemas.primitives import Column
-from codeintel.core.validation.arrow_type_compat import is_compatible_arrow_type
+from codeintel.core.validation.schema_constraints import is_compatible_arrow_type
 
 pytestmark = pytest.mark.no_runtime_env
 

@@ -166,7 +166,7 @@ custom orchestration and improve observability.
 - Phase 2: add `src/codeintel/core/targets/catalog.py`.
 - Phase 2: update `src/codeintel/build/target_metadata.py` and
   `src/codeintel/build/spec/*` to serialize TargetCatalog.
-- Phase 2: regenerate `src/codeintel/core/registry/dag_output_inventory.yaml`
+- Phase 2: regenerate `config/registry/dag_output_inventory.yaml`
   from TargetCatalog.
 - Phase 7: remove any remaining inventory drift or duplicate target specs.
 
@@ -518,7 +518,7 @@ File-level refactors
 - `src/codeintel/build/target_metadata.py` -> delegates to TargetCatalog.
 - `src/codeintel/build/spec/*` -> becomes thin serialization for TargetCatalog
   (or replaced by TargetCatalog exports).
-- `src/codeintel/core/registry/dag_output_inventory.yaml` -> regenerated from
+- `config/registry/dag_output_inventory.yaml` -> regenerated from
   TargetCatalog (no manual drift).
 - Storage: metadata tables and inventory readers use TargetCatalog.
 - Serving: manifests and publish flows use TargetCatalog.

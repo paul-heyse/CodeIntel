@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypeGuard, cast
 
+import polars as pl
 import pyarrow as pa
 from hamilton.caching.adapter import (
     CachingBehavior,
@@ -19,10 +20,12 @@ from hamilton.caching.adapter import (
 from hamilton.caching.stores.base import ResultStore
 from hamilton.caching.stores.file import FileResultStore
 
+from codeintel.build.hamilton.arrow_hashing import register_arrow_hashing
 from codeintel.build.hamilton.cache_index import CacheIndex, CacheProbeResult
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.manifest.records import CacheManifestEntry
 from codeintel.build.manifest.writer import CacheManifestWriter
-from codeintel.build.tabular.conversion import reader_to_table, table_to_reader
+from codeintel.build.tabular.conversion import reader_to_table, table_to_frame, table_to_lazyframe
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.telemetry.hooks.cache_events import CacheEventMetrics
 
@@ -31,6 +34,8 @@ if TYPE_CHECKING:
     from hamilton.node import Node
 
 log = logging.getLogger(__name__)
+
+register_arrow_hashing()
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +55,7 @@ class CacheAdapterOptions:
 class ArrowCachedResult:
     """Cached Arrow data wrapper that preserves the original return kind."""
 
-    kind: Literal["table", "reader"]
+    kind: Literal["table", "reader", "lazyframe", "frame"]
     table: pa.Table
 
 
@@ -263,7 +268,7 @@ class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
             return result
         table = reader_to_table(result)
         self._arrow_cache_tables[_arrow_cache_key(run_id, node_name, task_id)] = table
-        return table_to_reader(table)
+        return table
 
     def post_node_execute(self, **kwargs: object) -> None:
         """Persist cache results after node execution."""
@@ -279,8 +284,8 @@ class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
         if isinstance(node_name, str):
             cache_key = _arrow_cache_key(run_id, node_name, task_id)
             table = self._arrow_cache_tables.pop(cache_key, None)
-        if table is not None and isinstance(result, pa.RecordBatchReader):
-            result = ArrowCachedResult(kind="reader", table=table)
+        if table is not None and isinstance(result, (pa.RecordBatchReader, pa.Table)):
+            result = ArrowCachedResult(kind="table", table=table)
         super().post_node_execute(
             run_id=run_id,
             node_=node_,
@@ -535,9 +540,29 @@ def _normalize_arrow_cached_result(result: object) -> object:
     normalized = result
     if not isinstance(result, ArrowCachedResult):
         if isinstance(result, pa.RecordBatchReader):
-            normalized = ArrowCachedResult(kind="reader", table=reader_to_table(result))
+            normalized = ArrowCachedResult(kind="table", table=reader_to_table(result))
         elif isinstance(result, pa.Table):
             normalized = ArrowCachedResult(kind="table", table=result)
+        elif isinstance(result, pl.LazyFrame):
+            normalized = ArrowCachedResult(
+                kind="lazyframe",
+                table=result.collect().to_arrow(),
+            )
+        elif isinstance(result, pl.DataFrame):
+            normalized = ArrowCachedResult(
+                kind="frame",
+                table=result.to_arrow(),
+            )
+        elif isinstance(result, DatasetRef):
+            normalized = DatasetRef(
+                table_key=result.table_key,
+                repo=result.repo,
+                commit=result.commit,
+                schema_version=result.schema_version,
+                row_count=result.row_count,
+                source_target=result.source_target,
+                metadata=dict(result.metadata),
+            )
         elif _is_dataclass_instance(result):
             replaced = _normalize_dataclass(result)
             if replaced is not None:
@@ -576,9 +601,13 @@ def _resolve_dataclass[T: _DataclassInstance](result: T) -> T | None:
 def _resolve_arrow_cached_result(result: object | None) -> object | None:
     if isinstance(result, ArrowCachedResult):
         if result.kind == "reader":
-            return table_to_reader(result.table)
+            return result.table
         if result.kind == "table":
             return result.table
+        if result.kind == "lazyframe":
+            return table_to_lazyframe(result.table)
+        if result.kind == "frame":
+            return table_to_frame(result.table)
         msg = f"Unsupported cached Arrow result kind: {result.kind}"
         raise ValueError(msg)
 

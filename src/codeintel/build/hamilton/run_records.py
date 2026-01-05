@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self
 
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
 from codeintel.build.hashing import compute_target_options_hash
 from codeintel.core.build_manifest import OutputManifest
@@ -53,11 +54,14 @@ def _load_drift_summaries(
 ) -> dict[str, Mapping[str, object]]:
     if not datasets:
         return {}
+    observation_provider = observation_provider_for_env(env)
+    if observation_provider is None:
+        return {}
     summaries: dict[str, Mapping[str, object]] = {}
     for dataset in datasets:
         try:
-            observation = env.gateway.schemas.load_latest_schema_observation(
-                table_key=dataset.table_key,
+            observation = observation_provider.load_latest_schema_observation(
+                table_key=dataset.table_key
             )
         except (DuckDBError, StorageError, RuntimeError, TypeError, ValueError) as exc:
             log.warning(
@@ -338,6 +342,8 @@ def save_manifest(
     change_delta
         Optional change-detection delta payload for auditability.
     """
+    if env.metadata_bundle is not None or env.gateway is None:
+        return
     manifest = OutputManifest(
         target=record.target,
         repo=env.snapshot.repo,

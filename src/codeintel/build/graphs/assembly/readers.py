@@ -9,6 +9,7 @@ import pyarrow as pa
 from codeintel.build.tabular.compute_columns import empty_table
 from codeintel.build.tabular.conversion import reader_to_table, table_to_reader
 from codeintel.build.tabular.conversion import tabular_to_arrow_reader as tabular_to_reader
+from codeintel.build.tabular.conversion import tabular_to_arrow_table as tabular_to_table
 
 
 def table_rows(table: pa.Table) -> list[dict[str, object]]:
@@ -96,4 +97,5 @@ __all__ = [
     "table_rows",
     "table_to_reader",
     "tabular_to_reader",
+    "tabular_to_table",
 ]

@@ -22,7 +22,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.validation.reporters import GraphValidationReporter
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -67,12 +67,12 @@ def _report_findings(reporter: GraphValidationReporter, findings: list[dict[str,
 
 def graph_validation__base(
     env: BuildEnv,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build graph validation rows from validation findings.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing graph validation rows.
     """
     runtime = GraphRuntimeOptions(
@@ -86,11 +86,11 @@ def graph_validation__base(
     )
     report = run_graph_validations_with_runner(request=request)
     if not report.findings:
-        return empty_reader_for_table(GRAPH_VALIDATION_TABLE_KEY)
+        return empty_table_for_table(GRAPH_VALIDATION_TABLE_KEY)
     reporter = GraphValidationReporter(repo=env.repo, commit=env.commit)
     _report_findings(reporter, report.findings)
     rows = reporter.to_rows()
-    reader, _ = record_batch_reader_for_rows(GRAPH_VALIDATION_TABLE_KEY, rows)
+    reader, _ = table_for_rows(GRAPH_VALIDATION_TABLE_KEY, rows)
     return reader
 
 
@@ -105,7 +105,7 @@ _GRAPH_VALIDATION_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=GRAPH_VALIDATION_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=GRAPH_VALIDATION_TABLE_KEY),
             node_name="graph_validation__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="graph_validation__table_materializations",

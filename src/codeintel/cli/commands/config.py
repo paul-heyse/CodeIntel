@@ -39,7 +39,7 @@ def _resolve_config_path() -> Path:
         if path.exists():
             return path
 
-    return Path("codeintel.toml")
+    return Path("config/codeintel.toml")
 
 
 def _load_toml_config() -> dict[str, object]:
@@ -217,7 +217,7 @@ class ConfigInitCommand:
         SystemExit
             If the config file already exists.
         """
-        target = self.target or (Path.home() / ".codeintel" / "config.toml")
+        target = self.target or (Path("config") / "codeintel.toml")
         writer = sys.stdout
 
         if target.exists():

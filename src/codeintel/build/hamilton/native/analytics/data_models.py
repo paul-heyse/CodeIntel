@@ -30,7 +30,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -175,34 +175,34 @@ def data_models_result(
     )
 
 
-def data_models__base(data_models_result: DataModelsResult) -> pa.RecordBatchReader:
+def data_models__base(data_models_result: DataModelsResult) -> pa.Table:
     """Build data model summary rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing data model rows.
     """
     if not data_models_result.model_rows:
-        return empty_reader_for_table(DATA_MODELS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(DATA_MODELS_TABLE_KEY)
+    reader, _ = table_for_rows(
         DATA_MODELS_TABLE_KEY,
         data_models_result.model_rows,
     )
     return reader
 
 
-def data_model_fields__base(data_models_result: DataModelsResult) -> pa.RecordBatchReader:
+def data_model_fields__base(data_models_result: DataModelsResult) -> pa.Table:
     """Build data model field rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing data model field rows.
     """
     if not data_models_result.field_rows:
-        return empty_reader_for_table(DATA_MODEL_FIELDS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(DATA_MODEL_FIELDS_TABLE_KEY)
+    reader, _ = table_for_rows(
         DATA_MODEL_FIELDS_TABLE_KEY,
         data_models_result.field_rows,
     )
@@ -211,17 +211,17 @@ def data_model_fields__base(data_models_result: DataModelsResult) -> pa.RecordBa
 
 def data_model_relationships__base(
     data_models_result: DataModelsResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build data model relationship rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing data model relationship rows.
     """
     if not data_models_result.relationship_rows:
-        return empty_reader_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)
+    reader, _ = table_for_rows(
         DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
         data_models_result.relationship_rows,
     )
@@ -239,7 +239,7 @@ _DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODELS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODELS_TABLE_KEY),
             node_name="data_models__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=DATA_MODEL_FIELDS_TABLE_KEY,
@@ -247,7 +247,7 @@ _DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODEL_FIELDS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODEL_FIELDS_TABLE_KEY),
             node_name="data_model_fields__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
@@ -255,7 +255,7 @@ _DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
             node_name="data_model_relationships__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="data_models__table_materializations",
@@ -272,12 +272,12 @@ t__data_models = _MODULE.t__data_models
 def data_model_usage__base(
     env: BuildEnv,
     data_model_usage_frames: DataModelUsageFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build data model usage rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing data model usage rows.
     """
     modules_frame = data_model_usage_frames.core.modules_frame
@@ -288,7 +288,7 @@ def data_model_usage__base(
     function_types_frame = data_model_usage_frames.subsystems.function_types_frame
     module_map = _module_map(modules_frame)
     if not module_map:
-        return empty_reader_for_table(DATA_MODEL_USAGE_TABLE_KEY)
+        return empty_table_for_table(DATA_MODEL_USAGE_TABLE_KEY)
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -310,8 +310,8 @@ def data_model_usage__base(
         ),
     )
     if not rows:
-        return empty_reader_for_table(DATA_MODEL_USAGE_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(DATA_MODEL_USAGE_TABLE_KEY, rows)
+        return empty_table_for_table(DATA_MODEL_USAGE_TABLE_KEY)
+    reader, _ = table_for_rows(DATA_MODEL_USAGE_TABLE_KEY, rows)
     return reader
 
 
@@ -325,7 +325,7 @@ _DATA_MODEL_USAGE_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=DATA_MODEL_USAGE_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=DATA_MODEL_USAGE_TABLE_KEY),
             node_name="data_model_usage__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="data_model_usage__table_materializations",

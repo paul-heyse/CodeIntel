@@ -60,7 +60,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from pathlib import Path
 
-    from codeintel.core.gateway import BuildGateway
+    from codeintel.build.meta.bundle import BuildMetadataBundleWriter
+    from codeintel.core.gateway import BuildGateway, DatasetRegistryProtocol
     from codeintel.core.schemas.contract_primitives import DatasetContract
 
 log = logging.getLogger(__name__)
@@ -77,7 +78,54 @@ class _ExportFormatSpec:
     mapping: Mapping[str, str]
     can_export_capability_key: str
     extension: str
-    write_table: Callable[[BuildGateway, str, Path, ExportAuditSettings], int]
+    write_table: Callable[
+        [BuildGateway, str, Path, ExportAuditSettings, BuildMetadataBundleWriter | None], int
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class ExportRunConfig:
+    """Configuration inputs for export runs."""
+
+    settings: ExportAuditSettings
+    options: ExportCallOptions | None = None
+    metadata_bundle: BuildMetadataBundleWriter | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ExportRunContext:
+    spec: _ExportFormatSpec
+    opts: ExportCallOptions
+    settings: ExportAuditSettings
+    metadata_bundle: BuildMetadataBundleWriter | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ExportPlan:
+    output_dir: Path
+    registry: DatasetRegistryProtocol
+    dataset_mapping: dict[str, str]
+    selected: dict[str, str]
+    spec: _ExportFormatSpec
+    context: _ExportRunContext
+
+
+@dataclass(frozen=True, slots=True)
+class _ExportDecision:
+    validation_profile: str
+    schema_digest: str | None
+    current_row_count: int | None
+    should_skip: bool
+    skip_path: Path | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ExportWriteResult:
+    rows_written: int | None
+    data_hash: str
+    started_at: datetime
+    completed_at: datetime
+    final_row_count: int | None
 
 
 def export_jsonl_for_table(
@@ -85,6 +133,7 @@ def export_jsonl_for_table(
     table_key: str,
     output_path: Path,
     settings: ExportAuditSettings,
+    metadata_bundle: BuildMetadataBundleWriter | None = None,
 ) -> int:
     """Export a dataset snapshot to JSONL.
 
@@ -98,6 +147,8 @@ def export_jsonl_for_table(
         Output JSONL path.
     settings
         Export audit settings.
+    metadata_bundle
+        Optional metadata bundle writer for build-first audit logging.
 
     Returns
     -------
@@ -125,6 +176,7 @@ def export_jsonl_for_table(
         ),
         gateway=gateway,
         settings=settings,
+        metadata_bundle=metadata_bundle,
     )
     return rows_written
 
@@ -134,6 +186,7 @@ def export_parquet_for_table(
     table_key: str,
     output_path: Path,
     settings: ExportAuditSettings,
+    metadata_bundle: BuildMetadataBundleWriter | None = None,
 ) -> int:
     """Export a dataset snapshot to Parquet.
 
@@ -147,6 +200,8 @@ def export_parquet_for_table(
         Output Parquet path.
     settings
         Export audit settings.
+    metadata_bundle
+        Optional metadata bundle writer for build-first audit logging.
 
     Returns
     -------
@@ -178,6 +233,7 @@ def export_parquet_for_table(
         ),
         gateway=gateway,
         settings=settings,
+        metadata_bundle=metadata_bundle,
     )
     return rows_written
 
@@ -232,6 +288,111 @@ def _normalize_build_format(fmt: str) -> ExportFormat:
         msg = f"Unsupported export format for build: {fmt}"
         raise ValueError(msg)
     return cast("ExportFormat", normalized)
+
+
+def _build_export_plan(
+    *,
+    gateway: BuildGateway,
+    document_output_dir: Path,
+    fmt: ExportFormat,
+    run_config: ExportRunConfig,
+) -> _ExportPlan:
+    opts = run_config.options or ExportCallOptions()
+    output_dir = document_output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    normalized_format = _normalize_build_format(fmt)
+    validate_registry_or_raise(gateway)
+    registry = gateway.datasets
+    dataset_mapping = {name: contract.table_key for name, contract in registry.by_name.items()}
+    spec = _format_spec(gateway, normalized_format)
+    context = _ExportRunContext(
+        spec=spec,
+        opts=opts,
+        settings=run_config.settings,
+        metadata_bundle=run_config.metadata_bundle,
+    )
+    selected = select_dataset_tables(dataset_mapping, spec.mapping, opts.datasets)
+    _log_missing_tables(spec.mapping, dataset_mapping)
+    return _ExportPlan(
+        output_dir=output_dir,
+        registry=registry,
+        dataset_mapping=dataset_mapping,
+        selected=selected,
+        spec=spec,
+        context=context,
+    )
+
+
+def _log_missing_tables(mapping: Mapping[str, str], dataset_mapping: dict[str, str]) -> None:
+    missing_tables = set(mapping) - set(dataset_mapping.values())
+    for table_name in sorted(missing_tables):
+        log.warning("Skipping %s; table not present in dataset registry", table_name)
+
+
+def _current_row_count(gateway: BuildGateway, table_key: str) -> int | None:
+    dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
+    manifest = load_dataset_manifest(
+        dataset_root=dataset_root_dir,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    return manifest.row_count if manifest is not None else None
+
+
+def _build_export_decision(
+    *,
+    gateway: BuildGateway,
+    target: ExportTarget,
+    opts: ExportCallOptions,
+) -> _ExportDecision:
+    validation_profile = resolve_validation_profile(opts, target.dataset)
+    schema_digest = compute_schema_digest(target.dataset)
+    marker = read_incremental_marker(target.output_path)
+    current_row_count = _current_row_count(gateway, target.table_name)
+    criteria = SkipCriteria(
+        row_count=current_row_count,
+        schema_version=target.dataset.schema_version if target.dataset else None,
+        validation_profile=validation_profile,
+        schema_digest=schema_digest,
+        force_full_export=opts.force_full_export,
+    )
+    should_skip = should_skip_export(marker, criteria)
+    skip_path = target.output_path if should_skip and target.output_path.exists() else None
+    return _ExportDecision(
+        validation_profile=validation_profile,
+        schema_digest=schema_digest,
+        current_row_count=current_row_count,
+        should_skip=should_skip,
+        skip_path=skip_path,
+    )
+
+
+def _perform_export_write(
+    *,
+    gateway: BuildGateway,
+    target: ExportTarget,
+    context: _ExportRunContext,
+    decision: _ExportDecision,
+) -> _ExportWriteResult:
+    started_at = datetime.now(UTC)
+    rows_written = context.spec.write_table(
+        gateway,
+        target.table_name,
+        target.output_path,
+        context.settings,
+        context.metadata_bundle,
+    )
+    data_hash = compute_file_hash(target.output_path)
+    completed_at = datetime.now(UTC)
+    final_row_count = rows_written if rows_written is not None else decision.current_row_count
+    return _ExportWriteResult(
+        rows_written=rows_written,
+        data_hash=data_hash,
+        started_at=started_at,
+        completed_at=completed_at,
+        final_row_count=final_row_count,
+    )
 
 
 def _validate_written_exports(
@@ -292,10 +453,9 @@ def _export_dataset(
     gateway: BuildGateway,
     target: ExportTarget,
     *,
-    spec: _ExportFormatSpec,
-    opts: ExportCallOptions,
-    settings: ExportAuditSettings,
+    context: _ExportRunContext,
 ) -> Path | None:
+    spec = context.spec
     if target.dataset is not None:
         caps = target.dataset.capabilities()
         if not caps.get(spec.can_export_capability_key, False):
@@ -306,41 +466,21 @@ def _export_dataset(
             )
             return None
 
-    validation_profile = resolve_validation_profile(opts, target.dataset)
-    schema_digest = compute_schema_digest(target.dataset)
-    marker = read_incremental_marker(target.output_path)
-
-    dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
-    manifest = load_dataset_manifest(
-        dataset_root=dataset_root_dir,
-        table_key=target.table_name,
-        snapshot_id=snapshot_id,
+    decision = _build_export_decision(
+        gateway=gateway,
+        target=target,
+        opts=context.opts,
     )
-    current_row_count = manifest.row_count if manifest is not None else None
-
-    criteria = SkipCriteria(
-        row_count=current_row_count,
-        schema_version=target.dataset.schema_version if target.dataset else None,
-        validation_profile=validation_profile,
-        schema_digest=schema_digest,
-        force_full_export=opts.force_full_export,
-    )
-    if should_skip_export(marker, criteria):
-        if target.output_path.exists():
-            return target.output_path
-        return None
+    if decision.should_skip:
+        return decision.skip_path
 
     try:
-        started_at = datetime.now(UTC)
-        rows_written = spec.write_table(
-            gateway,
-            target.table_name,
-            target.output_path,
-            settings,
+        result = _perform_export_write(
+            gateway=gateway,
+            target=target,
+            context=context,
+            decision=decision,
         )
-        data_hash = compute_file_hash(target.output_path)
-        completed_at = datetime.now(UTC)
-        final_row_count = rows_written if rows_written is not None else current_row_count
     except (OSError, ValueError, TypeError) as exc:
         log.warning(
             "Failed to export dataset %s (%s) to %s: %s",
@@ -351,27 +491,32 @@ def _export_dataset(
         )
         return None
 
+    row_count = (
+        result.final_row_count
+        if result.final_row_count is not None
+        else (result.rows_written if result.rows_written is not None else 0)
+    )
     manifest_payload = ExportManifestData(
         dataset=target.dataset_name,
         artifact=target.output_path.name,
         schema_id=target.dataset.json_schema_id if target.dataset else None,
         schema_version=target.dataset.schema_version if target.dataset else None,
-        schema_digest=schema_digest,
-        validation_profile=validation_profile,
-        row_count=(final_row_count or rows_written or 0),
-        data_hash=data_hash,
-        started_at=started_at.isoformat(),
-        completed_at=completed_at.isoformat(),
+        schema_digest=decision.schema_digest,
+        validation_profile=decision.validation_profile,
+        row_count=row_count,
+        data_hash=result.data_hash,
+        started_at=result.started_at.isoformat(),
+        completed_at=result.completed_at.isoformat(),
     )
     write_per_dataset_manifest(target.output_path, manifest_payload)
     write_incremental_marker(
         target.output_path,
         IncrementalMarker(
             dataset=target.dataset_name,
-            row_count=(final_row_count or rows_written or 0),
+            row_count=row_count,
             schema_version=target.dataset.schema_version if target.dataset else None,
-            validation_profile=validation_profile,
-            schema_digest=schema_digest,
+            validation_profile=decision.validation_profile,
+            schema_digest=decision.schema_digest,
         ),
     )
     return target.output_path
@@ -382,10 +527,9 @@ def export_all_datasets(
     document_output_dir: Path,
     *,
     fmt: ExportFormat,
-    settings: ExportAuditSettings,
-    options: ExportCallOptions | None = None,
+    run_config: ExportRunConfig,
 ) -> list[Path]:
-    """Export configured datasets to a given format under `Document Output/`.
+    """Export configured datasets to a given format under the document output directory.
 
     Parameters
     ----------
@@ -395,69 +539,60 @@ def export_all_datasets(
         Root directory under which dataset artifacts are written.
     fmt
         Export format ("jsonl" or "parquet").
-    options
-        Export selection and validation options.
-    settings
-        Export audit settings for logging.
-    settings
-        Export audit settings for logging.
+    run_config
+        Export settings, selection options, and optional metadata bundle.
 
     Returns
     -------
     list[Path]
         Paths to written dataset artifacts and the top-level manifest.
     """
-    opts = options or ExportCallOptions()
-    document_output_dir = document_output_dir.resolve()
-    document_output_dir.mkdir(parents=True, exist_ok=True)
-
-    normalized_format = _normalize_build_format(fmt)
-    validate_registry_or_raise(gateway)
-    registry = gateway.datasets
-    dataset_mapping = {name: contract.table_key for name, contract in registry.by_name.items()}
-    spec = _format_spec(gateway, normalized_format)
-    registry_meta = registry.by_name
-
-    selected = select_dataset_tables(dataset_mapping, spec.mapping, opts.datasets)
-    missing_tables = set(spec.mapping) - set(dataset_mapping.values())
-    for table_name in sorted(missing_tables):
-        log.warning("Skipping %s; table not present in dataset registry", table_name)
-
+    plan = _build_export_plan(
+        gateway=gateway,
+        document_output_dir=document_output_dir,
+        fmt=fmt,
+        run_config=run_config,
+    )
     written: list[Path] = []
-    for dataset_name, table_name in sorted(selected.items()):
-        filename = spec.mapping.get(table_name, f"{dataset_name}{spec.extension}")
+    for dataset_name, table_name in sorted(plan.selected.items()):
+        filename = plan.spec.mapping.get(table_name, f"{dataset_name}{plan.spec.extension}")
         target = ExportTarget(
             dataset_name=dataset_name,
             table_name=table_name,
-            output_path=document_output_dir / filename,
-            dataset=registry_meta.get(dataset_name),
+            output_path=plan.output_dir / filename,
+            dataset=plan.registry.by_name.get(dataset_name),
         )
-        exported = _export_dataset(gateway, target, spec=spec, opts=opts, settings=settings)
+        exported = _export_dataset(
+            gateway,
+            target,
+            context=plan.context,
+        )
         if exported is not None:
             written.append(exported)
 
     manifest_path = write_dataset_manifest(
-        document_output_dir,
-        dataset_mapping,
-        jsonl_mapping=registry.jsonl_datasets,
-        parquet_mapping=registry.parquet_datasets,
-        selected=list(selected.keys()),
+        plan.output_dir,
+        plan.dataset_mapping,
+        jsonl_mapping=plan.registry.jsonl_datasets,
+        parquet_mapping=plan.registry.parquet_datasets,
+        selected=list(plan.selected.keys()),
     )
     written.append(manifest_path)
 
-    if gateway.exports.audit_enabled(settings):
+    if gateway.exports.audit_enabled(plan.context.settings):
         log.debug(
             "Export audit enabled: log_path=%s table_enabled=%s",
-            settings.log_path,
-            settings.table_enabled,
+            plan.context.settings.log_path,
+            plan.context.settings.table_enabled,
         )
 
-    _validate_written_exports(written, registry.by_table_key, opts, gateway)
+    _validate_written_exports(written, plan.registry.by_table_key, plan.context.opts, gateway)
     return written
 
 
 __all__ = [
     "ExportFormat",
+    "ExportRunConfig",
     "export_all_datasets",
     "export_jsonl_for_table",
     "export_parquet_for_table",

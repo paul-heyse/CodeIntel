@@ -27,7 +27,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -81,12 +81,12 @@ def subsystem_graph_metrics__base(
     q__analytics__subsystem_modules: InferableTabularInput,
     q__graph__import_graph_edges: InferableTabularInput,
     q__graph__import_modules: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build subsystem graph metrics rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing subsystem graph metrics rows.
     """
     membership_rows = _collect_rows(
@@ -128,8 +128,8 @@ def subsystem_graph_metrics__base(
         )
     )
     if not rows:
-        return empty_reader_for_table(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY, rows)
+        return empty_table_for_table(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY)
+    reader, _ = table_for_rows(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY, rows)
     return reader
 
 
@@ -144,7 +144,7 @@ _SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEM_GRAPH_METRICS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
             node_name="subsystem_graph_metrics__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="subsystem_graph_metrics__table_materializations",

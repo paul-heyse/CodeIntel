@@ -126,7 +126,8 @@ def test_env_override_path(tmp_path: Path) -> None:
 
 def test_search_default_locations(tmp_path: Path) -> None:
     """Verify searches default locations when no env override."""
-    config_file = tmp_path / "codeintel.toml"
+    config_file = tmp_path / "config/codeintel.toml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text("[codeintel]\n")
 
     original_cwd = Path.cwd()

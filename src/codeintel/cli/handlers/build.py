@@ -510,7 +510,7 @@ def _with_decision_trace_targets(targets: Sequence[str]) -> list[str]:
 
 def _execute_build_hamilton(
     runtime: ResolvedRuntime,
-    gateway: StorageGateway,
+    gateway: StorageGateway | None,
     execution: BuildExecutionArgs,
 ) -> _BuildExecutionOutcome | None:
     """Execute build using Hamilton executor.
@@ -541,12 +541,14 @@ def _execute_build_hamilton(
     )
     providers = create_default_providers(runtime.tools)
     config = load_build_config(runtime.snapshot.repo_root)
-    manifests_list = gateway.build.list_manifests(
-        repo=runtime.snapshot.repo,
-        commit=runtime.snapshot.commit,
-    )
-    manifest_index = {m.target: m for m in manifests_list}
-    LOG.debug("build.cli.hamilton.manifest_index count=%d", len(manifest_index))
+    manifest_index = None
+    if gateway is not None:
+        manifests_list = gateway.build.list_manifests(
+            repo=runtime.snapshot.repo,
+            commit=runtime.snapshot.commit,
+        )
+        manifest_index = {m.target: m for m in manifests_list}
+        LOG.debug("build.cli.hamilton.manifest_index count=%d", len(manifest_index))
 
     cache_dir = runtime.paths.build_dir / ".hamilton_cache"
     if execution.cache_dir:
@@ -624,8 +626,10 @@ def _maybe_publish_serving_snapshot(
     execution: BuildExecutionArgs,
     outcome: _BuildExecutionOutcome | None,
     *,
-    gateway: StorageGateway,
+    gateway: StorageGateway | None,
 ) -> None:
+    if gateway is None:
+        return
     if not execution.publish_serving_snapshot or execution.run_mode is not RunMode.EXECUTE:
         return
     if outcome is None or outcome.result.failed_targets:
@@ -641,7 +645,7 @@ def _execute_build_outcome(
     runtime: ResolvedRuntime,
     execution: BuildExecutionArgs,
     *,
-    gateway: StorageGateway,
+    gateway: StorageGateway | None,
 ) -> _BuildExecutionOutcome | None:
     outcome = _execute_build_hamilton(runtime, gateway, execution)
     _maybe_publish_serving_snapshot(
@@ -1742,7 +1746,7 @@ def _execute_and_format_result(
     runtime: ResolvedRuntime,
     execution: BuildExecutionArgs,
     *,
-    gateway: StorageGateway,
+    gateway: StorageGateway | None,
     telemetry_state: _BuildRunTelemetryState | None = None,
     format_options: _BuildRunFormatOptions | None = None,
 ) -> CliResult[BuildRunResult]:
@@ -1755,7 +1759,7 @@ def _execute_and_format_result(
     execution
         BuildExecutionArgs capturing mode, validation, and goal selection.
     gateway
-        Pre-opened gateway to reuse for execution.
+        Optional gateway to reuse for execution.
     telemetry_state
         Optional telemetry state to populate with execution metadata.
     format_options

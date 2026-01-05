@@ -46,7 +46,7 @@ Checklist:
 
 File-level tasks:
 - `src/codeintel/core/schemas/output_registry.py`: ensure every graph output is present.
-- `src/codeintel/core/registry/dag_output_inventory.yaml`: confirm all outputs listed.
+- `config/registry/dag_output_inventory.yaml`: confirm all outputs listed.
 - `src/codeintel/runtime/compose.py`: add a "schema completeness" check after
   schema_index build.
 

@@ -289,7 +289,7 @@ Acceptance
 - [ ] Expand Parallelizable/Collect beyond module ingest where safe and add gating tests.
   Files: `src/codeintel/build/hamilton/native/**`, `tests/build/hamilton/**`
 - [x] Document dynamic execution knobs and defaults.
-  Files: `docs/hamilton_best_in_class_implementation_plan.md`, `codeintel.yaml`
+  Files: `docs/hamilton_best_in_class_implementation_plan.md`, `config/codeintel.yaml`
 
 Dynamic execution knobs (defaults)
 - Config keys (Hamilton config): `ci.dynamic_execution.enabled=false`,
@@ -299,7 +299,7 @@ Dynamic execution knobs (defaults)
   `CODEINTEL_HAMILTON_DYNAMIC_REMOTE_EXECUTOR`,
   `CODEINTEL_HAMILTON_DYNAMIC_REMOTE_MAX_TASKS`
 - Execution defaults: `HAMILTON_BACKEND=sequential`, `HAMILTON_MAX_WORKERS=null`
-- Example YAML: see `codeintel.yaml`
+- Example YAML: see `config/codeintel.yaml`
 
 ### Phase 8 - Adapter Expansion and ResultBuilder
 - [ ] Add adapter safeguards (materialize-node locking/grouping) for parallel execution.
@@ -311,7 +311,7 @@ Dynamic execution knobs (defaults)
 ### Phase 9 - Builder-Level Materializers
 - [ ] Wire config schema and docs for materializer selection.
   Files: `src/codeintel/core/config/settings.py`, `src/codeintel/core/runtime/loader.py`,
-  `src/codeintel/runtime/compose.py`, `codeintel.yaml`
+  `src/codeintel/runtime/compose.py`, `config/codeintel.yaml`
 - [ ] Add tests covering materializer config selection and DAG tagging.
   Files: `tests/build/hamilton/**`
 

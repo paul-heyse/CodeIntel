@@ -301,7 +301,7 @@ def _call_graph_for_graph_metrics(
 def _import_graph_for_graph_metrics(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
-) -> tuple[nx.DiGraph, dict[str, dict[str, int | bool]] | None]:
+) -> tuple[nx.DiGraph, Mapping[str, Mapping[str, int | bool]] | None]:
     import_edge_rows = _fetch_rows(
         gateway,
         "SELECT src_module, dst_module, module_layer "
@@ -550,7 +550,7 @@ def make_repo_context(
     """
     build_dir = repo_root / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
-    document_output_dir = repo_root / "Document Output"
+    document_output_dir = repo_root / "build" / "document_output"
     db = db_path or build_dir / "db" / "codeintel.duckdb"
     db.parent.mkdir(parents=True, exist_ok=True)
     return RepoContext(
@@ -1322,8 +1322,8 @@ def build_callgraph_fixture_repo(
     paths = BuildPaths(
         build_dir=build_dir,
         db_path=build_dir / "db" / "codeintel.duckdb",
-        document_output_dir=build_dir / "output",
-        dataset_root_dir=build_dir / "output" / "datasets",
+        document_output_dir=build_dir / "document_output",
+        dataset_root_dir=build_dir / "datasets",
         scip_dir=build_dir / "scip",
         pytest_report=build_dir / "test-results" / "pytest-report.json",
         tool_cache=build_dir / ".tool_cache",

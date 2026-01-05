@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from codeintel.build.meta.contract_catalog import ContractCatalogResult, persist_contract_catalog
+from codeintel.build.meta.bundle import BuildMetadataBundleWriter, BundleFileRecord
+from codeintel.build.meta.contract_catalog import build_contract_catalog_payload
 
 __all__ = [
-    "ContractCatalogResult",
-    "persist_contract_catalog",
+    "BuildMetadataBundleWriter",
+    "BundleFileRecord",
+    "build_contract_catalog_payload",
 ]

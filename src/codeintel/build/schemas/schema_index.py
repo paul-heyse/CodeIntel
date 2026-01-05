@@ -194,7 +194,11 @@ class SchemaIndex:
         if not self._inference_errors:
             return
 
-        timestamp = occurred_at or datetime.now(tz=UTC)
+        resolved_timestamp = occurred_at or datetime.now(tz=UTC)
+        if resolved_timestamp.tzinfo is not None:
+            timestamp = resolved_timestamp.astimezone(UTC).replace(tzinfo=None)
+        else:
+            timestamp = resolved_timestamp
         for table_key, error in self.iter_inference_errors():
             derivation = self.derivations.get(table_key)
             target_name = derivation.source if derivation is not None else None

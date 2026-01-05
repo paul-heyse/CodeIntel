@@ -16,10 +16,6 @@ from tests._helpers import provision_docs_export_ready
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphValidationRow as GraphValidationRow,
-    )
-
 EXPORT_SETTINGS = ExportAuditSettings()
 
 
@@ -56,7 +52,7 @@ def test_graph_validation_export(tmp_path: Path) -> None:
         "DELETE FROM analytics.graph_validation WHERE repo = ? AND commit = ?",
         ["demo/repo", "deadbeef"],
     )
-    row: GraphValidationRow = {
+    row: dict[str, object] = {
         "repo": "demo/repo",
         "commit": "deadbeef",
         "graph_name": "call_graph",
@@ -71,13 +67,14 @@ def test_graph_validation_export(tmp_path: Path) -> None:
     con.execute(
         """
         INSERT INTO analytics.graph_validation (
-            repo, commit, graph_name, entity_id, issue, severity, rel_path, detail, metadata, created_at
+            repo, commit, graph_name, entity_id, issue, severity, rel_path, detail,
+            metadata, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         serialize_row(row, GRAPH_VALIDATION_COLUMNS),
     )
 
-    doc_out = tmp_path / "Document Output"
+    doc_out = tmp_path / "build" / "document_output"
     export_all_jsonl(gateway, doc_out, settings=EXPORT_SETTINGS)
     export_all_parquet(gateway, doc_out, settings=EXPORT_SETTINGS)
 

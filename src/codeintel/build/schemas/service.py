@@ -90,13 +90,12 @@ def configure_schema_service(
         return get_core_schema_service()
 
     schema_provider = _unified_schema_provider(runtime=runtime)
-    _ = observation_provider
     resolved_provider = ResolvedSchemaProvider(
-        observation_provider=None,
+        observation_provider=observation_provider,
         fallback_provider=schema_provider,
     )
     arrow_provider = ResolvedArrowSchemaProvider(
-        observation_provider=None,
+        observation_provider=observation_provider,
         fallback_provider=schema_provider,
     )
 

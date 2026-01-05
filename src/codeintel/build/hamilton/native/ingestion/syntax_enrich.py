@@ -31,9 +31,9 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table
+from codeintel.core.columnar.rows import empty_table_for_table
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -213,10 +213,10 @@ def _resolve_facts(
     occurrences: pa.Table,
     *,
     table_key: str,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     fact_columns = list(facts.column_names)
     if not fact_columns:
-        return empty_reader_for_table(table_key)
+        return empty_table_for_table(table_key)
     resolved_columns = _ordered_columns(table_key)
     matched_bytes, fallback_join, line_join = _resolve_occurrence_joins(
         facts,
@@ -233,13 +233,12 @@ def _resolve_facts(
         aligned = _align_tables_for_concat([matched_bytes, fallback_join, line_join])
     tables = [table for table in aligned if table.num_rows > 0]
     if not tables:
-        return empty_reader_for_table(table_key)
+        return empty_table_for_table(table_key)
     combined = concat_tables_unified(tables)
     if resolved_columns:
         combined = combined.select(resolved_columns)
     combined = _dedupe_for_table(combined, table_key=table_key)
-    combined = align_table_to_contract(table_key, combined)
-    return table_to_reader(combined)
+    return align_table_to_contract(table_key, combined)
 
 
 def _resolve_occurrence_joins(
@@ -406,12 +405,12 @@ def syntax_enrich__occurrence_resolution(
 def syntax_enrich__defs_resolved__base(
     q__core__syntax_defs: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build core.syntax_defs_resolved from syntax defs and SCIP welds.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Arrow reader for core.syntax_defs_resolved.
     """
     facts = tabular_to_arrow_table(q__core__syntax_defs)
@@ -426,12 +425,12 @@ def syntax_enrich__defs_resolved__base(
 def syntax_enrich__refs_resolved__base(
     q__core__syntax_refs: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build core.syntax_refs_resolved from syntax refs and SCIP welds.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Arrow reader for core.syntax_refs_resolved.
     """
     facts = tabular_to_arrow_table(q__core__syntax_refs)
@@ -446,12 +445,12 @@ def syntax_enrich__refs_resolved__base(
 def syntax_enrich__calls_resolved__base(
     q__core__syntax_calls: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build core.syntax_calls_resolved from syntax calls and SCIP welds.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Arrow reader for core.syntax_calls_resolved.
     """
     facts = tabular_to_arrow_table(q__core__syntax_calls)
@@ -466,12 +465,12 @@ def syntax_enrich__calls_resolved__base(
 def syntax_enrich__imports_resolved__base(
     q__core__syntax_imports: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build core.syntax_imports_resolved from syntax imports and SCIP welds.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Arrow reader for core.syntax_imports_resolved.
     """
     facts = tabular_to_arrow_table(q__core__syntax_imports)

@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from codeintel.build.graphs.compute import callgraph as call_resolution
 from codeintel.build.graphs.compute.callgraph import persistence as call_persist
 from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.assertions import expect_equal, expect_true
 
-if TYPE_CHECKING:
-    from codeintel.core.schemas.generated_rows.graph import (
-        GraphCallGraphEdgesRow as CallGraphEdgeRow,
-    )
+CallGraphEdgeRow = dict[str, object]
 
 ALIAS_GOID = 10
 SCIP_GOID = 1234

@@ -22,7 +22,7 @@ from codeintel.build.analytics.utilities.datasets import validate_contract_rows
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.schemas import get_contract_for_table_key
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:

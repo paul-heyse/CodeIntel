@@ -25,7 +25,7 @@ from codeintel.core.columnar.rows import (
     ColumnarBatchCollector,
     ColumnarRows,
     columnar_batch_collector_for_table_key,
-    empty_reader_for_table,
+    empty_table_for_table,
 )
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.ingestion.compute.base import BaseExtractStep
@@ -119,41 +119,41 @@ class CstExtractResult:
     syntax_call_args_rows: ColumnarRows = field(default_factory=dict)
     syntax_func_params_rows: ColumnarRows = field(default_factory=dict)
     syntax_imports_rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(CST_NODES_TABLE_KEY)
+    rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY)
     )
-    parse_manifest_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PARSE_MANIFEST_TABLE_KEY)
+    parse_manifest_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY)
     )
-    syntax_spans_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_SPANS_TABLE_KEY)
+    syntax_spans_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY)
     )
-    syntax_nodes_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_NODES_TABLE_KEY)
+    syntax_nodes_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY)
     )
-    syntax_edges_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_EDGES_TABLE_KEY)
+    syntax_edges_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY)
     )
-    syntax_scopes_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    syntax_scopes_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY)
     )
-    syntax_defs_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_DEFS_TABLE_KEY)
+    syntax_defs_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY)
     )
-    syntax_refs_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_REFS_TABLE_KEY)
+    syntax_refs_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY)
     )
-    syntax_calls_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_CALLS_TABLE_KEY)
+    syntax_calls_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY)
     )
-    syntax_call_args_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    syntax_call_args_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
     )
-    syntax_func_params_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    syntax_func_params_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
     )
-    syntax_imports_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    syntax_imports_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY)
     )
     row_count: int = 0
     parse_manifest_row_count: int = 0
@@ -221,18 +221,18 @@ class _CstCollectors:
 
 @dataclass(frozen=True, slots=True)
 class _CstReaderBundle:
-    cst: pa.RecordBatchReader
-    parse_manifest: pa.RecordBatchReader
-    spans: pa.RecordBatchReader
-    syntax_nodes: pa.RecordBatchReader
-    syntax_edges: pa.RecordBatchReader
-    scopes: pa.RecordBatchReader
-    defs: pa.RecordBatchReader
-    refs: pa.RecordBatchReader
-    calls: pa.RecordBatchReader
-    call_args: pa.RecordBatchReader
-    func_params: pa.RecordBatchReader
-    imports: pa.RecordBatchReader
+    cst: pa.Table
+    parse_manifest: pa.Table
+    spans: pa.Table
+    syntax_nodes: pa.Table
+    syntax_edges: pa.Table
+    scopes: pa.Table
+    defs: pa.Table
+    refs: pa.Table
+    calls: pa.Table
+    call_args: pa.Table
+    func_params: pa.Table
+    imports: pa.Table
 
 
 class CstVisitor(CstCaptureVisitor):
@@ -1813,31 +1813,31 @@ def _flush_cst_collectors(collectors: _CstCollectors) -> None:
 
 
 def _build_cst_readers(collectors: _CstCollectors) -> _CstReaderBundle:
-    cst_reader = collectors.cst.to_reader()
-    parse_manifest_reader = collectors.parse_manifest.to_reader()
-    spans_reader = collectors.spans.to_reader()
-    syntax_nodes_reader = collectors.syntax_nodes.to_reader()
-    syntax_edges_reader = collectors.syntax_edges.to_reader()
-    scopes_reader = collectors.scopes.to_reader()
-    defs_reader = collectors.defs.to_reader()
-    refs_reader = collectors.refs.to_reader()
-    calls_reader = collectors.calls.to_reader()
-    call_args_reader = collectors.call_args.to_reader()
-    func_params_reader = collectors.func_params.to_reader()
-    imports_reader = collectors.imports.to_reader()
+    cst_table = collectors.cst.to_table()
+    parse_manifest_table = collectors.parse_manifest.to_table()
+    spans_table = collectors.spans.to_table()
+    syntax_nodes_table = collectors.syntax_nodes.to_table()
+    syntax_edges_table = collectors.syntax_edges.to_table()
+    scopes_table = collectors.scopes.to_table()
+    defs_table = collectors.defs.to_table()
+    refs_table = collectors.refs.to_table()
+    calls_table = collectors.calls.to_table()
+    call_args_table = collectors.call_args.to_table()
+    func_params_table = collectors.func_params.to_table()
+    imports_table = collectors.imports.to_table()
     return _CstReaderBundle(
-        cst=cst_reader,
-        parse_manifest=parse_manifest_reader,
-        spans=spans_reader,
-        syntax_nodes=syntax_nodes_reader,
-        syntax_edges=syntax_edges_reader,
-        scopes=scopes_reader,
-        defs=defs_reader,
-        refs=refs_reader,
-        calls=calls_reader,
-        call_args=call_args_reader,
-        func_params=func_params_reader,
-        imports=imports_reader,
+        cst=cst_table,
+        parse_manifest=parse_manifest_table,
+        spans=spans_table,
+        syntax_nodes=syntax_nodes_table,
+        syntax_edges=syntax_edges_table,
+        scopes=scopes_table,
+        defs=defs_table,
+        refs=refs_table,
+        calls=calls_table,
+        call_args=call_args_table,
+        func_params=func_params_table,
+        imports=imports_table,
     )
 
 

@@ -54,6 +54,8 @@ def decision_trace__content(env: BuildEnv, catalog: DagCatalog) -> str | None:
     run_context = env.run_context
     if run_context is None:
         return None
+    if env.gateway is None:
+        return None
     reader = CacheManifestReader(env.gateway)
     entries = reader.fetch(run_context.run_id)
     payload = build_decision_trace(entries)

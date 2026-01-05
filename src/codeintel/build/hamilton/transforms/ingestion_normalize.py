@@ -5,7 +5,7 @@ from __future__ import annotations
 import pyarrow as pa
 
 from codeintel.build.tabular.arrow_ops import align_table_to_contract, dedupe_table_for_table
-from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_reader
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 
 
@@ -15,7 +15,7 @@ def normalize_ingest_frame(
     table_key: str,
     add_missing: bool = True,
     keep_extras: bool | None = None,
-) -> pa.RecordBatchReader | None:
+) -> pa.Table | None:
     """Normalize ingestion frames for schema alignment and deduping.
 
     Parameters
@@ -32,15 +32,14 @@ def normalize_ingest_frame(
 
     Returns
     -------
-    pa.RecordBatchReader | None
-        Normalized Arrow reader or None if input is None.
+    pa.Table | None
+        Normalized Arrow table or None if input is None.
     """
     if frame is None:
         return None
-    reader = tabular_to_arrow_reader(frame)
-    table = reader_to_table(reader)
+    table = tabular_to_arrow_table(frame)
     if table.num_rows == 0:
-        return pa.RecordBatchReader.from_batches(table.schema, [])
+        return pa.Table.from_batches([], schema=table.schema)
     extras_policy = None
     if keep_extras is True:
         extras_policy = "retain"
@@ -51,8 +50,7 @@ def normalize_ingest_frame(
         if add_missing or extras_policy is not None
         else table
     )
-    deduped = dedupe_table_for_table(table_key, aligned)
-    return pa.RecordBatchReader.from_batches(deduped.schema, deduped.to_batches())
+    return dedupe_table_for_table(table_key, aligned)
 
 
 __all__ = ["normalize_ingest_frame"]

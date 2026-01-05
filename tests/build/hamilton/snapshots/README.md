@@ -48,7 +48,7 @@ pytest -m cli_snapshot --list-cli-snapshots
 
 ### 1. Add Case to Manifest
 
-Edit `manifest.yaml` and add a new case:
+Edit `config/hamilton/cli_snapshots/manifest.yaml` and add a new case:
 
 ```yaml
 cases:
@@ -142,7 +142,7 @@ pytest -m cli_snapshot --cli-snapshot-fail-fast
 
 ## Files
 
-- `manifest.yaml` - Test case definitions (YAML format)
+- `config/hamilton/cli_snapshots/manifest.yaml` - Test case definitions (YAML format)
 - `_snapshot.py` - Normalization and assertion helpers
 - `_manifest.py` - Typed manifest loader
 - `_runner.py` - CLI execution and comparison

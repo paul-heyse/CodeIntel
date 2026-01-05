@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
     from hamilton.function_modifiers.base import NodeTransformLifecycle
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
     from hamilton.node import Node
+
+log = logging.getLogger(__name__)
 
 
 class _ParameterizeWithTags(parameterize):
@@ -223,8 +226,8 @@ def dataset_ref(
                 row_count=ds.row_count,
                 source_target=producer_target,
             )
+        row_count = record.row_counts.get(table_key) if record.row_counts else None
         if record.success or record.skipped:
-            row_count = record.row_counts.get(table_key) if record.row_counts else None
             return DatasetRef(
                 table_key=table_key,
                 repo=env.snapshot.repo,
@@ -232,8 +235,19 @@ def dataset_ref(
                 row_count=row_count,
                 source_target=producer_target,
             )
-        msg = f"Missing DatasetRef for {table_key} from {producer_target}"
-        raise ValueError(msg)
+        log.warning(
+            "Missing DatasetRef for %s from %s (status=%s); returning empty reference",
+            table_key,
+            producer_target,
+            record.status,
+        )
+        return DatasetRef(
+            table_key=table_key,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+            row_count=row_count,
+            source_target=producer_target,
+        )
 
     if seed is None:
         resolved_repo = env.snapshot.repo

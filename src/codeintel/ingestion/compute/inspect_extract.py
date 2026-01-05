@@ -31,7 +31,7 @@ from codeintel.core.columnar.rows import (
     ColumnarBatchCollector,
     ColumnarRows,
     columnar_batch_collector_for_table_key,
-    empty_reader_for_table,
+    empty_table_for_table,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 
@@ -77,35 +77,35 @@ class InspectExtractResult:
     annotation_rows: ColumnarRows = field(default_factory=dict)
     source_rows: ColumnarRows = field(default_factory=dict)
     runtime_state_rows: ColumnarRows = field(default_factory=dict)
-    object_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
+    object_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
     )
-    member_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
+    member_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
     )
-    class_mro_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
+    class_mro_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
     )
-    class_attr_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
+    class_attr_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
     )
-    unwrap_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
+    unwrap_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
     )
-    signature_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
+    signature_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
     )
-    signature_param_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
+    signature_param_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
     )
-    annotation_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
+    annotation_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
     )
-    source_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
+    source_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
     )
-    runtime_state_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
+    runtime_state_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
     )
     object_row_count: int = 0
     member_row_count: int = 0
@@ -1361,11 +1361,11 @@ def _combine_warnings(base: list[str], extra: list[str]) -> tuple[str, ...]:
 def _reader_from_batches(
     table_key: str,
     batches: list[pa.RecordBatch],
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     if not batches:
-        return empty_reader_for_table(table_key)
+        return empty_table_for_table(table_key)
     schema = batches[0].schema
-    return pa.RecordBatchReader.from_batches(schema, batches)
+    return pa.Table.from_batches(schema, batches)
 
 
 def _payload_to_result(

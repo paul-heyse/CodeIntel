@@ -33,7 +33,7 @@ Proposed
      it as public library surface.
 
 5) Remove YAML project config compatibility
-   - `codeintel.yaml` handling in project detection and runtime resolution.
+   - `config/codeintel.yaml` handling in project detection and runtime resolution.
    - Ensure TOML remains the only supported project config path.
 
 ## Non-Goals
@@ -54,7 +54,7 @@ Suggested checks:
 - `rg "AnalyticsTupleWriteOptions|write_analytics_tuple_rows" src tests docs`
 - `rg "_migrate_impl_kind_columns|impl_kind" src tests`
 - `rg "check_target_contracts" src tools`
-- `rg "codeintel.yaml" src tests docs`
+- `rg "config/codeintel.yaml" src tests docs`
 
 ### Phase 1: Remove Hamilton materialization helpers
 
@@ -110,11 +110,11 @@ Acceptance:
    - `src/codeintel/cli/resolution/runtime.py`
 2) Remove any YAML parsing dependencies that are now unused.
 3) Update docs and tests to reflect TOML-only support:
-   - Remove or rewrite any tests that expect `codeintel.yaml`.
+   - Remove or rewrite any tests that expect `config/codeintel.yaml`.
 4) Ensure CLI messaging explains TOML config path expectations.
 
 Acceptance:
-- No `codeintel.yaml` references remain in `src/`, `tests/`, or `docs/`.
+- No `config/codeintel.yaml` references remain in `src/`, `tests/`, or `docs/`.
 - TOML paths are the only supported config paths.
 
 ## Validation

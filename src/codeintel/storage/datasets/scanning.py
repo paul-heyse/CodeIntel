@@ -1,6 +1,6 @@
 """Compatibility re-exports for Arrow dataset scanning helpers."""
 
-from codeintel.core.datasets.scanning import (
+from codeintel.core.columnar.streaming import (
     DatasetScanOptions,
     QueryPlanSpec,
     build_scanner,

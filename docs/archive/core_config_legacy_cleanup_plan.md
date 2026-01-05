@@ -232,8 +232,8 @@
    - Remove `TAG_DEPRECATED` and `TAG_REPLACED_BY` (and any encoding helpers) from
      `src/codeintel/core/hamilton/semantic_tags.py`.
 4. Remove deprecation fields from config schemas:
-   - Remove `deprecated` and `replaced_by` properties from
-     `src/codeintel/config/schemas/serving/semantic_registry.json`.
+   - Remove `deprecated` and `replaced_by` properties from the semantic registry schema
+     generation used for serving artifacts.
    - Ensure the schema no longer enforces `replaced_by` when deprecated.
 5. Remove remaining deprecation mentions in core/config docs and public exports:
    - Update `src/codeintel/config/__init__.py` and any docstrings that reference

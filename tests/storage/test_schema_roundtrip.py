@@ -6,7 +6,7 @@ import dataclasses
 import json
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given, settings
@@ -16,9 +16,7 @@ from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.data_models.rows import (
     SymbolUseRow,
 )
-from codeintel.core.schemas.generated_rows.graph import (
-    GraphCallGraphEdgesRow as CallGraphEdgeRow,
-)
+from codeintel.core.schemas.row_models import row_model_for_table_key
 from codeintel.core.serialization.payload import encode_payload
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets
@@ -44,6 +42,7 @@ DATETIME_SAMPLES = [
     datetime(2023, 6, 15, tzinfo=UTC),
     datetime(2024, 12, 31, tzinfo=UTC),
 ]
+CallGraphEdgeRow = dict[str, object]
 CALL_GRAPH_EDGE_SAMPLES: list[CallGraphEdgeRow] = [
     {
         "repo": "alpha",
@@ -158,13 +157,16 @@ def _json_safe(value: object) -> object:
 @settings(max_examples=MAX_HYPOTHESIS_EXAMPLES, deadline=None)
 @given(_call_graph_edge_strategy())
 def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
-    """Generate schemas from TypedDict should validate generated call graph edges."""
-    schema = json_schema_from_typeddict(CallGraphEdgeRow)
+    """Generate schemas from row models should validate generated call graph edges."""
+    row_model = row_model_for_table_key("graph.call_graph_edges")
+    if row_model is None:
+        pytest.fail("Missing row model for graph.call_graph_edges")
+    schema = json_schema_from_typeddict(row_model)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     contract = _contracts_by_table_key()["graph.call_graph_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     columns = [col.name for col in contract.schema.columns] if contract.schema else []
-    values = tuple(cast("dict[str, object]", row)[col] for col in columns)
+    values = tuple(row[col] for col in columns)
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 

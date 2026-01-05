@@ -17,11 +17,8 @@ from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
-    empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsStaticDiagnosticsRow as StaticDiagnosticRow,
+    empty_table_for_table,
+    table_for_columnar_rows,
 )
 from codeintel.ingestion.ports.tools import ToolStatus
 
@@ -152,7 +149,7 @@ class TypingIngestStep:
             diagnostic_buffer.row_count,
         )
 
-        diagnostic_rows_reader, row_count = record_batch_reader_for_columnar_rows(
+        diagnostic_rows_reader, row_count = table_for_columnar_rows(
             DIAGNOSTICS_TABLE_KEY,
             diagnostic_buffer.data,
             extras_policy="retain",
@@ -201,16 +198,16 @@ class TypingIngestStep:
             type_error_count = pyright_errors + pyrefly_errors + ruff_errors
 
             diagnostic_buffer.append(
-                StaticDiagnosticRow(
-                    repo=repo,
-                    commit=commit,
-                    rel_path=module.rel_path,
-                    pyright_errors=pyright_errors,
-                    pyrefly_errors=pyrefly_errors,
-                    ruff_errors=ruff_errors,
-                    total_errors=type_error_count,
-                    has_errors=type_error_count > 0,
-                )
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "rel_path": module.rel_path,
+                    "pyright_errors": pyright_errors,
+                    "pyrefly_errors": pyrefly_errors,
+                    "ruff_errors": ruff_errors,
+                    "total_errors": type_error_count,
+                    "has_errors": type_error_count > 0,
+                }
             )
 
         return diagnostic_buffer
@@ -254,8 +251,8 @@ class TypingIngestResult:
 
     result: ExecutionResult
     diagnostic_rows: ColumnarRows = field(default_factory=dict)
-    diagnostic_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(DIAGNOSTICS_TABLE_KEY)
+    diagnostic_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(DIAGNOSTICS_TABLE_KEY)
     )
     diagnostic_row_count: int = 0
 

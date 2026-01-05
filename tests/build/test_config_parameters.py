@@ -47,7 +47,8 @@ def test_load_build_config_missing_or_invalid_returns_empty(tmp_path: Path) -> N
     expect_equal(empty_config.sections, {})
     expect_true(empty_config.parameters_for("anything").has("missing") is False)
 
-    bad_path = project_root / "codeintel.build.toml"
+    bad_path = project_root / "config/codeintel.build.toml"
+    bad_path.parent.mkdir(parents=True, exist_ok=True)
     bad_path.write_text("not = { valid = ", encoding="utf-8")
     recovered = load_build_config(project_root)
     expect_equal(recovered.sections, {})

@@ -68,6 +68,8 @@ log = logging.getLogger(__name__)
 
 
 def _is_in_memory_gateway(env: BuildEnv) -> bool:
+    if env.gateway is None:
+        return True
     return str(env.gateway.config.db_path) == ":memory:"
 
 
@@ -332,6 +334,8 @@ class ThreadPoolAdapter(
         env = resolved.get("env")
         if not isinstance(env, BuildEnv):
             return resolved
+        if env.gateway is None:
+            return resolved
 
         # Main-thread execution can reuse the primary gateway safely.
         if threading.get_ident() == self._primary_thread_id:
@@ -352,6 +356,9 @@ class ThreadPoolAdapter(
 
     def _get_thread_gateway(self, env: BuildEnv, *, _read_only: bool) -> BuildGateway:
         # DuckDB disallows mixing read-only and read-write connections per database file.
+        if env.gateway is None:
+            msg = "Thread gateway requested without an active storage gateway"
+            raise RuntimeError(msg)
         effective_read_only = env.gateway.config.read_only
         key = (threading.get_ident(), effective_read_only)
         with self._gateway_lock:

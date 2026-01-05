@@ -25,13 +25,9 @@ from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, equal_mask, invert_mask, is_in_mask
-from codeintel.build.tabular.conversion import (
-    reader_to_table,
-    table_to_reader,
-    tabular_to_arrow_table,
-)
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.spans import normalize_byte_span
 
@@ -58,10 +54,10 @@ class _SyntaxNodeIndex:
 
 @dataclass(frozen=True, slots=True)
 class SyntaxAugmentFrames:
-    syntax_nodes: pa.RecordBatchReader
-    syntax_edges: pa.RecordBatchReader
-    ts_syntax_node_xref: pa.RecordBatchReader
-    ts_weld_coverage: pa.RecordBatchReader
+    syntax_nodes: pa.Table
+    syntax_edges: pa.Table
+    ts_syntax_node_xref: pa.Table
+    ts_weld_coverage: pa.Table
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,34 +451,31 @@ def _coverage_key_from_row(
     return repo, commit, rel_path, language
 
 
-def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.RecordBatchReader:
+def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
     try:
-        reader, _ = record_batch_reader_for_rows(table_key, rows)
-        table = reader_to_table(reader)
+        table, _ = table_for_rows(table_key, rows)
     except (KeyError, RuntimeError):
         if not rows:
-            return pa.RecordBatchReader.from_batches(pa.schema([]), [])
+            return pa.Table.from_batches(pa.schema([]), [])
         table = pa.Table.from_pylist(rows)
-    deduped = dedupe_table_for_table(table_key, table)
-    return table_to_reader(deduped)
+    return dedupe_table_for_table(table_key, table)
 
 
-def _empty_reader(table_key: str) -> pa.RecordBatchReader:
+def _empty_reader(table_key: str) -> pa.Table:
     try:
-        return empty_reader_for_table(table_key)
+        return empty_table_for_table(table_key)
     except (KeyError, RuntimeError):
-        return pa.RecordBatchReader.from_batches(pa.schema([]), [])
+        return pa.Table.from_batches(pa.schema([]), [])
 
 
-def _reader_from_table(table_key: str, table: pa.Table) -> pa.RecordBatchReader:
+def _reader_from_table(table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0:
         return _empty_reader(table_key)
     try:
         aligned = align_table_to_contract(table_key, table)
     except (KeyError, RuntimeError):
         aligned = table
-    deduped = dedupe_table_for_table(table_key, aligned)
-    return table_to_reader(deduped)
+    return dedupe_table_for_table(table_key, aligned)
 
 
 def _constant_array(value: object, length: int) -> pa.Array:
@@ -687,12 +680,12 @@ def syntax_augment__frames(
 
 def syntax_augment__syntax_nodes__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Return canonical syntax nodes with tree-sitter augmentation.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Canonical syntax node rows.
     """
     return syntax_augment__frames.syntax_nodes
@@ -700,12 +693,12 @@ def syntax_augment__syntax_nodes__base(
 
 def syntax_augment__syntax_edges__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Return canonical syntax edges with tree-sitter fallback applied.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Canonical syntax edge rows.
     """
     return syntax_augment__frames.syntax_edges
@@ -713,12 +706,12 @@ def syntax_augment__syntax_edges__base(
 
 def syntax_augment__ts_syntax_node_xref__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Return tree-sitter xref rows for canonical syntax nodes.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Tree-sitter xref rows.
     """
     return syntax_augment__frames.ts_syntax_node_xref
@@ -726,12 +719,12 @@ def syntax_augment__ts_syntax_node_xref__base(
 
 def syntax_augment__ts_weld_coverage__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Return per-file tree-sitter weld coverage rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Weld coverage rows.
     """
     return syntax_augment__frames.ts_weld_coverage
@@ -752,7 +745,7 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
                 ),
             ),
             node_name="syntax_augment__syntax_nodes",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
@@ -764,21 +757,21 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
                 ),
             ),
             node_name="syntax_augment__syntax_edges",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=TS_XREF_TABLE_KEY,
             base_node="syntax_augment__ts_syntax_node_xref__base",
             save_spec=RelationTableSaveSpec(table_key=TS_XREF_TABLE_KEY),
             node_name="syntax_augment__ts_syntax_node_xref",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=TS_WELD_COVERAGE_TABLE_KEY,
             base_node="syntax_augment__ts_weld_coverage__base",
             save_spec=RelationTableSaveSpec(table_key=TS_WELD_COVERAGE_TABLE_KEY),
             node_name="syntax_augment__ts_weld_coverage",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="syntax_augment__table_materializations",

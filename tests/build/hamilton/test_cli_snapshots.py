@@ -37,15 +37,32 @@ if TYPE_CHECKING:
     from tests.build.hamilton.snapshots._manifest import SnapshotCase, SnapshotManifest
 
 
-def _default_snapshots_dir() -> Path:
-    """Return the default snapshots directory path.
+def _default_manifest_path() -> Path:
+    """Return the default manifest path for CLI snapshot tests.
 
     Returns
     -------
     Path
-        Path to the snapshots directory.
+        Path to the CLI snapshot manifest.
     """
-    return Path(__file__).parent / "snapshots"
+    return (
+        Path(__file__).resolve().parents[3]
+        / "config"
+        / "hamilton"
+        / "cli_snapshots"
+        / "manifest.yaml"
+    )
+
+
+def _default_snapshots_dir() -> Path:
+    """Return the default snapshots directory for CLI snapshot tests.
+
+    Returns
+    -------
+    Path
+        Directory containing snapshot files.
+    """
+    return Path(__file__).resolve().parent / "snapshots"
 
 
 def _manifest_path(config: pytest.Config) -> Path:
@@ -65,10 +82,7 @@ def _manifest_path(config: pytest.Config) -> Path:
     if override:
         return Path(override)
 
-    snapshots_dir = _default_snapshots_dir()
-    manifest_yaml = snapshots_dir / "manifest.yaml"
-    manifest_json = snapshots_dir / "manifest.json"
-    return manifest_yaml if manifest_yaml.exists() else manifest_json
+    return _default_manifest_path()
 
 
 @lru_cache(maxsize=8)

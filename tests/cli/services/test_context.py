@@ -117,7 +117,8 @@ def test_with_storage_enables_runtime(tmp_path: Path) -> None:
     db_dir = project_dir / "build" / "db"
     db_dir.mkdir(parents=True)
 
-    config_file = project_dir / "codeintel.yaml"
+    config_file = project_dir / "config/codeintel.yaml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text("repo: test/repo\nstorage:\n  db_path: build/db/codeintel.duckdb\n")
 
     with patch("codeintel.cli.context.load_config") as mock_config:

@@ -9,8 +9,7 @@ from pathlib import Path
 from codeintel.build.graphs.assembly import (
     empty_reader,
     reader_for_rows,
-    reader_to_table,
-    tabular_to_reader,
+    tabular_to_table,
 )
 from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
@@ -88,7 +87,7 @@ def import_graph_analysis(
     ImportAnalysisResult
         Import graph analysis derived from module sources.
     """
-    modules_table = reader_to_table(tabular_to_reader(q__core__modules))
+    modules_table = tabular_to_table(q__core__modules)
     modules_table = filter_python_modules(modules_table)
     modules: set[str] = set()
     edges: list[ImportEdge] = []

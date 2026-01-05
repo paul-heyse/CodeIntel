@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
+    from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
 
@@ -398,6 +400,7 @@ def write_audit_entry(
     *,
     gateway: BuildGateway,
     settings: ExportAuditSettings,
+    metadata_bundle: BuildMetadataBundleWriter | None = None,
 ) -> None:
     """Write an audit entry for an export operation.
 
@@ -409,7 +412,25 @@ def write_audit_entry(
         Storage gateway providing audit logging access.
     settings
         Export audit settings for the write.
+    metadata_bundle
+        Optional metadata bundle writer for build-first audit logging.
     """
+    if metadata_bundle is not None:
+        metadata_bundle.append_jsonl(
+            "exports/export_audit.jsonl",
+            {
+                "dataset": record.table_name,
+                "macro": record.macro,
+                "rows": record.rows,
+                "duration_s": record.duration_s,
+                "output_path": str(record.output_path),
+                "sql": None,
+                "plan": None,
+                "created_at": datetime.now(tz=UTC).isoformat(),
+            },
+            schema_version="v1",
+        )
+        return
     if not gateway.exports.audit_enabled(settings):
         return
     gateway.exports.write_export_audit(record, settings=settings)

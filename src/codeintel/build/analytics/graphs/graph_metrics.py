@@ -8,7 +8,7 @@ architectural bottlenecks and coupling signals.
 from __future__ import annotations
 
 import logging
-from collections.abc import Hashable, Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
@@ -35,18 +35,14 @@ from codeintel.build.graphs.runtime.context import (
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
 
 if TYPE_CHECKING:
+    from collections.abc import Hashable, Iterable
+
     from codeintel.build.graphs.runtime.context import GraphContext
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
-    )
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
-    )
 
 log = logging.getLogger(__name__)
 
-SymbolModuleEdges = tuple[set[str], Mapping[str, set[str]], Mapping[str, set[str]]]
+SymbolModuleEdges = tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
 ComponentMeta = Mapping[str, Mapping[str, int | bool]]
 
 
@@ -129,8 +125,8 @@ class GraphMetricFilters:
 class GraphMetricsRows:
     """Rows for function and module graph metrics."""
 
-    function_rows: list[GraphMetricsFunctionsRow]
-    module_rows: list[GraphMetricsModulesRow]
+    function_rows: list[dict[str, object]]
+    module_rows: list[dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -301,7 +297,7 @@ def _build_function_graph_metrics_rows(
     ctx: GraphContext,
     call_graph: nx.DiGraph,
     filters: GraphMetricFilters,
-) -> list[GraphMetricsFunctionsRow]:
+) -> list[dict[str, object]]:
     graph = filters.filter_call_graph(call_graph)
     stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
     centrality_bundle = centrality_directed(graph, ctx)
@@ -314,6 +310,14 @@ def _build_function_graph_metrics_rows(
         "closeness": centrality_bundle.closeness,
     }
 
+    graph_nodes: list[int] = []
+    for node in graph.nodes:
+        node_id = normalize_decimal_id(node)
+        if node_id is None:
+            continue
+        graph_nodes.append(node_id)
+    graph_nodes.sort()
+
     rows = build_function_graph_metric_rows(
         FunctionGraphMetricInputs(
             repo=snapshot.repo,
@@ -321,7 +325,7 @@ def _build_function_graph_metrics_rows(
             stats=stats,
             centrality=centrality,
             components=components,
-            graph_nodes=sorted(str(node) for node in graph.nodes),
+            graph_nodes=graph_nodes,
             created_at=created_at,
         )
     )
@@ -338,7 +342,7 @@ def _build_function_graph_metrics_rows(
 
 def _build_module_graph_metrics_rows(
     inputs: ModuleGraphMetricsInputs,
-) -> list[GraphMetricsModulesRow]:
+) -> list[dict[str, object]]:
     graph = inputs.filters.filter_import_graph(inputs.import_graph)
     symbol_modules, symbol_inbound, symbol_outbound = inputs.symbol_module_edges
     modules = {str(node) for node in graph.nodes} | {str(node) for node in symbol_modules}

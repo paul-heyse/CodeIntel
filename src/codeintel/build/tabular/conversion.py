@@ -51,7 +51,7 @@ def table_to_reader(table: pa.Table) -> pa.RecordBatchReader:
     return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
 
 
-def reader_to_table(reader: pa.RecordBatchReader) -> pa.Table:
+def reader_to_table(reader: pa.RecordBatchReader | pa.Table) -> pa.Table:
     """Materialize a RecordBatchReader into an Arrow Table.
 
     Returns
@@ -59,6 +59,8 @@ def reader_to_table(reader: pa.RecordBatchReader) -> pa.Table:
     pa.Table
         Arrow table built from reader batches.
     """
+    if isinstance(reader, pa.Table):
+        return reader
     return pa.Table.from_batches(reader, schema=reader.schema)
 
 

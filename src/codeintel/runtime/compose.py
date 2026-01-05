@@ -38,11 +38,13 @@ from codeintel.build.schemas.inference_service import (
     get_schema_inference_service,
 )
 from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
+from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.build.schemas.service import configure_schema_service
 from codeintel.core.config.settings import HamiltonTrackerSettings
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.schemas import SchemaService, get_schema_service, set_schema_service
 from codeintel.core.schemas.declared import source_declared_schema_provider
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
@@ -246,7 +248,8 @@ def compose_runtime(
             cache_adapter=cache_adapter,
             cache_store=cache_store,
         )
-        configure_schema_service(runtime=runtime_bundle, observation_provider=env.gateway.schemas)
+        observation_provider = observation_provider_for_env(env)
+        configure_schema_service(runtime=runtime_bundle, observation_provider=observation_provider)
         configure_contract_service(runtime=runtime_bundle)
         _validate_graph_invariants(
             runtime=runtime_bundle,
@@ -891,6 +894,7 @@ def _build_schema_index(
         exclude_table_keys=catalog.table_outputs,
     )
     override_provider = _override_schema_provider(env=env)
+    _ensure_schema_service_for_inference(provider=override_provider)
     schema_index = build_schema_index(
         system=catalog,
         declared_provider=declared_provider,
@@ -909,6 +913,13 @@ def _seed_dataset_config(env: BuildEnv) -> SeedDatasetConfig:
         dataset_root_dir=env.paths.dataset_root_dir,
         snapshot_id=snapshot_id or None,
     )
+
+
+def _ensure_schema_service_for_inference(*, provider: SchemaProvider) -> None:
+    try:
+        get_schema_service()
+    except RuntimeError:
+        set_schema_service(SchemaService(table_provider=provider))
 
 
 def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:

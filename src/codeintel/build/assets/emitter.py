@@ -68,9 +68,10 @@ class RunArtifactSpec:
 
 
 def _resolve_schema_provider(env: BuildEnv) -> SchemaProvider:
-    provider = env.gateway.policy.schema_provider
-    if provider is not None:
-        return provider
+    if env.gateway is not None:
+        provider = env.gateway.policy.schema_provider
+        if provider is not None:
+            return provider
     return get_schema_provider()
 
 
@@ -79,6 +80,8 @@ def _try_table_row_count_for_snapshot(
     *,
     table_key: str,
 ) -> int | None:
+    if env.gateway is None:
+        return None
     try:
         relation = env.gateway.relation_from_table_key(table_key)
         if "repo" in relation.columns and "commit" in relation.columns:
@@ -437,6 +440,8 @@ def persist_asset_catalog_for_run(
     records: Sequence[TargetRunRecord],
 ) -> None:
     """Persist asset versions, run mappings, and lineage edges for a build run."""
+    if env.gateway is None:
+        return
     ctx = _VersionState(env=env, run_id=run_id, policy=env.fingerprint_policy)
     versions, events, run_maps, target_outputs = _collect_versions_for_run(ctx, catalog, records)
     edges = _collect_lineage_edges(catalog=catalog, target_outputs=target_outputs)
@@ -457,6 +462,8 @@ def record_run_artifact(
     spec: RunArtifactSpec,
 ) -> None:
     """Persist a run-scoped artifact in the asset catalog."""
+    if env.gateway is None:
+        return
     bytes_value = _try_artifact_size_from_path(spec.path)
     version_input = ArtifactVersionInput(
         artifact_name=spec.artifact_name,

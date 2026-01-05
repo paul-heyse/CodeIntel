@@ -167,7 +167,7 @@ Keep `core.ts_parse_errors` but enrich `extras_json` with:
 
 Use query packs to emit tokens and trivia:
 - Add `tokens.scm` and `trivia.scm` packs under
-  `src/codeintel/ingestion/tree_sitter/packs/python/`.
+  `config/tree_sitter/packs/python/`.
 - Use `QueryCursor` with `match_limit` and `set_byte_range` when available.
 
 ### 4.4 Query pack linting
@@ -250,7 +250,7 @@ Add `syntax_augment` (or extend `syntax_index`):
 Update:
 - `src/codeintel/core/schemas/output_registry.py`
 - `src/codeintel/core/schemas/generated_rows/core.py`
-- `src/codeintel/core/registry/dag_output_inventory.yaml`
+- `config/registry/dag_output_inventory.yaml`
 - `src/codeintel/build/hamilton/native/ingestion/tree_sitter.py`
 
 ## 8. Downstream usage and CPG integration

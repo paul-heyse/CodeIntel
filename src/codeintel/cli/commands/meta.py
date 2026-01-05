@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App
@@ -16,6 +17,7 @@ from codeintel.cli.handlers.meta import (
 )
 from codeintel.cli.options.registry import (
     DATASET_TABLE_KEY,
+    META_BUNDLE_ROOT,
     META_DRIFT_LIMIT,
     META_OVERRIDE_SCHEMA_DIGEST,
     META_OVERRIDE_VERSION_ID,
@@ -28,7 +30,7 @@ meta_app = App(
     help="Metadata catalog maintenance commands.",
 )
 
-_META_SYNC_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+_META_SYNC_CONFIG = CommandConfig(require_runtime=True, require_gateway=False)
 _META_OVERRIDE_CONFIG = CommandConfig(require_runtime=False, require_gateway=True)
 
 META_SYNC_PATH: CommandPath = ("meta", "sync")
@@ -45,8 +47,12 @@ _META_OVERRIDE_FLAGS_FIELD = shared_flags_field(META_OVERRIDE_PIN_PATH)
 @meta_app.command(name="sync")
 @dataclass
 class MetaSyncCommand:
-    """Regenerate and persist canonical meta catalogs."""
+    """Ingest build metadata bundles into the meta catalog."""
 
+    bundle_root: Annotated[
+        Path | None,
+        option_param(META_BUNDLE_ROOT, command_path=META_SYNC_PATH),
+    ] = None
     flags: SharedFlagsProtocol = _META_SYNC_FLAGS_FIELD
 
 

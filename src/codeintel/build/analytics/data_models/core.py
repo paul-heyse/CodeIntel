@@ -29,7 +29,7 @@ from codeintel.build.analytics.utilities.ast import (
 from codeintel.core.hashing import sha256_short
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.paths import normalize_path, path_to_module
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:

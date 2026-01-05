@@ -123,6 +123,7 @@ class FileArtifactSaver(DataSaver):
             str,
             Path,
             DuckDBRelation,
+            pa.Table,
             pa.RecordBatchReader,
         ]
 
@@ -140,7 +141,7 @@ class FileArtifactSaver(DataSaver):
         bool
             True when the saver can persist the output type.
         """
-        if type_ in {bytes, str, Path, DuckDBRelation, pa.RecordBatchReader}:
+        if type_ in {bytes, str, Path, DuckDBRelation, pa.Table, pa.RecordBatchReader}:
             return True
         if type_ is ArtifactWritePlan:
             return True
@@ -155,6 +156,7 @@ class FileArtifactSaver(DataSaver):
                     str,
                     Path,
                     DuckDBRelation,
+                    pa.Table,
                     pa.RecordBatchReader,
                     type(None),
                 }
@@ -275,6 +277,8 @@ def _write_artifact_payload(output_path: Path, data: object) -> int:
         return _atomic_write_via_plan(output_path, data)
     if isinstance(data, DuckDBRelation):
         return _write_relation_artifact(output_path, data)
+    if isinstance(data, pa.Table):
+        return _write_arrow_table(output_path, data)
     if isinstance(data, pa.RecordBatchReader):
         return _write_arrow_reader(output_path, data)
     if isinstance(data, Path) and _same_path(data, output_path):
@@ -319,6 +323,11 @@ def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
         for batch in reader:
             writer.write_batch(batch)
     return output_path.stat().st_size
+
+
+def _write_arrow_table(output_path: Path, table: pa.Table) -> int:
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    return _write_arrow_reader(output_path, reader)
 
 
 def _write_relation_artifact(output_path: Path, relation: DuckDBRelation) -> int:

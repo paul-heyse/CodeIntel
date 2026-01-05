@@ -163,8 +163,6 @@ Add an explicit collector pipeline blueprint that matches CodeIntel’s defaults
 4) **Connectors**
    - `spanmetrics` connector (optional) to generate RED metrics from traces.
 
-Provide a reference collector YAML file in `docs/observability/collector_reference.yaml`.
-
 ### L) Attribute Taxonomy + Schemas
 
 Define and document the exact attribute schema for each surface:

@@ -376,6 +376,13 @@ def _index_field_numbers(index: IndexProto) -> _IndexFieldNumbers:
     descriptor = getattr(index, "DESCRIPTOR", None)
     fields_by_name = getattr(descriptor, "fields_by_name", None)
     if not isinstance(fields_by_name, Mapping):
+        fields = getattr(descriptor, "fields", None)
+        if fields is not None:
+            try:
+                fields_by_name = {field.name: field for field in fields if hasattr(field, "name")}
+            except TypeError:
+                fields_by_name = None
+    if not isinstance(fields_by_name, Mapping):
         message = "SCIP protobuf Index descriptor fields are unavailable"
         raise TypeError(message)
     return _IndexFieldNumbers(

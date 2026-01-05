@@ -715,14 +715,6 @@ To make “adding a new target = adding a module” ergonomic inside the repo, e
 
 Under `examples/target_packs/hello_pack/`:
 
-* `examples/target_packs/hello_pack/pyproject.toml`
-
-  * defines entry point:
-
-    ```toml
-    [project.entry-points."codeintel.target_packs"]
-    hello_pack = "hello_pack.plugin:codeintel_target_pack"
-    ```
 * `examples/target_packs/hello_pack/src/hello_pack/plugin.py`
 
   * returns `TargetPack` referencing module import paths

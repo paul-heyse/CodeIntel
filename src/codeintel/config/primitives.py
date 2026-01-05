@@ -317,8 +317,8 @@ class BuildPaths:
         """
         resolved_root = repo_root.resolve()
         resolved_build = (build_dir or resolved_root / "build").resolve()
-        document_output_dir = resolved_root / "Document Output"
-        dataset_root_dir = _default_dataset_root_dir(resolved_root)
+        document_output_dir = resolved_build / "document_output"
+        dataset_root_dir = _default_dataset_root_dir(resolved_build)
         return cls(
             build_dir=resolved_build,
             db_path=resolved_build / "db" / "codeintel.duckdb",
@@ -358,9 +358,9 @@ class BuildPaths:
         override_bundle.validate(resolved_build)
         normalized = override_bundle.resolved(resolved_build)
         document_output_dir = (
-            normalized.document_output_dir or resolved_build.parent / "Document Output"
+            normalized.document_output_dir or resolved_build / "document_output"
         ).resolve()
-        dataset_root_dir = _default_dataset_root_dir(resolved_build.parent)
+        dataset_root_dir = _default_dataset_root_dir(resolved_build)
         return cls(
             build_dir=resolved_build,
             db_path=(normalized.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
@@ -406,9 +406,9 @@ class BuildPaths:
         resolved_root = repo_root.resolve()
         resolved_build = (layout.build_dir or resolved_root / "build").resolve()
         document_output_dir = (
-            layout.document_output_dir or resolved_root / "Document Output"
+            layout.document_output_dir or resolved_build / "document_output"
         ).resolve()
-        dataset_root_dir = _default_dataset_root_dir(resolved_root)
+        dataset_root_dir = _default_dataset_root_dir(resolved_build)
         paths = cls(
             build_dir=resolved_build,
             db_path=(layout.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
@@ -436,15 +436,15 @@ class BuildPaths:
         return paths
 
 
-def _default_dataset_root_dir(repo_root: Path) -> Path:
-    """Return the default dataset root directory under the repo.
+def _default_dataset_root_dir(build_dir: Path) -> Path:
+    """Return the default dataset root directory under the build directory.
 
     Returns
     -------
     Path
-        Default dataset root directory for the repository.
+        Default dataset root directory for the build directory.
     """
-    return repo_root / "src" / "codeintel" / "storage" / "datasets"
+    return build_dir / "datasets"
 
 
 @dataclass(frozen=True)

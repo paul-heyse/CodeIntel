@@ -87,7 +87,7 @@ class CliRuntimeComposeOptions:
 def compose_cli_runtime_bundle_with_env(
     *,
     runtime: ResolvedRuntime,
-    gateway: StorageGateway,
+    gateway: StorageGateway | None,
     options: CliRuntimeComposeOptions | None = None,
 ) -> tuple[RuntimeBundle, BuildEnv]:
     """Compose a RuntimeBundle and BuildEnv for CLI handlers.
@@ -127,7 +127,7 @@ def compose_cli_runtime_bundle_with_env(
 def compose_cli_runtime_bundle(
     *,
     runtime: ResolvedRuntime,
-    gateway: StorageGateway,
+    gateway: StorageGateway | None,
     options: CliRuntimeComposeOptions | None = None,
 ) -> RuntimeBundle:
     """Compose a RuntimeBundle for CLI handlers.

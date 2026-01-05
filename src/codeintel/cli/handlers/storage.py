@@ -29,9 +29,11 @@ from codeintel.cli.errors.results import (
     fail_macro_validation,
     fail_missing_output_path,
     fail_missing_required,
+    fail_not_found,
     fail_storage,
     fail_storage_connection,
 )
+from codeintel.cli.handlers.metadata_bundle import BundleIngestRequest, ingest_metadata_bundle
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.services.storage import StorageService
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -325,6 +327,93 @@ def ingest_cache_logs_handler(
     return CliResult.ok(summary)
 
 
+def ingest_metadata_bundle_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
+    """Ingest build metadata bundles into the DuckDB meta catalog.
+
+    Parameters
+    ----------
+    ctx
+        Command context with params:
+        - db_path: Path to database (optional, uses runtime if not provided)
+        - bundle_root: Build metadata bundle root (defaults to build/metadata)
+
+    Returns
+    -------
+    CliResult[dict[str, object]]
+        Summary payload for the ingest operation.
+    """
+    bundle_root = ctx.params.get_path("bundle_root")
+    if bundle_root is None:
+        if not ctx.has_runtime:
+            return fail_missing_required("bundle_root")
+        bundle_root = ctx.runtime.paths.build_dir / "metadata"
+    if not bundle_root.exists():
+        return fail_not_found(
+            "bundle_root",
+            str(bundle_root),
+            suggestion="Run `codeintel build run --all` to generate build metadata",
+        )
+
+    if not ctx.has_runtime:
+        return fail_missing_required("db_path")
+    snapshot = ctx.runtime.snapshot
+    if not snapshot.repo or not snapshot.commit:
+        return fail_storage("repo and commit must be set for storage.ingest-metadata")
+
+    db_path = _resolve_storage_db_path(ctx)
+    try:
+        outcome = ingest_metadata_bundle(
+            BundleIngestRequest(
+                bundle_root=bundle_root,
+                db_path=db_path,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                catalog_inputs={"source": "storage.ingest-metadata"},
+            )
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        return fail_storage(str(exc))
+
+    payload = outcome.report.to_payload()
+    payload.update(
+        {
+            "run_id": outcome.run_id,
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "bundle_root": str(bundle_root),
+            "bundle_manifest_repo": outcome.bundle_manifest.repo,
+            "bundle_manifest_commit": outcome.bundle_manifest.commit,
+            "bundle_manifest_run_id": outcome.bundle_manifest.run_id,
+            "renderer_cache_backfill_rows": outcome.renderer_cache_rows,
+        }
+    )
+    if outcome.override_refresh is None:
+        payload.update(
+            {
+                "override_refresh_status": "skipped",
+                "override_refresh_reason": "schema_manifest_missing",
+                "override_refresh_version_id": None,
+                "override_refresh_tables": 0,
+                "override_refresh_schema_versions_rows": 0,
+                "override_refresh_versions_rows": 0,
+                "override_refresh_registry_rows": 0,
+            }
+        )
+    else:
+        payload.update(
+            {
+                "override_refresh_status": outcome.override_refresh.status,
+                "override_refresh_reason": outcome.override_refresh.reason,
+                "override_refresh_version_id": outcome.override_refresh.version_id,
+                "override_refresh_tables": outcome.override_refresh.tables,
+                "override_refresh_schema_versions_rows": outcome.override_refresh.schema_versions_rows,
+                "override_refresh_versions_rows": outcome.override_refresh.override_versions_rows,
+                "override_refresh_registry_rows": outcome.override_refresh.override_registry_rows,
+            }
+        )
+    return CliResult.ok(payload)
+
+
 def export_database_handler(
     ctx: CommandContext,
 ) -> CliResult[StorageDatabaseExportResult]:
@@ -465,6 +554,7 @@ __all__ = [
     "export_database_handler",
     "import_database_handler",
     "ingest_cache_logs_handler",
+    "ingest_metadata_bundle_handler",
     "profile_storage_handler",
     "validate_macros_handler",
 ]

@@ -1658,13 +1658,13 @@ the Hamilton DAG and has been removed from the active migration scope.
    ```py
    @codeintel_target(domain="export", target=EXPORT_JSONL_TARGET_NAME)
    def t__export_jsonl(...):
-       """Export datasets to JSONL format for Document Output."""
+       """Export datasets to JSONL format for the document output directory."""
    ```
 
    ```py
    @codeintel_target(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
    def t__export_parquet(...):
-       """Export datasets to Parquet format for Document Output."""
+       """Export datasets to Parquet format for the document output directory."""
    ```
 
 ---

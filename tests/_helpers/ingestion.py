@@ -256,11 +256,11 @@ def build_target_context_for_target(
             build_dir=build_dir,
             db_path=db_path,
             document_output_dir=build_dir / "document_output",
-            dataset_root_dir=build_dir / "document_output" / "datasets",
+            dataset_root_dir=build_dir / "datasets",
             scip_dir=build_dir / "scip",
             pytest_report=build_dir / "test-results" / "pytest-report.json",
             tool_cache=build_dir / ".tool_cache",
-            log_db_path=build_dir / "logs" / "logs.duckdb",
+            log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
         )
 
     providers = cfg.providers or create_default_providers(ToolsConfig.default())

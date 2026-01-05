@@ -1,0 +1,14 @@
+{
+  "build_fingerprint": "62642d3569f67ba312efdfac3942967bd718240c520daa77b251e30e2a8c3ad4",
+  "closure": [],
+  "created_at_utc": "2026-01-05T02:08:22.791957+00:00",
+  "entries": [],
+  "plan_schema_version": "v1",
+  "request": {
+    "include_cache_details": false,
+    "include_io_details": false,
+    "include_node_details": false,
+    "mode": "predict",
+    "requested_targets": []
+  }
+}

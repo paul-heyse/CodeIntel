@@ -1,4 +1,4 @@
-"""Parity checks for Document Output dataset mappings."""
+"""Parity checks for document output dataset mappings."""
 
 from __future__ import annotations
 

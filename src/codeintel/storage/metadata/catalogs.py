@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlglot import exp
 
-from codeintel.core.serialization.payload import decode_payload, encode_payload
+from codeintel.core.serialization.payload import decode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 
@@ -51,13 +52,43 @@ def _coerce_json_payload(value: object) -> dict[str, Any]:
             raw = bytes(value).decode("utf-8")
         else:
             raw = value
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
+        parsed = _parse_json_payload(raw)
+        if isinstance(parsed, Mapping):
             return dict(parsed)
         msg = "Catalog payload must be a JSON object"
         raise TypeError(msg)
     msg = "Catalog payload must be a mapping or JSON string"
     raise TypeError(msg)
+
+
+def _parse_json_payload(raw: str) -> object | None:
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed = None
+    if isinstance(parsed, Mapping):
+        return dict(parsed)
+    if isinstance(parsed, str):
+        nested = _parse_json_payload(parsed)
+        if isinstance(nested, Mapping):
+            return dict(nested)
+        recovered = _decode_msgpack_string(parsed)
+        if recovered is not None:
+            return recovered
+    return None
+
+
+def _decode_msgpack_string(raw: str) -> dict[str, Any] | None:
+    if "\\x" not in raw:
+        return None
+    try:
+        unescaped = codecs.decode(raw, "unicode_escape")
+    except (UnicodeDecodeError, ValueError):
+        return None
+    decoded = decode_payload(unescaped.encode("latin1"))
+    if isinstance(decoded, Mapping):
+        return dict(decoded)
+    return None
 
 
 def load_canonical_catalog(
@@ -209,8 +240,8 @@ def upsert_canonical_catalog(
 ) -> None:
     """Insert or update a canonical catalog entry."""
     created_at = entry.created_at.astimezone(UTC)
-    payload_json = encode_payload(entry.payload)
-    inputs_json = encode_payload(entry.inputs) if entry.inputs is not None else None
+    payload_json = json.dumps(entry.payload)
+    inputs_json = json.dumps(entry.inputs) if entry.inputs is not None else None
     table_ref = meta_table_ref("metadata.canonical_catalogs")
     table_expr = table_expr_from_ref(table_ref)
     columns = [

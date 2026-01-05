@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, TypedDict
+from typing import TypedDict
 
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
-if TYPE_CHECKING:
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
-    )
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
-    )
+GraphMetricsFunctionsRow = dict[str, object]
+GraphMetricsModulesRow = dict[str, object]
 
 __all__ = [
     "make_graph_metric_function_row",

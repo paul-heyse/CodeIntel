@@ -34,11 +34,10 @@ if TYPE_CHECKING:
     from codeintel.build.tabular.types import InferableTabularInput
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.parsing import ParsedModule
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsFunctionTypesRow as FunctionTypesRow,
-    )
 
 log = logging.getLogger(__name__)
+
+FunctionTypesRow = dict[str, object]
 
 
 @dataclass(frozen=True)

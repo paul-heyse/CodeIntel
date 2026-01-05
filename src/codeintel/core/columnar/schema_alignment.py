@@ -102,6 +102,46 @@ def align_reader_to_contract(
     return pa.RecordBatchReader.from_batches(target_schema, _aligned_batches())
 
 
+def align_table_to_contract(
+    table: pa.Table,
+    contract_schema: pa.Schema,
+    *,
+    extras_policy: ExtrasPolicy | None = None,
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+    cast_options: pc.CastOptions | None = None,
+) -> pa.Table:
+    """Align an Arrow table to a contract schema.
+
+    Parameters
+    ----------
+    table
+        Incoming Arrow table to align.
+    contract_schema
+        Canonical Arrow schema contract to align to.
+    extras_policy
+        Policy for handling extra columns (retain, reject, drop). When None,
+        resolve from Arrow schema metadata.
+    schema_promote_options
+        Promotion policy for schema unification.
+    cast_options
+        Optional cast options to allow explicit type promotion.
+
+    Returns
+    -------
+    pa.Table
+        Table aligned to the contract schema.
+    """
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    aligned = align_reader_to_contract(
+        reader,
+        contract_schema,
+        extras_policy=extras_policy,
+        schema_promote_options=schema_promote_options,
+        cast_options=cast_options,
+    )
+    return pa.Table.from_batches(aligned, schema=aligned.schema)
+
+
 def extras_policy_from_schema(
     schema: pa.Schema,
     *,

@@ -34,9 +34,9 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     not_equal_mask,
 )
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
@@ -91,15 +91,15 @@ def _cast_int64(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     return pa.Table.from_arrays(arrays, names=list(table.column_names))
 
 
-def _empty_reader_for_output_table(table_key: str) -> pa.RecordBatchReader:
+def _empty_reader_for_output_table(table_key: str) -> pa.Table:
     try:
-        return empty_reader_for_table(table_key)
+        return empty_table_for_table(table_key)
     except KeyError:
         table_schema = OUTPUT_TABLE_SCHEMAS.get(table_key)
         if table_schema is None:
             raise
         arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-        return pa.RecordBatchReader.from_batches(arrow_schema, [])
+        return pa.Table.from_batches(arrow_schema, [])
 
 
 def _empty_table_for_output_table(table_key: str) -> pa.Table:
@@ -487,12 +487,12 @@ def scip_resolution__frames(
 
 def scip_resolution__symbol_goid_xref__base(
     scip_resolution__frames: ScipResolutionFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Return rows for core.scip_symbol_goid_xref.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Arrow reader for core.scip_symbol_goid_xref.
     """
     table = dedupe_table_for_table(
@@ -501,18 +501,17 @@ def scip_resolution__symbol_goid_xref__base(
     )
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-    table = align_table_to_contract(SCIP_SYMBOL_GOID_XREF_TABLE_KEY, table)
-    return table_to_reader(table)
+    return align_table_to_contract(SCIP_SYMBOL_GOID_XREF_TABLE_KEY, table)
 
 
 def scip_resolution__occurrence_span_xref__base(
     scip_resolution__frames: ScipResolutionFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Return rows for core.scip_occurrence_span_xref.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Arrow reader for core.scip_occurrence_span_xref.
     """
     table = dedupe_table_for_table(
@@ -521,19 +520,18 @@ def scip_resolution__occurrence_span_xref__base(
     )
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
-    table = align_table_to_contract(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY, table)
-    return table_to_reader(table)
+    return align_table_to_contract(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY, table)
 
 
 def scip_resolution__occurrence_syntax_xref__base(
     scip_resolution__frames: ScipResolutionFrames,
     q__core__syntax_nodes: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Return rows for core.scip_occurrence_syntax_xref.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Arrow reader for core.scip_occurrence_syntax_xref.
     """
     occurrences_table = scip_resolution__frames.occurrence_span_xref
@@ -543,8 +541,7 @@ def scip_resolution__occurrence_syntax_xref__base(
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
     table = pa.Table.from_pylist(rows)
     table = dedupe_table_for_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
-    table = align_table_to_contract(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
-    return table_to_reader(table)
+    return align_table_to_contract(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
 
 
 _MODULE = sys.modules[__name__]

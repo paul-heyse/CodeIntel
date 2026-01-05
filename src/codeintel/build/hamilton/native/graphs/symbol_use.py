@@ -10,8 +10,7 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import (
     empty_reader,
     reader_for_rows,
-    reader_to_table,
-    tabular_to_reader,
+    tabular_to_table,
 )
 from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
@@ -187,11 +186,11 @@ def _symbol_use_tables(
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
-    occurrences_table = reader_to_table(tabular_to_reader(q__core__scip_occurrences)).select(
+    occurrences_table = tabular_to_table(q__core__scip_occurrences).select(
         ["symbol", "rel_path", "start_line", "roles"]
     )
-    modules_table = reader_to_table(tabular_to_reader(q__core__modules)).select(["path", "module"])
-    goids_table = reader_to_table(tabular_to_reader(q__core__goids)).select(
+    modules_table = tabular_to_table(q__core__modules).select(["path", "module"])
+    goids_table = tabular_to_table(q__core__goids).select(
         ["rel_path", "goid_h128", "start_line", "end_line"]
     )
     return occurrences_table, modules_table, goids_table

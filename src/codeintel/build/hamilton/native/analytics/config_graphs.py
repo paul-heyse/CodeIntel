@@ -34,7 +34,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.spans import normalize_line_span
@@ -342,7 +342,7 @@ def config_data_flow_frames(
 def config_data_flow__base(
     env: BuildEnv,
     config_data_flow_frames: ConfigDataFlowFrames,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build config data flow rows.
 
     Parameters
@@ -354,7 +354,7 @@ def config_data_flow__base(
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing config data flow rows.
     """
     config_value_rows = _collect_rows(
@@ -405,8 +405,8 @@ def config_data_flow__base(
         )
     )
     if result.rows is None:
-        return empty_reader_for_table(CONFIG_DATA_FLOW_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(CONFIG_DATA_FLOW_TABLE_KEY, result.rows)
+        return empty_table_for_table(CONFIG_DATA_FLOW_TABLE_KEY)
+    reader, _ = table_for_rows(CONFIG_DATA_FLOW_TABLE_KEY, result.rows)
     return reader
 
 
@@ -452,17 +452,17 @@ def config_graph_metrics_result(
 
 def config_graph_metrics_keys__base(
     config_graph_metrics_result: ConfigGraphMetricsResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build config graph key metrics rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing key metrics rows.
     """
     if config_graph_metrics_result.key_rows is None:
-        return empty_reader_for_table(CONFIG_GRAPH_KEYS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(CONFIG_GRAPH_KEYS_TABLE_KEY)
+    reader, _ = table_for_rows(
         CONFIG_GRAPH_KEYS_TABLE_KEY,
         config_graph_metrics_result.key_rows,
     )
@@ -471,17 +471,17 @@ def config_graph_metrics_keys__base(
 
 def config_graph_metrics_modules__base(
     config_graph_metrics_result: ConfigGraphMetricsResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build config graph module metrics rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing module metrics rows.
     """
     if config_graph_metrics_result.module_rows is None:
-        return empty_reader_for_table(CONFIG_GRAPH_MODULES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(CONFIG_GRAPH_MODULES_TABLE_KEY)
+    reader, _ = table_for_rows(
         CONFIG_GRAPH_MODULES_TABLE_KEY,
         config_graph_metrics_result.module_rows,
     )
@@ -490,17 +490,17 @@ def config_graph_metrics_modules__base(
 
 def config_projection_key_edges__base(
     config_graph_metrics_result: ConfigGraphMetricsResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build config projection key edge rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing config projection key edges.
     """
     if config_graph_metrics_result.key_edge_rows is None:
-        return empty_reader_for_table(CONFIG_GRAPH_KEY_EDGES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(CONFIG_GRAPH_KEY_EDGES_TABLE_KEY)
+    reader, _ = table_for_rows(
         CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
         config_graph_metrics_result.key_edge_rows,
     )
@@ -509,17 +509,17 @@ def config_projection_key_edges__base(
 
 def config_projection_module_edges__base(
     config_graph_metrics_result: ConfigGraphMetricsResult,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build config projection module edge rows.
 
     Returns
     -------
-    pa.RecordBatchReader
+    pa.Table
         Reader containing config projection module edges.
     """
     if config_graph_metrics_result.module_edge_rows is None:
-        return empty_reader_for_table(CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY)
+    reader, _ = table_for_rows(
         CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
         config_graph_metrics_result.module_edge_rows,
     )
@@ -537,7 +537,7 @@ _CONFIG_DATA_FLOW_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=CONFIG_DATA_FLOW_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=CONFIG_DATA_FLOW_TABLE_KEY),
             node_name="config_data_flow__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="config_data_flow__table_materializations",
@@ -558,7 +558,7 @@ _CONFIG_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=CONFIG_GRAPH_KEYS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEYS_TABLE_KEY),
             node_name="config_graph_metrics_keys__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
@@ -566,7 +566,7 @@ _CONFIG_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=CONFIG_GRAPH_MODULES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULES_TABLE_KEY),
             node_name="config_graph_metrics_modules__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
@@ -574,7 +574,7 @@ _CONFIG_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY),
             node_name="config_projection_key_edges__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
         TableTargetTableSpec(
             table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
@@ -582,7 +582,7 @@ _CONFIG_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY),
             node_name="config_projection_module_edges__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="config_graph_metrics__table_materializations",

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, SupportsInt, cast
 
 from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
@@ -19,16 +20,20 @@ from codeintel.ingestion.ports.change_detection import (
     FileDigest,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.storage.datasets.registry import DatasetRegistry
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, DuckDBError
+from codeintel.storage.duckdb_types import (
+    ColumnExpression,
+    ConstantExpression,
+    DuckDBError,
+    DuckDBRelation,
+)
 from codeintel.storage.query_results import (
     iter_tuples_from_arrow_reader,
     iter_tuples_from_relation,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Sequence
     from pathlib import Path
 
     from codeintel.ingestion.ports.change_detection import (
@@ -39,6 +44,15 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 FILE_STATE_TABLE_KEY = "core.file_state"
+READ_EXCEPTIONS = (
+    DuckDBError,
+    FileNotFoundError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
+RELATION_EXCEPTIONS = (DuckDBError, RuntimeError, TypeError, ValueError)
 
 
 class HashChangeDetectionAdapter:
@@ -85,7 +99,23 @@ class HashChangeDetectionAdapter:
         current_state = self._build_current_state(current_modules)
         state_hash = self.compute_state_hash(current_state)
 
-        previous_state = self.load_previous_state(request.repo, request.language)
+        try:
+            previous_state = self.load_previous_state(request.repo, request.language)
+        except (
+            DuckDBError,
+            FileNotFoundError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            log.warning(
+                "file_state previous state load failed for repo=%s language=%s: %s",
+                request.repo,
+                request.language,
+                exc,
+            )
+            previous_state = {}
 
         added: list[ModuleRecord] = []
         modified: list[ModuleRecord] = []
@@ -161,53 +191,158 @@ class HashChangeDetectionAdapter:
         Mapping[str, FileDigest]
         Mapping from relative path to file digest.
         """
+        rows_iter = self._rows_iter_for_previous_state(repo, language)
+        if rows_iter is None:
+            return {}
+
+        state, completed = self._build_state_from_rows(rows_iter, repo=repo, language=language)
+        if completed and not state:
+            log.info("No previous file_state rows found for %s", repo)
+
+        return state
+
+    def _rows_iter_for_previous_state(
+        self,
+        repo: str,
+        language: str,
+    ) -> Iterable[tuple[object, object, object, object]] | None:
         gateway = getattr(self._storage, "_gateway", None)
-        if gateway is not None:
-            predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
-                ColumnExpression("language") == ConstantExpression(language)
+        if gateway is None:
+            return self._rows_iter_from_storage(repo, language)
+        return self._rows_iter_from_gateway(cast("StorageGateway", gateway), repo, language)
+
+    def _rows_iter_from_gateway(
+        self,
+        gateway: StorageGateway,
+        repo: str,
+        language: str,
+    ) -> Iterable[tuple[object, object, object, object]] | None:
+        relation = self._filtered_relation_from_gateway(gateway, repo, language)
+        if relation is None:
+            return None
+        try:
+            return cast(
+                "Iterable[tuple[object, object, object, object]]",
+                iter_tuples_from_relation(relation),
             )
-            try:
-                base_relation = gateway.relation_from_table_key(FILE_STATE_TABLE_KEY)
-            except (DuckDBError, FileNotFoundError) as exc:
-                datasets = getattr(gateway, "datasets", None)
-                config = getattr(gateway, "config", None)
-                dataset_root_dir = getattr(config, "dataset_root_dir", None)
-                snapshot_id = getattr(config, "commit", None)
-                if isinstance(datasets, DatasetRegistry):
-                    dataset = datasets.by_table_key.get(FILE_STATE_TABLE_KEY)
-                    if (
-                        dataset is not None
-                        and not dataset.is_view
-                        and dataset_root_dir is not None
-                        and snapshot_id is not None
-                    ):
-                        log.info(
-                            "file_state dataset missing for repo=%s language=%s snapshot=%s; "
-                            "skipping previous state: %s",
-                            repo,
-                            language,
-                            snapshot_id,
-                            exc,
-                        )
-                        return {}
-                gateway.policy.ensure_table(FILE_STATE_TABLE_KEY)
-                log.info(
-                    "file_state manifest missing for repo=%s language=%s; "
-                    "falling back to DuckDB table: %s",
-                    repo,
-                    language,
-                    exc,
-                )
-                base_relation = gateway.table(FILE_STATE_TABLE_KEY)
-            relation = base_relation.filter(predicate).select(
+        except READ_EXCEPTIONS as exc:
+            log.warning(
+                "file_state relation load failed for repo=%s language=%s: %s",
+                repo,
+                language,
+                exc,
+            )
+            return None
+
+    def _filtered_relation_from_gateway(
+        self,
+        gateway: StorageGateway,
+        repo: str,
+        language: str,
+    ) -> DuckDBRelation | None:
+        base_relation = self._base_relation_from_gateway(gateway, repo, language)
+        if base_relation is None:
+            return None
+        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+            ColumnExpression("language") == ConstantExpression(language)
+        )
+        try:
+            return base_relation.filter(predicate).select(
                 "rel_path",
                 "size_bytes",
                 "mtime_ns",
                 "content_hash",
             )
-            rows_iter = iter_tuples_from_relation(relation)
-        else:
-            self._storage.ensure_schema("core.file_state")
+        except RELATION_EXCEPTIONS as exc:
+            log.warning(
+                "file_state load failed for repo=%s language=%s: %s",
+                repo,
+                language,
+                exc,
+            )
+            return None
+
+    def _base_relation_from_gateway(
+        self,
+        gateway: StorageGateway,
+        repo: str,
+        language: str,
+    ) -> DuckDBRelation | None:
+        try:
+            return gateway.relation_from_table_key(FILE_STATE_TABLE_KEY)
+        except RELATION_EXCEPTIONS as exc:
+            if self._should_skip_missing_dataset(gateway, repo, language, exc):
+                return None
+            return self._fallback_relation(gateway, repo, language, exc)
+
+    def _should_skip_missing_dataset(
+        self,
+        gateway: StorageGateway,
+        repo: str,
+        language: str,
+        exc: Exception,
+    ) -> bool:
+        dataset = self._dataset_for_table_key(gateway, FILE_STATE_TABLE_KEY)
+        config = getattr(gateway, "config", None)
+        dataset_root_dir = getattr(config, "dataset_root_dir", None)
+        snapshot_id = getattr(config, "commit", None)
+        is_view = bool(getattr(dataset, "is_view", False)) if dataset is not None else False
+        if dataset is None or is_view or dataset_root_dir is None or snapshot_id is None:
+            return False
+        log.info(
+            "file_state dataset missing for repo=%s language=%s snapshot=%s; "
+            "skipping previous state: %s",
+            repo,
+            language,
+            snapshot_id,
+            exc,
+        )
+        return True
+
+    @staticmethod
+    def _dataset_for_table_key(
+        gateway: StorageGateway,
+        table_key: str,
+    ) -> object | None:
+        datasets = getattr(gateway, "datasets", None)
+        by_table_key = getattr(datasets, "by_table_key", None)
+        if isinstance(by_table_key, Mapping):
+            return by_table_key.get(table_key)
+        return None
+
+    @staticmethod
+    def _fallback_relation(
+        gateway: StorageGateway,
+        repo: str,
+        language: str,
+        exc: Exception,
+    ) -> DuckDBRelation | None:
+        try:
+            gateway.policy.ensure_table(FILE_STATE_TABLE_KEY)
+            base_relation = gateway.table(FILE_STATE_TABLE_KEY)
+        except RELATION_EXCEPTIONS as table_exc:
+            log.warning(
+                "file_state fallback failed for repo=%s language=%s: %s",
+                repo,
+                language,
+                table_exc,
+            )
+            return None
+        log.info(
+            "file_state manifest missing for repo=%s language=%s; falling back to DuckDB table: %s",
+            repo,
+            language,
+            exc,
+        )
+        return base_relation
+
+    def _rows_iter_from_storage(
+        self,
+        repo: str,
+        language: str,
+    ) -> Iterable[tuple[object, object, object, object]] | None:
+        self._storage.ensure_schema(FILE_STATE_TABLE_KEY)
+        try:
             reader = self._storage.fetch_arrow_reader(
                 """
                 WITH ranked AS (
@@ -226,24 +361,56 @@ class HashChangeDetectionAdapter:
                 """,
                 [repo, language],
             )
-            rows_iter = iter_tuples_from_arrow_reader(reader)
-
-        state: dict[str, FileDigest] = {}
-        for rel_path, size_bytes, mtime_ns, content_hash in rows_iter:
-            normalized = normalize_path(str(rel_path))
-            digest = FileDigest(
-                size_bytes=int(cast("SupportsInt", size_bytes)),
-                mtime_ns=int(cast("SupportsInt", mtime_ns)),
-                content_hash=str(content_hash),
+        except READ_EXCEPTIONS as exc:
+            log.warning(
+                "file_state reader load failed for repo=%s language=%s: %s",
+                repo,
+                language,
+                exc,
             )
-            existing = state.get(normalized)
-            if existing is None or digest.mtime_ns >= existing.mtime_ns:
-                state[normalized] = digest
+            return None
+        try:
+            return cast(
+                "Iterable[tuple[object, object, object, object]]",
+                iter_tuples_from_arrow_reader(reader),
+            )
+        except READ_EXCEPTIONS as exc:
+            log.warning(
+                "file_state reader load failed for repo=%s language=%s: %s",
+                repo,
+                language,
+                exc,
+            )
+            return None
 
-        if not state:
-            log.info("No previous file_state rows found for %s", repo)
-
-        return state
+    @staticmethod
+    def _build_state_from_rows(
+        rows_iter: Iterable[tuple[object, object, object, object]],
+        *,
+        repo: str,
+        language: str,
+    ) -> tuple[dict[str, FileDigest], bool]:
+        state: dict[str, FileDigest] = {}
+        try:
+            for rel_path, size_bytes, mtime_ns, content_hash in rows_iter:
+                normalized = normalize_path(str(rel_path))
+                digest = FileDigest(
+                    size_bytes=int(cast("SupportsInt", size_bytes)),
+                    mtime_ns=int(cast("SupportsInt", mtime_ns)),
+                    content_hash=str(content_hash),
+                )
+                existing = state.get(normalized)
+                if existing is None or digest.mtime_ns >= existing.mtime_ns:
+                    state[normalized] = digest
+        except READ_EXCEPTIONS as exc:
+            log.warning(
+                "file_state iteration failed for repo=%s language=%s: %s",
+                repo,
+                language,
+                exc,
+            )
+            return {}, False
+        return state, True
 
     def save_current_state(
         self,

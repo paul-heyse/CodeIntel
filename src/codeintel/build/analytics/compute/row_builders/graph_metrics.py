@@ -4,25 +4,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codeintel.core.query_results import coerce_optional_int
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from datetime import datetime
 
     from codeintel.build.analytics.compute.graphs import ComponentBundle, NeighborStats
-    from codeintel.core.schemas.generated_rows.graph import (
-        GraphImportModulesRow,
-        GraphSymbolUseEdgesRow,
-    )
 
 
 @dataclass(frozen=True)
@@ -32,9 +22,9 @@ class FunctionGraphMetricInputs:
     repo: str
     commit: str
     stats: NeighborStats
-    centrality: Mapping[str, Mapping[Any, float]]
+    centrality: Mapping[str, Mapping[int, float]]
     components: ComponentBundle
-    graph_nodes: list[Any]
+    graph_nodes: list[int]
     created_at: datetime
 
 
@@ -46,8 +36,8 @@ class ModuleGraphMetricInputs:
     commit: str
     modules: set[str]
     import_stats: NeighborStats
-    centrality: Mapping[str, Mapping[Any, float]]
-    component_meta: Mapping[str, Mapping[Any, int | bool]]
+    centrality: Mapping[str, Mapping[str, float]]
+    component_meta: Mapping[str, Mapping[str, int | bool]]
     symbol_inbound: Mapping[str, set[str]]
     symbol_outbound: Mapping[str, set[str]]
     created_at: datetime
@@ -55,7 +45,7 @@ class ModuleGraphMetricInputs:
 
 def build_function_graph_metric_rows(
     inputs: FunctionGraphMetricInputs,
-) -> list[GraphMetricsFunctionsRow]:
+) -> list[dict[str, object]]:
     """Construct rows for analytics.graph_metrics_functions.
 
     Parameters
@@ -65,33 +55,33 @@ def build_function_graph_metric_rows(
 
     Returns
     -------
-    list[GraphMetricsFunctionsRow]
+    list[dict[str, object]]
         Row dicts ready for graph_metrics_functions insertion.
     """
     return [
-        GraphMetricsFunctionsRow(
-            repo=inputs.repo,
-            commit=inputs.commit,
-            function_goid_h128=int(node),
-            call_fan_in=len(inputs.stats.in_neighbors.get(node, ())),
-            call_fan_out=len(inputs.stats.out_neighbors.get(node, ())),
-            call_in_degree=inputs.stats.in_counts.get(node, 0),
-            call_out_degree=inputs.stats.out_counts.get(node, 0),
-            call_pagerank=inputs.centrality["pagerank"].get(node),
-            call_betweenness=inputs.centrality["betweenness"].get(node),
-            call_closeness=inputs.centrality["closeness"].get(node),
-            call_cycle_member=inputs.components.in_cycle.get(node, False),
-            call_cycle_id=inputs.components.scc_id.get(node),
-            call_layer=inputs.components.layer.get(node),
-            created_at=inputs.created_at,
-        )
+        {
+            "repo": inputs.repo,
+            "commit": inputs.commit,
+            "function_goid_h128": int(node),
+            "call_fan_in": len(inputs.stats.in_neighbors.get(node, ())),
+            "call_fan_out": len(inputs.stats.out_neighbors.get(node, ())),
+            "call_in_degree": inputs.stats.in_counts.get(node, 0),
+            "call_out_degree": inputs.stats.out_counts.get(node, 0),
+            "call_pagerank": inputs.centrality["pagerank"].get(node),
+            "call_betweenness": inputs.centrality["betweenness"].get(node),
+            "call_closeness": inputs.centrality["closeness"].get(node),
+            "call_cycle_member": inputs.components.in_cycle.get(node, False),
+            "call_cycle_id": inputs.components.scc_id.get(node),
+            "call_layer": inputs.components.layer.get(node),
+            "created_at": inputs.created_at,
+        }
         for node in inputs.graph_nodes
     ]
 
 
 def component_metadata_from_import_rows(
-    rows: Iterable[Mapping[str, object]] | Iterable[GraphImportModulesRow],
-) -> dict[str, dict[str, int | bool]] | None:
+    rows: Iterable[Mapping[str, object]],
+) -> Mapping[str, Mapping[str, int | bool]] | None:
     """Build cached import graph metadata from pre-scoped rows.
 
     Parameters
@@ -163,7 +153,7 @@ def merge_component_metadata(
 
 
 def build_symbol_module_edges(
-    symbol_use_edges: Iterable[Mapping[str, object]] | Iterable[GraphSymbolUseEdgesRow],
+    symbol_use_edges: Iterable[Mapping[str, object]],
     module_by_path: Mapping[str, str],
 ) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
     """Aggregate symbol use edges to module-level adjacency.
@@ -202,7 +192,7 @@ def build_symbol_module_edges(
 
 def build_module_graph_metric_rows(
     inputs: ModuleGraphMetricInputs,
-) -> list[GraphMetricsModulesRow]:
+) -> list[dict[str, object]]:
     """Construct rows for analytics.graph_metrics_modules.
 
     Parameters
@@ -212,36 +202,36 @@ def build_module_graph_metric_rows(
 
     Returns
     -------
-    list[GraphMetricsModulesRow]
+    list[dict[str, object]]
         Row dicts ready for graph_metrics_modules insertion.
     """
     return [
-        GraphMetricsModulesRow(
-            repo=inputs.repo,
-            commit=inputs.commit,
-            module=module,
-            import_fan_in=len(inputs.import_stats.in_neighbors.get(module, ())),
-            import_fan_out=len(inputs.import_stats.out_neighbors.get(module, ())),
-            import_in_degree=inputs.import_stats.in_counts.get(module, 0),
-            import_out_degree=inputs.import_stats.out_counts.get(module, 0),
-            import_pagerank=inputs.centrality["pagerank"].get(module),
-            import_betweenness=inputs.centrality["betweenness"].get(module),
-            import_closeness=inputs.centrality["closeness"].get(module),
-            import_cycle_member=bool(inputs.component_meta["in_cycle"].get(module, False)),
-            import_cycle_id=(
+        {
+            "repo": inputs.repo,
+            "commit": inputs.commit,
+            "module": module,
+            "import_fan_in": len(inputs.import_stats.in_neighbors.get(module, ())),
+            "import_fan_out": len(inputs.import_stats.out_neighbors.get(module, ())),
+            "import_in_degree": inputs.import_stats.in_counts.get(module, 0),
+            "import_out_degree": inputs.import_stats.out_counts.get(module, 0),
+            "import_pagerank": inputs.centrality["pagerank"].get(module),
+            "import_betweenness": inputs.centrality["betweenness"].get(module),
+            "import_closeness": inputs.centrality["closeness"].get(module),
+            "import_cycle_member": bool(inputs.component_meta["in_cycle"].get(module, False)),
+            "import_cycle_id": (
                 int(component_id)
                 if (component_id := inputs.component_meta["component_id"].get(module)) is not None
                 else None
             ),
-            import_layer=(
+            "import_layer": (
                 int(layer_val)
                 if (layer_val := inputs.component_meta["layer"].get(module)) is not None
                 else None
             ),
-            symbol_fan_in=len(inputs.symbol_inbound.get(module, ())),
-            symbol_fan_out=len(inputs.symbol_outbound.get(module, ())),
-            created_at=inputs.created_at,
-        )
+            "symbol_fan_in": len(inputs.symbol_inbound.get(module, ())),
+            "symbol_fan_out": len(inputs.symbol_outbound.get(module, ())),
+            "created_at": inputs.created_at,
+        }
         for module in sorted(inputs.modules)
     ]
 

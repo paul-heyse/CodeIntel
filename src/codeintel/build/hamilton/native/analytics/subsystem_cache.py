@@ -19,7 +19,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.arrow_ops import align_table_to_contract
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -42,13 +42,13 @@ def subsystem_profile_cache__base(
     env: BuildEnv,
     q__analytics__subsystems: InferableTabularInput,
     q__analytics__subsystem_graph_metrics: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build cached subsystem profile rows.
 
     Returns
     -------
-    pa.RecordBatchReader
-        Reader containing subsystem profile cache rows.
+    pa.Table
+        Table containing subsystem profile cache rows.
     """
     subsystems_frame = tabular_to_arrow_table(q__analytics__subsystems)
     metrics_frame = tabular_to_arrow_table(q__analytics__subsystem_graph_metrics)
@@ -59,7 +59,7 @@ def subsystem_profile_cache__base(
     )
     with suppress(KeyError, RuntimeError, ValueError):
         table = align_table_to_contract(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY, table)
-    return table_to_reader(table)
+    return table
 
 
 _MODULE = sys.modules[__name__]
@@ -73,7 +73,7 @@ _SUBSYSTEM_CACHES_TABLE_TARGET_SPEC = TableTargetSpec(
             contract=SUBSYSTEM_PROFILE_CACHE_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
             node_name="subsystem_profile_cache__table",
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
         ),
     ),
     table_materializations_node="subsystem_caches__table_materializations",

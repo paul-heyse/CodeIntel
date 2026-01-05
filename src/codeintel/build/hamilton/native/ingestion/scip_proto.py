@@ -204,7 +204,7 @@ def scip_proto__materializations(
     return {SCIP_PROTO_ARTIFACT: m__artifact__scip_pb2}
 
 
-@cache(behavior="disable")
+@cache(behavior="ignore")
 @tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
 def scip_proto__finalize_context(
     env: BuildEnv,

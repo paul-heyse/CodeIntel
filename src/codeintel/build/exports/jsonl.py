@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.exports.common import build_export_reader
-from codeintel.build.exports.engine import export_all_datasets
+from codeintel.build.exports.engine import ExportRunConfig, export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
 from codeintel.build.exports.writers import write_json_array
 from codeintel.core.config.settings import ExportAuditSettings
@@ -107,7 +107,7 @@ def export_all_jsonl(
     settings: ExportAuditSettings,
     options: ExportCallOptions | None = None,
 ) -> list[Path]:
-    """Export configured datasets to JSONL files under `Document Output/`.
+    """Export configured datasets to JSONL files under the document output directory.
 
     Parameters
     ----------
@@ -129,8 +129,10 @@ def export_all_jsonl(
         gateway,
         document_output_dir,
         fmt="jsonl",
-        settings=settings,
-        options=options,
+        run_config=ExportRunConfig(
+            settings=settings,
+            options=options,
+        ),
     )
 
 

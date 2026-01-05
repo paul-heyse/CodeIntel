@@ -20,7 +20,7 @@ from codeintel.core.columnar.rows import (
     ColumnarBatchCollector,
     ColumnarRows,
     columnar_batch_collector_for_table_key,
-    empty_reader_for_table,
+    empty_table_for_table,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.ast_facts import (
@@ -109,11 +109,11 @@ class AstExtractResult:
     result: ExecutionResult
     ast_rows: ColumnarRows = field(default_factory=dict)
     metric_rows: ColumnarRows = field(default_factory=dict)
-    ast_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(AST_NODES_TABLE_KEY)
+    ast_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(AST_NODES_TABLE_KEY)
     )
-    metric_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(AST_METRICS_TABLE_KEY)
+    metric_rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(AST_METRICS_TABLE_KEY)
     )
     ast_row_count: int = 0
     metric_row_count: int = 0
@@ -575,14 +575,14 @@ class AstExtractStep(BaseExtractStep):
             collectors.metrics.row_count,
         )
 
-        ast_rows_reader = collectors.ast_nodes.to_reader()
-        metric_rows_reader = collectors.metrics.to_reader()
+        ast_rows_table = collectors.ast_nodes.to_table()
+        metric_rows_table = collectors.metrics.to_table()
         return AstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             ast_rows={},
             metric_rows={},
-            ast_rows_reader=ast_rows_reader,
-            metric_rows_reader=metric_rows_reader,
+            ast_rows_reader=ast_rows_table,
+            metric_rows_reader=metric_rows_table,
             ast_row_count=collectors.ast_nodes.row_count,
             metric_row_count=collectors.metrics.row_count,
         )

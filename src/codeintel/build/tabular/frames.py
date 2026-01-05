@@ -29,7 +29,7 @@ from codeintel.core.schemas.arrow_gen import (
     ExtrasPolicy,
     arrow_contract_for_table_schema,
 )
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable

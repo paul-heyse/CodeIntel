@@ -1,7 +1,7 @@
 
 # CodeIntel Metadata Outputs
 
-This document describes the consolidated artifacts emitted by `generate_documents.sh` under `Document Output/`. Each dataset is produced by the CodeIntel enrichment pipeline and captures different facets of the repository graph. The intent is to give downstream AI agents enough semantic context to reason about the codebase without re-running the heavy analysis steps.
+This document describes the consolidated artifacts emitted by `generate_documents.sh` under `build/document_output/`. Each dataset is produced by the CodeIntel enrichment pipeline and captures different facets of the repository graph. The intent is to give downstream AI agents enough semantic context to reason about the codebase without re-running the heavy analysis steps.
 
 In addition to these physical datasets, the pipeline defines several **DuckDB views** under the `docs.*` schema (for example `docs.v_function_architecture`, `docs.v_module_architecture`). Those views denormalize multiple tables from this document into architecture‑oriented profiles that are consumed by the CodeIntel server and MCP tools. They are not exported as stand‑alone JSONL files but are important parts of the overall data model.
 
@@ -167,14 +167,14 @@ Each dataset is written twice:
 - **Parquet**: Columnar format aligned with the DuckDB catalog; best for analytics and SQL.
 - **JSONL**: (Generated via DuckDB `COPY` from Parquet) for LLM ingestion, allowing streaming of each row as a JSON object.
 
-The JSON files reside directly under `Document Output/` with names matching the Parquet base (`goids.jsonl`, `call_graph_edges.jsonl`, etc.). They contain the exact column/value pairs described above.
+The JSON files reside directly under `build/document_output/` with names matching the Parquet base (`goids.jsonl`, `call_graph_edges.jsonl`, etc.). They contain the exact column/value pairs described above.
 
 ## 7. Generation Workflow Summary
 
 1. `scip-python` indexes the repository and emits `CodeIntel/index.scip` + JSON view.
 2. `CodeIntel.cli.enrich_pipeline all` runs LibCST, AST, analytics, and stores outputs under `CodeIntel/io/ENRICHED`.
 3. Dedicated graph commands (`CodeIntel.cli.enrich goids|callgraph|cfg|dfg`) consume the repo and enrichment output, emitting the graph datasets.
-4. `generate_documents.sh` copies all artifacts into `Document Output/` and runs the Parquet→JSONL conversion for the graph tables.
+4. `generate_documents.sh` copies all artifacts into `build/document_output/` and runs the Parquet→JSONL conversion for the graph tables.
 
 Downstream consumers can therefore:
 - Join any dataset on `goid_h128`/`goid` to relate nodes, edges, and crosswalk entries.
@@ -367,7 +367,7 @@ Each entry lists the resolved matches (files) for downstream consumption. Tools 
 
 **Purpose**: Language-agnostic symbol graph produced by `scip-python`, capturing symbol definitions, references, and documentation. Serves as the canonical interface for cross-language tooling (search, jump-to-def, etc.) and as the raw input for both `symbol_use_edges.*` and `goid_crosswalk.scip_symbol`.
 
-**Origin**: Generated via `scip-python index ../src` and exported to JSON using `scip print --json`. Stored at `Document Output/index.scip.json`. During enrichment, SCIP definitions are matched to GOID spans to populate `goid_crosswalk.scip_symbol`, and SCIP def→use relationships are materialized into `symbol_use_edges.*` and used as evidence for unresolved call edges.
+**Origin**: Generated via `scip-python index ../src` and exported to JSON using `scip print --json`. Stored at `build/document_output/index.scip.json`. During enrichment, SCIP definitions are matched to GOID spans to populate `goid_crosswalk.scip_symbol`, and SCIP def→use relationships are materialized into `symbol_use_edges.*` and used as evidence for unresolved call edges.
 
 **Structure**: JSON array of documents, each containing:
 

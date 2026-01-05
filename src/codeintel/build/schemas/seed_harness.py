@@ -13,12 +13,12 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import pyarrow as pa
 
-from codeintel.core.columnar.dataset_scanner import (
+from codeintel.core.columnar.ipc import schema_from_ipc_payload
+from codeintel.core.columnar.streaming import (
     empty_reader_from_schema,
     sample_reader,
     scan_dataset_reader,
 )
-from codeintel.core.columnar.ipc import schema_from_ipc_payload
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema

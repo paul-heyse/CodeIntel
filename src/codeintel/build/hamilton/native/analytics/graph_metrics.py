@@ -50,7 +50,7 @@ from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.compute_masks import equal_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_optional_int
 
@@ -723,52 +723,52 @@ def graph_metrics_result(
 
 def graph_metrics_functions__base(
     graph_metrics_result: GraphMetricsRows,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build base graph metrics rows for functions.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing function graph metrics rows.
+    pyarrow.Table
+        Table containing function graph metrics rows.
     """
     if not graph_metrics_result.function_rows:
-        return empty_reader_for_table(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)
+    table, _ = table_for_rows(
         GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
         graph_metrics_result.function_rows,
     )
-    return reader
+    return table
 
 
 def graph_metrics_modules__base(
     graph_metrics_result: GraphMetricsRows,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build base graph metrics rows for modules.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing module graph metrics rows.
+    pyarrow.Table
+        Table containing module graph metrics rows.
     """
     if not graph_metrics_result.module_rows:
-        return empty_reader_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(
+        return empty_table_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
+    table, _ = table_for_rows(
         GRAPH_METRICS_MODULES_TABLE_KEY,
         graph_metrics_result.module_rows,
     )
-    return reader
+    return table
 
 
 def graph_metrics_functions_ext__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build extended graph metrics rows for functions.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing extended function metrics rows.
+    pyarrow.Table
+        Table containing extended function metrics rows.
     """
     rows = build_graph_metrics_functions_ext_rows(
         repo=env.repo,
@@ -778,21 +778,21 @@ def graph_metrics_functions_ext__base(
         filters=graph_metric_inputs.filters,
     )
     if not rows:
-        return empty_reader_for_table(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
-    return reader
+        return empty_table_for_table(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY)
+    table, _ = table_for_rows(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
+    return table
 
 
 def graph_metrics_modules_ext__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build extended graph metrics rows for modules.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing extended module metrics rows.
+    pyarrow.Table
+        Table containing extended module metrics rows.
     """
     rows = build_graph_metrics_modules_ext_rows(
         repo=env.repo,
@@ -802,21 +802,21 @@ def graph_metrics_modules_ext__base(
         filters=graph_metric_inputs.filters,
     )
     if not rows:
-        return empty_reader_for_table(GRAPH_METRICS_MODULES_EXT_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
-    return reader
+        return empty_table_for_table(GRAPH_METRICS_MODULES_EXT_TABLE_KEY)
+    table, _ = table_for_rows(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
+    return table
 
 
 def symbol_graph_metrics_functions__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build symbol graph metrics rows for functions.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing symbol function metrics rows.
+    pyarrow.Table
+        Table containing symbol function metrics rows.
     """
     rows = build_symbol_graph_metrics_function_rows(
         repo=env.repo,
@@ -826,21 +826,21 @@ def symbol_graph_metrics_functions__base(
         runtime=graph_metric_inputs.runtime_options,
     )
     if not rows:
-        return empty_reader_for_table(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
-    return reader
+        return empty_table_for_table(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY)
+    table, _ = table_for_rows(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
+    return table
 
 
 def symbol_graph_metrics_modules__base(
     env: BuildEnv,
     graph_metric_inputs: GraphMetricInputs,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build symbol graph metrics rows for modules.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing symbol module metrics rows.
+    pyarrow.Table
+        Table containing symbol module metrics rows.
     """
     rows = build_symbol_graph_metrics_module_rows(
         repo=env.repo,
@@ -850,9 +850,9 @@ def symbol_graph_metrics_modules__base(
         runtime=graph_metric_inputs.runtime_options,
     )
     if not rows:
-        return empty_reader_for_table(SYMBOL_GRAPH_MODULES_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
-    return reader
+        return empty_table_for_table(SYMBOL_GRAPH_MODULES_TABLE_KEY)
+    table, _ = table_for_rows(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
+    return table
 
 
 def graph_stats__base(
@@ -860,13 +860,13 @@ def graph_stats__base(
     graph_metric_inputs: GraphMetricInputs,
     q__analytics__config_values: InferableTabularInput,
     q__core__modules: InferableTabularInput,
-) -> pa.RecordBatchReader:
+) -> pa.Table:
     """Build base graph stats rows.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Reader containing graph stats rows.
+    pyarrow.Table
+        Table containing graph stats rows.
     """
     config_value_rows = _collect_rows(
         q__analytics__config_values,
@@ -904,8 +904,8 @@ def graph_stats__base(
         )
     )
     if not rows:
-        return empty_reader_for_table(GRAPH_STATS_TABLE_KEY)
-    reader, _ = record_batch_reader_for_rows(GRAPH_STATS_TABLE_KEY, rows)
+        return empty_table_for_table(GRAPH_STATS_TABLE_KEY)
+    reader, _ = table_for_rows(GRAPH_STATS_TABLE_KEY, rows)
     return reader
 
 
@@ -922,7 +922,7 @@ _GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
                 table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
                 collect_group=GRAPH_METRICS_COLLECT_GROUP,
             ),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="graph_metrics_functions__table",
         ),
         TableTargetTableSpec(
@@ -933,7 +933,7 @@ _GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
                 table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
                 collect_group=GRAPH_METRICS_COLLECT_GROUP,
             ),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="graph_metrics_modules__table",
         ),
     ),
@@ -955,7 +955,7 @@ _GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="graph_metrics_functions_ext__base",
             contract=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="graph_metrics_functions_ext__table",
         ),
         TableTargetTableSpec(
@@ -963,7 +963,7 @@ _GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="graph_metrics_modules_ext__base",
             contract=GRAPH_METRICS_MODULES_EXT_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="graph_metrics_modules_ext__table",
         ),
     ),
@@ -985,7 +985,7 @@ _SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="symbol_graph_metrics_functions__base",
             contract=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="symbol_graph_metrics_functions__table",
         ),
         TableTargetTableSpec(
@@ -993,7 +993,7 @@ _SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="symbol_graph_metrics_modules__base",
             contract=SYMBOL_GRAPH_MODULES_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="symbol_graph_metrics_modules__table",
         ),
     ),
@@ -1015,7 +1015,7 @@ _GRAPH_STATS_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="graph_stats__base",
             contract=GRAPH_STATS_CONTRACT,
             save_spec=DatasetSaveSpec(table_key=GRAPH_STATS_TABLE_KEY),
-            input_type=pa.RecordBatchReader,
+            input_type=pa.Table,
             node_name="graph_stats__table",
         ),
     ),

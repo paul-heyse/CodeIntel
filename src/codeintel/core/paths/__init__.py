@@ -20,6 +20,7 @@ from codeintel.core.paths.module import (
 )
 from codeintel.core.paths.normalize import (
     ensure_repo_root,
+    find_repo_root,
     normalize_path,
     repo_relpath,
     safe_relpath,
@@ -27,6 +28,7 @@ from codeintel.core.paths.normalize import (
 
 __all__ = [
     "ensure_repo_root",
+    "find_repo_root",
     "is_package_path",
     "module_to_path",
     "normalize_path",

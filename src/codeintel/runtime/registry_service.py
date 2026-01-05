@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -15,6 +14,7 @@ from codeintel.build.schemas.contract_service import (
 )
 from codeintel.core.exports.formats import export_format_choices, resolve_export_format_spec
 from codeintel.core.imports.lazy import lazy_getattr
+from codeintel.core.paths import find_repo_root
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
@@ -28,9 +28,10 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-_REGISTRY_RESOURCES = Path(str(files("codeintel.core.registry")))
-_DAG_OUTPUT_INVENTORY_PATH = _REGISTRY_RESOURCES / "dag_output_inventory.yaml"
-_INGESTION_TOOLING_INVENTORY_PATH = _REGISTRY_RESOURCES / "ingestion_tooling_inventory.yaml"
+def _registry_config_path(filename: str) -> Path:
+    return find_repo_root() / "config" / "registry" / filename
+
+
 _VALID_MATERIALIZATIONS = {"artifact", "mixed", "table"}
 _VALID_TOOL_KINDS = {"binary", "library", "python_module"}
 
@@ -762,7 +763,7 @@ class RegistryService:
         DagOutputInventory
             Parsed DAG output inventory.
         """
-        inventory_path = path or _DAG_OUTPUT_INVENTORY_PATH
+        inventory_path = path or _registry_config_path("dag_output_inventory.yaml")
         return DagOutputInventory.from_path(inventory_path)
 
     @staticmethod
@@ -774,7 +775,7 @@ class RegistryService:
         Path
             Default inventory file path.
         """
-        return _DAG_OUTPUT_INVENTORY_PATH
+        return _registry_config_path("dag_output_inventory.yaml")
 
     @staticmethod
     def load_ingestion_tooling_inventory(
@@ -792,7 +793,7 @@ class RegistryService:
         IngestionToolInventory
             Parsed ingestion tooling inventory.
         """
-        inventory_path = path or _INGESTION_TOOLING_INVENTORY_PATH
+        inventory_path = path or _registry_config_path("ingestion_tooling_inventory.yaml")
         return IngestionToolInventory.from_path(inventory_path)
 
     @staticmethod
@@ -804,7 +805,7 @@ class RegistryService:
         Path
             Default tooling inventory file path.
         """
-        return _INGESTION_TOOLING_INVENTORY_PATH
+        return _registry_config_path("ingestion_tooling_inventory.yaml")
 
     def get_contract(self, table_key: str) -> DatasetContract:
         """Return the dataset contract for a table key.

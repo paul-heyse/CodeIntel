@@ -31,17 +31,14 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
 from codeintel.build.schemas import get_schema_provider
-from codeintel.build.tabular.conversion import (
-    table_to_reader,
-    tabular_to_arrow_reader,
-    tabular_to_arrow_table,
-)
-from codeintel.core.columnar.dataset_scanner import scan_dataset_reader
+from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_table
+from codeintel.core.columnar.streaming import scan_dataset_reader
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
 from codeintel.core.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
+from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.sqlglot_tools import (
     canonicalize_expression_duckdb,
@@ -402,25 +399,16 @@ def _apply_semantic_attr(fn: Callable[..., object], tags: Mapping[str, str]) -> 
         setattr(fn, SEMANTIC_VIEW_TAG_ATTR, dict(tags))
 
 
-def _add_row_index_reader(
-    reader: pa.RecordBatchReader,
+def _add_row_index_table(
+    table: pa.Table,
     *,
     name: str,
     offset: int,
-) -> pa.RecordBatchReader:
-    if name in reader.schema.names:
-        return reader
-
-    def _iter_batches() -> Iterable[pa.RecordBatch]:
-        current = offset
-        for batch in reader:
-            size = batch.num_rows
-            index_array = pa.array(range(current, current + size), type=pa.int64())
-            current += size
-            yield batch.append_column(name, index_array)
-
-    schema = reader.schema.append(pa.field(name, pa.int64()))
-    return pa.RecordBatchReader.from_batches(schema, _iter_batches())
+) -> pa.Table:
+    if name in table.schema.names:
+        return table
+    index_array = pa.array(range(offset, offset + table.num_rows), type=pa.int64())
+    return table.append_column(name, index_array)
 
 
 def _view_node_name(table_key: str) -> str:
@@ -444,13 +432,13 @@ def _loader_signature(dataset_param: str) -> inspect.Signature:
             annotation=DatasetRef,
         ),
     ]
-    return inspect.Signature(params, return_annotation=pa.RecordBatchReader)
+    return inspect.Signature(params, return_annotation=pa.Table)
 
 
-def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pa.RecordBatchReader]:
+def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pa.Table]:
     dataset_param = dataset_node(table_key)
 
-    def loader(env: BuildEnv, **kwargs: object) -> pa.RecordBatchReader:
+    def loader(env: BuildEnv, **kwargs: object) -> pa.Table:
         dataset_ref = kwargs.get(dataset_param)
         if not isinstance(dataset_ref, DatasetRef):
             msg = f"Expected DatasetRef for {dataset_param}, got {type(dataset_ref)}"
@@ -484,19 +472,20 @@ def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pa.
         if reader is None:
             msg = f"Missing dataset snapshot directory: {snapshot_dir}"
             raise FileNotFoundError(msg)
+        table = reader_to_table(reader)
         row_index_name = env.settings.dataset_row_index_name
         if row_index_name:
-            return _add_row_index_reader(
-                reader,
+            return _add_row_index_table(
+                table,
                 name=row_index_name,
                 offset=env.settings.dataset_row_index_offset,
             )
-        return reader
+        return table
 
     loader = set_signature(loader, _loader_signature(dataset_param))
     loader.__name__ = node_name
     loader.__module__ = __name__
-    loader.__doc__ = f"Load {table_key} as an Arrow RecordBatchReader."
+    loader.__doc__ = f"Load {table_key} as an Arrow table."
     tagged = tag_loader_query(
         domain=VIEWS_DOMAIN,
         target=VIEWS_TARGET_NAME,
@@ -519,18 +508,18 @@ def _view_signature(param_names: Sequence[str]) -> inspect.Signature:
         inspect.Parameter(
             name,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=pa.RecordBatchReader,
+            annotation=pa.Table,
         )
         for name in param_names
     )
-    return inspect.Signature(params, return_annotation=pa.RecordBatchReader)
+    return inspect.Signature(params, return_annotation=pa.Table)
 
 
-def _ensure_reader(value: object, *, param_name: str) -> pa.RecordBatchReader:
+def _ensure_table(value: object, *, param_name: str) -> pa.Table:
     try:
-        return tabular_to_arrow_reader(value)
+        return tabular_to_arrow_table(value)
     except TypeError as exc:
-        msg = f"Expected Arrow reader for {param_name}, got {type(value)}"
+        msg = f"Expected Arrow table for {param_name}, got {type(value)}"
         raise TypeError(msg) from exc
 
 
@@ -547,10 +536,10 @@ def _require_dependency(
 
 
 def _decorate_view_node(
-    fn: Callable[..., pa.RecordBatchReader],
+    fn: Callable[..., pa.Table],
     *,
     plan: ViewPlan,
-) -> Callable[..., pa.RecordBatchReader]:
+) -> Callable[..., pa.Table]:
     context = SaverContext(
         domain=VIEWS_DOMAIN,
         target=VIEWS_TARGET_NAME,
@@ -593,8 +582,8 @@ def _coerce_string_view(table: pa.Table) -> pa.Table:
 def _execute_view_query(
     *,
     plan: ViewPlan,
-    readers: Mapping[str, pa.RecordBatchReader],
-) -> pa.RecordBatchReader:
+    readers: Mapping[str, pa.Table],
+) -> pa.Table:
     con = duckdb.connect()
     try:
         for table_key, reader in readers.items():
@@ -604,24 +593,24 @@ def _execute_view_query(
         result = con.execute(plan.sql).fetch_arrow_table()
     finally:
         con.close()
-    return table_to_reader(result)
+    return result
 
 
 def _build_ast_view_node(
     *,
     plan: ViewPlan,
     param_by_table: Mapping[str, str],
-) -> Callable[..., pa.RecordBatchReader]:
-    def view_fn(env: BuildEnv, **kwargs: object) -> pa.RecordBatchReader:
+) -> Callable[..., pa.Table]:
+    def view_fn(env: BuildEnv, **kwargs: object) -> pa.Table:
         _ = env
-        readers: dict[str, pa.RecordBatchReader] = {}
+        readers: dict[str, pa.Table] = {}
         for table_key, param_name in param_by_table.items():
             value = _require_dependency(
                 kwargs.get(param_name),
                 param_name=param_name,
                 table_key=plan.table_key,
             )
-            readers[table_key] = _ensure_reader(value, param_name=param_name)
+            readers[table_key] = _ensure_table(value, param_name=param_name)
         return _execute_view_query(plan=plan, readers=readers)
 
     view_fn = set_signature(view_fn, _view_signature(tuple(param_by_table.values())))
@@ -680,8 +669,8 @@ def view_plan_map() -> dict[str, ViewPlan]:
 
 def _install_source_loaders(
     table_keys: Iterable[str],
-) -> dict[str, Callable[..., pa.RecordBatchReader]]:
-    loaders: dict[str, Callable[..., pa.RecordBatchReader]] = {}
+) -> dict[str, Callable[..., pa.Table]]:
+    loaders: dict[str, Callable[..., pa.Table]] = {}
     for table_key in table_keys:
         node_name = _source_node_name(table_key)
         source_loader = _build_source_loader(table_key=table_key, node_name=node_name)
@@ -692,8 +681,8 @@ def _install_source_loaders(
 
 def _install_view_nodes(
     plans: Mapping[str, ViewPlan],
-) -> dict[str, Callable[..., pa.RecordBatchReader]]:
-    nodes: dict[str, Callable[..., pa.RecordBatchReader]] = {}
+) -> dict[str, Callable[..., pa.Table]]:
+    nodes: dict[str, Callable[..., pa.Table]] = {}
     for view_key, plan in plans.items():
         param_by_table = {
             dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
@@ -736,7 +725,7 @@ def _resolve_table_columns(*, table_key: str, env: BuildEnv) -> tuple[str, ...] 
         provider = None
     resolution = resolve_table_schema(
         table_key,
-        observation_provider=env.gateway.schemas,
+        observation_provider=observation_provider_for_env(env),
         schema_provider=provider,
     )
     table_schema = resolution.table_schema
@@ -826,6 +815,21 @@ def _view_lineage_payload(
     return lineage, column_lineage
 
 
+def view_lineage_payload(
+    *,
+    env: BuildEnv,
+    catalog: DagCatalog,
+) -> tuple[dict[str, frozenset[str]], dict[str, dict[str, frozenset[str]]]]:
+    """Return view-level table and column lineage payloads.
+
+    Returns
+    -------
+    tuple[dict[str, frozenset[str]], dict[str, dict[str, frozenset[str]]]]
+        Table-level lineage and column-level lineage payloads.
+    """
+    return _view_lineage_payload(env=env, catalog=catalog)
+
+
 views__table_materializations = make_table_materializations_collector(
     domain=VIEWS_DOMAIN,
     target=VIEWS_TARGET_NAME,
@@ -871,6 +875,7 @@ def t__views(
 __all__ = [
     "VIEW_TABLE_KEYS",
     "t__views",
+    "view_lineage_payload",
     "view_plan_map",
     "views__table_materializations",
 ]

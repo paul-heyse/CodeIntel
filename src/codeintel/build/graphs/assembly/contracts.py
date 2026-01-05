@@ -10,7 +10,7 @@ from codeintel.build.tabular.arrow_ops import (
 from codeintel.build.tabular.arrow_ops import (
     align_table_to_contract as _align_table_to_contract,
 )
-from codeintel.core.columnar.rows import empty_reader_for_table
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.schemas.arrow_gen import ExtrasPolicy
 
 
@@ -46,15 +46,15 @@ def align_table_to_contract(
     return _align_table_to_contract(table_key, table, extras_policy=extras_policy)
 
 
-def empty_contract_reader(table_key: str) -> pa.RecordBatchReader:
-    """Return an empty reader aligned to the table contract.
+def empty_contract_reader(table_key: str) -> pa.Table:
+    """Return an empty table aligned to the table contract.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Empty reader with the contract schema.
+    pyarrow.Table
+        Empty table with the contract schema.
     """
-    return empty_reader_for_table(table_key)
+    return empty_table_for_table(table_key)
 
 
 __all__ = [

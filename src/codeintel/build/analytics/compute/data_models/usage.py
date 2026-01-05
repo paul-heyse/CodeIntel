@@ -24,7 +24,7 @@ from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_str
-from codeintel.core.schemas.generated_rows import columns_for_table_key
+from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -191,8 +191,9 @@ def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection) -> None:
     catalog = get_contract_catalog()
     if catalog is None:
         msg = (
-            "Contract catalog missing. Run `codeintel meta sync` to populate "
-            "metadata.canonical_catalogs before opening a storage gateway."
+            "Contract catalog missing. Run `codeintel meta sync --bundle-root build/metadata` "
+            "or `codeintel storage ingest-metadata` to populate metadata.canonical_catalogs "
+            "before opening a storage gateway."
         )
         raise RuntimeError(msg)
 

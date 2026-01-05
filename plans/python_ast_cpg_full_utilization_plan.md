@@ -221,7 +221,7 @@ Reference anchors:
   - add new targets for symtable, bytecode, inspect
 - [x] src/codeintel/build/hamilton/native/options/ingestion.py
   - add options for new targets and safety budgets
-- [x] src/codeintel/core/registry/dag_output_inventory.yaml
+- [x] config/registry/dag_output_inventory.yaml
   - register new ingestion outputs for symtable/bytecode/inspect
 
 ### Schema and storage wiring
@@ -368,7 +368,7 @@ Reference anchors:
   - [x] Bytecode CFG behind flag + validation gate (ingestion.bytecode.include_cfg)
   - [x] DFG reachability behind flag (graph.cpg.enable_reaches or equivalent)
   - [x] Inspect overlay allowlist-only (ingestion.inspect.enable + allowlist)
-  - [x] Wire gating into build config (codeintel.build.toml / profile yaml)
+  - [x] Wire gating into build config (config/codeintel.build.toml / profile yaml)
   - [x] Add rollout checklist and notes for profile sequencing (full vs fast)
 
 ## Acceptance Criteria
@@ -400,7 +400,7 @@ Reference anchors:
 - Add inspect overlay last and keep disabled by default.
 
 ## Rollout Checklist (Profiles)
-- [x] Build config toggles are present in `codeintel.build.toml.example`.
+- [x] Build config toggles are supported via `config/codeintel.build.toml`.
 - [x] Full profile enables symtable + bytecode CFG/DFG reachability; inspect remains allowlist-only.
 - [x] Fast profile disables bytecode/DFG/inspect by default, keeps symtable on.
 - [x] Documented gate runner: `uv run python -m tools.pytest_gate`.

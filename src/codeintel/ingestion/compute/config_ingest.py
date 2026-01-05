@@ -19,8 +19,8 @@ from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
-    empty_reader_for_table,
-    record_batch_reader_for_columnar_rows,
+    empty_table_for_table,
+    table_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
 
@@ -260,8 +260,8 @@ class ConfigIngestResult:
 
     result: ExecutionResult
     rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_reader_for_table(CONFIG_VALUES_TABLE_KEY)
+    rows_reader: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(CONFIG_VALUES_TABLE_KEY)
     )
     row_count: int = 0
 
@@ -351,7 +351,7 @@ class ConfigIngestStep(BaseExtractStep):
             buffer.row_count,
         )
 
-        rows_reader, row_count = record_batch_reader_for_columnar_rows(
+        rows_reader, row_count = table_for_columnar_rows(
             CONFIG_VALUES_TABLE_KEY,
             buffer.data,
             extras_policy="retain",

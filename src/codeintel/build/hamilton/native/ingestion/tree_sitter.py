@@ -27,7 +27,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.tree_sitter_index import (
     TreeSitterIndexRunOptions,
@@ -69,31 +69,31 @@ class TreeSitterToolOutput(ToolStepOutput):
     """Tool step output for tree-sitter indexing."""
 
     parse_manifest_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_PARSE_MANIFEST_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_PARSE_MANIFEST_TABLE_KEY)
     )
     captures_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_CAPTURES_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_CAPTURES_TABLE_KEY)
     )
     nodes_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_NODES_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_NODES_TABLE_KEY)
     )
     edges_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_EDGES_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_EDGES_TABLE_KEY)
     )
     parse_errors_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_PARSE_ERRORS_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_PARSE_ERRORS_TABLE_KEY)
     )
     changed_ranges_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_CHANGED_RANGES_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_CHANGED_RANGES_TABLE_KEY)
     )
     tokens_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_TOKENS_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_TOKENS_TABLE_KEY)
     )
     trivia_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_TRIVIA_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_TRIVIA_TABLE_KEY)
     )
     language_metadata_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_reader_for_table(TS_LANGUAGE_METADATA_TABLE_KEY)
+        default_factory=lambda: empty_table_for_table(TS_LANGUAGE_METADATA_TABLE_KEY)
     )
     parse_manifest_row_count: int = 0
     captures_row_count: int = 0
@@ -188,15 +188,15 @@ def _coerce_tree_sitter_output(
     )
     return TreeSitterToolOutput(
         result=merged,
-        parse_manifest_rows=empty_reader_for_table(TS_PARSE_MANIFEST_TABLE_KEY),
-        captures_rows=empty_reader_for_table(TS_CAPTURES_TABLE_KEY),
-        nodes_rows=empty_reader_for_table(TS_NODES_TABLE_KEY),
-        edges_rows=empty_reader_for_table(TS_EDGES_TABLE_KEY),
-        parse_errors_rows=empty_reader_for_table(TS_PARSE_ERRORS_TABLE_KEY),
-        changed_ranges_rows=empty_reader_for_table(TS_CHANGED_RANGES_TABLE_KEY),
-        tokens_rows=empty_reader_for_table(TS_TOKENS_TABLE_KEY),
-        trivia_rows=empty_reader_for_table(TS_TRIVIA_TABLE_KEY),
-        language_metadata_rows=empty_reader_for_table(TS_LANGUAGE_METADATA_TABLE_KEY),
+        parse_manifest_rows=empty_table_for_table(TS_PARSE_MANIFEST_TABLE_KEY),
+        captures_rows=empty_table_for_table(TS_CAPTURES_TABLE_KEY),
+        nodes_rows=empty_table_for_table(TS_NODES_TABLE_KEY),
+        edges_rows=empty_table_for_table(TS_EDGES_TABLE_KEY),
+        parse_errors_rows=empty_table_for_table(TS_PARSE_ERRORS_TABLE_KEY),
+        changed_ranges_rows=empty_table_for_table(TS_CHANGED_RANGES_TABLE_KEY),
+        tokens_rows=empty_table_for_table(TS_TOKENS_TABLE_KEY),
+        trivia_rows=empty_table_for_table(TS_TRIVIA_TABLE_KEY),
+        language_metadata_rows=empty_table_for_table(TS_LANGUAGE_METADATA_TABLE_KEY),
         parse_manifest_row_count=0,
         captures_row_count=0,
         nodes_row_count=0,

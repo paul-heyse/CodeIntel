@@ -64,7 +64,7 @@ def cli_runner(cli_ctx: CLIContext) -> Callable[[list[str]], CliResult]:
 
 @pytest.fixture
 def cli_project_ctx(tmp_path: Path) -> Iterator[CLIProjectContext]:
-    """Fixture creating a project layout with codeintel.yaml.
+    """Fixture creating a project layout with config/codeintel.yaml.
 
     Yields
     ------

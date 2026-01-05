@@ -1,11 +1,11 @@
 """Project configuration discovery and runtime construction for the CLI.
 
 This module provides:
-- Pydantic models for parsing `codeintel.yaml` project configuration
+- Pydantic models for parsing `config/codeintel.yaml` project configuration
 - Functions for discovering the project root directory
 - Factory for constructing a unified runtime context from project config
 
-The project config file (`codeintel.yaml`) provides a declarative way to
+The project config file (`config/codeintel.yaml`) provides a declarative way to
 configure CodeIntel for a repository, avoiding verbose CLI flags.
 
 Example Project Config
@@ -21,7 +21,10 @@ Example Project Config
     graphs:
       recipe: builtin.full
     storage:
-      db_path: .codeintel/duckdb.db
+      build_dir: build
+      db_path: build/db/codeintel.duckdb
+      document_output_dir: document_output
+      dataset_root_dir: datasets
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from codeintel.build.settings import DEFAULT_PROFILE_NAME
 
 LOG = logging.getLogger(__name__)
 
-PROJECT_FILE = "codeintel.yaml"
+PROJECT_FILE = "config/codeintel.yaml"
 """Canonical name for the project configuration file."""
 
 
@@ -87,15 +90,27 @@ class StorageProjectConfig(BaseModel):
 
     Attributes
     ----------
+    build_dir
+        Base build directory relative to the project root.
     db_path
-        Path to the DuckDB database file relative to project root.
+        Path to the DuckDB database file relative to project root. Defaults to
+        ``build_dir / "db" / "codeintel.duckdb"`` when omitted.
+    document_output_dir
+        Optional document output directory (relative to build_dir when provided as a
+        relative path).
+    dataset_root_dir
+        Optional dataset root directory (relative to build_dir when provided as a
+        relative path).
     """
 
-    db_path: Path = Path(".codeintel/duckdb.db")
+    build_dir: Path = Path("build")
+    db_path: Path | None = None
+    document_output_dir: Path | None = None
+    dataset_root_dir: Path | None = None
 
 
 class ProjectConfig(BaseModel):
-    """Project-level configuration loaded from codeintel.yaml.
+    """Project-level configuration loaded from config/codeintel.yaml.
 
     This model represents the complete project configuration, providing
     defaults for all optional sections.
@@ -138,7 +153,7 @@ class ProjectConfigError(Exception):
 
 
 def find_project_root(start: Path | None = None) -> Path:
-    """Walk upward from start (or CWD) to find codeintel.yaml.
+    """Walk upward from start (or CWD) to find config/codeintel.yaml.
 
     Parameters
     ----------
@@ -148,7 +163,7 @@ def find_project_root(start: Path | None = None) -> Path:
     Returns
     -------
     Path
-        Absolute path to the directory containing codeintel.yaml.
+        Absolute path to the directory containing config/codeintel.yaml.
 
     Raises
     ------
@@ -158,7 +173,7 @@ def find_project_root(start: Path | None = None) -> Path:
     Examples
     --------
     >>> root = find_project_root(Path("/path/to/nested/dir"))
-    >>> (root / "codeintel.yaml").exists()
+    >>> (root / "config/codeintel.yaml").exists()
     True
     """
     current = (start or Path.cwd()).resolve()
@@ -171,7 +186,7 @@ def find_project_root(start: Path | None = None) -> Path:
 
 
 def load_project_config(root: Path | None = None) -> ProjectConfig:
-    """Load ProjectConfig from codeintel.yaml at the given root.
+    """Load ProjectConfig from config/codeintel.yaml at the given root.
 
     Parameters
     ----------

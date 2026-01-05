@@ -18,7 +18,7 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_reader_for_table, record_batch_reader_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
@@ -361,7 +361,7 @@ def call_graph_nodes_compute(
     """
     goids_table = tabular_to_arrow_table(q__core__goids)
     if goids_table.num_rows == 0:
-        return empty_reader_for_table(CALL_GRAPH_NODES_TABLE_KEY)
+        return empty_table_for_table(CALL_GRAPH_NODES_TABLE_KEY)
 
     modules_table = tabular_to_arrow_table(q__core__modules)
     module_by_path = _module_by_path(modules_table)
@@ -370,7 +370,7 @@ def call_graph_nodes_compute(
         goids_table=goids_table,
         module_by_path=module_by_path,
     )
-    reader, _ = record_batch_reader_for_rows(CALL_GRAPH_NODES_TABLE_KEY, output_rows)
+    reader, _ = table_for_rows(CALL_GRAPH_NODES_TABLE_KEY, output_rows)
     return reader
 
 
@@ -388,7 +388,7 @@ def call_graph_edges_compute(
     """
     goids_table = tabular_to_arrow_table(q__core__goids)
     if goids_table.num_rows == 0:
-        return empty_reader_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
+        return empty_table_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
     modules_table = tabular_to_arrow_table(q__core__modules)
     module_by_path = _module_by_path(modules_table)
@@ -403,7 +403,7 @@ def call_graph_edges_compute(
         goid_language=goid_language,
     )
 
-    reader, _ = record_batch_reader_for_rows(
+    reader, _ = table_for_rows(
         CALL_GRAPH_EDGES_TABLE_KEY,
         _edge_rows(edge_context, module_by_path=module_by_path),
     )
@@ -449,7 +449,7 @@ def call_graph_nodes_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for call graph nodes.
     """
     _ = env
-    return empty_reader_for_table(CALL_GRAPH_NODES_TABLE_KEY)
+    return empty_table_for_table(CALL_GRAPH_NODES_TABLE_KEY)
 
 
 def call_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -461,7 +461,7 @@ def call_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for call graph edges.
     """
     _ = env
-    return empty_reader_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
+    return empty_table_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
 
 __all__ = [

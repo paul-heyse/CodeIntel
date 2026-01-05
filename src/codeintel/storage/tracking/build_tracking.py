@@ -18,7 +18,7 @@ import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
-from codeintel.core.columnar.rows import record_batch_reader_for_rows
+from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract
 from codeintel.core.gateway import ScipRunRecordProtocol
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -431,7 +431,7 @@ class BuildTracking:
         dataset_root_dir, snapshot_id = self._manifest_dataset_context(commit=manifest.commit)
         impl_column = self._manifest_impl_column(table_key)
         payload = _manifest_row_payload(manifest, impl_column=impl_column)
-        reader, _ = record_batch_reader_for_rows(table_key, [payload])
+        reader, _ = table_for_rows(table_key, [payload])
         new_table = reader.read_all()
 
         with _MANIFEST_WRITE_LOCK:
@@ -986,10 +986,7 @@ class BuildTracking:
             ]
             if include_drift:
                 drift_summaries_payload = encode_payload(
-                    {
-                        table_key: dict(summary)
-                        for table_key, summary in rec.drift_summaries.items()
-                    }
+                    {table_key: dict(summary) for table_key, summary in rec.drift_summaries.items()}
                 )
                 row_values.append(drift_summaries_payload)
             row_values.append(rec.error)

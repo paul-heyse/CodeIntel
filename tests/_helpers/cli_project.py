@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from tests.cli._harness import CliInvocationResult
 
-PROJECT_FILENAME = "codeintel.yaml"
+PROJECT_FILENAME = "config/codeintel.yaml"
 
 
 @dataclass
@@ -35,6 +35,7 @@ class CLIProjectContext:
 
 def _write_project_file(repo_root: Path, repo: str, commit: str, db_rel_path: Path) -> Path:
     cfg_path = repo_root / PROJECT_FILENAME
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(
         "\n".join(
             [

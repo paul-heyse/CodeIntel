@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
+from codeintel.build.meta.contract_catalog import build_contract_catalog_payload
 from codeintel.build.providers import create_default_providers
 from codeintel.build.schemas.contract_service import get_contract_service
 from codeintel.config.models import ToolsConfig
@@ -22,6 +22,7 @@ from codeintel.core.config.settings import (
     ExportAuditSettings,
     HamiltonExecutionSettings,
 )
+from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.runtime.compose import compose_runtime
 from codeintel.storage.gateway import (
@@ -32,6 +33,8 @@ from codeintel.storage.gateway import (
 )
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
 from codeintel.storage.gateway.factory import MemoryGatewayOptions
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
@@ -350,10 +353,14 @@ def _ensure_contract_service_configured() -> None:
 def seed_contract_catalog(con: DuckDBConnection) -> None:
     """Seed the canonical dataset contract catalog into a DuckDB connection."""
     _ensure_contract_service_configured()
-    persist_contract_catalog_to_connection(
-        con,
+    payload = build_contract_catalog_payload()
+    entry = build_catalog_entry(
+        catalog_kind="dataset_contracts",
+        catalog_hash=fingerprint(payload),
+        payload=payload,
         inputs={"source": "tests"},
     )
+    upsert_canonical_catalog(MinimalStorageGateway(con), entry)
 
 
 def seed_tables(gateway: StorageGateway, ddl: list[str]) -> None:

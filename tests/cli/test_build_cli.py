@@ -69,7 +69,7 @@ class TestBuildStatusCommand:
         expect_equal(result.exit_code, 1, label="exit_code")
         combined = (result.stdout + (result.output or "")).lower()
         has_module_error = "unknown module" in combined
-        has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
+        has_project_error = "config/codeintel.yaml" in combined or "provide --repo" in combined
         expect_true(
             has_module_error or has_project_error,
             message="Expected module validation or project context error",
@@ -111,7 +111,7 @@ class TestBuildRunValidation:
         expect_equal(result.exit_code, 1, label="exit_code")
         combined = (result.stdout + (result.output or "")).lower()
         has_targets_error = "provide exactly one of targets" in combined
-        has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
+        has_project_error = "config/codeintel.yaml" in combined or "provide --repo" in combined
         expect_true(
             has_targets_error or has_project_error,
             message="Expected targets/module or project context error",
@@ -125,7 +125,7 @@ class TestBuildRunValidation:
         expect_equal(result.exit_code, 1, label="exit_code")
         combined = (result.stdout + (result.output or "")).lower()
         has_module_error = "unknown module" in combined
-        has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
+        has_project_error = "config/codeintel.yaml" in combined or "provide --repo" in combined
         expect_true(
             has_module_error or has_project_error,
             message="Expected module validation or project context error",
@@ -139,7 +139,7 @@ class TestBuildRunValidation:
         expect_equal(result.exit_code, 1, label="exit_code")
         combined = (result.stdout + (result.output or "")).lower()
         has_target_error = "unknown target" in combined
-        has_project_error = "codeintel.yaml" in combined or "provide --repo" in combined
+        has_project_error = "config/codeintel.yaml" in combined or "provide --repo" in combined
         expect_true(
             has_target_error or has_project_error,
             message="Expected target validation or project context error",
