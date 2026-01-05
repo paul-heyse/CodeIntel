@@ -600,6 +600,7 @@ Right now `build/schemas/contract_service.py` derives overrides from `OutputCont
     * `ci.jsonl_filename`
     * `ci.parquet_filename`
     * (optional) `ci.dataset_owner`, `ci.validation_profile`, etc.
+  * Canonical reference: `docs/contract_override_tags.md`.
   * These tags are attached to the DataSaver metadata node, so `DagCatalog` can carry them in `OutputDescriptor.tags`.
 
 ### Files MODIFIED

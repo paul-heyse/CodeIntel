@@ -6,9 +6,12 @@ execution telemetry to build.run_nodes for profiling and debugging.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
+from dataclasses import asdict
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hamilton.lifecycle import base as lifecycle_base
@@ -44,7 +47,12 @@ class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePo
         Build run writer for persistence.
     """
 
-    def __init__(self, run_id: str, writer: BuildRunWriter) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        writer: BuildRunWriter,
+        output_path: Path | None = None,
+    ) -> None:
         """Initialize telemetry hook.
 
         Parameters
@@ -53,11 +61,15 @@ class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePo
             Build run identifier for grouping.
         writer
             Build run writer for persistence.
+        output_path
+            Optional JSONL output path for node telemetry.
         """
         self._run_id = run_id
         self._writer = writer
+        self._output_path = output_path
         self._node_starts: dict[str, datetime] = {}
         self._records: list[NodeExecutionRecord] = []
+        self._last_flushed: list[NodeExecutionRecord] = []
         self._lock = threading.Lock()
 
     def pre_node_execute(
@@ -169,8 +181,47 @@ class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePo
                 return 0
             records = list(self._records)
             self._records.clear()
+            self._last_flushed = records
 
-        return self._writer.save_run_nodes(self._run_id, records)
+        saved = self._writer.save_run_nodes(self._run_id, records)
+        if self._output_path is not None:
+            _write_node_telemetry(self._output_path, records)
+        return saved
+
+    def last_flushed_records(self) -> tuple[NodeExecutionRecord, ...]:
+        """Return the most recently flushed records."""
+        with self._lock:
+            return tuple(self._last_flushed)
+
+
+def _write_node_telemetry(path: Path, records: list[NodeExecutionRecord]) -> None:
+    payloads = [_node_record_payload(record) for record in records]
+    lines = [
+        json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+        for payload in payloads
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _node_record_payload(record: NodeExecutionRecord) -> dict[str, object]:
+    payload = asdict(record)
+    started_at = record.started_at.isoformat()
+    payload["started_at"] = started_at
+    completed_at = record.completed_at.isoformat() if record.completed_at else None
+    payload["completed_at"] = completed_at
+    tags = record.tags
+    if tags:
+        payload["tags"] = {str(key): _normalize_tag_value(value) for key, value in tags.items()}
+    return payload
+
+
+def _normalize_tag_value(value: object) -> object:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 
 __all__ = [

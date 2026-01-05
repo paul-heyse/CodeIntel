@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.core.schemas.schema_catalog_models import (
     DEFAULT_SCHEMA_MANIFEST_KIND,
     ColumnStatsPayload,
@@ -21,6 +22,9 @@ from codeintel.core.schemas.schema_catalog_models import (
     SchemaVersionRecord,
     TableSchemaRegistryRecord,
 )
+from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
+from codeintel.core.serialization.payload import encode_payload
+from codeintel.core.time import utc_now
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
@@ -35,6 +39,7 @@ from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.metadata.sync import bootstrap_metadata_datasets
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
+from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -94,6 +99,10 @@ class BundleIngestReport:
     run_metadata_rows: int
     run_tag_summary_rows: int
     output_catalog_rows: int
+    asset_versions_rows: int
+    asset_version_events_rows: int
+    run_asset_versions_rows: int
+    asset_lineage_rows: int
 
     def to_payload(self) -> dict[str, object]:
         """Return a JSON-serializable summary payload.
@@ -121,6 +130,10 @@ class BundleIngestReport:
             "run_metadata_rows": self.run_metadata_rows,
             "run_tag_summary_rows": self.run_tag_summary_rows,
             "output_catalog_rows": self.output_catalog_rows,
+            "asset_versions_rows": self.asset_versions_rows,
+            "asset_version_events_rows": self.asset_version_events_rows,
+            "run_asset_versions_rows": self.run_asset_versions_rows,
+            "asset_lineage_rows": self.asset_lineage_rows,
         }
 
 
@@ -140,6 +153,30 @@ class _BundleIngestResults:
     run_metadata_rows: int
     run_tag_summary_rows: int
     output_catalog_rows: int
+    asset_versions_rows: int
+    asset_version_events_rows: int
+    run_asset_versions_rows: int
+    asset_lineage_rows: int
+
+
+@dataclass(frozen=True, slots=True)
+class _BundleIngestCounts:
+    schema_versions_rows: int
+    table_schema_registry_rows: int
+    schema_observations_rows: int
+    dataflow_nodes: int
+    dataflow_edges: int
+    lineage_edges: int
+    lineage_columns: int
+    export_audit_rows: int
+    run_index_rows: int
+    run_metadata_rows: int
+    run_tag_summary_rows: int
+    output_catalog_rows: int
+    asset_versions_rows: int
+    asset_version_events_rows: int
+    run_asset_versions_rows: int
+    asset_lineage_rows: int
 
 
 @dataclass(slots=True)
@@ -162,6 +199,10 @@ _REQUIRED_BUNDLE_FILES: tuple[str, ...] = (
     "dataflow/dataset_edges.jsonl",
     "lineage/derived_edges.jsonl",
     "lineage/derived_columns.jsonl",
+    "assets/asset_versions.jsonl",
+    "assets/asset_version_events.jsonl",
+    "assets/run_asset_versions.jsonl",
+    "assets/asset_lineage.jsonl",
     "runs/run_index.jsonl",
     "exports/export_audit.jsonl",
 )
@@ -246,8 +287,7 @@ def _validate_required_files(
 
 def _validate_run_report_paths(manifest_paths: set[str], errors: list[str]) -> None:
     has_run_reports = any(
-        path.startswith("runs/run_report_") and path.endswith(".jsonl")
-        for path in manifest_paths
+        path.startswith("runs/run_report_") and path.endswith(".jsonl") for path in manifest_paths
     )
     if not has_run_reports:
         errors.append("Missing run report file in bundle (runs/run_report_<run_id>.jsonl)")
@@ -323,6 +363,10 @@ def load_build_metadata_bundle(
         run_metadata_rows=results.run_metadata_rows,
         run_tag_summary_rows=results.run_tag_summary_rows,
         output_catalog_rows=results.output_catalog_rows,
+        asset_versions_rows=results.asset_versions_rows,
+        asset_version_events_rows=results.asset_version_events_rows,
+        run_asset_versions_rows=results.run_asset_versions_rows,
+        asset_lineage_rows=results.asset_lineage_rows,
     )
 
 
@@ -332,7 +376,8 @@ def _ingest_bundle_records(
     manifest: BundleManifest,
 ) -> _BundleIngestResults:
     apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=True)
-    gateway = MinimalStorageGateway(con)
+    schema_provider = MappingSchemaProvider(TABLE_SCHEMAS)
+    gateway = MinimalStorageGateway(con, schema_provider=schema_provider)
     tracker = SchemaCatalogTracking(gateway)
 
     contract_hash = _ingest_contract_catalog(bundle_root, con)
@@ -341,6 +386,42 @@ def _ingest_bundle_records(
     load_contract_catalog_from_connection(con)
     bootstrap_metadata_datasets(con)
 
+    counts = _ingest_bundle_payloads(
+        bundle_root=bundle_root,
+        con=con,
+        gateway=gateway,
+        tracker=tracker,
+    )
+
+    return _BundleIngestResults(
+        contract_catalog_hash=contract_hash,
+        schema_manifest_hash=schema_manifest_hash,
+        schema_versions_rows=counts.schema_versions_rows,
+        table_schema_registry_rows=counts.table_schema_registry_rows,
+        schema_observations_rows=counts.schema_observations_rows,
+        dataflow_nodes=counts.dataflow_nodes,
+        dataflow_edges=counts.dataflow_edges,
+        lineage_edges=counts.lineage_edges,
+        lineage_columns=counts.lineage_columns,
+        export_audit_rows=counts.export_audit_rows,
+        run_index_rows=counts.run_index_rows,
+        run_metadata_rows=counts.run_metadata_rows,
+        run_tag_summary_rows=counts.run_tag_summary_rows,
+        output_catalog_rows=counts.output_catalog_rows,
+        asset_versions_rows=counts.asset_versions_rows,
+        asset_version_events_rows=counts.asset_version_events_rows,
+        run_asset_versions_rows=counts.run_asset_versions_rows,
+        asset_lineage_rows=counts.asset_lineage_rows,
+    )
+
+
+def _ingest_bundle_payloads(
+    *,
+    bundle_root: Path,
+    con: DuckDBPyConnection,
+    gateway: MinimalStorageGateway,
+    tracker: SchemaCatalogTracking,
+) -> _BundleIngestCounts:
     registry_rows = _ingest_schema_registry(bundle_root, tracker)
     version_rows = _ingest_schema_versions(bundle_root, tracker)
     observation_rows = _ingest_schema_observations(bundle_root, tracker)
@@ -352,10 +433,12 @@ def _ingest_bundle_records(
     export_audit_rows = _ingest_export_audit(bundle_root, gateway)
     run_index_rows = _ingest_run_index(bundle_root, gateway)
     run_report_rows = _ingest_run_reports(bundle_root, gateway)
+    asset_versions_rows = _ingest_asset_versions(bundle_root, gateway)
+    asset_version_events_rows = _ingest_asset_version_events(bundle_root, gateway)
+    run_asset_versions_rows = _ingest_run_asset_versions(bundle_root, gateway)
+    asset_lineage_rows = _ingest_asset_lineage(bundle_root, gateway)
 
-    return _BundleIngestResults(
-        contract_catalog_hash=contract_hash,
-        schema_manifest_hash=schema_manifest_hash,
+    return _BundleIngestCounts(
         schema_versions_rows=version_rows,
         table_schema_registry_rows=registry_rows,
         schema_observations_rows=observation_rows,
@@ -368,6 +451,10 @@ def _ingest_bundle_records(
         run_metadata_rows=run_report_rows[0],
         run_tag_summary_rows=run_report_rows[1],
         output_catalog_rows=run_report_rows[2],
+        asset_versions_rows=asset_versions_rows,
+        asset_version_events_rows=asset_version_events_rows,
+        run_asset_versions_rows=run_asset_versions_rows,
+        asset_lineage_rows=asset_lineage_rows,
     )
 
 
@@ -782,6 +869,258 @@ def _ingest_run_reports(
             catalog=META_CATALOG_NAME,
         )
     return len(rows.run_metadata_rows), len(rows.tag_summary_rows), len(rows.output_rows)
+
+
+def _ingest_asset_versions(bundle_root: Path, gateway: MinimalStorageGateway) -> int:
+    path = bundle_root / "assets" / "asset_versions.jsonl"
+    if not path.is_file():
+        return 0
+    rows: list[tuple[object, ...]] = []
+    for item in _iter_jsonl(path):
+        asset_kind = _optional_str(item.get("asset_kind"))
+        asset_key = _optional_str(item.get("asset_key"))
+        version_hash = _optional_str(item.get("version_hash"))
+        if not (asset_kind and asset_key and version_hash):
+            continue
+        rows.append(
+            (
+                asset_kind,
+                asset_key,
+                version_hash,
+                _optional_str(item.get("schema_hash")),
+                _optional_int(item.get("row_count")),
+                _optional_int(item.get("bytes")),
+                _parse_datetime(item.get("created_at")) or utc_now(),
+                encode_payload(_optional_mapping(item.get("meta")) or {}),
+            )
+        )
+    if not rows:
+        return 0
+    gateway.policy.ensure_table("build.asset_versions", create_if_missing=True)
+    return gateway.policy.upsert(
+        "build.asset_versions",
+        rows,
+        columns=(
+            "asset_kind",
+            "asset_key",
+            "version_hash",
+            "schema_hash",
+            "row_count",
+            "bytes",
+            "created_at",
+            "meta",
+        ),
+        upsert=UpsertSpec(
+            conflict_columns=("asset_kind", "asset_key", "version_hash"),
+            update_columns=("schema_hash", "row_count", "bytes", "created_at", "meta"),
+        ),
+    )
+
+
+def _ingest_asset_version_events(bundle_root: Path, gateway: MinimalStorageGateway) -> int:
+    path = bundle_root / "assets" / "asset_version_events.jsonl"
+    if not path.is_file():
+        return 0
+    rows: list[tuple[object, ...]] = []
+    for item in _iter_jsonl(path):
+        run_id = _optional_str(item.get("run_id"))
+        repo = _optional_str(item.get("repo"))
+        commit = _optional_str(item.get("commit"))
+        asset_kind = _optional_str(item.get("asset_kind"))
+        asset_key = _optional_str(item.get("asset_key"))
+        version_hash = _optional_str(item.get("version_hash"))
+        status = _optional_str(item.get("status"))
+        if not (
+            run_id and repo and commit and asset_kind and asset_key and version_hash and status
+        ):
+            continue
+        rows.append(
+            (
+                run_id,
+                repo,
+                commit,
+                asset_kind,
+                asset_key,
+                version_hash,
+                _optional_str(item.get("target")),
+                _optional_str(item.get("impl_kind")),
+                status,
+                _optional_str(item.get("location")),
+                _optional_str(item.get("input_hash")),
+                _optional_str(item.get("options_hash")),
+                _parse_datetime(item.get("recorded_at")) or utc_now(),
+                encode_payload(_optional_mapping(item.get("meta")) or {}),
+            )
+        )
+    if not rows:
+        return 0
+    gateway.policy.ensure_table("build.asset_version_events", create_if_missing=True)
+    return gateway.policy.upsert(
+        "build.asset_version_events",
+        rows,
+        columns=(
+            "run_id",
+            "repo",
+            "commit",
+            "asset_kind",
+            "asset_key",
+            "version_hash",
+            "target",
+            "impl_kind",
+            "status",
+            "location",
+            "input_hash",
+            "options_hash",
+            "recorded_at",
+            "meta",
+        ),
+        upsert=UpsertSpec(
+            conflict_columns=("run_id", "asset_kind", "asset_key"),
+            update_columns=(
+                "repo",
+                "commit",
+                "version_hash",
+                "target",
+                "impl_kind",
+                "status",
+                "location",
+                "input_hash",
+                "options_hash",
+                "recorded_at",
+                "meta",
+            ),
+        ),
+    )
+
+
+def _ingest_run_asset_versions(bundle_root: Path, gateway: MinimalStorageGateway) -> int:
+    path = bundle_root / "assets" / "run_asset_versions.jsonl"
+    if not path.is_file():
+        return 0
+    rows: list[tuple[object, ...]] = []
+    for item in _iter_jsonl(path):
+        run_id = _optional_str(item.get("run_id"))
+        repo = _optional_str(item.get("repo"))
+        commit = _optional_str(item.get("commit"))
+        asset_kind = _optional_str(item.get("asset_kind"))
+        asset_key = _optional_str(item.get("asset_key"))
+        version_hash = _optional_str(item.get("version_hash"))
+        resolution_kind = _optional_str(item.get("resolution_kind"))
+        if not (
+            run_id
+            and repo
+            and commit
+            and asset_kind
+            and asset_key
+            and version_hash
+            and resolution_kind
+        ):
+            continue
+        rows.append(
+            (
+                run_id,
+                repo,
+                commit,
+                asset_kind,
+                asset_key,
+                version_hash,
+                _optional_str(item.get("target")),
+                resolution_kind,
+                _parse_datetime(item.get("recorded_at")) or utc_now(),
+                encode_payload(_optional_mapping(item.get("meta")) or {}),
+            )
+        )
+    if not rows:
+        return 0
+    gateway.policy.ensure_table("build.run_asset_versions", create_if_missing=True)
+    return gateway.policy.upsert(
+        "build.run_asset_versions",
+        rows,
+        columns=(
+            "run_id",
+            "repo",
+            "commit",
+            "asset_kind",
+            "asset_key",
+            "version_hash",
+            "target",
+            "resolution_kind",
+            "recorded_at",
+            "meta",
+        ),
+        upsert=UpsertSpec(
+            conflict_columns=("run_id", "asset_kind", "asset_key"),
+            update_columns=("version_hash", "target", "resolution_kind", "recorded_at", "meta"),
+        ),
+    )
+
+
+def _ingest_asset_lineage(bundle_root: Path, gateway: MinimalStorageGateway) -> int:
+    path = bundle_root / "assets" / "asset_lineage.jsonl"
+    if not path.is_file():
+        return 0
+    rows: list[tuple[object, ...]] = []
+    for item in _iter_jsonl(path):
+        downstream_kind = _optional_str(item.get("downstream_kind"))
+        downstream_key = _optional_str(item.get("downstream_key"))
+        downstream_version = _optional_str(item.get("downstream_version"))
+        upstream_kind = _optional_str(item.get("upstream_kind"))
+        upstream_key = _optional_str(item.get("upstream_key"))
+        upstream_version = _optional_str(item.get("upstream_version"))
+        edge_kind = _optional_str(item.get("edge_kind"))
+        if not (
+            downstream_kind
+            and downstream_key
+            and downstream_version
+            and upstream_kind
+            and upstream_key
+            and upstream_version
+            and edge_kind
+        ):
+            continue
+        rows.append(
+            (
+                downstream_kind,
+                downstream_key,
+                downstream_version,
+                upstream_kind,
+                upstream_key,
+                upstream_version,
+                edge_kind,
+                _parse_datetime(item.get("created_at")) or utc_now(),
+                encode_payload(_optional_mapping(item.get("meta")) or {}),
+            )
+        )
+    if not rows:
+        return 0
+    gateway.policy.ensure_table("build.asset_lineage", create_if_missing=True)
+    return gateway.policy.upsert(
+        "build.asset_lineage",
+        rows,
+        columns=(
+            "downstream_kind",
+            "downstream_key",
+            "downstream_version",
+            "upstream_kind",
+            "upstream_key",
+            "upstream_version",
+            "edge_kind",
+            "created_at",
+            "meta",
+        ),
+        upsert=UpsertSpec(
+            conflict_columns=(
+                "downstream_kind",
+                "downstream_key",
+                "downstream_version",
+                "upstream_kind",
+                "upstream_key",
+                "upstream_version",
+                "edge_kind",
+            ),
+            update_columns=("created_at", "meta"),
+        ),
+    )
 
 
 def _run_report_paths(bundle_root: Path) -> list[Path]:

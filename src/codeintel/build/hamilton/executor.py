@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import hamilton.base as h_base
 from hamilton.caching.adapter import HamiltonCacheAdapter
-from opentelemetry import trace as otel_trace
 
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
@@ -44,6 +43,7 @@ from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
 )
+from codeintel.build.hamilton.diagnostics import diagnostics_dir, emit_diagnostics
 from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
@@ -74,6 +74,7 @@ from codeintel.build.schemas.compile import (
 )
 from codeintel.build.schemas.contract_service import iter_contracts
 from codeintel.core.datasets.manifests import dataset_manifest_path
+from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.manifests import DatasetSuiteManifest
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -220,16 +221,6 @@ def _coerce_project_id(value: str) -> int | str:
     if value.isdigit():
         return int(value)
     return value
-
-
-def _current_trace_id() -> str | None:
-    span = otel_trace.get_current_span()
-    context = span.get_span_context()
-    if not context.is_valid:
-        return None
-    if context.trace_id == 0:
-        return None
-    return f"{context.trace_id:032x}"
 
 
 def _apply_tracker_constants(settings: HamiltonTrackerSettings) -> None:
@@ -589,9 +580,6 @@ def _build_hamilton_tracker_adapter(
         domain=domain,
         deployment_environment=runtime_settings.deployment_environment,
     )
-    trace_id = _current_trace_id()
-    if trace_id and "trace_id" not in tags:
-        tags["trace_id"] = trace_id
     dag_name = tracker_settings.dag_name or env.snapshot.repo
     kwargs = {
         "project_id": _coerce_project_id(tracker_settings.project_id),
@@ -833,7 +821,28 @@ def _dataset_manifest_exists(env: BuildEnv, table_key: str) -> bool:
     return manifest_path.is_file()
 
 
+def _table_key_exists_in_gateway(env: BuildEnv, table_key: str) -> bool | None:
+    gateway = env.gateway
+    if gateway is None:
+        return None
+    if "." not in table_key:
+        return None
+    schema, table = table_key.split(".", maxsplit=1)
+    if not schema or not table:
+        return None
+    policy = getattr(gateway, "policy", None)
+    if policy is None:
+        return None
+    try:
+        return policy.table_exists(schema=schema, table=table)
+    except (AttributeError, DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
+
+
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
+    gateway_exists = _table_key_exists_in_gateway(env, table_key)
+    if gateway_exists is not None:
+        return gateway_exists
     return _dataset_manifest_exists(env, table_key)
 
 
@@ -1517,7 +1526,7 @@ class HamiltonBuildExecutor:
 
             _apply_cache_keys(outputs=outputs, runtime=context.runtime)
 
-            return _finalize_run(
+            result = _finalize_run(
                 context=context,
                 inputs=_FinalizeInputs(
                     writer=writer,
@@ -1526,6 +1535,29 @@ class HamiltonBuildExecutor:
                     error=error,
                 ),
             )
+            try:
+                emit_diagnostics(
+                    env=context.env,
+                    runtime=context.runtime,
+                    run_id=context.run_id,
+                    cache_dir=context.cache_dir,
+                    cache_adapter=context.runtime.cache_adapter,
+                    telemetry_records=telemetry_hook.last_flushed_records()
+                    if telemetry_hook is not None
+                    else None,
+                    requested_targets=context.targets,
+                    computed_targets=result.computed_targets,
+                    skipped_targets=result.skipped_targets,
+                    failed_targets=result.failed_targets,
+                    duration_ms=result.duration_ms,
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                log.warning(
+                    "build.hamilton.diagnostics_failed run_id=%s error=%s",
+                    context.run_id,
+                    exc,
+                )
+            return result
         finally:
             _persist_build_log(context=context, writer=writer)
 
@@ -1557,7 +1589,8 @@ class HamiltonBuildExecutor:
         materializers = _resolve_materializers(env.execution_settings.materializers)
         telemetry_hook: NodeTelemetryHook | None = None
 
-        hook_options = self._options.hook_options()
+        telemetry_output = diagnostics_dir(env.paths.build_dir) / "node_telemetry.jsonl"
+        hook_options = self._options.hook_options(telemetry_output_path=telemetry_output)
         cache_adapter = _build_cache_adapter(
             run_id=run_id,
             cache_dir=cache_dir,

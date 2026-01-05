@@ -11,6 +11,7 @@ from codeintel.build.planning.preflight import (
     optional_inputs_for_targets,
 )
 from codeintel.core.datasets.manifests import dataset_manifest_path
+from codeintel.core.duckdb_types import DuckDBError
 
 
 def preflight_issues(
@@ -113,7 +114,28 @@ def _blocked_targets(catalog: DagCatalog, roots: set[str]) -> set[str]:
     return blocked
 
 
+def _table_key_exists_in_gateway(env: BuildEnv, table_key: str) -> bool | None:
+    gateway = env.gateway
+    if gateway is None:
+        return None
+    if "." not in table_key:
+        return None
+    schema, table = table_key.split(".", maxsplit=1)
+    if not schema or not table:
+        return None
+    policy = getattr(gateway, "policy", None)
+    if policy is None:
+        return None
+    try:
+        return policy.table_exists(schema=schema, table=table)
+    except (AttributeError, DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
+
+
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
+    gateway_exists = _table_key_exists_in_gateway(env, table_key)
+    if gateway_exists is not None:
+        return gateway_exists
     dataset_root_dir = env.paths.dataset_root_dir
     if dataset_root_dir is None:
         return False

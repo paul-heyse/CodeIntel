@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 from collections.abc import Mapping
 from contextlib import contextmanager
@@ -44,7 +45,12 @@ from codeintel.core.config.settings import HamiltonTrackerSettings
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.core.schemas import SchemaService, get_schema_service, set_schema_service
+from codeintel.core.schemas import (
+    SchemaService,
+    get_schema_service,
+    set_schema_service,
+    table_schema_from_json_obj,
+)
 from codeintel.core.schemas.declared import source_declared_schema_provider
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
@@ -69,6 +75,8 @@ if TYPE_CHECKING:
     from hamilton.execution.executors import TaskExecutor
     from hamilton.io.materialization import ExtractorFactory, MaterializerFactory
     from hamilton.lifecycle.base import LifecycleAdapter
+
+    from codeintel.core.schemas.primitives import TableSchema
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +153,13 @@ class _ResolvedRuntimeConfig:
     hamilton_config: dict[str, Any]
     plugin_config: PluginConfig
     dynamic_execution: _DynamicExecutionConfig
+
+
+@dataclass(frozen=True, slots=True)
+class _BundleSchemaRegistryEntry:
+    table_key: str
+    schema_digest: str
+    derivation_kind: str | None
 
 
 @contextmanager
@@ -922,27 +937,151 @@ def _ensure_schema_service_for_inference(*, provider: SchemaProvider) -> None:
         set_schema_service(SchemaService(table_provider=provider))
 
 
+def _bundle_root_for_schema_cache(env: BuildEnv) -> Path | None:
+    if env.metadata_bundle is not None:
+        bundle_root = env.metadata_bundle.bundle_root
+    else:
+        bundle_root = env.paths.build_dir / "metadata"
+    registry_path = bundle_root / "schema" / "schema_registry.json"
+    versions_path = bundle_root / "schema" / "schema_versions.jsonl"
+    if registry_path.is_file() and versions_path.is_file():
+        return bundle_root
+    return None
+
+
+def _optional_str(value: object) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def _load_bundle_schema_versions(bundle_root: Path) -> dict[str, TableSchema]:
+    path = bundle_root / "schema" / "schema_versions.jsonl"
+    if not path.is_file():
+        return {}
+    versions: dict[str, TableSchema] = {}
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, Mapping):
+                continue
+            schema_digest = _optional_str(payload.get("schema_digest"))
+            schema_json = payload.get("schema_json")
+            if not schema_digest or not isinstance(schema_json, Mapping):
+                continue
+            try:
+                table_schema = table_schema_from_json_obj(schema_json)
+            except (KeyError, TypeError, ValueError) as exc:
+                log.warning(
+                    "schema.bundle.version_parse_failed digest=%s error=%s",
+                    schema_digest,
+                    exc,
+                )
+                continue
+            versions.setdefault(schema_digest, table_schema)
+    return versions
+
+
+def _load_bundle_schema_registry_entries(
+    bundle_root: Path,
+) -> list[_BundleSchemaRegistryEntry]:
+    path = bundle_root / "schema" / "schema_registry.json"
+    if not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning(
+            "schema.bundle.registry_load_failed path=%s error=%s",
+            path,
+            exc,
+        )
+        return []
+    if not isinstance(payload, Mapping):
+        return []
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        return []
+    resolved: list[_BundleSchemaRegistryEntry] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        table_key = _optional_str(entry.get("table_key"))
+        schema_digest = _optional_str(entry.get("schema_digest"))
+        if not table_key or not schema_digest:
+            continue
+        derivation_kind = _optional_str(entry.get("derivation_kind"))
+        resolved.append(
+            _BundleSchemaRegistryEntry(
+                table_key=table_key,
+                schema_digest=schema_digest,
+                derivation_kind=derivation_kind,
+            )
+        )
+    return resolved
+
+
+def _bundle_schema_cache(
+    bundle_root: Path,
+) -> tuple[dict[str, TableSchema], dict[str, TableSchema]]:
+    versions = _load_bundle_schema_versions(bundle_root)
+    if not versions:
+        return {}, {}
+    entries = _load_bundle_schema_registry_entries(bundle_root)
+    if not entries:
+        return {}, {}
+    prefetched: dict[str, TableSchema] = {}
+    overrides: dict[str, TableSchema] = {}
+    for entry in entries:
+        table_schema = versions.get(entry.schema_digest)
+        if table_schema is None:
+            continue
+        prefetched[entry.table_key] = table_schema
+        if entry.derivation_kind == "explicit_override":
+            overrides[entry.table_key] = table_schema
+    return prefetched, overrides
+
+
 def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:
     override_schemas = dict(TABLE_SCHEMAS)
-    if env.gateway is None:
+    bundle_root = _bundle_root_for_schema_cache(env)
+    if bundle_root is not None:
+        _, bundle_overrides = _bundle_schema_cache(bundle_root)
+        override_schemas.update(bundle_overrides)
         return MappingSchemaProvider(override_schemas)
-    try:
-        override_schemas.update(env.gateway.schemas.load_override_registry())
-    except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:
-        log.warning("schema.override_registry.load failed: %s", exc)
+    if env.gateway is not None:
+        try:
+            override_schemas.update(env.gateway.schemas.load_override_registry())
+        except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:
+            log.warning("schema.override_registry.load failed: %s", exc)
     return MappingSchemaProvider(override_schemas)
 
 
 def _prefill_schema_index(*, env: BuildEnv, schema_index: SchemaIndex) -> None:
+    bundle_root = _bundle_root_for_schema_cache(env)
+    if bundle_root is not None:
+        prefetched, _ = _bundle_schema_cache(bundle_root)
+        if prefetched:
+            schema_index.prefill_cache(prefetched)
+            log.info("schema.index.prefill bundle_loaded=%d", len(prefetched))
+            return
     if env.gateway is None:
         return
     try:
-        prefetched = env.gateway.schemas.prefill_schema_index(schema_index)
+        prefetched_gateway = env.gateway.schemas.prefill_schema_index(schema_index)
     except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:
         log.warning("schema.index.prefill failed: %s", exc)
         return
-    if prefetched:
-        log.info("schema.index.prefill loaded %d schemas", prefetched)
+    if prefetched_gateway:
+        log.info("schema.index.prefill loaded %d schemas", prefetched_gateway)
 
 
 def _require_schema_authority(*, schema_index: SchemaIndex, catalog: DagCatalog) -> None:

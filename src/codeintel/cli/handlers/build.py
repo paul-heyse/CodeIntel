@@ -29,7 +29,6 @@ from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import HamiltonBuildExecutor
 from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
-    DECISION_TRACE_TARGET_NAME,
     default_decision_trace_path,
     read_decision_trace,
 )
@@ -498,17 +497,8 @@ def _build_status_result(state: BuildState) -> BuildStatusResult:
 
 
 def _with_decision_trace_targets(targets: Sequence[str]) -> list[str]:
-    """Ensure decision_trace is included in executed targets when available.
-
-    Returns
-    -------
-    list[str]
-        Target list including decision_trace when requested targets are present.
-    """
-    requested = list(targets)
-    if requested and DECISION_TRACE_TARGET_NAME not in requested:
-        requested.append(DECISION_TRACE_TARGET_NAME)
-    return requested
+    """Return the requested targets without forcing decision_trace."""
+    return list(targets)
 
 
 def _execute_build_hamilton(
@@ -964,6 +954,15 @@ class _BuildRunParams:
 class _BuildRunFormatOptions:
     runtime_bundle: RuntimeBundle | None
     show_tags: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _BuildRunInputs:
+    params: _BuildRunParams
+    runtime: ResolvedRuntime
+    runtime_bundle: RuntimeBundle
+    goals: list[str]
+    compose_options: CliRuntimeComposeOptions
 
 
 def resolve_parallel_backend(*, parallel_backend: str | None, max_workers: int | None) -> str:
@@ -1490,6 +1489,154 @@ def _resolve_build_target_tags(
     return target_tags or None
 
 
+def _gateway_required_targets(
+    *,
+    catalog: DagCatalog,
+    targets: Sequence[str],
+) -> list[str]:
+    required: list[str] = []
+    for target_name in targets:
+        target = catalog.targets.get(target_name)
+        if target is None:
+            continue
+        if target.resources.gateway:
+            required.append(target_name)
+    return required
+
+
+def _prepare_build_run_inputs(
+    ctx: CommandContext,
+) -> tuple[CliResult[BuildRunResult] | None, _BuildRunInputs | None]:
+    try:
+        params = _extract_build_run_params(ctx)
+    except ValidationError as exc:
+        return fail_invalid_target_selection(str(exc)), None
+
+    validation_error = _validate_build_run_params(params)
+    if validation_error is not None:
+        return validation_error, None
+
+    try:
+        runtime = ctx.runtime
+    except ResolutionError as exc:
+        return fail_project_error("build", str(exc)), None
+
+    config_overrides = _plugin_overrides_from_params(params)
+    compose_options = CliRuntimeComposeOptions(config_overrides=config_overrides)
+    runtime_bundle = compose_cli_runtime_bundle(
+        runtime=runtime,
+        gateway=None,
+        options=compose_options,
+    )
+    goals, error = _resolve_goals_for_params(
+        params=params,
+        runtime_bundle=runtime_bundle,
+    )
+    if error is not None:
+        return error, None
+
+    return None, _BuildRunInputs(
+        params=params,
+        runtime=runtime,
+        runtime_bundle=runtime_bundle,
+        goals=goals,
+        compose_options=compose_options,
+    )
+
+
+def _resolve_gateway_requirements(
+    ctx: CommandContext,
+    inputs: _BuildRunInputs,
+) -> tuple[CliResult[BuildRunResult] | None, bool]:
+    gateway_targets = _gateway_required_targets(
+        catalog=inputs.runtime_bundle.catalog,
+        targets=inputs.goals,
+    )
+    require_gateway = inputs.params.publish_serving_snapshot or (
+        not inputs.params.dry_run and bool(gateway_targets)
+    )
+    if require_gateway and not ctx.has_storage:
+        if inputs.params.publish_serving_snapshot:
+            message = "Storage gateway required for --publish-serving-snapshot."
+        else:
+            joined = ", ".join(sorted(gateway_targets))
+            message = f"Targets require storage gateway: {joined}."
+        return fail_invalid_target_selection(message), require_gateway
+    return None, require_gateway
+
+
+def _runtime_bundle_for_gateway(
+    inputs: _BuildRunInputs,
+    gateway: StorageGateway | None,
+) -> RuntimeBundle:
+    if gateway is None:
+        return inputs.runtime_bundle
+    return compose_cli_runtime_bundle(
+        runtime=inputs.runtime,
+        gateway=gateway,
+        options=inputs.compose_options,
+    )
+
+
+def _build_execution_args(
+    params: _BuildRunParams,
+    goals: list[str],
+    domain: str | None,
+) -> BuildExecutionArgs:
+    return BuildExecutionArgs(
+        goals=goals,
+        domain=domain,
+        force=params.force,
+        run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
+        validate_outputs=params.validate_outputs,
+        publish_serving_snapshot=params.publish_serving_snapshot,
+        parallel_backend=params.parallel_backend,
+        max_workers=params.max_workers,
+        enable_cache=params.enable_cache,
+        cache_dir=params.cache_dir,
+        clear_cache=params.clear_cache,
+        cache_report=params.cache_report,
+        validation_mode=params.validation_mode,
+        plugins_enabled=params.plugins_enabled,
+        plugins_disabled=params.plugins_disabled,
+        allow_workspace_modules=params.allow_workspace_modules,
+    )
+
+
+def _execute_build_run_inputs(
+    inputs: _BuildRunInputs,
+    *,
+    runtime_bundle: RuntimeBundle,
+    gateway: StorageGateway | None,
+    telemetry_state: _BuildRunTelemetryState,
+) -> CliResult[BuildRunResult] | None:
+    goals = inputs.goals
+    if inputs.params.publish_serving_snapshot and "serving_artifacts" not in goals:
+        goals.append("serving_artifacts")
+
+    domain = _resolve_domain_for_goals(goals, runtime_bundle.catalog)
+    telemetry_state.domain = domain
+
+    LOG.info(
+        "build.run repo=%s commit=%s targets=%s",
+        inputs.runtime.snapshot.repo,
+        inputs.runtime.snapshot.commit,
+        goals,
+    )
+
+    execution_args = _build_execution_args(inputs.params, goals, domain)
+    return _execute_and_format_result(
+        inputs.runtime,
+        execution_args,
+        gateway=gateway,
+        telemetry_state=telemetry_state,
+        format_options=_BuildRunFormatOptions(
+            runtime_bundle=runtime_bundle,
+            show_tags=inputs.params.show_tags,
+        ),
+    )
+
+
 def _build_run_result(
     ctx: CommandContext,
     *,
@@ -1497,81 +1644,30 @@ def _build_run_result(
 ) -> tuple[CliResult[BuildRunResult] | None, ResolvedRuntime | None, list[str]]:
     runtime: ResolvedRuntime | None = None
     goals: list[str] = []
-    try:
-        params = _extract_build_run_params(ctx)
-    except ValidationError as exc:
-        return fail_invalid_target_selection(str(exc)), runtime, goals
+    error, inputs = _prepare_build_run_inputs(ctx)
+    if error is not None or inputs is None:
+        return error, runtime, goals
 
-    validation_error = _validate_build_run_params(params)
-    if validation_error is not None:
-        return validation_error, runtime, goals
+    runtime = inputs.runtime
+    goals = inputs.goals
 
-    try:
-        runtime = ctx.runtime
-    except ResolutionError as exc:
-        return fail_project_error("build", str(exc)), runtime, goals
+    gateway_error, require_gateway = _resolve_gateway_requirements(ctx, inputs)
+    if gateway_error is not None:
+        return gateway_error, runtime, goals
 
-    require_gateway = params.publish_serving_snapshot
-    config_overrides = _plugin_overrides_from_params(params)
     gateway_context = _gateway_context(
-        runtime=runtime,
-        validation_mode=params.validation_mode,
+        runtime=inputs.runtime,
+        validation_mode=inputs.params.validation_mode,
         require_gateway=require_gateway,
     )
 
     with gateway_context as gateway:
-        runtime_bundle = compose_cli_runtime_bundle(
-            runtime=runtime,
-            gateway=gateway,
-            options=CliRuntimeComposeOptions(config_overrides=config_overrides),
-        )
-        goals, error = _resolve_goals_for_params(
-            params=params,
+        runtime_bundle = _runtime_bundle_for_gateway(inputs, gateway)
+        result = _execute_build_run_inputs(
+            inputs,
             runtime_bundle=runtime_bundle,
-        )
-        if error is not None:
-            return error, runtime, goals
-
-        if params.publish_serving_snapshot and "serving_artifacts" not in goals:
-            goals.append("serving_artifacts")
-
-        domain = _resolve_domain_for_goals(goals, runtime_bundle.catalog)
-        telemetry_state.domain = domain
-
-        LOG.info(
-            "build.run repo=%s commit=%s targets=%s",
-            runtime.snapshot.repo,
-            runtime.snapshot.commit,
-            goals,
-        )
-
-        execution_args = BuildExecutionArgs(
-            goals=goals,
-            domain=domain,
-            force=params.force,
-            run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
-            validate_outputs=params.validate_outputs,
-            publish_serving_snapshot=params.publish_serving_snapshot,
-            parallel_backend=params.parallel_backend,
-            max_workers=params.max_workers,
-            enable_cache=params.enable_cache,
-            cache_dir=params.cache_dir,
-            clear_cache=params.clear_cache,
-            cache_report=params.cache_report,
-            validation_mode=params.validation_mode,
-            plugins_enabled=params.plugins_enabled,
-            plugins_disabled=params.plugins_disabled,
-            allow_workspace_modules=params.allow_workspace_modules,
-        )
-        result = _execute_and_format_result(
-            runtime,
-            execution_args,
             gateway=gateway,
             telemetry_state=telemetry_state,
-            format_options=_BuildRunFormatOptions(
-                runtime_bundle=runtime_bundle,
-                show_tags=params.show_tags,
-            ),
         )
 
     return result, runtime, goals
@@ -1758,27 +1854,22 @@ def _resolve_decision_trace_artifact(
     runtime: ResolvedRuntime,
     result: HamiltonBuildResult,
 ) -> tuple[ArtifactSummary | None, str | None]:
-    record = result.get_record(DECISION_TRACE_TARGET_NAME)
-    if record is None:
+    _ = result
+    path = default_decision_trace_path(runtime.paths.build_dir)
+    if not path.exists():
         return None, None
-    artifact = next(
-        (item for item in record.artifacts if item.name == DECISION_TRACE_ARTIFACT_NAME),
-        None,
-    )
-    if artifact is None:
-        return None, None
+    size_bytes = None
+    try:
+        size_bytes = path.stat().st_size
+    except OSError:
+        size_bytes = None
     summary = ArtifactSummary(
-        name=artifact.name,
-        artifact_type=artifact.artifact_type,
-        path=artifact.path,
-        size_bytes=_artifact_size_bytes(artifact),
+        name=DECISION_TRACE_ARTIFACT_NAME,
+        artifact_type="file",
+        path=str(path),
+        size_bytes=size_bytes,
     )
-    path = artifact.path
-    if path is None:
-        default_path = default_decision_trace_path(runtime.paths.build_dir)
-        if default_path.exists():
-            path = str(default_path)
-    return summary, path
+    return summary, str(path)
 
 
 def _schema_inference_error_count(result: HamiltonBuildResult) -> int:

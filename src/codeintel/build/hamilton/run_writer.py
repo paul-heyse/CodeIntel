@@ -24,6 +24,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     _orjson = None
 
+from codeintel.build.assets.emitter import collect_asset_catalog_for_run
 from codeintel.build.hamilton.build_log import build_log_path
 from codeintel.build.hamilton.tagging import tag_schema_spec, tag_schema_summary
 from codeintel.core.datasets.manifests import dataset_manifest_path, read_dataset_manifest
@@ -120,8 +121,8 @@ class BuildRunWriter:
 
     metadata_bundle: BuildMetadataBundleWriter | None = None
 
-    @staticmethod
     def start_run(
+        self,
         *,
         env: BuildEnv,
         run_id: str,
@@ -141,6 +142,8 @@ class BuildRunWriter:
         started_at
             Run start timestamp.
         """
+        if self.metadata_bundle is None:
+            return
         if not run_id:
             return
         if not requested_targets:
@@ -150,8 +153,8 @@ class BuildRunWriter:
         if started_at.tzinfo is None:
             return
 
-    @staticmethod
     def complete_run(
+        self,
         *,
         run_id: str,
         success: bool,
@@ -174,6 +177,8 @@ class BuildRunWriter:
         error_summary
             Optional error summary if failed.
         """
+        if self.metadata_bundle is None:
+            return
         if not run_id:
             return
         if success and error_summary:
@@ -181,8 +186,8 @@ class BuildRunWriter:
         if not computed_targets and not skipped_targets:
             return
 
-    @staticmethod
     def save_run_targets(
+        self,
         *,
         env: BuildEnv,
         run_id: str,
@@ -199,13 +204,15 @@ class BuildRunWriter:
         records
             Target run records to persist.
         """
+        if self.metadata_bundle is None:
+            return
         if not run_id or not records:
             return
         if not env.repo:
             return
 
-    @staticmethod
     def save_run_nodes(
+        self,
         run_id: str,
         records: Sequence[NodeExecutionRecord],
     ) -> int:
@@ -223,6 +230,8 @@ class BuildRunWriter:
         int
             Number of records persisted.
         """
+        if self.metadata_bundle is None:
+            return 0
         if not run_id or not records:
             return 0
         return 0
@@ -259,8 +268,8 @@ class BuildRunWriter:
         else:
             return path
 
-    @staticmethod
     def persist_asset_catalog(
+        self,
         *,
         env: BuildEnv,
         run_id: str,
@@ -286,6 +295,29 @@ class BuildRunWriter:
             return
         if not catalog.targets:
             return
+        bundle = self.metadata_bundle
+        if bundle is None:
+            log.warning(
+                "build.asset_catalog.skipped run_id=%s reason=missing_bundle",
+                run_id,
+            )
+            return
+        collected = collect_asset_catalog_for_run(
+            env=env,
+            run_id=run_id,
+            catalog=catalog,
+            records=records,
+        )
+        if collected is None:
+            return
+        for record in collected.versions:
+            bundle.append_jsonl("assets/asset_versions.jsonl", record, schema_version="v1")
+        for record in collected.events:
+            bundle.append_jsonl("assets/asset_version_events.jsonl", record, schema_version="v1")
+        for record in collected.run_maps:
+            bundle.append_jsonl("assets/run_asset_versions.jsonl", record, schema_version="v1")
+        for record in collected.lineage_edges:
+            bundle.append_jsonl("assets/asset_lineage.jsonl", record, schema_version="v1")
 
     @staticmethod
     def write_run_report(*, inputs: RunReportInputs) -> Path | None:

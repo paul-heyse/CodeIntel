@@ -22,6 +22,7 @@ Using progress bars:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 # Re-export from lifecycle hooks (progress, timing, conditional)
@@ -58,6 +59,7 @@ class HookOptions:
     enable_progress: bool = False
     enable_timing: bool = False
     progress_desc: str = "Building targets"
+    telemetry_output_path: Path | None = None
 
 
 def build_hooks(
@@ -100,7 +102,13 @@ def build_hooks(
     hooks: list[object] = []
 
     if options.enable_telemetry:
-        hooks.append(NodeTelemetryHook(run_id, writer))
+        hooks.append(
+            NodeTelemetryHook(
+                run_id,
+                writer,
+                output_path=options.telemetry_output_path,
+            )
+        )
 
     if options.enable_progress:
         hooks.append(create_progress_hook(options.progress_desc))

@@ -5,10 +5,12 @@ Decision trace payloads are audit artifacts and must not drive control flow.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 import msgspec
+from hamilton.caching.adapter import CachingEventType, HamiltonCacheAdapter
 
 from codeintel.build.manifest.records import CacheEventStatus, CacheManifestEntry
 from codeintel.core.serialization.msgspec_json import decode_json_bytes, encode_json_bytes
@@ -18,7 +20,7 @@ DECISION_TRACE_ARTIFACT_NAME = "build_decision_trace"
 DECISION_TRACE_PATH_TEMPLATE = "{build_dir}/decision_trace.json"
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 
 class DecisionTracePayload(TypedDict):
@@ -98,6 +100,67 @@ def build_decision_trace_payload(
     return cast("list[DecisionTracePayload]", payload)
 
 
+def build_cache_manifest_entries(
+    *,
+    cache_adapter: HamiltonCacheAdapter,
+    run_id: str,
+    target_by_node: Mapping[str, str] | None = None,
+    durations_ms: Mapping[str, float | None] | None = None,
+) -> list[CacheManifestEntry]:
+    """Build cache manifest entries from Hamilton cache logs.
+
+    Parameters
+    ----------
+    cache_adapter
+        Hamilton cache adapter used for the build run.
+    run_id
+        Hamilton run identifier.
+    target_by_node
+        Optional mapping of node name to target name.
+    durations_ms
+        Optional mapping of node name to execution duration in milliseconds.
+
+    Returns
+    -------
+    list[CacheManifestEntry]
+        Cache manifest entries derived from cache logs.
+    """
+    entries: list[CacheManifestEntry] = []
+    logs_by_node = cache_adapter.logs(run_id=run_id, level="info")
+    if not isinstance(logs_by_node, dict):
+        return entries
+    for key, events in logs_by_node.items():
+        node_name, task_id = _cache_log_key_parts(key)
+        if not isinstance(events, list):
+            continue
+        cache_key = _peek_cache_key(cache_adapter, run_id, node_name, task_id)
+        cache_version = _peek_cache_version(cache_adapter, run_id, node_name, cache_key, task_id)
+        cache_path, size_bytes = _cache_artifact(cache_adapter, cache_version)
+        target = target_by_node.get(node_name) if target_by_node else None
+        duration_ms = durations_ms.get(node_name) if durations_ms else None
+        for event in events:
+            status = _cache_event_status(event)
+            if status is None:
+                continue
+            recorded_at = _event_timestamp(event)
+            entries.append(
+                CacheManifestEntry(
+                    run_id=run_id,
+                    node_name=node_name,
+                    status=status,
+                    recorded_at=recorded_at,
+                    cache_key=cache_key,
+                    cache_version=cache_version if status != "miss" else None,
+                    cache_path=cache_path if status != "miss" else None,
+                    duration_ms=duration_ms,
+                    size_bytes=size_bytes if status != "miss" else None,
+                    target=target,
+                )
+            )
+    entries.sort(key=lambda entry: entry.recorded_at)
+    return entries
+
+
 def default_decision_trace_path(build_dir: Path) -> Path:
     """Return the default decision trace path within the build directory.
 
@@ -145,12 +208,92 @@ def read_decision_trace(path: Path) -> list[DecisionTracePayload]:
     return cast("list[DecisionTracePayload]", payload)
 
 
+def _cache_log_key_parts(key: object) -> tuple[str, str | None]:
+    if isinstance(key, str):
+        return key, None
+    if isinstance(key, tuple) and len(key) == 2 and all(isinstance(item, str) for item in key):
+        return key[0], key[1]
+    return str(key), None
+
+
+def _cache_event_status(event: object) -> CacheEventStatus | None:
+    event_type = getattr(event, "event_type", None)
+    msg = getattr(event, "msg", None)
+    if event_type == CachingEventType.GET_RESULT and msg == "hit":
+        return "hit"
+    if event_type == CachingEventType.EXECUTE_NODE:
+        return "miss"
+    if event_type == CachingEventType.SET_RESULT:
+        return "store"
+    return None
+
+
+def _event_timestamp(event: object) -> datetime:
+    timestamp = getattr(event, "timestamp", None)
+    if isinstance(timestamp, (int, float)):
+        return datetime.fromtimestamp(timestamp, tz=UTC)
+    return datetime.now(tz=UTC)
+
+
+def _peek_cache_key(
+    cache_adapter: HamiltonCacheAdapter,
+    run_id: str,
+    node_name: str,
+    task_id: str | None,
+) -> str | None:
+    cache_key = cache_adapter.get_cache_key(
+        run_id=run_id,
+        node_name=node_name,
+        task_id=task_id,
+    )
+    return cache_key if isinstance(cache_key, str) else None
+
+
+def _peek_cache_version(
+    cache_adapter: HamiltonCacheAdapter,
+    run_id: str,
+    node_name: str,
+    cache_key: str | None,
+    task_id: str | None,
+) -> str | None:
+    cache_version = cache_adapter.get_data_version(
+        run_id=run_id,
+        node_name=node_name,
+        cache_key=cache_key,
+        task_id=task_id,
+    )
+    return cache_version if isinstance(cache_version, str) else None
+
+
+def _cache_artifact(
+    cache_adapter: HamiltonCacheAdapter,
+    cache_version: str | None,
+) -> tuple[str | None, int | None]:
+    if cache_version is None:
+        return None, None
+    result_store = cache_adapter.result_store
+    if result_store is None:
+        return None, None
+    path_root = getattr(result_store, "path", None)
+    if path_root is None:
+        return None, None
+    root = path_root if isinstance(path_root, Path) else Path(str(path_root))
+    path = root / cache_version
+    if not path.exists():
+        return str(path), None
+    try:
+        return str(path), path.stat().st_size
+    except OSError:
+        return str(path), None
+
+
 __all__ = [
     "DECISION_TRACE_ARTIFACT_NAME",
     "DECISION_TRACE_PATH_TEMPLATE",
     "DECISION_TRACE_TARGET_NAME",
     "DecisionTracePayload",
     "DecisionTraceRecord",
+    "build_cache_manifest_entries",
     "build_decision_trace",
     "build_decision_trace_payload",
     "default_decision_trace_path",

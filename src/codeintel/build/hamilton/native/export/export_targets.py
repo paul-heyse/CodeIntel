@@ -29,11 +29,15 @@ from codeintel.build.hamilton.native.materialization_records import (
     FileArtifactRecordContext,
     record_from_file_artifact_materialization,
 )
-from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.target_decorators import (
+    TargetSpecDescriptor,
+    codeintel_target,
+)
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
+from codeintel.build.resources import TargetResources
 from codeintel.build.tabular.types import InferableTabularInput
 
 if TYPE_CHECKING:
@@ -51,6 +55,8 @@ EXPORT_PARQUET_ARTIFACT_NAME = "datasets_manifest_parquet"
 
 DEFAULT_JSONL_DATASETS: tuple[str, ...] = ("modules",)
 DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("modules",)
+
+_EXPORT_TARGET_SPEC = TargetSpecDescriptor(resources=TargetResources(gateway=True))
 
 
 @dataclass(frozen=True)
@@ -75,6 +81,7 @@ def _export_manifest_plan(
     if gateway is None:
         log.warning("export skipped: storage gateway unavailable for %s", target_name)
         return None
+    build_gateway = gateway
     export_options = load_target_options(
         env,
         target_name=target_name,
@@ -83,7 +90,7 @@ def _export_manifest_plan(
     if export_options.datasets is None:
         export_options = replace(export_options, datasets=list(request.default_datasets))
 
-    def _write(output_path: Path, *, build_gateway: BuildGateway = gateway) -> int:
+    def _write(output_path: Path, *, build_gateway: BuildGateway = build_gateway) -> int:
         export_all_datasets(
             build_gateway,
             output_path.parent,
@@ -159,7 +166,7 @@ def export_jsonl__content(
     return t__export_jsonl__compute
 
 
-@codeintel_target(domain="export", target=EXPORT_JSONL_TARGET_NAME)
+@codeintel_target(domain="export", target=EXPORT_JSONL_TARGET_NAME, spec=_EXPORT_TARGET_SPEC)
 def t__export_jsonl(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -235,7 +242,7 @@ def export_parquet__bytes(
     return t__export_parquet__compute
 
 
-@codeintel_target(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
+@codeintel_target(domain="export", target=EXPORT_PARQUET_TARGET_NAME, spec=_EXPORT_TARGET_SPEC)
 def t__export_parquet(
     env: BuildEnv,
     catalog: DagCatalog,

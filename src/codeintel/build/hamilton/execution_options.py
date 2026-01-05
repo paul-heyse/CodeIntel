@@ -103,7 +103,7 @@ class BuildExecutionOptions:
             return Path(self.cache_dir)
         return env.paths.build_dir / ".hamilton_cache"
 
-    def hook_options(self) -> HookOptions:
+    def hook_options(self, *, telemetry_output_path: Path | None = None) -> HookOptions:
         """Construct HookOptions for this run.
 
         Telemetry/progress/timing follow the execution options toggles.
@@ -117,6 +117,7 @@ class BuildExecutionOptions:
             enable_telemetry=self.enable_telemetry,
             enable_progress=self.enable_progress,
             enable_timing=self.enable_timing,
+            telemetry_output_path=telemetry_output_path,
         )
 
     def plugin_overrides(self) -> dict[str, object]:

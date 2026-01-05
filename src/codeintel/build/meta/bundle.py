@@ -38,6 +38,10 @@ _REQUIRED_JSONL_FILES: tuple[tuple[str, str], ...] = (
     ("dataflow/dataset_edges.jsonl", "v1"),
     ("lineage/derived_edges.jsonl", "v1"),
     ("lineage/derived_columns.jsonl", "v1"),
+    ("assets/asset_versions.jsonl", "v1"),
+    ("assets/asset_version_events.jsonl", "v1"),
+    ("assets/run_asset_versions.jsonl", "v1"),
+    ("assets/asset_lineage.jsonl", "v1"),
     ("runs/run_index.jsonl", "v1"),
     ("exports/export_audit.jsonl", "v1"),
 )

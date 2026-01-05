@@ -431,9 +431,13 @@ def write_audit_entry(
             schema_version="v1",
         )
         return
-    if not gateway.exports.audit_enabled(settings):
+    _ = gateway
+    if settings.log_path is None and not settings.table_enabled:
         return
-    gateway.exports.write_export_audit(record, settings=settings)
+    log.warning(
+        "build.export.audit_skipped dataset=%s reason=missing_bundle",
+        record.table_name,
+    )
 
 
 # ---------------------------------------------------------------------------

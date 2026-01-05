@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Protocol, cast
@@ -15,6 +15,7 @@ from codeintel.core.schemas.contract_factory import (
     build_dataset_contract,
     is_docs_view,
 )
+from codeintel.core.schemas.contract_policy import table_name_from_key
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.declared import declared_schema_provider
 from codeintel.core.schemas.provider import SchemaProvider
@@ -174,6 +175,30 @@ def overrides_from_output_descriptor(output: OutputDescriptor) -> DatasetContrac
     )
 
 
+def _derive_upstream_dependencies(
+    *,
+    table_key: str,
+    output: OutputDescriptor | None,
+    target_metadata: TargetMetadataProvider,
+) -> tuple[str, ...]:
+    if output is None:
+        return ()
+    target = target_metadata.get_target(output.producer_target)
+    if target is None:
+        return ()
+    upstream: set[str] = set()
+    for dep_name in target.dependencies:
+        dep_target = target_metadata.get_target(dep_name)
+        if dep_target is None:
+            continue
+        for dep_table in dep_target.table_keys:
+            upstream.add(table_name_from_key(dep_table))
+    upstream.discard(table_name_from_key(table_key))
+    if not upstream:
+        return ()
+    return tuple(sorted(upstream))
+
+
 class ContractProvider(Protocol):
     """Protocol for dataset contract providers."""
 
@@ -237,7 +262,16 @@ class ContractService:
         if schema is None and output is None and not is_view:
             msg = f"Unknown table key: {table_key}"
             raise KeyError(msg)
-        overrides = overrides_from_output_descriptor(output) if output else None
+        overrides = (
+            overrides_from_output_descriptor(output) if output else DatasetContractOverrides()
+        )
+        upstream_dependencies = _derive_upstream_dependencies(
+            table_key=table_key,
+            output=output,
+            target_metadata=self.target_metadata,
+        )
+        if upstream_dependencies:
+            overrides = replace(overrides, upstream_dependencies=upstream_dependencies)
         composition = _get_composition_for_table_key(table_key)
         return build_dataset_contract(
             table_key=table_key,

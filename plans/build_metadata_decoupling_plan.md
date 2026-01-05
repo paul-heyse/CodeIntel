@@ -13,17 +13,17 @@
 
 ## Current State Summary
 - Build emits a metadata bundle under `build/metadata/` (contract catalog, schema manifest/registry,
-  schema versions/observations, dataflow/lineage, run reports/index, export audit).
+  schema versions/observations, dataflow/lineage, run reports/index, export audit, asset tracking).
 - Storage supports read-only bundle ingest (`codeintel meta sync` and
-  `codeintel storage ingest-metadata`), including run reports/index ingest.
-- Export audit, schema versions, observations, dataflow, and lineage are written to the bundle;
-  contract catalog and schema manifest are hashed into canonical catalogs during ingest.
+  `codeintel storage ingest-metadata`), including run reports/index and asset tracking ingest.
+- Export audit, schema versions, observations, dataflow, lineage, and asset tracking are written to
+  the bundle; contract catalog and schema manifest are hashed into canonical catalogs during ingest.
 - Bundle validation enforces schema version compatibility and required file presence.
 - Build CLI does not open a storage gateway by default (gateway on demand only).
 - Schema observation resolution uses bundle-only providers; observations persist only to the bundle.
-- Legacy gateway writes removed for run manifests, cache log ingestion, and SCIP telemetry.
-- Remaining storage coupling: asset tracking writes, gateway-required targets (exports/history/publish),
-  and static contract config reliance.
+- Legacy gateway writes removed for run manifests, cache log ingestion, SCIP telemetry, and assets.
+- Remaining storage coupling: gateway-required targets (exports/history/publish), schema override
+  registry reads when a gateway is present, and any residual legacy metadata fallbacks.
 
 ## Target State Summary
 - Build emits a **Build Metadata Bundle** under `build/metadata/` that becomes the source of truth.
@@ -34,11 +34,12 @@
 ## Status Summary
 - Completed: bundle emission + validation, bundle ingest (including run reports/index), no-catalog
   gateway mode, build CLI default no-gateway, bundle-only schema observation provider, schema_version
-  derived from schema hash.
-- In progress: contract derivation simplification, CLI/runtime gating for gateway-required commands,
-  asset tracking decoupling, legacy cleanup.
+  derived from schema hash, asset tracking emitted into bundle + ingest wired, gateway-required
+  targets gated in `build.run`, decision-trace/export targets tagged as gateway-required.
+- In progress: reduce static config/datasets usage, finish runtime compose/preflight decoupling, and
+  complete legacy cleanup.
 - Remaining tests: contract derivation, bundle round-trip/ingest, end-to-end build+ingest without a
-  gateway, negative bundle validation cases.
+  gateway, negative bundle validation cases, asset bundle ingestion, no-catalog gateway mode.
 
 ## Plan Conventions
 - No module owners or hand-offs; the plan is end-to-end for a single implementation effort.
@@ -61,6 +62,10 @@
 - `build/metadata/runs/run_report_<run_id>.jsonl`
 - `build/metadata/runs/run_index.jsonl`
 - `build/metadata/exports/export_audit.jsonl`
+- `build/metadata/assets/asset_versions.jsonl`
+- `build/metadata/assets/asset_version_events.jsonl`
+- `build/metadata/assets/run_asset_versions.jsonl`
+- `build/metadata/assets/asset_lineage.jsonl`
 
 ### Canonical Payloads
 - **Contract catalog**: `version`, `contracts` mapping keyed by table_key.
@@ -69,6 +74,7 @@
 - **Schema observations**: Arrow IPC schema + stats derived from dataset manifests.
 - **Run reports**: build run status + output catalog (already emitted by build).
 - **Lineage/dataflow**: derived from DAG edges + manifest-level dependency info.
+- **Asset tracking**: asset versions, run mappings, and lineage edges for build outputs/artifacts.
 
 ### Bundle Manifest
 - `bundle_manifest.json` is the root descriptor for the bundle.
@@ -144,6 +150,22 @@
 #### `exports/export_audit.jsonl`
 - `dataset`, `macro`, `rows`, `duration_s`, `output_path`, `sql`, `plan`, `created_at`
 
+#### `assets/asset_versions.jsonl`
+- `asset_kind`, `asset_key`, `version_hash`, `schema_hash`, `row_count`, `bytes`, `created_at`, `meta`
+
+#### `assets/asset_version_events.jsonl`
+- `run_id`, `repo`, `commit`, `asset_kind`, `asset_key`, `version_hash`, `status`, `target`
+- `impl_kind`, `location`, `input_hash`, `options_hash`, `recorded_at`, `meta`
+
+#### `assets/run_asset_versions.jsonl`
+- `run_id`, `repo`, `commit`, `asset_kind`, `asset_key`, `version_hash`, `target`
+- `resolution_kind`, `recorded_at`, `meta`
+
+#### `assets/asset_lineage.jsonl`
+- `downstream_kind`, `downstream_key`, `downstream_version`
+- `upstream_kind`, `upstream_key`, `upstream_version`
+- `edge_kind`, `created_at`, `meta`
+
 ## Bundle Versioning and Compatibility
 - Add `bundle_schema_version` to `bundle_manifest.json`.
 - Bundle consumers must reject unsupported versions with a clear error message.
@@ -191,7 +213,7 @@
 | is_view | table_key | `docs.*` or tag | False |
 
 ## Storage Ingest Contract (Read-Only)
-Status: implemented for schema/contracts/lineage/dataflow/export audit; run report ingest pending.
+Status: implemented for schema/contracts/lineage/dataflow/export audit/run reports/assets.
 - New module: `src/codeintel/storage/metadata/ingest.py`.
 - API surface:
   - `load_build_metadata_bundle(bundle_root: Path, con: DuckDBPyConnection) -> IngestReport`
@@ -281,27 +303,27 @@ Status legend: [x] complete, [ ] pending, [-] intentionally omitted.
 - [x] Update gateway open logic to permit a no-catalog mode for build-only workflows.
 
 ### Phase 4: Contract Provider Simplification
-- [ ] Implement programmatic defaults in contract resolution (derive family/name, filenames, owner).
-- [ ] Derive schema + schema_version from manifests/observations with declared schema fallback.
+- [x] Implement programmatic defaults in contract resolution (derive family/name, filenames, owner).
+- [x] Derive schema + schema_version from manifests/observations with declared schema fallback.
 - [x] Derive schema_version from schema hash when available.
 - [x] Wire bundle-only schema observation provider for schema resolution (no gateway dependency).
-- [ ] Keep tag overrides only for exceptions; document supported override tags.
+- [x] Keep tag overrides only for exceptions; document supported override tags.
 - [ ] Reduce reliance on static configuration in `config/datasets` to non-inferable cases.
-- [ ] Document which tables remain declared-only and why.
-- [ ] Define and enforce contract field precedence (observed schema > manifest schema > declared).
-- [ ] Add explicit policy for default filenames and owner_package derivation when tags are absent.
-- [ ] Document override tags in a single reference (and link from config docs).
+- [x] Document which tables remain declared-only and why.
+- [x] Define and enforce contract field precedence (observed schema > manifest schema > declared).
+- [x] Add explicit policy for default filenames and owner_package derivation when tags are absent.
+- [x] Document override tags in a single reference (and link from config docs).
 
 ### Phase 5: CLI + Runtime Wiring
 - [x] Update build CLI to avoid opening a storage gateway by default (gateway on-demand only).
-- [ ] Split build commands that still require gateway (publish, assets, history) to open on demand.
+- [x] Split build commands that still require gateway (publish, assets, history) to open on demand.
 - [ ] Ensure build execution uses metadata bundle and never calls gateway persistence paths.
 - [x] Add a storage-only CLI path to ingest build artifacts into DuckDB.
 - [ ] Ensure read-only storage access operates solely from build outputs + metadata bundle.
 - [x] Add explicit error messaging when bundle is missing.
-- [ ] Add explicit CLI validation for gateway-required targets (exports/serving/artifacts).
-- [ ] Ensure runtime compose does not assume gateway for override registries or schema prefill.
-- [ ] Align preflight checks to dataset manifests only when gateway is absent.
+- [x] Add explicit CLI validation for gateway-required targets (exports/serving/artifacts).
+- [x] Ensure runtime compose does not assume gateway for override registries or schema prefill.
+- [x] Align preflight checks to dataset manifests only when gateway is absent.
 
 ### Phase 6: Legacy Removal (Sharp Cutover)
 - [ ] Remove legacy storage writes from build (run records, schema registry, catalog writes).
@@ -309,11 +331,11 @@ Status legend: [x] complete, [ ] pending, [-] intentionally omitted.
 - [x] Remove legacy run manifest writes and cache log ingestion.
 - [x] Remove SCIP telemetry writes to storage.
 - [x] Remove gateway-based schema observation persistence in build.
-- [ ] Remove asset tracking writes from build or move them into the metadata bundle.
+- [x] Remove asset tracking writes from build and emit into metadata bundle.
 - [ ] Delete fallback logic that reads legacy metadata locations.
 - [ ] Remove legacy config flags and unused tables/DDL tied only to write-time paths.
 - [ ] Prune docs/plan references to legacy metadata locations.
-- [ ] Decide asset catalog destination (bundle JSONL vs. storage-only) and implement ingestion rules.
+- [x] Decide asset catalog destination (bundle JSONL) and implement ingestion rules.
 - [ ] Remove storage-only build tracking tables if no longer used.
 
 ## API and Data Model Changes
@@ -329,6 +351,7 @@ Status legend: [x] complete, [ ] pending, [-] intentionally omitted.
 - [ ] End-to-end build + storage ingest without any build-time storage gateway.
 - [ ] Negative tests for corrupt bundle, missing required files, and unsupported bundle versions.
 - [ ] Tests covering no-catalog gateway mode for publish/serving flows.
+- [ ] Tests covering asset bundle ingestion into build tracking tables.
 
 ## Acceptance Criteria
 - Build can run without opening a storage gateway.
@@ -341,4 +364,4 @@ Status legend: [x] complete, [ ] pending, [-] intentionally omitted.
 - Which non-inferable tables require declared schemas permanently?
 - How to encode lineage edges for custom targets that do not expose dataset manifests?
 - Versioning strategy for bundle schemas (semantic version or digest-based).
-- Should asset tracking remain storage-backed or move to bundle-only outputs?
+- Should asset alias/diff tables be derived during ingest or computed on demand?

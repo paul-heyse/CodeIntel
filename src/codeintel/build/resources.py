@@ -54,7 +54,7 @@ class TargetResources:
     modules
         Whether this target needs access to the module list.
     gateway
-        Whether this target needs database access. Almost always True.
+        Whether this target needs database access.
     tools
         External tools required (e.g., "scip-python", "pyright").
         Build system validates tool availability at planning time.
@@ -70,7 +70,7 @@ class TargetResources:
 
     tracker: bool = False
     modules: bool = False
-    gateway: bool = True
+    gateway: bool = False
     tools: tuple[str, ...] = ()
 
     def requires_any_tool(self) -> bool:

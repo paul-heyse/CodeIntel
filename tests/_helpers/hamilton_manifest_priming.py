@@ -109,6 +109,8 @@ class ManifestPriming:
         ------
         RuntimeError
             Raised when the modules target is missing from the catalog.
+        RuntimeError
+            Raised when the build gateway is unavailable.
         """
         env = self.harness.build_env()
         target = self.runtime.catalog.get_target("modules")
@@ -157,6 +159,8 @@ class ManifestPriming:
         ------
         RuntimeError
             If the target is not found in the catalog.
+        RuntimeError
+            If the build gateway is unavailable.
         """
         env = self.harness.build_env()
         node = self.runtime.catalog.get_target(target)
@@ -206,6 +210,8 @@ class ManifestPriming:
 
         Raises
         ------
+        RuntimeError
+            If the target is not found in the catalog.
         RuntimeError
             If the build gateway is unavailable.
         """
