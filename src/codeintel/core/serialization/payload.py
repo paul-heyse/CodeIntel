@@ -8,6 +8,33 @@ import msgspec
 
 PayloadValue = Mapping[str, object] | Sequence[object] | str | int | float | bool | None
 
+_INT64_MIN = -(2**63)
+_UINT64_MAX = 2**64 - 1
+
+
+def _sanitize_payload(value: object) -> object:
+    if value is None:
+        result: object = None
+    elif isinstance(value, bool):
+        result = value
+    elif isinstance(value, int):
+        result = str(value) if value < _INT64_MIN or value > _UINT64_MAX else value
+    elif isinstance(value, (str, float)):
+        result = value
+    elif isinstance(value, Mapping):
+        sanitized: dict[object, object] = {}
+        for key, item in value.items():
+            safe_key = _sanitize_payload(key)
+            if isinstance(safe_key, (bytes, bytearray, memoryview)):
+                safe_key = str(bytes(safe_key))
+            sanitized[safe_key] = _sanitize_payload(item)
+        result = sanitized
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray, memoryview)):
+        result = [_sanitize_payload(item) for item in value]
+    else:
+        result = str(value)
+    return result
+
 
 def encode_payload(value: PayloadValue | bytes | bytearray | memoryview | None) -> bytes | None:
     """Encode a payload value to msgpack bytes for storage.
@@ -26,7 +53,8 @@ def encode_payload(value: PayloadValue | bytes | bytearray | memoryview | None) 
         return None
     if isinstance(value, (bytes, bytearray, memoryview)):
         return bytes(value)
-    return msgspec.msgpack.encode(value)
+    sanitized = _sanitize_payload(value)
+    return msgspec.msgpack.encode(sanitized)
 
 
 def decode_payload(value: object) -> object | None:

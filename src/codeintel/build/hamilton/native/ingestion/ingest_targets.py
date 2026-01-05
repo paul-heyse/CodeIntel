@@ -279,20 +279,26 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
         Tuple of module paths for the current snapshot.
     """
     paths = get_module_paths_from_env(env)
-    if paths:
-        if t__modules.status != "succeeded":
-            log.warning(
-                "Using stored module paths despite modules target %s: %s",
-                t__modules.status,
-                t__modules.error or "no error recorded",
-            )
-        return tuple(paths)
     try:
         options = load_target_options(
             env,
             target_name=MODULES_TARGET_NAME,
             options_type=ModuleIngestOptions,
         )
+        if paths:
+            filtered_records = filter_modules(
+                paths_to_modules(paths, env.snapshot.repo_root),
+                options,
+            )
+            filtered_paths = tuple(record.rel_path for record in filtered_records)
+            if filtered_paths:
+                if t__modules.status != "succeeded":
+                    log.warning(
+                        "Using stored module paths despite modules target %s: %s",
+                        t__modules.status,
+                        t__modules.error or "no error recorded",
+                    )
+                return filtered_paths
         profile = build_scan_profile(env.snapshot.repo_root, options)
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         discovered = discovery.discover_modules(env.snapshot.repo_root, profile)
@@ -558,13 +564,13 @@ def t__modules__ingest(
 
 def modules__module_rows__base(
     t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Extract rows for core.modules.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for the modules table, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for the modules table.
 
     Raises
     ------
@@ -572,7 +578,7 @@ def modules__module_rows__base(
         If the ingest payload is missing expected row data.
     """
     if t__modules__ingest.result.skipped or not t__modules__ingest.result.success:
-        return None
+        return empty_table_for_table(MODULES_TABLE_KEY)
 
     payload = t__modules__ingest.payload
     if payload is None:
@@ -587,13 +593,13 @@ def modules__module_rows__base(
 
 def modules__file_state_rows__base(
     t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Extract rows for core.file_state.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for the file_state table, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for the file_state table.
 
     Raises
     ------
@@ -601,7 +607,7 @@ def modules__file_state_rows__base(
         If the ingest payload is missing expected row data.
     """
     if t__modules__ingest.result.skipped or not t__modules__ingest.result.success:
-        return None
+        return empty_table_for_table(FILE_STATE_TABLE_KEY)
 
     payload = t__modules__ingest.payload
     if payload is None:
@@ -616,13 +622,13 @@ def modules__file_state_rows__base(
 
 def modules__repo_map_rows__base(
     t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Extract rows for core.repo_map.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for the repo_map table, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for the repo_map table.
 
     Raises
     ------
@@ -630,7 +636,7 @@ def modules__repo_map_rows__base(
         If the ingest payload is missing expected row data.
     """
     if t__modules__ingest.result.skipped or not t__modules__ingest.result.success:
-        return None
+        return empty_table_for_table(REPO_MAP_TABLE_KEY)
 
     payload = t__modules__ingest.payload
     if payload is None:
@@ -652,21 +658,21 @@ _MODULES_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="modules__module_rows__base",
             save_spec=RelationTableSaveSpec(table_key=MODULES_TABLE_KEY),
             node_name="modules__module_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=FILE_STATE_TABLE_KEY,
             base_node="modules__file_state_rows__base",
             save_spec=RelationTableSaveSpec(table_key=FILE_STATE_TABLE_KEY),
             node_name="modules__file_state_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=REPO_MAP_TABLE_KEY,
             base_node="modules__repo_map_rows__base",
             save_spec=RelationTableSaveSpec(table_key=REPO_MAP_TABLE_KEY),
             node_name="modules__repo_map_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="modules__table_materializations",
@@ -1230,14 +1236,16 @@ def t__tests_ingest__ingest(
 
 def tests__rows__base(
     tests__raw_rows: InferableTabularInput | None,
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Extract rows for analytics.test_catalog.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for the test_catalog table, or None when ingestion is skipped or failed.
+    InferableTabularInput
+        Tabular input for the test_catalog table.
     """
+    if tests__raw_rows is None:
+        return empty_table_for_table(TEST_CATALOG_TABLE_KEY)
     return tests__raw_rows
 
 
@@ -1250,7 +1258,7 @@ _TESTS_INGEST_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="tests__rows__base",
             save_spec=RelationTableSaveSpec(table_key=TEST_CATALOG_TABLE_KEY),
             node_name="tests__rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="tests_ingest__table_materializations",
@@ -1424,13 +1432,13 @@ def t__typing__ingest(
 
 def typing__diagnostic_rows__base(
     t__typing__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Extract rows for analytics.static_diagnostics.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for the static_diagnostics table, or None when ingestion is skipped or failed.
+    InferableTabularInput
+        Tabular input for the static_diagnostics table.
 
     Raises
     ------
@@ -1438,7 +1446,7 @@ def typing__diagnostic_rows__base(
         If the ingest payload is missing expected row data.
     """
     if t__typing__ingest.result.skipped or not t__typing__ingest.result.success:
-        return None
+        return empty_table_for_table(STATIC_DIAGNOSTICS_TABLE_KEY)
 
     payload = t__typing__ingest.payload
     if payload is None:
@@ -1460,7 +1468,7 @@ _TYPING_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="typing__diagnostic_rows__base",
             save_spec=RelationTableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
             node_name="typing__diagnostic_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="typing__table_materializations",
@@ -1534,33 +1542,9 @@ def t__typing(
     apply_to(modules__module_rows, table_key=value(MODULES_TABLE_KEY)),
     apply_to(modules__file_state_rows, table_key=value(FILE_STATE_TABLE_KEY)),
     apply_to(modules__repo_map_rows, table_key=value(REPO_MAP_TABLE_KEY)),
+    apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
     apply_to(tests__rows, table_key=value(TEST_CATALOG_TABLE_KEY)),
     apply_to(typing__diagnostic_rows, table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY)),
-)
-def _normalize_ingest_rows(
-    rows: InferableTabularInput | None,
-    table_key: str,
-) -> pa.Table | None:
-    """Normalize ingestion outputs with shared alignment/dedupe logic.
-
-    Parameters
-    ----------
-    rows
-        Ingestion rows to normalize.
-    table_key
-        Table key used for schema alignment.
-
-    Returns
-    -------
-    pa.Table | None
-        Normalized rows for the table.
-    """
-    return normalize_ingest_frame(rows, table_key=table_key)
-
-
-@tag_helper(domain="ingestion")
-@mutate_ingest_rows(
-    apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
 )
 def _normalize_required_ingest_rows(
     rows: InferableTabularInput,

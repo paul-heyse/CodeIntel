@@ -1,6 +1,6 @@
 {
   "bundle_schema_version":"v1",
-  "commit":"fe69e16c00b5e6e73685d19fe1057dbb98b98da2",
+  "commit":"b0d63122b2108be707cbb475b4b16b48a3222e00",
   "files":[
     {
       "path":"assets/asset_lineage.jsonl",
@@ -34,29 +34,29 @@
       "path":"contracts/contract_catalog.hash",
       "record_count":null,
       "schema_version":null,
-      "sha256":"e02ce3d22bb532bc08a45463961d49149327ccf55555f7879883384a4f964b75",
+      "sha256":"f045606eca6d26157b3b4db821aa1d7e577ca9d4bdf4678d292fb7e1569940b2",
       "size_bytes":65
     },
     {
       "path":"contracts/contract_catalog.json",
       "record_count":null,
       "schema_version":"v1",
-      "sha256":"63cba24852b83cf83971fd04b49d8e5cb5c565bd73a3f572799d63c7c752fdae",
-      "size_bytes":666302
+      "sha256":"beaa52dd8aa47ae63d6b90fd74be95e9475ddf34a2dfb430cccd60a9fcb5bf8d",
+      "size_bytes":540471
     },
     {
       "path":"dataflow/dataset_edges.jsonl",
-      "record_count":2866,
+      "record_count":1029,
       "schema_version":"v1",
-      "sha256":"33ab714a9fa465cbf8c2b68fb1d4555e6627f8dff0e6fd854ad8eee00d6e98fc",
-      "size_bytes":259902
+      "sha256":"5fc8806769856d9dd8805302161d6b06b2ecac30a5b93371f235404823e00463",
+      "size_bytes":88715
     },
     {
       "path":"dataflow/dataset_nodes.jsonl",
-      "record_count":200,
+      "record_count":186,
       "schema_version":"v1",
-      "sha256":"6f773966f68d28b965120bb06b20c2bba3e50ba266dfe111be5ced6fa92b814d",
-      "size_bytes":31081
+      "sha256":"8bb0391771a4b14f34c6d195ae2067451e867ee6c3db6926be5a670bbf6a37d3",
+      "size_bytes":28823
     },
     {
       "path":"exports/export_audit.jsonl",
@@ -67,62 +67,62 @@
     },
     {
       "path":"lineage/derived_columns.jsonl",
-      "record_count":682,
+      "record_count":207,
       "schema_version":"v1",
-      "sha256":"df6ce78f0dffd18bc9d54340c60cdb5aaea7e2c00c92842dd5da778972beca1e",
-      "size_bytes":251684
+      "sha256":"086738b2515ec3250afa567d562590258aba97af8a52e35d445efe3b8241e9a1",
+      "size_bytes":75159
     },
     {
       "path":"lineage/derived_edges.jsonl",
-      "record_count":1576,
+      "record_count":826,
       "schema_version":"v1",
-      "sha256":"540914d463517908508a0eef9c671b01213d368beb2563dcad0a25e51495cf8a",
-      "size_bytes":427712
+      "sha256":"d8fe091ce68b5fc24af282ce7fe9d1881f53e9db10be81b62484e47b358a03a0",
+      "size_bytes":222420
     },
     {
       "path":"runs/run_index.jsonl",
       "record_count":1,
       "schema_version":"v1",
-      "sha256":"cb56ac63213a59021d4690cb277136ed2c10cd422dce225c888f31f58b45383d",
-      "size_bytes":404
+      "sha256":"265be266a66e3f17425ef53629a543130d4d78f606fc769e63b4753d1f18cfd2",
+      "size_bytes":403
     },
     {
-      "path":"runs/run_report_hamilton-019b8e5ab05a7f628383d37fc15f8bdd.jsonl",
+      "path":"runs/run_report_hamilton-019b8f5249817d798a2bb4c670741f6a.jsonl",
       "record_count":2,
       "schema_version":"v1",
-      "sha256":"fcf5220dd608c7396a636bf3d4e377d6736cf5dd207ec9cabb9261644e6baed9",
-      "size_bytes":4396
+      "sha256":"9a8e7a780d88aa649f41d55f93fb7293cb16465f9dec9f6533d700970eb645e1",
+      "size_bytes":3831
     },
     {
       "path":"schema/schema_manifest.json",
       "record_count":null,
       "schema_version":"v2",
-      "sha256":"e979b0ebf88f33d840f56d683610f264bf48bc9343116f15681e1d6fc8767c51",
-      "size_bytes":679700
+      "sha256":"8afd9c45a91370930f47e7ae99926c81a4b0e2e62bf19cf6c7424960d4d4b6b8",
+      "size_bytes":531593
     },
     {
       "path":"schema/schema_observations.jsonl",
-      "record_count":41,
+      "record_count":36,
       "schema_version":"v1",
-      "sha256":"ea3c365771590b064f78ebb7194ab98c99aefa661a1658ee5b2db8a165bb849d",
-      "size_bytes":378085
+      "sha256":"2df1d4894eb6903db8f82249ae2aa7f8ce1975e55321aa0588778531eac7a1a3",
+      "size_bytes":366963
     },
     {
       "path":"schema/schema_registry.json",
       "record_count":null,
       "schema_version":"v1",
-      "sha256":"e2a6507ebfcb7057006d59b879093631c3c1c32e8074f127677f37ac97cbf944",
-      "size_bytes":103948
+      "sha256":"8249bed4401c3769ebf9d73d45300e276777754517630a34000f98dcf613bfbf",
+      "size_bytes":88062
     },
     {
       "path":"schema/schema_versions.jsonl",
-      "record_count":207,
+      "record_count":187,
       "schema_version":"v1",
-      "sha256":"bfeef85e88219e05865e7529da4befe83726a788ff004db0d77004e8dca4fe1c",
-      "size_bytes":658849
+      "sha256":"e21460ede4e1c3bec66e5834475dc6f158b8fe18026ce04818bd9ffaadfdc34b",
+      "size_bytes":583801
     }
   ],
-  "generated_at":"2026-01-05T13:31:06.713898+00:00",
+  "generated_at":"2026-01-05T18:01:33.313097+00:00",
   "repo":"github.com/paul-heyse/CodeIntel",
-  "run_id":"hamilton-019b8e5ab05a7f628383d37fc15f8bdd"
+  "run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a"
 }

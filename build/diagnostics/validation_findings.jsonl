@@ -1,0 +1,173 @@
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.cfg_block_metrics"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.cfg_function_metrics"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.cfg_function_metrics_ext"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.config_data_flow"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.config_graph_metrics_keys"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.config_graph_metrics_modules"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.config_projection_key_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.config_projection_module_edges"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"analytics.config_values"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"analytics.config_values"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.data_model_fields"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.data_model_relationships"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.data_model_usage"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.data_models"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.dfg_block_metrics"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.dfg_function_metrics"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.dfg_function_metrics_ext"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.entrypoint_tests"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.entrypoints"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.external_dependencies"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.external_dependency_calls"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.function_ast_features"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.function_contracts"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.function_effects"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.function_types"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.function_validation"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.graph_metrics_functions"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.graph_metrics_functions_ext"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.graph_metrics_modules"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.graph_metrics_modules_ext"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.graph_stats"}
+{"check":"nulls_detected","column":"rel_path","count":2,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"analytics.graph_validation"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.py_cpg_quality_report"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.semantic_roles_functions"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.semantic_roles_modules"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.static_diagnostics"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.subsystem_agreement"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.subsystem_graph_metrics"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.subsystem_modules"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.subsystem_profile_cache"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.subsystems"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.symbol_graph_metrics_functions"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.symbol_graph_metrics_modules"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"analytics.test_catalog"}
+{"check":"nulls_detected","column":"name","count":338632,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"qualname","count":348622,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"decorator_start_line","count":354314,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"decorator_end_line","count":354314,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"parent_qualname","count":349235,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"decorators","count":354314,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"docstring","count":351135,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"ctx","count":190366,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"type_comment","count":355820,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"type_ignores","count":355818,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"identifier","count":232104,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"attribute","count":329494,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"imported","count":347130,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"asname","count":355629,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"module","count":351134,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"level","count":355820,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"nulls_detected","column":"constant_kind","count":306304,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.ast_nodes"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"lineno","count":613,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"end_lineno","count":613,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"style","count":1982,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"long_desc","count":4053,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"params","count":2991,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"returns","count":2472,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"raises","count":4432,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"nulls_detected","column":"examples","count":4508,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.docstrings"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.file_line_index"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.file_state"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.file_state"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.goid_crosswalk"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.goids"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.modules"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.modules"}
+{"check":"nulls_detected","column":"row_hash","count":613,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.modules"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.parse_manifest"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.py_sym_bindings"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.py_sym_function_partitions"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.py_sym_namespace_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.py_sym_resolution_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.py_sym_scope_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.py_sym_scopes"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.py_sym_symbols"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.schema_inference_errors"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_external_symbols"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_external_symbols"}
+{"check":"nulls_detected","column":"package_manager","count":418,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_external_symbols"}
+{"check":"nulls_detected","column":"package_name","count":418,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_external_symbols"}
+{"check":"nulls_detected","column":"package_version","count":418,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_external_symbols"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.scip_occurrence_span_xref"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.scip_occurrence_syntax_xref"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_occurrences"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_occurrences"}
+{"check":"nulls_detected","column":"position_encoding","count":501079,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_occurrences"}
+{"check":"nulls_detected","column":"start_byte","count":501079,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_occurrences"}
+{"check":"nulls_detected","column":"end_byte","count":501079,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_occurrences"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.scip_symbol_goid_xref"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_information"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_information"}
+{"check":"nulls_detected","column":"documentation","count":22470,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_information"}
+{"check":"nulls_detected","column":"display_name","count":56902,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_information"}
+{"check":"nulls_detected","column":"signature","count":56902,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_information"}
+{"check":"nulls_detected","column":"enclosing_symbol","count":56902,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_information"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_relationships"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbol_relationships"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbols"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbols"}
+{"check":"nulls_detected","column":"documentation","count":25421,"message":"Null values detected in column","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"core.scip_symbols"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_call_args"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_calls"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_calls_resolved"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_defs"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_defs_resolved"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_edges_augmented"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_func_params"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_imports"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_imports_resolved"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_nodes"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_nodes_augmented"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_refs"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_refs_resolved"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_scopes"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.syntax_spans"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_captures"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_changed_ranges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_language_metadata"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_nodes"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_parse_errors"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_parse_manifest"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_syntax_node_xref"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_tokens"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_trivia"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.ts_weld_coverage"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.v_goid_crosswalk_join"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"core.v_goid_crosswalk_mismatches"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_data_model_fields"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_data_model_relationships"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_data_models"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_data_models_normalized"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_entrypoints"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_external_dependencies"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_external_dependency_calls"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_module_architecture"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_module_with_subsystem"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_subsystem_agreement"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_subsystem_profile"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_subsystem_summary"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_symbol_module_graph"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"docs.v_validation_summary"}
+{"check":"missing_column","column":"repo","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"graph.call_graph_edges"}
+{"check":"missing_column","column":"commit","count":0,"message":"Contract column missing from dataset","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"warn","table_key":"graph.call_graph_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cdg_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cfg_blocks"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cfg_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cpg_call_targets"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cpg_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cpg_edges_arg_to_param"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cpg_edges_calls"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cpg_edges_ret_to_call"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.cpg_nodes"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.dfg_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.import_graph_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.import_modules"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.pdg_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.symbol_use_edges"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.v_call_graph_degree"}
+{"check":"dataset_missing","count":0,"message":"Dataset snapshot missing","run_id":"hamilton-019b8f5249817d798a2bb4c670741f6a","severity":"error","table_key":"graph.v_import_graph_degree"}

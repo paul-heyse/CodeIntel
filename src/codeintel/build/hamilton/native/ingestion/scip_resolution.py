@@ -80,12 +80,12 @@ def _rename_columns(table: pa.Table, mapping: dict[str, str]) -> pa.Table:
     return table.rename_columns(new_names)
 
 
-def _cast_int64(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+def _cast_int32(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     arrays = []
     for name in table.column_names:
         column = table[name]
         if name in columns:
-            arrays.append(pc.cast(column, pa.int64(), safe=False))
+            arrays.append(pc.cast(column, pa.int32(), safe=False))
         else:
             arrays.append(column)
     return pa.Table.from_arrays(arrays, names=list(table.column_names))
@@ -132,7 +132,7 @@ def _goids_table(goids: InferableTabularInput) -> pa.Table:
             "end_line",
         ]
     )
-    table = _cast_int64(table, ["start_line", "end_line"])
+    table = _cast_int32(table, ["start_line", "end_line"])
     if table.num_rows == 0:
         return table
     mask = and_kleene(
@@ -145,7 +145,7 @@ def _goids_table(goids: InferableTabularInput) -> pa.Table:
 def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
     table = tabular_to_arrow_table(occurrences)
     table = _rename_columns(table, {"symbol": "scip_symbol"})
-    return _cast_int64(table, ["start_line", "end_line"])
+    return _cast_int32(table, ["start_line", "end_line"])
 
 
 def _symbol_goid_xref_table(
@@ -205,7 +205,11 @@ def _occurrence_span_xref_table(
     symbol_goid_xref: pa.Table,
     created_at: datetime,
 ) -> pa.Table:
-    goid_lookup = symbol_goid_xref.select(
+    goid_lookup_source = dedupe_table_for_table(
+        SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
+        symbol_goid_xref,
+    )
+    goid_lookup = goid_lookup_source.select(
         [
             "repo",
             "commit",
@@ -464,7 +468,7 @@ def scip_resolution__frames(
     ScipResolutionFrames
         Frames for SCIP symbol and occurrence xref tables.
     """
-    created_at = datetime.now(tz=UTC)
+    created_at = datetime.now(tz=UTC).replace(tzinfo=None)
     occurrences = _occurrences_table(q__core__scip_occurrences)
     symbol_info = _symbol_info_table(q__core__scip_symbol_information)
     goids = _goids_table(q__core__goids)

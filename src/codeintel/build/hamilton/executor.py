@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -97,6 +98,7 @@ if TYPE_CHECKING:
     from hamilton.io.materialization import ExtractorFactory, MaterializerFactory
     from hamilton.lifecycle.base import LifecycleAdapter
 
+    from codeintel.build.hamilton.build_log import BuildLogContext
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.config.settings import HamiltonTrackerSettings
@@ -188,6 +190,23 @@ class _RunState:
     def duration_ms(self) -> float:
         """Return elapsed milliseconds for the run."""
         return (time.perf_counter() - self.start_time) * 1000
+
+
+@dataclass(frozen=True)
+class _ExecutionPlan:
+    closure: tuple[str, ...]
+    final_vars: list[str]
+    preflight_records: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _FailureSnapshotContext:
+    run_id: str
+    repo: str
+    commit: str
+    domain: str | None
+    requested_targets: tuple[str, ...]
+    build_dir: Path
 
 
 @dataclass(frozen=True)
@@ -1402,6 +1421,7 @@ class HamiltonBuildExecutor:
             "build.run.start",
             requested_targets_count=len(resolved_targets),
         )
+        logging.captureWarnings(capture=True)
         metadata_bundle = BuildMetadataBundleWriter(
             env.paths.build_dir / "metadata",
             run_id=run_id,
@@ -1411,29 +1431,57 @@ class HamiltonBuildExecutor:
         env = replace(env, metadata_bundle=metadata_bundle)
         writer = BuildRunWriter(metadata_bundle=metadata_bundle)
         cache_dir = self._options.resolved_cache_dir(env=env)
-        runtime, telemetry_hook = self._build_runtime(
-            env=env,
-            run_id=run_id,
-            writer=writer,
-            cache_dir=cache_dir,
-            domain=domain,
-        )
+        log_handler = _install_run_log_handler(env.paths.build_dir, run_id)
+        try:
+            runtime, telemetry_hook = self._build_runtime(
+                env=env,
+                run_id=run_id,
+                writer=writer,
+                cache_dir=cache_dir,
+                domain=domain,
+            )
 
-        context = _RunState(
-            env=env,
-            targets=tuple(resolved_targets),
-            runtime=runtime,
-            run_id=run_id,
-            cache_dir=cache_dir,
-            start_time=time.perf_counter(),
-            started_at=datetime.now(tz=UTC),
-            domain=domain,
-        )
-        return self._run_with_state(
-            context=context,
-            writer=writer,
-            telemetry_hook=telemetry_hook,
-        )
+            context = _RunState(
+                env=env,
+                targets=tuple(resolved_targets),
+                runtime=runtime,
+                run_id=run_id,
+                cache_dir=cache_dir,
+                start_time=time.perf_counter(),
+                started_at=datetime.now(tz=UTC),
+                domain=domain,
+            )
+            return self._run_with_state(
+                context=context,
+                writer=writer,
+                telemetry_hook=telemetry_hook,
+            )
+        except Exception as exc:
+            error_summary = str(exc)
+            exception_type = type(exc).__name__
+            record_build_event(
+                "build.runtime.exception",
+                exception_type=exception_type,
+                error=error_summary,
+            )
+            events = _persist_build_log_from_buffer(writer=writer)
+            _write_failure_snapshot_from_context(
+                context=_FailureSnapshotContext(
+                    run_id=run_id,
+                    repo=env.repo,
+                    commit=env.commit,
+                    domain=domain,
+                    requested_targets=tuple(resolved_targets),
+                    build_dir=env.paths.build_dir,
+                ),
+                error_summary=error_summary,
+                exception_type=exception_type,
+                events=events,
+            )
+            log.exception("build.hamilton.executor.bootstrap_error run_id=%s", run_id)
+            raise
+        finally:
+            _teardown_run_logging(log_handler)
 
     def _run_with_state(
         self,
@@ -1442,123 +1490,190 @@ class HamiltonBuildExecutor:
         writer: BuildRunWriter,
         telemetry_hook: NodeTelemetryHook | None,
     ) -> HamiltonBuildResult:
-        catalog = context.runtime.catalog
-        requested_targets = list(context.targets)
+        error_summary: str | None = None
+        exception_type: str | None = None
 
         try:
-            log.info(
-                "build.hamilton.executor.start run_id=%s targets=%s",
-                context.run_id,
-                requested_targets,
-            )
-
-            writer.start_run(
-                env=context.env,
-                run_id=context.run_id,
-                requested_targets=requested_targets,
-                started_at=context.started_at,
-            )
-
-            closure = self._compute_closure(catalog, requested_targets, context.run_id)
-            if closure is None:
-                writer.complete_run(
-                    run_id=context.run_id,
-                    success=False,
-                    computed_targets=(),
-                    skipped_targets=(),
-                    error_summary="Failed to compute closure",
-                )
-                return self._make_error_result(context, "Failed to compute closure")
-
-            preflight_ok, preflight_error = _run_preflight(context=context, catalog=catalog)
-            if not preflight_ok:
-                writer.complete_run(
-                    run_id=context.run_id,
-                    success=False,
-                    computed_targets=(),
-                    skipped_targets=(),
-                    error_summary=preflight_error,
-                )
-                return self._make_error_result(context, preflight_error or "DAG preflight failed")
-
-            final_vars, missing = _map_closure_to_nodes(closure, context.runtime)
-            if missing:
-                writer.complete_run(
-                    run_id=context.run_id,
-                    success=False,
-                    computed_targets=(),
-                    skipped_targets=(),
-                    error_summary=f"Missing node mappings for: {missing}",
-                )
-                return self._make_missing_result(context, closure, missing)
-
-            final_vars, preflight_records = _apply_preflight(
+            result, error_summary = self._execute_run(
                 context=context,
-                closure=closure,
-                final_vars=final_vars,
+                writer=writer,
+                telemetry_hook=telemetry_hook,
             )
-
-            try:
-                if final_vars:
-                    outputs, error = self._execute_dag(context, final_vars)
-                else:
-                    outputs, error = {}, None
-            finally:
-                if telemetry_hook is not None:
-                    telemetry_hook.flush()
-
-            outputs.update(preflight_records)
-
-            if error:
-                _ensure_failure_records(
-                    env=context.env,
-                    runtime=context.runtime,
-                    closure=closure,
-                    outputs=outputs,
-                    error=error,
-                )
-
-            _apply_cache_keys(outputs=outputs, runtime=context.runtime)
-
-            result = _finalize_run(
-                context=context,
-                inputs=_FinalizeInputs(
-                    writer=writer,
-                    closure=closure,
-                    outputs=outputs,
-                    error=error,
-                ),
+        except Exception as exc:
+            exception_type = type(exc).__name__
+            error_summary = str(exc)
+            record_build_event(
+                "build.runtime.exception",
+                exception_type=exception_type,
+                error=error_summary,
             )
-            try:
-                diagnostics_targets = DiagnosticsTargets(
-                    requested=context.targets,
-                    computed=result.computed_targets,
-                    skipped=result.skipped_targets,
-                    failed=result.failed_targets,
-                )
-                diagnostics_inputs = DiagnosticsInputs(
-                    env=context.env,
-                    runtime=context.runtime,
-                    run_id=context.run_id,
-                    cache_dir=context.cache_dir,
-                    cache_adapter=context.runtime.cache_adapter,
-                    telemetry_records=telemetry_hook.last_flushed_records()
-                    if telemetry_hook is not None
-                    else None,
-                    targets=diagnostics_targets,
-                    duration_ms=result.duration_ms,
-                    domain=context.domain,
-                )
-                emit_diagnostics(diagnostics_inputs)
-            except (OSError, RuntimeError, TypeError, ValueError) as exc:
-                log.warning(
-                    "build.hamilton.diagnostics_failed run_id=%s error=%s",
-                    context.run_id,
-                    exc,
-                )
+            log.exception("build.hamilton.executor.error run_id=%s", context.run_id)
+            raise
+        else:
             return result
         finally:
-            _persist_build_log(context=context, writer=writer)
+            events = _persist_build_log(writer=writer)
+            _write_failure_snapshot(
+                context=context,
+                error_summary=error_summary,
+                exception_type=exception_type,
+                events=events,
+            )
+
+    def _execute_run(
+        self,
+        *,
+        context: _RunState,
+        writer: BuildRunWriter,
+        telemetry_hook: NodeTelemetryHook | None,
+    ) -> tuple[HamiltonBuildResult, str | None]:
+        requested_targets = list(context.targets)
+        log.info(
+            "build.hamilton.executor.start run_id=%s targets=%s",
+            context.run_id,
+            requested_targets,
+        )
+
+        writer.start_run(
+            env=context.env,
+            run_id=context.run_id,
+            requested_targets=requested_targets,
+            started_at=context.started_at,
+        )
+
+        plan, failure_result, error_summary = self._prepare_execution(
+            context=context,
+            writer=writer,
+            requested_targets=requested_targets,
+        )
+        if failure_result is not None:
+            return failure_result, error_summary
+        if plan is None:
+            return self._make_error_result(context, "Build planning failed"), error_summary
+
+        outputs, error = self._execute_final_vars(
+            context=context,
+            final_vars=plan.final_vars,
+            telemetry_hook=telemetry_hook,
+        )
+        outputs.update(plan.preflight_records)
+        if error:
+            _ensure_failure_records(
+                env=context.env,
+                runtime=context.runtime,
+                closure=plan.closure,
+                outputs=outputs,
+                error=error,
+            )
+
+        _apply_cache_keys(outputs=outputs, runtime=context.runtime)
+        result = _finalize_run(
+            context=context,
+            inputs=_FinalizeInputs(
+                writer=writer,
+                closure=plan.closure,
+                outputs=outputs,
+                error=error,
+            ),
+        )
+        if not result.success:
+            error_summary = result.error
+
+        _emit_diagnostics_safe(
+            context=context,
+            result=result,
+            telemetry_hook=telemetry_hook,
+        )
+        return result, error_summary
+
+    def _prepare_execution(
+        self,
+        *,
+        context: _RunState,
+        writer: BuildRunWriter,
+        requested_targets: list[str],
+    ) -> tuple[_ExecutionPlan | None, HamiltonBuildResult | None, str | None]:
+        catalog = context.runtime.catalog
+        closure = self._compute_closure(catalog, requested_targets, context.run_id)
+        if closure is None:
+            error_summary = "Failed to compute closure"
+            result = self._complete_failure_result(
+                context=context,
+                writer=writer,
+                error_summary=error_summary,
+            )
+            return None, result, error_summary
+
+        preflight_ok, preflight_error = _run_preflight(context=context, catalog=catalog)
+        if not preflight_ok:
+            error_summary = preflight_error or "DAG preflight failed"
+            result = self._complete_failure_result(
+                context=context,
+                writer=writer,
+                error_summary=error_summary,
+            )
+            return None, result, error_summary
+
+        final_vars, missing = _map_closure_to_nodes(closure, context.runtime)
+        if missing:
+            error_summary = f"Missing node mappings for: {missing}"
+            result = self._complete_failure_result(
+                context=context,
+                writer=writer,
+                error_summary=error_summary,
+                closure=closure,
+                missing=missing,
+            )
+            return None, result, error_summary
+
+        final_vars, preflight_records = _apply_preflight(
+            context=context,
+            closure=closure,
+            final_vars=final_vars,
+        )
+        plan = _ExecutionPlan(
+            closure=closure,
+            final_vars=final_vars,
+            preflight_records=preflight_records,
+        )
+        return plan, None, None
+
+    def _complete_failure_result(
+        self,
+        *,
+        context: _RunState,
+        writer: BuildRunWriter,
+        error_summary: str,
+        closure: tuple[str, ...] | None = None,
+        missing: list[str] | None = None,
+    ) -> HamiltonBuildResult:
+        writer.complete_run(
+            run_id=context.run_id,
+            success=False,
+            computed_targets=(),
+            skipped_targets=(),
+            error_summary=error_summary,
+        )
+        if missing is not None and closure is not None:
+            return self._make_missing_result(context, closure, missing)
+        return self._make_error_result(context, error_summary)
+
+    def _execute_final_vars(
+        self,
+        *,
+        context: _RunState,
+        final_vars: list[str],
+        telemetry_hook: NodeTelemetryHook | None,
+    ) -> tuple[dict[str, Any], str | None]:
+        try:
+            if final_vars:
+                outputs, error = self._execute_dag(context, final_vars)
+            else:
+                outputs, error = {}, None
+        finally:
+            if telemetry_hook is not None:
+                telemetry_hook.flush()
+        return outputs, error
 
     def _effective_max_workers(self, catalog: DagCatalog) -> int | None:
         return effective_max_workers_for_graph(run_options=self._options, catalog=catalog)
@@ -1796,20 +1911,209 @@ class HamiltonBuildExecutor:
             return outputs, None
 
 
-def _persist_build_log(*, context: _RunState, writer: BuildRunWriter) -> None:
+def _persist_build_log(
+    *,
+    writer: BuildRunWriter,
+) -> list[dict[str, object]] | None:
     drained = drain_build_log()
     if drained is None:
-        return
+        return None
     log_context, events = drained
+    return _write_build_log_events(
+        writer=writer,
+        log_context=log_context,
+        events=events,
+    )
+
+
+def _persist_build_log_from_buffer(
+    *,
+    writer: BuildRunWriter,
+) -> list[dict[str, object]] | None:
+    drained = drain_build_log()
+    if drained is None:
+        return None
+    log_context, events = drained
+    return _write_build_log_events(
+        writer=writer,
+        log_context=log_context,
+        events=events,
+    )
+
+
+def _write_build_log_events(
+    *,
+    writer: BuildRunWriter,
+    log_context: BuildLogContext,
+    events: list[dict[str, object]],
+) -> list[dict[str, object]]:
     path = writer.write_build_log(context=log_context, events=events)
     if path is None:
-        return
+        return events
     log.info(
         "build.hamilton.executor.build_log_written run_id=%s event_count=%d path=%s",
-        context.run_id,
+        log_context.run_id,
         len(events),
         path,
     )
+    return events
+
+
+def _emit_diagnostics_safe(
+    *,
+    context: _RunState,
+    result: HamiltonBuildResult,
+    telemetry_hook: NodeTelemetryHook | None,
+) -> None:
+    try:
+        diagnostics_targets = DiagnosticsTargets(
+            requested=context.targets,
+            computed=result.computed_targets,
+            skipped=result.skipped_targets,
+            failed=result.failed_targets,
+        )
+        diagnostics_inputs = DiagnosticsInputs(
+            env=context.env,
+            runtime=context.runtime,
+            run_id=context.run_id,
+            cache_dir=context.cache_dir,
+            cache_adapter=context.runtime.cache_adapter,
+            telemetry_records=telemetry_hook.last_flushed_records()
+            if telemetry_hook is not None
+            else None,
+            targets=diagnostics_targets,
+            duration_ms=result.duration_ms,
+            domain=context.domain,
+        )
+        emit_diagnostics(diagnostics_inputs)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        log.warning(
+            "build.hamilton.diagnostics_failed run_id=%s error=%s",
+            context.run_id,
+            exc,
+        )
+
+
+def _install_run_log_handler(build_dir: Path, run_id: str) -> logging.Handler | None:
+    log_dir = build_dir / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except (OSError, RuntimeError):
+        log.warning("build.hamilton.executor.log_dir_failed run_id=%s", run_id)
+        return None
+    handler = logging.FileHandler(log_dir / f"build_run_{run_id}.log", encoding="utf-8")
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+    return handler
+
+
+def _teardown_run_logging(handler: logging.Handler | None) -> None:
+    if handler is None:
+        return
+    root_logger = logging.getLogger()
+    root_logger.removeHandler(handler)
+    handler.flush()
+    handler.close()
+
+
+def _write_failure_snapshot(
+    *,
+    context: _RunState,
+    error_summary: str | None,
+    exception_type: str | None,
+    events: list[dict[str, object]] | None,
+) -> None:
+    _write_failure_snapshot_from_context(
+        context=_FailureSnapshotContext(
+            run_id=context.run_id,
+            repo=context.env.repo,
+            commit=context.env.commit,
+            domain=context.domain,
+            requested_targets=context.targets,
+            build_dir=context.env.paths.build_dir,
+        ),
+        error_summary=error_summary,
+        exception_type=exception_type,
+        events=events,
+    )
+
+
+def _write_failure_snapshot_from_context(
+    *,
+    context: _FailureSnapshotContext,
+    error_summary: str | None,
+    exception_type: str | None,
+    events: list[dict[str, object]] | None,
+) -> None:
+    if not error_summary:
+        return
+    diag_dir = diagnostics_dir(context.build_dir)
+    try:
+        diag_dir.mkdir(parents=True, exist_ok=True)
+    except (OSError, RuntimeError):
+        log.warning(
+            "build.hamilton.executor.failure_dir_failed run_id=%s",
+            context.run_id,
+        )
+        return
+    payload = _failure_snapshot_payload(
+        context=context,
+        error_summary=error_summary,
+        exception_type=exception_type,
+        events=events,
+    )
+    _write_failure_snapshot_files(
+        diag_dir=diag_dir,
+        run_id=context.run_id,
+        payload=payload,
+    )
+
+
+def _failure_snapshot_payload(
+    *,
+    context: _FailureSnapshotContext,
+    error_summary: str,
+    exception_type: str | None,
+    events: list[dict[str, object]] | None,
+) -> dict[str, object]:
+    log_path = context.build_dir / "logs" / f"build_run_{context.run_id}.log"
+    return {
+        "run_id": context.run_id,
+        "repo": context.repo,
+        "commit": context.commit,
+        "domain": context.domain,
+        "requested_targets": list(context.requested_targets),
+        "error": error_summary,
+        "exception_type": exception_type,
+        "timestamp": datetime.now(tz=UTC).isoformat(),
+        "log_path": str(log_path),
+        "build_log_event_count": len(events) if events is not None else 0,
+        "build_log_tail": (events[-200:] if events else []),
+    }
+
+
+def _write_failure_snapshot_files(
+    *,
+    diag_dir: Path,
+    run_id: str,
+    payload: dict[str, object],
+) -> None:
+    snapshot_path = diag_dir / f"failure_{run_id}.json"
+    latest_path = diag_dir / "failure_latest.json"
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str)
+    try:
+        snapshot_path.write_text(encoded + "\n", encoding="utf-8")
+        latest_path.write_text(encoded + "\n", encoding="utf-8")
+    except (OSError, RuntimeError) as exc:
+        log.warning(
+            "build.hamilton.executor.failure_write_failed run_id=%s error=%s",
+            run_id,
+            exc,
+        )
 
 
 __all__ = [

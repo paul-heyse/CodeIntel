@@ -38,6 +38,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.errors import CodeIntelError
 from codeintel.core.hamilton import tags as ht
 
@@ -422,13 +423,13 @@ def _attach_table_rows_node(
     table_spec: TableOutputSpec,
     ingest_node: str,
 ) -> None:
-    def rows_fn(**kwargs: object) -> InferableTabularInput | None:
+    def rows_fn(**kwargs: object) -> InferableTabularInput:
         ingest_result = kwargs.get(ingest_node)
         if not isinstance(ingest_result, IngestStep):
             msg = f"Expected IngestStep for {ingest_node}, got {type(ingest_result)}"
             raise TypeError(msg)
         if ingest_result.result.skipped or not ingest_result.result.success:
-            return None
+            return empty_table_for_table(table_spec.table_key)
         payload = ingest_result.payload
         if payload is None:
             msg = f"Missing ingest payload for {table_spec.table_key}"
@@ -447,7 +448,7 @@ def _attach_table_rows_node(
                 annotation=IngestStep[TabularByTable],
             )
         ],
-        return_annotation=InferableTabularInput | None,
+        return_annotation=InferableTabularInput,
     )
     rows_fn = set_signature(rows_fn, signature)
     node_name = (

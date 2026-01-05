@@ -189,9 +189,21 @@ def _normalize_columns(columns: ColumnsSpec) -> Mapping[str, Sequence[object]]:
     return {str(name): [] for name in columns}
 
 
-def _reader_from_columns(columns: Mapping[str, Sequence[object]]) -> pa.RecordBatchReader:
+def _reader_from_columns(
+    columns: Mapping[str, Sequence[object]],
+    *,
+    schema: pa.Schema | None = None,
+    row_count: int | None = None,
+) -> pa.RecordBatchReader:
     payload = {name: list(values) for name, values in columns.items()}
-    batch = pa.RecordBatch.from_pydict(payload)
+    if schema is not None:
+        if row_count is None:
+            row_count = columnar_row_count(payload)
+        missing = [name for name in schema.names if name not in payload]
+        if missing and row_count is not None:
+            for name in missing:
+                payload[name] = [None] * row_count
+    batch = pa.RecordBatch.from_pydict(payload, schema=schema)
     return pa.RecordBatchReader.from_batches(batch.schema, [batch])
 
 
@@ -235,10 +247,11 @@ def lazyframe_for_table_columns(
             table_schema=table_schema,
             metadata=metadata,
         )
-    reader = _reader_from_columns(normalized)
     resolved_policy = (
         extras_policy if extras_policy is not None else extras_policy_from_schema(contract_schema)
     )
+    schema = None if resolved_policy == "retain" else contract_schema
+    reader = _reader_from_columns(normalized, schema=schema, row_count=row_count)
     aligned = align_reader_to_contract(
         reader,
         contract_schema,

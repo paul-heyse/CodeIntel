@@ -1,0 +1,256 @@
+2026-01-05 11:35:21,574 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph_types.py:73: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  if not hasattr(n.body[0], "value") or not isinstance(n.body[0].value, ast.Str):
+
+2026-01-05 11:35:22,765 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/io/utils.py:51: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  timestamp = datetime.now().utcnow().timestamp()
+
+2026-01-05 11:35:22,784 WARNING codeintel.build.hamilton.materializers.arrow_dataset_saver build.schema.contract_alignment_failed table_key=ci.plan_entries extras_policy=reject error=Unable to merge: Field requested_targets has incompatible types: binary vs binary_view
+2026-01-05 11:35:28,491 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse config/mkdocs.yml
+2026-01-05 11:35:28,492 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/PF3PuIZ-jYDxEBRpjMkbi/markdown_it/port.yaml
+2026-01-05 11:35:28,492 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/u1TPF7g7VU5DysH2bCbj7/pycparser/_c_ast.cfg
+2026-01-05 11:35:28,515 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,515 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,515 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,515 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,522 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,523 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b8ef1ceae7506bc212f056da7f06c'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: 'b0d63122b2108be707cbb475b4b16b48a3222e00'
+codeintel.snapshot_id: 'b0d63122b2108be707cbb475b4b16b48a3222e00'
+codeintel.generated_at: '2026-01-05T16:16:18.642084+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-05 11:35:28,523 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check missing_function_goids; missing Parquet tables: core.goids
+2026-01-05 11:35:28,523 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check orphan_modules; missing Parquet tables: core.goids
+2026-01-05 11:35:28,524 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_bindings@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,524 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_resolution_edges@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,524 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_scopes@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,524 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_function_partitions@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,531 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,534 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,536 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,538 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@b0d63122b2108be707cbb475b4b16b48a3222e00
+2026-01-05 11:35:28,561 WARNING codeintel.build.graphs.validation.runner Validation: 5291 isolated call graph node(s) (sample: 19751646110714379590640200646220929101, 83684544455235090430523016725647810799, 86635196166339257481109026648245154545, 26507160163807980576934072306330799377, 23303593459856433212132722533988652297)
+2026-01-05 11:35:28,567 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.import_graph_edges
+2026-01-05 11:35:28,567 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.symbol_use_edges
+2026-01-05 11:35:28,569 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b8ef1ceae7506bc212f056da7f06c'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: 'b0d63122b2108be707cbb475b4b16b48a3222e00'
+codeintel.snapshot_id: 'b0d63122b2108be707cbb475b4b16b48a3222e00'
+codeintel.generated_at: '2026-01-05T16:16:18.642084+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-05 11:35:28,570 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check symbol_communities; missing Parquet tables: analytics.symbol_graph_metrics_modules
+2026-01-05 11:35:28,570 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check subsystem_disagreement; missing Parquet tables: analytics.subsystem_agreement
+2026-01-05 11:35:28,983 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Falling back to filesystem module scan after empty storage query.
+2026-01-05 11:43:30,750 ERROR hamilton.execution.graph_functions 
+********************************************************************************
+> scip_resolution__frames [codeintel.build.hamilton.native.ingestion.scip_resolution.scip_resolution__frames()] encountered an error<
+> Node inputs:
+{'q__core__goids': 'pyarrow.Table\ngoid_h128: decimal128(38, 0) not nul...',
+ 'q__core__scip_occurrences': 'pyarrow.Table\n'
+                              'repo: string not null\n'
+                              'commit: string...',
+ 'q__core__scip_symbol_information': 'pyarrow.Table\n'
+                                     'repo: string not null\n'
+                                     'commit: string...'}
+********************************************************************************
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 311, in execute_lifecycle_for_node
+    result = __adapter.call_lifecycle_method_sync(
+        "do_node_execute",
+    ...<3 lines>...
+        task_id=__task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 1079, in call_lifecycle_method_sync
+    return getattr(adapter, method_name)(**kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/cache_adapter.py", line 302, in do_node_execute
+    result = super().do_node_execute(
+        run_id=run_id,
+    ...<3 lines>...
+        **future_kwargs,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 1275, in do_node_execute
+    result = self._execute_node(
+        run_id=run_id,
+    ...<3 lines>...
+        task_id=task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 846, in _execute_node
+    result = node_callable(**node_kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip_resolution.py", line 476, in scip_resolution__frames
+    occurrence_span_xref = _occurrence_span_xref_table(
+        occurrences=occurrences,
+    ...<2 lines>...
+        created_at=created_at,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip_resolution.py", line 225, in _occurrence_span_xref_table
+    base = arrow_join_tables(
+        base,
+    ...<5 lines>...
+        ),
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/tabular/arrow_ops.py", line 590, in arrow_join_tables
+    _validate_join(
+    ~~~~~~~~~~~~~~^
+        left,
+        ^^^^^
+    ...<3 lines>...
+        validate=spec.validate,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/tabular/arrow_ops.py", line 502, in _validate_join
+    _ensure_unique_keys(right, right_key_values, label="right")
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/tabular/arrow_ops.py", line 478, in _ensure_unique_keys
+    raise ValueError(msg)
+ValueError: Join validation failed for right: keys not unique
+2026-01-05 11:43:30,756 ERROR codeintel.build.hamilton.hooks.telemetry_hook build.node.error run_id=hamilton-019b8f035d05722c980667954cff2f03 node_name=scip_resolution__frames target=None table_key=None exception_type=ValueError error=Join validation failed for right: keys not unique
+2026-01-05 11:43:30,756 ERROR hamilton.driver -------------------------------------------------------------------
+Oh no an error! Need help with Hamilton?
+Join our slack and ask for help! https://join.slack.com/t/hamilton-opensource/shared_invite/zt-2niepkra8-DGKGf_tTYhXuJWBTXtIs4g
+-------------------------------------------------------------------
+
+2026-01-05 11:43:30,757 ERROR codeintel.build.hamilton.executor build.hamilton.executor.error run_id=hamilton-019b8f035d05722c980667954cff2f03
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 1896, in _execute_dag
+    outputs = context.runtime.driver.execute(
+        list(final_vars),
+        inputs=input_mapping,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 663, in execute
+    raise e
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 649, in execute
+    outputs = self.__raw_execute(
+        _final_vars, overrides, display_graph, inputs=inputs, _run_id=run_id
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 860, in __raw_execute
+    raise e
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 851, in __raw_execute
+    results = self.graph_executor.execute(
+        function_graph,
+    ...<3 lines>...
+        run_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 192, in execute
+    fg.execute(nodes, memoized_computation, overrides, inputs, run_id=run_id)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph.py", line 1116, in execute
+    return graph_functions.execute_subdag(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        nodes=nodes,
+        ^^^^^^^^^^^^
+    ...<4 lines>...
+        run_id=run_id,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 267, in execute_subdag
+    dfs_traverse(final_var_node, dep_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 7 more times]
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 239, in dfs_traverse
+    result = execute_lifecycle_for_node_partial(**kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 311, in execute_lifecycle_for_node
+    result = __adapter.call_lifecycle_method_sync(
+        "do_node_execute",
+    ...<3 lines>...
+        task_id=__task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 1079, in call_lifecycle_method_sync
+    return getattr(adapter, method_name)(**kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/cache_adapter.py", line 302, in do_node_execute
+    result = super().do_node_execute(
+        run_id=run_id,
+    ...<3 lines>...
+        **future_kwargs,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 1275, in do_node_execute
+    result = self._execute_node(
+        run_id=run_id,
+    ...<3 lines>...
+        task_id=task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 846, in _execute_node
+    result = node_callable(**node_kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip_resolution.py", line 476, in scip_resolution__frames
+    occurrence_span_xref = _occurrence_span_xref_table(
+        occurrences=occurrences,
+    ...<2 lines>...
+        created_at=created_at,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip_resolution.py", line 225, in _occurrence_span_xref_table
+    base = arrow_join_tables(
+        base,
+    ...<5 lines>...
+        ),
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/tabular/arrow_ops.py", line 590, in arrow_join_tables
+    _validate_join(
+    ~~~~~~~~~~~~~~^
+        left,
+        ^^^^^
+    ...<3 lines>...
+        validate=spec.validate,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/tabular/arrow_ops.py", line 502, in _validate_join
+    _ensure_unique_keys(right, right_key_values, label="right")
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/tabular/arrow_ops.py", line 478, in _ensure_unique_keys
+    raise ValueError(msg)
+ValueError: Join validation failed for right: keys not unique
+2026-01-05 11:43:33,605 WARNING codeintel.build.hamilton.diagnostics build.diagnostics.cache_view_failed run_id=hamilton-019b8f035d05722c980667954cff2f03 error='hamilton-019b8f035d05722c980667954cff2f03'

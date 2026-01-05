@@ -7,6 +7,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -36,6 +37,7 @@ from codeintel.build.tabular.arrow_ops import (
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
 from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
 
@@ -45,6 +47,8 @@ CPG_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_calls"
 CPG_ARG_TO_PARAM_EDGES_TABLE_KEY = "graph.cpg_edges_arg_to_param"
 CPG_RET_TO_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_ret_to_call"
 
+_GOID_ARROW_TYPE = pa.decimal128(38, 0)
+_BLOCK_ID_ARROW_TYPE = pa.string()
 _ROLE_DEFINITION = 0x1
 _OVERLAP_CONFIDENCE_THRESHOLD = 3
 _IMPLICIT_CALL_ID_SEP = "#"
@@ -501,6 +505,8 @@ def _extract_def_info(row: Mapping[str, object]) -> tuple[_DefInfo, str | None, 
 def _coerce_int(value: object) -> int | None:
     if isinstance(value, int):
         return value
+    if isinstance(value, Decimal):
+        return int(value)
     return None
 
 
@@ -569,6 +575,24 @@ def _build_def_catalog(defs_rows: Sequence[Mapping[str, object]]) -> _DefCatalog
 
 def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
     return align_table_to_contract(table_key, table, extras_policy=None)
+
+
+def _cast_table_column(
+    table: pa.Table,
+    column_name: str,
+    target_type: pa.DataType,
+) -> pa.Table:
+    index = table.schema.get_field_index(column_name)
+    if index < 0:
+        return table
+    column = table.column(index)
+    if column.type == target_type:
+        return table
+    if pa.types.is_null(column.type):
+        casted = pa.nulls(table.num_rows, type=target_type)
+    else:
+        casted = pc.cast(column, target_type, safe=False)
+    return table.set_column(index, column_name, casted)
 
 
 def _call_edge_extras(row: Mapping[str, object]) -> bytes:
@@ -1925,10 +1949,18 @@ def cpg_call_targets(
     all_rows = [*explicit_rows, *implicit_rows]
     if not all_rows:
         return empty_reader(CPG_CALL_TARGETS_TABLE_KEY)
-    targets_table = pa.Table.from_pylist(all_rows)
+    targets_table = table_for_rows(CPG_CALL_TARGETS_TABLE_KEY, all_rows)[0]
+    targets_table = _drop_table_columns(
+        targets_table,
+        ["callee_entry_block_id", "callee_exit_block_id"],
+    )
     blocks = tabular_to_table(q__graph__cfg_blocks)
     entry_table = _entry_blocks(blocks)
+    entry_table = _cast_table_column(entry_table, "function_goid_h128", _GOID_ARROW_TYPE)
+    entry_table = _cast_table_column(entry_table, "entry_block_id", _BLOCK_ID_ARROW_TYPE)
     exit_table = _exit_blocks(blocks)
+    exit_table = _cast_table_column(exit_table, "function_goid_h128", _GOID_ARROW_TYPE)
+    exit_table = _cast_table_column(exit_table, "exit_block_id", _BLOCK_ID_ARROW_TYPE)
 
     joined = arrow_join_tables(
         targets_table,

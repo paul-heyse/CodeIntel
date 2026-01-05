@@ -1,11 +1,7 @@
 graph TD
-  call_graph["call_graph (graphs)"]
-  cfg["cfg (graphs)"]
   ci_plan["ci_plan (ops)"]
   config_ingest["config_ingest (ingestion)"]
-  dfg["dfg (graphs)"]
   graph_validation["graph_validation (analytics)"]
-  import_graph["import_graph (graphs)"]
   modules["modules (ingestion)"]
   ast["ast (ingestion)"]
   bytecode["bytecode (ingestion)"]
@@ -14,45 +10,49 @@ graph TD
   inspect["inspect (ingestion)"]
   scip_proto["scip_proto (ingestion)"]
   scip["scip (ingestion)"]
+  call_graph["call_graph (graphs)"]
+  call_wiring["call_wiring (graphs)"]
   cdg["cdg (graphs)"]
+  cfg["cfg (graphs)"]
+  cfg_dfg_metrics["cfg_dfg_metrics (analytics)"]
+  config_data_flow["config_data_flow (analytics)"]
   config_graph_metrics["config_graph_metrics (analytics)"]
+  cpg["cpg (graphs)"]
+  data_model_usage["data_model_usage (analytics)"]
+  data_models["data_models (analytics)"]
+  dfg["dfg (graphs)"]
+  entrypoints["entrypoints (analytics)"]
   export_jsonl["export_jsonl (export)"]
   export_parquet["export_parquet (export)"]
-  file_line_index["file_line_index (ingestion)"]
-  goids["goids (ingestion)"]
-  cfg_dfg_metrics["cfg_dfg_metrics (analytics)"]
-  data_models["data_models (analytics)"]
-  function_ast_features["function_ast_features (analytics)"]
   external_deps["external_deps (analytics)"]
+  file_line_index["file_line_index (ingestion)"]
+  function_ast_features["function_ast_features (analytics)"]
+  function_contracts["function_contracts (analytics)"]
   function_effects["function_effects (analytics)"]
   function_types["function_types (analytics)"]
-  function_contracts["function_contracts (analytics)"]
   function_validation["function_validation (analytics)"]
-  pdg["pdg (graphs)"]
-  serving_artifacts["serving_artifacts (export)"]
-  symbol_uses["symbol_uses (graphs)"]
-  subsystems["subsystems (analytics)"]
-  data_model_usage["data_model_usage (analytics)"]
+  goids["goids (ingestion)"]
   graph_metrics["graph_metrics (analytics)"]
   graph_metrics_ext["graph_metrics_ext (analytics)"]
   graph_stats["graph_stats (analytics)"]
-  semantic_roles["semantic_roles (analytics)"]
-  subsystem_agreement["subsystem_agreement (analytics)"]
-  subsystem_graph_metrics["subsystem_graph_metrics (analytics)"]
-  subsystem_caches["subsystem_caches (analytics)"]
-  symbol_graph_metrics["symbol_graph_metrics (analytics)"]
-  symtable["symtable (ingestion)"]
-  syntax_index["syntax_index (ingestion)"]
-  scip_resolution["scip_resolution (ingestion)"]
-  syntax_enrich["syntax_enrich (ingestion)"]
-  call_wiring["call_wiring (graphs)"]
-  tests_ingest["tests_ingest (ingestion)"]
-  entrypoints["entrypoints (analytics)"]
-  config_data_flow["config_data_flow (analytics)"]
-  tree_sitter_index["tree_sitter_index (ingestion)"]
-  cpg["cpg (graphs)"]
+  import_graph["import_graph (graphs)"]
+  pdg["pdg (graphs)"]
   py_cpg_quality_report["py_cpg_quality_report (analytics)"]
+  scip_resolution["scip_resolution (ingestion)"]
+  semantic_roles["semantic_roles (analytics)"]
+  serving_artifacts["serving_artifacts (export)"]
+  subsystem_agreement["subsystem_agreement (analytics)"]
+  subsystem_caches["subsystem_caches (analytics)"]
+  subsystem_graph_metrics["subsystem_graph_metrics (analytics)"]
+  subsystems["subsystems (analytics)"]
+  symbol_graph_metrics["symbol_graph_metrics (analytics)"]
+  symbol_uses["symbol_uses (graphs)"]
+  symtable["symtable (ingestion)"]
   syntax_augment["syntax_augment (ingestion)"]
+  syntax_enrich["syntax_enrich (ingestion)"]
+  syntax_index["syntax_index (ingestion)"]
+  tests_ingest["tests_ingest (ingestion)"]
+  tree_sitter_index["tree_sitter_index (ingestion)"]
   typing["typing (ingestion)"]
   views["views (views)"]
   modules --> ast
@@ -62,180 +62,100 @@ graph TD
   modules --> inspect
   modules --> scip
   scip_proto --> scip
-  cfg --> cdg
+  modules --> call_graph
+  scip --> call_graph
+  modules --> call_wiring
+  scip --> call_wiring
+  scip_proto --> call_wiring
+  modules --> cdg
   scip --> cdg
-  config_ingest --> config_graph_metrics
-  modules --> config_graph_metrics
-  scip --> config_graph_metrics
-  modules --> export_jsonl
-  scip --> export_jsonl
-  modules --> export_parquet
-  scip --> export_parquet
-  modules --> file_line_index
-  scip --> file_line_index
-  ast --> goids
-  modules --> goids
-  scip --> goids
-  cfg --> cfg_dfg_metrics
-  dfg --> cfg_dfg_metrics
-  goids --> cfg_dfg_metrics
+  modules --> cfg
+  scip --> cfg
   modules --> cfg_dfg_metrics
   scip --> cfg_dfg_metrics
-  docstrings --> data_models
-  goids --> data_models
-  modules --> data_models
-  scip --> data_models
-  goids --> function_ast_features
-  modules --> function_ast_features
-  scip --> function_ast_features
-  config_ingest --> external_deps
-  function_ast_features --> external_deps
-  goids --> external_deps
-  modules --> external_deps
-  scip --> external_deps
-  call_graph --> function_effects
-  goids --> function_effects
-  modules --> function_effects
-  scip --> function_effects
-  goids --> function_types
-  scip --> function_types
-  docstrings --> function_contracts
-  function_types --> function_contracts
-  goids --> function_contracts
-  modules --> function_contracts
-  scip --> function_contracts
-  goids --> function_validation
-  scip --> function_validation
-  cdg --> pdg
-  dfg --> pdg
-  scip --> pdg
-  config_ingest --> subsystems
-  import_graph --> subsystems
-  modules --> subsystems
-  scip --> subsystems
-  symbol_uses --> subsystems
-  data_models --> data_model_usage
-  function_types --> data_model_usage
-  goids --> data_model_usage
+  modules --> config_data_flow
+  scip --> config_data_flow
+  scip_proto --> config_data_flow
+  scip --> config_graph_metrics
+  modules --> cpg
+  scip --> cpg
+  scip_proto --> cpg
   modules --> data_model_usage
   scip --> data_model_usage
-  subsystems --> data_model_usage
-  call_graph --> graph_metrics
-  goids --> graph_metrics
-  import_graph --> graph_metrics
-  modules --> graph_metrics
-  scip --> graph_metrics
-  subsystems --> graph_metrics
-  symbol_uses --> graph_metrics
-  call_graph --> graph_metrics_ext
-  goids --> graph_metrics_ext
-  import_graph --> graph_metrics_ext
-  modules --> graph_metrics_ext
-  scip --> graph_metrics_ext
-  subsystems --> graph_metrics_ext
-  symbol_uses --> graph_metrics_ext
-  call_graph --> graph_stats
-  config_ingest --> graph_stats
-  goids --> graph_stats
-  import_graph --> graph_stats
-  modules --> graph_stats
-  scip --> graph_stats
-  subsystems --> graph_stats
-  symbol_uses --> graph_stats
-  function_ast_features --> semantic_roles
-  function_contracts --> semantic_roles
-  function_effects --> semantic_roles
-  goids --> semantic_roles
-  graph_metrics --> semantic_roles
-  modules --> semantic_roles
-  scip --> semantic_roles
-  graph_metrics_ext --> subsystem_agreement
-  scip --> subsystem_agreement
-  subsystems --> subsystem_agreement
-  import_graph --> subsystem_graph_metrics
-  scip --> subsystem_graph_metrics
-  subsystems --> subsystem_graph_metrics
-  scip --> subsystem_caches
-  subsystem_graph_metrics --> subsystem_caches
-  subsystems --> subsystem_caches
-  call_graph --> symbol_graph_metrics
-  goids --> symbol_graph_metrics
-  import_graph --> symbol_graph_metrics
-  modules --> symbol_graph_metrics
-  scip --> symbol_graph_metrics
-  subsystems --> symbol_graph_metrics
-  symbol_uses --> symbol_graph_metrics
-  modules --> symtable
-  modules --> syntax_index
-  goids --> scip_resolution
-  scip --> scip_resolution
-  syntax_index --> scip_resolution
-  scip --> syntax_enrich
-  scip_resolution --> syntax_enrich
-  syntax_index --> syntax_enrich
-  cfg --> call_wiring
-  scip --> call_wiring
-  scip_resolution --> call_wiring
-  syntax_enrich --> call_wiring
-  syntax_index --> call_wiring
-  modules --> tests_ingest
-  function_ast_features --> entrypoints
-  goids --> entrypoints
+  scip_proto --> data_model_usage
+  modules --> data_models
+  scip --> data_models
+  modules --> dfg
+  scip --> dfg
   modules --> entrypoints
   scip --> entrypoints
-  subsystems --> entrypoints
-  tests_ingest --> entrypoints
-  call_graph --> config_data_flow
-  config_ingest --> config_data_flow
-  entrypoints --> config_data_flow
-  goids --> config_data_flow
-  scip --> config_data_flow
-  modules --> tree_sitter_index
-  ast --> cpg
-  bytecode --> cpg
-  call_graph --> cpg
-  call_wiring --> cpg
-  cdg --> cpg
-  cfg --> cpg
-  dfg --> cpg
-  goids --> cpg
-  import_graph --> cpg
-  inspect --> cpg
-  scip --> cpg
-  scip_resolution --> cpg
-  symtable --> cpg
-  syntax_index --> cpg
-  tree_sitter_index --> cpg
-  bytecode --> py_cpg_quality_report
-  cpg --> py_cpg_quality_report
-  inspect --> py_cpg_quality_report
+  scip_proto --> entrypoints
+  scip --> export_jsonl
+  scip --> export_parquet
+  modules --> external_deps
+  scip --> external_deps
+  scip --> file_line_index
+  modules --> function_ast_features
+  scip --> function_ast_features
+  modules --> function_contracts
+  scip --> function_contracts
+  modules --> function_effects
+  scip --> function_effects
+  modules --> function_types
+  scip --> function_types
+  modules --> function_validation
+  scip --> function_validation
+  modules --> goids
+  scip --> goids
+  modules --> graph_metrics
+  scip --> graph_metrics
+  scip_proto --> graph_metrics
+  modules --> graph_metrics_ext
+  scip --> graph_metrics_ext
+  scip_proto --> graph_metrics_ext
+  modules --> graph_stats
+  scip --> graph_stats
+  scip_proto --> graph_stats
+  scip --> import_graph
+  modules --> pdg
+  scip --> pdg
+  modules --> py_cpg_quality_report
   scip --> py_cpg_quality_report
-  symtable --> py_cpg_quality_report
+  scip_proto --> py_cpg_quality_report
+  modules --> scip_resolution
+  scip --> scip_resolution
+  scip_proto --> scip_resolution
+  modules --> semantic_roles
+  scip --> semantic_roles
+  scip_proto --> semantic_roles
+  modules --> subsystem_agreement
+  scip --> subsystem_agreement
+  scip_proto --> subsystem_agreement
+  modules --> subsystem_caches
+  scip --> subsystem_caches
+  scip_proto --> subsystem_caches
+  modules --> subsystem_graph_metrics
+  scip --> subsystem_graph_metrics
+  scip_proto --> subsystem_graph_metrics
+  modules --> subsystems
+  scip --> subsystems
+  scip_proto --> subsystems
+  modules --> symbol_graph_metrics
+  scip --> symbol_graph_metrics
+  scip_proto --> symbol_graph_metrics
+  modules --> symbol_uses
+  scip --> symbol_uses
+  scip_proto --> symbol_uses
+  modules --> symtable
+  modules --> syntax_augment
   scip --> syntax_augment
-  syntax_index --> syntax_augment
-  tree_sitter_index --> syntax_augment
+  modules --> syntax_enrich
+  scip --> syntax_enrich
+  scip_proto --> syntax_enrich
+  modules --> syntax_index
+  modules --> tests_ingest
+  modules --> tree_sitter_index
   modules --> typing
-  ast --> views
-  call_graph --> views
-  cfg --> views
-  cfg_dfg_metrics --> views
-  config_data_flow --> views
-  config_graph_metrics --> views
-  data_model_usage --> views
-  data_models --> views
-  entrypoints --> views
-  external_deps --> views
-  function_validation --> views
-  goids --> views
-  graph_metrics --> views
-  graph_metrics_ext --> views
-  graph_validation --> views
-  import_graph --> views
   modules --> views
-  subsystem_agreement --> views
-  subsystem_caches --> views
-  subsystem_graph_metrics --> views
-  subsystems --> views
-  symbol_graph_metrics --> views
-  tests_ingest --> views
-  typing --> views
+  scip --> views
+  scip_proto --> views

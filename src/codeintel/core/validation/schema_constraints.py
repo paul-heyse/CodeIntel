@@ -582,6 +582,8 @@ def _any_true(values: pa.Array | pa.ChunkedArray) -> bool:
 
 
 def _all_valid(values: pa.Array | pa.ChunkedArray) -> bool:
+    if len(values) == 0:
+        return True
     is_valid = getattr(pc, "is_valid", None)
     if not callable(is_valid):
         return not _has_nulls(values)

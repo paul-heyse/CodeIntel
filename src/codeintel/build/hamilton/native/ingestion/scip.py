@@ -58,6 +58,7 @@ from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
     columnar_row_count,
+    empty_table_for_table,
     table_for_columnar_rows,
     table_for_rows,
 )
@@ -1191,9 +1192,9 @@ def t__scip__ingest(
 def _scip_payload_frame(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
     table_key: str,
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
-        return None
+        return empty_table_for_table(table_key)
     payload = t__scip__ingest.payload
     if payload is None:
         msg = "Missing SCIP ingest payload"
@@ -1207,91 +1208,91 @@ def _scip_payload_frame(
 
 def scip__symbol_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return rows for core.scip_symbols.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for core.scip_symbols, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for core.scip_symbols.
     """
     return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
 
 
 def scip__occurrence_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return rows for core.scip_occurrences.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for core.scip_occurrences, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for core.scip_occurrences.
     """
     return _scip_payload_frame(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
 
 
 def scip__symbol_info_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return rows for core.scip_symbol_information.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for core.scip_symbol_information, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for core.scip_symbol_information.
     """
     return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
 
 
 def scip__relationship_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return rows for core.scip_symbol_relationships.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for core.scip_symbol_relationships, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for core.scip_symbol_relationships.
     """
     return _scip_payload_frame(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
 
 
 def scip__diagnostic_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return rows for core.scip_diagnostics.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for core.scip_diagnostics, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for core.scip_diagnostics.
     """
     return _scip_payload_frame(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
 
 
 def scip__external_symbol_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return rows for core.scip_external_symbols.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for core.scip_external_symbols, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for core.scip_external_symbols.
     """
     return _scip_payload_frame(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
 
 
 def scip__module_state_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return rows for core.scip_module_state.
 
     Returns
     -------
-    InferableTabularInput | None
-        Tabular input for core.scip_module_state, or None when ingestion skipped or failed.
+    InferableTabularInput
+        Tabular input for core.scip_module_state.
     """
     return _scip_payload_frame(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
 
@@ -1321,49 +1322,49 @@ _SCIP_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="scip__symbol_rows__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOLS_TABLE_KEY),
             node_name="scip__symbol_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_OCCURRENCES_TABLE_KEY,
             base_node="scip__occurrence_rows__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCES_TABLE_KEY),
             node_name="scip__occurrence_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
             base_node="scip__symbol_info_rows__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_INFO_TABLE_KEY),
             node_name="scip__symbol_info_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_RELATIONSHIPS_TABLE_KEY,
             base_node="scip__relationship_rows__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_RELATIONSHIPS_TABLE_KEY),
             node_name="scip__relationship_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_DIAGNOSTICS_TABLE_KEY,
             base_node="scip__diagnostic_rows__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_DIAGNOSTICS_TABLE_KEY),
             node_name="scip__diagnostic_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
             base_node="scip__external_symbol_rows__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
             node_name="scip__external_symbol_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
         TableTargetTableSpec(
             table_key=SCIP_MODULE_STATE_TABLE_KEY,
             base_node="scip__module_state_rows__base",
             save_spec=RelationTableSaveSpec(table_key=SCIP_MODULE_STATE_TABLE_KEY),
             node_name="scip__module_state_rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="scip__table_materializations",

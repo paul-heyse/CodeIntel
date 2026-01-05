@@ -364,6 +364,8 @@ def _is_generated_path(rel_path: str) -> bool:
     if any(part in {"generated", ".generated"} for part in lower_parts):
         return True
     filename = path.name.lower()
+    if filename.startswith("generated_"):
+        return True
     return filename.endswith(("_generated.py", ".generated.py", "_pb2.py", "_pb2.pyi"))
 
 
