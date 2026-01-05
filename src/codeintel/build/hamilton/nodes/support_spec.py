@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.external_inputs import load_external_inputs_allowlist
 from codeintel.build.hamilton.naming import (
     artifact_node,
     dataset_node,
@@ -26,15 +28,8 @@ class SupportDatasetSpec:
     table_key: str
     producer_target: str | None
     domain: str
-
-
-@dataclass(frozen=True, slots=True)
-class SeededDatasetSpec:
-    """Dataset entry used to seed support nodes."""
-
-    table_key: str
-    repo: str
-    commit: str
+    data_node: str | None
+    allowlisted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +46,6 @@ class SupportNodeSpec:
     """Specification for support node generation."""
 
     datasets: tuple[SupportDatasetSpec, ...] = ()
-    seeded_datasets: tuple[SeededDatasetSpec, ...] = ()
     artifacts: tuple[SupportArtifactSpec, ...] = ()
     include_dataset_nodes: bool = True
     include_loader_nodes: bool = True
@@ -71,31 +65,19 @@ class SupportNodeSpec:
             label="table_key",
         )
         _require_unique(
-            [spec.table_key for spec in self.seeded_datasets],
-            label="seeded_table_key",
-        )
-        _require_unique(
             [spec.artifact_name for spec in self.artifacts],
             label="artifact_name",
         )
 
-        dataset_keys = {spec.table_key for spec in self.datasets}
         for spec in self.datasets:
             _require_identifier(dataset_node(spec.table_key), label="dataset_node")
             _require_identifier(query_node(spec.table_key), label="query_node")
+            if spec.data_node is not None:
+                _require_identifier(spec.data_node, label="data_node")
             if spec.producer_target is None:
                 continue
             if catalog is not None and spec.producer_target not in catalog.targets:
                 msg = f"Unknown producer target in dataset spec: {spec.producer_target}"
-                raise ValueError(msg)
-
-        for spec in self.seeded_datasets:
-            _require_identifier(dataset_node(spec.table_key), label="seeded_dataset_node")
-            if not spec.repo or not spec.commit:
-                msg = f"Seeded dataset spec missing repo/commit: {spec.table_key}"
-                raise ValueError(msg)
-            if dataset_keys and spec.table_key not in dataset_keys:
-                msg = f"Seeded dataset not in catalog outputs: {spec.table_key}"
                 raise ValueError(msg)
 
         for spec in self.artifacts:
@@ -115,7 +97,6 @@ class SupportNodeSpec:
         """
         return {
             "ci_support_datasets": tuple(_dataset_dicts(self.datasets)),
-            "ci_seeded_datasets": tuple(_seeded_dataset_dicts(self.seeded_datasets)),
             "ci_support_artifacts": tuple(_artifact_dicts(self.artifacts)),
             "ci_support_include_dataset_nodes": self.include_dataset_nodes,
             "ci_support_include_loader_nodes": self.include_loader_nodes,
@@ -128,7 +109,6 @@ class SupportNodeSpec:
 class SupportSpecOptions:
     """Options for building support node specifications."""
 
-    seeded_datasets: tuple[SeededDatasetSpec, ...] = ()
     include_dataset_nodes: bool = True
     include_loader_nodes: bool = True
     include_artifact_nodes: bool = True
@@ -139,6 +119,7 @@ def support_spec_from_catalog(
     catalog: DagCatalog,
     *,
     options: SupportSpecOptions | None = None,
+    repo_root: Path | None = None,
 ) -> SupportNodeSpec:
     """Build a support node spec from the catalog's contract outputs.
 
@@ -153,6 +134,9 @@ def support_spec_from_catalog(
         If the catalog outputs reference unknown targets.
     """
     resolved = options or SupportSpecOptions()
+    resolved_root = repo_root or Path.cwd()
+    allowlist = load_external_inputs_allowlist(repo_root=resolved_root)
+    allowlisted_keys = allowlist.table_keys()
     datasets: list[SupportDatasetSpec] = []
     artifacts: list[SupportArtifactSpec] = []
 
@@ -161,11 +145,17 @@ def support_spec_from_catalog(
         if target is None:
             msg = f"Unknown producer target for table output {table_key}"
             raise ValueError(msg)
+        data_node = catalog.table_data_nodes.get(table_key)
+        if data_node is None:
+            msg = f"Missing data node for {table_key}"
+            raise ValueError(msg)
         datasets.append(
             SupportDatasetSpec(
                 table_key=table_key,
                 producer_target=output.producer_target,
                 domain=target.module,
+                data_node=data_node,
+                allowlisted=table_key in allowlisted_keys,
             )
         )
 
@@ -173,11 +163,17 @@ def support_spec_from_catalog(
     for table_key in _view_base_table_keys():
         if table_key in dataset_keys:
             continue
+        allowlisted = table_key in allowlisted_keys
+        if not allowlisted:
+            msg = f"External input {table_key} is not allowlisted"
+            raise ValueError(msg)
         datasets.append(
             SupportDatasetSpec(
                 table_key=table_key,
                 producer_target=None,
                 domain=_domain_from_table_key(table_key),
+                data_node=None,
+                allowlisted=allowlisted,
             )
         )
         dataset_keys.add(table_key)
@@ -195,10 +191,8 @@ def support_spec_from_catalog(
             )
         )
 
-    seed_specs = resolved.seeded_datasets
     spec = SupportNodeSpec(
         datasets=tuple(datasets),
-        seeded_datasets=seed_specs,
         artifacts=tuple(artifacts),
         include_dataset_nodes=resolved.include_dataset_nodes,
         include_loader_nodes=resolved.include_loader_nodes,
@@ -209,12 +203,14 @@ def support_spec_from_catalog(
     return spec
 
 
-def _dataset_dicts(specs: Iterable[SupportDatasetSpec]) -> Iterable[dict[str, str | None]]:
+def _dataset_dicts(specs: Iterable[SupportDatasetSpec]) -> Iterable[dict[str, object]]:
     for spec in specs:
         yield {
             "table_key": spec.table_key,
             "producer_target": spec.producer_target,
             "domain": spec.domain,
+            "data_node": spec.data_node,
+            "allowlisted": spec.allowlisted,
         }
 
 
@@ -252,15 +248,6 @@ def _artifact_dicts(specs: Iterable[SupportArtifactSpec]) -> Iterable[dict[str, 
         }
 
 
-def _seeded_dataset_dicts(specs: Iterable[SeededDatasetSpec]) -> Iterable[dict[str, str]]:
-    for spec in specs:
-        yield {
-            "table_key": spec.table_key,
-            "repo": spec.repo,
-            "commit": spec.commit,
-        }
-
-
 def _require_unique(values: Iterable[str], *, label: str) -> None:
     seen: set[str] = set()
     for value in values:
@@ -277,7 +264,6 @@ def _require_identifier(value: str, *, label: str) -> None:
 
 
 __all__ = [
-    "SeededDatasetSpec",
     "SupportArtifactSpec",
     "SupportDatasetSpec",
     "SupportNodeSpec",

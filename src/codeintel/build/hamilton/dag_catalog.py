@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from hamilton.caching import fingerprinting
 
+from codeintel.build.hamilton.external_inputs import load_external_inputs_allowlist
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import required_dataset_node_tags, required_table_output_tags
 from codeintel.core.hamilton import tags as ht
@@ -26,7 +27,9 @@ if TYPE_CHECKING:
 OutputKind = Literal["table", "artifact"]
 OutputRole = Literal["contract", "internal"]
 PreflightIssueKind = Literal[
+    "external_input_not_allowlisted",
     "layering_violation",
+    "loader_query_for_output",
     "missing_contract",
     "missing_data_node",
     "missing_saver",
@@ -213,6 +216,7 @@ class DagCatalog:
     table_outputs_by_target: Mapping[str, tuple[OutputDescriptor, ...]]
     artifact_outputs_by_target: Mapping[str, tuple[OutputDescriptor, ...]]
     io_surfaces: Mapping[str, IOSurface]
+    table_data_nodes: Mapping[str, str]
 
     def __contains__(self, target_name: str) -> bool:
         """Return True if a target is present in the catalog.
@@ -456,6 +460,7 @@ class DagCatalog:
         issues.extend(_preflight_output_tag_issues(self))
         issues.extend(_preflight_dataset_node_issues(self))
         if repo_root is not None:
+            issues.extend(_preflight_external_input_issues(self, repo_root=repo_root))
             issues.extend(_preflight_layering_issues(self, repo_root=repo_root))
         duration_ms = (time.perf_counter() - start) * 1000
         return DagPreflightReport(issues=tuple(issues), duration_ms=duration_ms)
@@ -477,6 +482,21 @@ class DagCatalog:
         if output is None:
             return None
         return output.producer_target
+
+    def data_node_for_table(self, table_key: str) -> str | None:
+        """Return the data node name for a table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully-qualified table key.
+
+        Returns
+        -------
+        str | None
+            Data node name when known, otherwise None.
+        """
+        return self.table_data_nodes.get(table_key)
 
     def producer_of_artifact(self, artifact_name: str) -> str | None:
         """Return producer target for an artifact name.
@@ -761,6 +781,47 @@ def _preflight_layering_issues(
                 module_path=path,
             )
         )
+    return issues
+
+
+def _preflight_external_input_issues(
+    catalog: DagCatalog,
+    *,
+    repo_root: Path,
+) -> list[DagPreflightIssue]:
+    issues: list[DagPreflightIssue] = []
+    allowlist = load_external_inputs_allowlist(repo_root=repo_root)
+    allowlisted_keys = allowlist.table_keys()
+    for node in catalog.nodes.values():
+        if node.tags.get(ht.TAG_NODE_TYPE) != ht.NODE_TYPE_LOADER_QUERY:
+            continue
+        table_key = _tag_value(node.tags, ht.TAG_TABLE_KEY)
+        if table_key is None:
+            continue
+        data_node = catalog.table_data_nodes.get(table_key)
+        if data_node is not None:
+            if data_node not in node.deps:
+                issues.append(
+                    DagPreflightIssue(
+                        kind="loader_query_for_output",
+                        node_name=node.name,
+                        table_key=table_key,
+                        message=(
+                            f"Loader query {node.name} must depend on data node {data_node} "
+                            f"for {table_key}"
+                        ),
+                    )
+                )
+            continue
+        if table_key not in allowlisted_keys:
+            issues.append(
+                DagPreflightIssue(
+                    kind="external_input_not_allowlisted",
+                    node_name=node.name,
+                    table_key=table_key,
+                    message=f"External input {table_key} is not allowlisted",
+                )
+            )
     return issues
 
 

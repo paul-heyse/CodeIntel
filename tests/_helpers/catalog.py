@@ -183,6 +183,12 @@ def build_catalog(
             for target in targets
         }
 
+    table_data_nodes: dict[str, str] = {}
+    for table_key, output in table_outputs.items():
+        data_node = output.tags.get("ci.data_node")
+        if isinstance(data_node, str) and data_node:
+            table_data_nodes[table_key] = data_node
+
     return DagCatalog(
         nodes=freeze_mapping(nodes),
         targets=freeze_mapping(target_map),
@@ -195,6 +201,7 @@ def build_catalog(
         table_outputs_by_target=freeze_mapping(table_by_target),
         artifact_outputs_by_target=freeze_mapping(artifact_by_target),
         io_surfaces=freeze_mapping(cast("Mapping[str, IOSurface]", io_surfaces)),
+        table_data_nodes=freeze_mapping(table_data_nodes),
     )
 
 

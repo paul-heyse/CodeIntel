@@ -1266,9 +1266,7 @@ def _resolve_partition_columns(
         resolved = tuple(column for column in requested if column not in missing_declared)
     else:
         resolved = tuple(
-            column
-            for column in _DEFAULT_PARTITION_COLUMNS
-            if column in table_schema.column_names()
+            column for column in _DEFAULT_PARTITION_COLUMNS if column in table_schema.column_names()
         )
     missing_observed = _missing_partition_columns(observed_schema, resolved)
     if missing_observed:

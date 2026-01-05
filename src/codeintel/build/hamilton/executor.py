@@ -81,7 +81,6 @@ from codeintel.build.schemas.contract_service import iter_contracts
 from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.execution.ids import new_run_id
-from codeintel.core.manifests import DatasetSuiteManifest
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.telemetry_context import (
     RepoCommitContext,
@@ -459,37 +458,9 @@ def _base_hamilton_config(
             msg = f"Unsupported hamilton.graph_backend={graph_backend!r}"
             raise ValueError(msg)
         config["graph_backend"] = graph_backend
-    seeded_datasets = _resolve_seeded_datasets(env)
-    if seeded_datasets:
-        config["ci_seeded_datasets"] = seeded_datasets
     config["ci_validate_outputs"] = bool(env.validate_outputs)
     config["ci_validation_mode"] = env.validation_mode.value
     return config
-
-
-def _resolve_seeded_datasets(env: BuildEnv) -> tuple[dict[str, str], ...]:
-    explicit = env.config.seeded_datasets()
-    if explicit:
-        return explicit
-    manifest_path = env.config.seed_suite_manifest_path()
-    if manifest_path is None:
-        return ()
-    resolved_path = manifest_path
-    if not resolved_path.is_absolute():
-        resolved_path = env.snapshot.repo_root / resolved_path
-    try:
-        suite = DatasetSuiteManifest.from_path(resolved_path)
-    except OSError as exc:
-        msg = f"Seed suite manifest not found: {resolved_path}"
-        raise FileNotFoundError(msg) from exc
-    return tuple(
-        {
-            "table_key": table_key,
-            "repo": suite.repo,
-            "commit": suite.commit,
-        }
-        for table_key in sorted(suite.dataset_manifest_paths)
-    )
 
 
 def _apply_dynamic_execution_config(

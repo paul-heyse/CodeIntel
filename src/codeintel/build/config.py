@@ -61,24 +61,14 @@ _ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
         "views",
         "hamilton",
         "variants",
-        "seed_suite_manifest_path",
-        "ci_seeded_datasets",
     }
 )
 
 _ALLOWED_SCHEMA_DRIFT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
 
 
-class _SeededDatasetConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
-    table_key: str
-    repo: str
-    commit: str
-
-
 class _HamiltonConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     graph_backend: str | None = None
-    seed_suite_manifest_path: str | None = None
-    ci_seeded_datasets: tuple[_SeededDatasetConfig, ...] = msgspec.field(default_factory=tuple)
     schema_drift_mode: str | None = None
 
 
@@ -227,75 +217,6 @@ class BuildConfig:
                 return default
 
         return current
-
-    def seed_suite_manifest_path(self) -> Path | None:
-        """Return the seed suite manifest path if configured.
-
-        Returns
-        -------
-        Path | None
-            Parsed manifest path or None when unset.
-
-        Raises
-        ------
-        TypeError
-            If the configured value is not a string path.
-        """
-        raw = self.get("hamilton.seed_suite_manifest_path")
-        if raw is None:
-            raw = self.get("seed_suite_manifest_path")
-        if raw is None:
-            return None
-        if isinstance(raw, Path):
-            return raw.expanduser()
-        if isinstance(raw, str) and raw:
-            return Path(raw).expanduser()
-        msg = "hamilton.seed_suite_manifest_path must be a string path"
-        raise TypeError(msg)
-
-    def seeded_datasets(self) -> tuple[dict[str, str], ...]:
-        """Return explicitly configured seeded datasets.
-
-        Returns
-        -------
-        tuple[dict[str, str], ...]
-            Seeded dataset specs with table_key/repo/commit fields.
-
-        Raises
-        ------
-        TypeError
-            If the configuration is not a list of mappings.
-        """
-        raw = self.get("hamilton.ci_seeded_datasets")
-        if raw is None:
-            raw = self.get("ci_seeded_datasets")
-        if raw is None:
-            return ()
-        if not isinstance(raw, list):
-            msg = "hamilton.ci_seeded_datasets must be a list of mappings"
-            raise TypeError(msg)
-        parsed: list[dict[str, str]] = []
-        for entry in raw:
-            if not isinstance(entry, dict):
-                msg = "hamilton.ci_seeded_datasets entries must be mappings"
-                raise TypeError(msg)
-            table_key = _require_str_field(
-                entry,
-                "table_key",
-                ctx="hamilton.ci_seeded_datasets",
-            )
-            repo = _require_str_field(
-                entry,
-                "repo",
-                ctx="hamilton.ci_seeded_datasets",
-            )
-            commit = _require_str_field(
-                entry,
-                "commit",
-                ctx="hamilton.ci_seeded_datasets",
-            )
-            parsed.append({"table_key": table_key, "repo": repo, "commit": commit})
-        return tuple(parsed)
 
     def schema_drift_mode(self) -> str:
         """Return the configured schema drift mode.
@@ -587,6 +508,7 @@ def _validate_config_data(data: Mapping[str, Any], *, config_path: Path) -> None
     if not isinstance(data, Mapping):
         msg = f"Build config must be a mapping; got {type(data).__name__}"
         raise TypeError(msg)
+    _reject_seeded_dataset_config(data, config_path=config_path)
     unknown = sorted(set(data) - _ALLOWED_TOP_LEVEL_KEYS)
     if unknown:
         msg = f"Unknown build config sections: {', '.join(unknown)}"
@@ -611,9 +533,6 @@ def _validate_config_data(data: Mapping[str, Any], *, config_path: Path) -> None
             msg = "hamilton section must be a mapping"
             raise TypeError(msg)
         _decode_hamilton_section(hamilton, config_path=config_path)
-
-    _validate_seeded_datasets(data.get("ci_seeded_datasets"), ctx="ci_seeded_datasets")
-    _validate_seed_suite_manifest(data.get("seed_suite_manifest_path"))
 
 
 def _decode_hamilton_section(section: Mapping[str, Any], *, config_path: Path) -> None:
@@ -641,22 +560,22 @@ def _validate_schema_drift_mode(raw: object, *, config_path: Path) -> None:
     raise ValueError(msg)
 
 
-def _validate_seeded_datasets(raw: object, *, ctx: str) -> None:
-    if raw is None:
+def _reject_seeded_dataset_config(data: Mapping[str, Any], *, config_path: Path) -> None:
+    prohibited = {"ci_seeded_datasets", "seed_suite_manifest_path"}
+    top_level = sorted(prohibited.intersection(data.keys()))
+    if top_level:
+        msg = f"Seeded datasets are not supported; remove {', '.join(top_level)} from {config_path}"
+        raise ValueError(msg)
+    hamilton = data.get("hamilton")
+    if not isinstance(hamilton, Mapping):
         return
-    try:
-        msgspec.convert(raw, type=tuple[_SeededDatasetConfig, ...], strict=True)
-    except msgspec.ValidationError as exc:
-        msg = f"{ctx} must be a list of entries: {exc}"
-        raise ValueError(msg) from exc
-
-
-def _validate_seed_suite_manifest(raw: object) -> None:
-    if raw is None:
-        return
-    if not isinstance(raw, str) or not raw:
-        msg = "seed_suite_manifest_path must be a non-empty string"
-        raise TypeError(msg)
+    nested = sorted(prohibited.intersection(hamilton.keys()))
+    if nested:
+        msg = (
+            "Seeded datasets are not supported; remove "
+            f"{', '.join(nested)} from [hamilton] in {config_path}"
+        )
+        raise ValueError(msg)
 
 
 DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {

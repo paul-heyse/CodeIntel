@@ -1,0 +1,3 @@
+[hamilton]
+graph_backend = "compute"
+schema_drift_mode = "warn"

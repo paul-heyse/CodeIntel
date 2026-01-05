@@ -44,14 +44,34 @@ This plan removes seeded datasets entirely and enforces end-to-end dependency co
 - In `support_spec_from_catalog`, resolve view dependencies to their producer targets if present in the catalog.
 - If a dependency is not produced by any target, classify it as an explicit external input.
 
-### D) Query Node Resolution Rules
+### D) External Input Allowlist (Registry-Backed)
+- The external input allowlist lives in `config/registry/external_inputs_allowlist.yaml` (registry-owned, versioned).
+- Support spec reads this file directly; there is no build-config override.
+- Proposed schema:
+  ```yaml
+  version: 1
+  external_inputs:
+    - table_key: "external.some_table"
+      reason: "Required for X until producer target lands"
+      owner: "team-or-module"
+  ```
+
+### E) Query Node Resolution Rules
 - Produced datasets: `q__<table>` must `source(<data_node>)`.
 - External datasets: `q__<table>` may `source(load_relation)` but only if allowlisted.
 - Any non-allowlisted external dataset is a preflight error.
 
-### E) Validation as Diagnostics (Non-Blocking)
+### F) Validation as Diagnostics (Non-Blocking)
 - Validation failures (schema drift, nullability, min rows) must not abort DAG execution for compute-path datasets.
-- Emit structured diagnostics under `build/diagnostics/` (e.g., `schema_drift.json`, `null_inventory.json`).
+- Emit structured diagnostics under `build/diagnostics/` with fixed filenames and schemas:
+  - `schema_drift.json`
+    - Shape: `{ "generated_at": "...", "run_id": "...", "tables": [{ "table_key": "...", "drift_summary": {...} }] }`
+  - `null_inventory.json`
+    - Shape: `{ "generated_at": "...", "run_id": "...", "tables": [{ "table_key": "...", "row_count": 0, "null_counts": { "col": 123 } }] }`
+  - `validation_findings.jsonl`
+    - One JSON object per line: `{ "table_key": "...", "severity": "warn|error", "check": "...", "message": "...", "column": "...", "count": 0 }`
+  - `external_input_usage.json`
+    - Shape: `{ "generated_at": "...", "run_id": "...", "tables": [{ "table_key": "...", "loader_node": "...", "allowlisted": true }] }`
 
 ---
 
@@ -72,7 +92,7 @@ This plan removes seeded datasets entirely and enforces end-to-end dependency co
 ### Phase 3: Support Spec Accuracy
 - [ ] Extend `SupportDatasetSpec` to include `data_node` and `producer_target`.
 - [ ] In `support_spec_from_catalog`, resolve view base table keys to actual producers when possible.
-- [ ] Add `external_inputs_allowlist` option to support spec and validate against it.
+- [ ] Load external input allowlist from `config/registry/external_inputs_allowlist.yaml` and validate against it.
 
 ### Phase 4: Query Node Rewire
 - [ ] Update `_decorate_query_nodes` in `src/codeintel/build/hamilton/nodes/support_nodes.py`:
@@ -83,7 +103,7 @@ This plan removes seeded datasets entirely and enforces end-to-end dependency co
 
 ### Phase 5: Diagnostics-First Validation
 - [ ] Adjust default validation behavior for build outputs to warn/diagnose without abort.
-- [ ] Emit detailed schema drift and nullability diagnostics under `build/diagnostics/`.
+- [ ] Emit diagnostics with fixed filenames: `schema_drift.json`, `null_inventory.json`, `validation_findings.jsonl`, `external_input_usage.json`.
 - [ ] Add table-level diagnostics for empty outputs (e.g., `graph.cfg_blocks` empty) without stopping execution.
 
 ### Phase 6: Tests + Safety Nets
@@ -114,6 +134,5 @@ This plan removes seeded datasets entirely and enforces end-to-end dependency co
 ---
 
 ## Open Questions
-- Should external input allowlists live in build config or in a dedicated registry under `config/registry/`?
 - Should validation diagnostics be table-key specific (per output) or aggregated in a single report?
 - Should any dataset categories (e.g., SCIP) have stricter validation thresholds even in diagnostic mode?

@@ -76,48 +76,17 @@ def _normalize_tags(tags: Mapping[TagKey, TagValue]) -> dict[str, str]:
     return normalized
 
 
-def _normalize_seeded_datasets(
-    ci_seeded_datasets: Sequence[Mapping[str, str]] | None,
-) -> dict[str, dict[str, str]]:
-    seeded: dict[str, dict[str, str]] = {}
-    for spec in ci_seeded_datasets or ():
-        if not isinstance(spec, Mapping):
-            msg = "Seeded dataset specs must be mappings"
-            raise TypeError(msg)
-        table_key = spec.get("table_key")
-        repo = spec.get("repo")
-        commit = spec.get("commit")
-        if not isinstance(table_key, str) or not table_key:
-            msg = "Seeded dataset spec table_key must be a non-empty string"
-            raise ValueError(msg)
-        if not isinstance(repo, str) or not repo:
-            msg = f"Seeded dataset spec missing repo for {table_key}"
-            raise ValueError(msg)
-        if not isinstance(commit, str) or not commit:
-            msg = f"Seeded dataset spec missing commit for {table_key}"
-            raise ValueError(msg)
-        if table_key in seeded:
-            msg = f"Duplicate seeded dataset spec for {table_key}"
-            raise ValueError(msg)
-        seeded[table_key] = {"repo": repo, "commit": commit}
-    return seeded
-
-
 @dataclass(frozen=True, slots=True)
 class _SupportDatasetConfig:
     table_key: str
     producer_target: str | None
     domain: str
-
-
-@dataclass(frozen=True, slots=True)
-class _DatasetSeed:
-    repo: str
-    commit: str
+    data_node: str | None
+    allowlisted: bool
 
 
 def _parse_support_dataset_spec(
-    spec: Mapping[str, str | None],
+    spec: Mapping[str, object],
 ) -> _SupportDatasetConfig:
     table_key_raw = spec.get("table_key")
     if not isinstance(table_key_raw, str) or not table_key_raw:
@@ -129,22 +98,26 @@ def _parse_support_dataset_spec(
         raise ValueError(msg)
     producer_raw = spec.get("producer_target")
     producer_target = producer_raw if isinstance(producer_raw, str) and producer_raw else None
+    data_node_raw = spec.get("data_node")
+    data_node = data_node_raw if isinstance(data_node_raw, str) and data_node_raw else None
+    allowlisted = bool(spec.get("allowlisted"))
     return _SupportDatasetConfig(
         table_key=table_key_raw,
         producer_target=producer_target,
         domain=domain_raw,
+        data_node=data_node,
+        allowlisted=allowlisted,
     )
 
 
 def _parse_support_dataset_specs(
-    ci_support_datasets: Sequence[Mapping[str, str | None]],
+    ci_support_datasets: Sequence[Mapping[str, object]],
 ) -> list[_SupportDatasetConfig]:
     return [_parse_support_dataset_spec(spec) for spec in ci_support_datasets]
 
 
 def _decorate_dataset_nodes(
-    ci_support_datasets: Sequence[Mapping[str, str | None]] | None = None,
-    ci_seeded_datasets: Sequence[Mapping[str, str]] | None = None,
+    ci_support_datasets: Sequence[Mapping[str, object]] | None = None,
     *,
     ci_support_include_dataset_nodes: bool = True,
 ) -> NodeTransformLifecycle:
@@ -153,14 +126,7 @@ def _decorate_dataset_nodes(
     if not ci_support_datasets:
         return _ParameterizeWithTags(tags_by_output={})
 
-    seeded_by_table = _normalize_seeded_datasets(ci_seeded_datasets)
     parsed_specs = _parse_support_dataset_specs(ci_support_datasets)
-    supported_keys = {spec.table_key for spec in parsed_specs}
-    unsupported = set(seeded_by_table).difference(supported_keys)
-    if unsupported:
-        details = ", ".join(sorted(unsupported))
-        msg = f"Seeded datasets not in support outputs: {details}"
-        raise ValueError(msg)
     mapping: dict[str, dict[str, ParametrizedDependency]] = {}
     tags_by_output: dict[str, dict[str, str]] = {}
     for spec in parsed_specs:
@@ -168,21 +134,12 @@ def _decorate_dataset_nodes(
         producer_target = spec.producer_target
         domain = spec.domain
         node_name = dataset_node(table_key)
-        seed_spec = seeded_by_table.get(table_key)
-        if seed_spec is None:
-            mapping[node_name] = {
-                "table_key": value(table_key),
-                "producer_target": value(producer_target),
-            }
-            if producer_target is not None:
-                mapping[node_name]["record"] = source(target_node(producer_target))
-        else:
-            seed = _DatasetSeed(repo=seed_spec["repo"], commit=seed_spec["commit"])
-            mapping[node_name] = {
-                "table_key": value(table_key),
-                "producer_target": value(producer_target),
-                "seed": value(seed),
-            }
+        mapping[node_name] = {
+            "table_key": value(table_key),
+            "producer_target": value(producer_target),
+        }
+        if producer_target is not None:
+            mapping[node_name]["record"] = source(target_node(producer_target))
         tags_by_output[node_name] = _normalize_tags(
             TagSpec.for_dataset_ref(
                 domain=domain,
@@ -200,7 +157,6 @@ def dataset_ref(
     table_key: str,
     producer_target: str | None,
     record: TargetRunRecord | None = None,
-    seed: _DatasetSeed | None = None,
 ) -> DatasetRef:
     """Return DatasetRef for a target output.
 
@@ -249,14 +205,10 @@ def dataset_ref(
             source_target=producer_target,
         )
 
-    if seed is None:
-        resolved_repo = env.snapshot.repo
-        resolved_commit = env.snapshot.commit
-    else:
-        resolved_repo = seed.repo
-        resolved_commit = seed.commit
+    resolved_repo = env.snapshot.repo
+    resolved_commit = env.snapshot.commit
     if not resolved_repo or not resolved_commit:
-        msg = f"Seeded DatasetRef missing repo/commit for {table_key}"
+        msg = f"DatasetRef missing repo/commit for {table_key}"
         raise ValueError(msg)
     return DatasetRef(
         table_key=table_key,
@@ -293,7 +245,7 @@ def scip_ready(t__scip: TargetRunRecord) -> TargetRunRecord:
 
 
 def _decorate_query_nodes(
-    ci_support_datasets: Sequence[Mapping[str, str | None]] | None = None,
+    ci_support_datasets: Sequence[Mapping[str, object]] | None = None,
     *,
     ci_support_include_loader_nodes: bool = True,
 ) -> NodeTransformLifecycle:
@@ -309,7 +261,14 @@ def _decorate_query_nodes(
         producer_target = spec.producer_target
         domain = spec.domain
         node_name = query_node(table_key)
-        params: dict[str, ParametrizedDependency] = {"ref": source(dataset_node(table_key))}
+        params: dict[str, ParametrizedDependency] = {}
+        if spec.data_node is not None:
+            params["data"] = source(spec.data_node)
+        else:
+            if not spec.allowlisted:
+                msg = f"External input {table_key} is not allowlisted"
+                raise ValueError(msg)
+            params["ref"] = source(dataset_node(table_key))
         if _requires_scip_gate(table_key):
             params["scip_ready"] = source("scip_ready")
         mapping[node_name] = params
@@ -327,7 +286,8 @@ def _decorate_query_nodes(
 @resolve_from_config(decorate_with=_decorate_query_nodes)
 def load_relation(
     env: BuildEnv,
-    ref: DatasetRef,
+    ref: DatasetRef | None = None,
+    data: TabularInput | None = None,
     scip_ready: TargetRunRecord | None = None,
 ) -> TabularInput:
     """Load a dataset as an inferable tabular input.
@@ -343,6 +303,11 @@ def load_relation(
         If the snapshot_id cannot be resolved for the dataset reference.
     """
     _ = scip_ready
+    if data is not None:
+        return data
+    if ref is None:
+        msg = "Missing DatasetRef for external input"
+        raise ValueError(msg)
     snapshot_id = ref.commit or env.commit
     if not snapshot_id:
         msg = f"Missing snapshot_id for {ref.table_key}"

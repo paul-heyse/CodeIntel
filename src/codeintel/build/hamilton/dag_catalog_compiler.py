@@ -94,6 +94,7 @@ def compile_dag_catalog(
     target_nodes, node_to_target = _collect_target_nodes(nodes, strict=strict)
     deps_by_target = _derive_target_dependencies(nodes, target_nodes, node_to_target)
     outputs = _compile_output_inventory(driver.graph.nodes, strict=strict)
+    table_data_nodes = _compile_table_data_nodes(outputs)
 
     resolved_overrides = overrides_by_target or MappingProxyType({})
     inputs = TargetDescriptorCompileInputs(
@@ -129,6 +130,7 @@ def compile_dag_catalog(
         table_outputs_by_target=freeze_mapping(outputs.table_outputs_by_target),
         artifact_outputs_by_target=freeze_mapping(outputs.artifact_outputs_by_target),
         io_surfaces=freeze_mapping(io_surfaces),
+        table_data_nodes=freeze_mapping(table_data_nodes),
     )
 
 
@@ -295,6 +297,15 @@ def _compile_output_inventory(
         table_outputs_by_target={k: tuple(v) for k, v in table_by_target.items()},
         artifact_outputs_by_target={k: tuple(v) for k, v in artifact_by_target.items()},
     )
+
+
+def _compile_table_data_nodes(outputs: _OutputInventory) -> dict[str, str]:
+    data_nodes: dict[str, str] = {}
+    for table_key, output in outputs.table_outputs.items():
+        data_node = output.tags.get("ci.data_node")
+        if isinstance(data_node, str) and data_node:
+            data_nodes[table_key] = data_node
+    return data_nodes
 
 
 def _output_from_node(

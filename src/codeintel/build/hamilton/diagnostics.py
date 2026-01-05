@@ -18,6 +18,7 @@ from codeintel.build.hamilton.decision_trace import (
     default_decision_trace_path,
     write_decision_trace,
 )
+from codeintel.build.hamilton.external_inputs import load_external_inputs_allowlist
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_json,
@@ -27,6 +28,7 @@ from codeintel.build.schemas import get_schema_provider
 from codeintel.core.columnar.streaming import DatasetScanOptions, build_scanner
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
+from codeintel.core.datasets.manifests import load_dataset_manifest
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.schemas.primitives import TableSchema
@@ -101,12 +103,31 @@ def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
         runtime=inputs.runtime,
         targets=list(inputs.targets.requested),
     )
-    _write_null_inventory(
+    table_keys = _table_keys_for_targets(inputs.runtime, inputs.targets.requested)
+    null_payload = _write_null_inventory(
         diag_dir=diag_dir,
         env=inputs.env,
         runtime=inputs.runtime,
-        targets=inputs.targets.requested,
+        table_keys=table_keys,
         run_id=inputs.run_id,
+    )
+    drift_payload = _write_schema_drift(
+        diag_dir=diag_dir,
+        env=inputs.env,
+        table_keys=table_keys,
+        run_id=inputs.run_id,
+    )
+    _write_external_input_usage(
+        diag_dir=diag_dir,
+        runtime=inputs.runtime,
+        repo_root=inputs.env.snapshot.repo_root,
+        run_id=inputs.run_id,
+    )
+    _write_validation_findings(
+        diag_dir=diag_dir,
+        run_id=inputs.run_id,
+        null_payload=null_payload,
+        drift_payload=drift_payload,
     )
     if inputs.cache_adapter is None:
         return
@@ -182,12 +203,11 @@ def _write_null_inventory(
     diag_dir: Path,
     env: BuildEnv,
     runtime: RuntimeBundle,
-    targets: Sequence[str],
+    table_keys: Sequence[str],
     run_id: str,
-) -> None:
-    table_keys = _table_keys_for_targets(runtime, targets)
+) -> dict[str, object] | None:
     if not table_keys:
-        return
+        return None
     payload = _null_inventory_payload(
         env=env,
         runtime=runtime,
@@ -195,8 +215,278 @@ def _write_null_inventory(
         table_keys=table_keys,
     )
     if payload is None:
-        return
+        return None
     _write_json(diag_dir / "null_inventory.json", payload)
+    return payload
+
+
+def _write_schema_drift(
+    *,
+    diag_dir: Path,
+    env: BuildEnv,
+    table_keys: Sequence[str],
+    run_id: str,
+) -> dict[str, object]:
+    payload = _schema_drift_payload(
+        env=env,
+        table_keys=table_keys,
+        run_id=run_id,
+    )
+    _write_json(diag_dir / "schema_drift.json", payload)
+    return payload
+
+
+def _schema_drift_payload(
+    *,
+    env: BuildEnv,
+    table_keys: Sequence[str],
+    run_id: str,
+) -> dict[str, object]:
+    rows: list[dict[str, object]] = []
+    for table_key in table_keys:
+        manifest = load_dataset_manifest(
+            dataset_root=env.paths.dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=env.commit,
+        )
+        if manifest is None:
+            continue
+        extras = manifest.extras
+        if not isinstance(extras, Mapping):
+            continue
+        drift_summary = extras.get("schema_drift_summary")
+        if not isinstance(drift_summary, Mapping):
+            continue
+        rows.append(
+            {
+                "table_key": table_key,
+                "drift_summary": dict(drift_summary),
+            }
+        )
+    return {
+        "run_id": run_id,
+        "repo": env.repo,
+        "commit": env.commit,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "tables": rows,
+    }
+
+
+def _write_external_input_usage(
+    *,
+    diag_dir: Path,
+    runtime: RuntimeBundle,
+    repo_root: Path,
+    run_id: str,
+) -> None:
+    allowlist = load_external_inputs_allowlist(repo_root=repo_root)
+    allowlisted_keys = allowlist.table_keys()
+    rows: list[dict[str, object]] = []
+    for node in runtime.catalog.nodes.values():
+        if node.tags.get(ht.TAG_NODE_TYPE) != ht.NODE_TYPE_LOADER_QUERY:
+            continue
+        table_key = _tag_value(node.tags, ht.TAG_TABLE_KEY)
+        if table_key is None:
+            continue
+        if table_key in runtime.catalog.table_outputs:
+            continue
+        rows.append(
+            {
+                "table_key": table_key,
+                "loader_node": node.name,
+                "allowlisted": table_key in allowlisted_keys,
+            }
+        )
+    payload = {
+        "run_id": run_id,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "tables": rows,
+    }
+    _write_json(diag_dir / "external_input_usage.json", payload)
+
+
+def _write_validation_findings(
+    *,
+    diag_dir: Path,
+    run_id: str,
+    null_payload: Mapping[str, object] | None,
+    drift_payload: Mapping[str, object] | None,
+) -> None:
+    findings: list[dict[str, object]] = []
+    findings.extend(_validation_findings_from_nulls(null_payload, run_id=run_id))
+    findings.extend(_validation_findings_from_drift(drift_payload, run_id=run_id))
+    _write_jsonl(diag_dir / "validation_findings.jsonl", findings)
+
+
+def _validation_findings_from_nulls(
+    null_payload: Mapping[str, object] | None,
+    *,
+    run_id: str,
+) -> list[dict[str, object]]:
+    entries = _null_table_entries(null_payload)
+    if not entries:
+        return []
+    findings: list[dict[str, object]] = []
+    for entry in entries:
+        findings.extend(_null_findings_for_entry(entry, run_id=run_id))
+    return findings
+
+
+def _null_table_entries(null_payload: Mapping[str, object] | None) -> list[Mapping[str, object]]:
+    if null_payload is None:
+        return []
+    tables = null_payload.get("tables")
+    if not isinstance(tables, list):
+        return []
+    return [entry for entry in tables if isinstance(entry, Mapping)]
+
+
+def _null_findings_for_entry(
+    entry: Mapping[str, object],
+    *,
+    run_id: str,
+) -> list[dict[str, object]]:
+    table_key = entry.get("table_key")
+    if not isinstance(table_key, str):
+        return []
+    findings: list[dict[str, object]] = []
+    findings.extend(_null_status_findings(entry, run_id=run_id, table_key=table_key))
+    findings.extend(_missing_column_findings(entry, run_id=run_id, table_key=table_key))
+    findings.extend(_null_column_findings(entry, run_id=run_id, table_key=table_key))
+    return findings
+
+
+def _null_status_findings(
+    entry: Mapping[str, object],
+    *,
+    run_id: str,
+    table_key: str,
+) -> list[dict[str, object]]:
+    status = entry.get("status")
+    if status == "missing":
+        return [
+            {
+                "run_id": run_id,
+                "table_key": table_key,
+                "severity": "error",
+                "check": "dataset_missing",
+                "message": "Dataset snapshot missing",
+                "count": 0,
+            }
+        ]
+    if status == "error":
+        return [
+            {
+                "run_id": run_id,
+                "table_key": table_key,
+                "severity": "error",
+                "check": "dataset_error",
+                "message": str(entry.get("error") or "Dataset scan failed"),
+                "count": 0,
+            }
+        ]
+    return []
+
+
+def _missing_column_findings(
+    entry: Mapping[str, object],
+    *,
+    run_id: str,
+    table_key: str,
+) -> list[dict[str, object]]:
+    missing_columns = entry.get("missing_columns")
+    if not isinstance(missing_columns, list):
+        return []
+    findings: list[dict[str, object]] = []
+    for column in missing_columns:
+        if not isinstance(column, str):
+            continue
+        findings.append(
+            {
+                "run_id": run_id,
+                "table_key": table_key,
+                "severity": "warn",
+                "check": "missing_column",
+                "message": "Contract column missing from dataset",
+                "column": column,
+                "count": 0,
+            }
+        )
+    return findings
+
+
+def _null_column_findings(
+    entry: Mapping[str, object],
+    *,
+    run_id: str,
+    table_key: str,
+) -> list[dict[str, object]]:
+    columns_with_nulls = entry.get("columns_with_nulls")
+    if not isinstance(columns_with_nulls, list):
+        return []
+    findings: list[dict[str, object]] = []
+    for column_entry in columns_with_nulls:
+        if not isinstance(column_entry, Mapping):
+            continue
+        name = column_entry.get("name")
+        null_count = column_entry.get("null_count")
+        nullable = column_entry.get("nullable")
+        if not isinstance(name, str) or not isinstance(null_count, int):
+            continue
+        severity = "error" if nullable is False else "warn"
+        findings.append(
+            {
+                "run_id": run_id,
+                "table_key": table_key,
+                "severity": severity,
+                "check": "nulls_detected",
+                "message": "Null values detected in column",
+                "column": name,
+                "count": null_count,
+            }
+        )
+    return findings
+
+
+def _validation_findings_from_drift(
+    drift_payload: Mapping[str, object] | None,
+    *,
+    run_id: str,
+) -> list[dict[str, object]]:
+    if drift_payload is None:
+        return []
+    tables = drift_payload.get("tables")
+    if not isinstance(tables, list):
+        return []
+    findings: list[dict[str, object]] = []
+    for entry in tables:
+        if not isinstance(entry, Mapping):
+            continue
+        table_key = entry.get("table_key")
+        drift_summary = entry.get("drift_summary")
+        if not isinstance(table_key, str) or not isinstance(drift_summary, Mapping):
+            continue
+        missing = drift_summary.get("missing_columns")
+        extra = drift_summary.get("extra_columns")
+        type_changes = drift_summary.get("type_changes")
+        count = 0
+        if isinstance(missing, list):
+            count += len(missing)
+        if isinstance(extra, list):
+            count += len(extra)
+        if isinstance(type_changes, list):
+            count += len(type_changes)
+        findings.append(
+            {
+                "run_id": run_id,
+                "table_key": table_key,
+                "severity": "warn",
+                "check": "schema_drift",
+                "message": "Schema drift detected",
+                "count": count,
+            }
+        )
+    return findings
 
 
 def _table_keys_for_targets(runtime: RuntimeBundle, targets: Sequence[str]) -> tuple[str, ...]:
@@ -292,9 +582,7 @@ def _null_inventory_for_table(
     missing_columns: list[str] = []
     available = list(dataset.schema.names)
     if table_schema is not None:
-        missing_columns = [
-            name for name in table_schema.column_names() if name not in available
-        ]
+        missing_columns = [name for name in table_schema.column_names() if name not in available]
         columns = [name for name in table_schema.column_names() if name in available]
     else:
         columns = available
@@ -366,7 +654,7 @@ def _null_counts_for_columns(
             unify_schemas=True,
         ),
     )
-    null_counts = {name: 0 for name in columns}
+    null_counts = dict.fromkeys(columns, 0)
     row_count = 0
     for batch in scanner.to_batches():
         row_count += batch.num_rows
@@ -547,6 +835,15 @@ def _cache_log_key_parts(key: object) -> tuple[str, str | None]:
 def _cache_log_key_sort_key(key: object) -> tuple[str, str]:
     node_name, task_id = _cache_log_key_parts(key)
     return node_name, task_id or ""
+
+
+def _tag_value(tags: Mapping[str, object], key: str) -> str | None:
+    value = tags.get(key)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return None
 
 
 def _normalize_json_value(value: object) -> object:
