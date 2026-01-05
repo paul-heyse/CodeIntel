@@ -480,7 +480,7 @@ A factory that creates **realistic on-disk serving snapshot state** in the same 
 * Produces a single object you pass around, e.g. `snapshot.serve_dir`, `snapshot.pointer_path`, `snapshot.db_path`, `snapshot.registry_path`, etc.
 * Supports *modes* so you can choose realism level per test:
 
-  * **seeded**: fast, writes `db + semantic_registry + schema_manifest + buildspec + current.json`
+  * **seeded** (test-only fixtures; unrelated to build seeded datasets): fast, writes `db + semantic_registry + schema_manifest + buildspec + current.json`
   * **published**: runs `publish_serving_snapshot(...)` so you exercise:
 
     * atomic pointer semantics

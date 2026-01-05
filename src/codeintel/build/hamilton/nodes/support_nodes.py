@@ -130,6 +130,11 @@ def _decorate_dataset_nodes(
     mapping: dict[str, dict[str, ParametrizedDependency]] = {}
     tags_by_output: dict[str, dict[str, str]] = {}
     for spec in parsed_specs:
+        if spec.data_node is not None:
+            continue
+        if not spec.allowlisted:
+            msg = f"External input {spec.table_key} is not allowlisted"
+            raise ValueError(msg)
         table_key = spec.table_key
         producer_target = spec.producer_target
         domain = spec.domain
@@ -147,6 +152,9 @@ def _decorate_dataset_nodes(
                 table_key=table_key,
             ).to_tags()
         )
+
+    if not mapping:
+        return _ParameterizeWithTags(tags_by_output={})
 
     return _ParameterizeWithTags(tags_by_output=tags_by_output, **mapping)
 
@@ -261,14 +269,12 @@ def _decorate_query_nodes(
         producer_target = spec.producer_target
         domain = spec.domain
         node_name = query_node(table_key)
-        params: dict[str, ParametrizedDependency] = {}
         if spec.data_node is not None:
-            params["data"] = source(spec.data_node)
-        else:
-            if not spec.allowlisted:
-                msg = f"External input {table_key} is not allowlisted"
-                raise ValueError(msg)
-            params["ref"] = source(dataset_node(table_key))
+            continue
+        if not spec.allowlisted:
+            msg = f"External input {table_key} is not allowlisted"
+            raise ValueError(msg)
+        params: dict[str, ParametrizedDependency] = {"ref": source(dataset_node(table_key))}
         if _requires_scip_gate(table_key):
             params["scip_ready"] = source("scip_ready")
         mapping[node_name] = params
@@ -286,8 +292,7 @@ def _decorate_query_nodes(
 @resolve_from_config(decorate_with=_decorate_query_nodes)
 def load_relation(
     env: BuildEnv,
-    ref: DatasetRef | None = None,
-    data: TabularInput | None = None,
+    ref: DatasetRef,
     scip_ready: TargetRunRecord | None = None,
 ) -> TabularInput:
     """Load a dataset as an inferable tabular input.
@@ -303,11 +308,6 @@ def load_relation(
         If the snapshot_id cannot be resolved for the dataset reference.
     """
     _ = scip_ready
-    if data is not None:
-        return data
-    if ref is None:
-        msg = "Missing DatasetRef for external input"
-        raise ValueError(msg)
     snapshot_id = ref.commit or env.commit
     if not snapshot_id:
         msg = f"Missing snapshot_id for {ref.table_key}"
@@ -317,6 +317,60 @@ def load_relation(
         table_key=ref.table_key,
         snapshot_id=snapshot_id,
     )
+
+
+def _decorate_query_nodes_data(
+    ci_support_datasets: Sequence[Mapping[str, object]] | None = None,
+    *,
+    ci_support_include_loader_nodes: bool = True,
+) -> NodeTransformLifecycle:
+    if not ci_support_include_loader_nodes:
+        return _ParameterizeWithTags(tags_by_output={})
+    if not ci_support_datasets:
+        return _ParameterizeWithTags(tags_by_output={})
+
+    mapping: dict[str, dict[str, ParametrizedDependency]] = {}
+    tags_by_output: dict[str, dict[str, str]] = {}
+    for spec in _parse_support_dataset_specs(ci_support_datasets):
+        table_key = spec.table_key
+        if spec.data_node is None:
+            continue
+        producer_target = spec.producer_target
+        domain = spec.domain
+        node_name = query_node(table_key)
+        params: dict[str, ParametrizedDependency] = {"data": source(spec.data_node)}
+        if _requires_scip_gate(table_key):
+            params["scip_ready"] = source("scip_ready")
+        mapping[node_name] = params
+        tags_by_output[node_name] = _normalize_tags(
+            TagSpec.for_loader_query(
+                domain=domain,
+                target=producer_target,
+                table_key=table_key,
+            ).to_tags()
+        )
+
+    if not mapping:
+        return _ParameterizeWithTags(tags_by_output={})
+
+    return _ParameterizeWithTags(tags_by_output=tags_by_output, **mapping)
+
+
+@resolve_from_config(decorate_with=_decorate_query_nodes_data)
+def load_relation_data(
+    env: BuildEnv,
+    data: TabularInput,
+    scip_ready: TargetRunRecord | None = None,
+) -> TabularInput:
+    """Return in-DAG tabular inputs for produced datasets.
+
+    Returns
+    -------
+    TabularInput
+        Tabular data produced within the current DAG execution.
+    """
+    _ = (env, scip_ready)
+    return data
 
 
 def _decorate_artifact_nodes(
@@ -431,5 +485,6 @@ __all__ = [
     "artifact_ref",
     "dataset_ref",
     "load_relation",
+    "load_relation_data",
     "scip_ready",
 ]

@@ -999,14 +999,16 @@ def extract_ingest_rows(
 )
 def config_ingest__rows__base(
     config_ingest__raw_rows: InferableTabularInput | None,
-) -> InferableTabularInput | None:
+) -> InferableTabularInput:
     """Return cleaned rows for analytics.config_values.
 
     Returns
     -------
-    InferableTabularInput | None
+    InferableTabularInput
         Cleaned tabular input for the config values table.
     """
+    if config_ingest__raw_rows is None:
+        return empty_table_for_table(CONFIG_VALUES_TABLE_KEY)
     return config_ingest__raw_rows
 
 
@@ -1019,7 +1021,7 @@ _CONFIG_INGEST_TABLE_TARGET_SPEC = TableTargetSpec(
             base_node="config_ingest__rows__base",
             save_spec=RelationTableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
             node_name="config_ingest__rows",
-            input_type=InferableTabularInput | None,
+            input_type=InferableTabularInput,
         ),
     ),
     table_materializations_node="config_ingest__table_materializations",
@@ -1532,7 +1534,6 @@ def t__typing(
     apply_to(modules__module_rows, table_key=value(MODULES_TABLE_KEY)),
     apply_to(modules__file_state_rows, table_key=value(FILE_STATE_TABLE_KEY)),
     apply_to(modules__repo_map_rows, table_key=value(REPO_MAP_TABLE_KEY)),
-    apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
     apply_to(tests__rows, table_key=value(TEST_CATALOG_TABLE_KEY)),
     apply_to(typing__diagnostic_rows, table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY)),
 )
@@ -1555,6 +1556,34 @@ def _normalize_ingest_rows(
         Normalized rows for the table.
     """
     return normalize_ingest_frame(rows, table_key=table_key)
+
+
+@tag_helper(domain="ingestion")
+@mutate_ingest_rows(
+    apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
+)
+def _normalize_required_ingest_rows(
+    rows: InferableTabularInput,
+    table_key: str,
+) -> pa.Table:
+    """Normalize required ingestion outputs with shared alignment/dedupe logic.
+
+    Parameters
+    ----------
+    rows
+        Ingestion rows to normalize.
+    table_key
+        Table key used for schema alignment.
+
+    Returns
+    -------
+    pa.Table
+        Normalized rows for the table.
+    """
+    normalized = normalize_ingest_frame(rows, table_key=table_key)
+    if normalized is None:
+        return empty_table_for_table(table_key)
+    return normalized
 
 
 __all__: list[str] = [

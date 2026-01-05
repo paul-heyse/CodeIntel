@@ -78,39 +78,45 @@ This plan removes seeded datasets entirely and enforces end-to-end dependency co
 ## Implementation Phases
 
 ### Phase 1: Config + Invariants
-- [ ] Add `plans/architecture` note documenting invariants (seedless, compute-only, coupled DAG).
-- [ ] Create `config/codeintel.build.toml` with `hamilton.graph_backend="compute"` and `schema_drift_mode="warn"`.
-- [ ] Remove seed config keys from `BuildConfig` allowed keys and parsing (`src/codeintel/build/config.py`).
-- [ ] Remove `seed_suite_manifest_path` and `ci_seeded_datasets` handling in `src/codeintel/build/hamilton/executor.py`.
-- [ ] Update any docs/examples that mention seeded datasets.
+- [x] Add architecture note documenting invariants (seedless, compute-only, coupled DAG).
+- [x] Create `config/codeintel.build.toml` with `hamilton.graph_backend="compute"` and `schema_drift_mode="warn"`.
+- [x] Remove seed config keys from `BuildConfig` allowed keys and parsing (`src/codeintel/build/config.py`).
+- [x] Remove `seed_suite_manifest_path` and `ci_seeded_datasets` handling in `src/codeintel/build/hamilton/executor.py`.
+- [x] Update any docs/examples that mention seeded datasets.
 
 ### Phase 2: Catalog Enhancements
-- [ ] Add `DagCatalog.table_data_nodes: Mapping[str, str]` (table_key -> data_node).
-- [ ] Populate mapping from output tags (`ci.data_node`) during catalog compilation.
-- [ ] Add preflight check: every table output must have a valid data node.
+- [x] Add `DagCatalog.table_data_nodes: Mapping[str, str]` (table_key -> data_node).
+- [x] Populate mapping from output tags (`ci.data_node`) during catalog compilation.
+- [x] Add preflight check: every table output must have a valid data node.
 
 ### Phase 3: Support Spec Accuracy
-- [ ] Extend `SupportDatasetSpec` to include `data_node` and `producer_target`.
-- [ ] In `support_spec_from_catalog`, resolve view base table keys to actual producers when possible.
-- [ ] Load external input allowlist from `config/registry/external_inputs_allowlist.yaml` and validate against it.
+- [x] Extend `SupportDatasetSpec` to include `data_node` and `producer_target`.
+- [x] In `support_spec_from_catalog`, resolve view base table keys to actual producers when possible.
+- [x] Load external input allowlist from `config/registry/external_inputs_allowlist.yaml` and validate against it.
 
 ### Phase 4: Query Node Rewire
-- [ ] Update `_decorate_query_nodes` in `src/codeintel/build/hamilton/nodes/support_nodes.py`:
+- [x] Update `_decorate_query_nodes` in `src/codeintel/build/hamilton/nodes/support_nodes.py`:
   - Produced dataset -> `source(data_node)`
   - External dataset -> `source(dataset_ref)` then `load_relation`
-- [ ] Keep `dataset_ref` only for external inputs and artifacts.
-- [ ] Add preflight validation for any dataset that uses `load_relation` without allowlist entry.
+- [x] Keep `dataset_ref` only for external inputs and artifacts (avoid emitting dataset_ref for produced tables unless required).
+- [x] Add preflight validation for any dataset that uses `load_relation` without allowlist entry.
 
 ### Phase 5: Diagnostics-First Validation
-- [ ] Adjust default validation behavior for build outputs to warn/diagnose without abort.
-- [ ] Emit diagnostics with fixed filenames: `schema_drift.json`, `null_inventory.json`, `validation_findings.jsonl`, `external_input_usage.json`.
-- [ ] Add table-level diagnostics for empty outputs (e.g., `graph.cfg_blocks` empty) without stopping execution.
+- [x] Adjust default validation behavior for build outputs to warn/diagnose without abort.
+- [x] Emit diagnostics with fixed filenames: `schema_drift.json`, `null_inventory.json`, `validation_findings.jsonl`, `external_input_usage.json`.
+- [x] Add table-level diagnostics for empty outputs (e.g., `graph.cfg_blocks` empty) without stopping execution.
 
-### Phase 6: Tests + Safety Nets
+### Phase 6: Tests + Safety Nets (deferred)
 - [ ] Add tests verifying `q__graph__cfg_blocks` depends on `cfg__blocks_table` (or data node) not `load_relation`.
 - [ ] Add tests that seeded dataset config is rejected.
 - [ ] Add preflight test for external inputs allowlist enforcement.
 - [ ] Add run-level test that `t__goids` executes before `cfg` when `graph_backend=compute`.
+
+### Optional Audit (non-blocking)
+- [x] Confirm view base table dependencies that are produced outside contract outputs are mapped to data nodes (avoid misclassifying as external inputs).
+
+### Out of Scope (for now)
+- Test updates are explicitly deferred until after the remaining runtime changes land.
 
 ---
 

@@ -16,8 +16,7 @@ from sqlglot.errors import ParseError, SqlglotError
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.naming import dataset_node, to_node_name
+from codeintel.build.hamilton.naming import query_node, to_node_name
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -29,13 +28,12 @@ from codeintel.build.hamilton.native.patterns.materialization_collectors import 
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
+from codeintel.build.hamilton.tagging import TagKey, TagValue
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observation_provider import observation_provider_for_env
-from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_table
-from codeintel.core.columnar.streaming import scan_dataset_reader
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
-from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.types import TabularInput
+from codeintel.core.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
 from codeintel.core.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
@@ -415,87 +413,6 @@ def _view_node_name(table_key: str) -> str:
     return to_node_name(table_key, prefix="view")
 
 
-def _source_node_name(table_key: str) -> str:
-    return to_node_name(f"{VIEWS_TARGET_NAME}.source.{table_key}", prefix="l")
-
-
-def _loader_signature(dataset_param: str) -> inspect.Signature:
-    params = [
-        inspect.Parameter(
-            "env",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=BuildEnv,
-        ),
-        inspect.Parameter(
-            dataset_param,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=DatasetRef,
-        ),
-    ]
-    return inspect.Signature(params, return_annotation=pa.Table)
-
-
-def _build_source_loader(*, table_key: str, node_name: str) -> Callable[..., pa.Table]:
-    dataset_param = dataset_node(table_key)
-
-    def loader(env: BuildEnv, **kwargs: object) -> pa.Table:
-        dataset_ref = kwargs.get(dataset_param)
-        if not isinstance(dataset_ref, DatasetRef):
-            msg = f"Expected DatasetRef for {dataset_param}, got {type(dataset_ref)}"
-            raise TypeError(msg)
-        if dataset_ref.table_key != table_key:
-            msg = (
-                f"DatasetRef table_key mismatch for {node_name}: "
-                f"{dataset_ref.table_key} != {table_key}"
-            )
-            raise ValueError(msg)
-        snapshot_id = dataset_ref.commit or env.commit
-        if not snapshot_id:
-            msg = f"Missing snapshot_id for {table_key}"
-            raise ValueError(msg)
-        dataset_root = env.paths.dataset_root_dir
-        if dataset_root is None:
-            msg = "BuildEnv.paths.dataset_root_dir is required for view loading"
-            raise ValueError(msg)
-        snapshot_dir = dataset_snapshot_dir(
-            dataset_root,
-            table_key=table_key,
-            snapshot_id=snapshot_id,
-        )
-        if not snapshot_dir.exists():
-            msg = f"Missing dataset snapshot directory: {snapshot_dir}"
-            raise FileNotFoundError(msg)
-        reader = scan_dataset_reader(
-            snapshot_dir,
-            batch_size=DEFAULT_ARROW_BATCH_SIZE,
-        )
-        if reader is None:
-            msg = f"Missing dataset snapshot directory: {snapshot_dir}"
-            raise FileNotFoundError(msg)
-        table = reader_to_table(reader)
-        row_index_name = env.settings.dataset_row_index_name
-        if row_index_name:
-            return _add_row_index_table(
-                table,
-                name=row_index_name,
-                offset=env.settings.dataset_row_index_offset,
-            )
-        return table
-
-    loader = set_signature(loader, _loader_signature(dataset_param))
-    loader.__name__ = node_name
-    loader.__module__ = __name__
-    loader.__doc__ = f"Load {table_key} as an Arrow table."
-    tagged = tag_loader_query(
-        domain=VIEWS_DOMAIN,
-        target=VIEWS_TARGET_NAME,
-        table_key=table_key,
-    )(loader)
-    tagged.__name__ = node_name
-    tagged.__module__ = __name__
-    return tagged
-
-
 def _view_signature(param_names: Sequence[str]) -> inspect.Signature:
     params = [
         inspect.Parameter(
@@ -508,7 +425,7 @@ def _view_signature(param_names: Sequence[str]) -> inspect.Signature:
         inspect.Parameter(
             name,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=pa.Table,
+            annotation=TabularInput,
         )
         for name in param_names
     )
@@ -602,7 +519,8 @@ def _build_ast_view_node(
     param_by_table: Mapping[str, str],
 ) -> Callable[..., pa.Table]:
     def view_fn(env: BuildEnv, **kwargs: object) -> pa.Table:
-        _ = env
+        row_index_name = env.settings.dataset_row_index_name
+        row_index_offset = env.settings.dataset_row_index_offset
         readers: dict[str, pa.Table] = {}
         for table_key, param_name in param_by_table.items():
             value = _require_dependency(
@@ -610,7 +528,14 @@ def _build_ast_view_node(
                 param_name=param_name,
                 table_key=plan.table_key,
             )
-            readers[table_key] = _ensure_table(value, param_name=param_name)
+            table = _ensure_table(value, param_name=param_name)
+            if row_index_name:
+                table = _add_row_index_table(
+                    table,
+                    name=row_index_name,
+                    offset=row_index_offset,
+                )
+            readers[table_key] = table
         return _execute_view_query(plan=plan, readers=readers)
 
     view_fn = set_signature(view_fn, _view_signature(tuple(param_by_table.values())))
@@ -649,11 +574,6 @@ for builder in _VIEW_BUILDERS:
     )
 
 _VIEW_KEYS = frozenset(_VIEW_PLANS)
-_BASE_TABLE_KEYS = tuple(
-    sorted(
-        {dep for plan in _VIEW_PLANS.values() for dep in plan.dependencies if dep not in _VIEW_KEYS}
-    )
-)
 
 
 def view_plan_map() -> dict[str, ViewPlan]:
@@ -667,25 +587,13 @@ def view_plan_map() -> dict[str, ViewPlan]:
     return dict(_VIEW_PLANS)
 
 
-def _install_source_loaders(
-    table_keys: Iterable[str],
-) -> dict[str, Callable[..., pa.Table]]:
-    loaders: dict[str, Callable[..., pa.Table]] = {}
-    for table_key in table_keys:
-        node_name = _source_node_name(table_key)
-        source_loader = _build_source_loader(table_key=table_key, node_name=node_name)
-        globals()[node_name] = source_loader
-        loaders[table_key] = source_loader
-    return loaders
-
-
 def _install_view_nodes(
     plans: Mapping[str, ViewPlan],
 ) -> dict[str, Callable[..., pa.Table]]:
     nodes: dict[str, Callable[..., pa.Table]] = {}
     for view_key, plan in plans.items():
         param_by_table = {
-            dep: _source_node_name(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
+            dep: query_node(dep) if dep not in _VIEW_KEYS else _VIEW_PLANS[dep].node_name
             for dep in plan.dependencies
         }
         view_node = _build_ast_view_node(
@@ -697,7 +605,6 @@ def _install_view_nodes(
     return nodes
 
 
-_SOURCE_LOADERS = _install_source_loaders(_BASE_TABLE_KEYS)
 _VIEW_NODES = _install_view_nodes(_VIEW_PLANS)
 
 

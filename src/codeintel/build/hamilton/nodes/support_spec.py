@@ -14,6 +14,7 @@ from codeintel.build.hamilton.naming import (
     path_node,
     query_node,
 )
+from codeintel.core.hamilton import tags as ht
 from codeintel.core.imports.lazy import lazy_import
 from codeintel.core.table_key import split_table_key
 
@@ -163,6 +164,20 @@ def support_spec_from_catalog(
     for table_key in _view_base_table_keys():
         if table_key in dataset_keys:
             continue
+        data_node_entry = _dataset_node_for_table(catalog=catalog, table_key=table_key)
+        if data_node_entry is not None:
+            data_node, producer_target, domain = data_node_entry
+            datasets.append(
+                SupportDatasetSpec(
+                    table_key=table_key,
+                    producer_target=producer_target,
+                    domain=domain,
+                    data_node=data_node,
+                    allowlisted=False,
+                )
+            )
+            dataset_keys.add(table_key)
+            continue
         allowlisted = table_key in allowlisted_keys
         if not allowlisted:
             msg = f"External input {table_key} is not allowlisted"
@@ -212,6 +227,30 @@ def _dataset_dicts(specs: Iterable[SupportDatasetSpec]) -> Iterable[dict[str, ob
             "data_node": spec.data_node,
             "allowlisted": spec.allowlisted,
         }
+
+
+def _dataset_node_for_table(
+    *,
+    catalog: DagCatalog,
+    table_key: str,
+) -> tuple[str, str | None, str] | None:
+    candidates = [
+        node
+        for node in catalog.nodes.values()
+        if node.tags.get(ht.TAG_NODE_TYPE) == ht.NODE_TYPE_DATASET
+        and node.tags.get(ht.TAG_TABLE_KEY) == table_key
+    ]
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        msg = f"Multiple dataset nodes found for {table_key}"
+        raise ValueError(msg)
+    node = candidates[0]
+    target = node.tags.get(ht.TAG_TARGET)
+    domain = node.tags.get(ht.TAG_DOMAIN)
+    resolved_domain = domain if isinstance(domain, str) and domain else _domain_from_table_key(table_key)
+    resolved_target = target if isinstance(target, str) and target else None
+    return node.name, resolved_target, resolved_domain
 
 
 def _view_base_table_keys() -> tuple[str, ...]:

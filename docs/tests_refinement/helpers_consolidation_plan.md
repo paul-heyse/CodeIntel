@@ -569,7 +569,7 @@ After:
 ### 3. Migrate golden graph seed module
 - Update `tests/_helpers/seeds/golden_graphs.py`
   - Replace hardcoded graph construction with factory presets.
-  - Ensure seeded stats align with the `GraphFixtureSpec` values.
+  - Ensure test-seeded stats align with the `GraphFixtureSpec` values.
 
 ### 4. Update graph runtime/test doubles
 - Update `tests/_helpers/fakes/graph_runtime.py`

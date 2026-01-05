@@ -238,6 +238,7 @@ def build_table_schema_validators(
     -------
     tuple[DataValidator, ...]
         Validators configured for the table.
+        Build output validators are warn-only to avoid aborting the DAG.
 
     Raises
     ------
@@ -253,15 +254,8 @@ def build_table_schema_validators(
         raise ValueError(msg) from exc
 
     validators: list[DataValidator] = []
-    if normalized in {"strict", "data-strict"}:
-        importance = DataValidationLevel.FAIL.value
-        include_row_count = True
-    elif normalized in {"lenient", "data-light"}:
-        importance = DataValidationLevel.WARN.value
-        include_row_count = True
-    else:
-        importance = DataValidationLevel.FAIL.value
-        include_row_count = False
+    importance = DataValidationLevel.WARN.value
+    include_row_count = normalized in {"strict", "data-strict", "lenient", "data-light"}
 
     validators.append(
         ColumnarSchemaValidator(
