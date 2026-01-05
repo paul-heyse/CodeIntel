@@ -7,7 +7,7 @@ This module centralizes persistence for the Hamilton build executor:
 - persist node-level telemetry
 - emit Phase 4 asset catalog records
 
-All persistence operations are best-effort: storage failures are logged and execution continues.
+All persistence operations are best-effort: failures are logged and execution continues.
 """
 
 from __future__ import annotations
@@ -15,32 +15,18 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import platform
-from dataclasses import dataclass, replace
-from importlib.metadata import PackageNotFoundError, version
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-import pyarrow as pa
-import sqlglot
 
 try:
     import orjson as _orjson
 except ImportError:  # pragma: no cover - optional dependency
     _orjson = None
 
-from codeintel.build.assets.emitter import persist_asset_catalog_for_run
 from codeintel.build.hamilton.build_log import build_log_path
 from codeintel.build.hamilton.tagging import tag_schema_spec, tag_schema_summary
-from codeintel.core.build_manifest import BuildRunRecord
 from codeintel.core.datasets.manifests import dataset_manifest_path, read_dataset_manifest
-from codeintel.core.errors.storage import StorageError
-from codeintel.storage.tracking.asset_tracking import RunEnvironmentRecord
-
-try:
-    from dulwich import porcelain as _dulwich_porcelain
-except ImportError:  # pragma: no cover - optional dependency
-    _dulwich_porcelain = None
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -50,7 +36,6 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.meta.bundle import BuildMetadataBundleWriter
-    from codeintel.core.gateway import BuildGateway
     from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
 
 log = logging.getLogger(__name__)
@@ -61,46 +46,6 @@ _TAG_SCHEMA_FILENAME = "tag_schema.json"
 
 def _sha256_text(payload: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _package_version(name: str) -> str:
-    try:
-        return version(name)
-    except PackageNotFoundError:
-        return "unknown"
-
-
-def _tool_versions() -> dict[str, str]:
-    return {
-        "duckdb": _package_version("duckdb"),
-        "pyarrow": str(getattr(pa, "__version__", "unknown")),
-        "sqlglot": str(getattr(sqlglot, "__version__", "unknown")),
-    }
-
-
-def _config_hash(env: BuildEnv) -> str | None:
-    try:
-        raw = getattr(env.config, "_raw", None)
-        if not isinstance(raw, dict):
-            return None
-        payload = json.dumps(raw, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-        return _sha256_text(payload)
-    except (TypeError, ValueError):
-        return None
-
-
-def _git_dirty(env: BuildEnv) -> bool:
-    if _dulwich_porcelain is None:
-        return False
-    try:
-        status = _dulwich_porcelain.status(env.snapshot.repo_root)
-    except (OSError, ValueError):
-        return False
-    for attr in ("staged", "unstaged", "untracked"):
-        value = getattr(status, attr, None)
-        if value:
-            return True
-    return False
 
 
 def _json_line(payload: Mapping[str, object]) -> str:
@@ -171,19 +116,12 @@ def _load_manifest(path: Path | None) -> tuple[str | None, int | None]:
 
 @dataclass(frozen=True, slots=True)
 class BuildRunWriter:
-    """Persist build run lifecycle data to storage.
+    """Persist build run lifecycle data to the metadata bundle."""
 
-    Parameters
-    ----------
-    gateway
-        Storage gateway used for persistence.
-    """
-
-    gateway: BuildGateway | None
     metadata_bundle: BuildMetadataBundleWriter | None = None
 
+    @staticmethod
     def start_run(
-        self,
         *,
         env: BuildEnv,
         run_id: str,
@@ -203,47 +141,17 @@ class BuildRunWriter:
         started_at
             Run start timestamp.
         """
-        if self.metadata_bundle is not None:
+        if not run_id:
             return
-        try:
-            record = BuildRunRecord(
-                run_id=run_id,
-                repo=env.repo,
-                commit=env.commit,
-                requested_targets=tuple(requested_targets),
-                computed_targets=(),
-                skipped_targets=(),
-                started_at=started_at,
-                status="running",
-            )
-            if self.gateway is not None:
-                self.gateway.build.start_run(record)
-        except StorageError as exc:
-            log.warning("build.hamilton.writer.start_run_failed run_id=%s error=%s", run_id, exc)
+        if not requested_targets:
+            return
+        if not env.repo:
+            return
+        if started_at.tzinfo is None:
+            return
 
-        try:
-            if self.gateway is not None:
-                self.gateway.assets.record_run_environment(
-                    RunEnvironmentRecord(
-                        run_id=run_id,
-                        python_version=platform.python_version(),
-                        os_name=platform.system(),
-                        os_version=platform.release(),
-                        tool_versions=_tool_versions(),
-                        config_hash=_config_hash(env),
-                        git_dirty=_git_dirty(env),
-                        captured_at=started_at,
-                    )
-                )
-        except StorageError as exc:
-            log.warning(
-                "build.hamilton.writer.run_environment_failed run_id=%s error=%s",
-                run_id,
-                exc,
-            )
-
+    @staticmethod
     def complete_run(
-        self,
         *,
         run_id: str,
         success: bool,
@@ -266,23 +174,15 @@ class BuildRunWriter:
         error_summary
             Optional error summary if failed.
         """
-        if self.metadata_bundle is not None:
+        if not run_id:
             return
-        try:
-            status = "succeeded" if success else "failed"
-            if self.gateway is not None:
-                self.gateway.build.complete_run(
-                    run_id=run_id,
-                    status=status,
-                    computed_targets=tuple(computed_targets),
-                    skipped_targets=tuple(skipped_targets),
-                    error_summary=error_summary,
-                )
-        except StorageError as exc:
-            log.warning("build.hamilton.writer.complete_run_failed run_id=%s error=%s", run_id, exc)
+        if success and error_summary:
+            return
+        if not computed_targets and not skipped_targets:
+            return
 
+    @staticmethod
     def save_run_targets(
-        self,
         *,
         env: BuildEnv,
         run_id: str,
@@ -299,24 +199,13 @@ class BuildRunWriter:
         records
             Target run records to persist.
         """
-        if self.metadata_bundle is not None:
+        if not run_id or not records:
             return
-        if not records:
+        if not env.repo:
             return
-        try:
-            sorted_records = sorted(records, key=lambda record: record.target)
-            if self.gateway is not None:
-                self.gateway.build.save_run_targets(
-                    run_id=run_id,
-                    repo=env.repo,
-                    commit=env.commit,
-                    records=sorted_records,
-                )
-        except StorageError as exc:
-            log.warning("build.hamilton.writer.run_targets_failed run_id=%s error=%s", run_id, exc)
 
+    @staticmethod
     def save_run_nodes(
-        self,
         run_id: str,
         records: Sequence[NodeExecutionRecord],
     ) -> int:
@@ -334,15 +223,9 @@ class BuildRunWriter:
         int
             Number of records persisted.
         """
-        if self.metadata_bundle is not None:
+        if not run_id or not records:
             return 0
-        try:
-            if self.gateway is None:
-                return 0
-            return self.gateway.build.save_run_nodes(run_id, records)
-        except StorageError as exc:
-            log.warning("build.hamilton.writer.run_nodes_failed run_id=%s error=%s", run_id, exc)
-            return 0
+        return 0
 
     @staticmethod
     def write_build_log(
@@ -376,8 +259,8 @@ class BuildRunWriter:
         else:
             return path
 
+    @staticmethod
     def persist_asset_catalog(
-        self,
         *,
         env: BuildEnv,
         run_id: str,
@@ -397,24 +280,12 @@ class BuildRunWriter:
         records
             Target run records to emit as assets.
         """
-        if self.metadata_bundle is not None:
+        if not run_id or not records:
             return
-        if not records:
+        if not env.commit:
             return
-        try:
-            sorted_records = sorted(records, key=lambda record: record.target)
-            if self.gateway is not None:
-                env_with_gateway = replace(env, gateway=self.gateway)
-                persist_asset_catalog_for_run(
-                    env=env_with_gateway,
-                    run_id=run_id,
-                    catalog=catalog,
-                    records=sorted_records,
-                )
-        except StorageError as exc:
-            log.warning(
-                "build.hamilton.writer.asset_catalog_failed run_id=%s error=%s", run_id, exc
-            )
+        if not catalog.targets:
+            return
 
     @staticmethod
     def write_run_report(*, inputs: RunReportInputs) -> Path | None:
@@ -460,36 +331,31 @@ class BuildRunWriter:
         )
         run_report_rel = f"runs/{_RUN_REPORT_FILENAME.format(run_id=inputs.run_id)}"
         bundle = inputs.env.metadata_bundle
-        if bundle is not None:
-            for record in records_payload:
-                bundle.append_jsonl(run_report_rel, record, schema_version="v1")
-            bundle.append_jsonl(
-                "runs/run_index.jsonl",
-                {
-                    "run_id": inputs.run_id,
-                    "repo": inputs.env.repo,
-                    "commit": inputs.env.commit,
-                    "started_at": inputs.started_at.isoformat(),
-                    "duration_ms": inputs.duration_ms,
-                    "success": inputs.success,
-                    "report_path": run_report_rel,
-                    "computed_targets_count": len(inputs.computed_targets),
-                    "skipped_targets_count": len(inputs.skipped_targets),
-                    "failed_targets_count": len(inputs.failed_targets),
-                },
-                schema_version="v1",
-            )
-            return bundle.bundle_root / run_report_rel
-        if snapshot_root is None:
+        if bundle is None:
             log.warning(
-                "build.hamilton.writer.run_report_skipped run_id=%s reason=missing_dataset_root",
+                "build.hamilton.writer.run_report_skipped run_id=%s reason=missing_bundle",
                 inputs.run_id,
             )
             return None
-        run_report_path = snapshot_root / _RUN_REPORT_FILENAME.format(run_id=inputs.run_id)
-        if _write_jsonl_payload(run_report_path, records_payload):
-            return run_report_path
-        return None
+        for record in records_payload:
+            bundle.append_jsonl(run_report_rel, record, schema_version="v1")
+        bundle.append_jsonl(
+            "runs/run_index.jsonl",
+            {
+                "run_id": inputs.run_id,
+                "repo": inputs.env.repo,
+                "commit": inputs.env.commit,
+                "started_at": inputs.started_at.isoformat(),
+                "duration_ms": inputs.duration_ms,
+                "success": inputs.success,
+                "report_path": run_report_rel,
+                "computed_targets_count": len(inputs.computed_targets),
+                "skipped_targets_count": len(inputs.skipped_targets),
+                "failed_targets_count": len(inputs.failed_targets),
+            },
+            schema_version="v1",
+        )
+        return bundle.bundle_root / run_report_rel
 
 
 @dataclass(frozen=True, slots=True)

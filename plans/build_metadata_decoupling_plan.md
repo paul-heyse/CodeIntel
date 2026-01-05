@@ -15,23 +15,30 @@
 - Build emits a metadata bundle under `build/metadata/` (contract catalog, schema manifest/registry,
   schema versions/observations, dataflow/lineage, run reports/index, export audit).
 - Storage supports read-only bundle ingest (`codeintel meta sync` and
-  `codeintel storage ingest-metadata`).
+  `codeintel storage ingest-metadata`), including run reports/index ingest.
 - Export audit, schema versions, observations, dataflow, and lineage are written to the bundle;
   contract catalog and schema manifest are hashed into canonical catalogs during ingest.
-- Build CLI still opens a storage gateway by default (`codeintel build run` requires gateway).
-- Core build paths still depend on gateway reads for schema inference settings, asset tracking, and
-  fallback dataset counts (e.g., `arrow_dataset_saver`, asset emitter).
-- Legacy gateway writes remain when a metadata bundle is not configured (build run metadata still
-  persists to storage in that path).
-- Schema observation resolution still uses gateway-only providers (bundle-only observation provider
-  wiring is not complete).
-- Contract resolution still depends on static configuration more than intended.
+- Bundle validation enforces schema version compatibility and required file presence.
+- Build CLI does not open a storage gateway by default (gateway on demand only).
+- Schema observation resolution uses bundle-only providers; observations persist only to the bundle.
+- Legacy gateway writes removed for run manifests, cache log ingestion, and SCIP telemetry.
+- Remaining storage coupling: asset tracking writes, gateway-required targets (exports/history/publish),
+  and static contract config reliance.
 
 ## Target State Summary
 - Build emits a **Build Metadata Bundle** under `build/metadata/` that becomes the source of truth.
 - Storage loads build outputs and metadata bundle; no build-time persistence into DuckDB.
 - Contract catalog, schema registry, schema observations, and run metadata are derived programmatically.
 - Static overrides remain optional and minimal (only when inference cannot produce required metadata).
+
+## Status Summary
+- Completed: bundle emission + validation, bundle ingest (including run reports/index), no-catalog
+  gateway mode, build CLI default no-gateway, bundle-only schema observation provider, schema_version
+  derived from schema hash.
+- In progress: contract derivation simplification, CLI/runtime gating for gateway-required commands,
+  asset tracking decoupling, legacy cleanup.
+- Remaining tests: contract derivation, bundle round-trip/ingest, end-to-end build+ingest without a
+  gateway, negative bundle validation cases.
 
 ## Plan Conventions
 - No module owners or hand-offs; the plan is end-to-end for a single implementation effort.
@@ -269,32 +276,45 @@ Status legend: [x] complete, [ ] pending, [-] intentionally omitted.
 - [x] Load build metadata bundle into DuckDB tables as a read-only import step.
 - [x] Update `codeintel meta sync` to call the new ingest logic (no build-time dependencies).
 - [x] Add `codeintel storage ingest-metadata` for explicit operator ingest.
-- [ ] Ingest run reports and run index into build/run metadata tables (define tables + upsert rules).
-- [ ] Enforce bundle schema version compatibility and required file presence.
-- [ ] Update gateway open logic to permit a no-catalog mode for build-only workflows.
+- [x] Ingest run reports and run index into build/run metadata tables (define tables + upsert rules).
+- [x] Enforce bundle schema version compatibility and required file presence.
+- [x] Update gateway open logic to permit a no-catalog mode for build-only workflows.
 
 ### Phase 4: Contract Provider Simplification
 - [ ] Implement programmatic defaults in contract resolution (derive family/name, filenames, owner).
 - [ ] Derive schema + schema_version from manifests/observations with declared schema fallback.
-- [ ] Wire bundle-only schema observation provider for schema resolution (no gateway dependency).
+- [x] Derive schema_version from schema hash when available.
+- [x] Wire bundle-only schema observation provider for schema resolution (no gateway dependency).
 - [ ] Keep tag overrides only for exceptions; document supported override tags.
 - [ ] Reduce reliance on static configuration in `config/datasets` to non-inferable cases.
 - [ ] Document which tables remain declared-only and why.
+- [ ] Define and enforce contract field precedence (observed schema > manifest schema > declared).
+- [ ] Add explicit policy for default filenames and owner_package derivation when tags are absent.
+- [ ] Document override tags in a single reference (and link from config docs).
 
 ### Phase 5: CLI + Runtime Wiring
-- [ ] Update build CLI to avoid opening a storage gateway by default (gateway on-demand only).
+- [x] Update build CLI to avoid opening a storage gateway by default (gateway on-demand only).
 - [ ] Split build commands that still require gateway (publish, assets, history) to open on demand.
 - [ ] Ensure build execution uses metadata bundle and never calls gateway persistence paths.
 - [x] Add a storage-only CLI path to ingest build artifacts into DuckDB.
 - [ ] Ensure read-only storage access operates solely from build outputs + metadata bundle.
 - [x] Add explicit error messaging when bundle is missing.
+- [ ] Add explicit CLI validation for gateway-required targets (exports/serving/artifacts).
+- [ ] Ensure runtime compose does not assume gateway for override registries or schema prefill.
+- [ ] Align preflight checks to dataset manifests only when gateway is absent.
 
 ### Phase 6: Legacy Removal (Sharp Cutover)
 - [ ] Remove legacy storage writes from build (run records, schema registry, catalog writes).
-- [ ] Remove gateway-based schema observation resolution and asset tracking from build.
+- [x] Remove gateway-based schema observation resolution in build.
+- [x] Remove legacy run manifest writes and cache log ingestion.
+- [x] Remove SCIP telemetry writes to storage.
+- [x] Remove gateway-based schema observation persistence in build.
+- [ ] Remove asset tracking writes from build or move them into the metadata bundle.
 - [ ] Delete fallback logic that reads legacy metadata locations.
 - [ ] Remove legacy config flags and unused tables/DDL tied only to write-time paths.
 - [ ] Prune docs/plan references to legacy metadata locations.
+- [ ] Decide asset catalog destination (bundle JSONL vs. storage-only) and implement ingestion rules.
+- [ ] Remove storage-only build tracking tables if no longer used.
 
 ## API and Data Model Changes
 - New build metadata bundle format under `build/metadata/`.
@@ -308,6 +328,7 @@ Status legend: [x] complete, [ ] pending, [-] intentionally omitted.
 - [ ] Run report + run index ingestion tests (including upsert semantics).
 - [ ] End-to-end build + storage ingest without any build-time storage gateway.
 - [ ] Negative tests for corrupt bundle, missing required files, and unsupported bundle versions.
+- [ ] Tests covering no-catalog gateway mode for publish/serving flows.
 
 ## Acceptance Criteria
 - Build can run without opening a storage gateway.
@@ -320,5 +341,4 @@ Status legend: [x] complete, [ ] pending, [-] intentionally omitted.
 - Which non-inferable tables require declared schemas permanently?
 - How to encode lineage edges for custom targets that do not expose dataset manifests?
 - Versioning strategy for bundle schemas (semantic version or digest-based).
-- Which build/run metadata tables should ingest run reports and run index, and what is the
-  upsert/replace policy?
+- Should asset tracking remain storage-backed or move to bundle-only outputs?

@@ -72,7 +72,12 @@ from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import columnar_row_count, empty_table_for_table
+from codeintel.core.columnar.rows import (
+    ColumnarRows,
+    columnar_buffer_for_table_key,
+    columnar_row_count,
+    empty_table_for_table,
+)
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
@@ -89,7 +94,7 @@ from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeRequest
+    from codeintel.ingestion.ports.change_detection import ChangeRequest
 
 log = logging.getLogger(__name__)
 
@@ -121,12 +126,12 @@ _MODULE = sys.modules[__name__]
 class _NoopChangeDetectionAdapter:
     def compute_changes(
         self,
-        request: "ChangeRequest",
+        request: ChangeRequest,
         current_modules: Sequence[ModuleRecord],
     ) -> ChangeSet:
         state: dict[str, FileDigest] = {}
         for module in current_modules:
-            digest = HashChangeDetectionAdapter.compute_file_digest(module.file_path)
+            digest = self.compute_file_digest(module.file_path)
             if digest is None:
                 continue
             state[normalize_path(module.rel_path)] = digest
@@ -135,7 +140,7 @@ class _NoopChangeDetectionAdapter:
             modified=[],
             deleted=[],
             state_hash=HashChangeDetectionAdapter.compute_state_hash(state),
-            state_rows=HashChangeDetectionAdapter._build_state_rows(
+            state_rows=self._build_state_rows(
                 repo=request.repo,
                 commit=request.commit,
                 language=request.language,
@@ -143,28 +148,48 @@ class _NoopChangeDetectionAdapter:
             ),
         )
 
-    @staticmethod
-    def load_previous_state(repo: str, language: str) -> dict[str, FileDigest]:
-        _ = repo
-        _ = language
+    def load_previous_state(self, repo: str, language: str) -> dict[str, FileDigest]:
+        _ = (self, repo, language)
         return {}
 
-    @staticmethod
     def save_current_state(
+        self,
         repo: str,
         commit: str,
         language: str,
         state: Mapping[str, FileDigest],
     ) -> None:
-        _ = repo
-        _ = commit
-        _ = language
-        _ = state
-        return None
+        _ = (self, repo, commit, language, state)
 
-    @staticmethod
-    def compute_file_digest(path: Path) -> FileDigest | None:
+    def compute_file_digest(self, path: Path) -> FileDigest | None:
+        _ = self
         return HashChangeDetectionAdapter.compute_file_digest(path)
+
+    def _build_state_rows(
+        self,
+        *,
+        repo: str,
+        commit: str,
+        language: str,
+        state: Mapping[str, FileDigest],
+    ) -> ColumnarRows:
+        _ = self
+        if not state:
+            return {}
+        buffer = columnar_buffer_for_table_key(FILE_STATE_TABLE_KEY)
+        for rel_path, digest in sorted(state.items()):
+            buffer.append(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "rel_path": rel_path,
+                    "language": language,
+                    "size_bytes": digest.size_bytes,
+                    "mtime_ns": digest.mtime_ns,
+                    "content_hash": digest.content_hash,
+                }
+            )
+        return buffer.data
 
 
 @dataclass(frozen=True)

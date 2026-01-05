@@ -32,6 +32,15 @@ if TYPE_CHECKING:
 
 _BUNDLE_SCHEMA_VERSION = "v1"
 _COLUMN_REF_PARTS = 2
+_REQUIRED_JSONL_FILES: tuple[tuple[str, str], ...] = (
+    ("schema/schema_observations.jsonl", "v1"),
+    ("dataflow/dataset_nodes.jsonl", "v1"),
+    ("dataflow/dataset_edges.jsonl", "v1"),
+    ("lineage/derived_edges.jsonl", "v1"),
+    ("lineage/derived_columns.jsonl", "v1"),
+    ("runs/run_index.jsonl", "v1"),
+    ("exports/export_audit.jsonl", "v1"),
+)
 
 
 def _json_dumps(payload: Mapping[str, object], *, indent: int | None = None) -> str:
@@ -50,6 +59,23 @@ def _isoformat(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         return value.isoformat()
     return value.astimezone(UTC).isoformat()
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _jsonl_record_count(path: Path) -> int:
+    count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                count += 1
+    return count
 
 
 def _schema_version_to_json(record: SchemaVersionRecord) -> dict[str, object]:
@@ -641,6 +667,30 @@ class BuildMetadataBundleWriter:
                 self._jsonl_writers[relative_path] = writer
             writer.write(payload)
 
+    def ensure_jsonl(
+        self,
+        relative_path: str,
+        *,
+        schema_version: str | None = None,
+    ) -> None:
+        """Ensure a JSONL file exists in the bundle, even if empty."""
+        with self._lock:
+            if relative_path in self._jsonl_writers or relative_path in self._files:
+                return
+            path = self.bundle_root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.touch()
+            record_count = _jsonl_record_count(path) if path.stat().st_size else 0
+            record = BundleFileRecord(
+                path=str(path),
+                sha256=_sha256_path(path),
+                size_bytes=path.stat().st_size,
+                record_count=record_count,
+                schema_version=schema_version,
+            )
+            self._files[relative_path] = record
+
     def finalize(self) -> BundleFileRecord:
         """Flush JSONL writers and write the bundle manifest.
 
@@ -654,6 +704,8 @@ class BuildMetadataBundleWriter:
                 record = writer.close()
                 self._files[relative_path] = record
             self._jsonl_writers.clear()
+        for relative_path, schema_version in _REQUIRED_JSONL_FILES:
+            self.ensure_jsonl(relative_path, schema_version=schema_version)
 
         manifest_payload = {
             "bundle_schema_version": self.schema_version,

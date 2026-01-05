@@ -15,14 +15,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self
 
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
 from codeintel.build.hashing import compute_target_options_hash
-from codeintel.core.build_manifest import OutputManifest
+from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.errors.storage import StorageError
 from codeintel.core.hamilton.records import TargetRunRecord
@@ -331,36 +329,10 @@ def save_manifest(
     *,
     change_delta: Mapping[str, object] | None = None,
 ) -> None:
-    """Persist an audit-only OutputManifest for a completed native target execution.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway access.
-    record
-        Target run record to persist as manifest. Input hash is the cache key.
-    change_delta
-        Optional change-detection delta payload for auditability.
-    """
-    if env.metadata_bundle is not None or env.gateway is None:
-        return
-    manifest = OutputManifest(
-        target=record.target,
-        repo=env.snapshot.repo,
-        commit=env.snapshot.commit,
-        impl_kind=record.impl_kind,
-        computed_at=datetime.now(tz=UTC),
-        duration_ms=record.duration_ms,
-        input_hash=record.input_hash or "",
-        row_count=sum(record.row_counts.values()) if record.row_counts else None,
-        options_hash=record.options_hash,
-        change_delta=dict(change_delta) if change_delta is not None else None,
-    )
-
-    env.gateway.build.save_manifest(manifest)
-    log.debug(
-        "build.hamilton.manifest.saved target=%s input_hash=%s", record.target, record.input_hash
-    )
+    """Persist an audit-only OutputManifest for a completed target execution."""
+    _ = env
+    _ = record
+    _ = change_delta
 
 
 __all__ = [

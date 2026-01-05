@@ -11,6 +11,7 @@ from codeintel.core.schemas.contract_policy import (
     default_parquet_filename,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.service import SchemaService
 from codeintel.core.validation.profiles import ValidationProfile
 
@@ -136,6 +137,10 @@ def build_dataset_contract(
     if overrides is not None and overrides.tags:
         tags |= overrides.tags
 
+    schema_version = overrides.schema_version if overrides is not None else None
+    if schema_version is None and schema is not None:
+        schema_version = schema_hash(schema)
+
     return DatasetContract(
         table_key=table_key,
         name=table_name,
@@ -153,7 +158,7 @@ def build_dataset_contract(
         freshness_sla=overrides.freshness_sla if overrides is not None else None,
         retention_policy=overrides.retention_policy if overrides is not None else None,
         stable_id=overrides.stable_id if overrides is not None else None,
-        schema_version=overrides.schema_version if overrides is not None else None,
+        schema_version=schema_version,
         upstream_dependencies=overrides.upstream_dependencies if overrides is not None else (),
         validation_profile=overrides.validation_profile if overrides is not None else "strict",
         composition=composition,

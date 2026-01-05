@@ -797,41 +797,6 @@ def _build_file_state_map(file_state_rows: pa.Table) -> dict[str, FileDigest]:
 
 
 def _persist_scip_telemetry(env: BuildEnv, telemetry: ScipRunTelemetry) -> None:
-    record = ScipRunRecord(
-        run_id=telemetry.run_id,
-        repo=telemetry.repo,
-        commit=telemetry.commit,
-        mode=telemetry.mode,
-        options_hash=telemetry.options_hash,
-        tool_version=telemetry.tool_version,
-        total_modules=telemetry.total_modules,
-        changed_modules=telemetry.changed_modules,
-        deleted_modules=telemetry.deleted_modules,
-        changed_ratio=telemetry.changed_ratio,
-        batch_size=telemetry.batch_size,
-        batch_count=telemetry.batch_count,
-        decision=telemetry.decision,
-        ratio_gate_applied=telemetry.ratio_gate_applied,
-        ratio_gate_min_modules=telemetry.ratio_gate_min_modules,
-        ratio_gate_min_changed=telemetry.ratio_gate_min_changed,
-        hash_source=telemetry.hash_source,
-        hash_source_breakdown=telemetry.hash_source_breakdown,
-        hash_reused=telemetry.hash_reused,
-        hash_computed=telemetry.hash_computed,
-        plan_ms=telemetry.plan_ms,
-        hash_ms=telemetry.hash_ms,
-        tool_ms=telemetry.tool_ms,
-        parse_ms=telemetry.parse_ms,
-        merge_ms=telemetry.merge_ms,
-        write_ms=telemetry.write_ms,
-        total_ms=telemetry.total_ms,
-        status=telemetry.status,
-        error_summary=telemetry.error_summary,
-        output_scip=telemetry.output_scip,
-        recorded_at=telemetry.recorded_at,
-    )
-    if env.metadata_bundle is None and env.gateway is not None:
-        env.gateway.build.record_scip_run(record)
     _write_scip_run_report(env.paths.scip_dir, telemetry)
 
 

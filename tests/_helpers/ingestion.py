@@ -293,11 +293,19 @@ def build_ingestion_adapters(
     tuple
         storage, discovery, change detection, and tool adapters.
     """
-    storage = DuckDBStorageAdapter(ctx.gateway)
+    gateway = _require_gateway(ctx)
+    storage = DuckDBStorageAdapter(gateway)
     discovery = FilesystemDiscoveryAdapter(ctx.snapshot.repo_root)
     change_detection = HashChangeDetectionAdapter(storage)
     tools = ToolRunnerAdapter(ctx.providers.tool_service)
     return storage, discovery, change_detection, tools
+
+
+def _require_gateway(ctx: BuildEnv) -> BuildGateway:
+    if ctx.gateway is None:
+        msg = "BuildEnv gateway is required for ingestion test helpers."
+        raise RuntimeError(msg)
+    return ctx.gateway
 
 
 def build_repo_with_variants(
@@ -998,9 +1006,10 @@ def seed_modules_and_repo_map(
     paths
         Iterable of module-relative file paths to seed.
     """
+    gateway = _require_gateway(ctx)
     repo_root = ctx.snapshot.repo_root
     records = module_records_for_paths(paths, repo_root)
-    con = ctx.gateway.con
+    con = gateway.con
     con.execute(
         "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
         [ctx.snapshot.repo, ctx.snapshot.commit],
@@ -1036,7 +1045,7 @@ def seed_modules_and_repo_map(
         """,
         [ctx.snapshot.repo, ctx.snapshot.commit, modules_json, {}],
     )
-    ModulesAssertions(cast("StorageGateway", ctx.gateway), ctx.snapshot).inventory_consistent()
+    ModulesAssertions(cast("StorageGateway", gateway), ctx.snapshot).inventory_consistent()
 
 
 def seed_inventory_from_paths(
@@ -1123,6 +1132,7 @@ def seed_ingestion_tables(
 ) -> None:
     """Seed common ingestion tables in a single call."""
     cfg = config or SeedIngestionConfig()
+    gateway = _require_gateway(ctx)
     if cfg.module_paths:
         seed_modules_and_repo_map(ctx, cfg.module_paths)
 
@@ -1130,16 +1140,16 @@ def seed_ingestion_tables(
     if cfg.numeric_tables:
         tables_seeded = True
         for table, values in cfg.numeric_tables.items():
-            seed_numeric_table(ctx.gateway, table, values)
+            seed_numeric_table(gateway, table, values)
     if cfg.varchar_tables:
         tables_seeded = True
         for table, values in cfg.varchar_tables.items():
-            seed_varchar_table(ctx.gateway, table, values)
+            seed_varchar_table(gateway, table, values)
     if cfg.foreign_keys:
         tables_seeded = True
         for parent_table, child_table, parent_rows, child_rows in cfg.foreign_keys:
             seed_foreign_key_tables(
-                ctx.gateway,
+                gateway,
                 parent_table=parent_table,
                 child_table=child_table,
                 parent_rows=parent_rows,
@@ -1148,12 +1158,12 @@ def seed_ingestion_tables(
 
     if cfg.include_defaults and not tables_seeded:
         seed_numeric_table(
-            ctx.gateway,
+            gateway,
             "core.test_numeric",
             [10.5, 5.0, 20.0, 5.0] if cfg.include_duplicates else [10.5, 5.0, 20.0],
         )
         seed_varchar_table(
-            ctx.gateway,
+            gateway,
             "core.test_varchar",
             [
                 (1, "alpha"),
@@ -1167,7 +1177,7 @@ def seed_ingestion_tables(
         if cfg.include_orphans:
             default_child_rows.append((3, None))
         seed_foreign_key_tables(
-            ctx.gateway,
+            gateway,
             parent_table="core.test_parent",
             child_table="core.test_child",
             parent_rows=default_parent_rows,

@@ -25,6 +25,7 @@ from codeintel.storage.contracts.catalog_state import (
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
 from codeintel.storage.contracts.schema_provider import clear_schema_provider_cache
 from codeintel.storage.datasets.registry import (
+    DatasetRegistry,
     attach_dataset_manifests,
     load_dataset_manifests_for_snapshot,
     load_dataset_registry,
@@ -257,6 +258,62 @@ def _log_registry_health(gateway: StorageGateway) -> None:
     )
 
 
+def _open_gateway_connection(
+    *,
+    config: StorageConfig,
+    seed_contract_catalog: CatalogSeeder | None,
+) -> tuple[duckdb.DuckDBPyConnection, bool]:
+    session_config = config
+    include_views_for_bootstrap = config.ensure_views
+    if not config.read_only and config.apply_schema:
+        session_config = replace(config, apply_schema=False)
+    session = DuckDBSession(session_config)
+    con = session.open_reader() if config.read_only else session.open()
+    attach_meta_database(con, config=config)
+    if not config.read_only:
+        apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=config.ensure_views)
+        if seed_contract_catalog is not None:
+            seed_contract_catalog(con)
+    return con, include_views_for_bootstrap
+
+
+def _load_gateway_datasets(
+    *,
+    con: duckdb.DuckDBPyConnection,
+    config: StorageConfig,
+    include_views_for_bootstrap: bool,
+) -> DatasetRegistry:
+    if not config.load_catalogs:
+        return DatasetRegistry(
+            by_name={},
+            by_table_key={},
+            jsonl_datasets={},
+            parquet_datasets={},
+            dataset_root_dir=config.dataset_root_dir,
+        )
+    _ensure_contract_catalog(con)
+    if not config.read_only and config.apply_schema:
+        apply_all_schemas(con)
+    if not config.read_only:
+        bootstrap_metadata_datasets(con, include_views=include_views_for_bootstrap)
+    _maybe_set_schema_service_from_catalog(con)
+    datasets = load_dataset_registry(con)
+    if config.dataset_root_dir is None:
+        return datasets
+    dataset_manifests: dict[str, ArrowDatasetManifest] | None = None
+    if config.commit is not None:
+        dataset_manifests = load_dataset_manifests_for_snapshot(
+            datasets,
+            dataset_root_dir=config.dataset_root_dir,
+            snapshot_id=config.commit,
+        )
+    return attach_dataset_manifests(
+        datasets,
+        dataset_root_dir=config.dataset_root_dir,
+        dataset_manifests=dataset_manifests,
+    )
+
+
 def open_gateway(
     config: StorageConfig,
     *,
@@ -283,49 +340,24 @@ def open_gateway(
         If the database connection cannot be established.
     """
     try:
-        session_config = config
-        include_views_for_bootstrap = config.ensure_views
-        if not config.read_only and config.apply_schema:
-            session_config = replace(config, apply_schema=False)
-        session = DuckDBSession(session_config)
-        con = session.open_reader() if config.read_only else session.open()
-        attach_meta_database(con, config=config)
-        if not config.read_only:
-            apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=config.ensure_views)
-            if seed_contract_catalog is not None:
-                seed_contract_catalog(con)
-        _ensure_contract_catalog(con)
-        if not config.read_only and config.apply_schema:
-            apply_all_schemas(con)
-        if not config.read_only:
-            bootstrap_metadata_datasets(
-                con,
-                include_views=include_views_for_bootstrap,
-            )
-        _maybe_set_schema_service_from_catalog(con)
-        datasets = load_dataset_registry(con)
-        if config.dataset_root_dir is not None:
-            dataset_manifests: dict[str, ArrowDatasetManifest] | None = None
-            if config.commit is not None:
-                dataset_manifests = load_dataset_manifests_for_snapshot(
-                    datasets,
-                    dataset_root_dir=config.dataset_root_dir,
-                    snapshot_id=config.commit,
-                )
-            datasets = attach_dataset_manifests(
-                datasets,
-                dataset_root_dir=config.dataset_root_dir,
-                dataset_manifests=dataset_manifests,
-            )
-        gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
-        include_views = False
-        _apply_contract_validation(
+        con, include_views_for_bootstrap = _open_gateway_connection(
+            config=config,
+            seed_contract_catalog=seed_contract_catalog,
+        )
+        datasets = _load_gateway_datasets(
             con=con,
             config=config,
-            include_views=include_views,
+            include_views_for_bootstrap=include_views_for_bootstrap,
         )
-        if not config.suppress_registry_health_log:
-            _log_registry_health(gateway)
+        gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
+        if config.load_catalogs:
+            _apply_contract_validation(
+                con=con,
+                config=config,
+                include_views=False,
+            )
+            if not config.suppress_registry_health_log:
+                _log_registry_health(gateway)
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc), cause=exc) from exc
     return gateway

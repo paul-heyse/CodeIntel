@@ -38,6 +38,7 @@ from codeintel.build.schemas.observation_pipeline import (
     build_observation_setup,
     persist_observation,
 )
+from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
     SchemaObservationInputs,
@@ -83,7 +84,6 @@ from codeintel.core.schemas.arrow_polars import (
 )
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import TableSchema
-from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.core.schemas.resolution import resolve_table_schema
 
 if TYPE_CHECKING:

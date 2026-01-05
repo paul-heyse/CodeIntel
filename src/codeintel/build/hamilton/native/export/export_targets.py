@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import cache, source, value
 
@@ -34,6 +35,9 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.tabular.types import InferableTabularInput
+
+if TYPE_CHECKING:
+    from codeintel.core.gateway import BuildGateway
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput, Path)
 
@@ -67,7 +71,8 @@ def _export_manifest_plan(
 ) -> ArtifactWritePlan | None:
     target_name = request.target_name
     _ = catalog
-    if env.gateway is None:
+    gateway = env.gateway
+    if gateway is None:
         log.warning("export skipped: storage gateway unavailable for %s", target_name)
         return None
     export_options = load_target_options(
@@ -78,9 +83,9 @@ def _export_manifest_plan(
     if export_options.datasets is None:
         export_options = replace(export_options, datasets=list(request.default_datasets))
 
-    def _write(output_path: Path) -> int:
+    def _write(output_path: Path, *, build_gateway: BuildGateway = gateway) -> int:
         export_all_datasets(
-            env.gateway,
+            build_gateway,
             output_path.parent,
             fmt=request.fmt,
             run_config=ExportRunConfig(

@@ -31,6 +31,7 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_loader_query
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_table
 from codeintel.core.columnar.streaming import scan_dataset_reader
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
@@ -38,7 +39,6 @@ from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
 from codeintel.core.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
-from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.sqlglot_tools import (
     canonicalize_expression_duckdb,

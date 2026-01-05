@@ -53,8 +53,17 @@ class ManifestPriming:
         -------
         OutputManifest
             Saved manifest record.
+
+        Raises
+        ------
+        RuntimeError
+            If the build gateway is unavailable.
         """
         env = self.harness.build_env()
+        if env.gateway is None:
+            msg = "Manifest priming requires a build gateway."
+            raise RuntimeError(msg)
+        gateway = env.gateway
         when = spec.computed_at or datetime.now(tz=UTC)
         manifest = OutputManifest(
             target=spec.target,
@@ -70,7 +79,7 @@ class ManifestPriming:
             dep_hashes=None,
             change_delta=spec.change_delta,
         )
-        env.gateway.build.save_manifest(manifest)
+        gateway.build.save_manifest(manifest)
         return manifest
 
     def prime_modules_manifest(
@@ -194,6 +203,11 @@ class ManifestPriming:
         -------
         OutputManifest
             Saved manifest record for the target.
+
+        Raises
+        ------
+        RuntimeError
+            If the build gateway is unavailable.
         """
         manifest = self.prime_target_manifest(
             target,
@@ -202,9 +216,13 @@ class ManifestPriming:
             change_delta=change_delta,
         )
         env = self.harness.build_env()
+        if env.gateway is None:
+            msg = "Manifest priming requires a build gateway."
+            raise RuntimeError(msg)
+        gateway = env.gateway
         started_at = manifest.computed_at
         resolved_run_id = run_id or f"primed-{target}-{uuid4().hex[:8]}"
-        env.gateway.build.start_run(
+        gateway.build.start_run(
             BuildRunRecord(
                 run_id=resolved_run_id,
                 repo=env.repo,
@@ -216,7 +234,7 @@ class ManifestPriming:
                 status="running",
             )
         )
-        env.gateway.build.complete_run(
+        gateway.build.complete_run(
             run_id=resolved_run_id,
             status="succeeded",
             computed_targets=(target,),

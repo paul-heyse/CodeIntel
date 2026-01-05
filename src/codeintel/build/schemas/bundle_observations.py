@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import cast
 
 from codeintel.core.schemas.resolution import SchemaObservationProvider
-from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
+from codeintel.core.schemas.schema_catalog_models import (
+    ColumnStatsPayload,
+    DatasetStatsPayload,
+    DerivedSettingsPayload,
+    SchemaObservationRecord,
+)
 
 
 @dataclass
@@ -28,7 +31,13 @@ class BundleSchemaObservationProvider(SchemaObservationProvider):
         *,
         table_key: str,
     ) -> SchemaObservationRecord | None:
-        """Return the latest observation for a table key."""
+        """Return the latest observation for a table key.
+
+        Returns
+        -------
+        SchemaObservationRecord | None
+            Latest observation for the table key, if available.
+        """
         if not self._loaded:
             self._load_cache()
         return self._cache.get(table_key)
@@ -81,9 +90,9 @@ def _record_from_payload(payload: object) -> SchemaObservationRecord | None:
         repo=_optional_str(payload.get("repo")),
         commit=_optional_str(payload.get("commit")),
         target_name=_optional_str(payload.get("target_name")),
-        column_stats=_optional_mapping(payload.get("column_stats")),
-        dataset_stats=_optional_mapping(payload.get("dataset_stats")),
-        derived_settings=_optional_mapping(payload.get("derived_settings")),
+        column_stats=_optional_column_stats(payload.get("column_stats")),
+        dataset_stats=_optional_dataset_stats(payload.get("dataset_stats")),
+        derived_settings=_optional_derived_settings(payload.get("derived_settings")),
         drift_summary=_optional_mapping(payload.get("drift_summary")),
         observed_at=_parse_datetime(payload.get("observed_at")),
         observation_id=_optional_str(payload.get("observation_id")),
@@ -128,6 +137,27 @@ def _optional_mapping(value: object) -> dict[str, object] | None:
     if isinstance(value, Mapping):
         return {str(key): item for key, item in value.items()}
     return None
+
+
+def _optional_column_stats(value: object) -> ColumnStatsPayload | None:
+    mapping = _optional_mapping(value)
+    if mapping is None:
+        return None
+    return cast("ColumnStatsPayload", mapping)
+
+
+def _optional_dataset_stats(value: object) -> DatasetStatsPayload | None:
+    mapping = _optional_mapping(value)
+    if mapping is None:
+        return None
+    return cast("DatasetStatsPayload", mapping)
+
+
+def _optional_derived_settings(value: object) -> DerivedSettingsPayload | None:
+    mapping = _optional_mapping(value)
+    if mapping is None:
+        return None
+    return cast("DerivedSettingsPayload", mapping)
 
 
 __all__ = ["BundleSchemaObservationProvider"]

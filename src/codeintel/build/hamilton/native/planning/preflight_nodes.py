@@ -11,7 +11,6 @@ from codeintel.build.planning.preflight import (
     optional_inputs_for_targets,
 )
 from codeintel.core.datasets.manifests import dataset_manifest_path
-from codeintel.core.table_key import split_table_key
 
 
 def preflight_issues(
@@ -115,20 +114,6 @@ def _blocked_targets(catalog: DagCatalog, roots: set[str]) -> set[str]:
 
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
-    if env.gateway is not None:
-        dataset = env.gateway.datasets.by_table_key.get(table_key)
-        if dataset is not None and not dataset.is_view:
-            dataset_root_dir = env.paths.dataset_root_dir
-            if dataset_root_dir is None:
-                return False
-            manifest_path = dataset_manifest_path(
-                dataset_root=dataset_root_dir,
-                table_key=table_key,
-                snapshot_id=env.commit,
-            )
-            return manifest_path.is_file()
-        schema, table = split_table_key(table_key)
-        return env.gateway.policy.table_exists(schema=schema, table=table)
     dataset_root_dir = env.paths.dataset_root_dir
     if dataset_root_dir is None:
         return False

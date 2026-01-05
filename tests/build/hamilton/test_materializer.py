@@ -106,7 +106,11 @@ def _record_schema_observation(
         drift_summary=drift_summary,
         observed_at=utc_now(),
     )
-    env.gateway.schemas.record_schema_observations_batch([observation])
+    gateway = env.gateway
+    if gateway is None:
+        msg = "Schema observation recording requires a build gateway."
+        raise RuntimeError(msg)
+    gateway.schemas.record_schema_observations_batch([observation])
 
 
 def _module_row_for_schema(

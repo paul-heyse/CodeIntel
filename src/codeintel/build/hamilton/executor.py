@@ -58,7 +58,6 @@ from codeintel.build.hamilton.run_records import (
     create_run_record,
 )
 from codeintel.build.hamilton.run_writer import BuildRunWriter, RunReportInputs
-from codeintel.build.manifest.writer import CacheManifestWriter
 from codeintel.build.meta.bundle import (
     BuildMetadataBundleWriter,
     DerivedLineageContext,
@@ -75,15 +74,9 @@ from codeintel.build.schemas.compile import (
 )
 from codeintel.build.schemas.contract_service import iter_contracts
 from codeintel.core.datasets.manifests import dataset_manifest_path
-from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.manifests import DatasetSuiteManifest
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.core.table_key import split_table_key
-from codeintel.observability.cache_log_ingest import (
-    CacheLogIngestConfigError,
-    ingest_cache_log_jsonl,
-)
 from codeintel.observability.telemetry_context import (
     RepoCommitContext,
     telemetry_context,
@@ -519,16 +512,12 @@ def _apply_dynamic_execution_config(
 
 def _build_cache_adapter(
     *,
-    env: BuildEnv,
     run_id: str,
     cache_dir: Path,
     enable_cache: bool,
 ) -> ManifestBackedCacheAdapter | None:
     if not enable_cache:
         return None
-    manifest_writer = None
-    if env.gateway is not None and env.metadata_bundle is None:
-        manifest_writer = CacheManifestWriter(env.gateway)
     cache_options = CacheAdapterOptions(
         default_behavior="default",
         default_loader_behavior="disable",
@@ -538,7 +527,7 @@ def _build_cache_adapter(
     )
     return ManifestBackedCacheAdapter(
         path=cache_dir,
-        manifest_writer=manifest_writer,
+        manifest_writer=None,
         manifest_run_id=run_id,
         options=cache_options,
     )
@@ -804,48 +793,6 @@ def _apply_cache_keys(
         outputs[node_name] = replace(record, input_hash=snapshot.cache_key)
 
 
-def _cache_adapter_for_runtime(runtime: RuntimeBundle) -> HamiltonCacheAdapter | None:
-    cache_adapter = runtime.cache_adapter
-    if cache_adapter is None:
-        cache_adapter = getattr(runtime.dr, "cache", None)
-    if isinstance(cache_adapter, HamiltonCacheAdapter):
-        return cache_adapter
-    return None
-
-
-def _maybe_ingest_cache_logs(*, context: _RunState) -> None:
-    if context.env.metadata_bundle is not None:
-        return
-    if context.env.gateway is None:
-        return
-    if context.env.gateway.config.read_only:
-        return
-    cache_adapter = _cache_adapter_for_runtime(context.runtime)
-    if cache_adapter is None or not cache_adapter.run_ids:
-        return
-    db_path = context.env.gateway.config.db_path
-    if str(db_path) == ":memory:":
-        return
-    try:
-        result = ingest_cache_log_jsonl(
-            duckdb_path=Path(db_path),
-            cache_dir=context.cache_dir,
-        )
-    except CacheLogIngestConfigError as exc:
-        log.warning("cache_log_ingest.skipped error=%s", exc)
-        return
-    except DuckDBError as exc:
-        log.warning("cache_log_ingest.failed error=%s", exc)
-        return
-    if result.inserted_events:
-        run_ids = ",".join(result.run_ids)
-        log.info(
-            "cache_log_ingest.completed inserted=%d run_ids=%s",
-            result.inserted_events,
-            run_ids,
-        )
-
-
 def _map_closure_to_nodes(
     closure: tuple[str, ...],
     runtime: RuntimeBundle,
@@ -887,12 +834,6 @@ def _dataset_manifest_exists(env: BuildEnv, table_key: str) -> bool:
 
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
-    if env.gateway is not None:
-        dataset = env.gateway.datasets.by_table_key.get(table_key)
-        if dataset is not None and not dataset.is_view:
-            return _dataset_manifest_exists(env, table_key)
-        schema, table = split_table_key(table_key)
-        return env.gateway.policy.table_exists(schema=schema, table=table)
     return _dataset_manifest_exists(env, table_key)
 
 
@@ -1096,7 +1037,6 @@ def _finalize_run(
         success,
         duration_ms,
     )
-    _maybe_ingest_cache_logs(context=context)
     record_build_event(
         "build.run.complete",
         success=success,
@@ -1466,7 +1406,7 @@ class HamiltonBuildExecutor:
             commit=env.commit,
         )
         env = replace(env, metadata_bundle=metadata_bundle)
-        writer = BuildRunWriter(env.gateway, metadata_bundle=metadata_bundle)
+        writer = BuildRunWriter(metadata_bundle=metadata_bundle)
         cache_dir = self._options.resolved_cache_dir(env=env)
         runtime, telemetry_hook = self._build_runtime(
             env=env,
@@ -1619,7 +1559,6 @@ class HamiltonBuildExecutor:
 
         hook_options = self._options.hook_options()
         cache_adapter = _build_cache_adapter(
-            env=env,
             run_id=run_id,
             cache_dir=cache_dir,
             enable_cache=self._options.enable_hamilton_cache,

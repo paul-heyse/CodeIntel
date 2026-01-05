@@ -10,6 +10,10 @@ from __future__ import annotations
 from codeintel.core.schemas.primitives import Column, Index, TableSchema
 
 __all__ = [
+    "BUILD_OUTPUT_CATALOG_TABLE",
+    "BUILD_RUN_INDEX_TABLE",
+    "BUILD_RUN_METADATA_TABLE",
+    "BUILD_RUN_TAG_SUMMARY_TABLE",
     "CANONICAL_CATALOGS_TABLE",
     "EXPORT_AUDIT_TABLE",
     "METADATA_TABLES",
@@ -35,6 +39,91 @@ EXPORT_AUDIT_TABLE = TableSchema(
         Column("plan", "VARCHAR"),
         Column("created_at", "TIMESTAMPTZ", nullable=False),
     ],
+)
+
+BUILD_RUN_INDEX_TABLE = TableSchema(
+    schema="metadata",
+    name="build_run_index",
+    columns=[
+        Column("run_id", "VARCHAR", nullable=False),
+        Column("repo", "VARCHAR"),
+        Column("commit", "VARCHAR"),
+        Column("started_at", "TIMESTAMPTZ"),
+        Column("duration_ms", "DOUBLE"),
+        Column("success", "BOOLEAN"),
+        Column("report_path", "VARCHAR"),
+        Column("computed_targets_count", "BIGINT"),
+        Column("skipped_targets_count", "BIGINT"),
+        Column("failed_targets_count", "BIGINT"),
+    ],
+    primary_key=("run_id",),
+    indexes=(Index("idx_build_run_index_repo_commit", ("repo", "commit", "started_at")),),
+)
+
+BUILD_RUN_METADATA_TABLE = TableSchema(
+    schema="metadata",
+    name="build_run_metadata",
+    columns=[
+        Column("run_id", "VARCHAR", nullable=False),
+        Column("repo", "VARCHAR"),
+        Column("commit", "VARCHAR"),
+        Column("snapshot_id", "VARCHAR"),
+        Column("started_at", "TIMESTAMPTZ"),
+        Column("duration_ms", "DOUBLE"),
+        Column("success", "BOOLEAN"),
+        Column("computed_targets", "JSON"),
+        Column("skipped_targets", "JSON"),
+        Column("failed_targets", "JSON"),
+        Column("error_summary", "VARCHAR"),
+    ],
+    primary_key=("run_id",),
+    indexes=(Index("idx_build_run_metadata_repo_commit", ("repo", "commit", "started_at")),),
+)
+
+BUILD_RUN_TAG_SUMMARY_TABLE = TableSchema(
+    schema="metadata",
+    name="build_run_tag_summary",
+    columns=[
+        Column("run_id", "VARCHAR", nullable=False),
+        Column("repo", "VARCHAR"),
+        Column("commit", "VARCHAR"),
+        Column("snapshot_id", "VARCHAR"),
+        Column("summary", "JSON", nullable=False),
+    ],
+    primary_key=("run_id",),
+    indexes=(Index("idx_build_run_tag_summary_repo_commit", ("repo", "commit")),),
+)
+
+BUILD_OUTPUT_CATALOG_TABLE = TableSchema(
+    schema="metadata",
+    name="build_output_catalog",
+    columns=[
+        Column("run_id", "VARCHAR", nullable=False),
+        Column("output_kind", "VARCHAR", nullable=False),
+        Column("output_key", "VARCHAR", nullable=False),
+        Column("table_key", "VARCHAR"),
+        Column("artifact_name", "VARCHAR"),
+        Column("artifact_type", "VARCHAR"),
+        Column("artifact_path", "VARCHAR"),
+        Column("target", "VARCHAR", nullable=False),
+        Column("status", "VARCHAR", nullable=False),
+        Column("row_count", "BIGINT"),
+        Column("manifest_row_count", "BIGINT"),
+        Column("schema_hash", "VARCHAR"),
+        Column("dataset_manifest_path", "VARCHAR"),
+        Column("output_role", "VARCHAR"),
+        Column("saver_node", "VARCHAR"),
+        Column("sink", "VARCHAR"),
+        Column("tags", "JSON"),
+        Column("repo", "VARCHAR"),
+        Column("commit", "VARCHAR"),
+        Column("snapshot_id", "VARCHAR"),
+    ],
+    primary_key=("run_id", "output_kind", "output_key", "target"),
+    indexes=(
+        Index("idx_build_output_catalog_target", ("target",)),
+        Index("idx_build_output_catalog_repo_commit", ("repo", "commit")),
+    ),
 )
 
 CANONICAL_CATALOGS_TABLE = TableSchema(
@@ -193,6 +282,10 @@ SCHEMA_OBSERVATIONS_TABLE = TableSchema(
 
 METADATA_TABLES: tuple[TableSchema, ...] = (
     EXPORT_AUDIT_TABLE,
+    BUILD_RUN_INDEX_TABLE,
+    BUILD_RUN_METADATA_TABLE,
+    BUILD_RUN_TAG_SUMMARY_TABLE,
+    BUILD_OUTPUT_CATALOG_TABLE,
     CANONICAL_CATALOGS_TABLE,
     SCHEMA_VERSIONS_TABLE,
     TABLE_SCHEMA_REGISTRY_TABLE,

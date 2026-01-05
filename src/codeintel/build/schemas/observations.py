@@ -268,7 +268,7 @@ def persist_observation_bundle(
     metadata_bundle: BuildMetadataBundleWriter | None = None,
     gateway: BuildGateway | None = None,
 ) -> None:
-    """Persist observation data to build metadata outputs or storage."""
+    """Persist observation data to build metadata outputs."""
     if metadata_bundle is not None:
         metadata_bundle.write_schema_versions(
             "schema/schema_versions.jsonl",
@@ -287,17 +287,7 @@ def persist_observation_bundle(
                 bundle.observation.drift_summary,
             )
         return
-    if gateway is None:
-        return
-    gateway.schemas.record_schema_versions_batch([bundle.schema_version])
-    gateway.schemas.record_table_schema_registry_batch([bundle.registry_record])
-    gateway.schemas.record_schema_observations_batch([bundle.observation])
-    if bundle.observation.drift_summary:
-        LOG.warning(
-            "schema_drift_observed table=%s drift=%s",
-            bundle.observation.table_key,
-            bundle.observation.drift_summary,
-        )
+    _ = gateway
 
 
 _SCHEMA_HINTS_TAG = "schema_hints"

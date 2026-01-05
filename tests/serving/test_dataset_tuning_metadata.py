@@ -62,7 +62,11 @@ def _record_schema_observation(
         derived_settings=derived_settings,
         observed_at=utc_now(),
     )
-    env.gateway.schemas.record_schema_observations_batch([observation])
+    gateway = env.gateway
+    if gateway is None:
+        msg = "Schema observation recording requires a build gateway."
+        raise RuntimeError(msg)
+    gateway.schemas.record_schema_observations_batch([observation])
 
 
 def test_manifest_tuning_metadata_round_trips_through_serving(

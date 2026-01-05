@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -32,6 +32,7 @@ from codeintel.storage.metadata.bootstrap import (
 )
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.metadata.sync import bootstrap_metadata_datasets
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
@@ -89,6 +90,10 @@ class BundleIngestReport:
     lineage_edges: int
     lineage_columns: int
     export_audit_rows: int
+    run_index_rows: int
+    run_metadata_rows: int
+    run_tag_summary_rows: int
+    output_catalog_rows: int
 
     def to_payload(self) -> dict[str, object]:
         """Return a JSON-serializable summary payload.
@@ -112,7 +117,54 @@ class BundleIngestReport:
             "lineage_edges": self.lineage_edges,
             "lineage_columns": self.lineage_columns,
             "export_audit_rows": self.export_audit_rows,
+            "run_index_rows": self.run_index_rows,
+            "run_metadata_rows": self.run_metadata_rows,
+            "run_tag_summary_rows": self.run_tag_summary_rows,
+            "output_catalog_rows": self.output_catalog_rows,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class _BundleIngestResults:
+    contract_catalog_hash: str | None
+    schema_manifest_hash: str | None
+    schema_versions_rows: int
+    table_schema_registry_rows: int
+    schema_observations_rows: int
+    dataflow_nodes: int
+    dataflow_edges: int
+    lineage_edges: int
+    lineage_columns: int
+    export_audit_rows: int
+    run_index_rows: int
+    run_metadata_rows: int
+    run_tag_summary_rows: int
+    output_catalog_rows: int
+
+
+@dataclass(slots=True)
+class _RunReportRows:
+    run_metadata_rows: list[tuple[object, ...]] = field(default_factory=list)
+    tag_summary_rows: list[tuple[object, ...]] = field(default_factory=list)
+    output_rows: list[tuple[object, ...]] = field(default_factory=list)
+    run_ids: set[str] = field(default_factory=set)
+
+
+_SUPPORTED_BUNDLE_SCHEMA_VERSIONS: frozenset[str] = frozenset({"v1"})
+_REQUIRED_BUNDLE_FILES: tuple[str, ...] = (
+    "contracts/contract_catalog.json",
+    "contracts/contract_catalog.hash",
+    "schema/schema_manifest.json",
+    "schema/schema_registry.json",
+    "schema/schema_versions.jsonl",
+    "schema/schema_observations.jsonl",
+    "dataflow/dataset_nodes.jsonl",
+    "dataflow/dataset_edges.jsonl",
+    "lineage/derived_edges.jsonl",
+    "lineage/derived_columns.jsonl",
+    "runs/run_index.jsonl",
+    "exports/export_audit.jsonl",
+)
 
 
 def bundle_manifest_from_path(bundle_root: Path) -> BundleManifest:
@@ -152,6 +204,55 @@ def bundle_manifest_from_path(bundle_root: Path) -> BundleManifest:
     )
 
 
+def _manifest_relative_path(path: Path, bundle_root: Path) -> str:
+    try:
+        return path.relative_to(bundle_root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _collect_manifest_paths(
+    bundle_root: Path,
+    manifest: BundleManifest,
+    errors: list[str],
+) -> set[str]:
+    manifest_paths: set[str] = set()
+    for entry in manifest.files:
+        relative_path = _manifest_relative_path(entry.path, bundle_root)
+        manifest_paths.add(relative_path)
+        if not entry.path.is_file():
+            errors.append(f"Missing bundle file: {entry.path}")
+            continue
+        if entry.size_bytes and entry.path.stat().st_size != entry.size_bytes:
+            errors.append(f"Size mismatch for {entry.path}")
+        if entry.sha256 and _sha256_path(entry.path) != entry.sha256:
+            errors.append(f"Hash mismatch for {entry.path}")
+    return manifest_paths
+
+
+def _validate_required_files(
+    *,
+    bundle_root: Path,
+    manifest_paths: set[str],
+    errors: list[str],
+) -> None:
+    for required_path in _REQUIRED_BUNDLE_FILES:
+        if required_path not in manifest_paths:
+            errors.append(f"Missing bundle file in manifest: {required_path}")
+        full_path = bundle_root / required_path
+        if not full_path.is_file():
+            errors.append(f"Missing required bundle file: {full_path}")
+
+
+def _validate_run_report_paths(manifest_paths: set[str], errors: list[str]) -> None:
+    has_run_reports = any(
+        path.startswith("runs/run_report_") and path.endswith(".jsonl")
+        for path in manifest_paths
+    )
+    if not has_run_reports:
+        errors.append("Missing run report file in bundle (runs/run_report_<run_id>.jsonl)")
+
+
 def validate_build_metadata_bundle(bundle_root: Path) -> BundleValidation:
     """Validate bundle files against the recorded manifest hashes.
 
@@ -166,14 +267,18 @@ def validate_build_metadata_bundle(bundle_root: Path) -> BundleValidation:
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         return BundleValidation(ok=False, errors=(f"Failed to read bundle_manifest.json: {exc}",))
 
-    for entry in manifest.files:
-        if not entry.path.is_file():
-            errors.append(f"Missing bundle file: {entry.path}")
-            continue
-        if entry.size_bytes and entry.path.stat().st_size != entry.size_bytes:
-            errors.append(f"Size mismatch for {entry.path}")
-        if entry.sha256 and _sha256_path(entry.path) != entry.sha256:
-            errors.append(f"Hash mismatch for {entry.path}")
+    if manifest.bundle_schema_version not in _SUPPORTED_BUNDLE_SCHEMA_VERSIONS:
+        errors.append(
+            f"Unsupported bundle_schema_version: {manifest.bundle_schema_version or '<missing>'}"
+        )
+
+    manifest_paths = _collect_manifest_paths(bundle_root, manifest, errors)
+    _validate_required_files(
+        bundle_root=bundle_root,
+        manifest_paths=manifest_paths,
+        errors=errors,
+    )
+    _validate_run_report_paths(manifest_paths, errors)
     return BundleValidation(ok=not errors, errors=tuple(errors))
 
 
@@ -198,6 +303,34 @@ def load_build_metadata_bundle(
     if not validation.ok:
         raise ValueError("; ".join(validation.errors))
 
+    results = _ingest_bundle_records(bundle_root, con, manifest)
+
+    return BundleIngestReport(
+        repo=manifest.repo,
+        commit=manifest.commit,
+        run_id=manifest.run_id,
+        contract_catalog_hash=results.contract_catalog_hash,
+        schema_manifest_hash=results.schema_manifest_hash,
+        schema_versions_rows=results.schema_versions_rows,
+        table_schema_registry_rows=results.table_schema_registry_rows,
+        schema_observations_rows=results.schema_observations_rows,
+        dataflow_nodes=results.dataflow_nodes,
+        dataflow_edges=results.dataflow_edges,
+        lineage_edges=results.lineage_edges,
+        lineage_columns=results.lineage_columns,
+        export_audit_rows=results.export_audit_rows,
+        run_index_rows=results.run_index_rows,
+        run_metadata_rows=results.run_metadata_rows,
+        run_tag_summary_rows=results.run_tag_summary_rows,
+        output_catalog_rows=results.output_catalog_rows,
+    )
+
+
+def _ingest_bundle_records(
+    bundle_root: Path,
+    con: DuckDBPyConnection,
+    manifest: BundleManifest,
+) -> _BundleIngestResults:
     apply_metadata_ddl(con, catalog=META_CATALOG_NAME, include_views=True)
     gateway = MinimalStorageGateway(con)
     tracker = SchemaCatalogTracking(gateway)
@@ -217,11 +350,10 @@ def load_build_metadata_bundle(
     lineage_edges = _ingest_lineage_edges(bundle_root, con)
     lineage_columns = _ingest_lineage_columns(bundle_root, con)
     export_audit_rows = _ingest_export_audit(bundle_root, gateway)
+    run_index_rows = _ingest_run_index(bundle_root, gateway)
+    run_report_rows = _ingest_run_reports(bundle_root, gateway)
 
-    return BundleIngestReport(
-        repo=manifest.repo,
-        commit=manifest.commit,
-        run_id=manifest.run_id,
+    return _BundleIngestResults(
         contract_catalog_hash=contract_hash,
         schema_manifest_hash=schema_manifest_hash,
         schema_versions_rows=version_rows,
@@ -232,6 +364,10 @@ def load_build_metadata_bundle(
         lineage_edges=lineage_edges,
         lineage_columns=lineage_columns,
         export_audit_rows=export_audit_rows,
+        run_index_rows=run_index_rows,
+        run_metadata_rows=run_report_rows[0],
+        run_tag_summary_rows=run_report_rows[1],
+        output_catalog_rows=run_report_rows[2],
     )
 
 
@@ -525,6 +661,244 @@ def _ingest_export_audit(bundle_root: Path, gateway: MinimalStorageGateway) -> i
     )
 
 
+def _ingest_run_index(bundle_root: Path, gateway: MinimalStorageGateway) -> int:
+    path = bundle_root / "runs" / "run_index.jsonl"
+    if not path.is_file():
+        return 0
+    rows: list[tuple[object, ...]] = []
+    run_ids: set[str] = set()
+    for item in _iter_jsonl(path):
+        run_id = _optional_str(item.get("run_id"))
+        if not run_id:
+            continue
+        run_ids.add(run_id)
+        rows.append(
+            (
+                run_id,
+                _optional_str(item.get("repo")),
+                _optional_str(item.get("commit")),
+                _parse_datetime(item.get("started_at")),
+                _optional_float(item.get("duration_ms")),
+                _optional_bool(item.get("success")),
+                _optional_str(item.get("report_path")),
+                _optional_int(item.get("computed_targets_count")),
+                _optional_int(item.get("skipped_targets_count")),
+                _optional_int(item.get("failed_targets_count")),
+            )
+        )
+    if not rows:
+        return 0
+    _delete_run_ids(gateway.con, "metadata.build_run_index", run_ids)
+    return gateway.policy.bulk_insert(
+        "metadata.build_run_index",
+        rows,
+        columns=[
+            "run_id",
+            "repo",
+            "commit",
+            "started_at",
+            "duration_ms",
+            "success",
+            "report_path",
+            "computed_targets_count",
+            "skipped_targets_count",
+            "failed_targets_count",
+        ],
+        catalog=META_CATALOG_NAME,
+    )
+
+
+def _ingest_run_reports(
+    bundle_root: Path,
+    gateway: MinimalStorageGateway,
+) -> tuple[int, int, int]:
+    report_paths = _run_report_paths(bundle_root)
+    if not report_paths:
+        return 0, 0, 0
+
+    rows = _collect_run_report_rows(report_paths)
+    if rows.run_ids:
+        _delete_run_ids(gateway.con, "metadata.build_run_metadata", rows.run_ids)
+        _delete_run_ids(gateway.con, "metadata.build_run_tag_summary", rows.run_ids)
+        _delete_run_ids(gateway.con, "metadata.build_output_catalog", rows.run_ids)
+    if rows.run_metadata_rows:
+        gateway.policy.bulk_insert(
+            "metadata.build_run_metadata",
+            rows.run_metadata_rows,
+            columns=[
+                "run_id",
+                "repo",
+                "commit",
+                "snapshot_id",
+                "started_at",
+                "duration_ms",
+                "success",
+                "computed_targets",
+                "skipped_targets",
+                "failed_targets",
+                "error_summary",
+            ],
+            catalog=META_CATALOG_NAME,
+        )
+    if rows.tag_summary_rows:
+        gateway.policy.bulk_insert(
+            "metadata.build_run_tag_summary",
+            rows.tag_summary_rows,
+            columns=[
+                "run_id",
+                "repo",
+                "commit",
+                "snapshot_id",
+                "summary",
+            ],
+            catalog=META_CATALOG_NAME,
+        )
+    if rows.output_rows:
+        gateway.policy.bulk_insert(
+            "metadata.build_output_catalog",
+            rows.output_rows,
+            columns=[
+                "run_id",
+                "output_kind",
+                "output_key",
+                "table_key",
+                "artifact_name",
+                "artifact_type",
+                "artifact_path",
+                "target",
+                "status",
+                "row_count",
+                "manifest_row_count",
+                "schema_hash",
+                "dataset_manifest_path",
+                "output_role",
+                "saver_node",
+                "sink",
+                "tags",
+                "repo",
+                "commit",
+                "snapshot_id",
+            ],
+            catalog=META_CATALOG_NAME,
+        )
+    return len(rows.run_metadata_rows), len(rows.tag_summary_rows), len(rows.output_rows)
+
+
+def _run_report_paths(bundle_root: Path) -> list[Path]:
+    runs_root = bundle_root / "runs"
+    if not runs_root.is_dir():
+        return []
+    return sorted(runs_root.glob("run_report_*.jsonl"))
+
+
+def _collect_run_report_rows(report_paths: list[Path]) -> _RunReportRows:
+    rows = _RunReportRows()
+    row_targets = {
+        "run_metadata": (rows.run_metadata_rows, _run_metadata_row),
+        "tag_schema_summary": (rows.tag_summary_rows, _run_tag_summary_row),
+        "output_catalog": (rows.output_rows, _run_output_row),
+    }
+    for path in report_paths:
+        for item in _iter_jsonl(path):
+            record_type = _optional_str(item.get("record_type"))
+            if not record_type:
+                continue
+            target = row_targets.get(record_type)
+            if target is None:
+                continue
+            target_rows, parser = target
+            row = parser(item)
+            if row is None:
+                continue
+            rows.run_ids.add(str(row[0]))
+            target_rows.append(row)
+    return rows
+
+
+def _delete_run_ids(
+    con: DuckDBPyConnection,
+    table_key: str,
+    run_ids: set[str],
+) -> None:
+    if not run_ids:
+        return
+    placeholders = ", ".join("?" for _ in run_ids)
+    table_ref = meta_table_ref(table_key)
+    con.execute(
+        f"DELETE FROM {table_ref} WHERE run_id IN ({placeholders})",
+        sorted(run_ids),
+    )
+
+
+def _run_metadata_row(item: Mapping[str, object]) -> tuple[object, ...] | None:
+    run_id = _optional_str(item.get("run_id"))
+    if not run_id:
+        return None
+    return (
+        run_id,
+        _optional_str(item.get("repo")),
+        _optional_str(item.get("commit")),
+        _optional_str(item.get("snapshot_id")),
+        _parse_datetime(item.get("started_at")),
+        _optional_float(item.get("duration_ms")),
+        _optional_bool(item.get("success")),
+        _optional_json(item.get("computed_targets")),
+        _optional_json(item.get("skipped_targets")),
+        _optional_json(item.get("failed_targets")),
+        _optional_str(item.get("error_summary")),
+    )
+
+
+def _run_tag_summary_row(item: Mapping[str, object]) -> tuple[object, ...] | None:
+    run_id = _optional_str(item.get("run_id"))
+    summary = _optional_json(item.get("summary"))
+    if not run_id or summary is None:
+        return None
+    return (
+        run_id,
+        _optional_str(item.get("repo")),
+        _optional_str(item.get("commit")),
+        _optional_str(item.get("snapshot_id")),
+        summary,
+    )
+
+
+def _run_output_row(item: Mapping[str, object]) -> tuple[object, ...] | None:
+    run_id = _optional_str(item.get("run_id"))
+    output_kind = _optional_str(item.get("output_kind"))
+    target = _optional_str(item.get("target"))
+    status = _optional_str(item.get("status"))
+    if not run_id or not output_kind or not target or not status:
+        return None
+    table_key = _optional_str(item.get("table_key"))
+    artifact_name = _optional_str(item.get("artifact_name"))
+    output_key = table_key if output_kind == "table" else artifact_name
+    if not output_key:
+        return None
+    return (
+        run_id,
+        output_kind,
+        output_key,
+        table_key,
+        artifact_name,
+        _optional_str(item.get("artifact_type")),
+        _optional_str(item.get("artifact_path")),
+        target,
+        status,
+        _optional_int(item.get("row_count")),
+        _optional_int(item.get("manifest_row_count")),
+        _optional_str(item.get("schema_hash")),
+        _optional_str(item.get("dataset_manifest_path")),
+        _optional_str(item.get("output_role")),
+        _optional_str(item.get("saver_node")),
+        _optional_str(item.get("sink")),
+        _optional_json(item.get("tags")),
+        _optional_str(item.get("repo")),
+        _optional_str(item.get("commit")),
+        _optional_str(item.get("snapshot_id")),
+    )
+
+
 def _iter_jsonl(path: Path) -> Iterable[dict[str, object]]:
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -609,6 +983,41 @@ def _optional_float(value: object) -> float | None:
             except ValueError:
                 return None
     return None
+
+
+def _optional_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "false"}:
+            return normalized == "true"
+    return None
+
+
+def _optional_json(value: object) -> str | None:
+    result: str | None = None
+    if value is None:
+        result = None
+    elif isinstance(value, (str, bytes, bytearray, memoryview)):
+        if isinstance(value, memoryview):
+            text = value.tobytes().decode("utf-8")
+        elif isinstance(value, (bytes, bytearray)):
+            text = value.decode("utf-8")
+        else:
+            text = value
+        result = text if text.strip() else None
+    elif isinstance(value, Mapping):
+        try:
+            result = json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        except (TypeError, ValueError):
+            result = None
+    elif isinstance(value, (list, tuple)):
+        try:
+            result = json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+        except (TypeError, ValueError):
+            result = None
+    return result
 
 
 __all__ = [

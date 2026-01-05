@@ -25,6 +25,7 @@ class StorageConfigOptions:
     validation_mode: ContractValidationMode = ContractValidationMode.LENIENT
     validation_summary_path: Path | None = None
     attach_meta: bool = True
+    load_catalogs: bool = True
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class StorageConfig:
     apply_schema: bool = False
     ensure_views: bool = False
     validate_schema: bool = False
+    load_catalogs: bool = True
     validation_mode: ContractValidationMode = ContractValidationMode.LENIENT
     validation_summary_path: Path | None = None
     suppress_registry_health_log: bool = False
@@ -80,6 +82,7 @@ class StorageConfig:
             apply_schema=True,
             ensure_views=False,
             validate_schema=True,
+            load_catalogs=resolved_options.load_catalogs,
             validation_mode=resolved_options.validation_mode,
             validation_summary_path=resolved_options.validation_summary_path
             or _default_validation_summary_path(db_path),
@@ -118,6 +121,7 @@ class StorageConfig:
             apply_schema=False,
             ensure_views=False,
             validate_schema=True,
+            load_catalogs=resolved_options.load_catalogs,
             validation_mode=resolved_options.validation_mode,
             validation_summary_path=resolved_options.validation_summary_path
             or _default_validation_summary_path(db_path),

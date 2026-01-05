@@ -18,6 +18,7 @@ from codeintel.core.schemas.contract_factory import (
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.declared import declared_schema_provider
 from codeintel.core.schemas.provider import SchemaProvider
+from codeintel.core.schemas.resolution import SchemaDerivationProvider
 from codeintel.core.schemas.service import SchemaService
 from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
 from codeintel.core.views.inventory import discover_derived_docs_views
@@ -110,6 +111,26 @@ def _non_inferable_schema_service(schema_service: SchemaService) -> SchemaServic
 
 def _non_inferable_provider(_provider: SchemaProvider) -> SchemaProvider:
     return declared_schema_provider()
+
+
+def _declared_external_table_keys(
+    schema_provider: SchemaProvider,
+    *,
+    output_table_keys: set[str],
+) -> set[str]:
+    declared: set[str] = set()
+    if isinstance(schema_provider, SchemaDerivationProvider):
+        for schema in schema_provider.iter_table_schemas():
+            table_key = schema.table_key
+            derivation = schema_provider.derivation(table_key)
+            if derivation is None or derivation.source_kind != "declared_source":
+                continue
+            declared.add(table_key)
+        return declared
+    for schema in schema_provider.iter_table_schemas():
+        declared.add(schema.table_key)
+    declared.difference_update(output_table_keys)
+    return declared
 
 
 def overrides_from_output_descriptor(output: OutputDescriptor) -> DatasetContractOverrides:
@@ -234,26 +255,21 @@ class ContractService:
         DatasetContract
             Dataset contract entries known to the schema provider.
         """
-        active_schema_service = _non_inferable_schema_service(self.schema_service)
-        seen: set[str] = set()
-        for schema in active_schema_service.table_provider.iter_table_schemas():
-            table_key = schema.table_key
-            if table_key in seen:
-                continue
-            seen.add(table_key)
+        schema_provider = self.schema_service.table_provider
+        output_table_keys = set(self.target_metadata.all_table_keys())
+        declared_table_keys = _declared_external_table_keys(
+            schema_provider,
+            output_table_keys=output_table_keys,
+        )
+        view_keys = (
+            set(discover_derived_docs_views(tag_query=self.tag_query))
+            if self.tag_query is not None
+            else set()
+        )
+        all_keys = output_table_keys | declared_table_keys | view_keys
+        for table_key in sorted(all_keys):
             try:
-                yield self.get_dataset_contract(table_key, schema_service=active_schema_service)
-            except KeyError:
-                continue
-
-        if self.tag_query is None:
-            return
-        for view_key in discover_derived_docs_views(tag_query=self.tag_query):
-            if view_key in seen:
-                continue
-            seen.add(view_key)
-            try:
-                yield self.get_dataset_contract(view_key, schema_service=active_schema_service)
+                yield self.get_dataset_contract(table_key)
             except KeyError:
                 continue
 

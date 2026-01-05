@@ -36,14 +36,14 @@ class SnapshotScanRequest:
 
 
 def resolve_dataset_root(
-    snapshot: SnapshotRef,
+    _snapshot: SnapshotRef,
     dataset_root_dir: Path | None,
 ) -> Path | None:
     """Resolve the dataset root directory for a snapshot.
 
     Parameters
     ----------
-    snapshot
+    _snapshot
         Snapshot reference for repository context.
     dataset_root_dir
         Optional explicit dataset root directory.
@@ -53,6 +53,7 @@ def resolve_dataset_root(
     pathlib.Path | None
         Resolved dataset root directory or None when not found.
     """
+    _ = _snapshot
     if dataset_root_dir is not None:
         return dataset_root_dir
     return None

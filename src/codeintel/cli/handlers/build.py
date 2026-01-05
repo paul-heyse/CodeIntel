@@ -9,7 +9,8 @@ import json as _json
 import logging
 import shutil
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from enum import Enum
@@ -82,6 +83,7 @@ from codeintel.cli.handlers.runtime_helpers import (
 from codeintel.cli.handlers.tag_filters import filter_targets_by_tags, parse_tag_filters
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.cli.services.storage import default_validation_summary_path
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.manifests import DatasetSuiteManifest, ServingSnapshotManifest
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -105,6 +107,7 @@ from codeintel.serving.publisher import (
 )
 from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 from codeintel.storage.validation import ContractValidationMode
@@ -893,9 +896,10 @@ def build_status_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
+    gateway = ctx.gateway if ctx.has_storage else None
     runtime_bundle, env = compose_cli_runtime_bundle_with_env(
         runtime=runtime,
-        gateway=ctx.gateway,
+        gateway=gateway,
     )
     catalog = runtime_bundle.catalog
 
@@ -1124,6 +1128,41 @@ def _validate_build_run_params(
         error = fail_invalid_target_selection("--workers/--max-workers must be a positive integer.")
 
     return error
+
+
+@contextmanager
+def _gateway_context(
+    *,
+    runtime: ResolvedRuntime,
+    validation_mode: ContractValidationMode,
+    require_gateway: bool,
+) -> Iterator[StorageGateway | None]:
+    if not require_gateway:
+        yield None
+        return
+    validation_summary_path = (
+        None
+        if validation_mode is ContractValidationMode.OFF
+        else default_validation_summary_path(runtime.db_path)
+    )
+    config = StorageConfig(
+        db_path=runtime.db_path,
+        dataset_root_dir=runtime.paths.dataset_root_dir,
+        read_only=False,
+        validate_schema=validation_mode is not ContractValidationMode.OFF,
+        load_catalogs=False,
+        validation_mode=validation_mode,
+        validation_summary_path=validation_summary_path,
+        repo=runtime.repo,
+        commit=runtime.commit,
+    )
+    gateway = open_gateway(config)
+    if config.load_catalogs:
+        gateway.policy.ensure_schemas_preserve()
+    try:
+        yield gateway
+    finally:
+        gateway.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1472,8 +1511,15 @@ def _build_run_result(
     except ResolutionError as exc:
         return fail_project_error("build", str(exc)), runtime, goals
 
-    with ctx.storage.write_gateway(validation_mode=params.validation_mode) as gateway:
-        config_overrides = _plugin_overrides_from_params(params)
+    require_gateway = params.publish_serving_snapshot
+    config_overrides = _plugin_overrides_from_params(params)
+    gateway_context = _gateway_context(
+        runtime=runtime,
+        validation_mode=params.validation_mode,
+        require_gateway=require_gateway,
+    )
+
+    with gateway_context as gateway:
         runtime_bundle = compose_cli_runtime_bundle(
             runtime=runtime,
             gateway=gateway,
@@ -2043,7 +2089,8 @@ def build_graph_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    gateway = ctx.gateway if ctx.has_storage else None
+    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
     catalog = runtime_bundle.catalog
 
     targets_list = ctx.params.get_list("targets")

@@ -12,12 +12,16 @@ if TYPE_CHECKING:
 
 
 def observation_provider_for_env(env: BuildEnv) -> SchemaObservationProvider | None:
-    """Return the best available schema observation provider for a build env."""
+    """Return the best available schema observation provider for a build env.
+
+    Returns
+    -------
+    SchemaObservationProvider | None
+        Provider instance when metadata bundle is available, otherwise None.
+    """
     if env.metadata_bundle is not None:
         return BundleSchemaObservationProvider(env.metadata_bundle.bundle_root)
-    if env.gateway is None:
-        return None
-    return env.gateway.schemas
+    return None
 
 
 __all__ = ["observation_provider_for_env"]

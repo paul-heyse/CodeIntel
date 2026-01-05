@@ -37,8 +37,8 @@ from codeintel.build.schemas.inference_service import (
     SeedDatasetConfig,
     get_schema_inference_service,
 )
-from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
 from codeintel.build.schemas.observation_provider import observation_provider_for_env
+from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
 from codeintel.build.schemas.service import configure_schema_service
 from codeintel.core.config.settings import HamiltonTrackerSettings
 from codeintel.core.hamilton.tag_query import TagQuery
@@ -924,6 +924,8 @@ def _ensure_schema_service_for_inference(*, provider: SchemaProvider) -> None:
 
 def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:
     override_schemas = dict(TABLE_SCHEMAS)
+    if env.gateway is None:
+        return MappingSchemaProvider(override_schemas)
     try:
         override_schemas.update(env.gateway.schemas.load_override_registry())
     except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:
@@ -932,6 +934,8 @@ def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:
 
 
 def _prefill_schema_index(*, env: BuildEnv, schema_index: SchemaIndex) -> None:
+    if env.gateway is None:
+        return
     try:
         prefetched = env.gateway.schemas.prefill_schema_index(schema_index)
     except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:

@@ -138,6 +138,7 @@ build_app.command(build_spec_app, name="spec")
 
 
 _BUILD_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+_BUILD_CONFIG_NO_GATEWAY = CommandConfig(require_runtime=True, require_gateway=False)
 _VALIDATE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 _TRACE_CONFIG = CommandConfig(require_runtime=True, require_gateway=False)
 
@@ -203,7 +204,7 @@ def _spec_matches_filters(spec: DagOutputSpec, *, filters: _BuildTargetsFilters)
     return not (filters.pilot_only and not spec.pilot)
 
 
-@cli_command("build.run", handler=build_run_handler, config=_BUILD_CONFIG)
+@cli_command("build.run", handler=build_run_handler, config=_BUILD_CONFIG_NO_GATEWAY)
 @build_app.command(name="run")
 @dataclass
 class BuildRunCommand:
@@ -312,7 +313,7 @@ class BuildBootstrapIndexSuiteCommand:
     flags: SharedFlagsProtocol = _BUILD_BOOTSTRAP_INDEX_SUITE_FLAGS_FIELD
 
 
-@cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG)
+@cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG_NO_GATEWAY)
 @build_app.command(name="status")
 @dataclass
 class BuildStatusCommand:
@@ -525,7 +526,7 @@ class BuildExplainCommand:
     flags: SharedFlagsProtocol = _BUILD_EXPLAIN_FLAGS_FIELD
 
 
-@cli_command("build.graph", handler=build_graph_handler, config=_BUILD_CONFIG)
+@cli_command("build.graph", handler=build_graph_handler, config=_BUILD_CONFIG_NO_GATEWAY)
 @build_app.command(name="graph")
 @dataclass
 class BuildGraphCommand:
