@@ -43,7 +43,7 @@ class SymbolGoidDiagnostics:
     dropped_edges: int
 
 
-def cpg_edges_from_scip_symbol_relationships(
+def cpg2_edges__scip_symbol_relationships(
     symbol_rels: pa.Table,
     scip_symbols: pa.Table,
     *,
@@ -125,7 +125,7 @@ def cpg_edges_from_scip_symbol_relationships(
     return filtered
 
 
-def cpg_edges_from_scip_symbol_goid_xref(
+def cpg2_edges__scip_symbol_goid_xref(
     symbol_goid: pa.Table,
     scip_symbols: pa.Table,
     goids: pa.Table,
@@ -284,6 +284,6 @@ def _encode_extras_payload(values: dict[str, object]) -> bytes | None:
 __all__ = [
     "SymbolGoidDiagnostics",
     "SymbolRelationshipDiagnostics",
-    "cpg_edges_from_scip_symbol_goid_xref",
-    "cpg_edges_from_scip_symbol_relationships",
+    "cpg2_edges__scip_symbol_goid_xref",
+    "cpg2_edges__scip_symbol_relationships",
 ]

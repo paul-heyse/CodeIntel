@@ -29,7 +29,7 @@ class CallWiringDiagnostics:
     dropped_edges: int
 
 
-def cpg_edges_from_call_wiring_calls(
+def cpg2_edges__call_wiring_calls(
     call_edges: pa.Table,
     cfg_blocks: pa.Table,
     syntax_nodes: pa.Table,
@@ -103,7 +103,7 @@ def cpg_edges_from_call_wiring_calls(
     return table
 
 
-def cpg_edges_from_call_wiring_arg_to_param(
+def cpg2_edges__call_wiring_arg_to_param(
     arg_edges: pa.Table,
     syntax_nodes: pa.Table,
     *,
@@ -186,7 +186,7 @@ def cpg_edges_from_call_wiring_arg_to_param(
     return table
 
 
-def cpg_edges_from_call_wiring_ret_to_call(
+def cpg2_edges__call_wiring_ret_to_call(
     ret_edges: pa.Table,
     cfg_blocks: pa.Table,
     syntax_nodes: pa.Table,
@@ -328,7 +328,7 @@ def _record_diagnostics(
 
 __all__ = [
     "CallWiringDiagnostics",
-    "cpg_edges_from_call_wiring_arg_to_param",
-    "cpg_edges_from_call_wiring_calls",
-    "cpg_edges_from_call_wiring_ret_to_call",
+    "cpg2_edges__call_wiring_arg_to_param",
+    "cpg2_edges__call_wiring_calls",
+    "cpg2_edges__call_wiring_ret_to_call",
 ]

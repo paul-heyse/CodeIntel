@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import rename_table_columns, select_table_columns, table_rows
+from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_node_id, cpg_source_pk_json
 
 IDENTITY_KEY_REGISTRY: dict[str, tuple[str, ...]] = {
     "core.syntax_nodes": ("repo", "commit", "rel_path", "producer", "node_id"),
@@ -61,7 +62,11 @@ LOOKUP_KEY_REGISTRY: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 CANONICAL_CASTS: dict[str, Mapping[str, pa.DataType]] = {
-    "core.scip_symbol_information": {"repo": pa.string(), "commit": pa.string(), "symbol": pa.string()},
+    "core.scip_symbol_information": {
+        "repo": pa.string(),
+        "commit": pa.string(),
+        "symbol": pa.string(),
+    },
     "core.goids": {"goid_h128": pa.decimal128(38, 0)},
     "graph.import_modules": {"repo": pa.string(), "commit": pa.string(), "module": pa.string()},
     "graph.call_graph_edges": {
@@ -73,7 +78,23 @@ CANONICAL_CASTS: dict[str, Mapping[str, pa.DataType]] = {
 
 
 def identity_keys(table_key: str) -> tuple[str, ...]:
-    """Return the identity (primary) key columns for a table key."""
+    """Return the identity (primary) key columns for a table key.
+
+    Parameters
+    ----------
+    table_key
+        Table key to look up in the identity registry.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Identity key columns for the table.
+
+    Raises
+    ------
+    KeyError
+        Raised when the table key is not registered.
+    """
     keys = IDENTITY_KEY_REGISTRY.get(table_key)
     if keys is None:
         msg = f"Missing identity key registry for table: {table_key}"
@@ -82,7 +103,25 @@ def identity_keys(table_key: str) -> tuple[str, ...]:
 
 
 def lookup_keys(table_key: str, lookup_name: str) -> tuple[str, ...]:
-    """Return the lookup key columns for a table key and lookup name."""
+    """Return the lookup key columns for a table key and lookup name.
+
+    Parameters
+    ----------
+    table_key
+        Table key to look up in the registry.
+    lookup_name
+        Named lookup key set for the table.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Lookup key columns for the table and lookup name.
+
+    Raises
+    ------
+    KeyError
+        Raised when the table or lookup name is not registered.
+    """
     table_lookups = LOOKUP_KEY_REGISTRY.get(table_key)
     if table_lookups is None or lookup_name not in table_lookups:
         msg = f"Missing lookup key registry for {table_key}.{lookup_name}"
@@ -97,7 +136,24 @@ def canonicalize_for_table(
     renames: Mapping[str, str] | None = None,
     casts: Mapping[str, pa.DataType] | None = None,
 ) -> pa.Table:
-    """Normalize a table using registry-backed renames and casts."""
+    """Normalize a table using registry-backed renames and casts.
+
+    Parameters
+    ----------
+    table
+        Input table to normalize.
+    table_key
+        Table key used to pull default casts.
+    renames
+        Optional column renames to apply.
+    casts
+        Optional column casts to apply after defaults.
+
+    Returns
+    -------
+    pyarrow.Table
+        Normalized table with applied renames and casts.
+    """
     merged_casts: dict[str, pa.DataType] = {}
     default_casts = CANONICAL_CASTS.get(table_key)
     if default_casts:
@@ -116,9 +172,21 @@ def pk_from_row(
     *,
     table_key: str,
 ) -> dict[str, object]:
-    """Build a primary-key payload from a row using registry identity keys."""
+    """Build a primary-key payload from a row using registry identity keys.
+
+    Parameters
+    ----------
+    row
+        Row mapping containing key columns.
+    table_key
+        Table key used to resolve identity columns.
+
+    Returns
+    -------
+    dict[str, object]
+        Primary key mapping for the row.
+    """
     return {column: row.get(column) for column in identity_keys(table_key)}
-from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_node_id, cpg_source_pk_json
 
 CPG_NODE_ID_TYPE = pa.decimal128(38, 0)
 SOURCE_PK_JSON_TYPE = pa.binary()

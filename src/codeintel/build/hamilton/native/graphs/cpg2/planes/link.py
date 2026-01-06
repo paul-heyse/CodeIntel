@@ -53,7 +53,7 @@ class ImportModuleDiagnostics:
     dropped_rows: int
 
 
-def cpg_nodes_from_import_modules(
+def cpg2_nodes__import_modules(
     import_modules: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -115,7 +115,7 @@ def cpg_nodes_from_import_modules(
     return filtered
 
 
-def cpg_edges_from_call_graph_edges(
+def cpg2_edges__call_graph_edges(
     call_edges: pa.Table,
     goids: pa.Table,
     *,
@@ -214,7 +214,7 @@ def cpg_edges_from_call_graph_edges(
     return filtered
 
 
-def cpg_edges_from_import_graph_edges(
+def cpg2_edges__import_graph_edges(
     import_edges: pa.Table,
     import_modules: pa.Table,
     *,
@@ -334,7 +334,7 @@ __all__ = [
     "CallGraphDiagnostics",
     "ImportGraphDiagnostics",
     "ImportModuleDiagnostics",
-    "cpg_edges_from_call_graph_edges",
-    "cpg_edges_from_import_graph_edges",
-    "cpg_nodes_from_import_modules",
+    "cpg2_edges__call_graph_edges",
+    "cpg2_edges__import_graph_edges",
+    "cpg2_nodes__import_modules",
 ]

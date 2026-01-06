@@ -57,7 +57,7 @@ class _OccurrenceRolePayload:
     is_read: bool | None
 
 
-def cpg_nodes_from_scip_symbols(
+def cpg2_nodes__scip_symbols(
     symbols: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -119,7 +119,7 @@ def cpg_nodes_from_scip_symbols(
     return filtered
 
 
-def cpg_edges_from_scip_occurrences(
+def cpg2_edges__scip_occurrences(
     occ_syntax: pa.Table,
     occ_span: pa.Table,
     *,
@@ -370,6 +370,6 @@ def _coerce_int(value: object) -> int | None:
 __all__ = [
     "ScipNodeDiagnostics",
     "ScipOccurrenceDiagnostics",
-    "cpg_edges_from_scip_occurrences",
-    "cpg_nodes_from_scip_symbols",
+    "cpg2_edges__scip_occurrences",
+    "cpg2_nodes__scip_symbols",
 ]

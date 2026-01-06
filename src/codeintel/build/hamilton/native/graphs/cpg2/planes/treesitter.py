@@ -15,7 +15,7 @@ TS_TOKENS_TABLE_KEY = "core.ts_tokens"
 TS_TRIVIA_TABLE_KEY = "core.ts_trivia"
 
 
-def cpg_nodes_from_ts_tokens(tokens: pa.Table) -> pa.Table:
+def cpg2_nodes__ts_tokens(tokens: pa.Table) -> pa.Table:
     """Build CPG nodes from tree-sitter tokens.
 
     Returns
@@ -65,7 +65,7 @@ def cpg_nodes_from_ts_tokens(tokens: pa.Table) -> pa.Table:
     return table
 
 
-def cpg_nodes_from_ts_trivia(trivia: pa.Table) -> pa.Table:
+def cpg2_nodes__ts_trivia(trivia: pa.Table) -> pa.Table:
     """Build CPG nodes from tree-sitter trivia.
 
     Returns
@@ -123,4 +123,4 @@ def _payload_bytes(values: dict[str, object]) -> bytes:
     return encoded
 
 
-__all__ = ["cpg_nodes_from_ts_tokens", "cpg_nodes_from_ts_trivia"]
+__all__ = ["cpg2_nodes__ts_tokens", "cpg2_nodes__ts_trivia"]

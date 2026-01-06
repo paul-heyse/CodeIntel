@@ -6,7 +6,7 @@ import inspect
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TypedDict, cast
+from typing import cast
 
 import pyarrow as pa
 
@@ -14,8 +14,8 @@ from codeintel.build.graphs.assembly import ensure_table_columns, table_rows
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.arrow_ops import concat_tables_unified
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
-from codeintel.core.serialization.payload import decode_payload, encode_payload
 from codeintel.core.schemas.row_models import columns_for_table_key
+from codeintel.core.serialization.payload import decode_payload, encode_payload
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
@@ -63,6 +63,17 @@ class _InspectArgToParamContext:
 
 
 @dataclass(frozen=True, slots=True)
+class InspectArgToParamInputs:
+    """Inputs for inspect arg-to-param edge emission."""
+
+    syntax_calls: pa.Table
+    syntax_call_args: pa.Table
+    inspect_objects: pa.Table
+    inspect_signatures: pa.Table
+    inspect_signature_params: pa.Table
+
+
+@dataclass(frozen=True, slots=True)
 class _InspectAstIndex:
     by_qualname: dict[str, list[dict[str, object]]]
     by_norm_path: dict[str, list[dict[str, object]]]
@@ -100,13 +111,7 @@ class _RuntimeStateInstrContext:
     extras: dict[str, object]
 
 
-class _ArgTokenResult(TypedDict):
-    tokens_by_arg: dict[object, dict[str, object]]
-    positional_tokens: list[object]
-    keyword_tokens: dict[str, object]
-
-
-def cpg_edges_from_py_inspect_signature(
+def cpg2_edges__py_inspect_signature(
     signatures: pa.Table,
     params: pa.Table,
     *,
@@ -130,12 +135,8 @@ def cpg_edges_from_py_inspect_signature(
     return table
 
 
-def cpg_edges_from_inspect_arg_to_param(
-    syntax_calls: pa.Table,
-    syntax_call_args: pa.Table,
-    inspect_objects: pa.Table,
-    inspect_signatures: pa.Table,
-    inspect_signature_params: pa.Table,
+def cpg2_edges__inspect_arg_to_param(
+    inputs: InspectArgToParamInputs,
     *,
     diagnostics: dict[str, object] | None = None,
 ) -> pa.Table:
@@ -147,23 +148,23 @@ def cpg_edges_from_inspect_arg_to_param(
         CPG edges mapping call args to inspect params.
     """
     edges = _inspect_arg_to_param_edges_to_rows(
-        syntax_calls,
-        syntax_call_args,
-        inspect_objects,
-        inspect_signatures,
-        inspect_signature_params,
+        inputs.syntax_calls,
+        inputs.syntax_call_args,
+        inputs.inspect_objects,
+        inputs.inspect_signatures,
+        inputs.inspect_signature_params,
     )
     table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_arg_to_param",
-        expected_edges=syntax_call_args.num_rows,
+        expected_edges=inputs.syntax_call_args.num_rows,
         produced_edges=row_count,
     )
     return table
 
 
-def cpg_edges_from_py_inspect_unwrap(
+def cpg2_edges__py_inspect_unwrap(
     unwrap_hops: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -186,7 +187,7 @@ def cpg_edges_from_py_inspect_unwrap(
     return table
 
 
-def cpg_edges_from_py_inspect_class_mro(
+def cpg2_edges__py_inspect_class_mro(
     class_mro: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -209,7 +210,7 @@ def cpg_edges_from_py_inspect_class_mro(
     return table
 
 
-def cpg_edges_from_py_inspect_class_attr(
+def cpg2_edges__py_inspect_class_attr(
     class_attrs: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -232,7 +233,7 @@ def cpg_edges_from_py_inspect_class_attr(
     return table
 
 
-def cpg_edges_from_py_inspect_runtime_state(
+def cpg2_edges__py_inspect_runtime_state(
     runtime_state: pa.Table,
     code_units: pa.Table,
     instructions: pa.Table,
@@ -256,7 +257,7 @@ def cpg_edges_from_py_inspect_runtime_state(
     return table
 
 
-def cpg_edges_from_inspect_to_ast(
+def cpg2_edges__inspect_to_ast(
     inspect_objects: pa.Table,
     inspect_source: pa.Table,
     ast_nodes: pa.Table,
@@ -281,7 +282,7 @@ def cpg_edges_from_inspect_to_ast(
     return table
 
 
-def cpg_edges_from_inspect_to_scip(
+def cpg2_edges__inspect_to_scip(
     inspect_objects: pa.Table,
     scip_symbols: pa.Table,
     *,
@@ -2041,13 +2042,14 @@ _INSPECT_AST_REQUIRED_COLUMNS = frozenset(
 
 
 __all__ = [
+    "InspectArgToParamInputs",
     "OverlayEdgeDiagnostics",
-    "cpg_edges_from_inspect_arg_to_param",
-    "cpg_edges_from_inspect_to_ast",
-    "cpg_edges_from_inspect_to_scip",
-    "cpg_edges_from_py_inspect_class_attr",
-    "cpg_edges_from_py_inspect_class_mro",
-    "cpg_edges_from_py_inspect_runtime_state",
-    "cpg_edges_from_py_inspect_signature",
-    "cpg_edges_from_py_inspect_unwrap",
+    "cpg2_edges__inspect_arg_to_param",
+    "cpg2_edges__inspect_to_ast",
+    "cpg2_edges__inspect_to_scip",
+    "cpg2_edges__py_inspect_class_attr",
+    "cpg2_edges__py_inspect_class_mro",
+    "cpg2_edges__py_inspect_runtime_state",
+    "cpg2_edges__py_inspect_signature",
+    "cpg2_edges__py_inspect_unwrap",
 ]

@@ -16,7 +16,7 @@ PY_BC_INSTRUCTIONS_TABLE_KEY = "core.py_bc_instructions"
 PY_BC_BLOCKS_TABLE_KEY = "core.py_bc_blocks"
 
 
-def cpg_nodes_from_py_bc_code_units(code_units: pa.Table) -> pa.Table:
+def cpg2_nodes__py_bc_code_units(code_units: pa.Table) -> pa.Table:
     """Build CPG nodes for bytecode code units.
 
     Returns
@@ -68,7 +68,7 @@ def cpg_nodes_from_py_bc_code_units(code_units: pa.Table) -> pa.Table:
     return table
 
 
-def cpg_nodes_from_py_bc_instructions(instructions: pa.Table) -> pa.Table:
+def cpg2_nodes__py_bc_instructions(instructions: pa.Table) -> pa.Table:
     """Build CPG nodes for bytecode instructions.
 
     Returns
@@ -122,7 +122,7 @@ def cpg_nodes_from_py_bc_instructions(instructions: pa.Table) -> pa.Table:
     return table
 
 
-def cpg_nodes_from_py_bc_blocks(blocks: pa.Table) -> pa.Table:
+def cpg2_nodes__py_bc_blocks(blocks: pa.Table) -> pa.Table:
     """Build CPG nodes for bytecode blocks.
 
     Returns
@@ -172,7 +172,7 @@ def _payload_bytes(values: dict[str, object]) -> bytes:
 
 
 __all__ = [
-    "cpg_nodes_from_py_bc_blocks",
-    "cpg_nodes_from_py_bc_code_units",
-    "cpg_nodes_from_py_bc_instructions",
+    "cpg2_nodes__py_bc_blocks",
+    "cpg2_nodes__py_bc_code_units",
+    "cpg2_nodes__py_bc_instructions",
 ]

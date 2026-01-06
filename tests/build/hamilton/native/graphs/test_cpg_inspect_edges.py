@@ -5,9 +5,9 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from codeintel.build.hamilton.native.graphs.cpg import (
-    inspect_to_ast_edges_to_cpg,
-    py_inspect_unwrap_edges_to_cpg,
+from codeintel.build.hamilton.native.graphs.cpg2.planes.overlays_inspect import (
+    cpg2_edges__inspect_to_ast,
+    cpg2_edges__py_inspect_unwrap,
 )
 from codeintel.core.serialization.payload import decode_payload
 
@@ -54,7 +54,7 @@ def test_inspect_to_ast_uses_source_span_match() -> None:
         ]
     )
 
-    edges = inspect_to_ast_edges_to_cpg(inspect_objects, inspect_source, ast_nodes)
+    edges = cpg2_edges__inspect_to_ast(inspect_objects, inspect_source, ast_nodes)
     assert edges.num_rows == 1
     row = edges.to_pylist()[0]
     assert row["edge_kind"] == "INSPECT_ANCHORS_AST"
@@ -101,7 +101,7 @@ def test_py_inspect_unwrap_edges_distinguish_decorates() -> None:
         ]
     )
 
-    edges = py_inspect_unwrap_edges_to_cpg(unwrap_hops)
+    edges = cpg2_edges__py_inspect_unwrap(unwrap_hops)
     assert edges.num_rows == EXPECTED_UNWRAP_EDGE_COUNT
     kinds = {row["edge_kind"] for row in edges.to_pylist()}
     assert "DECORATES" in kinds

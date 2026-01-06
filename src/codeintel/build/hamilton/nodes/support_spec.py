@@ -248,7 +248,9 @@ def _dataset_node_for_table(
     node = candidates[0]
     target = node.tags.get(ht.TAG_TARGET)
     domain = node.tags.get(ht.TAG_DOMAIN)
-    resolved_domain = domain if isinstance(domain, str) and domain else _domain_from_table_key(table_key)
+    resolved_domain = (
+        domain if isinstance(domain, str) and domain else _domain_from_table_key(table_key)
+    )
     resolved_target = target if isinstance(target, str) and target else None
     return node.name, resolved_target, resolved_domain
 

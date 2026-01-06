@@ -83,6 +83,8 @@ class _ReachesContext:
 
 @dataclass(frozen=True)
 class PyBcReachesInputs:
+    """Inputs required for bytecode reachability overlays."""
+
     defuse_events: pa.Table
     code_units: pa.Table
     scopes: pa.Table
@@ -127,7 +129,7 @@ class _PyBcBlock(TypedDict):
     last_instr_index: int
 
 
-def cpg_edges_from_py_bc_instruction_ast(
+def cpg2_edges__py_bc_instruction_ast(
     instructions: pa.Table,
     ast_nodes: pa.Table,
     *,
@@ -151,7 +153,7 @@ def cpg_edges_from_py_bc_instruction_ast(
     return table
 
 
-def cpg_edges_from_py_bc_callsite(
+def cpg2_edges__py_bc_callsite(
     instructions: pa.Table,
     syntax_calls: pa.Table,
     *,
@@ -175,7 +177,7 @@ def cpg_edges_from_py_bc_callsite(
     return table
 
 
-def cpg_edges_from_py_bc_callsite_symbol(
+def cpg2_edges__py_bc_callsite_symbol(
     instructions: pa.Table,
     syntax_calls: pa.Table,
     scip_symbols: pa.Table,
@@ -200,7 +202,7 @@ def cpg_edges_from_py_bc_callsite_symbol(
     return table
 
 
-def cpg_edges_from_py_bc_cfg(
+def cpg2_edges__py_bc_cfg(
     cfg_edges: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -223,12 +225,8 @@ def cpg_edges_from_py_bc_cfg(
     return table
 
 
-def cpg_edges_from_py_bc_defuse_binding(
-    defuse_events: pa.Table,
-    code_units: pa.Table,
-    scopes: pa.Table,
-    bindings: pa.Table,
-    resolution_edges: pa.Table,
+def cpg2_edges__py_bc_defuse_binding(
+    inputs: PyBcReachesInputs,
     *,
     diagnostics: dict[str, object] | None = None,
 ) -> pa.Table:
@@ -240,23 +238,23 @@ def cpg_edges_from_py_bc_defuse_binding(
         CPG edges linking def/use events to symtable bindings.
     """
     edges = _py_bc_defuse_binding_edges_to_rows(
-        defuse_events,
-        code_units,
-        scopes,
-        bindings,
-        resolution_edges,
+        inputs.defuse_events,
+        inputs.code_units,
+        inputs.scopes,
+        inputs.bindings,
+        inputs.resolution_edges,
     )
     table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_defuse_binding",
-        expected_edges=defuse_events.num_rows,
+        expected_edges=inputs.defuse_events.num_rows,
         produced_edges=row_count,
     )
     return table
 
 
-def cpg_edges_from_py_bc_memory(
+def cpg2_edges__py_bc_memory(
     defuse_events: pa.Table,
     instructions: pa.Table,
     ast_nodes: pa.Table,
@@ -281,7 +279,7 @@ def cpg_edges_from_py_bc_memory(
     return table
 
 
-def cpg_edges_from_py_bc_stack(
+def cpg2_edges__py_bc_stack(
     instructions: pa.Table,
     blocks: pa.Table,
     *,
@@ -305,7 +303,7 @@ def cpg_edges_from_py_bc_stack(
     return table
 
 
-def cpg_edges_from_py_bc_reaches(
+def cpg2_edges__py_bc_reaches(
     inputs: PyBcReachesInputs,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -1218,28 +1216,24 @@ def _stack_push_spec(opname: str, arg: int | None) -> tuple[int, int, bool] | No
 
 
 def _stack_spec_simple(opname: str, arg: int | None) -> tuple[int, int, bool] | None:
+    spec: tuple[int, int, bool] | None = None
     if opname in _STACK_SKIP_OPS:
-        return 0, 0, False
-    if opname in _STACK_POP_ONLY_OPS:
-        return _effect_pop_only(opname=opname, arg=arg)
-    if opname in _STACK_LOAD_WITH_POP:
-        return _effect_from_push(opname=opname, arg=arg, push_count=1, emit_edge=True)
-    if opname in _STACK_BINARY_OPS:
-        return _effect_from_push(opname=opname, arg=arg, push_count=1, emit_edge=True)
-    if opname in _STACK_ITER_OPS:
-        return _effect_from_push(opname=opname, arg=arg, push_count=1, emit_edge=False)
-    if opname.startswith(_STACK_POP_PREFIXES):
-        return _effect_pop_only(opname=opname, arg=arg)
-    if opname.startswith("LOAD_"):
+        spec = (0, 0, False)
+    elif opname in _STACK_POP_ONLY_OPS:
+        spec = _effect_pop_only(opname=opname, arg=arg)
+    elif opname in _STACK_LOAD_WITH_POP or opname in _STACK_BINARY_OPS:
+        spec = _effect_from_push(opname=opname, arg=arg, push_count=1, emit_edge=True)
+    elif opname in _STACK_ITER_OPS:
+        spec = _effect_from_push(opname=opname, arg=arg, push_count=1, emit_edge=False)
+    elif opname.startswith(_STACK_POP_PREFIXES):
+        spec = _effect_pop_only(opname=opname, arg=arg)
+    elif opname.startswith("LOAD_"):
         push_count = _load_push_count(opname)
-        if push_count is None:
-            return None
-        return _effect_from_push(opname=opname, arg=arg, push_count=push_count, emit_edge=False)
-    if opname.startswith("UNARY_"):
-        return 1, 1, True
-    if opname.startswith("CALL"):
-        return None
-    return None
+        if push_count is not None:
+            spec = _effect_from_push(opname=opname, arg=arg, push_count=push_count, emit_edge=False)
+    elif opname.startswith("UNARY_"):
+        spec = (1, 1, True)
+    return spec
 
 
 def _stack_spec_call(opname: str, arg: int | None) -> tuple[int, int, bool] | None:
@@ -1248,10 +1242,7 @@ def _stack_spec_call(opname: str, arg: int | None) -> tuple[int, int, bool] | No
     net = _stack_effect_net(opname, arg)
     if net is None:
         return None
-    if net >= 0:
-        pop_count = 0 if net == 0 else 1
-    else:
-        pop_count = -net + 1
+    pop_count = (0 if net == 0 else 1) if net >= 0 else -net + 1
     return pop_count, 1, True
 
 
@@ -1274,33 +1265,32 @@ def _stack_edges_for_instruction(
         return []
     pop_count, push_count, emit_edge = spec
     stack_depth = len(stack)
-    popped: list[_StackValue] = []
-    for _ in range(min(pop_count, len(stack))):
-        popped.append(stack.pop())
+    pop_total = min(pop_count, len(stack))
+    popped = [stack.pop() for _ in range(pop_total)]
     edges: list[dict[str, object]] = []
     if emit_edge:
-        for pop_index, value in enumerate(reversed(popped)):
-            edges.append(
-                _stack_edge_row(
-                    _StackEdgeContext(
-                        instr=instr,
-                        value=value,
-                        block_id=block_id,
-                        pop_index=pop_index,
-                        depth_before=stack_depth,
-                        depth_after=len(stack),
-                    )
+        edges = [
+            _stack_edge_row(
+                _StackEdgeContext(
+                    instr=instr,
+                    value=value,
+                    block_id=block_id,
+                    pop_index=pop_index,
+                    depth_before=stack_depth,
+                    depth_after=len(stack),
                 )
             )
-    for push_index in range(push_count):
-        stack.append(
-            _StackValue(
-                instr_id=instr_id,
-                push_index=push_index,
-                opname=opname,
-                emit_edge=emit_edge,
-            )
+            for pop_index, value in enumerate(reversed(popped))
+        ]
+    stack.extend(
+        _StackValue(
+            instr_id=instr_id,
+            push_index=push_index,
+            opname=opname,
+            emit_edge=emit_edge,
         )
+        for push_index in range(push_count)
+    )
     return edges
 
 
@@ -1827,13 +1817,9 @@ def _binding_edge_for_event(
     resolution_map: Mapping[str, Mapping[str, object]],
 ) -> dict[str, object] | None:
     event_kind = _coerce_str(event.get("event_kind"))
-    if event_kind not in {"DEF", "USE"}:
-        return None
     name = _coerce_str(event.get("name"))
-    if name is None:
-        return None
     rel_path = _coerce_str(event.get("rel_path"))
-    if rel_path is None:
+    if event_kind not in {"DEF", "USE"} or name is None or rel_path is None:
         return None
     binding_info = _resolve_binding_for_event(
         rel_path=rel_path,
@@ -2410,12 +2396,12 @@ _MEMORY_EDGE_KIND_MAP = {
 __all__ = [
     "OverlayEdgeDiagnostics",
     "PyBcReachesInputs",
-    "cpg_edges_from_py_bc_callsite",
-    "cpg_edges_from_py_bc_callsite_symbol",
-    "cpg_edges_from_py_bc_cfg",
-    "cpg_edges_from_py_bc_defuse_binding",
-    "cpg_edges_from_py_bc_instruction_ast",
-    "cpg_edges_from_py_bc_memory",
-    "cpg_edges_from_py_bc_reaches",
-    "cpg_edges_from_py_bc_stack",
+    "cpg2_edges__py_bc_callsite",
+    "cpg2_edges__py_bc_callsite_symbol",
+    "cpg2_edges__py_bc_cfg",
+    "cpg2_edges__py_bc_defuse_binding",
+    "cpg2_edges__py_bc_instruction_ast",
+    "cpg2_edges__py_bc_memory",
+    "cpg2_edges__py_bc_reaches",
+    "cpg2_edges__py_bc_stack",
 ]

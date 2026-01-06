@@ -7,9 +7,9 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 
-from codeintel.build.hamilton.native.graphs.cpg import (
-    py_bc_callsite_edges_to_cpg,
-    py_bc_stack_edges_to_cpg,
+from codeintel.build.hamilton.native.graphs.cpg2.planes.overlays_bytecode import (
+    cpg2_edges__py_bc_callsite,
+    cpg2_edges__py_bc_stack,
 )
 from codeintel.core.serialization.payload import decode_payload
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -99,10 +99,10 @@ def test_cpg_bytecode_edges_patterns(tmp_path: Path) -> None:
     blocks = _reader_to_table(dis_result.block_rows_reader)
     syntax_calls = _reader_to_table(cst_result.syntax_calls_rows_reader)
 
-    stack_edges = py_bc_stack_edges_to_cpg(instructions, blocks)
+    stack_edges = cpg2_edges__py_bc_stack(instructions, blocks)
     assert stack_edges.num_rows > 0
 
-    callsite_edges = py_bc_callsite_edges_to_cpg(instructions, syntax_calls)
+    callsite_edges = cpg2_edges__py_bc_callsite(instructions, syntax_calls)
     assert callsite_edges.num_rows > 0
 
     payloads = [decode_payload(row.get("extras_json")) for row in callsite_edges.to_pylist()]

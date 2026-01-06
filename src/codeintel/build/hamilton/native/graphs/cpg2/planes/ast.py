@@ -15,7 +15,7 @@ CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
 
 
-def cpg_nodes_from_ast_nodes(ast_nodes: pa.Table, env: BuildEnv) -> pa.Table:
+def cpg2_nodes__ast_nodes(ast_nodes: pa.Table, env: BuildEnv) -> pa.Table:
     """Build CPG nodes from AST nodes.
 
     Returns
@@ -79,4 +79,4 @@ def _payload_bytes(values: dict[str, object]) -> bytes:
     return encoded
 
 
-__all__ = ["cpg_nodes_from_ast_nodes"]
+__all__ = ["cpg2_nodes__ast_nodes"]

@@ -32,7 +32,7 @@ class OverlayEdgeDiagnostics:
     dropped_edges: int
 
 
-def cpg_edges_from_py_sym_scope_edges(
+def cpg2_edges__py_sym_scope_edges(
     scope_edges: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -125,7 +125,7 @@ def cpg_edges_from_py_sym_scope_edges(
     return table
 
 
-def cpg_edges_from_py_sym_namespace_edges(
+def cpg2_edges__py_sym_namespace_edges(
     namespace_edges: pa.Table,
     bindings: pa.Table,
     *,
@@ -174,7 +174,7 @@ def cpg_edges_from_py_sym_namespace_edges(
     return table
 
 
-def cpg_edges_from_py_sym_binding_edges(
+def cpg2_edges__py_sym_binding_edges(
     bindings: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -249,7 +249,7 @@ def cpg_edges_from_py_sym_binding_edges(
     return table
 
 
-def cpg_edges_from_py_sym_resolution_edges(
+def cpg2_edges__py_sym_resolution_edges(
     resolution_edges: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -283,7 +283,7 @@ def cpg_edges_from_py_sym_resolution_edges(
     return table
 
 
-def cpg_edges_from_py_sym_binding_symbol_edges(
+def cpg2_edges__py_sym_binding_symbol_edges(
     bindings: pa.Table,
     scopes: pa.Table,
     scip_symbols: pa.Table,
@@ -327,7 +327,7 @@ def cpg_edges_from_py_sym_binding_symbol_edges(
     return table
 
 
-def cpg_edges_from_ast_binding_edges(
+def cpg2_edges__ast_binding_edges(
     ast_nodes: pa.Table,
     scopes: pa.Table,
     bindings: pa.Table,
@@ -1081,10 +1081,10 @@ class _AstBindingContext:
 
 __all__ = [
     "OverlayEdgeDiagnostics",
-    "cpg_edges_from_ast_binding_edges",
-    "cpg_edges_from_py_sym_binding_edges",
-    "cpg_edges_from_py_sym_binding_symbol_edges",
-    "cpg_edges_from_py_sym_namespace_edges",
-    "cpg_edges_from_py_sym_resolution_edges",
-    "cpg_edges_from_py_sym_scope_edges",
+    "cpg2_edges__ast_binding_edges",
+    "cpg2_edges__py_sym_binding_edges",
+    "cpg2_edges__py_sym_binding_symbol_edges",
+    "cpg2_edges__py_sym_namespace_edges",
+    "cpg2_edges__py_sym_resolution_edges",
+    "cpg2_edges__py_sym_scope_edges",
 ]

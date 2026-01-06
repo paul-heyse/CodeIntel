@@ -338,8 +338,7 @@ def _cpg_aggregator_dependency_issues(nodes: Mapping[str, NodeLike]) -> list[Gra
                     severity="error",
                     code="cpg_nodes_dependencies",
                     message=(
-                        "cpg_nodes must depend only on cpg2_nodes__frames "
-                        f"(found {sorted(deps)})."
+                        f"cpg_nodes must depend only on cpg2_nodes__frames (found {sorted(deps)})."
                     ),
                     node=nodes_node.name,
                 )
@@ -354,8 +353,7 @@ def _cpg_aggregator_dependency_issues(nodes: Mapping[str, NodeLike]) -> list[Gra
                     severity="error",
                     code="cpg_edges_dependencies",
                     message=(
-                        "cpg_edges must depend only on cpg2_edges__frames "
-                        f"(found {sorted(deps)})."
+                        f"cpg_edges must depend only on cpg2_edges__frames (found {sorted(deps)})."
                     ),
                     node=edges_node.name,
                 )
@@ -364,19 +362,17 @@ def _cpg_aggregator_dependency_issues(nodes: Mapping[str, NodeLike]) -> list[Gra
 
 
 def _duplicate_node_name_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
-    issues: list[GraphValidationIssue] = []
     counts = Counter(node.name for node in nodes.values())
     duplicates = sorted(name for name, count in counts.items() if count > 1)
-    for name in duplicates:
-        issues.append(
-            GraphValidationIssue(
-                severity="error",
-                code="duplicate_node_name",
-                message=f"Duplicate node name discovered: {name}",
-                node=name,
-            )
+    return [
+        GraphValidationIssue(
+            severity="error",
+            code="duplicate_node_name",
+            message=f"Duplicate node name discovered: {name}",
+            node=name,
         )
-    return issues
+        for name in duplicates
+    ]
 
 
 def _target_anchor_tag_issues(

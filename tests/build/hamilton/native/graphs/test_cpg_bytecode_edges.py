@@ -7,12 +7,12 @@ from typing import cast
 import pyarrow as pa
 import pytest
 
-from codeintel.build.hamilton.native.graphs.cpg import (
+from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_node_id
+from codeintel.build.hamilton.native.graphs.cpg2.planes.overlays_bytecode import (
+    PY_BC_INSTRUCTIONS_TABLE_KEY,
     SCIP_SYMBOLS_TABLE_KEY,
-    instruction_cpg_id,
-    py_bc_callsite_symbol_edges_to_cpg,
-    py_bc_stack_edges_to_cpg,
-    stable_cpg_id,
+    cpg2_edges__py_bc_callsite_symbol,
+    cpg2_edges__py_bc_stack,
 )
 from codeintel.core.serialization.payload import decode_payload
 
@@ -72,23 +72,29 @@ def test_py_bc_stack_edges_basic() -> None:
         ]
     )
 
-    edges = py_bc_stack_edges_to_cpg(instructions, blocks)
+    edges = cpg2_edges__py_bc_stack(instructions, blocks)
     assert edges.num_rows == EXPECTED_STACK_EDGE_COUNT
     assert set(edges.column("edge_kind").to_pylist()) == {"STACK_REACHES"}
     expected_src_ids = {
-        instruction_cpg_id(
-            repo="repo",
-            commit="commit",
-            rel_path="src/app.py",
-            code_unit_id="unit1",
-            instr_id="i0",
+        cpg_node_id(
+            PY_BC_INSTRUCTIONS_TABLE_KEY,
+            {
+                "repo": "repo",
+                "commit": "commit",
+                "rel_path": "src/app.py",
+                "code_unit_id": "unit1",
+                "instr_id": "i0",
+            },
         ),
-        instruction_cpg_id(
-            repo="repo",
-            commit="commit",
-            rel_path="src/app.py",
-            code_unit_id="unit1",
-            instr_id="i1",
+        cpg_node_id(
+            PY_BC_INSTRUCTIONS_TABLE_KEY,
+            {
+                "repo": "repo",
+                "commit": "commit",
+                "rel_path": "src/app.py",
+                "code_unit_id": "unit1",
+                "instr_id": "i1",
+            },
         ),
     }
     assert set(edges.column("src_cpg_node_id").to_pylist()) == expected_src_ids
@@ -146,19 +152,22 @@ def test_py_bc_callsite_symbol_edges_match_display_name() -> None:
         ]
     )
 
-    edges = py_bc_callsite_symbol_edges_to_cpg(instructions, syntax_calls, scip_symbols)
+    edges = cpg2_edges__py_bc_callsite_symbol(instructions, syntax_calls, scip_symbols)
     assert edges.num_rows == EXPECTED_CALLSITE_EDGE_COUNT
     row = edges.to_pylist()[0]
     assert row["edge_kind"] == "BYTECODE_CALLS_SYMBOL"
     assert row["edge_layer"] == "CALL"
-    assert row["src_cpg_node_id"] == instruction_cpg_id(
-        repo="repo",
-        commit="commit",
-        rel_path="src/app.py",
-        code_unit_id="unit1",
-        instr_id="call0",
+    assert row["src_cpg_node_id"] == cpg_node_id(
+        PY_BC_INSTRUCTIONS_TABLE_KEY,
+        {
+            "repo": "repo",
+            "commit": "commit",
+            "rel_path": "src/app.py",
+            "code_unit_id": "unit1",
+            "instr_id": "call0",
+        },
     )
-    expected_dst = stable_cpg_id(
+    expected_dst = cpg_node_id(
         SCIP_SYMBOLS_TABLE_KEY,
         {"repo": "repo", "commit": "commit", "symbol": "sym1"},
     )

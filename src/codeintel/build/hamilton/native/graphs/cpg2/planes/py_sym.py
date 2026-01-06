@@ -15,7 +15,7 @@ PY_SYM_SCOPES_TABLE_KEY = "core.py_sym_scopes"
 PY_SYM_BINDINGS_TABLE_KEY = "core.py_sym_bindings"
 
 
-def cpg_nodes_from_py_sym_scopes(scopes: pa.Table) -> pa.Table:
+def cpg2_nodes__py_sym_scopes(scopes: pa.Table) -> pa.Table:
     """Build CPG nodes from symtable scopes.
 
     Returns
@@ -61,7 +61,7 @@ def cpg_nodes_from_py_sym_scopes(scopes: pa.Table) -> pa.Table:
     return table
 
 
-def cpg_nodes_from_py_sym_bindings(bindings: pa.Table) -> pa.Table:
+def cpg2_nodes__py_sym_bindings(bindings: pa.Table) -> pa.Table:
     """Build CPG nodes from symtable bindings.
 
     Returns
@@ -111,4 +111,4 @@ def _payload_bytes(values: dict[str, object]) -> bytes:
     return encoded
 
 
-__all__ = ["cpg_nodes_from_py_sym_bindings", "cpg_nodes_from_py_sym_scopes"]
+__all__ = ["cpg2_nodes__py_sym_bindings", "cpg2_nodes__py_sym_scopes"]

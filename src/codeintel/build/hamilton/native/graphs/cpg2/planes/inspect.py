@@ -16,7 +16,7 @@ PY_INSPECT_SIGNATURES_TABLE_KEY = "core.py_inspect_signatures"
 PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY = "core.py_inspect_signature_params"
 
 
-def cpg_nodes_from_py_inspect_objects(objects: pa.Table) -> pa.Table:
+def cpg2_nodes__py_inspect_objects(objects: pa.Table) -> pa.Table:
     """Build CPG nodes from inspect objects.
 
     Returns
@@ -63,7 +63,7 @@ def cpg_nodes_from_py_inspect_objects(objects: pa.Table) -> pa.Table:
     return table
 
 
-def cpg_nodes_from_py_inspect_signatures(signatures: pa.Table) -> pa.Table:
+def cpg2_nodes__py_inspect_signatures(signatures: pa.Table) -> pa.Table:
     """Build CPG nodes from inspect signatures.
 
     Returns
@@ -108,7 +108,7 @@ def cpg_nodes_from_py_inspect_signatures(signatures: pa.Table) -> pa.Table:
     return table
 
 
-def cpg_nodes_from_py_inspect_signature_params(params: pa.Table) -> pa.Table:
+def cpg2_nodes__py_inspect_signature_params(params: pa.Table) -> pa.Table:
     """Build CPG nodes from inspect signature parameters.
 
     Returns
@@ -159,7 +159,7 @@ def _payload_bytes(values: dict[str, object]) -> bytes:
 
 
 __all__ = [
-    "cpg_nodes_from_py_inspect_objects",
-    "cpg_nodes_from_py_inspect_signature_params",
-    "cpg_nodes_from_py_inspect_signatures",
+    "cpg2_nodes__py_inspect_objects",
+    "cpg2_nodes__py_inspect_signature_params",
+    "cpg2_nodes__py_inspect_signatures",
 ]

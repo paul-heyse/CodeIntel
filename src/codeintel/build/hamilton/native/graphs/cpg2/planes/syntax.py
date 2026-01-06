@@ -44,7 +44,7 @@ class SyntaxNodeDiagnostics:
     resolved_nodes: int
 
 
-def syntax_anchor_map(syntax_nodes: pa.Table, *, include_source_pk_json: bool = True) -> pa.Table:
+def _syntax_anchor_map(syntax_nodes: pa.Table, *, include_source_pk_json: bool = True) -> pa.Table:
     """Return anchor map for syntax nodes.
 
     Returns
@@ -61,7 +61,7 @@ def syntax_anchor_map(syntax_nodes: pa.Table, *, include_source_pk_json: bool = 
     )
 
 
-def cpg_nodes_from_syntax_nodes(
+def cpg2_nodes__syntax_nodes(
     syntax_nodes: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -78,7 +78,7 @@ def cpg_nodes_from_syntax_nodes(
     required = set(identity_keys(SYNTAX_NODES_TABLE_KEY))
     if not required.issubset(set(syntax_nodes.column_names)):
         return _empty_node_table()
-    anchor_map = syntax_anchor_map(syntax_nodes, include_source_pk_json=True)
+    anchor_map = _syntax_anchor_map(syntax_nodes, include_source_pk_json=True)
     joined = arrow_join_tables(
         syntax_nodes,
         anchor_map,
@@ -116,7 +116,7 @@ def cpg_nodes_from_syntax_nodes(
     return selected
 
 
-def cpg_edges_from_syntax_edges(
+def cpg2_edges__syntax_edges(
     syntax_edges: pa.Table,
     syntax_nodes: pa.Table,
     *,
@@ -135,11 +135,9 @@ def cpg_edges_from_syntax_edges(
     required = set(join_keys) | {"parent_node_id", "child_node_id"}
     if not required.issubset(set(syntax_edges.column_names)):
         return _empty_edge_table()
-    anchor_map = syntax_anchor_map(syntax_nodes, include_source_pk_json=False)
+    anchor_map = _syntax_anchor_map(syntax_nodes, include_source_pk_json=False)
     normalized_edges = canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
-    parent_left_on = [
-        "parent_node_id" if column == "node_id" else column for column in join_keys
-    ]
+    parent_left_on = ["parent_node_id" if column == "node_id" else column for column in join_keys]
     child_left_on = ["child_node_id" if column == "node_id" else column for column in join_keys]
     parent_join = arrow_join_tables(
         normalized_edges,
@@ -267,7 +265,6 @@ def _encode_optional_payload(value: object) -> bytes | None:
 __all__ = [
     "SyntaxEdgeDiagnostics",
     "SyntaxNodeDiagnostics",
-    "cpg_edges_from_syntax_edges",
-    "cpg_nodes_from_syntax_nodes",
-    "syntax_anchor_map",
+    "cpg2_edges__syntax_edges",
+    "cpg2_nodes__syntax_nodes",
 ]

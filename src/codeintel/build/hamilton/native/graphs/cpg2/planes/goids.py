@@ -30,7 +30,7 @@ class GoidNodeDiagnostics:
     dropped_rows: int
 
 
-def cpg_nodes_from_goids(
+def cpg2_nodes__goids(
     goids: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
@@ -96,4 +96,4 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     return safe_filter(table, mask)
 
 
-__all__ = ["GoidNodeDiagnostics", "cpg_nodes_from_goids"]
+__all__ = ["GoidNodeDiagnostics", "cpg2_nodes__goids"]

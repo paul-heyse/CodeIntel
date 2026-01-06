@@ -63,7 +63,7 @@ class CdgEdgeDiagnostics:
     dropped_edges: int
 
 
-def cpg_nodes_from_cfg_blocks(
+def cpg2_nodes__cfg_blocks(
     cfg_blocks: pa.Table,
     goids: pa.Table,
     *,
@@ -136,7 +136,7 @@ def cpg_nodes_from_cfg_blocks(
     return filtered
 
 
-def cpg_edges_from_cfg_edges(
+def cpg2_edges__cfg_edges(
     cfg_edges: pa.Table,
     cfg_blocks: pa.Table,
     goids: pa.Table,
@@ -204,7 +204,7 @@ def cpg_edges_from_cfg_edges(
     return filtered
 
 
-def cpg_edges_from_dfg_edges(
+def cpg2_edges__dfg_edges(
     dfg_edges: pa.Table,
     cfg_blocks: pa.Table,
     goids: pa.Table,
@@ -289,7 +289,7 @@ def cpg_edges_from_dfg_edges(
     return filtered
 
 
-def cpg_edges_from_cdg_edges(
+def cpg2_edges__cdg_edges(
     cdg_edges: pa.Table,
     cfg_blocks: pa.Table,
     goids: pa.Table,
@@ -534,8 +534,8 @@ __all__ = [
     "CfgBlockDiagnostics",
     "CfgEdgeDiagnostics",
     "DfgEdgeDiagnostics",
-    "cpg_edges_from_cdg_edges",
-    "cpg_edges_from_cfg_edges",
-    "cpg_edges_from_dfg_edges",
-    "cpg_nodes_from_cfg_blocks",
+    "cpg2_edges__cdg_edges",
+    "cpg2_edges__cfg_edges",
+    "cpg2_edges__dfg_edges",
+    "cpg2_nodes__cfg_blocks",
 ]
