@@ -3,7 +3,7 @@ graph_backend = "compute"
 schema_drift_mode = "warn"
 
 [scope]
-scope_paths = ["src/codeintel"]
+scope_paths = ["src/codeintel/serving"]
 
 [ingestion.py_frontend]
 py_frontend_cache_entries = 40960

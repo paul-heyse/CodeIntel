@@ -306,3 +306,185 @@ Thread 0x00000001f7132c40 (most recent call first):
   File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/core/serialization/payload.py", line 36 in _sanitize_payload
   File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/core/serialization/payload.py", line ??? in encode_payload
   <invalid frame>
+Timeout (0:10:00)!
+Thread 0x0000000174b33000 (most recent call first):
+  <no Python frame>
+
+Thread 0x0000000174aa7000 (most recent call first):
+  <no Python frame>
+
+Thread 0x0000000174a1b000 (most recent call first):
+  <no Python frame>
+
+Thread 0x00000001742ff000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py", line 90 in _worker
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x0000000171e7b000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 363 in wait
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 660 in wait
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/rich/live.py", line 35 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x0000000170e6f000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 363 in wait
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/queue.py", line 210 in get
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton_sdk/api/clients.py", line 234 in worker
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x000000016fe63000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1095 in join
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton_sdk/api/clients.py", line 196 in <lambda>
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x000000016b947000 (most recent call first):
+  <no Python frame>
+
+Thread 0x00000001f7132c40 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py", line 361 in raw_decode
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py", line ??? in decode
+  <invalid frame>
+Timeout (0:10:00)!
+Thread 0x0000000307bd7000 (most recent call first):
+  <no Python frame>
+
+Thread 0x0000000307b4b000 (most recent call first):
+  <no Python frame>
+
+Thread 0x000000030751b000 (most recent call first):
+  <no Python frame>
+
+Thread 0x000000017d473000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py", line 90 in _worker
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x000000017afef000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 363 in wait
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 660 in wait
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/rich/live.py", line 35 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x0000000179fe3000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 363 in wait
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/queue.py", line 210 in get
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton_sdk/api/clients.py", line 234 in worker
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x0000000178fd7000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1095 in join
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton_sdk/api/clients.py", line 196 in <lambda>
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x000000016d62b000 (most recent call first):
+  <no Python frame>
+
+Thread 0x00000001f7132c40 (most recent call first):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/core/serialization/payload.py", line ??? in _sanitize_payload
+  <invalid frame>
+Timeout (0:10:00)!
+Thread 0x0000000307bd7000 (most recent call first):
+  <no Python frame>
+
+Thread 0x0000000307b4b000 (most recent call first):
+  <no Python frame>
+
+Thread 0x000000030751b000 (most recent call first):
+  <no Python frame>
+
+Thread 0x000000017d473000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py", line 90 in _worker
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x000000017afef000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 363 in wait
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 660 in wait
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/rich/live.py", line 35 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x0000000179fe3000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 363 in wait
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/queue.py", line 210 in get
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton_sdk/api/clients.py", line 234 in worker
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x0000000178fd7000 (most recent call first):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1095 in join
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton_sdk/api/clients.py", line 196 in <lambda>
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 995 in run
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1044 in _bootstrap_inner
+  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/threading.py", line 1015 in _bootstrap
+
+Thread 0x000000016d62b000 (most recent call first):
+  <no Python frame>
+
+Thread 0x00000001f7132c40 (most recent call first):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/networkx/algorithms/shortest_paths/unweighted.py", line 80 in single_source_shortest_path_length
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/networkx/utils/backends.py", line 551 in _call_if_no_backends_installed
+  File "<class 'networkx.utils.decorators.argmap'> compilation 44", line 3 in argmap_single_source_shortest_path_length_41
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/networkx/algorithms/shortest_paths/generic.py", line 306 in shortest_path_length
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/networkx/utils/backends.py", line 551 in _call_if_no_backends_installed
+  File "<class 'networkx.utils.decorators.argmap'> compilation 79", line 3 in argmap_shortest_path_length_76
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/networkx/algorithms/centrality/harmonic.py", line 82 in harmonic_centrality
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/networkx/utils/backends.py", line 551 in _call_if_no_backends_installed
+  File "<class 'networkx.utils.decorators.argmap'> compilation 75", line 3 in argmap_harmonic_centrality_72
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/core/compute/centrality.py", line 266 in compute_harmonic_centrality
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/graphs/compute/metrics/centrality.py", line 169 in centrality_undirected
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/analytics/graphs/symbol_orchestrator.py", line 116 in build_undirected_symbol_metric_rows
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/analytics/graphs/symbol_graph_metrics.py", line 173 in build_symbol_graph_metrics_function_rows
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/analytics/graph_metrics.py", line 822 in symbol_graph_metrics_functions__base
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 846 in _execute_node
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 1275 in do_node_execute
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/cache_adapter.py", line 302 in do_node_execute
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 1079 in call_lifecycle_method_sync
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 311 in execute_lifecycle_for_node
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 239 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206 in dfs_traverse
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 267 in execute_subdag
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph.py", line 1116 in execute
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 192 in execute
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 851 in __raw_execute
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 649 in execute
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 2877 in _execute_dag
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 2645 in _execute_final_vars
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 2529 in _execute_run
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 2471 in _run_with_state
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 2422 in run
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/handlers/build.py", line 607 in _execute_build_hamilton
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/handlers/build.py", line 662 in _execute_build_outcome
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/handlers/build.py", line 1930 in _execute_and_format_result
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/handlers/build.py", line 1647 in _execute_build_run_inputs
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/handlers/build.py", line 1685 in _build_run_result
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/handlers/build.py", line 1375 in build_run_handler
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/commands/decorators.py", line 562 in _execute_handler_command
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/commands/decorators.py", line 295 in generated_call
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/observability/cli.py", line 281 in _invoke_command
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/observability/cli.py", line 241 in _execute_invocation
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/observability/cli.py", line 172 in run_cli_with_telemetry
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/cli/commands/app.py", line 92 in main
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/bin/codeintel", line 10 in <module>

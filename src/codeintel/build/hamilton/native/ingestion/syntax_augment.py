@@ -565,8 +565,36 @@ def _xref_union(exact: pa.Table, fuzzy: pa.Table) -> pa.Table:
 
 def _column_or_null(table: pa.Table, name: str) -> pa.Array | pa.ChunkedArray:
     if name in table.column_names:
-        return table[name]
+        return _ensure_array(table[name])
     return pa.nulls(table.num_rows)
+
+
+def _group_payloads_by_syntax_node(
+    syntax_node_ids: pa.Array | pa.ChunkedArray,
+    payloads: pa.StructArray,
+) -> pa.Table:
+    ids = _ensure_array(syntax_node_ids)
+    index_by_id: dict[str, list[int]] = {}
+    for idx, node_id in enumerate(ids.to_pylist()):
+        if not isinstance(node_id, str):
+            continue
+        index_by_id.setdefault(node_id, []).append(idx)
+    if not index_by_id:
+        empty_nodes = pa.array([], type=pa.string())
+        empty_payloads = pa.array([], type=pa.list_(payloads.type))
+        return pa.table({"syntax_node_id": empty_nodes, "ts_nodes": empty_payloads})
+    keys: list[str] = []
+    indices_flat: list[int] = []
+    offsets: list[int] = [0]
+    for node_id, indices in index_by_id.items():
+        keys.append(node_id)
+        indices_flat.extend(indices)
+        offsets.append(len(indices_flat))
+    offsets_array = pa.array(offsets, type=pa.int64())
+    flat_indices = pa.array(indices_flat, type=pa.int64())
+    flat_payloads = payloads.take(flat_indices)
+    list_array = pa.ListArray.from_arrays(offsets_array, flat_payloads)
+    return pa.table({"syntax_node_id": pa.array(keys, type=pa.string()), "ts_nodes": list_array})
 
 
 def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
@@ -647,11 +675,10 @@ def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
         ],
     )
     payload_table = pa.Table.from_arrays(
-        [joined["syntax_node_id"], payload],
+        [_ensure_array(joined["syntax_node_id"]), payload],
         names=["syntax_node_id", "ts_payload"],
     )
-    grouped = payload_table.group_by(["syntax_node_id"]).aggregate([("ts_payload", "list")])
-    return _rename_columns(grouped, {"ts_payload_list": "ts_nodes"})
+    return _group_payloads_by_syntax_node(payload_table["syntax_node_id"], payload)
 
 
 def _augment_syntax_nodes(syntax_nodes: pa.Table, ts_payloads: pa.Table) -> pa.Table:
