@@ -18,7 +18,7 @@ import pyarrow as pa
 
 from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_table
 from codeintel.build.graphs.validation.base import GraphCheckBase
-from codeintel.build.hamilton.native.graphs.cpg import instruction_cpg_id
+from codeintel.build.hamilton.native.graphs.cpg.bytecode import instruction_cpg_id
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.query_results import coerce_int, coerce_str

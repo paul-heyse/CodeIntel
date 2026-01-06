@@ -208,8 +208,15 @@ def _empty_anchor_table(
 
 
 __all__ = [
+    "CANONICAL_CASTS",
     "CPG_NODE_ID_TYPE",
+    "IDENTITY_KEY_REGISTRY",
+    "LOOKUP_KEY_REGISTRY",
     "SOURCE_PK_JSON_TYPE",
     "build_anchor_map",
+    "canonicalize_for_table",
     "canonicalize_table",
+    "identity_keys",
+    "lookup_keys",
+    "pk_from_row",
 ]

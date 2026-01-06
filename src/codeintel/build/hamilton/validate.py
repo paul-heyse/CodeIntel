@@ -303,6 +303,65 @@ def _tag_type_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue
     return issues
 
 
+def _cpg2_naming_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+    for node in nodes.values():
+        module_name = _node_module_name(node)
+        if module_name is None:
+            continue
+        if ".graphs.cpg2" not in module_name:
+            continue
+        if node.name.startswith("cpg2_"):
+            continue
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="cpg2_unprefixed_node",
+                message="CPG2 node must be prefixed with 'cpg2_'.",
+                node=node.name,
+                module=module_name,
+            )
+        )
+    return issues
+
+
+def _cpg_aggregator_dependency_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+    nodes_node = nodes.get("cpg_nodes")
+    if nodes_node is not None:
+        deps = {dep.name for dep in nodes_node.dependencies}
+        expected = {"cpg2_nodes__frames"}
+        if deps != expected:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="cpg_nodes_dependencies",
+                    message=(
+                        "cpg_nodes must depend only on cpg2_nodes__frames "
+                        f"(found {sorted(deps)})."
+                    ),
+                    node=nodes_node.name,
+                )
+            )
+    edges_node = nodes.get("cpg_edges")
+    if edges_node is not None:
+        deps = {dep.name for dep in edges_node.dependencies}
+        expected = {"cpg2_edges__frames"}
+        if deps != expected:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="cpg_edges_dependencies",
+                    message=(
+                        "cpg_edges must depend only on cpg2_edges__frames "
+                        f"(found {sorted(deps)})."
+                    ),
+                    node=edges_node.name,
+                )
+            )
+    return issues
+
+
 def _target_anchor_tag_issues(
     nodes: Mapping[str, NodeLike],
 ) -> tuple[list[GraphValidationIssue], list[GraphValidationIssue]]:
@@ -1470,6 +1529,8 @@ def validate_nodes(
     ]
     warnings: list[GraphValidationIssue] = []
     errors.extend(_tag_type_issues(nodes))
+    errors.extend(_cpg2_naming_issues(nodes))
+    errors.extend(_cpg_aggregator_dependency_issues(nodes))
     anchor_errors, anchor_warnings = _target_anchor_tag_issues(nodes)
     errors.extend(anchor_errors)
     errors.extend(_semantic_tag_issues(nodes))

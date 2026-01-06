@@ -62,6 +62,10 @@ from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.serialization.payload import decode_payload, encode_payload
+from codeintel.build.hamilton.native.graphs.cpg2.assemble import (
+    edge_integrity_report,
+    emit_cpg_diagnostics,
+)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -1485,16 +1489,15 @@ def _arrow_join_frames(
     return arrow_join_tables(left, right, spec=join_spec)
 
 
-def cpg_nodes(
-    env: BuildEnv,
+def cpg2_nodes__frames(
     cpg_nodes__inputs: _CpgNodeInputs,
-) -> InferableTabularInput:
-    """Build CPG nodes from syntax, symbol, and flow inventories.
+) -> pa.Table:
+    """Build and assemble CPG node frames (prefixed internal aggregator).
 
     Returns
     -------
-    InferableTabularInput
-        Arrow reader for graph.cpg_nodes.
+    pyarrow.Table
+        Contract-aligned CPG nodes table.
     """
     core = _core_lazyframes(cpg_nodes__inputs.core)
     graph = _graph_lazyframes(cpg_nodes__inputs.graph)
@@ -1524,6 +1527,19 @@ def cpg_nodes(
         combined = dedupe_table_for_table(CPG_NODES_TABLE_KEY, combined)
         return _frame_to_reader(CPG_NODES_TABLE_KEY, combined)
     return empty_table_for_table(CPG_NODES_TABLE_KEY)
+
+
+def cpg_nodes(
+    cpg2_nodes__frames: pa.Table,
+) -> InferableTabularInput:
+    """Build CPG nodes from syntax, symbol, and flow inventories.
+
+    Returns
+    -------
+    InferableTabularInput
+        Arrow reader for graph.cpg_nodes.
+    """
+    return cpg2_nodes__frames
 
 
 def _syntax_edges_to_cpg(syntax_edges: pa.Table) -> pa.Table:
@@ -7429,18 +7445,20 @@ def _overlay_frames(
     return frames
 
 
-def cpg_edges(
+def cpg2_edges__frames(
+    env: BuildEnv,
     cpg_edge_core_inputs: _CpgEdgeCoreInputs,
     cpg_edge_overlay_inputs: _CpgOverlayEdgeInputs,
     cpg__overlay_options: CpgOverlayOptions,
     cpg__options: CpgOptions,
-) -> InferableTabularInput:
-    """Build CPG edges from syntax, symbol, and flow sources.
+    cpg2_nodes__frames: pa.Table,
+) -> pa.Table:
+    """Build and assemble CPG edge frames (prefixed internal aggregator).
 
     Returns
     -------
-    InferableTabularInput
-        Arrow reader for graph.cpg_edges.
+    pyarrow.Table
+        Contract-aligned CPG edges table.
     """
     cfg_blocks = cpg_edge_core_inputs.flow.cfg_blocks
     syntax_nodes = cpg_edge_core_inputs.syntax_nodes.syntax_nodes
@@ -7498,8 +7516,27 @@ def cpg_edges(
         combined = concat_tables_unified(tables)
         combined = _select_edge_columns(combined)
         combined = dedupe_table_for_table(CPG_EDGES_TABLE_KEY, combined)
-        return _frame_to_reader(CPG_EDGES_TABLE_KEY, combined)
-    return empty_table_for_table(CPG_EDGES_TABLE_KEY)
+        assembled = _frame_to_reader(CPG_EDGES_TABLE_KEY, combined)
+    else:
+        assembled = empty_table_for_table(CPG_EDGES_TABLE_KEY)
+    emit_cpg_diagnostics(
+        env,
+        edge_integrity=edge_integrity_report(assembled, nodes=cpg2_nodes__frames),
+    )
+    return assembled
+
+
+def cpg_edges(
+    cpg2_edges__frames: pa.Table,
+) -> InferableTabularInput:
+    """Build CPG edges from syntax, symbol, and flow sources.
+
+    Returns
+    -------
+    InferableTabularInput
+        Arrow reader for graph.cpg_edges.
+    """
+    return cpg2_edges__frames
 
 
 def instruction_cpg_id(

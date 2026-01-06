@@ -3,12 +3,6 @@
 from __future__ import annotations
 
 from codeintel.build.hamilton.native.graphs.cpg import _legacy
-from codeintel.build.hamilton.native.graphs.cpg.bytecode import (
-    instruction_cpg_id,
-    py_bc_callsite_edges_to_cpg,
-    py_bc_callsite_symbol_edges_to_cpg,
-    py_bc_stack_edges_to_cpg,
-)
 from codeintel.build.hamilton.native.graphs.cpg.edges import (
     CPG_EDGES_TABLE_KEY,
     cpg_edge_call_wiring_inputs,
@@ -26,11 +20,6 @@ from codeintel.build.hamilton.native.graphs.cpg.edges import (
     cpg_edge_symbol_inputs,
     cpg_edge_syntax_node_inputs,
     cpg_edges,
-)
-from codeintel.build.hamilton.native.graphs.cpg.ids import stable_cpg_id
-from codeintel.build.hamilton.native.graphs.cpg.inspect_overlay import (
-    inspect_to_ast_edges_to_cpg,
-    py_inspect_unwrap_edges_to_cpg,
 )
 from codeintel.build.hamilton.native.graphs.cpg.nodes import (
     CPG_NODES_TABLE_KEY,
@@ -132,11 +121,4 @@ __all__ = [
     "cpg_nodes__inspect_inputs",
     "cpg_nodes__py_inputs",
     "cpg_nodes__syntax_inputs",
-    "inspect_to_ast_edges_to_cpg",
-    "instruction_cpg_id",
-    "py_bc_callsite_edges_to_cpg",
-    "py_bc_callsite_symbol_edges_to_cpg",
-    "py_bc_stack_edges_to_cpg",
-    "py_inspect_unwrap_edges_to_cpg",
-    "stable_cpg_id",
 ]

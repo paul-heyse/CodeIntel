@@ -7,6 +7,10 @@ from dataclasses import dataclass
 import pyarrow as pa
 
 from codeintel.build.graphs.assembly import table_rows
+from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
+    canonicalize_for_table,
+    lookup_keys,
+)
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.serialization.payload import decode_payload, encode_payload
@@ -46,7 +50,9 @@ def cpg_edges_from_call_wiring_calls(
         call_node_id = row.get("call_node_id")
         if call_node_id is None:
             continue
-        syntax_info = syntax_index.get((row.get("repo"), row.get("commit"), call_node_id))
+        syntax_info = syntax_index.get(
+            _syntax_lookup_key(row.get("repo"), row.get("commit"), call_node_id)
+        )
         if syntax_info is None:
             continue
         block_info = block_index.get(row.get("callee_entry_block_id"))
@@ -117,8 +123,12 @@ def cpg_edges_from_call_wiring_arg_to_param(
         dst_param_node_id = row.get("dst_param_node_id")
         if src_arg_node_id is None or dst_param_node_id is None:
             continue
-        src_info = syntax_index.get((row.get("repo"), row.get("commit"), src_arg_node_id))
-        dst_info = syntax_index.get((row.get("repo"), row.get("commit"), dst_param_node_id))
+        src_info = syntax_index.get(
+            _syntax_lookup_key(row.get("repo"), row.get("commit"), src_arg_node_id)
+        )
+        dst_info = syntax_index.get(
+            _syntax_lookup_key(row.get("repo"), row.get("commit"), dst_param_node_id)
+        )
         if src_info is None or dst_info is None:
             continue
         src_pk = {
@@ -197,7 +207,9 @@ def cpg_edges_from_call_wiring_ret_to_call(
         call_node_id = row.get("call_node_id")
         if call_node_id is None:
             continue
-        syntax_info = syntax_index.get((row.get("repo"), row.get("commit"), call_node_id))
+        syntax_info = syntax_index.get(
+            _syntax_lookup_key(row.get("repo"), row.get("commit"), call_node_id)
+        )
         if syntax_info is None:
             continue
         block_info = block_index.get(row.get("exit_block_id"))
@@ -250,10 +262,12 @@ def cpg_edges_from_call_wiring_ret_to_call(
 
 def _syntax_node_index(
     syntax_nodes: pa.Table,
-) -> dict[tuple[object, object, object], dict[str, object]]:
-    index: dict[tuple[object, object, object], dict[str, object]] = {}
-    for row in table_rows(syntax_nodes):
-        key = (row.get("repo"), row.get("commit"), row.get("node_id"))
+) -> dict[tuple[object, ...], dict[str, object]]:
+    index: dict[tuple[object, ...], dict[str, object]] = {}
+    normalized = canonicalize_for_table(syntax_nodes, table_key=SYNTAX_NODES_TABLE_KEY)
+    key_columns = lookup_keys(SYNTAX_NODES_TABLE_KEY, "node_id")
+    for row in table_rows(normalized):
+        key = tuple(row.get(column) for column in key_columns)
         index[key] = {
             "rel_path": row.get("rel_path"),
             "producer": row.get("producer"),
@@ -263,8 +277,11 @@ def _syntax_node_index(
 
 def _block_id_index(cfg_blocks: pa.Table) -> dict[object, dict[str, object]]:
     index: dict[object, dict[str, object]] = {}
-    for row in table_rows(cfg_blocks):
-        block_id = row.get("block_id")
+    normalized = canonicalize_for_table(cfg_blocks, table_key=CFG_BLOCKS_TABLE_KEY)
+    block_key = lookup_keys(CFG_BLOCKS_TABLE_KEY, "block_id")
+    block_id_index = block_key[0]
+    for row in table_rows(normalized):
+        block_id = row.get(block_id_index)
         if block_id is None:
             continue
         index[block_id] = {
@@ -272,6 +289,16 @@ def _block_id_index(cfg_blocks: pa.Table) -> dict[object, dict[str, object]]:
             "block_idx": row.get("block_idx"),
         }
     return index
+
+
+def _syntax_lookup_key(
+    repo: object,
+    commit: object,
+    node_id: object,
+) -> tuple[object, ...]:
+    key_columns = lookup_keys(SYNTAX_NODES_TABLE_KEY, "node_id")
+    values = {"repo": repo, "commit": commit, "node_id": node_id}
+    return tuple(values.get(column) for column in key_columns)
 
 
 def _payload_bytes(values: dict[str, object]) -> bytes:
