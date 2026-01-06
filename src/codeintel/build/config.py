@@ -60,6 +60,8 @@ _ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
         "export",
         "views",
         "hamilton",
+        "scope",
+        "telemetry",
         "variants",
     }
 )
@@ -70,6 +72,66 @@ _ALLOWED_SCHEMA_DRIFT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"
 class _HamiltonConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     graph_backend: str | None = None
     schema_drift_mode: str | None = None
+
+
+class _TelemetryHooksConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    enable_telemetry: bool | None = None
+    enable_io_telemetry: bool | None = None
+    enable_progress: bool | None = None
+    enable_timing: bool | None = None
+    telemetry_output_path: str | None = None
+    io_telemetry_output_path: str | None = None
+    progress_style: str | None = None
+    progress_desc: str | None = None
+    println_enabled: bool | None = None
+    println_verbosity: int | None = None
+    println_node_filter: list[str] | str | None = None
+    typecheck_enabled: bool | None = None
+    typecheck_inputs: bool | None = None
+    typecheck_outputs: bool | None = None
+    graceful_errors_enabled: bool | None = None
+    graceful_try_all_parallel: bool | None = None
+    graceful_allow_injection: bool | None = None
+    pdb_enabled: bool | None = None
+    pdb_before: bool | None = None
+    pdb_during: bool | None = None
+    pdb_after: bool | None = None
+    pdb_node_filter: list[str] | str | None = None
+    event_stream_enabled: bool | None = None
+    event_stream_path: str | None = None
+    cache_logger_level: str | None = None
+    cache_logger_path: str | None = None
+    hang_watchdog_enabled: bool | None = None
+    hang_watchdog_timeout_s: float | None = None
+    hang_watchdog_repeat: bool | None = None
+    hang_watchdog_path: str | None = None
+    display_all_functions_enabled: bool | None = None
+    display_all_functions_path: str | None = None
+    visualize_execution_enabled: bool | None = None
+    visualize_execution_path: str | None = None
+    ddog_enabled: bool | None = None
+    ddog_root_name: str | None = None
+    ddog_service: str | None = None
+    ddog_include_causal_links: bool | None = None
+
+
+class _TelemetryTrackerConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    enabled: bool | None = None
+    project_id: str | int | None = None
+    username: str | None = None
+    dag_name: str | None = None
+    api_url: str | None = None
+    ui_url: str | None = None
+    capture_data_statistics: bool | None = None
+    max_list_length: int | None = None
+    max_dict_length: int | None = None
+    config_uri: str | None = None
+    tags: dict[str, str] | None = None
+
+
+class _TelemetryConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    hooks: _TelemetryHooksConfig | None = None
+    hamilton_tracker: _TelemetryTrackerConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -515,24 +577,12 @@ def _validate_config_data(data: Mapping[str, Any], *, config_path: Path) -> None
         raise ValueError(msg)
 
     for section_name in ("analytics", "ingestion", "graphs", "export", "views"):
-        section = data.get(section_name)
-        if section is None:
-            continue
-        if not isinstance(section, Mapping):
-            msg = f"{section_name} section must be a mapping"
-            raise TypeError(msg)
+        _validate_module_section(data, section_name)
 
-    variants = data.get("variants")
-    if variants is not None and not isinstance(variants, Mapping):
-        msg = "variants section must be a mapping"
-        raise TypeError(msg)
-
-    hamilton = data.get("hamilton")
-    if hamilton is not None:
-        if not isinstance(hamilton, Mapping):
-            msg = "hamilton section must be a mapping"
-            raise TypeError(msg)
-        _decode_hamilton_section(hamilton, config_path=config_path)
+    _validate_scope_section(data.get("scope"))
+    _validate_variants_section(data.get("variants"))
+    _validate_hamilton_section(data.get("hamilton"), config_path=config_path)
+    _validate_telemetry_section(data.get("telemetry"), config_path=config_path)
 
 
 def _decode_hamilton_section(section: Mapping[str, Any], *, config_path: Path) -> None:
@@ -542,6 +592,65 @@ def _decode_hamilton_section(section: Mapping[str, Any], *, config_path: Path) -
         msg = f"hamilton section invalid in {config_path}: {exc}"
         raise ValueError(msg) from exc
     _validate_schema_drift_mode(section.get("schema_drift_mode"), config_path=config_path)
+
+
+def _decode_telemetry_section(section: Mapping[str, Any], *, config_path: Path) -> None:
+    try:
+        msgspec.convert(section, type=_TelemetryConfig, strict=True)
+    except msgspec.ValidationError as exc:
+        msg = f"telemetry section invalid in {config_path}: {exc}"
+        raise ValueError(msg) from exc
+
+
+def _validate_module_section(data: Mapping[str, Any], section_name: str) -> None:
+    section = data.get(section_name)
+    if section is None:
+        return
+    if not isinstance(section, Mapping):
+        msg = f"{section_name} section must be a mapping"
+        raise TypeError(msg)
+
+
+def _validate_scope_section(scope: object) -> None:
+    if scope is None:
+        return
+    if not isinstance(scope, Mapping):
+        msg = "scope section must be a mapping"
+        raise TypeError(msg)
+    scope_paths = scope.get("scope_paths")
+    if scope_paths is None:
+        return
+    if not isinstance(scope_paths, list) or not all(
+        isinstance(value, str) for value in scope_paths
+    ):
+        msg = "scope.scope_paths must be a list of strings"
+        raise TypeError(msg)
+
+
+def _validate_variants_section(variants: object) -> None:
+    if variants is None:
+        return
+    if not isinstance(variants, Mapping):
+        msg = "variants section must be a mapping"
+        raise TypeError(msg)
+
+
+def _validate_hamilton_section(hamilton: object, *, config_path: Path) -> None:
+    if hamilton is None:
+        return
+    if not isinstance(hamilton, Mapping):
+        msg = "hamilton section must be a mapping"
+        raise TypeError(msg)
+    _decode_hamilton_section(hamilton, config_path=config_path)
+
+
+def _validate_telemetry_section(telemetry: object, *, config_path: Path) -> None:
+    if telemetry is None:
+        return
+    if not isinstance(telemetry, Mapping):
+        msg = "telemetry section must be a mapping"
+        raise TypeError(msg)
+    _decode_telemetry_section(telemetry, config_path=config_path)
 
 
 def _validate_schema_drift_mode(raw: object, *, config_path: Path) -> None:

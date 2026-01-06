@@ -129,6 +129,11 @@ def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
         null_payload=null_payload,
         drift_payload=drift_payload,
     )
+    _write_target_duration_summary(
+        output_path=diag_dir / "target_durations.json",
+        runtime=inputs.runtime,
+        records=inputs.telemetry_records or (),
+    )
     if inputs.cache_adapter is None:
         return
     _write_cache_events(
@@ -791,6 +796,41 @@ def _write_cache_visualization(
         cache_adapter.view_run(run_id=run_id, output_file_path=str(output_path))
     except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
         log.warning("build.diagnostics.cache_view_failed run_id=%s error=%s", run_id, exc)
+
+
+def _write_target_duration_summary(
+    *,
+    output_path: Path,
+    runtime: RuntimeBundle,
+    records: Iterable[NodeExecutionRecord],
+) -> None:
+    target_by_node = _target_map(runtime)
+    if not target_by_node:
+        return
+    totals: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for record in records:
+        target = target_by_node.get(record.node_name)
+        if not target:
+            continue
+        duration = record.duration_ms or 0.0
+        totals[target] = totals.get(target, 0.0) + duration
+        counts[target] = counts.get(target, 0) + 1
+    if not totals:
+        return
+    ordered = sorted(totals.items(), key=lambda item: item[1], reverse=True)
+    payload = {
+        "targets": [
+            {
+                "target": target,
+                "duration_ms": totals[target],
+                "node_count": counts.get(target, 0),
+            }
+            for target, _duration in ordered
+        ],
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+    }
+    _write_json(output_path, payload)
 
 
 def _target_map(runtime: RuntimeBundle) -> dict[str, str]:

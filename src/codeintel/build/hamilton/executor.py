@@ -14,19 +14,29 @@ Design Principles
 
 from __future__ import annotations
 
+import faulthandler
 import importlib
 import inspect
 import json
 import logging
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, TextIO, cast
 
 import hamilton.base as h_base
+import requests
 from hamilton.caching.adapter import HamiltonCacheAdapter
+from hamilton.lifecycle import (
+    FunctionInputOutputTypeChecker,
+    GracefulErrorAdapter,
+    PDBDebugger,
+    PrintLn,
+)
 
+from codeintel.build.config import BuildConfig
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.build_log import (
@@ -53,7 +63,12 @@ from codeintel.build.hamilton.diagnostics import (
 from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
-from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
+from codeintel.build.hamilton.hooks import (
+    LifecycleEventStreamHook,
+    NodeTelemetryHook,
+    ProgressBarHook,
+    build_hooks,
+)
 from codeintel.build.hamilton.native.views.view_outputs import view_lineage_payload
 from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
 from codeintel.build.hamilton.result_builder import BuildResultBuilder
@@ -79,6 +94,7 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.build.schemas.contract_service import iter_contracts
+from codeintel.core.config.settings import HamiltonTrackerSettings
 from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.execution.ids import new_run_id
@@ -92,7 +108,6 @@ from codeintel.runtime.inputs import ExecutionInputs, execution_input_mapping
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from typing import TypedDict
 
     from hamilton.io.materialization import ExtractorFactory, MaterializerFactory
@@ -101,8 +116,6 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.build_log import BuildLogContext
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.core.config.settings import HamiltonTrackerSettings
-
     class BuildExecutionOverrides(TypedDict, total=False):
         profile: str | None
         parallel_backend: str
@@ -182,6 +195,7 @@ class _RunState:
     runtime: RuntimeBundle
     run_id: str
     cache_dir: Path
+    telemetry: _TelemetryHooksSettings
     start_time: float
     started_at: datetime
     domain: str | None
@@ -190,6 +204,20 @@ class _RunState:
     def duration_ms(self) -> float:
         """Return elapsed milliseconds for the run."""
         return (time.perf_counter() - self.start_time) * 1000
+
+
+@dataclass(frozen=True)
+class _RunSetup:
+    env: BuildEnv
+    run_id: str
+    resolved_targets: tuple[str, ...]
+    writer: BuildRunWriter
+    cache_dir: Path
+    log_handler: logging.Handler | None
+    diagnostics_path: Path
+    telemetry_settings: _TelemetryHooksSettings
+    cache_logger_handle: _CacheLoggerHandle | None
+    hang_watchdog: _HangWatchdog | None
 
 
 @dataclass(frozen=True)
@@ -225,10 +253,96 @@ class _TrackerTagContext:
     diagnostics_path: Path | None
 
 
+@dataclass(frozen=True)
+class _TelemetryHooksSettings:
+    enable_progress: bool
+    progress_style: str
+    progress_desc: str
+    println_enabled: bool
+    println_verbosity: int
+    println_node_filter: tuple[str, ...] | None
+    typecheck_enabled: bool
+    typecheck_inputs: bool
+    typecheck_outputs: bool
+    graceful_errors_enabled: bool
+    graceful_try_all_parallel: bool
+    graceful_allow_injection: bool
+    pdb_enabled: bool
+    pdb_before: bool
+    pdb_during: bool
+    pdb_after: bool
+    pdb_node_filter: tuple[str, ...] | None
+    event_stream_enabled: bool
+    event_stream_path: Path
+    cache_logger_level: str | None
+    cache_logger_path: Path | None
+    hang_watchdog_enabled: bool
+    hang_watchdog_timeout_s: float
+    hang_watchdog_repeat: bool
+    hang_watchdog_path: Path
+    display_all_functions_enabled: bool
+    display_all_functions_path: Path
+    visualize_execution_enabled: bool
+    visualize_execution_path: Path
+    ddog_enabled: bool
+    ddog_root_name: str | None
+    ddog_service: str | None
+    ddog_include_causal_links: bool
+
+
+class _HangWatchdog:
+    def __init__(
+        self,
+        *,
+        timeout_s: float,
+        output_path: Path,
+        repeat: bool,
+    ) -> None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        self._file: TextIO = output_path.open("a", encoding="utf-8")
+        faulthandler.enable(file=self._file)
+        faulthandler.dump_traceback_later(timeout_s, repeat=repeat, file=self._file)
+
+    def close(self) -> None:
+        faulthandler.cancel_dump_traceback_later()
+        self._file.close()
+
+
+@dataclass(frozen=True)
+class _CacheLoggerHandle:
+    logger: logging.Logger
+    handler: logging.Handler | None
+    previous_level: int
+    previous_propagate: bool
+
+    def close(self) -> None:
+        if self.handler is not None:
+            self.logger.removeHandler(self.handler)
+            self.handler.close()
+        self.logger.setLevel(self.previous_level)
+        self.logger.propagate = self.previous_propagate
+
+
+@dataclass(frozen=True)
+class _TrackerOverrides:
+    enabled: bool | None = None
+    project_id: str | None = None
+    username: str | None = None
+    dag_name: str | None = None
+    api_url: str | None = None
+    ui_url: str | None = None
+    capture_data_statistics: bool | None = None
+    max_list_length: int | None = None
+    max_dict_length: int | None = None
+    config_uri: str | None = None
+    tags: tuple[tuple[str, str], ...] | None = None
+
+
 class _TrackingConstants(Protocol):
     CAPTURE_DATA_STATISTICS: bool
     MAX_LIST_LENGTH_CAPTURE: int
     MAX_DICT_LENGTH_CAPTURE: int
+    DEFAULT_CONFIG_URI: str
 
 
 def _generate_run_id() -> str:
@@ -256,7 +370,374 @@ def _coerce_project_id(value: str) -> int | str:
     return value
 
 
-def _apply_tracker_constants(settings: HamiltonTrackerSettings) -> None:
+def _telemetry_section(config: BuildConfig) -> Mapping[str, object]:
+    raw = config.get("telemetry.hooks")
+    if isinstance(raw, Mapping):
+        return raw
+    return {}
+
+
+def _telemetry_bool(config: Mapping[str, object], key: str, *, default: bool) -> bool:
+    value = config.get(key)
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _telemetry_int(config: Mapping[str, object], key: str, *, default: int, min_value: int) -> int:
+    value = config.get(key)
+    if isinstance(value, int) and value >= min_value:
+        return value
+    return default
+
+
+def _telemetry_float(
+    config: Mapping[str, object],
+    key: str,
+    *,
+    default: float,
+    min_value: float,
+) -> float:
+    value = config.get(key)
+    if isinstance(value, (int, float)) and float(value) >= min_value:
+        return float(value)
+    return default
+
+
+def _telemetry_str(config: Mapping[str, object], key: str, *, default: str) -> str:
+    value = config.get(key)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return default
+
+
+def _telemetry_optional_str(config: Mapping[str, object], key: str) -> str | None:
+    value = config.get(key)
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return None
+
+
+def _telemetry_filter_list(value: object) -> tuple[str, ...] | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return (stripped,) if stripped else None
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        cleaned = tuple(item.strip() for item in value if item.strip())
+        return cleaned or None
+    return None
+
+
+def _node_filter_from_prefixes(
+    prefixes: tuple[str, ...] | None,
+) -> Callable[[str, dict[str, Any]], bool] | None:
+    if not prefixes:
+        return None
+    normalized = tuple(prefixes)
+
+    def _filter(node_name: str, _tags: dict[str, Any]) -> bool:
+        return any(
+            node_name == prefix or node_name.startswith(prefix) for prefix in normalized
+        )
+
+    return _filter
+
+
+def _load_telemetry_hooks_settings(
+    *,
+    env: BuildEnv,
+    diagnostics_path: Path,
+) -> _TelemetryHooksSettings:
+    raw = _telemetry_section(env.config)
+    progress_style = _telemetry_str(raw, "progress_style", default="internal").lower()
+    enable_progress = _telemetry_bool(raw, "enable_progress", default=False)
+    return _TelemetryHooksSettings(
+        enable_progress=enable_progress,
+        progress_style=progress_style,
+        progress_desc=_telemetry_str(raw, "progress_desc", default="Building targets"),
+        println_enabled=_telemetry_bool(raw, "println_enabled", default=False),
+        println_verbosity=_telemetry_int(raw, "println_verbosity", default=1, min_value=0),
+        println_node_filter=_telemetry_filter_list(raw.get("println_node_filter")),
+        typecheck_enabled=_telemetry_bool(raw, "typecheck_enabled", default=False),
+        typecheck_inputs=_telemetry_bool(raw, "typecheck_inputs", default=True),
+        typecheck_outputs=_telemetry_bool(raw, "typecheck_outputs", default=True),
+        graceful_errors_enabled=_telemetry_bool(raw, "graceful_errors_enabled", default=False),
+        graceful_try_all_parallel=_telemetry_bool(
+            raw,
+            "graceful_try_all_parallel",
+            default=True,
+        ),
+        graceful_allow_injection=_telemetry_bool(
+            raw,
+            "graceful_allow_injection",
+            default=True,
+        ),
+        pdb_enabled=_telemetry_bool(raw, "pdb_enabled", default=False),
+        pdb_before=_telemetry_bool(raw, "pdb_before", default=False),
+        pdb_during=_telemetry_bool(raw, "pdb_during", default=False),
+        pdb_after=_telemetry_bool(raw, "pdb_after", default=False),
+        pdb_node_filter=_telemetry_filter_list(raw.get("pdb_node_filter")),
+        event_stream_enabled=_telemetry_bool(raw, "event_stream_enabled", default=False),
+        event_stream_path=_resolve_telemetry_path(
+            raw.get("event_stream_path"),
+            repo_root=env.snapshot.repo_root,
+            default_path=diagnostics_path / "hamilton_event_stream.jsonl",
+        ),
+        cache_logger_level=_telemetry_optional_str(raw, "cache_logger_level"),
+        cache_logger_path=_resolve_optional_path(
+            raw.get("cache_logger_path"),
+            repo_root=env.snapshot.repo_root,
+        ),
+        hang_watchdog_enabled=_telemetry_bool(raw, "hang_watchdog_enabled", default=False),
+        hang_watchdog_timeout_s=_telemetry_float(
+            raw,
+            "hang_watchdog_timeout_s",
+            default=600.0,
+            min_value=1.0,
+        ),
+        hang_watchdog_repeat=_telemetry_bool(raw, "hang_watchdog_repeat", default=True),
+        hang_watchdog_path=_resolve_telemetry_path(
+            raw.get("hang_watchdog_path"),
+            repo_root=env.snapshot.repo_root,
+            default_path=diagnostics_path / "hamilton_hang_dump.log",
+        ),
+        display_all_functions_enabled=_telemetry_bool(
+            raw,
+            "display_all_functions_enabled",
+            default=False,
+        ),
+        display_all_functions_path=_resolve_telemetry_path(
+            raw.get("display_all_functions_path"),
+            repo_root=env.snapshot.repo_root,
+            default_path=diagnostics_path / "hamilton_graph_all.svg",
+        ),
+        visualize_execution_enabled=_telemetry_bool(
+            raw,
+            "visualize_execution_enabled",
+            default=False,
+        ),
+        visualize_execution_path=_resolve_telemetry_path(
+            raw.get("visualize_execution_path"),
+            repo_root=env.snapshot.repo_root,
+            default_path=diagnostics_path / "hamilton_graph_execution.svg",
+        ),
+        ddog_enabled=_telemetry_bool(raw, "ddog_enabled", default=False),
+        ddog_root_name=_telemetry_optional_str(raw, "ddog_root_name"),
+        ddog_service=_telemetry_optional_str(raw, "ddog_service"),
+        ddog_include_causal_links=_telemetry_bool(
+            raw,
+            "ddog_include_causal_links",
+            default=False,
+        ),
+    )
+
+
+def _resolve_log_level(value: str | None, *, default: int) -> int:
+    if value is None:
+        return default
+    cleaned = value.strip().upper()
+    if not cleaned:
+        return default
+    if cleaned.isdigit():
+        return int(cleaned)
+    level_map = logging.getLevelNamesMapping()
+    resolved = level_map.get(cleaned)
+    if isinstance(resolved, int):
+        return resolved
+    return default
+
+
+def _configure_cache_logger(
+    settings: _TelemetryHooksSettings,
+) -> _CacheLoggerHandle | None:
+    if settings.cache_logger_level is None and settings.cache_logger_path is None:
+        return None
+    logger = logging.getLogger("hamilton.caching")
+    previous_level = logger.level
+    previous_propagate = logger.propagate
+    level = _resolve_log_level(settings.cache_logger_level, default=logging.INFO)
+    if (
+        settings.cache_logger_level is not None
+        and level == logging.INFO
+        and settings.cache_logger_level.strip().upper() not in {"INFO", "20"}
+    ):
+        log.warning(
+            "telemetry.cache_logger_level_invalid value=%s default=INFO",
+            settings.cache_logger_level,
+        )
+    logger.setLevel(level)
+    handler: logging.Handler | None = None
+    if settings.cache_logger_path is not None:
+        settings.cache_logger_path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(settings.cache_logger_path, encoding="utf-8")
+        handler.setLevel(level)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        )
+        logger.addHandler(handler)
+    return _CacheLoggerHandle(
+        logger=logger,
+        handler=handler,
+        previous_level=previous_level,
+        previous_propagate=previous_propagate,
+    )
+
+
+def _start_hang_watchdog(settings: _TelemetryHooksSettings) -> _HangWatchdog | None:
+    if not settings.hang_watchdog_enabled:
+        return None
+    try:
+        return _HangWatchdog(
+            timeout_s=settings.hang_watchdog_timeout_s,
+            output_path=settings.hang_watchdog_path,
+            repeat=settings.hang_watchdog_repeat,
+        )
+    except OSError as exc:
+        log.warning("build.telemetry.hang_watchdog_start_failed error=%s", exc)
+        return None
+
+
+def _build_println_adapter(settings: _TelemetryHooksSettings) -> PrintLn | None:
+    if not settings.println_enabled:
+        return None
+    node_filter = _node_filter_from_prefixes(settings.println_node_filter)
+    println_logger = logging.getLogger("hamilton.println")
+    return PrintLn(
+        verbosity=settings.println_verbosity,
+        print_fn=println_logger.info,
+        node_filter=node_filter,
+    )
+
+
+def _build_typecheck_adapter(
+    settings: _TelemetryHooksSettings,
+) -> FunctionInputOutputTypeChecker | None:
+    if not settings.typecheck_enabled:
+        return None
+    return FunctionInputOutputTypeChecker(
+        check_input=settings.typecheck_inputs,
+        check_output=settings.typecheck_outputs,
+    )
+
+
+def _build_graceful_adapter(settings: _TelemetryHooksSettings) -> GracefulErrorAdapter | None:
+    if not settings.graceful_errors_enabled:
+        return None
+    return GracefulErrorAdapter(
+        Exception,
+        sentinel_value=None,
+        try_all_parallel=settings.graceful_try_all_parallel,
+        allow_injection=settings.graceful_allow_injection,
+    )
+
+
+def _build_pdb_adapter(settings: _TelemetryHooksSettings) -> PDBDebugger | None:
+    if not settings.pdb_enabled:
+        return None
+    node_filter = _node_filter_from_prefixes(settings.pdb_node_filter)
+    return PDBDebugger(
+        node_filter=node_filter,
+        before=settings.pdb_before,
+        during=settings.pdb_during,
+        after=settings.pdb_after,
+    )
+
+
+def _build_progress_adapter(settings: _TelemetryHooksSettings) -> object | None:
+    if not settings.enable_progress:
+        return None
+    style = settings.progress_style
+    adapter: object | None = None
+    if style == "tqdm":
+        adapter = ProgressBarHook(desc=settings.progress_desc)
+    elif style == "rich":
+        try:
+            progress_module = importlib.import_module("hamilton.plugins.h_rich")
+        except ModuleNotFoundError as exc:
+            log.warning("Rich progress unavailable; install sf-hamilton[rich]: %s", exc)
+        else:
+            progress_cls = getattr(progress_module, "RichProgressBar", None)
+            if not isinstance(progress_cls, type):
+                log.warning("Rich progress adapter missing in hamilton.plugins.h_rich")
+            else:
+                try:
+                    adapter = progress_cls(run_desc=settings.progress_desc)
+                except (TypeError, ValueError) as exc:
+                    log.warning("Failed to initialize RichProgressBar: %s", exc)
+    return adapter
+
+
+def _build_ddog_adapter(
+    settings: _TelemetryHooksSettings,
+    *,
+    default_root_name: str,
+) -> object | None:
+    if not settings.ddog_enabled:
+        return None
+    try:
+        ddog_module = importlib.import_module("hamilton.plugins.h_ddog")
+    except ModuleNotFoundError as exc:
+        log.warning("DDOG tracer unavailable; install sf-hamilton[datadog]: %s", exc)
+        return None
+    tracer_cls = getattr(ddog_module, "DDOGTracer", None)
+    if not isinstance(tracer_cls, type):
+        log.warning("DDOG tracer adapter missing in hamilton.plugins.h_ddog")
+        return None
+    root_name = settings.ddog_root_name or default_root_name
+    try:
+        return tracer_cls(
+            root_name=root_name,
+            include_causal_links=settings.ddog_include_causal_links,
+            service=settings.ddog_service,
+        )
+    except (TypeError, ValueError) as exc:
+        log.warning("Failed to initialize DDOGTracer: %s", exc)
+        return None
+
+
+def _build_diagnostic_adapters(
+    *,
+    settings: _TelemetryHooksSettings,
+    run_id: str,
+    default_ddog_root: str,
+) -> list[LifecycleAdapter]:
+    adapters: list[LifecycleAdapter] = []
+    println_adapter = _build_println_adapter(settings)
+    if println_adapter is not None:
+        adapters.append(println_adapter)
+    progress_adapter = _build_progress_adapter(settings)
+    if progress_adapter is not None:
+        adapters.append(cast("LifecycleAdapter", progress_adapter))
+    typecheck_adapter = _build_typecheck_adapter(settings)
+    if typecheck_adapter is not None:
+        adapters.append(typecheck_adapter)
+    graceful_adapter = _build_graceful_adapter(settings)
+    if graceful_adapter is not None:
+        adapters.append(graceful_adapter)
+    pdb_adapter = _build_pdb_adapter(settings)
+    if pdb_adapter is not None:
+        adapters.append(pdb_adapter)
+    if settings.event_stream_enabled:
+        adapters.append(
+            LifecycleEventStreamHook(
+                run_id=run_id,
+                output_path=settings.event_stream_path,
+            )
+        )
+    ddog_adapter = _build_ddog_adapter(settings, default_root_name=default_ddog_root)
+    if ddog_adapter is not None:
+        adapters.append(cast("LifecycleAdapter", ddog_adapter))
+    return adapters
+
+
+def _apply_tracker_constants(
+    settings: HamiltonTrackerSettings,
+    *,
+    config_uri: str | None = None,
+) -> None:
     try:
         tracking_constants = importlib.import_module("hamilton_sdk.tracking.constants")
     except ModuleNotFoundError as exc:
@@ -269,6 +750,11 @@ def _apply_tracker_constants(settings: HamiltonTrackerSettings) -> None:
         constants.MAX_LIST_LENGTH_CAPTURE = settings.max_list_length
     if settings.max_dict_length is not None:
         constants.MAX_DICT_LENGTH_CAPTURE = settings.max_dict_length
+    if config_uri is not None:
+        try:
+            constants.DEFAULT_CONFIG_URI = config_uri
+        except (AttributeError, TypeError) as exc:
+            log.warning("tracker.constant_set_failed DEFAULT_CONFIG_URI: %s", exc)
 
 
 def _run_preflight(
@@ -554,6 +1040,103 @@ def _build_tracker_tags(
     return tags
 
 
+def _tracker_overrides_from_config(config: BuildConfig) -> _TrackerOverrides | None:
+    raw = config.get("telemetry.hamilton_tracker")
+    if not isinstance(raw, Mapping):
+        return None
+    overrides = _TrackerOverrides(
+        enabled=_coerce_bool(raw.get("enabled")),
+        project_id=_coerce_project_id_override(raw.get("project_id")),
+        username=_coerce_optional_str(raw.get("username")),
+        dag_name=_coerce_optional_str(raw.get("dag_name")),
+        api_url=_coerce_optional_str(raw.get("api_url")),
+        ui_url=_coerce_optional_str(raw.get("ui_url")),
+        capture_data_statistics=_coerce_bool(raw.get("capture_data_statistics")),
+        max_list_length=_coerce_optional_int(raw.get("max_list_length")),
+        max_dict_length=_coerce_optional_int(raw.get("max_dict_length")),
+        config_uri=_coerce_optional_str(raw.get("config_uri")),
+        tags=_coerce_tags(raw.get("tags")),
+    )
+    return overrides if _has_tracker_overrides(overrides) else None
+
+
+def _coerce_optional_str(value: object | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _coerce_project_id_override(value: object | None) -> str | None:
+    if not isinstance(value, (str, int)):
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _coerce_optional_int(value: object | None) -> int | None:
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _coerce_bool(value: object | None) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def _coerce_tags(value: object | None) -> tuple[tuple[str, str], ...] | None:
+    if not isinstance(value, Mapping):
+        return None
+    return tuple((str(key), str(item)) for key, item in value.items())
+
+
+def _has_tracker_overrides(overrides: _TrackerOverrides) -> bool:
+    return any(
+        value is not None
+        for value in (
+            overrides.enabled,
+            overrides.project_id,
+            overrides.username,
+            overrides.dag_name,
+            overrides.api_url,
+            overrides.ui_url,
+            overrides.capture_data_statistics,
+            overrides.max_list_length,
+            overrides.max_dict_length,
+            overrides.config_uri,
+            overrides.tags,
+        )
+    )
+
+
+def _merge_tracker_settings(
+    base: HamiltonTrackerSettings,
+    overrides: _TrackerOverrides,
+) -> HamiltonTrackerSettings:
+    return HamiltonTrackerSettings(
+        enabled=overrides.enabled if overrides.enabled is not None else base.enabled,
+        project_id=overrides.project_id if overrides.project_id is not None else base.project_id,
+        username=overrides.username if overrides.username is not None else base.username,
+        dag_name=overrides.dag_name if overrides.dag_name is not None else base.dag_name,
+        api_url=overrides.api_url if overrides.api_url is not None else base.api_url,
+        ui_url=overrides.ui_url if overrides.ui_url is not None else base.ui_url,
+        capture_data_statistics=(
+            overrides.capture_data_statistics
+            if overrides.capture_data_statistics is not None
+            else base.capture_data_statistics
+        ),
+        max_list_length=(
+            overrides.max_list_length if overrides.max_list_length is not None else base.max_list_length
+        ),
+        max_dict_length=(
+            overrides.max_dict_length if overrides.max_dict_length is not None else base.max_dict_length
+        ),
+        tags=overrides.tags if overrides.tags is not None else base.tags,
+    )
+
+
 def _build_hamilton_tracker_adapter(
     *,
     env: BuildEnv,
@@ -564,6 +1147,10 @@ def _build_hamilton_tracker_adapter(
 ) -> object | None:
     runtime_settings = load_runtime_settings().observability
     tracker_settings = runtime_settings.hamilton_tracker
+    overrides = _tracker_overrides_from_config(env.config)
+    config_uri = overrides.config_uri if overrides is not None else None
+    if overrides is not None:
+        tracker_settings = _merge_tracker_settings(tracker_settings, overrides)
     if not tracker_settings.enabled:
         return None
     if not tracker_settings.project_id or not tracker_settings.username:
@@ -580,7 +1167,7 @@ def _build_hamilton_tracker_adapter(
         log.warning("HamiltonTracker adapter is unavailable in hamilton_sdk.adapters")
         return None
 
-    _apply_tracker_constants(tracker_settings)
+    _apply_tracker_constants(tracker_settings, config_uri=config_uri)
     tag_context = _TrackerTagContext(
         env=env,
         run_id=run_id,
@@ -604,11 +1191,53 @@ def _build_hamilton_tracker_adapter(
         kwargs["hamilton_api_url"] = tracker_settings.api_url
     if tracker_settings.ui_url:
         kwargs["hamilton_ui_url"] = tracker_settings.ui_url
+    tracker_adapter: object | None = None
     try:
-        return tracker_cls(**kwargs)
+        tracker_adapter = tracker_cls(**kwargs)
+    except requests.exceptions.RequestException as exc:
+        log.warning("Hamilton tracker unreachable; disabling tracker. error=%s", exc)
     except (TypeError, ValueError) as exc:
         log.warning("Failed to initialize HamiltonTracker: %s", exc)
+    return tracker_adapter
+
+
+def _resolve_telemetry_path(
+    raw: object | None,
+    *,
+    repo_root: Path,
+    default_path: Path,
+) -> Path:
+    if raw is None:
+        return default_path
+    if not isinstance(raw, str):
+        msg = "telemetry.hooks output paths must be strings"
+        raise TypeError(msg)
+    cleaned = raw.strip()
+    if not cleaned:
+        return default_path
+    path = Path(cleaned)
+    if path.is_absolute():
+        return path
+    return (repo_root / path).resolve()
+
+
+def _resolve_optional_path(
+    raw: object | None,
+    *,
+    repo_root: Path,
+) -> Path | None:
+    if raw is None:
         return None
+    if not isinstance(raw, str):
+        msg = "telemetry.hooks output paths must be strings"
+        raise TypeError(msg)
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    path = Path(cleaned)
+    if path.is_absolute():
+        return path
+    return (repo_root / path).resolve()
 
 
 def _categorize_outputs(
@@ -820,6 +1449,48 @@ def _map_closure_to_nodes(
 
 def _execution_input_mapping(inputs: ExecutionInputs) -> dict[str, object]:
     return execution_input_mapping(inputs)
+
+
+def _build_execution_inputs(context: _RunState) -> dict[str, object]:
+    inputs = ExecutionInputs(
+        env=context.env,
+        catalog=context.runtime.catalog,
+        tag_query=context.runtime.tag_query,
+        cache_index=context.runtime.cache_index,
+        cache_key_resolver=context.runtime.cache_key_resolver,
+        schema_index=context.runtime.schema_index,
+        semantic_registry=context.runtime.semantic_registry,
+        runtime_fingerprint=context.runtime.fingerprint,
+    )
+    return _execution_input_mapping(inputs)
+
+
+def _emit_execution_visualizations(
+    *,
+    context: _RunState,
+    final_vars: list[str],
+) -> None:
+    settings = context.telemetry
+    driver = context.runtime.driver
+    if settings.display_all_functions_enabled:
+        try:
+            settings.display_all_functions_path.parent.mkdir(parents=True, exist_ok=True)
+            driver.display_all_functions(
+                output_file_path=str(settings.display_all_functions_path),
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            log.warning("build.telemetry.display_all_functions_failed error=%s", exc)
+    if settings.visualize_execution_enabled:
+        try:
+            settings.visualize_execution_path.parent.mkdir(parents=True, exist_ok=True)
+            driver.visualize_execution(
+                list(final_vars),
+                inputs=_build_execution_inputs(context),
+                overrides={},
+                output_file_path=str(settings.visualize_execution_path),
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            log.warning("build.telemetry.visualize_execution_failed error=%s", exc)
 
 
 def _dataset_manifest_exists(env: BuildEnv, table_key: str) -> bool:
@@ -1365,6 +2036,50 @@ def _build_override_data(overrides: Mapping[str, object]) -> dict[str, object]:
     }
 
 
+def _prepare_run_setup(
+    *,
+    env: BuildEnv,
+    targets: list[str],
+    options: BuildExecutionOptions,
+) -> _RunSetup:
+    resolved_targets = tuple(_ensure_intrinsic_targets(targets))
+    run_id = _generate_run_id()
+    start_build_log(env=env, run_id=run_id)
+    record_build_event(
+        "build.run.start",
+        requested_targets_count=len(resolved_targets),
+    )
+    metadata_bundle = BuildMetadataBundleWriter(
+        env.paths.build_dir / "metadata",
+        run_id=run_id,
+        repo=env.repo,
+        commit=env.commit,
+    )
+    env = replace(env, metadata_bundle=metadata_bundle)
+    writer = BuildRunWriter(metadata_bundle=metadata_bundle)
+    cache_dir = options.resolved_cache_dir(env=env)
+    log_handler = _install_run_log_handler(env.paths.build_dir, run_id)
+    diagnostics_path = diagnostics_dir(env.paths.build_dir)
+    telemetry_settings = _load_telemetry_hooks_settings(
+        env=env,
+        diagnostics_path=diagnostics_path,
+    )
+    cache_logger_handle = _configure_cache_logger(telemetry_settings)
+    hang_watchdog = _start_hang_watchdog(telemetry_settings)
+    return _RunSetup(
+        env=env,
+        run_id=run_id,
+        resolved_targets=resolved_targets,
+        writer=writer,
+        cache_dir=cache_dir,
+        log_handler=log_handler,
+        diagnostics_path=diagnostics_path,
+        telemetry_settings=telemetry_settings,
+        cache_logger_handle=cache_logger_handle,
+        hang_watchdog=hang_watchdog,
+    )
+
+
 class HamiltonBuildExecutor:
     """Execute build targets using Hamilton Driver.
 
@@ -1414,46 +2129,32 @@ class HamiltonBuildExecutor:
         HamiltonBuildResult
             Structured result containing outputs and status details.
         """
-        resolved_targets = _ensure_intrinsic_targets(targets)
-        run_id = _generate_run_id()
-        start_build_log(env=env, run_id=run_id)
-        record_build_event(
-            "build.run.start",
-            requested_targets_count=len(resolved_targets),
-        )
         logging.captureWarnings(capture=True)
-        metadata_bundle = BuildMetadataBundleWriter(
-            env.paths.build_dir / "metadata",
-            run_id=run_id,
-            repo=env.repo,
-            commit=env.commit,
+        setup = _prepare_run_setup(
+            env=env,
+            targets=targets,
+            options=self._options,
         )
-        env = replace(env, metadata_bundle=metadata_bundle)
-        writer = BuildRunWriter(metadata_bundle=metadata_bundle)
-        cache_dir = self._options.resolved_cache_dir(env=env)
-        log_handler = _install_run_log_handler(env.paths.build_dir, run_id)
         try:
             runtime, telemetry_hook = self._build_runtime(
-                env=env,
-                run_id=run_id,
-                writer=writer,
-                cache_dir=cache_dir,
+                setup=setup,
                 domain=domain,
             )
 
             context = _RunState(
-                env=env,
-                targets=tuple(resolved_targets),
+                env=setup.env,
+                targets=setup.resolved_targets,
                 runtime=runtime,
-                run_id=run_id,
-                cache_dir=cache_dir,
+                run_id=setup.run_id,
+                cache_dir=setup.cache_dir,
+                telemetry=setup.telemetry_settings,
                 start_time=time.perf_counter(),
                 started_at=datetime.now(tz=UTC),
                 domain=domain,
             )
             return self._run_with_state(
                 context=context,
-                writer=writer,
+                writer=setup.writer,
                 telemetry_hook=telemetry_hook,
             )
         except Exception as exc:
@@ -1464,24 +2165,28 @@ class HamiltonBuildExecutor:
                 exception_type=exception_type,
                 error=error_summary,
             )
-            events = _persist_build_log_from_buffer(writer=writer)
+            events = _persist_build_log_from_buffer(writer=setup.writer)
             _write_failure_snapshot_from_context(
                 context=_FailureSnapshotContext(
-                    run_id=run_id,
-                    repo=env.repo,
-                    commit=env.commit,
+                    run_id=setup.run_id,
+                    repo=setup.env.repo,
+                    commit=setup.env.commit,
                     domain=domain,
-                    requested_targets=tuple(resolved_targets),
-                    build_dir=env.paths.build_dir,
+                    requested_targets=setup.resolved_targets,
+                    build_dir=setup.env.paths.build_dir,
                 ),
                 error_summary=error_summary,
                 exception_type=exception_type,
                 events=events,
             )
-            log.exception("build.hamilton.executor.bootstrap_error run_id=%s", run_id)
+            log.exception("build.hamilton.executor.bootstrap_error run_id=%s", setup.run_id)
             raise
         finally:
-            _teardown_run_logging(log_handler)
+            if setup.hang_watchdog is not None:
+                setup.hang_watchdog.close()
+            if setup.cache_logger_handle is not None:
+                setup.cache_logger_handle.close()
+            _teardown_run_logging(setup.log_handler)
 
     def _run_with_state(
         self,
@@ -1551,6 +2256,7 @@ class HamiltonBuildExecutor:
         if plan is None:
             return self._make_error_result(context, "Build planning failed"), error_summary
 
+        _emit_execution_visualizations(context=context, final_vars=plan.final_vars)
         outputs, error = self._execute_final_vars(
             context=context,
             final_vars=plan.final_vars,
@@ -1681,10 +2387,7 @@ class HamiltonBuildExecutor:
     def _build_runtime(
         self,
         *,
-        env: BuildEnv,
-        run_id: str,
-        writer: BuildRunWriter,
-        cache_dir: Path,
+        setup: _RunSetup,
         domain: str | None,
     ) -> tuple[RuntimeBundle, NodeTelemetryHook | None]:
         """Build Hamilton runtime with configured mode and lifecycle adapters.
@@ -1694,21 +2397,33 @@ class HamiltonBuildExecutor:
         RuntimeBundle
             Configured runtime bundle with driver and catalog.
         """
-        config = _base_hamilton_config(env=env, options=self._options)
+        config = _base_hamilton_config(env=setup.env, options=self._options)
         dynamic_enabled, _, _ = _apply_dynamic_execution_config(
             config=config,
-            env=env,
+            env=setup.env,
             options=self._options,
         )
-        materializers = _resolve_materializers(env.execution_settings.materializers)
+        materializers = _resolve_materializers(setup.env.execution_settings.materializers)
         telemetry_hook: NodeTelemetryHook | None = None
 
-        diagnostics_path = diagnostics_dir(env.paths.build_dir)
-        telemetry_output = diagnostics_path / "node_telemetry.jsonl"
-        hook_options = self._options.hook_options(telemetry_output_path=telemetry_output)
+        telemetry_output = _resolve_telemetry_path(
+            setup.env.config.get("telemetry.hooks.telemetry_output_path"),
+            repo_root=setup.env.snapshot.repo_root,
+            default_path=setup.diagnostics_path / "node_telemetry.jsonl",
+        )
+        io_telemetry_output = _resolve_telemetry_path(
+            setup.env.config.get("telemetry.hooks.io_telemetry_output_path"),
+            repo_root=setup.env.snapshot.repo_root,
+            default_path=setup.diagnostics_path / "node_io_telemetry.jsonl",
+        )
+        hook_options = self._options.hook_options(
+            telemetry_output_path=telemetry_output,
+            io_telemetry_output_path=io_telemetry_output,
+            progress_desc=setup.telemetry_settings.progress_desc,
+        )
         cache_adapter = _build_cache_adapter(
-            run_id=run_id,
-            cache_dir=cache_dir,
+            run_id=setup.run_id,
+            cache_dir=setup.cache_dir,
             enable_cache=self._options.enable_hamilton_cache,
         )
 
@@ -1732,31 +2447,39 @@ class HamiltonBuildExecutor:
             else:
                 adapters.append(h_base.DictResult())
 
-            hooks = build_hooks(run_id, writer, options=hook_options)
+            hooks = build_hooks(setup.run_id, setup.writer, options=hook_options)
             for hook in hooks:
                 if isinstance(hook, NodeTelemetryHook):
                     telemetry_hook = hook
                 adapters.append(cast("LifecycleAdapter", hook))
 
+            adapters.extend(
+                _build_diagnostic_adapters(
+                    settings=setup.telemetry_settings,
+                    run_id=setup.run_id,
+                    default_ddog_root=setup.env.snapshot.repo,
+                )
+            )
+
             tracker_adapter = _build_hamilton_tracker_adapter(
-                env=env,
-                run_id=run_id,
+                env=setup.env,
+                run_id=setup.run_id,
                 domain=domain,
-                cache_dir=cache_dir,
-                diagnostics_path=diagnostics_path,
+                cache_dir=setup.cache_dir,
+                diagnostics_path=setup.diagnostics_path,
             )
             if tracker_adapter is not None:
                 adapters.append(cast("LifecycleAdapter", tracker_adapter))
             return adapters
 
         composition = compose_runtime(
-            env=env,
+            env=setup.env,
             config=config,
             options=BuildDriverOptions(
                 adapter_factory=_adapter_factory,
                 materializers=materializers or None,
                 enable_cache=self._options.enable_hamilton_cache,
-                cache_dir=str(cache_dir),
+                cache_dir=str(setup.cache_dir),
                 cache_adapter=cache_adapter,
             ),
         )
@@ -1870,8 +2593,6 @@ class HamiltonBuildExecutor:
             Outputs keyed by node name, and optional error string.
         """
         try:
-            execution_env = context.env
-
             with telemetry_context(
                 run_id=context.run_id,
                 domain=context.domain,
@@ -1880,17 +2601,7 @@ class HamiltonBuildExecutor:
                     commit=context.env.commit,
                 ),
             ):
-                inputs = ExecutionInputs(
-                    env=execution_env,
-                    catalog=context.runtime.catalog,
-                    tag_query=context.runtime.tag_query,
-                    cache_index=context.runtime.cache_index,
-                    cache_key_resolver=context.runtime.cache_key_resolver,
-                    schema_index=context.runtime.schema_index,
-                    semantic_registry=context.runtime.semantic_registry,
-                    runtime_fingerprint=context.runtime.fingerprint,
-                )
-                input_mapping = _execution_input_mapping(inputs)
+                input_mapping = _build_execution_inputs(context)
                 set_execution_active(active=True)
                 try:
                     outputs = context.runtime.driver.execute(

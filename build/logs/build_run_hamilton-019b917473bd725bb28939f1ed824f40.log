@@ -1,0 +1,42 @@
+2026-01-05 22:58:07,407 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph_types.py:73: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  if not hasattr(n.body[0], "value") or not isinstance(n.body[0].value, ast.Str):
+
+2026-01-05 22:58:08,811 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/io/utils.py:51: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  timestamp = datetime.now().utcnow().timestamp()
+
+2026-01-05 22:58:14,601 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse config/mkdocs.yml
+2026-01-05 22:58:14,602 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/PF3PuIZ-jYDxEBRpjMkbi/markdown_it/port.yaml
+2026-01-05 22:58:14,602 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/u1TPF7g7VU5DysH2bCbj7/pycparser/_c_ast.cfg
+2026-01-05 22:58:14,641 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.modules@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,641 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,641 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,641 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,641 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,641 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.call_graph_nodes@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,642 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.call_graph_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,642 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,642 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.modules@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,643 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check missing_function_goids; missing Parquet tables: core.ast_nodes, core.goids
+2026-01-05 22:58:14,643 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check callsite_span_mismatch; missing Parquet tables: graph.call_graph_edges
+2026-01-05 22:58:14,643 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check orphan_modules; missing Parquet tables: core.modules, core.goids
+2026-01-05 22:58:14,643 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_bindings@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,644 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_resolution_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,644 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_scopes@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,644 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_function_partitions@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,644 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_bc_code_units@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,644 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_bc_cfg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,644 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_bc_blocks@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_bc_defuse_events@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_bc_defuse_events@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_bc_defuse_events@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.call_graph_edges
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.import_graph_edges
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.symbol_use_edges
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.validation.runner Validation table missing: core.modules
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check symbol_communities; missing Parquet tables: analytics.symbol_graph_metrics_modules
+2026-01-05 22:58:14,645 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check subsystem_disagreement; missing Parquet tables: analytics.subsystem_agreement
+2026-01-05 22:58:15,073 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Falling back to filesystem module scan after empty storage query.

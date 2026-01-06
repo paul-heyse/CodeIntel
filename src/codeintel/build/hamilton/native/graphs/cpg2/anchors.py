@@ -188,6 +188,7 @@ def pk_from_row(
     """
     return {column: row.get(column) for column in identity_keys(table_key)}
 
+
 CPG_NODE_ID_TYPE = pa.decimal128(38, 0)
 SOURCE_PK_JSON_TYPE = pa.binary()
 

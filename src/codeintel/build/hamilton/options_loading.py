@@ -7,7 +7,7 @@ same parameter mapping, rather than instantiating options dataclasses directly.
 
 from __future__ import annotations
 
-from dataclasses import is_dataclass
+from dataclasses import fields, is_dataclass, replace
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from codeintel.build.hamilton.env import BuildEnv
@@ -52,22 +52,52 @@ def load_target_options[OptionsT: object](
     """
     params: TargetParameters = env.config.parameters_for(target_name)
     if len(params) == 0:
-        return options_type()
+        return _apply_global_scope(env, options_type())
     mapping = cast("Mapping[str, object]", params)
 
     from_params = getattr(options_type, "from_parameters", None)
     if callable(from_params):
-        return cast("_FromParameters[OptionsT]", options_type).from_parameters(mapping)
+        options = cast("_FromParameters[OptionsT]", options_type).from_parameters(mapping)
+        return _apply_global_scope(env, options)
 
     if not is_dataclass(options_type):
         msg = f"Options type must be a dataclass or implement from_parameters(): {options_type}"
         raise TypeError(msg)
 
     try:
-        return options_type(**dict(mapping))
+        options = options_type(**dict(mapping))
+        return _apply_global_scope(env, options)
     except TypeError as exc:
         msg = f"Failed to construct {options_type} for {target_name} from params={dict(mapping)!r}"
         raise TypeError(msg) from exc
+
+
+def _apply_global_scope[OptionsT: object](env: BuildEnv, options: OptionsT) -> OptionsT:
+    scope_paths = _resolve_global_scope_paths(env)
+    if scope_paths is None:
+        return options
+    if not is_dataclass(options):
+        return options
+    option_fields = {field.name for field in fields(options)}
+    if "scope_paths" not in option_fields:
+        return options
+    current = getattr(options, "scope_paths", None)
+    if current is not None:
+        return options
+    return replace(options, scope_paths=list(scope_paths))
+
+
+def _resolve_global_scope_paths(env: BuildEnv) -> tuple[str, ...] | None:
+    raw = env.config.get("scope.scope_paths")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(value, str) for value in raw):
+        msg = "scope.scope_paths must be a list of strings"
+        raise TypeError(msg)
+    normalized = tuple(value.strip() for value in raw if value.strip())
+    if not normalized:
+        return None
+    return normalized
 
 
 __all__ = [

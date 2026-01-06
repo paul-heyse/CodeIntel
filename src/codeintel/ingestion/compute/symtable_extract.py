@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
+    from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 LOG = logging.getLogger(__name__)
@@ -124,6 +125,7 @@ class _ModuleContext:
     module: ModuleRecord
     source_text: str
     source_index: LineIndexedSource
+    ast_tree: ast.AST | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +238,8 @@ def _parse_ast(
     *,
     warnings: list[str],
 ) -> ast.AST | None:
+    if context.ast_tree is not None:
+        return context.ast_tree
     try:
         return ast.parse(
             context.source_text,
@@ -1009,6 +1013,7 @@ class SymtableExtractStep(BaseExtractStep):
         discovery: ModuleDiscoveryPort,
         *,
         options: SymtableExtractOptions | None = None,
+        frontend: PyFrontend | None = None,
     ) -> None:
         """Initialize the symtable extraction step.
 
@@ -1018,8 +1023,10 @@ class SymtableExtractStep(BaseExtractStep):
             Discovery port for reading module source.
         options
             Symtable extraction options.
+        frontend
+            Optional shared frontend cache for source and AST reuse.
         """
-        super().__init__(discovery)
+        super().__init__(discovery, frontend=frontend)
         self._options = options or SymtableExtractOptions()
 
     def execute(
@@ -1047,13 +1054,14 @@ class SymtableExtractStep(BaseExtractStep):
             return SymtableExtractResult(result=ExecutionResult.failed(str(exc)))
 
         warnings: list[str] = []
-        for module, source_text, source_index in self._iter_python_source_bundles(modules):
+        for module, source_text, source_index, tree in self._iter_python_source_bundles(modules):
             context = _ModuleContext(
                 repo=repo,
                 commit=commit,
                 module=module,
                 source_text=source_text,
                 source_index=source_index,
+                ast_tree=tree,
             )
             _process_module(context, collectors, warnings=warnings)
             _flush_symtable_collectors(collectors)
@@ -1093,9 +1101,16 @@ class SymtableExtractStep(BaseExtractStep):
     def _iter_python_source_bundles(
         self,
         modules: Sequence[ModuleRecord],
-    ) -> Iterable[tuple[ModuleRecord, str, LineIndexedSource]]:
+    ) -> Iterable[tuple[ModuleRecord, str, LineIndexedSource, ast.AST | None]]:
         for module in modules:
             if not module.rel_path.endswith(".py"):
+                continue
+            if self._frontend is not None:
+                bundle = self._frontend.get_source_bundle(module)
+                if bundle is None:
+                    continue
+                tree = self._frontend.get_ast(module)
+                yield module, bundle.source_text, bundle.source_index, tree
                 continue
             source_bytes = self._discovery.read_module_bytes(module)
             if source_bytes is None:
@@ -1104,7 +1119,7 @@ class SymtableExtractStep(BaseExtractStep):
                     continue
                 source_bytes = source_text.encode("utf-8", errors="replace")
             source_text, source_index = _build_source_index(source_bytes)
-            yield module, source_text, source_index
+            yield module, source_text, source_index, None
 
 
 __all__ = ["SymtableExtractResult", "SymtableExtractStep"]

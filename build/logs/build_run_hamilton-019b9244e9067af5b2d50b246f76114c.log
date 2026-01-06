@@ -1,0 +1,355 @@
+2026-01-06 02:45:48,850 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph_types.py:73: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  if not hasattr(n.body[0], "value") or not isinstance(n.body[0].value, ast.Str):
+
+2026-01-06 02:45:50,250 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/io/utils.py:51: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  timestamp = datetime.now().utcnow().timestamp()
+
+2026-01-06 02:45:55,835 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse config/mkdocs.yml
+2026-01-06 02:45:55,836 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/PF3PuIZ-jYDxEBRpjMkbi/markdown_it/port.yaml
+2026-01-06 02:45:55,836 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/u1TPF7g7VU5DysH2bCbj7/pycparser/_c_ast.cfg
+2026-01-06 02:45:55,915 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=goid_h128: decimal128(38, 0)
+urn: string
+rel_path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+kind: dictionary<values=string, indices=int32, ordered=0>
+qualname: string
+start_line: int32
+end_line: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'core.goids'
+codeintel.domain: 'core'
+codeintel.target: 'goids'
+codeintel.schema_hash: '3e866ab4b566a5a63db836dfcef10e4623895bf233be26553' + 15
+codeintel.schema_digest: '92995b2ab6ed56c8ea06891ac93dab4a079362fb1580894' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","en' + 182
+codeintel.nullability_json: '{"commit":false,"created_at":false,"end_line' + 132
+codeintel.primary_keys_json: '["goid_h128"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:19.737713+00:00'
+codeintel.hamilton.node: 'm__core__goids'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"4550f108a1b499e5204423153a39a416' + 177)
+2026-01-06 02:45:55,915 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T05:49:57.493561+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-06 02:45:55,924 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=goid_h128: decimal128(38, 0)
+urn: string
+rel_path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+kind: dictionary<values=string, indices=int32, ordered=0>
+qualname: string
+start_line: int32
+end_line: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'core.goids'
+codeintel.domain: 'core'
+codeintel.target: 'goids'
+codeintel.schema_hash: '3e866ab4b566a5a63db836dfcef10e4623895bf233be26553' + 15
+codeintel.schema_digest: '92995b2ab6ed56c8ea06891ac93dab4a079362fb1580894' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","en' + 182
+codeintel.nullability_json: '{"commit":false,"created_at":false,"end_line' + 132
+codeintel.primary_keys_json: '["goid_h128"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:19.737713+00:00'
+codeintel.hamilton.node: 'm__core__goids'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"4550f108a1b499e5204423153a39a416' + 177)
+2026-01-06 02:45:58,555 WARNING codeintel.build.graphs.validation.runner Validation: 2355 isolated call graph node(s) (sample: 54229508676810237757852005866899728854, 65369651026670722044121540749252417629, 67396147505915419402991450161026687459, 81821712742756558443914674762054197669, 79096178072384228730265374375759561295)
+2026-01-06 02:45:58,559 WARNING codeintel.build.graphs.validation.runner Validation: 5 recursive call cluster(s) detected (largest size 31)
+2026-01-06 02:45:58,582 WARNING codeintel.build.graphs.validation.runner Validation: 5 import graph hub(s) (sample: __future__, collections.abc, dataclasses, pathlib, typing)
+2026-01-06 02:45:58,615 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T05:49:57.493561+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-06 02:45:58,617 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T05:49:57.493561+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-06 02:45:58,619 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+symbol_betweenness: double
+symbol_closeness: double
+symbol_eigenvector: double
+symbol_harmonic: double
+symbol_k_core: int32
+symbol_constraint: double
+symbol_effective_size: double
+symbol_community_id: int32
+symbol_component_id: int32
+symbol_component_size: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'analytics.symbol_graph_metrics_modules'
+codeintel.domain: 'analytics'
+codeintel.target: 'symbol_graph_metrics'
+codeintel.schema_hash: 'ec5b4ee870996ca9df31c81073143673ba5c3f17823bbb165' + 15
+codeintel.schema_digest: '07430f2b303c0cc34af644278e1533f01f12e34e84ab6e6' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","mo' + 334
+codeintel.nullability_json: '{"commit":false,"created_at":false,"module":' + 276
+codeintel.primary_keys_json: '["repo","commit","module"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:06:06.194276+00:00'
+codeintel.hamilton.node: 'm__analytics__symbol_graph_metrics_modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"9317af8a1adbbd1f3fe06084b8e7e8d6' + 226)
+2026-01-06 02:45:58,621 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+subsystem_id: string
+import_community_id: int32
+agrees: bool
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'analytics.subsystem_agreement'
+codeintel.domain: 'analytics'
+codeintel.target: 'subsystem_agreement'
+codeintel.schema_hash: '99dc1fdbac049b68801f872ef03e24acc95b6a88423fd322a' + 15
+codeintel.schema_digest: '5fdf28d84a3482f50b32f9f44cf9e80053ae7ec7c935785' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"agrees":"BOOLEAN","commit":"VARCHAR","created_' + 109
+codeintel.nullability_json: '{"agrees":true,"commit":false,"created_at":f' + 80
+codeintel.primary_keys_json: '["repo","commit","module"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:51.352153+00:00'
+codeintel.hamilton.node: 'm__analytics__subsystem_agreement'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"99dc1fdbac049b68801f872ef03e24ac' + 79)
+2026-01-06 02:45:58,746 ERROR codeintel.build.hamilton.native.ingestion.ingest_targets Module scan failed
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/options_loading.py", line 67, in load_target_options
+    return options_type(**dict(mapping))
+TypeError: ModuleIngestOptions.__init__() got an unexpected keyword argument 'py_frontend_cache_entries'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/ingestion/ingest_targets.py", line 469, in t__modules__run
+    opts = load_target_options(
+        env,
+        target_name=MODULES_TARGET_NAME,
+        options_type=ModuleIngestOptions,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/options_loading.py", line 70, in load_target_options
+    raise TypeError(msg) from exc
+TypeError: Failed to construct <class 'codeintel.build.hamilton.native.options.ingestion.ModuleIngestOptions'> for modules from params={'py_frontend_cache_entries': 4096, 'py_frontend_cache_bytes': True, 'py_frontend_cache_text': True, 'py_frontend_cache_line_index': True, 'py_frontend_cache_ast': True, 'py_frontend_cache_code': True, 'py_frontend_decode_errors': 'replace'}
+2026-01-06 02:45:58,933 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Module path fallback scan failed: Failed to construct <class 'codeintel.build.hamilton.native.options.ingestion.ModuleIngestOptions'> for modules from params={'py_frontend_cache_entries': 4096, 'py_frontend_cache_bytes': True, 'py_frontend_cache_text': True, 'py_frontend_cache_line_index': True, 'py_frontend_cache_ast': True, 'py_frontend_cache_code': True, 'py_frontend_decode_errors': 'replace'}
+2026-01-06 02:46:00,282 ERROR hamilton.execution.graph_functions 
+********************************************************************************
+> scip__options [codeintel.build.hamilton.native.ingestion.scip.scip__options()] encountered an error<
+> Node inputs:
+{'env': "BuildEnv(gateway=None, snapshot=SnapshotRef(repo='..."}
+********************************************************************************
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/options_loading.py", line 67, in load_target_options
+    return options_type(**dict(mapping))
+TypeError: ScipIngestOptions.__init__() got an unexpected keyword argument 'py_frontend_cache_entries'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 311, in execute_lifecycle_for_node
+    result = __adapter.call_lifecycle_method_sync(
+        "do_node_execute",
+    ...<3 lines>...
+        task_id=__task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 1079, in call_lifecycle_method_sync
+    return getattr(adapter, method_name)(**kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/cache_adapter.py", line 302, in do_node_execute
+    result = super().do_node_execute(
+        run_id=run_id,
+    ...<3 lines>...
+        **future_kwargs,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 1275, in do_node_execute
+    result = self._execute_node(
+        run_id=run_id,
+    ...<3 lines>...
+        task_id=task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 846, in _execute_node
+    result = node_callable(**node_kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip.py", line 262, in scip__options
+    return load_target_options(env, target_name=SCIP_TARGET_NAME, options_type=ScipIngestOptions)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/options_loading.py", line 70, in load_target_options
+    raise TypeError(msg) from exc
+TypeError: Failed to construct <class 'codeintel.build.hamilton.native.options.ingestion.ScipIngestOptions'> for scip from params={'py_frontend_cache_entries': 4096, 'py_frontend_cache_bytes': True, 'py_frontend_cache_text': True, 'py_frontend_cache_line_index': True, 'py_frontend_cache_ast': True, 'py_frontend_cache_code': True, 'py_frontend_decode_errors': 'replace'}
+2026-01-06 02:46:00,284 ERROR codeintel.build.hamilton.hooks.telemetry_hook build.node.error run_id=hamilton-019b9244e9067af5b2d50b246f76114c node_name=scip__options target=scip table_key=None exception_type=TypeError error=Failed to construct <class 'codeintel.build.hamilton.native.options.ingestion.ScipIngestOptions'> for scip from params={'py_frontend_cache_entries': 4096, 'py_frontend_cache_bytes': True, 'py_frontend_cache_text': True, 'py_frontend_cache_line_index': True, 'py_frontend_cache_ast': True, 'py_frontend_cache_code': True, 'py_frontend_decode_errors': 'replace'}
+2026-01-06 02:46:00,284 ERROR hamilton.driver -------------------------------------------------------------------
+Oh no an error! Need help with Hamilton?
+Join our slack and ask for help! https://join.slack.com/t/hamilton-opensource/shared_invite/zt-2niepkra8-DGKGf_tTYhXuJWBTXtIs4g
+-------------------------------------------------------------------
+
+2026-01-06 02:46:00,285 ERROR codeintel.build.hamilton.executor build.hamilton.executor.error run_id=hamilton-019b9244e9067af5b2d50b246f76114c
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/options_loading.py", line 67, in load_target_options
+    return options_type(**dict(mapping))
+TypeError: ScipIngestOptions.__init__() got an unexpected keyword argument 'py_frontend_cache_entries'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 1896, in _execute_dag
+    outputs = context.runtime.driver.execute(
+        list(final_vars),
+        inputs=input_mapping,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 663, in execute
+    raise e
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 649, in execute
+    outputs = self.__raw_execute(
+        _final_vars, overrides, display_graph, inputs=inputs, _run_id=run_id
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 860, in __raw_execute
+    raise e
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 851, in __raw_execute
+    results = self.graph_executor.execute(
+        function_graph,
+    ...<3 lines>...
+        run_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 192, in execute
+    fg.execute(nodes, memoized_computation, overrides, inputs, run_id=run_id)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph.py", line 1116, in execute
+    return graph_functions.execute_subdag(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        nodes=nodes,
+        ^^^^^^^^^^^^
+    ...<4 lines>...
+        run_id=run_id,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 267, in execute_subdag
+    dfs_traverse(final_var_node, dep_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 239, in dfs_traverse
+    result = execute_lifecycle_for_node_partial(**kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 311, in execute_lifecycle_for_node
+    result = __adapter.call_lifecycle_method_sync(
+        "do_node_execute",
+    ...<3 lines>...
+        task_id=__task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 1079, in call_lifecycle_method_sync
+    return getattr(adapter, method_name)(**kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/cache_adapter.py", line 302, in do_node_execute
+    result = super().do_node_execute(
+        run_id=run_id,
+    ...<3 lines>...
+        **future_kwargs,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 1275, in do_node_execute
+    result = self._execute_node(
+        run_id=run_id,
+    ...<3 lines>...
+        task_id=task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 846, in _execute_node
+    result = node_callable(**node_kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip.py", line 262, in scip__options
+    return load_target_options(env, target_name=SCIP_TARGET_NAME, options_type=ScipIngestOptions)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/options_loading.py", line 70, in load_target_options
+    raise TypeError(msg) from exc
+TypeError: Failed to construct <class 'codeintel.build.hamilton.native.options.ingestion.ScipIngestOptions'> for scip from params={'py_frontend_cache_entries': 4096, 'py_frontend_cache_bytes': True, 'py_frontend_cache_text': True, 'py_frontend_cache_line_index': True, 'py_frontend_cache_ast': True, 'py_frontend_cache_code': True, 'py_frontend_decode_errors': 'replace'}
+2026-01-06 02:46:03,789 WARNING codeintel.build.hamilton.diagnostics build.diagnostics.cache_view_failed run_id=hamilton-019b9244e9067af5b2d50b246f76114c error='hamilton-019b9244e9067af5b2d50b246f76114c'

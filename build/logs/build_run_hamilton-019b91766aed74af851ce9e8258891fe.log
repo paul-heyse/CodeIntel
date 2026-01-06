@@ -1,0 +1,87 @@
+2026-01-05 23:00:16,183 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph_types.py:73: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  if not hasattr(n.body[0], "value") or not isinstance(n.body[0].value, ast.Str):
+
+2026-01-05 23:00:17,441 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/io/utils.py:51: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  timestamp = datetime.now().utcnow().timestamp()
+
+2026-01-05 23:00:23,017 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse config/mkdocs.yml
+2026-01-05 23:00:23,018 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/PF3PuIZ-jYDxEBRpjMkbi/markdown_it/port.yaml
+2026-01-05 23:00:23,018 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/u1TPF7g7VU5DysH2bCbj7/pycparser/_c_ast.cfg
+2026-01-05 23:00:23,063 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,063 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,063 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,063 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,063 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.call_graph_nodes@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,063 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.call_graph_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,064 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.goids@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,065 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b917473bc75a4acf7bbd18af4f570'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T03:58:14.915667+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":null,"table_key":"core.file_state' + 100)
+2026-01-05 23:00:23,065 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check missing_function_goids; missing Parquet tables: core.goids
+2026-01-05 23:00:23,065 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check callsite_span_mismatch; missing Parquet tables: graph.call_graph_edges
+2026-01-05 23:00:23,066 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check orphan_modules; missing Parquet tables: core.goids
+2026-01-05 23:00:23,066 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_bindings@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,066 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_resolution_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,066 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_scopes@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,066 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for core.py_sym_function_partitions@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,072 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,074 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,075 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,076 WARNING codeintel.build.graphs.engine.datasets Dataset snapshot missing for graph.cpg_edges@5f11b68cef658a75b3a334a76190824f9269c165
+2026-01-05 23:00:23,076 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.call_graph_edges
+2026-01-05 23:00:23,076 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.import_graph_edges
+2026-01-05 23:00:23,076 WARNING codeintel.build.graphs.validation.runner Validation table missing: graph.symbol_use_edges
+2026-01-05 23:00:23,078 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b917473bc75a4acf7bbd18af4f570'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T03:58:14.915667+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":null,"table_key":"core.file_state' + 100)
+2026-01-05 23:00:23,078 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check symbol_communities; missing Parquet tables: analytics.symbol_graph_metrics_modules
+2026-01-05 23:00:23,078 WARNING codeintel.build.graphs.validation.runner Skipping graph validation check subsystem_disagreement; missing Parquet tables: analytics.subsystem_agreement
+2026-01-05 23:00:23,484 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Falling back to filesystem module scan after empty storage query.

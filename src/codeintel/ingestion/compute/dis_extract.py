@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
+    from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 LOG = logging.getLogger(__name__)
@@ -164,6 +165,7 @@ class _BytecodeContext:
     module_name: str
     source_index: LineIndexedSource
     options: BytecodeExtractOptions
+    frontend: PyFrontend | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +278,7 @@ class _DisModuleJob:
     repo: str
     commit: str
     options: BytecodeExtractOptions
+    frontend: PyFrontend | None
 
 
 def _stable_id(*parts: object) -> str:
@@ -1451,6 +1454,13 @@ def _process_module(
     warnings: list[str],
 ) -> None:
     code = _load_cached_code(context, rel_path=module.rel_path, warnings=warnings)
+    if code is None and context.frontend is not None:
+        code = context.frontend.get_code(
+            module,
+            dont_inherit=context.options.dont_inherit,
+            optimize=context.options.optimize,
+            flags=context.options.compile_flags,
+        )
     if code is None:
         try:
             code = compile(
@@ -1490,6 +1500,7 @@ def _extract_module_rows(
         module_name=job.module.module_name,
         source_index=job.source_index,
         options=job.options,
+        frontend=job.frontend,
     )
     start_time = time.monotonic()
     _process_module(
@@ -1531,8 +1542,9 @@ class DisExtractStep(BaseExtractStep):
         discovery: ModuleDiscoveryPort,
         *,
         options: BytecodeExtractOptions | None = None,
+        frontend: PyFrontend | None = None,
     ) -> None:
-        super().__init__(discovery=discovery)
+        super().__init__(discovery=discovery, frontend=frontend)
         self._options = options or BytecodeExtractOptions()
 
     def execute(
@@ -1579,6 +1591,7 @@ class DisExtractStep(BaseExtractStep):
                             repo=repo,
                             commit=commit,
                             options=options,
+                            frontend=self._frontend,
                         ),
                     ): module
                     for module, source_text, source_index in module_bundles
@@ -1598,6 +1611,7 @@ class DisExtractStep(BaseExtractStep):
                         repo=repo,
                         commit=commit,
                         options=options,
+                        frontend=self._frontend,
                     )
                 )
                 warnings.extend(result.warnings)
@@ -1655,18 +1669,26 @@ class DisExtractStep(BaseExtractStep):
                         f"Skipping bytecode for {module.rel_path} (size {size_bytes} bytes)"
                     )
                     continue
-            source_bytes = self._discovery.read_module_bytes(module)
-            if source_bytes is None:
-                source_text = self._discovery.read_module_source(module)
-                if source_text is None:
+            if self._frontend is not None:
+                bundle = self._frontend.get_source_bundle(module)
+                if bundle is None:
                     continue
-                source_bytes = source_text.encode("utf-8", errors="replace")
+                source_bytes = bundle.source_bytes
+                source_text = bundle.source_text
+                source_index = bundle.source_index
+            else:
+                source_bytes = self._discovery.read_module_bytes(module)
+                if source_bytes is None:
+                    source_text = self._discovery.read_module_source(module)
+                    if source_text is None:
+                        continue
+                    source_bytes = source_text.encode("utf-8", errors="replace")
+                source_text, source_index = _build_source_index(source_bytes)
             if max_module_bytes is not None and len(source_bytes) > max_module_bytes:
                 warnings.append(
                     f"Skipping bytecode for {module.rel_path} (size {len(source_bytes)} bytes)"
                 )
                 continue
-            source_text, source_index = _build_source_index(source_bytes)
             yield module, source_text, source_index
 
 

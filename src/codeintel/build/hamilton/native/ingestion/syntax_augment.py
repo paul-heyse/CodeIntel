@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from numbers import Integral
 
 import pyarrow as pa
+import pyarrow.compute as pc
 from hamilton.function_modifiers import cache
 
+from codeintel.build.graphs.assembly import select_table_columns
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.ingestion import SyntaxAugmentOptions
@@ -21,11 +23,21 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
     align_table_to_contract,
+    arrow_join_tables,
     concat_tables_unified,
     dedupe_table_for_table,
 )
-from codeintel.build.tabular.compute_masks import and_kleene, equal_mask, invert_mask, is_in_mask
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import (
+    and_kleene,
+    equal_mask,
+    invert_mask,
+    is_in_mask,
+    is_null_mask,
+    is_valid_mask,
+)
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -47,10 +59,30 @@ SYNTAX_PRODUCER_LIBCST = "libcst"
 TS_PRODUCER = "tree_sitter"
 EDGE_KIND = "AST_CHILD"
 
+_XrefRowValues = tuple[str, str, str, str, str, str, str | None, str, int]
+_FuzzyRowScalars = tuple[
+    pa.Scalar,
+    pa.Scalar,
+    pa.Scalar,
+    pa.Scalar,
+    pa.Scalar,
+    pa.Scalar,
+    pa.Scalar,
+    pa.Scalar,
+]
+
 
 @dataclass(slots=True)
 class _SyntaxNodeIndex:
     resolver: SpanResolver[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _SyntaxIndexColumns:
+    rel_path: int
+    node_id: int
+    start_byte: int
+    end_byte: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,348 +141,589 @@ def syntax_augment__inputs(
     )
 
 
-def _failure_paths(parse_manifest: pa.Table) -> set[str]:
+def _if_else(
+    condition: pa.Array | pa.ChunkedArray,
+    left: object,
+    right: object,
+) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("if_else", [condition, left, right])
+
+
+def _drop_nulls(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("drop_null", [values])
+
+
+def _struct_field(
+    values: pa.Array | pa.ChunkedArray,
+    name: str,
+) -> pa.Array | pa.ChunkedArray:
+    options = pc.StructFieldOptions(name)
+    return pc.call_function("struct_field", [values], options=options)
+
+
+def _divide(
+    left: pa.Array | pa.ChunkedArray,
+    right: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("divide", [left, right])
+
+
+def _failure_paths(parse_manifest: pa.Table) -> pa.Array | pa.ChunkedArray:
     if not parse_manifest.column_names:
-        return set()
+        return pa.array([], type=pa.string())
     if (
         "producer" not in parse_manifest.column_names
         or "parse_ok" not in parse_manifest.column_names
+        or "rel_path" not in parse_manifest.column_names
     ):
-        return set()
-    failures: set[str] = set()
-    for row in parse_manifest.to_pylist():
-        if row.get("producer") != SYNTAX_PRODUCER_LIBCST:
-            continue
-        parse_ok = row.get("parse_ok")
-        if parse_ok is True:
-            continue
-        rel_path = row.get("rel_path")
-        if isinstance(rel_path, str):
-            failures.add(rel_path)
-    return failures
+        return pa.array([], type=pa.string())
+    producer_mask = equal_mask(parse_manifest["producer"], pa.scalar(SYNTAX_PRODUCER_LIBCST))
+    ok_mask = equal_mask(parse_manifest["parse_ok"], pa.scalar(value=True))
+    failure_mask = and_kleene(producer_mask, invert_mask(ok_mask))
+    filtered = safe_filter(parse_manifest, failure_mask)
+    if filtered.num_rows == 0:
+        return pa.array([], type=pa.string())
+    rel_path = filtered["rel_path"]
+    return _drop_nulls(rel_path)
 
 
-def _build_syntax_index(nodes_table: pa.Table) -> dict[str, _SyntaxNodeIndex]:
-    indexes: dict[str, _SyntaxNodeIndex] = {}
-    for row in nodes_table.to_pylist():
-        rel_path = row.get("rel_path")
-        node_id = row.get("node_id")
-        if not isinstance(rel_path, str) or not isinstance(node_id, str):
+def _normalize_span_bytes(
+    start_byte: pa.Scalar,
+    end_byte: pa.Scalar,
+) -> tuple[int, int] | None:
+    start_value = start_byte.as_py()
+    end_value = end_byte.as_py()
+    if not isinstance(start_value, Integral) or not isinstance(end_value, Integral):
+        return None
+    return normalize_byte_span(int(start_value), int(end_value))
+
+
+def _syntax_index_columns(nodes_table: pa.Table) -> _SyntaxIndexColumns:
+    return _SyntaxIndexColumns(
+        rel_path=nodes_table.column_names.index("rel_path"),
+        node_id=nodes_table.column_names.index("node_id"),
+        start_byte=nodes_table.column_names.index("start_byte"),
+        end_byte=nodes_table.column_names.index("end_byte"),
+    )
+
+
+def _index_syntax_batch(
+    indexes: dict[str, _SyntaxNodeIndex],
+    batch: pa.RecordBatch,
+    columns: _SyntaxIndexColumns,
+) -> None:
+    rel_paths = batch.column(columns.rel_path)
+    node_ids = batch.column(columns.node_id)
+    starts = batch.column(columns.start_byte)
+    ends = batch.column(columns.end_byte)
+    for rel_path, node_id, start_byte, end_byte in zip(
+        rel_paths, node_ids, starts, ends, strict=True
+    ):
+        rel_value = rel_path.as_py()
+        node_value = node_id.as_py()
+        if not isinstance(rel_value, str) or not isinstance(node_value, str):
             continue
-        start_byte = row.get("start_byte")
-        end_byte = row.get("end_byte")
-        if not isinstance(start_byte, Integral) or not isinstance(end_byte, Integral):
+        normalized = _normalize_span_bytes(start_byte, end_byte)
+        if normalized is None:
             continue
-        span = normalize_byte_span(int(start_byte), int(end_byte))
-        if span is None:
-            continue
-        start_byte, end_byte = span
-        index = indexes.get(rel_path)
+        span_start, span_end = normalized
+        index = indexes.get(rel_value)
         if index is None:
             index = _SyntaxNodeIndex(
                 resolver=SpanResolver.for_bytes(path_normalizer=lambda value: value)
             )
-            indexes[rel_path] = index
-        index.resolver.add_span(rel_path, start_byte, end_byte, node_id)
+            indexes[rel_value] = index
+        index.resolver.add_span(rel_value, span_start, span_end, node_value)
+
+
+def _build_syntax_index(nodes_table: pa.Table) -> dict[str, _SyntaxNodeIndex]:
+    indexes: dict[str, _SyntaxNodeIndex] = {}
+    if nodes_table.num_rows == 0:
+        return indexes
+    required = {"rel_path", "node_id", "start_byte", "end_byte"}
+    if not required.issubset(set(nodes_table.column_names)):
+        return indexes
+    columns = _syntax_index_columns(nodes_table)
+    for batch in nodes_table.to_batches():
+        _index_syntax_batch(indexes, batch, columns)
     return indexes
 
 
-def _match_syntax_node(
-    index: _SyntaxNodeIndex,
-    rel_path: str,
-    start: int,
-    end: int,
-) -> tuple[str | None, str, int]:
-    match = index.resolver.resolve(rel_path, start, end, allow_adjacent_point=True)
-    return match.payload, match.match_kind, match.candidate_count
+def _producer_table(nodes_table: pa.Table) -> pa.Table:
+    selected = select_table_columns(nodes_table, ["rel_path", "producer"])
+    if selected.num_rows == 0:
+        return pa.table({"rel_path": [], "producer": []})
+    grouped = selected.group_by(["rel_path"]).aggregate([("producer", "min")])
+    rename: dict[str, str] = {}
+    for name in grouped.column_names:
+        if name.startswith("producer"):
+            rename[name] = "producer"
+    return _rename_columns(grouped, rename)
 
 
-def _producer_by_path(nodes_table: pa.Table) -> dict[str, str]:
-    mapping: dict[str, str] = {}
-    if not nodes_table.column_names:
-        return mapping
-    for row in nodes_table.to_pylist():
-        rel_path = row.get("rel_path")
-        producer = row.get("producer")
-        if isinstance(rel_path, str) and isinstance(producer, str):
-            mapping.setdefault(rel_path, producer)
-    return mapping
+def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
+    required_ts = {"repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"}
+    required_syntax = {
+        "repo",
+        "commit",
+        "rel_path",
+        "node_id",
+        "start_byte",
+        "end_byte",
+        "producer",
+    }
+    if not required_ts.issubset(set(ts_nodes.column_names)):
+        return _empty_reader(TS_XREF_TABLE_KEY)
+    if not required_syntax.issubset(set(syntax_nodes.column_names)):
+        return _empty_reader(TS_XREF_TABLE_KEY)
+    ts_selected = select_table_columns(
+        ts_nodes,
+        ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
+    )
+    ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
+    syntax_selected = select_table_columns(
+        syntax_nodes,
+        ["repo", "commit", "rel_path", "node_id", "start_byte", "end_byte", "producer"],
+    )
+    syntax_selected = _rename_columns(syntax_selected, {"node_id": "syntax_node_id"})
+    joined = arrow_join_tables(
+        ts_selected,
+        syntax_selected,
+        spec=ArrowJoinSpec(
+            on=["repo", "commit", "rel_path", "start_byte", "end_byte"],
+            how="left",
+        ),
+    )
+    syntax_null = is_null_mask(joined["syntax_node_id"])
+    match_kind = _if_else(syntax_null, pa.scalar("NONE"), pa.scalar("EXACT"))
+    candidate_count = _if_else(syntax_null, pa.scalar(0), pa.scalar(1))
+    producer = joined["producer"]
+    producer = _if_else(
+        is_null_mask(producer),
+        pa.scalar(SYNTAX_PRODUCER_LIBCST),
+        producer,
+    )
+    table = pa.table(
+        {
+            "repo": joined["repo"],
+            "commit": joined["commit"],
+            "rel_path": joined["rel_path"],
+            "language": joined["language"],
+            "producer": producer,
+            "ts_node_id": joined["ts_node_id"],
+            "syntax_node_id": joined["syntax_node_id"],
+            "match_kind": match_kind,
+            "candidate_count": pc.cast(candidate_count, pa.int64()),
+        }
+    )
+    return _reader_from_table(TS_XREF_TABLE_KEY, table)
 
 
-def _xref_rows(
-    *,
-    ts_nodes: pa.Table,
-    syntax_nodes: pa.Table,
-) -> list[dict[str, object]]:
+def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
     if ts_nodes.num_rows == 0:
-        return []
-    index_by_path = _build_syntax_index(syntax_nodes)
-    producer_by_path = _producer_by_path(syntax_nodes)
-    rows: list[dict[str, object]] = []
-    for row in ts_nodes.to_pylist():
-        xref_row = _xref_row_for_ts_node(
-            row,
-            index_by_path=index_by_path,
-            producer_by_path=producer_by_path,
-        )
-        if xref_row is not None:
-            rows.append(xref_row)
-    return rows
+        return pa.Table.from_pylist([])
+    required = {"repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"}
+    if not required.issubset(set(ts_nodes.column_names)):
+        return pa.Table.from_pylist([])
+    ts_selected = select_table_columns(
+        ts_nodes,
+        ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
+    )
+    ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
+    if xref_exact.num_rows == 0 or "ts_node_id" not in xref_exact.column_names:
+        return ts_selected
+    xref_selected = select_table_columns(xref_exact, ["ts_node_id", "syntax_node_id"])
+    joined = arrow_join_tables(
+        ts_selected,
+        xref_selected,
+        spec=ArrowJoinSpec(on=["ts_node_id"], how="left"),
+    )
+    mask = is_null_mask(joined["syntax_node_id"])
+    return safe_filter(joined, mask)
 
 
-def _xref_row_for_ts_node(
-    ts_row: dict[str, object],
-    *,
-    index_by_path: dict[str, _SyntaxNodeIndex],
-    producer_by_path: dict[str, str],
-) -> dict[str, object] | None:
-    rel_path = ts_row.get("rel_path")
-    ts_node_id = ts_row.get("node_id")
-    language = ts_row.get("language")
-    repo = ts_row.get("repo")
-    commit = ts_row.get("commit")
-    if not isinstance(rel_path, str) or not isinstance(ts_node_id, str):
-        return None
-    if not isinstance(language, str) or not isinstance(repo, str) or not isinstance(commit, str):
-        return None
-    producer = producer_by_path.get(rel_path, SYNTAX_PRODUCER_LIBCST)
-    context = _XrefRowContext(
-        repo=repo,
-        commit=commit,
-        rel_path=rel_path,
-        language=language,
-        producer=producer,
-        ts_node_id=ts_node_id,
-    )
-    start_byte = ts_row.get("start_byte")
-    end_byte = ts_row.get("end_byte")
-    normalized = (
-        normalize_byte_span(int(start_byte), int(end_byte))
-        if isinstance(start_byte, Integral) and isinstance(end_byte, Integral)
-        else None
-    )
-    if normalized is None:
-        return _xref_row_payload(
-            context,
-            syntax_node_id=None,
-            match_kind="NONE",
-            candidate_count=0,
-        )
-    start_byte, end_byte = normalized
-    index = index_by_path.get(rel_path)
-    if index is None:
-        return _xref_row_payload(
-            context,
-            syntax_node_id=None,
-            match_kind="NONE",
-            candidate_count=0,
-        )
-    syntax_node_id, match_kind, candidate_count = _match_syntax_node(
-        index,
+def _xref_row_from_values(values: _XrefRowValues) -> dict[str, object]:
+    (
+        repo,
+        commit,
         rel_path,
+        language,
+        producer,
+        ts_node_id,
+        syntax_node_id,
+        match_kind,
+        count,
+    ) = values
+    return {
+        "repo": repo,
+        "commit": commit,
+        "rel_path": rel_path,
+        "language": language,
+        "producer": producer,
+        "ts_node_id": ts_node_id,
+        "syntax_node_id": syntax_node_id,
+        "match_kind": match_kind,
+        "candidate_count": count,
+    }
+
+
+def _batch_columns(batch: pa.RecordBatch, names: Sequence[str]) -> list[pa.Array]:
+    schema = batch.schema
+    arrays: list[pa.Array] = []
+    for name in names:
+        index = schema.get_field_index(name)
+        if index < 0:
+            arrays.append(pa.nulls(batch.num_rows))
+        else:
+            arrays.append(batch.column(index))
+    return arrays
+
+
+def _coerce_scalar_str(value: pa.Scalar) -> str | None:
+    candidate = value.as_py()
+    if isinstance(candidate, str):
+        return candidate
+    return None
+
+
+def _parse_fuzzy_row(
+    row: _FuzzyRowScalars,
+) -> tuple[str, str, str, str, str, str, pa.Scalar, pa.Scalar] | None:
+    (
+        repo,
+        commit,
+        rel_path,
+        language,
+        ts_node_id,
+        start_byte,
+        end_byte,
+        producer,
+    ) = row
+    repo_value = _coerce_scalar_str(repo)
+    commit_value = _coerce_scalar_str(commit)
+    rel_value = _coerce_scalar_str(rel_path)
+    lang_value = _coerce_scalar_str(language)
+    ts_value = _coerce_scalar_str(ts_node_id)
+    if (
+        repo_value is None
+        or commit_value is None
+        or rel_value is None
+        or lang_value is None
+        or ts_value is None
+    ):
+        return None
+    producer_value = _coerce_scalar_str(producer)
+    if producer_value is None:
+        producer_value = SYNTAX_PRODUCER_LIBCST
+    return (
+        repo_value,
+        commit_value,
+        rel_value,
+        lang_value,
+        ts_value,
+        producer_value,
         start_byte,
         end_byte,
     )
-    return _xref_row_payload(
-        context,
-        syntax_node_id=syntax_node_id,
-        match_kind=match_kind,
-        candidate_count=candidate_count,
+
+
+def _build_fuzzy_row(
+    index_by_path: dict[str, _SyntaxNodeIndex],
+    row: _FuzzyRowScalars,
+) -> dict[str, object] | None:
+    parsed = _parse_fuzzy_row(row)
+    if parsed is None:
+        return None
+    (
+        repo_value,
+        commit_value,
+        rel_value,
+        lang_value,
+        ts_value,
+        producer_value,
+        start_byte,
+        end_byte,
+    ) = parsed
+    normalized = _normalize_span_bytes(start_byte, end_byte)
+    if normalized is None:
+        return _xref_row_from_values(
+            (
+                repo_value,
+                commit_value,
+                rel_value,
+                lang_value,
+                producer_value,
+                ts_value,
+                None,
+                "NONE",
+                0,
+            )
+        )
+    index = index_by_path.get(rel_value)
+    if index is None:
+        return _xref_row_from_values(
+            (
+                repo_value,
+                commit_value,
+                rel_value,
+                lang_value,
+                producer_value,
+                ts_value,
+                None,
+                "NONE",
+                0,
+            )
+        )
+    match = index.resolver.resolve(
+        rel_value,
+        normalized[0],
+        normalized[1],
+        allow_adjacent_point=True,
+    )
+    return _xref_row_from_values(
+        (
+            repo_value,
+            commit_value,
+            rel_value,
+            lang_value,
+            producer_value,
+            ts_value,
+            match.payload,
+            match.match_kind,
+            match.candidate_count,
+        )
     )
 
 
-@dataclass(frozen=True, slots=True)
-class _XrefRowContext:
-    repo: str
-    commit: str
-    rel_path: str
-    language: str
-    producer: str
-    ts_node_id: str
+def _xref_fuzzy(
+    unmatched_ts_nodes: pa.Table,
+    syntax_nodes: pa.Table,
+    producer_table: pa.Table,
+) -> pa.Table:
+    if unmatched_ts_nodes.num_rows == 0:
+        return _empty_reader(TS_XREF_TABLE_KEY)
+    index_by_path = _build_syntax_index(syntax_nodes)
+    joined = arrow_join_tables(
+        unmatched_ts_nodes,
+        producer_table,
+        spec=ArrowJoinSpec(on=["rel_path"], how="left"),
+    )
+    rows: list[dict[str, object]] = []
+    columns = (
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "ts_node_id",
+        "start_byte",
+        "end_byte",
+        "producer",
+    )
+    for batch in joined.to_batches():
+        arrays = _batch_columns(batch, columns)
+        for repo, commit, rel_path, language, ts_node_id, start_byte, end_byte, producer in zip(
+            *arrays,
+            strict=True,
+        ):
+            row = _build_fuzzy_row(
+                index_by_path,
+                (
+                    repo,
+                    commit,
+                    rel_path,
+                    language,
+                    ts_node_id,
+                    start_byte,
+                    end_byte,
+                    producer,
+                ),
+            )
+            if row is not None:
+                rows.append(row)
+    return _reader_from_rows(TS_XREF_TABLE_KEY, rows)
 
 
-def _xref_row_payload(
-    context: _XrefRowContext,
-    *,
-    syntax_node_id: str | None,
-    match_kind: str,
-    candidate_count: int,
-) -> dict[str, object]:
-    return {
-        "repo": context.repo,
-        "commit": context.commit,
-        "rel_path": context.rel_path,
-        "language": context.language,
-        "producer": context.producer,
-        "ts_node_id": context.ts_node_id,
-        "syntax_node_id": syntax_node_id,
-        "match_kind": match_kind,
-        "candidate_count": candidate_count,
-    }
+def _xref_union(exact: pa.Table, fuzzy: pa.Table) -> pa.Table:
+    if exact.num_rows == 0:
+        return fuzzy
+    if fuzzy.num_rows == 0:
+        return exact
+    combined = concat_tables_unified([exact, fuzzy])
+    return dedupe_table_for_table(TS_XREF_TABLE_KEY, combined)
 
 
-def _ts_node_payload(ts_row: dict[str, object], match_kind: str) -> dict[str, object]:
-    return {
-        "ts_node_id": ts_row.get("node_id"),
-        "ts_node_type": ts_row.get("node_type"),
-        "start_byte": ts_row.get("start_byte"),
-        "end_byte": ts_row.get("end_byte"),
-        "start_row": ts_row.get("start_row"),
-        "start_col": ts_row.get("start_col"),
-        "end_row": ts_row.get("end_row"),
-        "end_col": ts_row.get("end_col"),
-        "grammar_id": ts_row.get("grammar_id"),
-        "kind_id": ts_row.get("kind_id"),
-        "parse_state": ts_row.get("parse_state"),
-        "next_parse_state": ts_row.get("next_parse_state"),
-        "is_named": ts_row.get("is_named"),
-        "is_missing": ts_row.get("is_missing"),
-        "is_error": ts_row.get("is_error"),
-        "has_error": ts_row.get("has_error"),
-        "match_kind": match_kind,
-    }
+def _column_or_null(table: pa.Table, name: str) -> pa.Array | pa.ChunkedArray:
+    if name in table.column_names:
+        return table[name]
+    return pa.nulls(table.num_rows)
 
 
-def _merge_ts_extras(
-    nodes_rows: list[dict[str, object]],
-    ts_nodes: pa.Table,
-    xref_rows: list[dict[str, object]],
-) -> None:
-    ts_index = _ts_node_index(ts_nodes)
-    payloads_by_node = _payloads_by_syntax_node(xref_rows, ts_index)
-    _apply_ts_payloads(nodes_rows, payloads_by_node)
+def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
+    if ts_nodes.num_rows == 0 or xref.num_rows == 0:
+        return pa.table({"syntax_node_id": [], "ts_nodes": []})
+    if not {"ts_node_id", "syntax_node_id", "match_kind"}.issubset(set(xref.column_names)):
+        return pa.table({"syntax_node_id": [], "ts_nodes": []})
+    match_mask = invert_mask(equal_mask(xref["match_kind"], pa.scalar("NONE")))
+    id_mask = is_valid_mask(xref["syntax_node_id"])
+    filtered = safe_filter(xref, and_kleene(match_mask, id_mask))
+    if filtered.num_rows == 0:
+        return pa.table({"syntax_node_id": [], "ts_nodes": []})
+    ts_selected = select_table_columns(
+        ts_nodes,
+        [
+            "node_id",
+            "node_type",
+            "start_byte",
+            "end_byte",
+            "start_row",
+            "start_col",
+            "end_row",
+            "end_col",
+            "grammar_id",
+            "kind_id",
+            "parse_state",
+            "next_parse_state",
+            "is_named",
+            "is_missing",
+            "is_error",
+            "has_error",
+        ],
+    )
+    ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
+    joined = arrow_join_tables(
+        filtered,
+        ts_selected,
+        spec=ArrowJoinSpec(on=["ts_node_id"], how="left"),
+    )
+    payload = pa.StructArray.from_arrays(
+        [
+            _column_or_null(joined, "ts_node_id"),
+            _column_or_null(joined, "node_type"),
+            _column_or_null(joined, "start_byte"),
+            _column_or_null(joined, "end_byte"),
+            _column_or_null(joined, "start_row"),
+            _column_or_null(joined, "start_col"),
+            _column_or_null(joined, "end_row"),
+            _column_or_null(joined, "end_col"),
+            _column_or_null(joined, "grammar_id"),
+            _column_or_null(joined, "kind_id"),
+            _column_or_null(joined, "parse_state"),
+            _column_or_null(joined, "next_parse_state"),
+            _column_or_null(joined, "is_named"),
+            _column_or_null(joined, "is_missing"),
+            _column_or_null(joined, "is_error"),
+            _column_or_null(joined, "has_error"),
+            _column_or_null(joined, "match_kind"),
+        ],
+        names=[
+            "ts_node_id",
+            "ts_node_type",
+            "start_byte",
+            "end_byte",
+            "start_row",
+            "start_col",
+            "end_row",
+            "end_col",
+            "grammar_id",
+            "kind_id",
+            "parse_state",
+            "next_parse_state",
+            "is_named",
+            "is_missing",
+            "is_error",
+            "has_error",
+            "match_kind",
+        ],
+    )
+    payload_table = pa.Table.from_arrays(
+        [joined["syntax_node_id"], payload],
+        names=["syntax_node_id", "ts_payload"],
+    )
+    grouped = payload_table.group_by(["syntax_node_id"]).aggregate([("ts_payload", "list")])
+    return _rename_columns(grouped, {"ts_payload_list": "ts_nodes"})
 
 
-def _ts_node_index(ts_nodes: pa.Table) -> dict[str, dict[str, object]]:
-    ts_index: dict[str, dict[str, object]] = {}
-    for row in ts_nodes.to_pylist():
-        node_id = row.get("node_id")
-        if isinstance(node_id, str):
-            ts_index[node_id] = row
-    return ts_index
-
-
-def _payloads_by_syntax_node(
-    xref_rows: list[dict[str, object]],
-    ts_index: dict[str, dict[str, object]],
-) -> dict[str, dict[str, dict[str, object]]]:
-    payloads_by_node: dict[str, dict[str, dict[str, object]]] = {}
-    for xref in xref_rows:
-        syntax_node_id = xref.get("syntax_node_id")
-        ts_node_id = xref.get("ts_node_id")
-        match_kind = xref.get("match_kind")
-        if not isinstance(syntax_node_id, str) or not isinstance(ts_node_id, str):
-            continue
-        if not isinstance(match_kind, str) or match_kind == "NONE":
-            continue
-        ts_row = ts_index.get(ts_node_id)
-        if ts_row is None:
-            continue
-        payload = _ts_node_payload(ts_row, match_kind)
-        payloads_by_node.setdefault(syntax_node_id, {})[ts_node_id] = payload
-    return payloads_by_node
-
-
-def _apply_ts_payloads(
-    nodes_rows: list[dict[str, object]],
-    payloads_by_node: dict[str, dict[str, dict[str, object]]],
-) -> None:
-    for row in nodes_rows:
-        node_id = row.get("node_id")
-        if not isinstance(node_id, str):
-            continue
-        payload_map = payloads_by_node.get(node_id)
-        if not payload_map:
-            continue
-        extras = _merge_ts_node_payloads(row.get("extras_json"), payload_map)
-        row["extras_json"] = extras
+def _augment_syntax_nodes(syntax_nodes: pa.Table, ts_payloads: pa.Table) -> pa.Table:
+    if syntax_nodes.num_rows == 0:
+        return syntax_nodes
+    if ts_payloads.num_rows == 0:
+        return syntax_nodes
+    joined = arrow_join_tables(
+        syntax_nodes,
+        ts_payloads,
+        spec=ArrowJoinSpec(left_on=["node_id"], right_on=["syntax_node_id"], how="left"),
+    )
+    if "extras_json" in joined.column_names:
+        try:
+            ast_nodes = _struct_field(joined["extras_json"], "ast_nodes")
+        except (pa.ArrowInvalid, pa.ArrowNotImplementedError, TypeError, ValueError):
+            ast_nodes = pa.nulls(joined.num_rows)
+    else:
+        ast_nodes = pa.nulls(joined.num_rows)
+    ts_nodes = (
+        joined["ts_nodes"] if "ts_nodes" in joined.column_names else pa.nulls(joined.num_rows)
+    )
+    extras = pa.StructArray.from_arrays([ast_nodes, ts_nodes], names=["ast_nodes", "ts_nodes"])
+    if "extras_json" in joined.column_names:
+        index = joined.schema.get_field_index("extras_json")
+        joined = joined.set_column(index, "extras_json", extras)
+    else:
+        joined = joined.append_column("extras_json", extras)
+    final_columns = [name for name in syntax_nodes.column_names if name != "extras_json"]
+    final_columns.append("extras_json")
+    return joined.select([name for name in final_columns if name in joined.column_names])
 
 
 def _weld_coverage_table(
     ts_nodes: pa.Table,
-    xref_rows: list[dict[str, object]],
+    xref: pa.Table,
 ) -> pa.Table:
     if ts_nodes.num_rows == 0:
         return pa.Table.from_pylist([])
-    counts: dict[tuple[str, str, str, str], int] = {}
-    for row in ts_nodes.to_pylist():
-        key = _coverage_key_from_row(row)
-        if key is None:
-            continue
-        counts[key] = counts.get(key, 0) + 1
-    mapped_counts: dict[tuple[str, str, str, str], int] = {}
-    for row in xref_rows:
-        if row.get("syntax_node_id") is None:
-            continue
-        if row.get("match_kind") == "NONE":
-            continue
-        key = _coverage_key_from_row(row)
-        if key is None:
-            continue
-        mapped_counts[key] = mapped_counts.get(key, 0) + 1
-    rows: list[dict[str, object]] = []
-    for key, total in counts.items():
-        mapped = mapped_counts.get(key, 0)
-        repo, commit, rel_path, language = key
-        ratio = float(mapped) / float(total) if total else 0.0
-        rows.append(
-            {
-                "repo": repo,
-                "commit": commit,
-                "rel_path": rel_path,
-                "language": language,
-                "ts_node_count": total,
-                "mapped_count": mapped,
-                "coverage_ratio": ratio,
-            }
-        )
-    return pa.Table.from_pylist(rows)
+    key_cols = ["repo", "commit", "rel_path", "language"]
+    if not set(key_cols).issubset(set(ts_nodes.column_names)):
+        return pa.Table.from_pylist([])
 
+    def _count_by(table: pa.Table, *, count_col: str, name: str) -> pa.Table:
+        if table.num_rows == 0:
+            empty = {col: [] for col in key_cols}
+            empty[name] = []
+            return pa.table(empty)
+        grouped = table.group_by(key_cols).aggregate([(count_col, "count")])
+        rename: dict[str, str] = {}
+        for column in grouped.column_names:
+            if column.startswith(f"{count_col}_"):
+                rename[column] = name
+        return _rename_columns(grouped, rename)
 
-def _merge_ts_node_payloads(
-    extras_raw: object,
-    payload_map: dict[str, dict[str, object]],
-) -> dict[str, object]:
-    extras = dict(extras_raw) if isinstance(extras_raw, Mapping) else {}
-    prior = extras.get("ts_nodes")
-    merged: dict[str, dict[str, object]] = {}
-    if isinstance(prior, list):
-        for item in prior:
-            if isinstance(item, dict):
-                ts_node_id = item.get("ts_node_id")
-                if isinstance(ts_node_id, str):
-                    merged[ts_node_id] = item
-    merged.update(payload_map)
-    payloads = list(merged.values())
-    payloads.sort(key=_ts_payload_sort_key)
-    extras["ts_nodes"] = payloads
-    return extras
+    ts_counts = _count_by(ts_nodes, count_col="node_id", name="ts_node_count")
+    if xref.num_rows == 0 or "ts_node_id" not in xref.column_names:
+        mapped_counts = pa.table({**{col: [] for col in key_cols}, "mapped_count": []})
+    else:
+        match_mask = invert_mask(equal_mask(xref["match_kind"], pa.scalar("NONE")))
+        mapped = safe_filter(xref, and_kleene(match_mask, is_valid_mask(xref["ts_node_id"])))
+        mapped_counts = _count_by(mapped, count_col="ts_node_id", name="mapped_count")
 
-
-def _ts_payload_sort_key(item: dict[str, object]) -> tuple[int, int]:
-    start = item.get("start_byte")
-    end = item.get("end_byte")
-    start_value = int(start) if isinstance(start, Integral) else -1
-    end_value = int(end) if isinstance(end, Integral) else -1
-    return start_value, end_value
-
-
-def _coverage_key_from_row(
-    row: Mapping[str, object],
-) -> tuple[str, str, str, str] | None:
-    repo = row.get("repo")
-    if not isinstance(repo, str):
-        return None
-    commit = row.get("commit")
-    if not isinstance(commit, str):
-        return None
-    rel_path = row.get("rel_path")
-    if not isinstance(rel_path, str):
-        return None
-    language = row.get("language")
-    if not isinstance(language, str):
-        return None
-    return repo, commit, rel_path, language
+    joined = arrow_join_tables(
+        ts_counts, mapped_counts, spec=ArrowJoinSpec(on=key_cols, how="left")
+    )
+    mapped = pc.fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
+    total = _column_or_null(joined, "ts_node_count")
+    total_float = pc.cast(total, pa.float64())
+    mapped_float = pc.cast(mapped, pa.float64())
+    zero_mask = equal_mask(total, pa.scalar(0))
+    ratio = _if_else(zero_mask, pa.scalar(0.0), _divide(mapped_float, total_float))
+    return pa.table(
+        {
+            "repo": joined["repo"],
+            "commit": joined["commit"],
+            "rel_path": joined["rel_path"],
+            "language": joined["language"],
+            "ts_node_count": total,
+            "mapped_count": mapped,
+            "coverage_ratio": ratio,
+        }
+    )
 
 
 def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
@@ -602,12 +875,11 @@ def _concat_if_non_empty(base: pa.Table, extra: pa.Table) -> pa.Table:
     return concat_tables_unified([left, right])
 
 
-def _filter_by_paths(table: pa.Table, paths: set[str]) -> pa.Table:
-    if not paths or "rel_path" not in table.column_names:
+def _filter_by_paths(table: pa.Table, paths: pa.Array | pa.ChunkedArray) -> pa.Table:
+    if len(paths) == 0 or "rel_path" not in table.column_names:
         return table
-    path_values = pa.array(sorted(paths))
-    mask = is_in_mask(table["rel_path"], value_set=path_values)
-    return table.filter(mask)
+    mask = is_in_mask(table["rel_path"], value_set=paths)
+    return safe_filter(table, mask)
 
 
 def _apply_fallback_paths(
@@ -615,9 +887,9 @@ def _apply_fallback_paths(
     syntax_edges: pa.Table,
     ts_nodes: pa.Table,
     ts_edges: pa.Table,
-    fallback_paths: set[str],
+    fallback_paths: pa.Array | pa.ChunkedArray,
 ) -> tuple[pa.Table, pa.Table]:
-    if not fallback_paths:
+    if len(fallback_paths) == 0:
         return syntax_nodes, syntax_edges
     syntax_nodes = _filter_libcst_rows(syntax_nodes, fallback_paths)
     syntax_edges = _filter_libcst_rows(syntax_edges, fallback_paths)
@@ -626,6 +898,35 @@ def _apply_fallback_paths(
     syntax_nodes = _concat_if_non_empty(syntax_nodes, ts_fallback_nodes)
     syntax_edges = _concat_if_non_empty(syntax_edges, ts_fallback_edges)
     return syntax_nodes, syntax_edges
+
+
+def _resolve_fallback_paths(
+    options: SyntaxAugmentOptions,
+    parse_manifest: pa.Table,
+) -> pa.Array | pa.ChunkedArray:
+    if not options.fallback_on_libcst_failure:
+        return pa.array([], type=pa.string())
+    return _failure_paths(parse_manifest)
+
+
+def _build_xref_table(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
+    xref_exact = _xref_exact(ts_nodes, syntax_nodes)
+    unmatched = _unmatched_ts_nodes(ts_nodes, xref_exact)
+    producer_table = _producer_table(syntax_nodes)
+    xref_fuzzy = _xref_fuzzy(unmatched, syntax_nodes, producer_table)
+    return _xref_union(xref_exact, xref_fuzzy)
+
+
+def _frame_or_empty(table_key: str, table: pa.Table) -> pa.Table:
+    if table.num_rows == 0 or not table.column_names:
+        return _empty_reader(table_key)
+    return _reader_from_table(table_key, table)
+
+
+def _frame_if_enabled(table_key: str, table: pa.Table, *, emit: bool) -> pa.Table:
+    if not emit:
+        return _empty_reader(table_key)
+    return _frame_or_empty(table_key, table)
 
 
 def syntax_augment__frames(
@@ -640,11 +941,7 @@ def syntax_augment__frames(
         Canonical syntax nodes, edges, and optional tree-sitter xref rows.
     """
     inputs = syntax_augment__inputs
-    fallback_paths = (
-        _failure_paths(inputs.parse_manifest)
-        if syntax_augment__options.fallback_on_libcst_failure
-        else set()
-    )
+    fallback_paths = _resolve_fallback_paths(syntax_augment__options, inputs.parse_manifest)
     syntax_nodes, syntax_edges = _apply_fallback_paths(
         inputs.syntax_nodes,
         inputs.syntax_edges,
@@ -652,25 +949,23 @@ def syntax_augment__frames(
         inputs.ts_edges,
         fallback_paths,
     )
-    xref_rows = _xref_rows(ts_nodes=inputs.ts_nodes, syntax_nodes=syntax_nodes)
-    nodes_rows = syntax_nodes.to_pylist()
-    _merge_ts_extras(nodes_rows, inputs.ts_nodes, xref_rows)
+    xref_table = _build_xref_table(inputs.ts_nodes, syntax_nodes)
+    syntax_nodes_augmented = _augment_syntax_nodes(
+        syntax_nodes,
+        _ts_payloads_by_syntax_node(inputs.ts_nodes, xref_table),
+    )
 
-    syntax_nodes_frame = _reader_from_rows(SYNTAX_NODES_AUGMENTED_TABLE_KEY, nodes_rows)
-    if not syntax_edges.column_names or syntax_edges.num_rows == 0:
-        syntax_edges_frame = _empty_reader(SYNTAX_EDGES_AUGMENTED_TABLE_KEY)
-    else:
-        syntax_edges_frame = _reader_from_table(SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
-    if syntax_augment__options.emit_ts_xref:
-        xref_frame = _reader_from_rows(TS_XREF_TABLE_KEY, xref_rows)
-    else:
-        xref_frame = _empty_reader(TS_XREF_TABLE_KEY)
-
-    coverage_table = _weld_coverage_table(inputs.ts_nodes, xref_rows)
-    if coverage_table.num_rows == 0:
-        coverage_frame = _empty_reader(TS_WELD_COVERAGE_TABLE_KEY)
-    else:
-        coverage_frame = _reader_from_table(TS_WELD_COVERAGE_TABLE_KEY, coverage_table)
+    syntax_nodes_frame = _frame_or_empty(SYNTAX_NODES_AUGMENTED_TABLE_KEY, syntax_nodes_augmented)
+    syntax_edges_frame = _frame_or_empty(SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
+    xref_frame = _frame_if_enabled(
+        TS_XREF_TABLE_KEY,
+        xref_table,
+        emit=syntax_augment__options.emit_ts_xref,
+    )
+    coverage_frame = _frame_or_empty(
+        TS_WELD_COVERAGE_TABLE_KEY,
+        _weld_coverage_table(inputs.ts_nodes, xref_table),
+    )
 
     return SyntaxAugmentFrames(
         syntax_nodes=syntax_nodes_frame,

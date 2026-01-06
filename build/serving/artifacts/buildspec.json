@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "fe1f384e1ce9aa0c5842544746c2afd4673e434667e7ba06100a7b150551c3a5",
+  "buildspec_hash": "f281a218d676a65a94ddaedf6bab1fbea450b737d8411513c3660604a8f80aa7",
   "datasets": [
     {
       "schema_hash": "bfd52893bcac939b2dcdbb656760191635dc5e27a83cc07d5173e5fd82e7860d",
@@ -478,22 +478,6 @@
       "table_key": "core.v_goid_crosswalk_mismatches"
     },
     {
-      "schema_hash": "e28f58b95df09db15e661d347844cd0d753abc1a2580873c00b1e78d55910b8b",
-      "table_key": "docs.v_behavioral_classification_input"
-    },
-    {
-      "schema_hash": "2860d1a17c99964bf17410bfd31f568567565ae378ef249a47e05f1ac61c754d",
-      "table_key": "docs.v_call_graph_enriched"
-    },
-    {
-      "schema_hash": "6ab03c635a980566f4d9c948864d32d9308372290e4ef8f610679c9cb59ba52c",
-      "table_key": "docs.v_cfg_block_architecture"
-    },
-    {
-      "schema_hash": "e59a76abbd50ec2ab9b27526625a7b498846ce8219d64604b7ac72ac1defeb2e",
-      "table_key": "docs.v_config_data_flow"
-    },
-    {
       "schema_hash": "8349d21487333b91f78fb0befae36ffa8ea816017041270c04f8455961d2f3ae",
       "table_key": "docs.v_data_model_fields"
     },
@@ -502,20 +486,12 @@
       "table_key": "docs.v_data_model_relationships"
     },
     {
-      "schema_hash": "5c6e9392622a3e6e5a4c5b1853228af8e02a03c8942dde9182c407651d30d417",
-      "table_key": "docs.v_data_model_usage"
-    },
-    {
       "schema_hash": "ebd57e29ed43d25b78f6e039404cf5cac3424eb6ba78a553e0b2eec8ecb69720",
       "table_key": "docs.v_data_models"
     },
     {
       "schema_hash": "a749f1c298996d78400532692fe3804a99357343dc7ce5eb1505baa344766c0f",
       "table_key": "docs.v_data_models_normalized"
-    },
-    {
-      "schema_hash": "322f295b52a04e6c922e2e501b3e4951afaf6282becdd2d2d24a9932b97364e2",
-      "table_key": "docs.v_dfg_block_architecture"
     },
     {
       "schema_hash": "e79e83fec746015f2812973ead30dd92849d46f0783fa0e6f63a1c39ceffc007",
@@ -530,36 +506,8 @@
       "table_key": "docs.v_external_dependency_calls"
     },
     {
-      "schema_hash": "cbc722696720a0d7866a35a025026d00588b79d517c41f3f520f5bcef80b9057",
-      "table_key": "docs.v_file_summary"
-    },
-    {
-      "schema_hash": "8805c17c9e74103ebbaf73b6b61f1a40b4204400ae9d8bd45b18362d32f160ff",
-      "table_key": "docs.v_function_architecture"
-    },
-    {
-      "schema_hash": "052bdfb0da81e858e8574c76e0db89dfaf1ccbb05ef1f85ec4a670d8a29c2825",
-      "table_key": "docs.v_function_history"
-    },
-    {
-      "schema_hash": "278a1f095662716faab18083ade46bd086a15cd2cbfaa508efb3d673f916a1f4",
-      "table_key": "docs.v_function_history_timeseries"
-    },
-    {
-      "schema_hash": "4a882187f066e88a4c65e40d6eb9251df0f50c3002f22425008daae29129363b",
-      "table_key": "docs.v_ide_hints"
-    },
-    {
       "schema_hash": "a86221c34fc971a35d8d008391cddf717f3f2065388724f70edd43aae9fa6f7f",
       "table_key": "docs.v_module_architecture"
-    },
-    {
-      "schema_hash": "7c2271c27f9e5fa60e33d3b017990a4393331ea43e8bc6cafcb14784c212a525",
-      "table_key": "docs.v_module_architecture_full"
-    },
-    {
-      "schema_hash": "80cef3079c360ede659f7744dc5661500276b2deef56d1b5e223ac5dae25dbf2",
-      "table_key": "docs.v_module_history_timeseries"
     },
     {
       "schema_hash": "87e17ca9ac97aba800cbc8b032eb52d8405aacee0ca79df7a7f012f65e0c581f",
@@ -580,14 +528,6 @@
     {
       "schema_hash": "ec5b4ee870996ca9df31c81073143673ba5c3f17823bbb1653893d2df4bacad7",
       "table_key": "docs.v_symbol_module_graph"
-    },
-    {
-      "schema_hash": "6bec56207895bfbb82a3f4326e47bf3534a60144b1ae9c9a295be228a65094aa",
-      "table_key": "docs.v_test_architecture"
-    },
-    {
-      "schema_hash": "36cb965931293bcf195dc124b72e68cda6c6e643689ee3734cd63c47e45ee8ba",
-      "table_key": "docs.v_test_to_function"
     },
     {
       "schema_hash": "58411e253fb83bc10d0d51ad123d8b84b8731ebc65d71c4740667fcc377a8d19",
@@ -701,7 +641,10 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "modules",
+        "scip"
+      ],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "call_graph",
@@ -713,11 +656,9 @@
     {
       "artifacts": [],
       "deps": [
-        "cfg",
+        "modules",
         "scip",
-        "scip_resolution",
-        "syntax_enrich",
-        "syntax_index"
+        "scip_proto"
       ],
       "domain": "graphs",
       "impl_kind": "native",
@@ -732,7 +673,7 @@
     {
       "artifacts": [],
       "deps": [
-        "cfg",
+        "modules",
         "scip"
       ],
       "domain": "graphs",
@@ -744,7 +685,10 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "modules",
+        "scip"
+      ],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "cfg",
@@ -756,9 +700,6 @@
     {
       "artifacts": [],
       "deps": [
-        "cfg",
-        "dfg",
-        "goids",
         "modules",
         "scip"
       ],
@@ -798,11 +739,9 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "config_ingest",
-        "entrypoints",
-        "goids",
-        "scip"
+        "modules",
+        "scip",
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -814,8 +753,6 @@
     {
       "artifacts": [],
       "deps": [
-        "config_ingest",
-        "modules",
         "scip"
       ],
       "domain": "analytics",
@@ -841,21 +778,9 @@
     {
       "artifacts": [],
       "deps": [
-        "ast",
-        "bytecode",
-        "call_graph",
-        "call_wiring",
-        "cdg",
-        "cfg",
-        "dfg",
-        "goids",
-        "import_graph",
-        "inspect",
+        "modules",
         "scip",
-        "scip_resolution",
-        "symtable",
-        "syntax_index",
-        "tree_sitter_index"
+        "scip_proto"
       ],
       "domain": "graphs",
       "impl_kind": "native",
@@ -880,12 +805,9 @@
     {
       "artifacts": [],
       "deps": [
-        "data_models",
-        "function_types",
-        "goids",
         "modules",
         "scip",
-        "subsystems"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -897,8 +819,6 @@
     {
       "artifacts": [],
       "deps": [
-        "docstrings",
-        "goids",
         "modules",
         "scip"
       ],
@@ -912,22 +832,11 @@
       ]
     },
     {
-      "artifacts": [
-        {
-          "kind": null,
-          "name": "build_decision_trace",
-          "path_template": "{build_dir}/decision_trace.json"
-        }
-      ],
-      "deps": [],
-      "domain": "export",
-      "impl_kind": "native",
-      "name": "decision_trace",
-      "outputs": []
-    },
-    {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "modules",
+        "scip"
+      ],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "dfg",
@@ -950,12 +859,9 @@
     {
       "artifacts": [],
       "deps": [
-        "function_ast_features",
-        "goids",
         "modules",
         "scip",
-        "subsystems",
-        "tests_ingest"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -974,7 +880,6 @@
         }
       ],
       "deps": [
-        "modules",
         "scip"
       ],
       "domain": "export",
@@ -991,7 +896,6 @@
         }
       ],
       "deps": [
-        "modules",
         "scip"
       ],
       "domain": "export",
@@ -1002,9 +906,6 @@
     {
       "artifacts": [],
       "deps": [
-        "config_ingest",
-        "function_ast_features",
-        "goids",
         "modules",
         "scip"
       ],
@@ -1019,7 +920,6 @@
     {
       "artifacts": [],
       "deps": [
-        "modules",
         "scip"
       ],
       "domain": "ingestion",
@@ -1032,7 +932,6 @@
     {
       "artifacts": [],
       "deps": [
-        "goids",
         "modules",
         "scip"
       ],
@@ -1046,9 +945,6 @@
     {
       "artifacts": [],
       "deps": [
-        "docstrings",
-        "function_types",
-        "goids",
         "modules",
         "scip"
       ],
@@ -1062,8 +958,6 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "goids",
         "modules",
         "scip"
       ],
@@ -1077,7 +971,7 @@
     {
       "artifacts": [],
       "deps": [
-        "goids",
+        "modules",
         "scip"
       ],
       "domain": "analytics",
@@ -1090,7 +984,7 @@
     {
       "artifacts": [],
       "deps": [
-        "goids",
+        "modules",
         "scip"
       ],
       "domain": "analytics",
@@ -1103,7 +997,6 @@
     {
       "artifacts": [],
       "deps": [
-        "ast",
         "modules",
         "scip"
       ],
@@ -1118,13 +1011,9 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "goids",
-        "import_graph",
         "modules",
         "scip",
-        "subsystems",
-        "symbol_uses"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1137,13 +1026,9 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "goids",
-        "import_graph",
         "modules",
         "scip",
-        "subsystems",
-        "symbol_uses"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1156,14 +1041,9 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "config_ingest",
-        "goids",
-        "import_graph",
         "modules",
         "scip",
-        "subsystems",
-        "symbol_uses"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1184,7 +1064,9 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "scip"
+      ],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "import_graph",
@@ -1229,8 +1111,7 @@
     {
       "artifacts": [],
       "deps": [
-        "cdg",
-        "dfg",
+        "modules",
         "scip"
       ],
       "domain": "graphs",
@@ -1243,11 +1124,9 @@
     {
       "artifacts": [],
       "deps": [
-        "bytecode",
-        "cpg",
-        "inspect",
+        "modules",
         "scip",
-        "symtable"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1298,9 +1177,9 @@
     {
       "artifacts": [],
       "deps": [
-        "goids",
+        "modules",
         "scip",
-        "syntax_index"
+        "scip_proto"
       ],
       "domain": "ingestion",
       "impl_kind": "native",
@@ -1314,13 +1193,9 @@
     {
       "artifacts": [],
       "deps": [
-        "function_ast_features",
-        "function_contracts",
-        "function_effects",
-        "goids",
-        "graph_metrics",
         "modules",
-        "scip"
+        "scip",
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1369,9 +1244,9 @@
     {
       "artifacts": [],
       "deps": [
-        "graph_metrics_ext",
+        "modules",
         "scip",
-        "subsystems"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1383,9 +1258,9 @@
     {
       "artifacts": [],
       "deps": [
+        "modules",
         "scip",
-        "subsystem_graph_metrics",
-        "subsystems"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1397,9 +1272,9 @@
     {
       "artifacts": [],
       "deps": [
-        "import_graph",
+        "modules",
         "scip",
-        "subsystems"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1411,11 +1286,9 @@
     {
       "artifacts": [],
       "deps": [
-        "config_ingest",
-        "import_graph",
         "modules",
         "scip",
-        "symbol_uses"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1428,13 +1301,9 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "goids",
-        "import_graph",
         "modules",
         "scip",
-        "subsystems",
-        "symbol_uses"
+        "scip_proto"
       ],
       "domain": "analytics",
       "impl_kind": "native",
@@ -1446,7 +1315,11 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "modules",
+        "scip",
+        "scip_proto"
+      ],
       "domain": "graphs",
       "impl_kind": "native",
       "name": "symbol_uses",
@@ -1475,9 +1348,8 @@
     {
       "artifacts": [],
       "deps": [
-        "scip",
-        "syntax_index",
-        "tree_sitter_index"
+        "modules",
+        "scip"
       ],
       "domain": "ingestion",
       "impl_kind": "native",
@@ -1492,9 +1364,9 @@
     {
       "artifacts": [],
       "deps": [
+        "modules",
         "scip",
-        "scip_resolution",
-        "syntax_index"
+        "scip_proto"
       ],
       "domain": "ingestion",
       "impl_kind": "native",
@@ -1575,30 +1447,9 @@
     {
       "artifacts": [],
       "deps": [
-        "ast",
-        "call_graph",
-        "cfg",
-        "cfg_dfg_metrics",
-        "config_data_flow",
-        "config_graph_metrics",
-        "data_model_usage",
-        "data_models",
-        "entrypoints",
-        "external_deps",
-        "function_validation",
-        "goids",
-        "graph_metrics",
-        "graph_metrics_ext",
-        "graph_validation",
-        "import_graph",
         "modules",
-        "subsystem_agreement",
-        "subsystem_caches",
-        "subsystem_graph_metrics",
-        "subsystems",
-        "symbol_graph_metrics",
-        "tests_ingest",
-        "typing"
+        "scip",
+        "scip_proto"
       ],
       "domain": "views",
       "impl_kind": "native",
@@ -1606,34 +1457,19 @@
       "outputs": [
         "core.v_goid_crosswalk_join",
         "core.v_goid_crosswalk_mismatches",
-        "docs.v_behavioral_classification_input",
-        "docs.v_call_graph_enriched",
-        "docs.v_cfg_block_architecture",
-        "docs.v_config_data_flow",
         "docs.v_data_model_fields",
         "docs.v_data_model_relationships",
-        "docs.v_data_model_usage",
         "docs.v_data_models",
         "docs.v_data_models_normalized",
-        "docs.v_dfg_block_architecture",
         "docs.v_entrypoints",
         "docs.v_external_dependencies",
         "docs.v_external_dependency_calls",
-        "docs.v_file_summary",
-        "docs.v_function_architecture",
-        "docs.v_function_history",
-        "docs.v_function_history_timeseries",
-        "docs.v_ide_hints",
         "docs.v_module_architecture",
-        "docs.v_module_architecture_full",
-        "docs.v_module_history_timeseries",
         "docs.v_module_with_subsystem",
         "docs.v_subsystem_agreement",
         "docs.v_subsystem_profile",
         "docs.v_subsystem_summary",
         "docs.v_symbol_module_graph",
-        "docs.v_test_architecture",
-        "docs.v_test_to_function",
         "docs.v_validation_summary",
         "graph.v_call_graph_degree",
         "graph.v_import_graph_degree"

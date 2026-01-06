@@ -1,3 +1,72 @@
 [hamilton]
 graph_backend = "compute"
 schema_drift_mode = "warn"
+
+[scope]
+scope_paths = ["src/codeintel/serving"]
+
+[ingestion.py_frontend]
+py_frontend_cache_entries = 40960
+py_frontend_cache_bytes = true
+py_frontend_cache_text = true
+py_frontend_cache_line_index = true
+py_frontend_cache_ast = true
+py_frontend_cache_code = true
+py_frontend_decode_errors = "replace"
+
+[telemetry.hooks]
+enable_telemetry = true
+enable_io_telemetry = true
+enable_progress = true
+enable_timing = true
+telemetry_output_path = "build/diagnostics/node_telemetry.jsonl"
+io_telemetry_output_path = "build/diagnostics/node_io_telemetry.jsonl"
+progress_style = "rich"
+progress_desc = "Building targets"
+println_enabled = true
+println_verbosity = 1
+println_node_filter = []
+typecheck_enabled = true
+typecheck_inputs = true
+typecheck_outputs = true
+graceful_errors_enabled = true
+graceful_try_all_parallel = true
+graceful_allow_injection = true
+pdb_enabled = false
+pdb_before = false
+pdb_during = false
+pdb_after = false
+pdb_node_filter = []
+event_stream_enabled = true
+event_stream_path = "build/diagnostics/hamilton_event_stream.jsonl"
+cache_logger_level = "INFO"
+cache_logger_path = "build/diagnostics/hamilton_cache.log"
+hang_watchdog_enabled = true
+hang_watchdog_timeout_s = 600.0
+hang_watchdog_repeat = true
+hang_watchdog_path = "build/diagnostics/hamilton_hang_dump.log"
+display_all_functions_enabled = true
+display_all_functions_path = "build/diagnostics/hamilton_graph_all.svg"
+visualize_execution_enabled = true
+visualize_execution_path = "build/diagnostics/hamilton_graph_execution.svg"
+ddog_enabled = true
+ddog_root_name = "codeintel_hamilton"
+ddog_service = "codeintel-build"
+ddog_include_causal_links = true
+
+[telemetry.hamilton_tracker]
+enabled = true
+project_id = "1"
+username = "local"
+dag_name = "codeintel_cpg_v1"
+api_url = "http://localhost:8241"
+ui_url = "http://localhost:8242"
+capture_data_statistics = true
+max_list_length = 50
+max_dict_length = 100
+config_uri = "~/.hamilton.conf"
+
+[telemetry.hamilton_tracker.tags]
+environment = "dev"
+team = "codeintel"
+version = "v1"

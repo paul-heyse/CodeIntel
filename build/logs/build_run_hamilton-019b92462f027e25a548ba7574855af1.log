@@ -1,0 +1,149 @@
+2026-01-06 02:47:12,305 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph_types.py:73: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  if not hasattr(n.body[0], "value") or not isinstance(n.body[0].value, ast.Str):
+
+2026-01-06 02:47:13,731 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/io/utils.py:51: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  timestamp = datetime.now().utcnow().timestamp()
+
+2026-01-06 02:47:18,927 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse config/mkdocs.yml
+2026-01-06 02:47:18,927 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/PF3PuIZ-jYDxEBRpjMkbi/markdown_it/port.yaml
+2026-01-06 02:47:18,928 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/u1TPF7g7VU5DysH2bCbj7/pycparser/_c_ast.cfg
+2026-01-06 02:47:19,002 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=goid_h128: decimal128(38, 0)
+urn: string
+rel_path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+kind: dictionary<values=string, indices=int32, ordered=0>
+qualname: string
+start_line: int32
+end_line: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'core.goids'
+codeintel.domain: 'core'
+codeintel.target: 'goids'
+codeintel.schema_hash: '3e866ab4b566a5a63db836dfcef10e4623895bf233be26553' + 15
+codeintel.schema_digest: '92995b2ab6ed56c8ea06891ac93dab4a079362fb1580894' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","en' + 182
+codeintel.nullability_json: '{"commit":false,"created_at":false,"end_line' + 132
+codeintel.primary_keys_json: '["goid_h128"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:19.737713+00:00'
+codeintel.hamilton.node: 'm__core__goids'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"4550f108a1b499e5204423153a39a416' + 177)
+2026-01-06 02:47:19,005 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=goid_h128: decimal128(38, 0)
+urn: string
+rel_path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+kind: dictionary<values=string, indices=int32, ordered=0>
+qualname: string
+start_line: int32
+end_line: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'core.goids'
+codeintel.domain: 'core'
+codeintel.target: 'goids'
+codeintel.schema_hash: '3e866ab4b566a5a63db836dfcef10e4623895bf233be26553' + 15
+codeintel.schema_digest: '92995b2ab6ed56c8ea06891ac93dab4a079362fb1580894' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","en' + 182
+codeintel.nullability_json: '{"commit":false,"created_at":false,"end_line' + 132
+codeintel.primary_keys_json: '["goid_h128"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:19.737713+00:00'
+codeintel.hamilton.node: 'm__core__goids'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"4550f108a1b499e5204423153a39a416' + 177)
+2026-01-06 02:47:21,644 WARNING codeintel.build.graphs.validation.runner Validation: 2355 isolated call graph node(s) (sample: 54229508676810237757852005866899728854, 65369651026670722044121540749252417629, 67396147505915419402991450161026687459, 81821712742756558443914674762054197669, 79096178072384228730265374375759561295)
+2026-01-06 02:47:21,649 WARNING codeintel.build.graphs.validation.runner Validation: 5 recursive call cluster(s) detected (largest size 31)
+2026-01-06 02:47:21,670 WARNING codeintel.build.graphs.validation.runner Validation: 5 import graph hub(s) (sample: __future__, collections.abc, dataclasses, pathlib, typing)
+2026-01-06 02:47:21,816 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=config_path: dictionary<values=string, indices=int32, ordered=0>
+format: dictionary<values=string, indices=int32, ordered=0>
+key: string
+reference_paths: binary
+reference_modules: binary
+reference_count: int32
+-- schema metadata --
+codeintel.table_key: 'analytics.config_values'
+codeintel.domain: 'analytics'
+codeintel.target: 'config_ingest'
+codeintel.schema_hash: '26739bd1a32cbbcbe91bdf9445e4c2e2f70de1d37dabb0a87' + 15
+codeintel.schema_digest: '392d355d62ed8e7a28e8503a63316a4823becb81e2a98da' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","config_path":"VARCHAR","for' + 128
+codeintel.nullability_json: '{"commit":false,"config_path":false,"format"' + 104
+codeintel.primary_keys_json: '["repo","commit","config_path","key"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b92462f017042842e4d9afb39db55'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T07:47:18.919436+00:00'
+codeintel.hamilton.node: 'm__analytics__config_values'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"26739bd1a32cbbcbe91bdf9445e4c2e2' + 73)
+2026-01-06 02:47:21,817 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+symbol_betweenness: double
+symbol_closeness: double
+symbol_eigenvector: double
+symbol_harmonic: double
+symbol_k_core: int32
+symbol_constraint: double
+symbol_effective_size: double
+symbol_community_id: int32
+symbol_component_id: int32
+symbol_component_size: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'analytics.symbol_graph_metrics_modules'
+codeintel.domain: 'analytics'
+codeintel.target: 'symbol_graph_metrics'
+codeintel.schema_hash: 'ec5b4ee870996ca9df31c81073143673ba5c3f17823bbb165' + 15
+codeintel.schema_digest: '07430f2b303c0cc34af644278e1533f01f12e34e84ab6e6' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","mo' + 334
+codeintel.nullability_json: '{"commit":false,"created_at":false,"module":' + 276
+codeintel.primary_keys_json: '["repo","commit","module"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:06:06.194276+00:00'
+codeintel.hamilton.node: 'm__analytics__symbol_graph_metrics_modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"9317af8a1adbbd1f3fe06084b8e7e8d6' + 226)
+2026-01-06 02:47:21,818 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+subsystem_id: string
+import_community_id: int32
+agrees: bool
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'analytics.subsystem_agreement'
+codeintel.domain: 'analytics'
+codeintel.target: 'subsystem_agreement'
+codeintel.schema_hash: '99dc1fdbac049b68801f872ef03e24acc95b6a88423fd322a' + 15
+codeintel.schema_digest: '5fdf28d84a3482f50b32f9f44cf9e80053ae7ec7c935785' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"agrees":"BOOLEAN","commit":"VARCHAR","created_' + 109
+codeintel.nullability_json: '{"agrees":true,"commit":false,"created_at":f' + 80
+codeintel.primary_keys_json: '["repo","commit","module"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:51.352153+00:00'
+codeintel.hamilton.node: 'm__analytics__subsystem_agreement'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"99dc1fdbac049b68801f872ef03e24ac' + 79)
+2026-01-06 02:47:22,369 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Falling back to filesystem module scan after empty storage query.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -131,10 +132,16 @@ class BuildRunContext:
         if self.execution_options is not None:
             return self.execution_options
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
+        stacked = self.build_config_stack(self.config, self.config_overrides)
+        hook_flags = _telemetry_hook_flags(stacked)
         return BuildExecutionOptions(
             profile=None,
             parallel_backend=execution_settings.parallel_backend,
             max_workers=execution_settings.max_workers,
+            enable_telemetry=hook_flags[0],
+            enable_io_telemetry=hook_flags[1],
+            enable_progress=hook_flags[2],
+            enable_timing=hook_flags[3],
         )
 
     def execution_policy_for(self, target: TargetDescriptor) -> ExecutionPolicy:
@@ -203,6 +210,45 @@ class BuildRunContext:
             fingerprint_policy=resolved.fingerprint_policy,
             execution_context=execution_context,
         )
+
+
+def _telemetry_hook_flags(config: BuildConfig) -> tuple[bool, bool, bool, bool]:
+    raw = config.get("telemetry.hooks")
+    if not isinstance(raw, Mapping):
+        return (True, True, False, False)
+    progress_style = _telemetry_str(raw, "progress_style", default="internal")
+    return (
+        _telemetry_bool(raw, "enable_telemetry", default=True),
+        _telemetry_bool(raw, "enable_io_telemetry", default=True),
+        _telemetry_progress_enabled(raw, progress_style=progress_style),
+        _telemetry_bool(raw, "enable_timing", default=False),
+    )
+
+
+def _telemetry_bool(config: Mapping[str, object], key: str, *, default: bool) -> bool:
+    value = config.get(key)
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _telemetry_str(config: Mapping[str, object], key: str, *, default: str) -> str:
+    value = config.get(key)
+    if isinstance(value, str):
+        stripped = value.strip().lower()
+        return stripped or default
+    return default
+
+
+def _telemetry_progress_enabled(config: Mapping[str, object], *, progress_style: str) -> bool:
+    enabled = _telemetry_bool(config, "enable_progress", default=False)
+    if not enabled:
+        return False
+    if progress_style in {"none", "false", "off"}:
+        return False
+    if progress_style in {"rich", "tqdm"}:
+        return False
+    return True
 
 
 __all__ = ["BuildRunContext", "BuildRunContextOverrides"]

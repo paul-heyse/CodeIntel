@@ -78,9 +78,10 @@ def cpg2_nodes__syntax_nodes(
     required = set(identity_keys(SYNTAX_NODES_TABLE_KEY))
     if not required.issubset(set(syntax_nodes.column_names)):
         return _empty_node_table()
-    anchor_map = _syntax_anchor_map(syntax_nodes, include_source_pk_json=True)
+    normalized = _encode_extras_json(syntax_nodes, column_name="extras_json")
+    anchor_map = _syntax_anchor_map(normalized, include_source_pk_json=True)
     joined = arrow_join_tables(
-        syntax_nodes,
+        normalized,
         anchor_map,
         spec=ArrowJoinSpec(on=["repo", "commit", "rel_path", "producer", "node_id"], how="left"),
     )

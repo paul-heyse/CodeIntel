@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
+    from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 log = logging.getLogger(__name__)
@@ -456,6 +457,8 @@ def _extract_module_ast(
     module: ModuleRecord,
     source_text: str,
     source_index: LineIndexedSource,
+    *,
+    tree: ast.AST | None = None,
 ) -> ModuleAstResult | None:
     """Extract AST from module source.
 
@@ -467,17 +470,20 @@ def _extract_module_ast(
         Module source code text.
     source_index
         Line index used for span lookups.
+    tree
+        Pre-parsed AST when already available.
 
     Returns
     -------
     ModuleAstResult | None
         Extraction result, or None if parsing fails.
     """
-    try:
-        tree = ast.parse(source_text, filename=str(module.file_path), type_comments=True)
-    except (SyntaxError, ValueError, TypeError) as exc:
-        log.warning("Failed to parse %s: %s", module.file_path, exc)
-        return None
+    if tree is None:
+        try:
+            tree = ast.parse(source_text, filename=str(module.file_path), type_comments=True)
+        except (SyntaxError, ValueError, TypeError) as exc:
+            log.warning("Failed to parse %s: %s", module.file_path, exc)
+            return None
 
     visitor = AstVisitor(rel_path=module.rel_path, module_name=module.module_name)
     try:
@@ -522,8 +528,9 @@ class AstExtractStep(BaseExtractStep):
         discovery: ModuleDiscoveryPort,
         *,
         options: AstExtractOptions | None = None,
+        frontend: PyFrontend | None = None,
     ) -> None:
-        super().__init__(discovery=discovery)
+        super().__init__(discovery=discovery, frontend=frontend)
         self._options = options or AstExtractOptions()
 
     def execute(
@@ -555,8 +562,8 @@ class AstExtractStep(BaseExtractStep):
         except (KeyError, RuntimeError) as exc:
             return AstExtractResult(result=ExecutionResult.failed(str(exc)))
         warnings: list[str] = []
-        for module, source_text, source_index in self._iter_python_source_bundles(modules):
-            result = _extract_module_ast(module, source_text, source_index)
+        for module, source_text, source_index, tree in self._iter_python_source_bundles(modules):
+            result = _extract_module_ast(module, source_text, source_index, tree=tree)
             if result is None:
                 warnings.append(f"Failed to extract AST from {module.rel_path}")
                 continue
@@ -590,9 +597,16 @@ class AstExtractStep(BaseExtractStep):
     def _iter_python_source_bundles(
         self,
         modules: Sequence[ModuleRecord],
-    ) -> Iterable[tuple[ModuleRecord, str, LineIndexedSource]]:
+    ) -> Iterable[tuple[ModuleRecord, str, LineIndexedSource, ast.AST | None]]:
         for module in modules:
             if not module.rel_path.endswith(".py"):
+                continue
+            if self._frontend is not None:
+                bundle = self._frontend.get_source_bundle(module)
+                if bundle is None:
+                    continue
+                tree = self._frontend.get_ast(module)
+                yield module, bundle.source_text, bundle.source_index, tree
                 continue
             source_bytes = self._discovery.read_module_bytes(module)
             if source_bytes is None:
@@ -601,7 +615,7 @@ class AstExtractStep(BaseExtractStep):
                     continue
                 source_bytes = source_text.encode("utf-8", errors="replace")
             source_text, source_index = _build_source_index(source_bytes)
-            yield module, source_text, source_index
+            yield module, source_text, source_index, None
 
 
 __all__ = [

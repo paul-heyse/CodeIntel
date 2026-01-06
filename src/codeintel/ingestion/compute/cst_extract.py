@@ -6,6 +6,7 @@ LibCST concrete syntax trees, using ports for all I/O operations.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import io
 import json
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     from libcst.metadata.scope_provider import Access, Scope
 
+    from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 log = logging.getLogger(__name__)
@@ -276,6 +278,16 @@ class _SyntaxContext:
     rel_path: str
     producer: str
     language: str
+
+
+@dataclass(frozen=True, slots=True)
+class _SyntaxModuleRequest:
+    module: ModuleRecord
+    context: _SyntaxContext
+    source_bytes: bytes
+    collectors: _CstCollectors
+    emit_ast_nodes: bool
+    ast_tree: ast.AST | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1965,18 +1977,15 @@ def _resolve_scope_map(
 
 
 def _extract_module_syntax(
-    *,
-    module: ModuleRecord,
-    context: _SyntaxContext,
-    source_bytes: bytes,
-    collectors: _CstCollectors,
-    emit_ast_nodes: bool,
+    request: _SyntaxModuleRequest,
 ) -> list[str]:
     warnings: list[str] = []
+    context = request.context
+    emit_ast_nodes = request.emit_ast_nodes
     parsed_context = _parse_module_context(
         context=context,
-        source_bytes=source_bytes,
-        collectors=collectors,
+        source_bytes=request.source_bytes,
+        collectors=request.collectors,
         warnings=warnings,
     )
     if parsed_context is None:
@@ -1984,10 +1993,10 @@ def _extract_module_syntax(
 
     cst_visitor = CstVisitor(
         rel_path=context.rel_path,
-        module_name=module.module_name,
+        module_name=request.module.module_name,
         source=SourceBundle(
             text=parsed_context.source_text,
-            source_bytes=source_bytes,
+            source_bytes=request.source_bytes,
             encoding=parsed_context.encoding,
         ),
     )
@@ -2030,6 +2039,7 @@ def _extract_module_syntax(
             context=AstCollectContext(
                 warnings=warnings,
                 source_label=context.rel_path,
+                parsed=request.ast_tree,
             ),
         )
         if emit_ast_nodes
@@ -2082,18 +2092,18 @@ def _extract_module_syntax(
             ),
         )
 
-    _flush_cst_rows(collectors, cst_visitor.rows)
+    _flush_cst_rows(request.collectors, cst_visitor.rows)
 
-    collectors.spans.extend(syntax_visitor.span_rows)
-    collectors.syntax_nodes.extend(syntax_graph_visitor.node_rows)
-    collectors.syntax_edges.extend(syntax_graph_visitor.edge_rows)
-    collectors.scopes.extend(syntax_visitor.scopes)
-    collectors.defs.extend(syntax_visitor.defs)
-    collectors.refs.extend(syntax_visitor.refs)
-    collectors.calls.extend(syntax_visitor.calls)
-    collectors.call_args.extend(syntax_visitor.call_args)
-    collectors.func_params.extend(syntax_visitor.func_params)
-    collectors.imports.extend(syntax_visitor.imports)
+    request.collectors.spans.extend(syntax_visitor.span_rows)
+    request.collectors.syntax_nodes.extend(syntax_graph_visitor.node_rows)
+    request.collectors.syntax_edges.extend(syntax_graph_visitor.edge_rows)
+    request.collectors.scopes.extend(syntax_visitor.scopes)
+    request.collectors.defs.extend(syntax_visitor.defs)
+    request.collectors.refs.extend(syntax_visitor.refs)
+    request.collectors.calls.extend(syntax_visitor.calls)
+    request.collectors.call_args.extend(syntax_visitor.call_args)
+    request.collectors.func_params.extend(syntax_visitor.func_params)
+    request.collectors.imports.extend(syntax_visitor.imports)
     return warnings
 
 
@@ -2119,8 +2129,9 @@ class CstExtractStep(BaseExtractStep):
         *,
         emit_ast_nodes: bool = True,
         batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+        frontend: PyFrontend | None = None,
     ) -> None:
-        super().__init__(discovery)
+        super().__init__(discovery, frontend=frontend)
         self._emit_ast_nodes = emit_ast_nodes
         self._batch_size = batch_size
 
@@ -2162,13 +2173,21 @@ class CstExtractStep(BaseExtractStep):
                 producer=SYNTAX_PRODUCER,
                 language=SYNTAX_LANGUAGE,
             )
+            ast_tree = (
+                self._frontend.get_ast(module)
+                if self._frontend is not None and self._emit_ast_nodes
+                else None
+            )
             warnings.extend(
                 _extract_module_syntax(
-                    module=module,
-                    context=context,
-                    source_bytes=source_bytes,
-                    collectors=collectors,
-                    emit_ast_nodes=self._emit_ast_nodes,
+                    _SyntaxModuleRequest(
+                        module=module,
+                        context=context,
+                        source_bytes=source_bytes,
+                        collectors=collectors,
+                        emit_ast_nodes=self._emit_ast_nodes,
+                        ast_tree=ast_tree,
+                    )
                 )
             )
             _flush_cst_collectors(collectors)
@@ -2228,7 +2247,10 @@ class CstExtractStep(BaseExtractStep):
         for module in modules:
             if not module.rel_path.endswith(".py"):
                 continue
-            source_bytes = self._discovery.read_module_bytes(module)
+            if self._frontend is not None:
+                source_bytes = self._frontend.get_source_bytes(module)
+            else:
+                source_bytes = self._discovery.read_module_bytes(module)
             if source_bytes is not None:
                 yield module, source_bytes
 

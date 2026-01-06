@@ -1,5 +1,5 @@
 {
-  "commit":"b0d63122b2108be707cbb475b4b16b48a3222e00",
+  "commit":"5f11b68cef658a75b3a334a76190824f9269c165",
   "contracts":{
     "analytics.behavioral_coverage":{
       "composition":null,
@@ -13041,32 +13041,32 @@
         "columns":[
           {
             "name":"repo",
-            "nullable":false,
+            "nullable":true,
             "type":"VARCHAR"
           },
           {
             "name":"commit",
-            "nullable":false,
+            "nullable":true,
             "type":"VARCHAR"
           },
           {
             "name":"rel_path",
-            "nullable":false,
+            "nullable":true,
             "type":"VARCHAR"
           },
           {
             "name":"producer",
-            "nullable":false,
+            "nullable":true,
             "type":"VARCHAR"
           },
           {
             "name":"scip_symbol",
-            "nullable":false,
+            "nullable":true,
             "type":"VARCHAR"
           },
           {
             "name":"scip_occurrence_id",
-            "nullable":false,
+            "nullable":true,
             "type":"VARCHAR"
           },
           {
@@ -13081,22 +13081,22 @@
           },
           {
             "name":"occ_start_line",
-            "nullable":false,
+            "nullable":true,
             "type":"INTEGER"
           },
           {
             "name":"occ_start_col",
-            "nullable":false,
+            "nullable":true,
             "type":"INTEGER"
           },
           {
             "name":"occ_end_line",
-            "nullable":false,
+            "nullable":true,
             "type":"INTEGER"
           },
           {
             "name":"occ_end_col",
-            "nullable":false,
+            "nullable":true,
             "type":"INTEGER"
           },
           {
@@ -13106,12 +13106,12 @@
           },
           {
             "name":"match_kind",
-            "nullable":false,
+            "nullable":true,
             "type":"VARCHAR"
           },
           {
             "name":"candidate_count",
-            "nullable":false,
+            "nullable":true,
             "type":"INTEGER"
           }
         ],
@@ -20842,7 +20842,7 @@
       "validation_profile":"lenient"
     }
   },
-  "generated_at":"2026-01-05T18:01:33.313097+00:00",
+  "generated_at":"2026-01-06T10:03:11.245266+00:00",
   "repo":"github.com/paul-heyse/CodeIntel",
   "version":1
 }

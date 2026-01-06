@@ -347,11 +347,17 @@ def _function_rows_from_frame(
     filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
     if filtered.num_rows == 0:
         return []
+    if "function_goid_h128" in filtered.column_names:
+        goid_column = "function_goid_h128"
+    elif "goid_h128" in filtered.column_names:
+        goid_column = "goid_h128"
+    else:
+        return []
     result: list[tuple[int, str, str, int | None]] = []
     for row in filtered.select(
-        ["function_goid_h128", "rel_path", "qualname", "start_line", "end_line"]
+        [goid_column, "rel_path", "qualname", "start_line", "end_line"]
     ).to_pylist():
-        goid_raw = row.get("function_goid_h128")
+        goid_raw = row.get(goid_column)
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         start_line_raw = row.get("start_line")

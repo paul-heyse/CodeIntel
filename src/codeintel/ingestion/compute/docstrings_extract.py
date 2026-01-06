@@ -27,7 +27,8 @@ from codeintel.ingestion.compute.base import BaseExtractStep
 if TYPE_CHECKING:
     import pyarrow as pa
 
-    from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
+    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 log = logging.getLogger(__name__)
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
@@ -217,6 +218,8 @@ def _extract_module_docstrings(
     module: ModuleRecord,
     source: str,
     ctx: DocstringContext,
+    *,
+    tree: ast.AST | None = None,
 ) -> list[DocstringRow]:
     """Extract docstrings from module source.
 
@@ -228,17 +231,20 @@ def _extract_module_docstrings(
         Module source code.
     ctx
         Docstring extraction context.
+    tree
+        Pre-parsed AST when already available.
 
     Returns
     -------
     list[DocstringRow]
         Extracted docstring rows.
     """
-    try:
-        tree = ast.parse(source, filename=str(module.file_path))
-    except (SyntaxError, ValueError) as exc:
-        log.warning("Failed to parse %s: %s", module.file_path, exc)
-        return []
+    if tree is None:
+        try:
+            tree = ast.parse(source, filename=str(module.file_path))
+        except (SyntaxError, ValueError) as exc:
+            log.warning("Failed to parse %s: %s", module.file_path, exc)
+            return []
 
     visitor = DocstringVisitor(
         rel_path=module.rel_path,
@@ -278,6 +284,14 @@ class DocstringsExtractStep(BaseExtractStep):
         Discovery port for reading module source.
     """
 
+    def __init__(
+        self,
+        discovery: ModuleDiscoveryPort,
+        *,
+        frontend: PyFrontend | None = None,
+    ) -> None:
+        super().__init__(discovery=discovery, frontend=frontend)
+
     def execute(
         self,
         modules: Sequence[ModuleRecord],
@@ -313,7 +327,8 @@ class DocstringsExtractStep(BaseExtractStep):
             return DocstringsExtractResult(result=ExecutionResult.failed(str(exc)))
 
         for module, source in self._iter_python_sources(modules):
-            docstrings = _extract_module_docstrings(module, source, ctx)
+            tree = self._frontend.get_ast(module) if self._frontend is not None else None
+            docstrings = _extract_module_docstrings(module, source, ctx, tree=tree)
             for row in docstrings:
                 buffer.append(row)
 

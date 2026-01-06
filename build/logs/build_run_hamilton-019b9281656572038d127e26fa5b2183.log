@@ -1,0 +1,464 @@
+2026-01-06 03:51:52,858 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph_types.py:73: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  if not hasattr(n.body[0], "value") or not isinstance(n.body[0].value, ast.Str):
+
+2026-01-06 03:51:54,362 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/io/utils.py:51: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  timestamp = datetime.now().utcnow().timestamp()
+
+2026-01-06 03:51:59,710 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse config/mkdocs.yml
+2026-01-06 03:51:59,710 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/PF3PuIZ-jYDxEBRpjMkbi/markdown_it/port.yaml
+2026-01-06 03:51:59,710 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Config parse warning: Failed to parse .uv/cache/archive-v0/u1TPF7g7VU5DysH2bCbj7/pycparser/_c_ast.cfg
+2026-01-06 03:51:59,798 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=goid_h128: decimal128(38, 0)
+urn: string
+rel_path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+kind: dictionary<values=string, indices=int32, ordered=0>
+qualname: string
+start_line: int32
+end_line: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'core.goids'
+codeintel.domain: 'core'
+codeintel.target: 'goids'
+codeintel.schema_hash: '3e866ab4b566a5a63db836dfcef10e4623895bf233be26553' + 15
+codeintel.schema_digest: '92995b2ab6ed56c8ea06891ac93dab4a079362fb1580894' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","en' + 182
+codeintel.nullability_json: '{"commit":false,"created_at":false,"end_line' + 132
+codeintel.primary_keys_json: '["goid_h128"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:19.737713+00:00'
+codeintel.hamilton.node: 'm__core__goids'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"4550f108a1b499e5204423153a39a416' + 177)
+2026-01-06 03:51:59,799 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b927f6de27573ae1f5f49d2034ed0'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T08:49:54.286777+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-06 03:51:59,803 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=goid_h128: decimal128(38, 0)
+urn: string
+rel_path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+kind: dictionary<values=string, indices=int32, ordered=0>
+qualname: string
+start_line: int32
+end_line: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'core.goids'
+codeintel.domain: 'core'
+codeintel.target: 'goids'
+codeintel.schema_hash: '3e866ab4b566a5a63db836dfcef10e4623895bf233be26553' + 15
+codeintel.schema_digest: '92995b2ab6ed56c8ea06891ac93dab4a079362fb1580894' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","en' + 182
+codeintel.nullability_json: '{"commit":false,"created_at":false,"end_line' + 132
+codeintel.primary_keys_json: '["goid_h128"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:19.737713+00:00'
+codeintel.hamilton.node: 'm__core__goids'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"4550f108a1b499e5204423153a39a416' + 177)
+2026-01-06 03:52:02,451 WARNING codeintel.build.graphs.validation.runner Validation: 320 isolated call graph node(s) (sample: 88507451588699215546635241106434174302, 29111138449849787495288424227296916819, 37451787742333787432719460786506295042, 69712750364982251365356277004947204491, 67036512157923842960915021875960332529)
+2026-01-06 03:52:02,452 WARNING codeintel.build.graphs.validation.runner Validation: 1 recursive call cluster(s) detected (largest size 31)
+2026-01-06 03:52:02,474 WARNING codeintel.build.graphs.validation.runner Validation: 5 import graph hub(s) (sample: __future__, collections.abc, dataclasses, pathlib, typing)
+2026-01-06 03:52:02,506 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b927f6de27573ae1f5f49d2034ed0'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T08:49:54.286777+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-06 03:52:02,508 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+path: string
+language: dictionary<values=string, indices=int32, ordered=0>
+tags: list<element: string>
+  child 0, element: string
+owners: list<element: string>
+  child 0, element: string
+row_hash: string
+-- schema metadata --
+codeintel.table_key: 'core.modules'
+codeintel.domain: 'core'
+codeintel.target: 'modules'
+codeintel.schema_hash: '0592124aeac8a9f7e6394bb6d3ca93f11825577c60a16674d' + 15
+codeintel.schema_digest: '7184be2a17869a97c64312df2655ff9d4fe50f806c3fa43' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","language":"VARCHAR","module' + 115
+codeintel.nullability_json: '{"commit":true,"language":true,"module":fals' + 69
+codeintel.primary_keys_json: '["module","path"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b927f6de27573ae1f5f49d2034ed0'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T08:49:54.286777+00:00'
+codeintel.hamilton.node: 'm__core__modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"a9f3e2aa045eeea7e23361593e0b0a1d' + 286)
+2026-01-06 03:52:02,510 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+symbol_betweenness: double
+symbol_closeness: double
+symbol_eigenvector: double
+symbol_harmonic: double
+symbol_k_core: int32
+symbol_constraint: double
+symbol_effective_size: double
+symbol_community_id: int32
+symbol_component_id: int32
+symbol_component_size: int32
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'analytics.symbol_graph_metrics_modules'
+codeintel.domain: 'analytics'
+codeintel.target: 'symbol_graph_metrics'
+codeintel.schema_hash: 'ec5b4ee870996ca9df31c81073143673ba5c3f17823bbb165' + 15
+codeintel.schema_digest: '07430f2b303c0cc34af644278e1533f01f12e34e84ab6e6' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"commit":"VARCHAR","created_at":"TIMESTAMP","mo' + 334
+codeintel.nullability_json: '{"commit":false,"created_at":false,"module":' + 276
+codeintel.primary_keys_json: '["repo","commit","module"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:06:06.194276+00:00'
+codeintel.hamilton.node: 'm__analytics__symbol_graph_metrics_modules'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"9317af8a1adbbd1f3fe06084b8e7e8d6' + 226)
+2026-01-06 03:52:02,512 WARNING codeintel.build.graphs.engine.datasets Dataset columns missing: repo, commit (table=module: string
+subsystem_id: string
+import_community_id: int32
+agrees: bool
+created_at: timestamp[us]
+-- schema metadata --
+codeintel.table_key: 'analytics.subsystem_agreement'
+codeintel.domain: 'analytics'
+codeintel.target: 'subsystem_agreement'
+codeintel.schema_hash: '99dc1fdbac049b68801f872ef03e24acc95b6a88423fd322a' + 15
+codeintel.schema_digest: '5fdf28d84a3482f50b32f9f44cf9e80053ae7ec7c935785' + 17
+codeintel.settings_fingerprint: 'd084197d240ab41f2f8aaf3f4fba09c61eddb74e' + 24
+codeintel.columns_json: '{"agrees":"BOOLEAN","commit":"VARCHAR","created_' + 109
+codeintel.nullability_json: '{"agrees":true,"commit":false,"created_at":f' + 80
+codeintel.primary_keys_json: '["repo","commit","module"]'
+codeintel.partition_columns_json: '["repo","commit"]'
+codeintel.build_id: 'full-019b91daadcd7bcc8050aa1239da4511'
+codeintel.repo: 'github.com/paul-heyse/CodeIntel'
+codeintel.commit: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.snapshot_id: '5f11b68cef658a75b3a334a76190824f9269c165'
+codeintel.generated_at: '2026-01-06T06:05:51.352153+00:00'
+codeintel.hamilton.node: 'm__analytics__subsystem_agreement'
+codeintel.hamilton.graph_version: '1'
+codeintel.inputs_json: '[{"schema_hash":"99dc1fdbac049b68801f872ef03e24ac' + 79)
+2026-01-06 03:52:02,972 WARNING codeintel.build.hamilton.native.ingestion.ingest_targets Falling back to filesystem module scan after empty storage query.
+2026-01-06 03:53:18,217 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/ingestion/tree_sitter/runner.py:479: DeprecationWarning: query() is deprecated. Use the Query() constructor instead.
+  result = query_fn(source)
+
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/auth/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/auth/policy.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/config.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/contracts/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/contracts/check_operation_contracts.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/contracts/http_routes.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/db/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/db/manager.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/db/pointer.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/errors/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/errors/catalog.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/errors/exceptions.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/errors/mapping.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/errors/models.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/errors/problem_adapter.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/errors/templates.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/export/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/export/engine.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/export/formats.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/export/meta.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/export/models.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/export/ndjson.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/features.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/app.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/dependencies.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/errors.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/export_dispatch.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/middleware.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/route_utils.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/routes/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/routes/v1/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/routes/v1/export.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/routes/v1/search.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/routes/v1/semantic.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/state.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/http/streaming.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/app.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/export_dispatch.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/middleware_errors.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/middleware_stack.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/models/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/models/exports.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/models/primitives.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/models/requests.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/models/semantic.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/prompts.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/protocols.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/resource_store.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/resources/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/resources/exports.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/resources/meta.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/runtime.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/server.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/catalog.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,836 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/describe.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/explain.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/export.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/meta.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/query.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/search.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/mcp/tools/shared.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/meta/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/meta/models.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/meta/service.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/meta/tooling.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/metrics.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/models/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/models/primitives.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/operations/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/operations/cancellation.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/operations/ops.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/operations/protocols.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/publisher.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/runtime.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/search/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/search/engine.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/search/models.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/duckdb_contracts.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/duckdb_relation_builder.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/duckdb_scan_adapter.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/engines/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/engines/duckdb_engine.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/engines/polars_engine.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/engines/protocol.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/engines/registry.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/fingerprints.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/guardrails.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/inventory.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/kernel.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/models.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/planner.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/polars_views.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/query_ast.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/registry.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/registry_compiler.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/routing.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/specs.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic/sqlglot_query_builder.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/semantic_compile.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/settings.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/snapshot/__init__.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/snapshot/models.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:19,837 WARNING codeintel.build.hamilton.native.ingestion.tree_sitter Tree-sitter indexing warning: Tree-sitter failed for src/codeintel/serving/uris.py: Invalid syntax at row 0, column 19
+2026-01-06 03:53:27,093 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/graphs/cpg2/assemble.py:186: FutureWarning: promote has been superseded by promote_options='default'.
+  combined = concat_tables_unified(tables)
+
+2026-01-06 03:53:30,889 WARNING hamilton.caching Node `cpg__overlay_options` has unhashable result of type `<class 'codeintel.build.hamilton.native.graphs.cpg2.types.CpgOverlayOptions'>`. Set `CachingBehavior.IGNORE` or register a versioning function to silence warning. Learn more: https://hamilton.apache.org/concepts/caching/#caching-behavior
+
+2026-01-06 03:53:30,892 WARNING hamilton.caching Node `cpg__edge_config` has unhashable result of type `<class 'codeintel.build.hamilton.native.graphs.cpg2.types.CpgEdgeConfig'>`. Set `CachingBehavior.IGNORE` or register a versioning function to silence warning. Learn more: https://hamilton.apache.org/concepts/caching/#caching-behavior
+
+2026-01-06 03:53:49,709 ERROR hamilton.execution.graph_functions 
+********************************************************************************
+> cpg2_edges__frames [codeintel.build.hamilton.native.graphs.cpg2.assemble.cpg2_edges__frames()] encountered an error<
+> Node inputs:
+{'cpg2_nodes__frames': 'pyarrow.Table\n'
+                       'repo: string\n'
+                       'commit: string\n'
+                       'cpg_node...',
+ 'cpg__edge_config': 'CpgEdgeConfig(overlay_options=CpgOverlayOptions(en...',
+ 'cpg_edge_core_inputs': '_CpgEdgeCoreInputs(symbol=_CpgSymbolInputs(syntax_...',
+ 'cpg_edge_overlay_inputs': '_CpgOverlayEdgeInputs(ast_nodes=pyarrow.Table\n'
+                            'path...',
+ 'env': "BuildEnv(gateway=None, snapshot=SnapshotRef(repo='..."}
+********************************************************************************
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 311, in execute_lifecycle_for_node
+    result = __adapter.call_lifecycle_method_sync(
+        "do_node_execute",
+    ...<3 lines>...
+        task_id=__task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 1079, in call_lifecycle_method_sync
+    return getattr(adapter, method_name)(**kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/cache_adapter.py", line 302, in do_node_execute
+    result = super().do_node_execute(
+        run_id=run_id,
+    ...<3 lines>...
+        **future_kwargs,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 1275, in do_node_execute
+    result = self._execute_node(
+        run_id=run_id,
+    ...<3 lines>...
+        task_id=task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 846, in _execute_node
+    result = node_callable(**node_kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/graphs/cpg2/assemble.py", line 345, in cpg2_edges__frames
+    cpg2_edges__cdg_edges(core.flow.cdg_edges, core.flow.cfg_blocks, core.flow.goids),
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/graphs/cpg2/planes/flow.py", line 346, in cpg2_edges__cdg_edges
+    selected = joined.select(
+        [
+    ...<9 lines>...
+        ]
+    )
+  File "pyarrow/table.pxi", line 4372, in pyarrow.lib.Table.select
+  File "pyarrow/table.pxi", line 1733, in pyarrow.lib._Tabular._ensure_integer_index
+KeyError: 'Field "repo" does not exist in schema'
+2026-01-06 03:53:49,713 ERROR codeintel.build.hamilton.hooks.telemetry_hook build.node.error run_id=hamilton-019b9281656572038d127e26fa5b2183 node_name=cpg2_edges__frames target=None table_key=None exception_type=KeyError error='Field "repo" does not exist in schema'
+2026-01-06 03:53:49,713 ERROR hamilton.driver -------------------------------------------------------------------
+Oh no an error! Need help with Hamilton?
+Join our slack and ask for help! https://join.slack.com/t/hamilton-opensource/shared_invite/zt-2niepkra8-DGKGf_tTYhXuJWBTXtIs4g
+-------------------------------------------------------------------
+
+2026-01-06 03:53:49,714 ERROR codeintel.build.hamilton.executor build.hamilton.executor.error run_id=hamilton-019b9281656572038d127e26fa5b2183
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 1896, in _execute_dag
+    outputs = context.runtime.driver.execute(
+        list(final_vars),
+        inputs=input_mapping,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 663, in execute
+    raise e
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 649, in execute
+    outputs = self.__raw_execute(
+        _final_vars, overrides, display_graph, inputs=inputs, _run_id=run_id
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 860, in __raw_execute
+    raise e
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 851, in __raw_execute
+    results = self.graph_executor.execute(
+        function_graph,
+    ...<3 lines>...
+        run_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 192, in execute
+    fg.execute(nodes, memoized_computation, overrides, inputs, run_id=run_id)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph.py", line 1116, in execute
+    return graph_functions.execute_subdag(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        nodes=nodes,
+        ^^^^^^^^^^^^
+    ...<4 lines>...
+        run_id=run_id,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 267, in execute_subdag
+    dfs_traverse(final_var_node, dep_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 206, in dfs_traverse
+    dfs_traverse(n, node_dependency_type)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 3 more times]
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 239, in dfs_traverse
+    result = execute_lifecycle_for_node_partial(**kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/execution/graph_functions.py", line 311, in execute_lifecycle_for_node
+    result = __adapter.call_lifecycle_method_sync(
+        "do_node_execute",
+    ...<3 lines>...
+        task_id=__task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 1079, in call_lifecycle_method_sync
+    return getattr(adapter, method_name)(**kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/cache_adapter.py", line 302, in do_node_execute
+    result = super().do_node_execute(
+        run_id=run_id,
+    ...<3 lines>...
+        **future_kwargs,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 1275, in do_node_execute
+    result = self._execute_node(
+        run_id=run_id,
+    ...<3 lines>...
+        task_id=task_id,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/caching/adapter.py", line 846, in _execute_node
+    result = node_callable(**node_kwargs)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/graphs/cpg2/assemble.py", line 345, in cpg2_edges__frames
+    cpg2_edges__cdg_edges(core.flow.cdg_edges, core.flow.cfg_blocks, core.flow.goids),
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/native/graphs/cpg2/planes/flow.py", line 346, in cpg2_edges__cdg_edges
+    selected = joined.select(
+        [
+    ...<9 lines>...
+        ]
+    )
+  File "pyarrow/table.pxi", line 4372, in pyarrow.lib.Table.select
+  File "pyarrow/table.pxi", line 1733, in pyarrow.lib._Tabular._ensure_integer_index
+KeyError: 'Field "repo" does not exist in schema'
+2026-01-06 03:53:53,251 WARNING codeintel.build.hamilton.diagnostics build.diagnostics.cache_view_failed run_id=hamilton-019b9281656572038d127e26fa5b2183 error='hamilton-019b9281656572038d127e26fa5b2183'

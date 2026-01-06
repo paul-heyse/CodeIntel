@@ -58,6 +58,7 @@ from codeintel.ingestion.compute.dis_extract import DisExtractStep
 from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from codeintel.ingestion.compute.inspect_extract import InspectExtractStep
 from codeintel.ingestion.compute.symtable_extract import SymtableExtractStep
+from codeintel.ingestion.infrastructure.py_frontend import PyFrontend, PyFrontendOptions
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
@@ -70,6 +71,7 @@ _HAMILTON_TYPE_HINTS = (
     DagCatalog,
     TargetRunRecord,
     ModuleRecord,
+    PyFrontend,
 )
 
 AST_TARGET_NAME = "ast"
@@ -173,6 +175,70 @@ PY_INSPECT_TABLE_KEYS = (
 )
 
 
+def py_frontend__options(env: BuildEnv) -> PyFrontendOptions:
+    """Return shared frontend options for ingestion steps.
+
+    Returns
+    -------
+    PyFrontendOptions
+        Shared frontend configuration.
+    """
+    params = env.config.parameters_for("py_frontend")
+    defaults = PyFrontendOptions()
+    return PyFrontendOptions(
+        max_entries=params.get_typed(
+            "py_frontend_cache_entries",
+            int,
+            default=defaults.max_entries,
+        ),
+        cache_bytes=params.get_typed(
+            "py_frontend_cache_bytes",
+            bool,
+            default=defaults.cache_bytes,
+        ),
+        cache_text=params.get_typed(
+            "py_frontend_cache_text",
+            bool,
+            default=defaults.cache_text,
+        ),
+        cache_line_index=params.get_typed(
+            "py_frontend_cache_line_index",
+            bool,
+            default=defaults.cache_line_index,
+        ),
+        cache_ast=params.get_typed(
+            "py_frontend_cache_ast",
+            bool,
+            default=defaults.cache_ast,
+        ),
+        cache_code=params.get_typed(
+            "py_frontend_cache_code",
+            bool,
+            default=defaults.cache_code,
+        ),
+        decode_errors=params.get_typed(
+            "py_frontend_decode_errors",
+            str,
+            default=defaults.decode_errors,
+        ),
+    )
+
+
+def py_frontend(
+    env: BuildEnv,
+    py_frontend__options: PyFrontendOptions,
+) -> PyFrontend:
+    """Create shared Python frontend for ingestion steps.
+
+    Returns
+    -------
+    PyFrontend
+        Shared frontend instance.
+    """
+    discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
+    return PyFrontend(discovery=discovery, options=py_frontend__options)
+
+
 @dataclass(frozen=True)
 class DocstringsToolOutput(ToolStepOutput):
     """Tool step output for docstrings extraction."""
@@ -199,6 +265,58 @@ class CstToolOutput(ToolStepOutput):
 
     rows: pa.Table = field(default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY))
     row_count: int = 0
+
+
+@dataclass(frozen=True)
+class CstSyntaxIndexToolOutput(ToolStepOutput):
+    """Tool step output for combined CST + syntax index extraction."""
+
+    cst_rows: pa.Table = field(default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY))
+    parse_manifest_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY)
+    )
+    syntax_spans_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY)
+    )
+    syntax_nodes_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY)
+    )
+    syntax_edges_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY)
+    )
+    syntax_scopes_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    )
+    syntax_defs_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY)
+    )
+    syntax_refs_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY)
+    )
+    syntax_calls_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY)
+    )
+    syntax_call_args_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    )
+    syntax_func_params_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    )
+    syntax_imports_rows: pa.Table = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    )
+    cst_row_count: int = 0
+    parse_manifest_row_count: int = 0
+    syntax_spans_row_count: int = 0
+    syntax_nodes_row_count: int = 0
+    syntax_edges_row_count: int = 0
+    syntax_scopes_row_count: int = 0
+    syntax_defs_row_count: int = 0
+    syntax_refs_row_count: int = 0
+    syntax_calls_row_count: int = 0
+    syntax_call_args_row_count: int = 0
+    syntax_func_params_row_count: int = 0
+    syntax_imports_row_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -466,6 +584,79 @@ def _coerce_cst_output(
         result=merged,
         rows=empty_table_for_table(CST_NODES_TABLE_KEY),
         row_count=0,
+    )
+
+
+def _coerce_cst_syntax_index_output(
+    output: ToolStepOutput,
+    warnings: tuple[str, ...],
+) -> CstSyntaxIndexToolOutput:
+    if isinstance(output, CstSyntaxIndexToolOutput):
+        if warnings:
+            return CstSyntaxIndexToolOutput(
+                result=_merge_result_warnings(
+                    output.result,
+                    warnings,
+                    error_message="CST/syntax index extraction failed",
+                ),
+                cst_rows=output.cst_rows,
+                parse_manifest_rows=output.parse_manifest_rows,
+                syntax_spans_rows=output.syntax_spans_rows,
+                syntax_nodes_rows=output.syntax_nodes_rows,
+                syntax_edges_rows=output.syntax_edges_rows,
+                syntax_scopes_rows=output.syntax_scopes_rows,
+                syntax_defs_rows=output.syntax_defs_rows,
+                syntax_refs_rows=output.syntax_refs_rows,
+                syntax_calls_rows=output.syntax_calls_rows,
+                syntax_call_args_rows=output.syntax_call_args_rows,
+                syntax_func_params_rows=output.syntax_func_params_rows,
+                syntax_imports_rows=output.syntax_imports_rows,
+                cst_row_count=output.cst_row_count,
+                parse_manifest_row_count=output.parse_manifest_row_count,
+                syntax_spans_row_count=output.syntax_spans_row_count,
+                syntax_nodes_row_count=output.syntax_nodes_row_count,
+                syntax_edges_row_count=output.syntax_edges_row_count,
+                syntax_scopes_row_count=output.syntax_scopes_row_count,
+                syntax_defs_row_count=output.syntax_defs_row_count,
+                syntax_refs_row_count=output.syntax_refs_row_count,
+                syntax_calls_row_count=output.syntax_calls_row_count,
+                syntax_call_args_row_count=output.syntax_call_args_row_count,
+                syntax_func_params_row_count=output.syntax_func_params_row_count,
+                syntax_imports_row_count=output.syntax_imports_row_count,
+            )
+        return output
+
+    merged = _merge_result_warnings(
+        output.result,
+        warnings,
+        error_message="CST/syntax index extraction failed",
+    )
+    return CstSyntaxIndexToolOutput(
+        result=merged,
+        cst_rows=empty_table_for_table(CST_NODES_TABLE_KEY),
+        parse_manifest_rows=empty_table_for_table(PARSE_MANIFEST_TABLE_KEY),
+        syntax_spans_rows=empty_table_for_table(SYNTAX_SPANS_TABLE_KEY),
+        syntax_nodes_rows=empty_table_for_table(SYNTAX_NODES_TABLE_KEY),
+        syntax_edges_rows=empty_table_for_table(SYNTAX_EDGES_TABLE_KEY),
+        syntax_scopes_rows=empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY),
+        syntax_defs_rows=empty_table_for_table(SYNTAX_DEFS_TABLE_KEY),
+        syntax_refs_rows=empty_table_for_table(SYNTAX_REFS_TABLE_KEY),
+        syntax_calls_rows=empty_table_for_table(SYNTAX_CALLS_TABLE_KEY),
+        syntax_call_args_rows=empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
+        syntax_func_params_rows=empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
+        syntax_imports_rows=empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY),
+        cst_row_count=0,
+        parse_manifest_row_count=0,
+        syntax_spans_row_count=0,
+        syntax_nodes_row_count=0,
+        syntax_edges_row_count=0,
+        syntax_scopes_row_count=0,
+        syntax_defs_row_count=0,
+        syntax_refs_row_count=0,
+        syntax_calls_row_count=0,
+        syntax_call_args_row_count=0,
+        syntax_func_params_row_count=0,
+        syntax_imports_row_count=0,
     )
 
 
@@ -771,6 +962,7 @@ def t__ast__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
+    py_frontend: PyFrontend,
 ) -> AstToolOutput:
     """Execute AST extraction on repository modules.
 
@@ -791,13 +983,16 @@ def t__ast__run(
 
     def _execute() -> AstToolOutput:
         get_schema_service()
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         options = load_target_options(
             env,
             target_name=AST_TARGET_NAME,
             options_type=AstExtractOptions,
         )
-        step = AstExtractStep(discovery=discovery, options=options)
+        step = AstExtractStep(
+            discovery=py_frontend.discovery,
+            options=options,
+            frontend=py_frontend,
+        )
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
@@ -858,11 +1053,90 @@ def t__ast__ingest(
     )
 
 
-def t__cst__run(
+def py_frontend__cst_syntax_index__run(
     env: BuildEnv,
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
+    py_frontend: PyFrontend,
+) -> CstSyntaxIndexToolOutput:
+    """Execute CST + syntax index extraction once per module set.
+
+    Returns
+    -------
+    CstSyntaxIndexToolOutput
+        Combined CST + syntax index tool output.
+    """
+    failure, warnings = _module_inventory_precheck(t__modules, module_records)
+    if failure is not None:
+        return CstSyntaxIndexToolOutput(result=failure)
+
+    context = ToolRunContext(
+        env=env,
+        catalog=catalog,
+        target_name=f"{CST_TARGET_NAME}+{SYNTAX_INDEX_TARGET_NAME}",
+    )
+
+    def _execute() -> CstSyntaxIndexToolOutput:
+        get_schema_service()
+        options_cst = load_target_options(
+            env,
+            target_name=CST_TARGET_NAME,
+            options_type=SyntaxIndexOptions,
+        )
+        options_syntax = load_target_options(
+            env,
+            target_name=SYNTAX_INDEX_TARGET_NAME,
+            options_type=SyntaxIndexOptions,
+        )
+        step = CstExtractStep(
+            discovery=py_frontend.discovery,
+            emit_ast_nodes=options_syntax.emit_ast_nodes,
+            batch_size=max(options_cst.batch_size, options_syntax.batch_size),
+            frontend=py_frontend,
+        )
+        extract_result = step.execute(
+            module_records,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+        )
+        return CstSyntaxIndexToolOutput(
+            result=extract_result.result,
+            cst_rows=extract_result.rows_reader,
+            parse_manifest_rows=extract_result.parse_manifest_rows_reader,
+            syntax_spans_rows=extract_result.syntax_spans_rows_reader,
+            syntax_nodes_rows=extract_result.syntax_nodes_rows_reader,
+            syntax_edges_rows=extract_result.syntax_edges_rows_reader,
+            syntax_scopes_rows=extract_result.syntax_scopes_rows_reader,
+            syntax_defs_rows=extract_result.syntax_defs_rows_reader,
+            syntax_refs_rows=extract_result.syntax_refs_rows_reader,
+            syntax_calls_rows=extract_result.syntax_calls_rows_reader,
+            syntax_call_args_rows=extract_result.syntax_call_args_rows_reader,
+            syntax_func_params_rows=extract_result.syntax_func_params_rows_reader,
+            syntax_imports_rows=extract_result.syntax_imports_rows_reader,
+            cst_row_count=extract_result.row_count,
+            parse_manifest_row_count=extract_result.parse_manifest_row_count,
+            syntax_spans_row_count=extract_result.syntax_spans_row_count,
+            syntax_nodes_row_count=extract_result.syntax_nodes_row_count,
+            syntax_edges_row_count=extract_result.syntax_edges_row_count,
+            syntax_scopes_row_count=extract_result.syntax_scopes_row_count,
+            syntax_defs_row_count=extract_result.syntax_defs_row_count,
+            syntax_refs_row_count=extract_result.syntax_refs_row_count,
+            syntax_calls_row_count=extract_result.syntax_calls_row_count,
+            syntax_call_args_row_count=extract_result.syntax_call_args_row_count,
+            syntax_func_params_row_count=extract_result.syntax_func_params_row_count,
+            syntax_imports_row_count=extract_result.syntax_imports_row_count,
+        )
+
+    output = run_tool_step(context=context, run=_execute)
+    coerced = _coerce_cst_syntax_index_output(output, warnings)
+    for warning in coerced.result.warnings:
+        log.warning("CST/syntax index extraction warning: %s", warning)
+    return coerced
+
+
+def t__cst__run(
+    py_frontend__cst_syntax_index__run: CstSyntaxIndexToolOutput,
 ) -> CstToolOutput:
     """Execute CST extraction on repository modules.
 
@@ -871,45 +1145,12 @@ def t__cst__run(
     CstToolOutput
         Tool output with row payloads and execution status.
     """
-    failure, warnings = _module_inventory_precheck(t__modules, module_records)
-    if failure is not None:
-        return CstToolOutput(result=failure)
-
-    context = ToolRunContext(
-        env=env,
-        catalog=catalog,
-        target_name=CST_TARGET_NAME,
+    output = py_frontend__cst_syntax_index__run
+    return CstToolOutput(
+        result=output.result,
+        rows=output.cst_rows,
+        row_count=output.cst_row_count,
     )
-
-    def _execute() -> CstToolOutput:
-        get_schema_service()
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        options = load_target_options(
-            env,
-            target_name=CST_TARGET_NAME,
-            options_type=SyntaxIndexOptions,
-        )
-        step = CstExtractStep(
-            discovery=discovery,
-            emit_ast_nodes=False,
-            batch_size=options.batch_size,
-        )
-        extract_result = step.execute(
-            module_records,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-        return CstToolOutput(
-            result=extract_result.result,
-            rows=extract_result.rows_reader,
-            row_count=extract_result.row_count,
-        )
-
-    output = run_tool_step(context=context, run=_execute)
-    coerced = _coerce_cst_output(output, warnings)
-    for warning in coerced.result.warnings:
-        log.warning("CST extraction warning: %s", warning)
-    return coerced
 
 
 def t__cst__ingest(
@@ -947,10 +1188,7 @@ def t__cst__ingest(
 
 
 def t__syntax_index__run(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    t__modules: TargetRunRecord,
-    module_records: tuple[ModuleRecord, ...],
+    py_frontend__cst_syntax_index__run: CstSyntaxIndexToolOutput,
 ) -> SyntaxIndexToolOutput:
     """Execute syntax index extraction on repository modules.
 
@@ -959,65 +1197,32 @@ def t__syntax_index__run(
     SyntaxIndexToolOutput
         Tool output with row payloads and execution status.
     """
-    failure, warnings = _module_inventory_precheck(t__modules, module_records)
-    if failure is not None:
-        return SyntaxIndexToolOutput(result=failure)
-
-    context = ToolRunContext(
-        env=env,
-        catalog=catalog,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
+    output = py_frontend__cst_syntax_index__run
+    return SyntaxIndexToolOutput(
+        result=output.result,
+        parse_manifest_rows=output.parse_manifest_rows,
+        syntax_spans_rows=output.syntax_spans_rows,
+        syntax_nodes_rows=output.syntax_nodes_rows,
+        syntax_edges_rows=output.syntax_edges_rows,
+        syntax_scopes_rows=output.syntax_scopes_rows,
+        syntax_defs_rows=output.syntax_defs_rows,
+        syntax_refs_rows=output.syntax_refs_rows,
+        syntax_calls_rows=output.syntax_calls_rows,
+        syntax_call_args_rows=output.syntax_call_args_rows,
+        syntax_func_params_rows=output.syntax_func_params_rows,
+        syntax_imports_rows=output.syntax_imports_rows,
+        parse_manifest_row_count=output.parse_manifest_row_count,
+        syntax_spans_row_count=output.syntax_spans_row_count,
+        syntax_nodes_row_count=output.syntax_nodes_row_count,
+        syntax_edges_row_count=output.syntax_edges_row_count,
+        syntax_scopes_row_count=output.syntax_scopes_row_count,
+        syntax_defs_row_count=output.syntax_defs_row_count,
+        syntax_refs_row_count=output.syntax_refs_row_count,
+        syntax_calls_row_count=output.syntax_calls_row_count,
+        syntax_call_args_row_count=output.syntax_call_args_row_count,
+        syntax_func_params_row_count=output.syntax_func_params_row_count,
+        syntax_imports_row_count=output.syntax_imports_row_count,
     )
-
-    def _execute() -> SyntaxIndexToolOutput:
-        get_schema_service()
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        options = load_target_options(
-            env,
-            target_name=SYNTAX_INDEX_TARGET_NAME,
-            options_type=SyntaxIndexOptions,
-        )
-        step = CstExtractStep(
-            discovery=discovery,
-            emit_ast_nodes=options.emit_ast_nodes,
-            batch_size=options.batch_size,
-        )
-        extract_result = step.execute(
-            module_records,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-        return SyntaxIndexToolOutput(
-            result=extract_result.result,
-            parse_manifest_rows=extract_result.parse_manifest_rows_reader,
-            syntax_spans_rows=extract_result.syntax_spans_rows_reader,
-            syntax_nodes_rows=extract_result.syntax_nodes_rows_reader,
-            syntax_edges_rows=extract_result.syntax_edges_rows_reader,
-            syntax_scopes_rows=extract_result.syntax_scopes_rows_reader,
-            syntax_defs_rows=extract_result.syntax_defs_rows_reader,
-            syntax_refs_rows=extract_result.syntax_refs_rows_reader,
-            syntax_calls_rows=extract_result.syntax_calls_rows_reader,
-            syntax_call_args_rows=extract_result.syntax_call_args_rows_reader,
-            syntax_func_params_rows=extract_result.syntax_func_params_rows_reader,
-            syntax_imports_rows=extract_result.syntax_imports_rows_reader,
-            parse_manifest_row_count=extract_result.parse_manifest_row_count,
-            syntax_spans_row_count=extract_result.syntax_spans_row_count,
-            syntax_nodes_row_count=extract_result.syntax_nodes_row_count,
-            syntax_edges_row_count=extract_result.syntax_edges_row_count,
-            syntax_scopes_row_count=extract_result.syntax_scopes_row_count,
-            syntax_defs_row_count=extract_result.syntax_defs_row_count,
-            syntax_refs_row_count=extract_result.syntax_refs_row_count,
-            syntax_calls_row_count=extract_result.syntax_calls_row_count,
-            syntax_call_args_row_count=extract_result.syntax_call_args_row_count,
-            syntax_func_params_row_count=extract_result.syntax_func_params_row_count,
-            syntax_imports_row_count=extract_result.syntax_imports_row_count,
-        )
-
-    output = run_tool_step(context=context, run=_execute)
-    coerced = _coerce_syntax_index_output(output, warnings)
-    for warning in coerced.result.warnings:
-        log.warning("Syntax index extraction warning: %s", warning)
-    return coerced
 
 
 def t__syntax_index__ingest(
@@ -1083,6 +1288,7 @@ def t__symtable__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
+    py_frontend: PyFrontend,
 ) -> SymtableToolOutput:
     """Execute symtable extraction on repository modules.
 
@@ -1103,7 +1309,6 @@ def t__symtable__run(
 
     def _execute() -> SymtableToolOutput:
         get_schema_service()
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         options = load_target_options(
             env,
             target_name=SYMTABLE_TARGET_NAME,
@@ -1113,7 +1318,11 @@ def t__symtable__run(
             return SymtableToolOutput(
                 result=ExecutionResult.skip("Symtable extraction disabled by options")
             )
-        step = SymtableExtractStep(discovery=discovery, options=options)
+        step = SymtableExtractStep(
+            discovery=py_frontend.discovery,
+            options=options,
+            frontend=py_frontend,
+        )
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
@@ -1199,6 +1408,7 @@ def t__bytecode__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
+    py_frontend: PyFrontend,
 ) -> BytecodeToolOutput:
     """Execute bytecode extraction on repository modules.
 
@@ -1219,7 +1429,6 @@ def t__bytecode__run(
 
     def _execute() -> BytecodeToolOutput:
         get_schema_service()
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         options = load_target_options(
             env,
             target_name=BYTECODE_TARGET_NAME,
@@ -1231,7 +1440,11 @@ def t__bytecode__run(
             )
         if options.cache_dir is None:
             options = replace(options, cache_dir=env.paths.tool_cache / "bytecode")
-        step = DisExtractStep(discovery=discovery, options=options)
+        step = DisExtractStep(
+            discovery=py_frontend.discovery,
+            options=options,
+            frontend=py_frontend,
+        )
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,
@@ -1442,6 +1655,7 @@ def t__docstrings__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
+    py_frontend: PyFrontend,
 ) -> DocstringsToolOutput:
     """Execute docstring extraction on repository modules.
 
@@ -1462,8 +1676,10 @@ def t__docstrings__run(
 
     def _execute() -> DocstringsToolOutput:
         get_schema_service()
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-        step = DocstringsExtractStep(discovery=discovery)
+        step = DocstringsExtractStep(
+            discovery=py_frontend.discovery,
+            frontend=py_frontend,
+        )
         extract_result = step.execute(
             module_records,
             repo=env.snapshot.repo,

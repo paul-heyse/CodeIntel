@@ -28,6 +28,19 @@ def constant_array(value: object, length: int) -> pa.Array | pa.ChunkedArray:
     pa.Array | pa.ChunkedArray
         Array of the requested length filled with the constant value.
     """
+    if length == 0:
+        if value is None:
+            return pa.nulls(0)
+        try:
+            return pa.array([], type=pa.scalar(value).type)
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            return pa.array([], type=pa.null())
     if value is None:
         return pa.nulls(length)
     try:
@@ -49,7 +62,7 @@ def append_constant_columns(table: pa.Table, constants: Mapping[str, object]) ->
     pa.Table
         Table with constant-valued columns appended when missing.
     """
-    if table.num_rows == 0 or not constants:
+    if not constants:
         return table
     existing = set(table.column_names)
     for name, value in constants.items():

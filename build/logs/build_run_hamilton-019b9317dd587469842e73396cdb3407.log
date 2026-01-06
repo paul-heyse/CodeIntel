@@ -1,0 +1,61 @@
+2026-01-06 06:36:13,963 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/ddtrace/context.py:6: DDTraceDeprecationWarning: The ddtrace.context module is deprecated and will be removed from the public API.: Context should be imported from the ddtrace.trace package
+  deprecate(
+
+2026-01-06 06:36:14,160 WARNING codeintel.build.hamilton.executor Hamilton tracker unreachable; disabling tracker. error=HTTPConnectionPool(host='localhost', port=8241): Max retries exceeded with url: /api/v1/phone_home (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8241): Failed to establish a new connection: [Errno 61] Connection refused"))
+2026-01-06 06:36:14,162 ERROR codeintel.build.hamilton.executor build.hamilton.executor.bootstrap_error run_id=hamilton-019b9317dd587469842e73396cdb3407
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/runtime/compose.py", line 826, in _build_or_raise
+    return builder.build()
+           ~~~~~~~~~~~~~^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 2189, in build
+    return Driver(
+        self.config,
+    ...<5 lines>...
+        allow_module_overrides=self._allow_module_overrides,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 460, in __init__
+    adapter = self.normalize_adapter_input(adapter, use_legacy_adapter=_use_legacy_adapter)
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 367, in normalize_adapter_input
+    return lifecycle_base.LifecycleAdapterSet(*adapter)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 894, in __init__
+    self.sync_methods, self.async_methods = self._get_lifecycle_methods()
+                                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/lifecycle/base.py", line 962, in _get_lifecycle_methods
+    raise ValueError(
+    ...<3 lines>...
+    )
+ValueError: Multiple adapters cannot (currently) implement the same lifecycle method. Sync methods: ['do_node_execute']. Async methods: []
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 2139, in run
+    runtime, telemetry_hook = self._build_runtime(
+                              ~~~~~~~~~~~~~~~~~~~^
+        setup=setup,
+        ^^^^^^^^^^^^
+        domain=domain,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 2475, in _build_runtime
+    composition = compose_runtime(
+        env=setup.env,
+    ...<7 lines>...
+        ),
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/runtime/compose.py", line 252, in compose_runtime
+    driver = _build_driver_with_adapters(
+        config=merged_config,
+    ...<3 lines>...
+        dynamic_config=resolved_config.dynamic_execution,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/runtime/compose.py", line 691, in _build_driver_with_adapters
+    return _build_or_raise(
+        builder=builder.with_adapters(*adapters),
+        allow_overrides=allow_overrides,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/runtime/compose.py", line 834, in _build_or_raise
+    raise RuntimeError(msg) from exc
+RuntimeError: Hamilton driver build failed. If this is due to duplicate node names, set ci.allow_module_overrides=true to enable overrides.

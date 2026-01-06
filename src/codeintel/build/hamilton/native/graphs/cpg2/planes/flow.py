@@ -2,24 +2,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.build.graphs.assembly import rename_table_columns, select_table_columns
+from codeintel.build.graphs.assembly import (
+    rename_table_columns,
+    select_table_columns,
+)
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
     identity_keys,
 )
-from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal
 from codeintel.build.tabular.arrow_ops import ArrowJoinSpec, arrow_join_tables
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
+from codeintel.build.tabular.conversion import table_to_frame
 from codeintel.core.columnar.rows import empty_table_for_table
-from codeintel.core.serialization.payload import encode_payload
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
@@ -154,33 +158,38 @@ def cpg2_edges__cfg_edges(
     if not required.issubset(set(cfg_edges.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     normalized_edges = _normalize_flow_edges(cfg_edges)
+    normalized_edges = _rename_if_present(normalized_edges, {"edge_kind": "cfg_edge_kind"})
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
     joined = _join_block_lookup(normalized_edges, lookup)
     joined = _join_block_anchors(joined, anchors)
-    rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path")
+    rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
-    ordinals = [
-        cpg_edge_ordinal(
-            "graph.cfg_edges",
-            {
-                "function_goid_h128": row.get("function_goid_h128"),
-                "src_block_id": row.get("src_block_id"),
-                "dst_block_id": row.get("dst_block_id"),
-                "edge_kind": row.get("edge_kind"),
-            },
-        )
-        for row in joined.select(
-            ["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"]
-        ).to_pylist()
-    ]
-    extras = [
-        _payload_bytes({"cfg_edge_kind": row.get("edge_kind")})
-        for row in joined.select(["edge_kind"]).to_pylist()
-    ]
-    joined = joined.append_column("ordinal", pa.array(ordinals, type=pa.int64()))
-    joined = joined.append_column("extras_json", pa.array(extras, type=pa.binary()))
-    joined = append_constant_columns(joined, {"edge_kind": "CFG", "edge_layer": "FLOW"})
+    repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
+    commit = _coalesce_rel_path(joined, "src_commit", "dst_commit", result_type=pa.string())
+    joined = joined.append_column("repo", repo)
+    joined = joined.append_column("commit", commit)
+    joined = append_constant_columns(
+        joined,
+        {"edge_kind": "CFG", "edge_layer": "FLOW", "extras_json": None},
+    )
+    joined = _assign_ordinals(
+        joined,
+        group_cols=[
+            "repo",
+            "commit",
+            "src_cpg_node_id",
+            "dst_cpg_node_id",
+            "edge_kind",
+            "edge_layer",
+        ],
+        sort_cols=[
+            "function_goid_h128",
+            "src_block_id",
+            "dst_block_id",
+            "cfg_edge_kind",
+        ],
+    )
     selected = joined.select(
         [
             "repo",
@@ -222,50 +231,42 @@ def cpg2_edges__dfg_edges(
     if not required.issubset(set(dfg_edges.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     normalized_edges = _normalize_flow_edges(dfg_edges)
+    normalized_edges = _rename_if_present(normalized_edges, {"edge_kind": "dfg_edge_kind"})
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
     joined = _join_block_lookup(normalized_edges, lookup)
     joined = _join_block_anchors(joined, anchors)
-    rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path")
+    rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
-    ordinals = [
-        cpg_edge_ordinal(
-            "graph.dfg_edges",
-            {
-                "function_goid_h128": row.get("function_goid_h128"),
-                "src_block_id": row.get("src_block_id"),
-                "dst_block_id": row.get("dst_block_id"),
-                "src_var": row.get("src_var"),
-                "dst_var": row.get("dst_var"),
-            },
-        )
-        for row in joined.select(
-            [
-                "function_goid_h128",
-                "src_block_id",
-                "dst_block_id",
-                "src_var",
-                "dst_var",
-            ]
-        ).to_pylist()
-    ]
-    extras = [
-        _payload_bytes(
-            {
-                "src_var": row.get("src_var"),
-                "dst_var": row.get("dst_var"),
-                "edge_kind": row.get("edge_kind"),
-                "via_phi": row.get("via_phi"),
-                "use_kind": row.get("use_kind"),
-            }
-        )
-        for row in joined.select(
-            ["src_var", "dst_var", "edge_kind", "via_phi", "use_kind"]
-        ).to_pylist()
-    ]
-    joined = joined.append_column("ordinal", pa.array(ordinals, type=pa.int64()))
-    joined = joined.append_column("extras_json", pa.array(extras, type=pa.binary()))
-    joined = append_constant_columns(joined, {"edge_kind": "DFG", "edge_layer": "FLOW"})
+    repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
+    commit = _coalesce_rel_path(joined, "src_commit", "dst_commit", result_type=pa.string())
+    joined = joined.append_column("repo", repo)
+    joined = joined.append_column("commit", commit)
+    joined = append_constant_columns(
+        joined,
+        {"edge_kind": "DFG", "edge_layer": "FLOW", "extras_json": None},
+    )
+    joined = _assign_ordinals(
+        joined,
+        group_cols=[
+            "repo",
+            "commit",
+            "src_cpg_node_id",
+            "dst_cpg_node_id",
+            "edge_kind",
+            "edge_layer",
+        ],
+        sort_cols=[
+            "function_goid_h128",
+            "src_block_id",
+            "dst_block_id",
+            "src_var",
+            "dst_var",
+            "dfg_edge_kind",
+            "via_phi",
+            "use_kind",
+        ],
+    )
     selected = joined.select(
         [
             "repo",
@@ -307,45 +308,40 @@ def cpg2_edges__cdg_edges(
     if not required.issubset(set(cdg_edges.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     normalized_edges = _normalize_flow_edges(cdg_edges)
+    normalized_edges = _rename_if_present(normalized_edges, {"edge_kind": "cdg_edge_kind"})
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
     joined = _join_block_lookup(normalized_edges, lookup)
     joined = _join_block_anchors(joined, anchors)
-    rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path")
+    rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
-    ordinals = [
-        cpg_edge_ordinal(
-            "graph.cdg_edges",
-            {
-                "function_goid_h128": row.get("function_goid_h128"),
-                "src_block_id": row.get("src_block_id"),
-                "dst_block_id": row.get("dst_block_id"),
-                "via_succ_block_id": row.get("via_succ_block_id"),
-            },
-        )
-        for row in joined.select(
-            [
-                "function_goid_h128",
-                "src_block_id",
-                "dst_block_id",
-                "via_succ_block_id",
-            ]
-        ).to_pylist()
-    ]
-    extras = [
-        _payload_bytes(
-            {
-                "via_succ_block_id": row.get("via_succ_block_id"),
-                "via_edge_kind": row.get("via_edge_kind"),
-            }
-        )
-        for row in joined.select(["via_succ_block_id", "via_edge_kind"]).to_pylist()
-    ]
-    joined = joined.append_column("ordinal", pa.array(ordinals, type=pa.int64()))
-    joined = joined.append_column("extras_json", pa.array(extras, type=pa.binary()))
-    edge_kinds = [row.get("edge_kind") or "CDG" for row in joined.select(["edge_kind"]).to_pylist()]
-    joined = joined.append_column("edge_kind", pa.array(edge_kinds, type=pa.string()))
-    joined = append_constant_columns(joined, {"edge_layer": "FLOW"})
+    repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
+    commit = _coalesce_rel_path(joined, "src_commit", "dst_commit", result_type=pa.string())
+    joined = joined.append_column("repo", repo)
+    joined = joined.append_column("commit", commit)
+    joined = append_constant_columns(
+        joined,
+        {"edge_kind": "CDG", "edge_layer": "FLOW", "extras_json": None},
+    )
+    joined = _assign_ordinals(
+        joined,
+        group_cols=[
+            "repo",
+            "commit",
+            "src_cpg_node_id",
+            "dst_cpg_node_id",
+            "edge_kind",
+            "edge_layer",
+        ],
+        sort_cols=[
+            "function_goid_h128",
+            "src_block_id",
+            "dst_block_id",
+            "via_succ_block_id",
+            "cdg_edge_kind",
+            "via_edge_kind",
+        ],
+    )
     selected = joined.select(
         [
             "repo",
@@ -499,13 +495,55 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
     )
 
 
-def _coalesce_rel_path(table: pa.Table, src_col: str, dst_col: str) -> pa.Array:
+def _coalesce_rel_path(
+    table: pa.Table,
+    src_col: str,
+    dst_col: str,
+    *,
+    result_type: pa.DataType | None = None,
+) -> pa.Array:
     if src_col not in table.column_names or dst_col not in table.column_names:
-        return pa.nulls(table.num_rows)
+        null_type = result_type or pa.string()
+        return pa.nulls(table.num_rows, type=null_type)
     src = table.column(src_col)
     dst = table.column(dst_col)
     src_valid = is_valid_mask(src)
-    return pc.call_function("if_else", [src_valid, src, dst])
+    result = pc.call_function("if_else", [src_valid, src, dst])
+    if result_type is None:
+        return result
+    return pc.cast(result, result_type, safe=False)
+
+
+def _rename_if_present(table: pa.Table, mapping: dict[str, str]) -> pa.Table:
+    if not mapping:
+        return table
+    if not any(name in table.column_names for name in mapping):
+        return table
+    return rename_table_columns(table, mapping)
+
+
+def _assign_ordinals(
+    table: pa.Table,
+    *,
+    group_cols: Sequence[str],
+    sort_cols: Sequence[str],
+) -> pa.Table:
+    if table.num_rows == 0:
+        if "ordinal" in table.column_names:
+            return table
+        return table.append_column("ordinal", pa.nulls(0, type=pa.int64()))
+    frame = table_to_frame(table)
+    sort_keys = [name for name in sort_cols if name in frame.columns]
+    if sort_keys:
+        frame = frame.sort(sort_keys)
+    group_keys = [name for name in group_cols if name in frame.columns]
+    if group_keys:
+        frame = frame.with_columns(
+            pl.int_range(0, pl.len()).over(group_keys).cast(pl.Int64).alias("ordinal")
+        )
+    else:
+        frame = frame.with_columns(pl.int_range(0, pl.len()).cast(pl.Int64).alias("ordinal"))
+    return frame.to_arrow()
 
 
 def _filter_valid_edges(table: pa.Table) -> pa.Table:
@@ -519,14 +557,6 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     mask = is_valid_mask(table.column("cpg_node_id"))
     return safe_filter(table, mask)
-
-
-def _payload_bytes(values: dict[str, object]) -> bytes:
-    encoded = encode_payload(values)
-    if encoded is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return encoded
 
 
 __all__ = [

@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.hooks.event_stream import LifecycleEventStreamHook
+
 # Re-export from lifecycle hooks (progress, timing, conditional)
 from codeintel.build.hamilton.hooks.lifecycle import (
     BuildTimingHook,
@@ -37,6 +39,7 @@ from codeintel.build.hamilton.hooks.lifecycle import (
 # Re-export from telemetry hook
 from codeintel.build.hamilton.hooks.telemetry_hook import (
     NodeExecutionRecord,
+    NodeIOTelemetryHook,
     NodeTelemetryHook,
 )
 
@@ -56,10 +59,12 @@ class HookOptions:
     """Configuration options for `build_hooks`."""
 
     enable_telemetry: bool = True
+    enable_io_telemetry: bool = True
     enable_progress: bool = False
     enable_timing: bool = False
     progress_desc: str = "Building targets"
     telemetry_output_path: Path | None = None
+    io_telemetry_output_path: Path | None = None
 
 
 def build_hooks(
@@ -109,6 +114,13 @@ def build_hooks(
                 output_path=options.telemetry_output_path,
             )
         )
+    if options.enable_io_telemetry and options.io_telemetry_output_path is not None:
+        hooks.append(
+            NodeIOTelemetryHook(
+                run_id,
+                output_path=options.io_telemetry_output_path,
+            )
+        )
 
     if options.enable_progress:
         hooks.append(create_progress_hook(options.progress_desc))
@@ -123,7 +135,9 @@ __all__ = [
     "BuildTimingHook",
     "ConditionalHook",
     "HookOptions",
+    "LifecycleEventStreamHook",
     "NodeExecutionRecord",
+    "NodeIOTelemetryHook",
     "NodeTelemetryHook",
     "NodeTimingRecord",
     "ProgressBarHook",

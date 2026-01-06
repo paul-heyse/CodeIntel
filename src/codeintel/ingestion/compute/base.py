@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
+    from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.tools import IngestToolPort
 
@@ -26,13 +27,18 @@ class BaseExtractStep:
     ----------
     discovery
         Discovery port for reading module source.
+    frontend
+        Optional shared frontend cache for source and AST reuse.
     """
 
     _discovery: ModuleDiscoveryPort
+    _frontend: PyFrontend | None
 
     def __init__(
         self,
         discovery: ModuleDiscoveryPort,
+        *,
+        frontend: PyFrontend | None = None,
     ) -> None:
         """Initialize the step with discovery ports.
 
@@ -40,8 +46,11 @@ class BaseExtractStep:
         ----------
         discovery
             Discovery port for reading module source.
+        frontend
+            Optional shared frontend cache for source and AST reuse.
         """
         self._discovery = discovery
+        self._frontend = frontend
 
     def _iter_python_sources(
         self, modules: Sequence[ModuleRecord]
@@ -61,7 +70,10 @@ class BaseExtractStep:
         for module in modules:
             if not module.rel_path.endswith(".py"):
                 continue
-            source = self._discovery.read_module_source(module)
+            if self._frontend is not None:
+                source = self._frontend.get_source_text(module)
+            else:
+                source = self._discovery.read_module_source(module)
             if source is not None:
                 yield module, source
 

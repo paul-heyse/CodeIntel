@@ -46,7 +46,7 @@ class ModuleIngestOptions:
     scope_paths: list[str] | None = None
     include_tests: bool = True
     include_generated: bool = False
-    max_file_size_kb: int = 1024
+    max_file_size_kb: int = 102400
 
 
 @dataclass(frozen=True)
@@ -84,7 +84,7 @@ class ScipIngestOptions:
     scope_paths: list[str] | None = None
     include_references: bool = True
     include_implementations: bool = True
-    max_file_size_kb: int = 1024
+    max_file_size_kb: int = 102400
     timeout_seconds: int = 300
     scip_output_dir: Path | None = None
     batch_size: int = 200
