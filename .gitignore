@@ -6,6 +6,11 @@ __pycache__/
 build/build/db/
 build/datasets/
 build/db/
+build/diagnostics/
+build/logs/
+build/document_output/
+build/metadata/
+build/plans/
 build/scip/
 build/test-results/
 build/.hamilton_cache/
