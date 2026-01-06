@@ -26,7 +26,7 @@ from codeintel.ingestion.engine.plugins import (
 from codeintel.ingestion.engine.results import DiagnosticReport, ScipIndexResult
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from codeintel.config.models import ToolsConfig
@@ -146,7 +146,12 @@ class ToolService:
             raise ToolSpecError(plugin.metadata.name, missing=missing, extra=extra)
         return await plugin.run(repo_root=repo_root, **kwargs)
 
-    async def run_pyright(self, repo_root: Path) -> Mapping[str, int]:
+    async def run_pyright(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> Mapping[str, int]:
         """
         Run pyright and return error counts keyed by repo-relative path.
 
@@ -154,6 +159,8 @@ class ToolService:
         ----------
         repo_root
             Repository root supplied to the pyright invocation.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
@@ -167,7 +174,11 @@ class ToolService:
         RuntimeError
             Raised when a plugin result is missing the expected run metadata.
         """
-        plugin_result = await self.run_plugin("pyright", repo_root=repo_root)
+        plugin_result = await self.run_plugin(
+            "pyright",
+            repo_root=repo_root,
+            paths=paths,
+        )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:
             log.warning("pyright binary not found; treating all files as 0 errors")
@@ -191,7 +202,12 @@ class ToolService:
             raise RuntimeError(message)
         return {}
 
-    async def run_pyrefly(self, repo_root: Path) -> Mapping[str, int]:
+    async def run_pyrefly(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> Mapping[str, int]:
         """
         Run pyrefly and return error counts keyed by repo-relative path.
 
@@ -199,6 +215,8 @@ class ToolService:
         ----------
         repo_root
             Repository root supplied to the pyrefly invocation.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
@@ -211,6 +229,7 @@ class ToolService:
             "pyrefly",
             repo_root=repo_root,
             output_path=output_path,
+            paths=paths,
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:
@@ -236,7 +255,12 @@ class ToolService:
 
         return {}
 
-    async def run_ruff(self, repo_root: Path) -> Mapping[str, int]:
+    async def run_ruff(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> Mapping[str, int]:
         """
         Run ruff and return lint error counts keyed by repo-relative path.
 
@@ -244,6 +268,8 @@ class ToolService:
         ----------
         repo_root
             Repository root supplied to the ruff invocation.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
@@ -260,6 +286,7 @@ class ToolService:
         plugin_result = await self.run_plugin(
             "ruff",
             repo_root=repo_root,
+            paths=paths,
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:

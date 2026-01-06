@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -136,7 +135,7 @@ def write_incremental_marker(
         Path to the written marker file.
     """
     if marker.exported_at is None:
-        marker = replace(marker, exported_at=datetime.now(UTC).isoformat())
+        marker = msgspec.structs.replace(marker, exported_at=datetime.now(UTC).isoformat())
     payload = marker.to_json_obj()
     marker_path = output_path.with_suffix(output_path.suffix + ".marker.json")
     write_manifest_json(marker_path, payload)

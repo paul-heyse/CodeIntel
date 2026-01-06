@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -15,6 +15,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunOptions,
+    ToolSpec,
 )
 from codeintel.ingestion.engine.plugins import (
     DiagnosticToolPlugin,
@@ -29,6 +30,37 @@ if TYPE_CHECKING:
     from codeintel.ingestion.engine.infrastructure import ToolRunner
 
 log = logging.getLogger(__name__)
+
+
+def _coerce_paths(raw: object) -> list[Path] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+        paths: list[Path] = []
+        for entry in raw:
+            if isinstance(entry, Path):
+                paths.append(entry)
+                continue
+            if isinstance(entry, str):
+                paths.append(Path(entry))
+                continue
+            msg = "paths entries must be Path or str"
+            raise TypeError(msg)
+        return paths
+    msg = "paths must be a sequence of Path values"
+    raise TypeError(msg)
+
+
+def _normalize_targets(repo_root: Path, paths: Sequence[Path] | None) -> list[str]:
+    if not paths:
+        return [str(repo_root)]
+    targets: list[str] = []
+    for path in paths:
+        if path.is_absolute():
+            targets.append(str(path))
+        else:
+            targets.append(str(repo_root / path))
+    return targets
 
 
 def _parse_pyright_output(
@@ -101,10 +133,11 @@ class PyrightPlugin(DiagnosticToolPlugin):
             produces_artifacts=(),
             consumes_configs=("pyright_bin",),
             datasets=("analytics.static_diagnostics",),
+            spec=ToolSpec(optional_kwargs=("paths",)),
         )
     )
 
-    async def run(self, *, repo_root: Path, **_: object) -> ToolPluginResult:
+    async def run(self, *, repo_root: Path, **kwargs: object) -> ToolPluginResult:
         """
         Invoke pyright with --outputjson and return parsed diagnostics.
 
@@ -116,10 +149,12 @@ class PyrightPlugin(DiagnosticToolPlugin):
         ToolPluginResult
             Normalized execution result with parsed diagnostics.
         """
+        paths = _coerce_paths(kwargs.get("paths"))
+        targets = _normalize_targets(repo_root, paths)
         try:
             result = await self.runner.run_async(
                 ToolName.PYRIGHT,
-                ["--outputjson", str(repo_root)],
+                ["--outputjson", *targets],
                 options=ToolRunOptions(
                     cwd=repo_root,
                     timeout_s=self.tools_config.default_timeout_s,

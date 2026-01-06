@@ -579,13 +579,27 @@ def _truncate_repr(value: object, limit: int = 240) -> str:
     return text[:limit]
 
 
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
+
+
+def _safe_int64(value: int) -> int | None:
+    if _INT64_MIN <= value <= _INT64_MAX:
+        return value
+    return None
+
+
 def _argval_fields(argval: object) -> _ArgvalInfo:
     if argval is None:
         return _ArgvalInfo(None, None, None, None)
     if isinstance(argval, str):
         return _ArgvalInfo("str", argval, None, None)
+    if isinstance(argval, bool):
+        return _ArgvalInfo("bool", None, None, _truncate_repr(argval))
     if isinstance(argval, int):
-        return _ArgvalInfo("int", None, argval, None)
+        safe_value = _safe_int64(argval)
+        repr_text = None if safe_value is not None else _truncate_repr(argval)
+        return _ArgvalInfo("int", None, safe_value, repr_text)
     return _ArgvalInfo(type(argval).__name__, None, None, _truncate_repr(argval))
 
 

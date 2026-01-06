@@ -19,22 +19,23 @@ import importlib
 import inspect
 import json
 import logging
+import shlex
+import subprocess
+import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TextIO, cast
+from urllib.parse import urljoin, urlparse
 
 import hamilton.base as h_base
 import requests
+from hamilton import htypes
 from hamilton.caching.adapter import HamiltonCacheAdapter
-from hamilton.lifecycle import (
-    FunctionInputOutputTypeChecker,
-    GracefulErrorAdapter,
-    PDBDebugger,
-    PrintLn,
-)
+from hamilton.lifecycle import GracefulErrorAdapter, PDBDebugger, PrintLn
+from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.execution_policy import effective_max_workers_for_graph
@@ -112,6 +113,7 @@ if TYPE_CHECKING:
 
     from hamilton.io.materialization import ExtractorFactory, MaterializerFactory
     from hamilton.lifecycle.base import LifecycleAdapter
+    from hamilton.node import Node
 
     from codeintel.build.hamilton.build_log import BuildLogContext
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
@@ -218,6 +220,7 @@ class _RunSetup:
     telemetry_settings: _TelemetryHooksSettings
     cache_logger_handle: _CacheLoggerHandle | None
     hang_watchdog: _HangWatchdog | None
+    ui_handle: _HamiltonUiHandle | None
 
 
 @dataclass(frozen=True)
@@ -290,6 +293,35 @@ class _TelemetryHooksSettings:
     ddog_include_causal_links: bool
 
 
+@dataclass(frozen=True)
+class _HamiltonUiSettings:
+    enabled: bool
+    command: tuple[str, ...]
+    api_url: str
+    healthcheck_path: str
+    startup_timeout_s: float
+    shutdown_timeout_s: float
+    log_path: Path
+
+
+@dataclass(frozen=True)
+class _HamiltonUiHandle:
+    process: subprocess.Popen[str]
+    log_handle: TextIO | None
+    shutdown_timeout_s: float
+
+    def stop(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=self.shutdown_timeout_s)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=self.shutdown_timeout_s)
+        if self.log_handle is not None:
+            self.log_handle.close()
+
+
 class _HangWatchdog:
     def __init__(
         self,
@@ -321,6 +353,85 @@ class _CacheLoggerHandle:
             self.handler.close()
         self.logger.setLevel(self.previous_level)
         self.logger.propagate = self.previous_propagate
+
+
+class _SafeTypeCheckHook(
+    lifecycle_base.BasePreNodeExecute,
+    lifecycle_base.BasePostNodeExecute,
+):
+    def __init__(
+        self,
+        *,
+        check_input: bool,
+        check_output: bool,
+        logger: logging.Logger,
+    ) -> None:
+        self._check_input = check_input
+        self._check_output = check_output
+        self._logger = logger
+
+    def pre_node_execute(
+        self,
+        *,
+        run_id: str,
+        node_: Node,
+        kwargs: dict[str, object],
+        task_id: str | None = None,
+    ) -> None:
+        _ = (run_id, task_id)
+        if not self._check_input:
+            return
+        for input_name, input_value in kwargs.items():
+            input_type = node_.input_types.get(input_name)
+            if input_type is None:
+                continue
+            declared_type = input_type[0]
+            try:
+                if not htypes.check_instance(input_value, declared_type):
+                    self._logger.warning(
+                        "build.telemetry.typecheck_input_mismatch node=%s input=%s "
+                        "expected=%s actual=%s",
+                        node_.name,
+                        input_name,
+                        declared_type,
+                        type(input_value),
+                    )
+            except TypeError as exc:
+                self._logger.warning(
+                    "build.telemetry.typecheck_input_failed node=%s input=%s error=%s",
+                    node_.name,
+                    input_name,
+                    exc,
+                )
+
+    def post_node_execute(
+        self,
+        *,
+        run_id: str,
+        node_: Node,
+        kwargs: dict[str, object],
+        success: bool,
+        task_id: str | None = None,
+        **context: object,
+    ) -> None:
+        _ = (run_id, kwargs, task_id)
+        if not self._check_output or not success:
+            return
+        result = context.get("result")
+        try:
+            if not htypes.check_instance(result, node_.type):
+                self._logger.warning(
+                    "build.telemetry.typecheck_output_mismatch node=%s expected=%s actual=%s",
+                    node_.name,
+                    node_.type,
+                    type(result),
+                )
+        except TypeError as exc:
+            self._logger.warning(
+                "build.telemetry.typecheck_output_failed node=%s error=%s",
+                node_.name,
+                exc,
+            )
 
 
 @dataclass(frozen=True)
@@ -612,14 +723,13 @@ def _build_println_adapter(settings: _TelemetryHooksSettings) -> PrintLn | None:
     )
 
 
-def _build_typecheck_adapter(
-    settings: _TelemetryHooksSettings,
-) -> FunctionInputOutputTypeChecker | None:
+def _build_typecheck_adapter(settings: _TelemetryHooksSettings) -> LifecycleAdapter | None:
     if not settings.typecheck_enabled:
         return None
-    return FunctionInputOutputTypeChecker(
+    return _SafeTypeCheckHook(
         check_input=settings.typecheck_inputs,
         check_output=settings.typecheck_outputs,
+        logger=log,
     )
 
 
@@ -703,6 +813,7 @@ def _build_diagnostic_adapters(
     settings: _TelemetryHooksSettings,
     run_id: str,
     default_ddog_root: str,
+    cache_enabled: bool,
 ) -> list[LifecycleAdapter]:
     adapters: list[LifecycleAdapter] = []
     println_adapter = _build_println_adapter(settings)
@@ -714,9 +825,15 @@ def _build_diagnostic_adapters(
     typecheck_adapter = _build_typecheck_adapter(settings)
     if typecheck_adapter is not None:
         adapters.append(typecheck_adapter)
-    graceful_adapter = _build_graceful_adapter(settings)
-    if graceful_adapter is not None:
-        adapters.append(graceful_adapter)
+    if cache_enabled and settings.graceful_errors_enabled:
+        log.warning(
+            "build.telemetry.graceful_disabled cache_enabled=true; disable cache to enable "
+            "GracefulErrorAdapter",
+        )
+    else:
+        graceful_adapter = _build_graceful_adapter(settings)
+        if graceful_adapter is not None:
+            adapters.append(graceful_adapter)
     pdb_adapter = _build_pdb_adapter(settings)
     if pdb_adapter is not None:
         adapters.append(pdb_adapter)
@@ -731,6 +848,147 @@ def _build_diagnostic_adapters(
     if ddog_adapter is not None:
         adapters.append(cast("LifecycleAdapter", ddog_adapter))
     return adapters
+
+
+def _default_hamilton_ui_command() -> tuple[str, ...]:
+    return (sys.executable, "-m", "hamilton.cli.__main__", "ui")
+
+
+def _resolve_hamilton_ui_command(raw: object | None) -> tuple[str, ...]:
+    default_command = _default_hamilton_ui_command()
+    if raw is None:
+        return default_command
+    if isinstance(raw, str):
+        parsed = tuple(part for part in shlex.split(raw) if part.strip())
+        return parsed or default_command
+    if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
+        cleaned = tuple(item.strip() for item in raw if item.strip())
+        return cleaned or default_command
+    return default_command
+
+
+def _normalize_healthcheck_path(path: str) -> str:
+    cleaned = path.strip()
+    if not cleaned:
+        return "/api/v1/phone_home"
+    if not cleaned.startswith("/"):
+        return f"/{cleaned}"
+    return cleaned
+
+
+def _resolve_tracker_settings(config: BuildConfig) -> HamiltonTrackerSettings:
+    runtime_settings = load_runtime_settings().observability.hamilton_tracker
+    overrides = _tracker_overrides_from_config(config)
+    if overrides is not None:
+        return _merge_tracker_settings(runtime_settings, overrides)
+    return runtime_settings
+
+
+def _tracker_api_url(config: BuildConfig) -> str:
+    settings = _resolve_tracker_settings(config)
+    return settings.api_url or "http://localhost:8241"
+
+
+def _load_hamilton_ui_settings(*, env: BuildEnv) -> _HamiltonUiSettings:
+    raw = env.config.get("telemetry.hamilton_ui")
+    section = raw if isinstance(raw, Mapping) else {}
+    tracker_settings = _resolve_tracker_settings(env.config)
+    default_enabled = bool(tracker_settings.enabled)
+    return _HamiltonUiSettings(
+        enabled=_telemetry_bool(section, "enabled", default=default_enabled),
+        command=_resolve_hamilton_ui_command(section.get("command")),
+        api_url=tracker_settings.api_url or "http://localhost:8241",
+        healthcheck_path=_normalize_healthcheck_path(
+            _telemetry_str(section, "healthcheck_path", default="/api/v1/phone_home")
+        ),
+        startup_timeout_s=_telemetry_float(
+            section,
+            "startup_timeout_s",
+            default=30.0,
+            min_value=0.0,
+        ),
+        shutdown_timeout_s=_telemetry_float(
+            section,
+            "shutdown_timeout_s",
+            default=5.0,
+            min_value=0.0,
+        ),
+        log_path=_resolve_telemetry_path(
+            section.get("log_path"),
+            repo_root=env.snapshot.repo_root,
+            default_path=env.paths.build_dir / "logs" / "hamilton_ui.log",
+        ),
+    )
+
+
+def _is_local_ui_url(api_url: str) -> bool:
+    parsed = urlparse(api_url)
+    hostname = (parsed.hostname or "").lower()
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _hamilton_ui_healthcheck_url(settings: _HamiltonUiSettings) -> str:
+    return urljoin(settings.api_url.rstrip("/") + "/", settings.healthcheck_path.lstrip("/"))
+
+
+def _hamilton_ui_is_ready(settings: _HamiltonUiSettings) -> bool:
+    url = _hamilton_ui_healthcheck_url(settings)
+    try:
+        response = requests.get(url, timeout=1.0)
+    except requests.RequestException:
+        return False
+    return response is not None
+
+
+def _wait_for_hamilton_ui(handle: _HamiltonUiHandle, settings: _HamiltonUiSettings) -> bool:
+    if settings.startup_timeout_s <= 0:
+        return True
+    deadline = time.monotonic() + settings.startup_timeout_s
+    while time.monotonic() < deadline:
+        if handle.process.poll() is not None:
+            log.warning("hamilton.ui.exited_early code=%s", handle.process.returncode)
+            handle.stop()
+            return False
+        if _hamilton_ui_is_ready(settings):
+            log.info("hamilton.ui.ready api_url=%s", settings.api_url)
+            return True
+        time.sleep(0.5)
+    log.warning("hamilton.ui.start_timeout api_url=%s", settings.api_url)
+    return True
+
+
+def _start_hamilton_ui(settings: _HamiltonUiSettings, *, repo_root: Path) -> _HamiltonUiHandle | None:
+    if not settings.enabled:
+        return None
+    if not _is_local_ui_url(settings.api_url):
+        log.warning("hamilton.ui.autostart_skipped api_url=%s", settings.api_url)
+        return None
+    if _hamilton_ui_is_ready(settings):
+        log.info("hamilton.ui.already_running api_url=%s", settings.api_url)
+        return None
+    settings.log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_handle = settings.log_path.open("a", encoding="utf-8")
+    try:
+        process = subprocess.Popen(
+            list(settings.command),
+            cwd=str(repo_root),
+            stdin=subprocess.DEVNULL,
+            stdout=log_handle,
+            stderr=log_handle,
+            text=True,
+        )
+    except (OSError, ValueError) as exc:
+        log.warning("hamilton.ui.start_failed error=%s", exc)
+        log_handle.close()
+        return None
+    handle = _HamiltonUiHandle(
+        process=process,
+        log_handle=log_handle,
+        shutdown_timeout_s=settings.shutdown_timeout_s,
+    )
+    if not _wait_for_hamilton_ui(handle, settings):
+        return None
+    return handle
 
 
 def _apply_tracker_constants(
@@ -1478,7 +1736,7 @@ def _emit_execution_visualizations(
             driver.display_all_functions(
                 output_file_path=str(settings.display_all_functions_path),
             )
-        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
             log.warning("build.telemetry.display_all_functions_failed error=%s", exc)
     if settings.visualize_execution_enabled:
         try:
@@ -1489,7 +1747,7 @@ def _emit_execution_visualizations(
                 overrides={},
                 output_file_path=str(settings.visualize_execution_path),
             )
-        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
             log.warning("build.telemetry.visualize_execution_failed error=%s", exc)
 
 
@@ -1688,6 +1946,12 @@ def _finalize_run(
     computed, skipped, failed = _categorize_outputs(inputs.closure, inputs.outputs, context.runtime)
     duration_ms = context.duration_ms
     success = not failed and inputs.error is None
+
+    _write_failed_targets_diagnostic(
+        context=context,
+        failed_targets=failed,
+        outputs=inputs.outputs,
+    )
 
     records: list[TargetRunRecord] = [
         value for value in inputs.outputs.values() if isinstance(value, TargetRunRecord)
@@ -2064,6 +2328,8 @@ def _prepare_run_setup(
         env=env,
         diagnostics_path=diagnostics_path,
     )
+    ui_settings = _load_hamilton_ui_settings(env=env)
+    ui_handle = _start_hamilton_ui(ui_settings, repo_root=env.snapshot.repo_root)
     cache_logger_handle = _configure_cache_logger(telemetry_settings)
     hang_watchdog = _start_hang_watchdog(telemetry_settings)
     return _RunSetup(
@@ -2077,6 +2343,7 @@ def _prepare_run_setup(
         telemetry_settings=telemetry_settings,
         cache_logger_handle=cache_logger_handle,
         hang_watchdog=hang_watchdog,
+        ui_handle=ui_handle,
     )
 
 
@@ -2186,6 +2453,8 @@ class HamiltonBuildExecutor:
                 setup.hang_watchdog.close()
             if setup.cache_logger_handle is not None:
                 setup.cache_logger_handle.close()
+            if setup.ui_handle is not None:
+                setup.ui_handle.stop()
             _teardown_run_logging(setup.log_handler)
 
     def _run_with_state(
@@ -2458,6 +2727,7 @@ class HamiltonBuildExecutor:
                     settings=setup.telemetry_settings,
                     run_id=setup.run_id,
                     default_ddog_root=setup.env.snapshot.repo,
+                    cache_enabled=cache_adapter is not None,
                 )
             )
 
@@ -2700,6 +2970,67 @@ def _emit_diagnostics_safe(
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         log.warning(
             "build.hamilton.diagnostics_failed run_id=%s error=%s",
+            context.run_id,
+            exc,
+        )
+
+
+def _write_failed_targets_diagnostic(
+    *,
+    context: _RunState,
+    failed_targets: Sequence[str],
+    outputs: Mapping[str, Any],
+) -> None:
+    if not failed_targets:
+        return
+    diag_dir = diagnostics_dir(context.env.paths.build_dir)
+    try:
+        diag_dir.mkdir(parents=True, exist_ok=True)
+    except (OSError, RuntimeError) as exc:
+        log.warning("build.hamilton.failed_targets_dir_failed run_id=%s error=%s", context.run_id, exc)
+        return
+
+    record_map = {
+        record.target: record
+        for record in outputs.values()
+        if isinstance(record, TargetRunRecord)
+    }
+    entries: list[dict[str, object]] = []
+    for target in failed_targets:
+        record = record_map.get(target)
+        if record is None:
+            entries.append(
+                {
+                    "target": target,
+                    "status": "missing_record",
+                    "error": "Missing TargetRunRecord for failed target",
+                }
+            )
+            continue
+        entries.append(
+            {
+                "target": target,
+                "status": record.status,
+                "error": record.error,
+                "row_counts": record.row_counts,
+                "dataset_count": len(record.datasets),
+                "artifact_count": len(record.artifacts),
+            }
+        )
+
+    payload = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "run_id": context.run_id,
+        "repo": context.env.repo,
+        "commit": context.env.commit,
+        "failed_targets": entries,
+    }
+    path = diag_dir / "failed_targets.json"
+    try:
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        log.warning(
+            "build.hamilton.failed_targets_write_failed run_id=%s error=%s",
             context.run_id,
             exc,
         )

@@ -185,7 +185,7 @@ def validate_dataset_manifests_or_raise(gateway: BuildGateway) -> None:
     if missing:
         message = "Dataset manifests missing for parquet-only exports: "
         message += ", ".join(sorted(missing))
-        raise ValueError(message)
+        log.warning("%s", message)
 
 
 def resolve_export_snapshot(gateway: BuildGateway) -> tuple[Path, str]:

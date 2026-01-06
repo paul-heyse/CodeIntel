@@ -123,6 +123,8 @@ class ToolRunnerAdapter:
         self,
         tool_name: str,
         repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
     ) -> DiagnosticResult:
         """Run a diagnostic tool and convert to DiagnosticResult.
 
@@ -133,18 +135,21 @@ class ToolRunnerAdapter:
             Must correspond to a method name on the service (run_{tool_name}).
         repo_root
             Repository root directory.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
         DiagnosticResult
             Diagnostic results with error counts per file.
         """
-        service_method: Callable[[Path], Awaitable[dict[str, int]]] = getattr(
-            self._service, f"run_{tool_name}"
+        service_method: Callable[..., Awaitable[dict[str, int]]] = getattr(
+            self._service,
+            f"run_{tool_name}",
         )
         start = time.perf_counter()
         try:
-            errors_by_path = await service_method(repo_root)
+            errors_by_path = await service_method(repo_root, paths=paths)
             duration = time.perf_counter() - start
 
             diagnostics = [
@@ -174,50 +179,71 @@ class ToolRunnerAdapter:
                 duration_s=duration,
             )
 
-    async def run_pyright(self, repo_root: Path) -> DiagnosticResult:
+    async def run_pyright(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> DiagnosticResult:
         """Run pyright type checker.
 
         Parameters
         ----------
         repo_root
             Repository root directory.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
         DiagnosticResult
             Type checking results with diagnostics.
         """
-        return await self._run_diagnostic_tool("pyright", repo_root)
+        return await self._run_diagnostic_tool("pyright", repo_root, paths=paths)
 
-    async def run_pyrefly(self, repo_root: Path) -> DiagnosticResult:
+    async def run_pyrefly(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> DiagnosticResult:
         """Run pyrefly type checker.
 
         Parameters
         ----------
         repo_root
             Repository root directory.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
         DiagnosticResult
             Type checking results with diagnostics.
         """
-        return await self._run_diagnostic_tool("pyrefly", repo_root)
+        return await self._run_diagnostic_tool("pyrefly", repo_root, paths=paths)
 
-    async def run_ruff(self, repo_root: Path) -> DiagnosticResult:
+    async def run_ruff(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> DiagnosticResult:
         """Run ruff linter.
 
         Parameters
         ----------
         repo_root
             Repository root directory.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
         DiagnosticResult
             Linting results with diagnostics.
         """
-        return await self._run_diagnostic_tool("ruff", repo_root)
+        return await self._run_diagnostic_tool("ruff", repo_root, paths=paths)
 
     async def run_scip(self, request: ScipRunRequest) -> ScipResult:
         """Run SCIP indexing.

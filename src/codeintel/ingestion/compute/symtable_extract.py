@@ -38,6 +38,16 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 
 LOG = logging.getLogger(__name__)
+_INT32_MIN = -(2**31)
+_INT32_MAX = 2**31 - 1
+
+
+def _safe_int32(value: object) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    if value < _INT32_MIN or value > _INT32_MAX:
+        return None
+    return value
 
 PY_SYM_SCOPES_TABLE_KEY = "core.py_sym_scopes"
 PY_SYM_SYMBOLS_TABLE_KEY = "core.py_sym_symbols"
@@ -348,7 +358,7 @@ def _build_scope_index(
         scope_name = module_name if scope_type == "MODULE" else raw_name
         scope_name = scope_name or "<anonymous>"
         lineno = current.get_lineno()
-        local_id = current.get_id()
+        local_id = _safe_int32(current.get_id())
         is_nested = current.is_nested()
         is_optimized = current.is_optimized()
         has_children = current.has_children()

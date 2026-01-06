@@ -5,7 +5,6 @@
 (string) @token.string
 (integer) @token.number
 (float) @token.number
-(imaginary) @token.number
 (true) @token.boolean
 (false) @token.boolean
 (none) @token.none

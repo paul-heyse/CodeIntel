@@ -64,12 +64,14 @@ class LifecycleEventStreamHook(
         overrides: dict[str, object],
     ) -> None:
         """Emit event before graph execution."""
+        input_keys = sorted(inputs.keys()) if inputs else []
+        override_keys = sorted(overrides.keys()) if overrides else []
         self._emit(
             "graph_execute_start",
             run_id=run_id,
             final_vars=list(final_vars),
-            input_keys=sorted(inputs.keys()),
-            override_keys=sorted(overrides.keys()),
+            input_keys=input_keys,
+            override_keys=override_keys,
             node_count=len(getattr(graph, "nodes", {})),
         )
 

@@ -129,9 +129,19 @@ class _TelemetryTrackerConfig(msgspec.Struct, frozen=True, forbid_unknown_fields
     tags: dict[str, str] | None = None
 
 
+class _TelemetryHamiltonUiConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    enabled: bool | None = None
+    command: list[str] | str | None = None
+    healthcheck_path: str | None = None
+    startup_timeout_s: float | None = None
+    shutdown_timeout_s: float | None = None
+    log_path: str | None = None
+
+
 class _TelemetryConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     hooks: _TelemetryHooksConfig | None = None
     hamilton_tracker: _TelemetryTrackerConfig | None = None
+    hamilton_ui: _TelemetryHamiltonUiConfig | None = None
 
 
 @dataclass(frozen=True)

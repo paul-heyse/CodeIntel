@@ -3,7 +3,7 @@ graph_backend = "compute"
 schema_drift_mode = "warn"
 
 [scope]
-scope_paths = ["src/codeintel/serving"]
+scope_paths = ["src/codeintel"]
 
 [ingestion.py_frontend]
 py_frontend_cache_entries = 40960
@@ -65,6 +65,13 @@ capture_data_statistics = true
 max_list_length = 50
 max_dict_length = 100
 config_uri = "~/.hamilton.conf"
+
+[telemetry.hamilton_ui]
+enabled = false
+healthcheck_path = "/api/v1/phone_home"
+startup_timeout_s = 30.0
+shutdown_timeout_s = 5.0
+log_path = "build/logs/hamilton_ui.log"
 
 [telemetry.hamilton_tracker.tags]
 environment = "dev"

@@ -153,6 +153,17 @@ def _drop_nulls(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArra
     return pc.call_function("drop_null", [values])
 
 
+def _ensure_array(values: pa.Array | pa.ChunkedArray) -> pa.Array:
+    if isinstance(values, pa.ChunkedArray):
+        return values.combine_chunks()
+    return values
+
+
+def _path_set(values: pa.Array | pa.ChunkedArray) -> set[str]:
+    array = _ensure_array(values)
+    return {item for item in array.to_pylist() if isinstance(item, str)}
+
+
 def _struct_field(
     values: pa.Array | pa.ChunkedArray,
     name: str,
@@ -184,7 +195,7 @@ def _failure_paths(parse_manifest: pa.Table) -> pa.Array | pa.ChunkedArray:
     if filtered.num_rows == 0:
         return pa.array([], type=pa.string())
     rel_path = filtered["rel_path"]
-    return _drop_nulls(rel_path)
+    return _ensure_array(_drop_nulls(rel_path))
 
 
 def _normalize_span_bytes(
@@ -848,15 +859,18 @@ def _ts_edges_to_syntax_edges(ts_edges: pa.Table) -> pa.Table:
     return selected.select([name for name in ordered if name in selected.column_names])
 
 
-def _filter_libcst_rows(frame: pa.Table, fallback_paths: set[str]) -> pa.Table:
+def _filter_libcst_rows(
+    frame: pa.Table,
+    fallback_paths: pa.Array | pa.ChunkedArray,
+) -> pa.Table:
     if not {"producer", "rel_path"}.issubset(frame.column_names):
         return frame
-    if not fallback_paths:
+    fallback_values = _path_set(fallback_paths)
+    if not fallback_values:
         return frame
-    fallback_values = pa.array(sorted(fallback_paths))
     libcst_mask = and_kleene(
         equal_mask(frame["producer"], pa.scalar(SYNTAX_PRODUCER_LIBCST)),
-        is_in_mask(frame["rel_path"], value_set=fallback_values),
+        is_in_mask(frame["rel_path"], value_set=pa.array(sorted(fallback_values))),
     )
     return frame.filter(invert_mask(libcst_mask))
 
@@ -878,7 +892,7 @@ def _concat_if_non_empty(base: pa.Table, extra: pa.Table) -> pa.Table:
 def _filter_by_paths(table: pa.Table, paths: pa.Array | pa.ChunkedArray) -> pa.Table:
     if len(paths) == 0 or "rel_path" not in table.column_names:
         return table
-    mask = is_in_mask(table["rel_path"], value_set=paths)
+    mask = is_in_mask(table["rel_path"], value_set=_ensure_array(paths))
     return safe_filter(table, mask)
 
 

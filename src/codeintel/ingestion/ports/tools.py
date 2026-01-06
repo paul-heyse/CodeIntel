@@ -292,13 +292,20 @@ class IngestToolPort(Protocol):
     tool installations and to normalize result formats across tools.
     """
 
-    async def run_pyright(self, repo_root: Path) -> DiagnosticResult:
+    async def run_pyright(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> DiagnosticResult:
         """Run pyright type checker.
 
         Parameters
         ----------
         repo_root
             Repository root directory.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
@@ -307,13 +314,20 @@ class IngestToolPort(Protocol):
         """
         ...
 
-    async def run_pyrefly(self, repo_root: Path) -> DiagnosticResult:
+    async def run_pyrefly(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> DiagnosticResult:
         """Run pyrefly type checker.
 
         Parameters
         ----------
         repo_root
             Repository root directory.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------
@@ -322,13 +336,20 @@ class IngestToolPort(Protocol):
         """
         ...
 
-    async def run_ruff(self, repo_root: Path) -> DiagnosticResult:
+    async def run_ruff(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> DiagnosticResult:
         """Run ruff linter.
 
         Parameters
         ----------
         repo_root
             Repository root directory.
+        paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
 
         Returns
         -------

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -34,6 +34,37 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
+
+
+def _coerce_paths(raw: object) -> list[Path] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+        paths: list[Path] = []
+        for entry in raw:
+            if isinstance(entry, Path):
+                paths.append(entry)
+                continue
+            if isinstance(entry, str):
+                paths.append(Path(entry))
+                continue
+            msg = "paths entries must be Path or str"
+            raise TypeError(msg)
+        return paths
+    msg = "paths must be a sequence of Path values"
+    raise TypeError(msg)
+
+
+def _normalize_targets(repo_root: Path, paths: Sequence[Path] | None) -> list[str]:
+    if not paths:
+        return [str(repo_root)]
+    targets: list[str] = []
+    for path in paths:
+        if path.is_absolute():
+            targets.append(str(path))
+        else:
+            targets.append(str(repo_root / path))
+    return targets
 
 
 def _mkdir_parents(path: Path) -> None:
@@ -97,7 +128,7 @@ class PyreflyPlugin(DiagnosticToolPlugin):
             produces_artifacts=("pyrefly_json",),
             consumes_configs=("pyrefly_bin",),
             datasets=("analytics.static_diagnostics",),
-            spec=ToolSpec(required_kwargs=("output_path",)),
+            spec=ToolSpec(required_kwargs=("output_path",), optional_kwargs=("paths",)),
         )
     )
 
@@ -133,9 +164,11 @@ class PyreflyPlugin(DiagnosticToolPlugin):
 
         await to_thread.run_sync(_mkdir_parents, output_path.parent)
 
+        paths = _coerce_paths(kwargs.get("paths"))
+        targets = _normalize_targets(repo_root, paths)
         args = [
             "check",
-            str(repo_root),
+            *targets,
             "--output-format",
             "json",
             "--output",

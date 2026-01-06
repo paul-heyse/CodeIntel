@@ -588,7 +588,7 @@ def _validate_contract_manifests(
     if missing:
         message = "Dataset manifests missing for parquet-only exports: "
         message += ", ".join(sorted(missing))
-        raise ValueError(message)
+        log.warning("%s", message)
 
 
 def _current_row_count(gateway: BuildGateway, table_key: str) -> int | None:

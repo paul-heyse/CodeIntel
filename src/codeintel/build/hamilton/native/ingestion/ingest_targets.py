@@ -88,7 +88,10 @@ from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
-from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
+from codeintel.ingestion.compute.typing_ingest import (
+    TypingIngestContext,
+    TypingIngestStep,
+)
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
 from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -1337,6 +1340,19 @@ def _coerce_typing_output(
     )
 
 
+def _resolve_scope_paths(env: BuildEnv) -> tuple[Path, ...] | None:
+    raw = env.config.get("scope.scope_paths")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        msg = "scope.scope_paths must be a list of strings"
+        raise TypeError(msg)
+    cleaned = [item.strip() for item in raw if item.strip()]
+    if not cleaned:
+        return None
+    return tuple((env.snapshot.repo_root / item).resolve() for item in cleaned)
+
+
 @tag_tool(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing__run(
     env: BuildEnv,
@@ -1372,13 +1388,17 @@ def t__typing__run(
 
         tools = ToolRunnerAdapter(env.providers.tool_service)
         step = TypingIngestStep(tools=tools)
+        scope_paths = _resolve_scope_paths(env)
         ingest_result = asyncio.run(
             step.execute_async(
                 module_records,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-                repo_root=str(env.snapshot.repo_root),
-                run_diagnostics=True,
+                context=TypingIngestContext(
+                    repo=env.snapshot.repo,
+                    commit=env.snapshot.commit,
+                    repo_root=str(env.snapshot.repo_root),
+                    scope_paths=scope_paths,
+                    run_diagnostics=True,
+                ),
             )
         )
         return TypingToolOutput(
