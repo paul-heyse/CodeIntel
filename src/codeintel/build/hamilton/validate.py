@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+from collections import Counter
 from dataclasses import dataclass, replace
 from textwrap import dedent
 from types import FunctionType, MethodType
@@ -359,6 +360,22 @@ def _cpg_aggregator_dependency_issues(nodes: Mapping[str, NodeLike]) -> list[Gra
                     node=edges_node.name,
                 )
             )
+    return issues
+
+
+def _duplicate_node_name_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+    counts = Counter(node.name for node in nodes.values())
+    duplicates = sorted(name for name, count in counts.items() if count > 1)
+    for name in duplicates:
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="duplicate_node_name",
+                message=f"Duplicate node name discovered: {name}",
+                node=name,
+            )
+        )
     return issues
 
 
@@ -1529,6 +1546,7 @@ def validate_nodes(
     ]
     warnings: list[GraphValidationIssue] = []
     errors.extend(_tag_type_issues(nodes))
+    errors.extend(_duplicate_node_name_issues(nodes))
     errors.extend(_cpg2_naming_issues(nodes))
     errors.extend(_cpg_aggregator_dependency_issues(nodes))
     anchor_errors, anchor_warnings = _target_anchor_tag_issues(nodes)

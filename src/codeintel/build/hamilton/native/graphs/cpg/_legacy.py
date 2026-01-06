@@ -37,6 +37,10 @@ from codeintel.build.graphs.assembly import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.cpg2.assemble import (
+    edge_integrity_report,
+    emit_cpg_diagnostics,
+)
 from codeintel.build.hamilton.native.options.graphs import CpgOptions
 from codeintel.build.hamilton.native.options.ingestion import (
     BytecodeExtractOptions,
@@ -62,10 +66,6 @@ from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.serialization.payload import decode_payload, encode_payload
-from codeintel.build.hamilton.native.graphs.cpg2.assemble import (
-    edge_integrity_report,
-    emit_cpg_diagnostics,
-)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
