@@ -4,6 +4,7 @@ __pycache__/
 .codeintel/
 .hypothesis/
 build/build/db/
+build/datasets/
 build/db/
 build/scip/
 build/test-results/

@@ -1,0 +1,34 @@
+2026-01-05 20:51:44,237 WARNING py.warnings /Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/graph_types.py:73: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  if not hasattr(n.body[0], "value") or not isinstance(n.body[0].value, ast.Str):
+
+2026-01-05 20:51:45,709 ERROR hamilton.driver -------------------------------------------------------------------
+Oh no an error! Need help with Hamilton?
+Join our slack and ask for help! https://join.slack.com/t/hamilton-opensource/shared_invite/zt-2niepkra8-DGKGf_tTYhXuJWBTXtIs4g
+-------------------------------------------------------------------
+
+2026-01-05 20:51:45,711 ERROR codeintel.build.hamilton.executor build.hamilton.executor.error run_id=hamilton-019b9100bdf97a5f8d6b73132eae1ba0
+Traceback (most recent call last):
+  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/executor.py", line 1929, in _execute_dag
+    outputs = context.runtime.driver.execute(
+        list(final_vars),
+        inputs=input_mapping,
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 663, in execute
+    raise e
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 649, in execute
+    outputs = self.__raw_execute(
+        _final_vars, overrides, display_graph, inputs=inputs, _run_id=run_id
+    )
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 834, in __raw_execute
+    Driver.validate_inputs(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        function_graph, self.adapter, user_nodes, inputs, nodes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )  # TODO -- validate within the function graph itself
+    ^
+  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/hamilton/driver.py", line 608, in validate_inputs
+    raise ValueError(error_str)
+ValueError: 2 errors encountered: 
+  Error: Required input cpg_edge_symbol_mapping_inputs not provided for nodes: ['cpg_edge_symbol_inputs'].
+  Error: Required input cpg_edge_symbol_occurrence_inputs not provided for nodes: ['cpg_edge_symbol_inputs'].
+2026-01-05 20:51:48,912 WARNING codeintel.build.hamilton.diagnostics build.diagnostics.cache_view_failed run_id=hamilton-019b9100bdf97a5f8d6b73132eae1ba0 error='hamilton-019b9100bdf97a5f8d6b73132eae1ba0'
